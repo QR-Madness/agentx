@@ -1,0 +1,42 @@
+openapi: 3.0.0
+info:
+  title: AgentX AI API
+  description: API documentation for AgentX AI services
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development server
+
+paths:
+  /index:
+    get:
+      summary: Get API status
+      description: Returns a simple hello message to verify API is running
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello, AgentX AI!"
+
+  /language-detect:
+    get:
+      summary: Detect language
+      description: Detects the language of provided text using ML model
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello, AgentX AI!"

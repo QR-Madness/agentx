@@ -1,0 +1,53 @@
+version: '3'
+
+tasks:
+  # Django API tasks
+  api:migrate:
+    dir: api
+    cmds:
+      - python manage.py migrate
+
+  api:makemigrations:
+    dir: api
+    cmds:
+      - python manage.py makemigrations
+
+  api:shell:
+    dir: api
+    cmds:
+      - python manage.py shell
+
+  api:runserver:
+    dir: api
+    cmds:
+      - python manage.py runserver
+
+  # Electron app tasks
+  app:start:
+    cmds:
+      - npm start
+
+  app:build:
+    cmds:
+      - npm run make
+
+  app:package:
+    cmds:
+      - npm run package
+
+  # Combined tasks
+  dev:
+    deps: [ api:runserver, app:start ]
+    cmds:
+      - echo "Starting development environment..."
+
+  install:
+    cmds:
+      - uv install
+      - npm install
+
+  test:
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - python api/manage.py test
