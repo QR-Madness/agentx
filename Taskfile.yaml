@@ -20,18 +20,21 @@ tasks:
   api:runserver:
     dir: api
     cmds:
-      - python manage.py runserver
+      - python manage.py runserver --port 12319
 
   # Electron app tasks
   app:start:
+    dir: client/
     cmds:
       - npm start
 
   app:build:
+    dir: client/
     cmds:
       - npm run make
 
   app:package:
+    dir: client/
     cmds:
       - npm run package
 
@@ -39,7 +42,7 @@ tasks:
   dev:
     deps: [ api:runserver, app:start ]
     cmds:
-      - echo "Starting development environment..."
+      - echo "Started development environment..."
 
   install:
     cmds:
