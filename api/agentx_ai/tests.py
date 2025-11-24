@@ -2,7 +2,15 @@ from unittest import SkipTest
 
 from django.test import TestCase, Client
 
-from api.agentx_ai.kit.translation import TranslationKit, LanguageLexicon
+from api.agentx_ai.kit.translation import LanguageLexicon
+
+"""
+
+TODO 0) Integrate FAISS for vector database
+TODO 1) Implement Django ORM for AI settings, basic storage
+TODO 2) Implement neo4j for structured information storage and relationship analysis
+ 
+"""
 
 
 # Create your tests here.
