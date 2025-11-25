@@ -1,56 +1,62 @@
 version: '3'
 
 tasks:
-  # Django API tasks
   api:migrate:
     dir: api
     cmds:
-      - python manage.py migrate
+      - uv run python manage.py migrate
 
   api:makemigrations:
-    dir: api
+    dir: api/
     cmds:
-      - python manage.py makemigrations
+      - uv run python manage.py makemigrations
 
   api:shell:
-    dir: api
+    dir: api/
     cmds:
-      - python manage.py shell
+      - uv run python manage.py shell
 
   api:runserver:
-    dir: api
+    dir: api/
     cmds:
-      - python manage.py runserver --port 12319
+      - uv run python manage.py runserver 127.0.0.1:12319
 
-  # Electron app tasks
-  app:start:
+  client:start:
+    deps: [ client:build]
     dir: client/
     cmds:
-      - npm start
+      - bunx next start
 
-  app:build:
+  client:build:
     dir: client/
     cmds:
-      - npm run make
+      - bunx next build
 
-  app:package:
+  client:dev:
     dir: client/
     cmds:
-      - npm run package
+      - bun run dev
 
-  # Combined tasks
   dev:
-    deps: [ api:runserver, app:start ]
+    deps: [api:runserver, client:dev]
+    cmd: echo SERVER FAILOVER; Check logs for errors
+
+  install:api:
     cmds:
-      - echo "Started development environment..."
+      - uv sync
+
+  install:client:
+    dir: client/
+    cmds:
+      - bun install
 
   install:
     cmds:
-      - uv install
-      - npm install
+      - task: install:api
+      - task: install:client
 
   test:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - python api/manage.py test
+      - uv run python api/manage.py test

@@ -1,8 +1,7 @@
 import iso639
 import torch
 from termcolor import colored
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForSeq2SeqLM, \
-    M2M100ForConditionalGeneration
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, M2M100ForConditionalGeneration
 
 nlb200_list = ["ace_Arab", "ace_Latn", "acm_Arab", "acq_Arab", "aeb_Arab", "afr_Latn", "ajp_Arab", "aka_Latn",
                "amh_Ethi", "apc_Arab", "arb_Arab", "ars_Arab", "ary_Arab", "arz_Arab", "asm_Beng", "ast_Latn",
@@ -109,32 +108,30 @@ class TranslationKit:
 
         return detected_language, round(confidence * 100, 2)
 
-    def translate_level_i(self, text: str, target_language_iso639pt1: str) -> str:
+    def translate_text(self, text: str, target_language: str, target_language_level: int) -> str:
         """
         Translate text to a specific language using the translation model.
         Supports over 200 languages.
         Level I due to usage of a distilled model, not suitable for dense text.
+        :param target_language: Language to translate to (format it based on parameter target_language_level).
+        :param target_language_level: 1/Level 1 (format: "en"), 2/Level 2 (format: "eng_Latn").
         :param text: Text to translate.
-        :param source_language_level_ii: Language to translate to.
         :return:
         """
-        # first we will detect the language of the text
-        detected_source_language_level_i, _ = self.detect_language_level_i(text)
-        source_language_level_ii = self.language_lexicon.convert_level_i_detection_to_level_ii(
-            detected_source_language_level_i)
-
-        if source_language_level_ii not in self.language_lexicon.level_ii_languages:
-            raise ValueError(f"Language {source_language_level_ii} not supported.")
+        if target_language_level == 1:
+            target_language_code = self.language_lexicon.convert_level_i_detection_to_level_ii(target_language)
+        elif target_language_level == 2:
+            target_language_code = target_language
+        else:
+            raise ValueError(f"Invalid target language level: {target_language_level}")
 
         # convert language code to language name
         text_to_translate = text
         model_inputs = self.translation_tokenizer(text_to_translate, return_tensors="pt")
 
         # translate to French
-        language_id = self.translation_tokenizer.get_lang_id(target_language_iso639pt1)
+        language_id = self.translation_tokenizer.get_lang_id(target_language_code)
         gen_tokens = self.translation_model.generate(**model_inputs,
                                                      # forced_bos_token_id=self.translation_tokenizer.get_lang_id("fr"))
                                                      forced_bos_token_id=language_id)
-        print(self.translation_tokenizer.batch_decode(gen_tokens,
-                                                      skip_special_tokens=True))
-        return "add this later"
+        return self.translation_tokenizer.batch_decode(gen_tokens, skip_special_tokens=True)[0]

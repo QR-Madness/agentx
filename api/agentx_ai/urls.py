@@ -4,6 +4,6 @@ from . import views
 
 urlpatterns = [
     path("index", views.index, name="index"),
-    path("language-detect", views.language_detect, name="language-detect"),
-    path("translate", views.translate, name="translate"),
+    path("tools/language-detect-20", views.language_detect, name="language-detect"),
+    path("tools/translate", views.translate, name="translate"),
 ]
