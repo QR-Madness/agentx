@@ -1,7 +1,7 @@
 import iso639
 import torch
 from termcolor import colored
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, M2M100ForConditionalGeneration
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForSeq2SeqLM
 
 nlb200_list = ["ace_Arab", "ace_Latn", "acm_Arab", "acq_Arab", "aeb_Arab", "afr_Latn", "ajp_Arab", "aka_Latn",
                "amh_Ethi", "apc_Arab", "arb_Arab", "ars_Arab", "ary_Arab", "arz_Arab", "asm_Beng", "ast_Latn",
@@ -78,6 +78,7 @@ class TranslationKit:
     language_detection_model_name = "eleldar/language-detection"
     level_i_translation_model_name = "facebook/nllb-200-distilled-600M"
     level_ii_translation_model_name = "facebook/nllb-200-distilled-600M"
+    #
 
     def __init__(self):
         # initialize models
@@ -85,10 +86,9 @@ class TranslationKit:
         self.language_detection_model = AutoModelForSequenceClassification.from_pretrained(
             self.language_detection_model_name)
 
-        # self.translation_tokenizer = AutoTokenizer.from_pretrained(self.level_i_translation_model_name)
-        self.translation_tokenizer = AutoTokenizer.from_pretrained("facebook/m2m100_418M")
-        # self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(self.level_i_translation_model_name)
-        self.translation_model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M")
+        # Use NLLB-200 model for translation (supports 204 languages with NLLB format codes)
+        self.translation_tokenizer = AutoTokenizer.from_pretrained(self.level_ii_translation_model_name)
+        self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(self.level_ii_translation_model_name)
 
     def detect_language_level_i(self, unclassified_text) -> tuple[str, float]:
         """ Will detect a language from a given text; supports about 20 languages; thus level I.
@@ -121,7 +121,10 @@ class TranslationKit:
         if target_language_level == 1:
             target_language_code = self.language_lexicon.convert_level_i_detection_to_level_ii(target_language)
         elif target_language_level == 2:
-            target_language_code = target_language
+            if target_language not in self.language_lexicon.level_ii_languages:
+                raise ValueError(f"Language {target_language} not supported for translation.")
+            else:
+                target_language_code = target_language
         else:
             raise ValueError(f"Invalid target language level: {target_language_level}")
 
@@ -129,9 +132,16 @@ class TranslationKit:
         text_to_translate = text
         model_inputs = self.translation_tokenizer(text_to_translate, return_tensors="pt")
 
-        # translate to French
-        language_id = self.translation_tokenizer.get_lang_id(target_language_code)
-        gen_tokens = self.translation_model.generate(**model_inputs,
-                                                     # forced_bos_token_id=self.translation_tokenizer.get_lang_id("fr"))
-                                                     forced_bos_token_id=language_id)
+        # For NLLB-200, set the target language using forced_bos_token_id
+        # Language codes are stored directly in the tokenizer vocabulary
+        self.translation_tokenizer.src_lang = "eng_Latn"  # Source language (default to English)
+
+        # Get the token ID for the target language code from vocabulary
+        forced_bos_token_id = self.translation_tokenizer.convert_tokens_to_ids(target_language_code)
+
+        gen_tokens = self.translation_model.generate(
+            **model_inputs,
+            forced_bos_token_id=forced_bos_token_id,
+            max_length=512
+        )
         return self.translation_tokenizer.batch_decode(gen_tokens, skip_special_tokens=True)[0]

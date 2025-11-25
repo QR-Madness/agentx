@@ -1,24 +1,14 @@
 import React, {useState} from 'react';
 import {postTranslation} from '../../models/translation';
+import {nllb200Languages} from '../../data/nllb200Languages';
 import '../../styles/TranslationTab.css';
 
 export const TranslationTab: React.FC = () => {
     const [sourceText, setSourceText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
-    const [sourceLanguage, setSourceLanguage] = useState('--');
-    const [targetLanguage, setTargetLanguage] = useState('es');
+    const [targetLanguage, setTargetLanguage] = useState('spa_Latn');
     const [isTranslating, setIsTranslating] = useState(false);
-
-    const languages = [{code: '--', name: 'Auto-detect'}, {code: 'en', name: 'English'}, {
-        code: 'es',
-        name: 'Spanish'
-    }, {code: 'fr', name: 'French'}, {code: 'de', name: 'German'}, {code: 'it', name: 'Italian'}, {
-        code: 'pt',
-        name: 'Portuguese'
-    }, {code: 'ru', name: 'Russian'}, {code: 'ja', name: 'Japanese'}, {code: 'zh', name: 'Chinese'}, {
-        code: 'ar',
-        name: 'Arabic'
-    },];
+    const [searchQuery, setSearchQuery] = useState('');
 
     const handleTranslate = async () => {
         if (!sourceText.trim()) return;
@@ -26,7 +16,8 @@ export const TranslationTab: React.FC = () => {
         setIsTranslating(true);
         try {
             const response = await postTranslation({
-                text: sourceText, sourceLanguage, targetLanguage,
+                text: sourceText,
+                targetLanguage,
             });
             setTranslatedText(response.translatedText);
         } catch (error) {
@@ -37,12 +28,13 @@ export const TranslationTab: React.FC = () => {
         }
     };
 
-    const swapLanguages = () => {
-        setSourceLanguage(targetLanguage);
-        setTargetLanguage(sourceLanguage);
-        setSourceText(translatedText);
-        setTranslatedText(sourceText);
-    };
+    // Filter languages based on search query
+    const filteredLanguages = searchQuery.trim()
+        ? nllb200Languages.filter(lang =>
+            lang.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            lang.code.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        : nllb200Languages;
 
     return (<div className="translation-tab">
         <div className="translation-header fade-in">
@@ -56,27 +48,34 @@ export const TranslationTab: React.FC = () => {
         <div className="translation-container">
             <div className="translation-controls card">
                 <div className="language-selector">
-                    <select
-                        value={sourceLanguage}
-                        onChange={(e) => setSourceLanguage(e.target.value)}
-                        className="language-select"
-                    >
-                        {languages.map(lang => (<option key={lang.code} value={lang.code}>{lang.name}</option>))}
-                    </select>
-
-                    <button className="swap-button button-secondary" onClick={swapLanguages}>
-                        <span>⇄</span>
-                    </button>
-
-                    <select
-                        value={targetLanguage}
-                        onChange={(e) => setTargetLanguage(e.target.value)}
-                        className="language-select"
-                    >
-                        {/* Remove auto-detect language option from target language selector */}
-                        {languages.map(lang => (lang.code != "--" ?
-                            <option key={lang.code} value={lang.code}>{lang.name}</option> : null))}
-                    </select>
+                    <div className="language-select-wrapper">
+                        <label htmlFor="target-language" className="language-label">
+                            Translate to:
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="Search languages... (e.g., 'French', 'Arabic', 'Chinese')"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="language-search"
+                        />
+                        <select
+                            id="target-language"
+                            value={targetLanguage}
+                            onChange={(e) => setTargetLanguage(e.target.value)}
+                            className="language-select"
+                            size={8}
+                        >
+                            {filteredLanguages.map(lang => (
+                                <option key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="language-info">
+                            {filteredLanguages.length} language{filteredLanguages.length !== 1 ? 's' : ''} available
+                        </div>
+                    </div>
                 </div>
             </div>
 

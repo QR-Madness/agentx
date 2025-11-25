@@ -6,7 +6,7 @@ const urls = {
 
 export interface TranslationRequest {
     text: string;
-    sourceLanguage: string;
+    sourceLanguage?: string;
     targetLanguage: string;
 }
 
