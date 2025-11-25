@@ -134,7 +134,7 @@ class TranslationKit:
 
         # For NLLB-200, set the target language using forced_bos_token_id
         # Language codes are stored directly in the tokenizer vocabulary
-        self.translation_tokenizer.src_lang = "eng_Latn"  # Source language (default to English)
+        # self.translation_tokenizer.src_lang = "eng_Latn"  # Source language (default to English)
 
         # Get the token ID for the target language code from vocabulary
         forced_bos_token_id = self.translation_tokenizer.convert_tokens_to_ids(target_language_code)
