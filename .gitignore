@@ -1,1 +1,7 @@
 client/node_modules
+
+# Database data directories (local bind mounts)
+data/
+
+# Database backups
+backups/

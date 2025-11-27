@@ -1,12 +1,76 @@
 version: '3'
 
 tasks:
+  default:
+    desc: Sanity check task (use to debug Taskfile)
+    prompt: "Taskfile is operational! Do you want to run the development environment?"
+    deps: [ pre-launch-check ]
+    cmds:
+      - task: install
+      - task: db:init
+      - task: dev
+
+  pre-launch-check:
+    desc: Check that the development environment is ready to launch
+    silent: true
+    cmds:
+      - echo "Checking development environment..."
+      - |
+        MISSING=""
+
+        # Check for data directories
+        if [ ! -d "data/postgres" ]; then
+          MISSING="${MISSING}\n  - data/postgres/ (run: task db:init)"
+        fi
+
+        if [ ! -d "data/neo4j" ]; then
+          MISSING="${MISSING}\n  - data/neo4j/ (run: task db:init)"
+        fi
+
+        if [ ! -d "data/redis" ]; then
+          MISSING="${MISSING}\n  - data/redis/ (run: task db:init)"
+        fi
+
+        # Check for virtual environment
+        if [ ! -d ".venv" ]; then
+          MISSING="${MISSING}\n  - .venv/ (run: task install:api)"
+        fi
+
+        # Check for client node_modules
+        if [ ! -d "client/node_modules" ]; then
+          MISSING="${MISSING}\n  - client/node_modules/ (run: task install:client)"
+        fi
+
+        # Print results
+        if [ -n "$MISSING" ]; then
+          echo "⚠️  Missing required directories:"
+          echo -e "$MISSING"
+          echo ""
+          echo "Run 'task install' or 'task db:init' to set up missing components."
+          exit 1
+        else
+          echo "✓ Development environment is ready!"
+        fi
+
+  runners:
+    desc: Start all runners/services
+    deps: [ pre-launch-check ]
+    cmds:
+      - docker-compose up -d
+
+  teardown:
+    desc: Stop all runners/services
+    cmds:
+      - docker-compose down
+
   api:migrate:
+    desc: Run database migrations
     dir: api
     cmds:
       - uv run python manage.py migrate
 
   api:makemigrations:
+    run: once
     dir: api/
     cmds:
       - uv run python manage.py makemigrations
@@ -22,7 +86,7 @@ tasks:
       - uv run python manage.py runserver 127.0.0.1:12319
 
   client:start:
-    deps: [ client:build]
+    deps: [ client:build ]
     dir: client/
     cmds:
       - bunx next start
@@ -35,11 +99,13 @@ tasks:
   client:dev:
     dir: client/
     cmds:
-      - bun run dev
+      - bunx tauri run dev
 
   dev:
-    deps: [api:runserver, client:dev]
-    cmd: echo SERVER FAILOVER; Check logs for errors
+    deps: [ runners ]
+    cmds:
+      - defer: { task: teardown }
+      - bunx concurrently -n "API,CLIENT" -c "blue,magenta" "cd api && uv run python manage.py runserver 127.0.0.1:12319" "cd client && bunx tauri dev"
 
   install:api:
     cmds:
@@ -51,12 +117,104 @@ tasks:
       - bun install
 
   install:
+    desc: Install dependencies
+    run: once
     cmds:
+      - bun install concurrently
       - task: install:api
       - task: install:client
 
   test:
+    desc: Run backend tests
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
       - uv run python api/manage.py test
+
+  db:clean:
+    desc: Remove all database data
+    prompt: Are you sure you want to remove all database data?
+    cmds:
+      - rm -rf data/neo4j/data/*
+      - rm -rf data/neo4j/logs/*
+      - rm -rf data/neo4j/plugins/*
+      - rm -rf data/postgres/*
+      - rm -rf data/redis/*
+
+  db:migrate-volumes:
+    desc: Migrate all database data from Docker volumes to local bind mounts
+    cmds:
+      - task: db:migrate-volumes:neo4j
+      - task: db:migrate-volumes:postgres
+      - task: db:migrate-volumes:redis
+
+  db:migrate-volumes:neo4j:
+    desc: Migrate Neo4j data from Docker volumes to local bind mounts
+    cmds:
+      - echo "Creating Neo4j data directory structure..."
+      - mkdir -p data/neo4j/{data,logs,plugins}
+      - echo "Migrating Neo4j data from volumes..."
+      - docker run --rm -v agentx-source_neo4j_data:/from -v "{{.ROOT_DIR}}/data/neo4j/data:/to" alpine sh -c "cp -av /from/. /to/"
+      - docker run --rm -v agentx-source_neo4j_logs:/from -v "{{.ROOT_DIR}}/data/neo4j/logs:/to" alpine sh -c "cp -av /from/. /to/"
+      - docker run --rm -v agentx-source_neo4j_plugins:/from -v "{{.ROOT_DIR}}/data/neo4j/plugins:/to" alpine sh -c "cp -av /from/. /to/"
+      - echo "✓ Neo4j migration complete! Data is now in ./data/neo4j/"
+    status:
+      - test -d data/neo4j/data/databases
+
+  db:migrate-volumes:postgres:
+    desc: Migrate Postgres data from Docker volumes to local bind mounts
+    cmds:
+      - echo "Creating Postgres data directory..."
+      - mkdir -p data/postgres
+      - echo "Migrating Postgres data from volumes..."
+      - docker run --rm -v agentx-source_postgres_data:/from -v "{{.ROOT_DIR}}/data/postgres:/to" alpine sh -c "cp -av /from/. /to/"
+      - echo "✓ Postgres migration complete! Data is now in ./data/postgres/"
+    status:
+      - test -f data/postgres/PG_VERSION
+
+  db:migrate-volumes:redis:
+    desc: Migrate Redis data from Docker volumes to local bind mounts
+    cmds:
+      - echo "Creating Redis data directory..."
+      - mkdir -p data/redis
+      - echo "Migrating Redis data from volumes..."
+      - docker run --rm -v agentx-source_redis_data:/from -v "{{.ROOT_DIR}}/data/redis:/to" alpine sh -c "cp -av /from/. /to/"
+      - echo "✓ Redis migration complete! Data is now in ./data/redis/"
+    status:
+      - test -f data/redis/appendonlydir/appendonly.aof.1.base.rdb || test -f data/redis/appendonly.aof
+
+  db:backup:postgres:
+    desc: Create a backup of Postgres database
+    cmds:
+      - echo "Creating Postgres backup..."
+      - mkdir -p backups
+      - docker exec agent-postgres pg_dump -U agent agent_memory > "backups/postgres_$(date +%Y%m%d_%H%M%S).sql"
+      - echo "✓ Backup created in ./backups/"
+
+  db:restore:postgres:
+    desc: Restore Postgres database from backup (provide BACKUP_FILE=path/to/backup.sql)
+    cmds:
+      - echo "Restoring Postgres from {{.BACKUP_FILE}}..."
+      - docker exec -i agent-postgres psql -U agent -d agent_memory < "{{.BACKUP_FILE}}"
+      - echo "✓ Restore complete!"
+    requires:
+      vars: [ BACKUP_FILE ]
+
+  db:shell:postgres:
+    desc: Open Postgres shell (psql)
+    cmds:
+      - docker exec -it agent-postgres psql -U agent -d agent_memory
+
+  db:shell:redis:
+    desc: Open Redis CLI
+    cmds:
+      - docker exec -it agent-redis redis-cli
+
+  db:init:
+    desc: Initialize data directories for all databases
+    cmds:
+      - echo "Creating data directory structure..."
+      - mkdir -p data/neo4j/{data,logs,plugins}
+      - mkdir -p data/postgres
+      - mkdir -p data/redis
+      - echo "✓ Data directories initialized in ./data/"
