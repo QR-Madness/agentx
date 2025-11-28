@@ -1,0 +1,131 @@
+site_name: AgentX Documentation
+site_description: AI-powered language translation and memory system
+site_author: AgentX Team
+site_url: https://agentx.dev  # Update with your actual domain
+
+# Repository
+repo_name: agentx-source
+repo_url: https://github.com/yourusername/agentx-source  # Update with your actual repo
+edit_uri: edit/master/docs/
+
+# Copyright
+copyright: Copyright &copy; 2025 AgentX
+
+# Configuration
+theme:
+  name: material
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  features:
+    - navigation.instant      # Instant loading (SPA-like)
+    - navigation.tracking     # Update URL with active anchor
+    - navigation.tabs         # Top-level sections as tabs
+    - navigation.sections     # Section grouping in sidebar
+    - navigation.top          # Back to top button
+    - search.suggest          # Search suggestions
+    - search.highlight        # Highlight search terms
+    - content.code.copy       # Copy code blocks
+    - content.code.annotate   # Code annotations
+
+  icon:
+    repo: fontawesome/brands/github
+
+# Extensions
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+  # PyMdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - API Layer: architecture/api.md
+    - Client Layer: architecture/client.md
+    - Database Stack: architecture/databases.md
+  - Features:
+    - Translation System: features/translation.md
+    - Memory System: features/memory.md
+    - Chat Interface: features/chat.md
+  - Development:
+    - Setup: development/setup.md
+    - Task Commands: development/tasks.md
+    - Testing: development/testing.md
+    - Contributing: development/contributing.md
+  - API Reference:
+    - Endpoints: api/endpoints.md
+    - Models: api/models.md
+  - Deployment:
+    - Docker: deployment/docker.md
+    - Database Migration: deployment/migration.md
+
+# Extra
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/agentx-source
+  version:
+    provider: mike
+    default: latest
+
+# Custom CSS (optional)
+# extra_css:
+#   - stylesheets/extra.css

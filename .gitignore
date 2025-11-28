@@ -5,3 +5,6 @@ data/
 
 # Database backups
 backups/
+
+# MkDocs build output
+site/
