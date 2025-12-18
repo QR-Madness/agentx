@@ -15,4 +15,6 @@ dependencies = [
     "neo4j>=6.0.3",
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
 ]

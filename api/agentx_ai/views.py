@@ -54,6 +54,7 @@ def translate(request):
     })
 
 
+@csrf_exempt
 def language_detect(request):
     unclassified_text = "Hello, AgentX AI, this is a language test to detect the spoken language!"
 
