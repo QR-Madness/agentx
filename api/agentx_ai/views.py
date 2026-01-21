@@ -1,11 +1,28 @@
+import asyncio
 import json
 import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .kit.memory_utils import check_memory_health
+from .mcp import MCPClientManager, ServerRegistry, ServerConfig
 
 logger = logging.getLogger(__name__)
+
+# Lazy-loaded MCP manager
+_mcp_manager = None
+
+
+def get_mcp_manager():
+    """Get or create MCPClientManager instance lazily."""
+    global _mcp_manager
+    if _mcp_manager is None:
+        from pathlib import Path
+        config_path = Path(__file__).parent.parent.parent / "mcp_servers.json"
+        registry = ServerRegistry(config_path) if config_path.exists() else ServerRegistry()
+        _mcp_manager = MCPClientManager(registry)
+        logger.info(f"MCPClientManager initialized with {len(registry.list())} configured servers")
+    return _mcp_manager
 
 # Lazy-loaded translation kit to avoid import-time model loading
 _translation_kit = None
@@ -137,4 +154,58 @@ def language_detect(request):
         'original': unclassified_text,
         'detected_language': detected_language,
         'confidence': confidence
+    })
+
+
+def mcp_servers(request):
+    """List configured MCP servers and their status."""
+    manager = get_mcp_manager()
+    
+    # Get configured servers from registry
+    configured = [
+        {
+            "name": config.name,
+            "transport": config.transport.value,
+            "command": config.command,
+            "url": config.url,
+            "connected": manager.is_connected(config.name),
+        }
+        for config in manager.registry.list()
+    ]
+    
+    # Get active connections
+    active = [
+        conn.to_dict()
+        for conn in manager.list_connections()
+    ]
+    
+    return JsonResponse({
+        "configured_servers": configured,
+        "active_connections": active,
+    })
+
+
+def mcp_tools(request):
+    """List available tools from connected MCP servers."""
+    manager = get_mcp_manager()
+    server_name = request.GET.get('server')
+    
+    tools = manager.list_tools(server_name)
+    
+    return JsonResponse({
+        "tools": [tool.to_dict() for tool in tools],
+        "count": len(tools),
+    })
+
+
+def mcp_resources(request):
+    """List available resources from connected MCP servers."""
+    manager = get_mcp_manager()
+    server_name = request.GET.get('server')
+    
+    resources = manager.list_resources(server_name)
+    
+    return JsonResponse({
+        "resources": [res.to_dict() for res in resources],
+        "count": len(resources),
     })

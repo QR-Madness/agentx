@@ -82,3 +82,105 @@ class HealthCheckTest(TestCase):
         self.assertIn('neo4j', data['memory'])
         self.assertIn('postgres', data['memory'])
         self.assertIn('redis', data['memory'])
+
+
+class MCPClientTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+    def test_mcp_servers_endpoint(self):
+        """Test that the MCP servers endpoint returns expected structure."""
+        response = self.client.get("/api/mcp/servers")
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('configured_servers', data)
+        self.assertIn('active_connections', data)
+        self.assertIsInstance(data['configured_servers'], list)
+        self.assertIsInstance(data['active_connections'], list)
+
+    def test_mcp_tools_endpoint(self):
+        """Test that the MCP tools endpoint returns expected structure."""
+        response = self.client.get("/api/mcp/tools")
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('tools', data)
+        self.assertIn('count', data)
+        self.assertIsInstance(data['tools'], list)
+
+    def test_mcp_resources_endpoint(self):
+        """Test that the MCP resources endpoint returns expected structure."""
+        response = self.client.get("/api/mcp/resources")
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('resources', data)
+        self.assertIn('count', data)
+        self.assertIsInstance(data['resources'], list)
+
+
+class MCPServerRegistryTest(TestCase):
+    def test_server_config_creation(self):
+        """Test creating a server configuration."""
+        from agentx_ai.mcp import ServerConfig
+        from agentx_ai.mcp.server_registry import TransportType
+        
+        config = ServerConfig(
+            name="test-server",
+            transport=TransportType.STDIO,
+            command="npx",
+            args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        )
+        
+        self.assertEqual(config.name, "test-server")
+        self.assertEqual(config.transport, TransportType.STDIO)
+        self.assertEqual(config.command, "npx")
+        self.assertTrue(config.validate())
+
+    def test_server_registry_operations(self):
+        """Test server registry register/get/list operations."""
+        from agentx_ai.mcp import ServerRegistry, ServerConfig
+        from agentx_ai.mcp.server_registry import TransportType
+        
+        registry = ServerRegistry()
+        
+        config = ServerConfig(
+            name="test-server",
+            transport=TransportType.STDIO,
+            command="echo",
+            args=["test"],
+        )
+        
+        registry.register(config)
+        
+        # Test get
+        retrieved = registry.get("test-server")
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.name, "test-server")
+        
+        # Test list
+        servers = registry.list()
+        self.assertEqual(len(servers), 1)
+        
+        # Test unregister
+        result = registry.unregister("test-server")
+        self.assertTrue(result)
+        self.assertIsNone(registry.get("test-server"))
+
+    def test_env_resolution(self):
+        """Test environment variable resolution in server config."""
+        import os
+        from agentx_ai.mcp import ServerConfig
+        from agentx_ai.mcp.server_registry import TransportType
+        
+        os.environ["TEST_TOKEN"] = "my-secret-token"
+        
+        config = ServerConfig(
+            name="test",
+            transport=TransportType.STDIO,
+            command="echo",
+            env={"TOKEN": "${TEST_TOKEN}"},
+        )
+        
+        resolved = config.resolve_env()
+        self.assertEqual(resolved["TOKEN"], "my-secret-token")
+        
+        del os.environ["TEST_TOKEN"]

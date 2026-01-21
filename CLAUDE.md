@@ -78,6 +78,13 @@ The `LanguageLexicon` class bridges Level I and Level II by converting between I
   - `models.py`: Pydantic models for Turn, Entity, Fact, Goal, Strategy
   - `memory/`: Episodic, semantic, procedural, working memory implementations
 
+**MCP Client** (`api/agentx_ai/mcp/`)
+- `client.py`: `MCPClientManager` for managing server connections
+- `server_registry.py`: `ServerRegistry` and `ServerConfig` for configuration
+- `tool_executor.py`: `ToolExecutor` for executing tools on connected servers
+- `transports/`: Transport implementations (stdio, SSE)
+- Configure servers in `mcp_servers.json` (see `mcp_servers.json.example`)
+
 **Client Tabs** (`client/src/components/tabs/`)
 - Each tab is a separate React component (DashboardTab, TranslationTab, ChatTab, ToolsTab)
 - Tab switching handled by `App.tsx` state management
@@ -166,6 +173,9 @@ Base URL: `http://localhost:12319/api/`
 | `/api/health` | GET | Health check (add `?include_memory=true` for DB status) |
 | `/api/tools/language-detect-20` | GET/POST | Detect language of text |
 | `/api/tools/translate` | POST | Translate text to target language |
+| `/api/mcp/servers` | GET | List configured MCP servers |
+| `/api/mcp/tools` | GET | List available MCP tools |
+| `/api/mcp/resources` | GET | List available MCP resources |
 
 **Language Detection:**
 ```json
@@ -289,7 +299,7 @@ Managed via `pyproject.toml` with uv:
 See `Todo.md` for detailed task tracking. Current status:
 - ✅ Phase 1: Critical fixes (dependencies, Taskfile, OpenAPI)
 - ✅ Phase 2: Wire up existing code (health endpoint, lazy loading)
-- 🔲 Phase 3: MCP Client integration
+- ✅ Phase 3: MCP Client integration
 - 🔲 Phase 4: Model provider abstraction
 - 🔲 Phase 5: Drafting models framework
 - 🔲 Phase 6: Reasoning framework

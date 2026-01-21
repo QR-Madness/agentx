@@ -61,5 +61,9 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# MCP configuration (may contain sensitive data)
+mcp_servers.json
+
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
