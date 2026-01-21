@@ -25,6 +25,46 @@ paths:
                     type: string
                     example: "Hello, AgentX AI!"
 
+  /health:
+    get:
+      summary: Health check
+      description: Returns health status of all services including API, translation models, and optionally memory system connections.
+      parameters:
+        - name: include_memory
+          in: query
+          description: Include memory system health (neo4j, postgres, redis)
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Health status response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                    example: "healthy"
+                  api:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                  translation:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      models:
+                        type: object
+                  memory:
+                    type: object
+                    description: Only present if include_memory=true
+
   /tools/language-detect-20:
     post:
       summary: Detect language (Level I)

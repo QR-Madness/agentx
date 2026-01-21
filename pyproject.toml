@@ -17,6 +17,7 @@ dependencies = [
     "faiss-cpu>=1.13.0",
     "neo4j>=6.0.3",
     "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
     "redis>=5.0.0",
     
     # MCP Client
@@ -35,6 +36,7 @@ dependencies = [
     "python-iso639>=2025.11.16",
     "termcolor>=3.2.0",
     "networkx>=3.0",
+    "sentence-transformers>=2.2.0",
     
     # Documentation
     "mkdocs>=1.6.0",

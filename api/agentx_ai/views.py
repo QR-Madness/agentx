@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .kit.translation import TranslationKit
+from .kit.memory_utils import check_memory_health
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,45 @@ translation_kit = TranslationKit()
 
 def index(request):
     return JsonResponse({'message': 'Hello, AgentX AI!'})
+
+
+def health(request):
+    """
+    Health check endpoint for all services.
+    
+    Returns status of:
+    - API server (always healthy if responding)
+    - Translation models (loaded or not)
+    - Memory system connections (neo4j, postgres, redis)
+    """
+    # Check translation kit
+    translation_status = {
+        "status": "healthy" if translation_kit else "unhealthy",
+        "models": {
+            "language_detection": translation_kit.language_detection_model_name if translation_kit else None,
+            "translation": translation_kit.level_ii_translation_model_name if translation_kit else None,
+        }
+    }
+    
+    # Check memory system (lazy - only if explicitly requested)
+    include_memory = request.GET.get('include_memory', 'false').lower() == 'true'
+    memory_status = None
+    if include_memory:
+        memory_status = check_memory_health()
+    
+    response = {
+        "status": "healthy",
+        "api": {"status": "healthy"},
+        "translation": translation_status,
+    }
+    
+    if memory_status:
+        response["memory"] = memory_status
+        # Overall status is unhealthy if any memory component is unhealthy
+        if any(v["status"] == "unhealthy" for v in memory_status.values()):
+            response["status"] = "degraded"
+    
+    return JsonResponse(response)
 
 
 @csrf_exempt

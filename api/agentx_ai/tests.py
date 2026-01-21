@@ -57,3 +57,28 @@ class TranslationKitTest(TestCase):
         )
         print(response.json())
         self.assertEqual(response.status_code, 200)
+
+
+class HealthCheckTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+    def test_health_endpoint(self):
+        """Test that the health check endpoint returns expected structure."""
+        response = self.client.get("/api/health")
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('status', data)
+        self.assertIn('api', data)
+        self.assertIn('translation', data)
+        self.assertEqual(data['api']['status'], 'healthy')
+
+    def test_health_with_memory_check(self):
+        """Test health check with memory system included (will show unhealthy if DBs not running)."""
+        response = self.client.get("/api/health?include_memory=true")
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('memory', data)
+        self.assertIn('neo4j', data['memory'])
+        self.assertIn('postgres', data['memory'])
+        self.assertIn('redis', data['memory'])
