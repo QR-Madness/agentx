@@ -132,7 +132,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test
+      - uv run python api/manage.py test -v2
 
   db:clean:
     desc: Remove all database data

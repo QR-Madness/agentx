@@ -10,13 +10,16 @@ class Settings(BaseSettings):
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "your_secure_password"
+    neo4j_password: str = "changeme"
 
     # PostgreSQL
-    postgres_uri: str = "postgresql://agent:your_secure_password@localhost:5432/agent_memory"
+    postgres_uri: str = "postgresql://agent:changeme@localhost:5432/agent_memory"
 
     # Redis
     redis_uri: str = "redis://localhost:6379"
+
+    # Connection timeouts (seconds)
+    connection_timeout: int = 5
 
     # Embeddings
     embedding_provider: str = "openai"  # or "local"

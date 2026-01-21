@@ -74,7 +74,7 @@ class HealthCheckTest(TestCase):
         self.assertEqual(data['api']['status'], 'healthy')
 
     def test_health_with_memory_check(self):
-        """Test health check with memory system included (will show unhealthy if DBs not running)."""
+        """Test health check with memory system - requires Docker services running."""
         response = self.client.get("/api/health?include_memory=true")
         data = response.json()
         self.assertEqual(response.status_code, 200)
@@ -82,6 +82,13 @@ class HealthCheckTest(TestCase):
         self.assertIn('neo4j', data['memory'])
         self.assertIn('postgres', data['memory'])
         self.assertIn('redis', data['memory'])
+        # Assert all database connections are healthy
+        self.assertEqual(data['memory']['neo4j']['status'], 'healthy', 
+                         f"Neo4j unhealthy: {data['memory']['neo4j'].get('error')}")
+        self.assertEqual(data['memory']['postgres']['status'], 'healthy',
+                         f"PostgreSQL unhealthy: {data['memory']['postgres'].get('error')}")
+        self.assertEqual(data['memory']['redis']['status'], 'healthy',
+                         f"Redis unhealthy: {data['memory']['redis'].get('error')}")
 
 
 class MCPClientTest(TestCase):

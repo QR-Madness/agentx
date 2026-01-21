@@ -13,10 +13,10 @@ from .config import get_settings
 
 settings = get_settings()
 
-# Thread locks for singleton initialization
-_neo4j_lock = threading.Lock()
-_postgres_lock = threading.Lock()
-_redis_lock = threading.Lock()
+# Thread locks for singleton initialization (reentrant to avoid deadlocks)
+_neo4j_lock = threading.RLock()
+_postgres_lock = threading.RLock()
+_redis_lock = threading.RLock()
 
 
 # Neo4j Connection Manager
@@ -34,7 +34,10 @@ class Neo4jConnection:
                 if cls._driver is None:
                     cls._driver = GraphDatabase.driver(
                         settings.neo4j_uri,
-                        auth=(settings.neo4j_user, settings.neo4j_password)
+                        auth=(settings.neo4j_user, settings.neo4j_password),
+                        connection_timeout=settings.connection_timeout,
+                        max_connection_lifetime=300,
+                        connection_acquisition_timeout=settings.connection_timeout,
                     )
         return cls._driver
 
@@ -75,7 +78,8 @@ class PostgresConnection:
                     cls._engine = create_engine(
                         settings.postgres_uri, 
                         pool_size=10, 
-                        max_overflow=20
+                        max_overflow=20,
+                        connect_args={"connect_timeout": settings.connection_timeout}
                     )
         return cls._engine
     
@@ -131,7 +135,9 @@ class RedisConnection:
                 if cls._client is None:
                     cls._client = redis.from_url(
                         settings.redis_uri,
-                        decode_responses=True
+                        decode_responses=True,
+                        socket_timeout=settings.connection_timeout,
+                        socket_connect_timeout=settings.connection_timeout
                     )
         return cls._client
 
@@ -145,10 +151,42 @@ class RedisConnection:
 
 
 def close_all_connections():
-    """Close all database connections. Called on process shutdown."""
-    Neo4jConnection.close()
-    PostgresConnection.close()
-    RedisConnection.close()
+    """Close all database connections with timeout. Called on process shutdown."""
+    import queue
+    
+    results = queue.Queue()
+    
+    def _close_neo4j():
+        try:
+            Neo4jConnection.close()
+            results.put("neo4j")
+        except Exception:
+            pass
+    
+    def _close_postgres():
+        try:
+            PostgresConnection.close()
+            results.put("postgres")
+        except Exception:
+            pass
+    
+    def _close_redis():
+        try:
+            RedisConnection.close()
+            results.put("redis")
+        except Exception:
+            pass
+    
+    # Close connections in parallel with daemon threads
+    threads = []
+    for close_fn in [_close_neo4j, _close_postgres, _close_redis]:
+        t = threading.Thread(target=close_fn, daemon=True)
+        t.start()
+        threads.append(t)
+    
+    # Wait briefly for cleanup (2 seconds max)
+    for t in threads:
+        t.join(timeout=2)
 
 
 # Register cleanup function to run on process exit

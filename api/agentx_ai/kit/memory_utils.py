@@ -5,14 +5,17 @@ The memory system is initialized on first access to avoid startup delays
 when database services are not running.
 """
 
-from functools import lru_cache
 from typing import Optional
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
 _memory_instance: Optional["AgentMemory"] = None
 _memory_error: Optional[Exception] = None
+
+# Timeout for health checks in seconds
+HEALTH_CHECK_TIMEOUT = 5
 
 
 def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None):
@@ -50,12 +53,13 @@ def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = 
 
 def check_memory_health() -> dict:
     """
-    Check health of memory system connections.
+    Check health of memory system connections with timeouts.
     
     Returns:
         Dict with status of each connection (neo4j, postgres, redis)
     """
     from sqlalchemy import text
+    import queue
     
     health = {
         "neo4j": {"status": "unknown", "error": None},
@@ -63,34 +67,59 @@ def check_memory_health() -> dict:
         "redis": {"status": "unknown", "error": None},
     }
     
-    # Check Neo4j
-    try:
-        from .agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as session:
-            session.run("RETURN 1")
-        health["neo4j"]["status"] = "healthy"
-    except Exception as e:
-        health["neo4j"]["status"] = "unhealthy"
-        health["neo4j"]["error"] = str(e)
+    results = queue.Queue()
     
-    # Check PostgreSQL
-    try:
-        from .agent_memory.connections import get_postgres_session
-        with get_postgres_session() as session:
-            session.execute(text("SELECT 1"))
-        health["postgres"]["status"] = "healthy"
-    except Exception as e:
-        health["postgres"]["status"] = "unhealthy"
-        health["postgres"]["error"] = str(e)
+    def _check_neo4j():
+        try:
+            from .agent_memory.connections import Neo4jConnection
+            with Neo4jConnection.session() as session:
+                session.run("RETURN 1").consume()
+            results.put(("neo4j", "healthy", None))
+        except Exception as e:
+            results.put(("neo4j", "unhealthy", str(e)))
     
-    # Check Redis
-    try:
-        from .agent_memory.connections import RedisConnection
-        client = RedisConnection.get_client()
-        client.ping()
-        health["redis"]["status"] = "healthy"
-    except Exception as e:
-        health["redis"]["status"] = "unhealthy"
-        health["redis"]["error"] = str(e)
+    def _check_postgres():
+        try:
+            from .agent_memory.connections import get_postgres_session
+            with get_postgres_session() as session:
+                session.execute(text("SELECT 1"))
+            results.put(("postgres", "healthy", None))
+        except Exception as e:
+            results.put(("postgres", "unhealthy", str(e)))
+    
+    def _check_redis():
+        try:
+            from .agent_memory.connections import RedisConnection
+            client = RedisConnection.get_client()
+            client.ping()
+            results.put(("redis", "healthy", None))
+        except Exception as e:
+            results.put(("redis", "unhealthy", str(e)))
+    
+    # Start daemon threads for each check
+    threads = []
+    for check_fn in [_check_neo4j, _check_postgres, _check_redis]:
+        t = threading.Thread(target=check_fn, daemon=True)
+        t.start()
+        threads.append(t)
+    
+    # Wait for all threads to complete or timeout
+    deadline = threading.Event()
+    for t in threads:
+        t.join(timeout=HEALTH_CHECK_TIMEOUT)
+    
+    # Collect results that completed
+    completed = set()
+    while not results.empty():
+        name, status, error = results.get_nowait()
+        health[name]["status"] = status
+        health[name]["error"] = error
+        completed.add(name)
+    
+    # Mark any that didn't complete as timed out
+    for name in ["neo4j", "postgres", "redis"]:
+        if name not in completed:
+            health[name]["status"] = "unhealthy"
+            health[name]["error"] = f"Connection timed out after {HEALTH_CHECK_TIMEOUT}s"
     
     return health
