@@ -4,22 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AgentX is a hybrid desktop application combining:
-- **Backend**: Django REST API providing AI-powered language translation and detection services
+AgentX is an AI Agent Platform combining:
+- **Backend**: Django REST API providing AI-powered language translation, detection, and agent services
 - **Frontend**: Tauri desktop application with React/TypeScript UI and Vite build system
-- **AI Features**: Multi-level language detection and translation using HuggingFace transformers (NLLB-200, M2M100)
+- **AI Features**: Multi-level language detection/translation, MCP client integration, drafting models, reasoning framework
+- **Memory System**: Persistent agent memory with Neo4j, PostgreSQL (pgvector), and Redis
 
 ## Architecture
 
-### Two-Tier System
+### System Overview
 
 The project has a clean separation between API and client:
 
 1. **API Layer** (`api/` directory)
    - Django 5.2.8 application running on port 12319
    - Main app: `agentx_ai` with endpoints for translation and language detection
-   - SQLite database for settings and storage
-   - Planned integrations: FAISS vector database, Neo4j for relationship analysis (see api/agentx_ai/tests.py:9-12)
+   - Agent memory system with episodic, semantic, procedural, and working memory
+   - MCP client for consuming external tool servers
+   - Drafting and reasoning frameworks for multi-model AI workflows
 
 2. **Client Layer** (`client/` directory)
    - Tauri v2 desktop app with Rust backend
@@ -27,6 +29,11 @@ The project has a clean separation between API and client:
    - Vite build system for fast development
    - Tab-based navigation: Dashboard, Translation, Chat, Tools
    - Communicates with Django API
+
+3. **Data Layer** (Docker services)
+   - Neo4j: Graph database for knowledge graphs and relationships
+   - PostgreSQL + pgvector: Relational storage with vector search
+   - Redis: Caching and working memory
 
 **Note**: The `client-old/` directory contains the previous Electron implementation and can be ignored.
 
@@ -40,7 +47,7 @@ The translation system implements a two-level approach:
 - Returns ISO 639-1 codes (e.g., "en", "fr")
 
 **Level II**: Comprehensive translation (200+ languages)
-- Model: `facebook/m2m100_418M` (currently) or `facebook/nllb-200-distilled-600M` (configured)
+- Model: `facebook/nllb-200-distilled-600M`
 - Used for: Multi-language translation via NLLB-200 architecture
 - Uses extended ISO 639 codes with script info (e.g., "eng_Latn", "zho_Hans")
 
@@ -128,9 +135,12 @@ python api/manage.py test agentx_ai.TranslationKitTest
 Base URL: `http://localhost:12319/api/`
 
 - `GET /api/index` - Health check
-- `GET /api/language-detect` - Detect language from hardcoded test text
-- `POST /api/translate` - Translate text to target language
-  - Body: `{"text": "...", "target_language": "fr"}` (ISO 639-1 code)
+- `GET|POST /api/tools/language-detect-20` - Detect language of text
+  - POST Body: `{"text": "..."}`
+  - Response: `{"original": "...", "detected_language": "en", "confidence": 98.5}`
+- `POST /api/tools/translate` - Translate text to target language
+  - Body: `{"text": "...", "targetLanguage": "fra_Latn"}` (NLLB-200 format)
+  - Response: `{"original": "...", "translatedText": "..."}`
 
 ### Translation Model Loading
 

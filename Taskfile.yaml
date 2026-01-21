@@ -86,20 +86,23 @@ tasks:
       - uv run python manage.py runserver 127.0.0.1:12319
 
   client:start:
+    desc: Start client in preview mode
     deps: [ client:build ]
     dir: client/
     cmds:
-      - bunx next start
+      - bun run preview
 
   client:build:
+    desc: Build client for production
     dir: client/
     cmds:
-      - bunx next build
+      - bun run build
 
   client:dev:
+    desc: Start client in development mode
     dir: client/
     cmds:
-      - bunx tauri run dev
+      - bun run tauri dev
 
   dev:
     deps: [ runners ]
