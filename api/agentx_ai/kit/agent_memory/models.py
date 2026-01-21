@@ -1,9 +1,14 @@
 """Data models for the agent memory system."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from uuid import uuid4
+
+
+def _utc_now():
+    """Return current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class Turn(BaseModel):
@@ -12,7 +17,7 @@ class Turn(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     conversation_id: str
     index: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=_utc_now)
     role: str  # 'user', 'assistant', 'system', 'tool'
     content: str
     embedding: Optional[List[float]] = None
@@ -31,8 +36,8 @@ class Entity(BaseModel):
     embedding: Optional[List[float]] = None
     salience: float = 0.5
     properties: Dict[str, Any] = Field(default_factory=dict)
-    first_seen: datetime = Field(default_factory=datetime.utcnow)
-    last_accessed: datetime = Field(default_factory=datetime.utcnow)
+    first_seen: datetime = Field(default_factory=_utc_now)
+    last_accessed: datetime = Field(default_factory=_utc_now)
     access_count: int = 0
 
 
@@ -46,7 +51,7 @@ class Fact(BaseModel):
     source_turn_id: Optional[str] = None
     entity_ids: List[str] = Field(default_factory=list)
     embedding: Optional[List[float]] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
 
 
 class Goal(BaseModel):
@@ -58,7 +63,7 @@ class Goal(BaseModel):
     priority: int = 3  # 1-5
     parent_goal_id: Optional[str] = None
     embedding: Optional[List[float]] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
     deadline: Optional[datetime] = None
 
 

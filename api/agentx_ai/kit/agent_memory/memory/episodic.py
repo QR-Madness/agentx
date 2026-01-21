@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
+from sqlalchemy import text
+
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
 
@@ -60,7 +62,7 @@ class EpisodicMemory:
             turn: Turn object to store
         """
         with get_postgres_session() as session:
-            session.execute("""
+            session.execute(text("""
                 INSERT INTO conversation_logs
                 (conversation_id, turn_index, timestamp, role, content, token_count, embedding)
                 VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :embedding)
@@ -68,7 +70,7 @@ class EpisodicMemory:
                 SET content = EXCLUDED.content,
                     token_count = EXCLUDED.token_count,
                     embedding = EXCLUDED.embedding
-            """, {
+            """), {
                 "conv_id": turn.conversation_id,
                 "index": turn.index,
                 "timestamp": turn.timestamp,

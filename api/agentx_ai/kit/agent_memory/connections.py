@@ -1,5 +1,7 @@
 """Database connection management for Neo4j, PostgreSQL, and Redis."""
 
+import atexit
+import threading
 from contextlib import contextmanager
 from typing import Generator, Optional
 import redis
@@ -11,6 +13,11 @@ from .config import get_settings
 
 settings = get_settings()
 
+# Thread locks for singleton initialization
+_neo4j_lock = threading.Lock()
+_postgres_lock = threading.Lock()
+_redis_lock = threading.Lock()
+
 
 # Neo4j Connection Manager
 class Neo4jConnection:
@@ -20,12 +27,15 @@ class Neo4jConnection:
 
     @classmethod
     def get_driver(cls) -> Driver:
-        """Get or create Neo4j driver instance."""
+        """Get or create Neo4j driver instance (thread-safe)."""
         if cls._driver is None:
-            cls._driver = GraphDatabase.driver(
-                settings.neo4j_uri,
-                auth=(settings.neo4j_user, settings.neo4j_password)
-            )
+            with _neo4j_lock:
+                # Double-check pattern
+                if cls._driver is None:
+                    cls._driver = GraphDatabase.driver(
+                        settings.neo4j_uri,
+                        auth=(settings.neo4j_user, settings.neo4j_password)
+                    )
         return cls._driver
 
     @classmethod
@@ -42,9 +52,10 @@ class Neo4jConnection:
     @classmethod
     def close(cls):
         """Close the Neo4j driver connection."""
-        if cls._driver:
-            cls._driver.close()
-            cls._driver = None
+        with _neo4j_lock:
+            if cls._driver:
+                cls._driver.close()
+                cls._driver = None
 
 
 # PostgreSQL Connection Manager (lazy initialization)
@@ -56,33 +67,39 @@ class PostgresConnection:
     
     @classmethod
     def get_engine(cls):
-        """Get or create SQLAlchemy engine."""
+        """Get or create SQLAlchemy engine (thread-safe)."""
         if cls._engine is None:
-            cls._engine = create_engine(
-                settings.postgres_uri, 
-                pool_size=10, 
-                max_overflow=20
-            )
+            with _postgres_lock:
+                # Double-check pattern
+                if cls._engine is None:
+                    cls._engine = create_engine(
+                        settings.postgres_uri, 
+                        pool_size=10, 
+                        max_overflow=20
+                    )
         return cls._engine
     
     @classmethod
     def get_session_factory(cls):
-        """Get or create session factory."""
+        """Get or create session factory (thread-safe)."""
         if cls._session_factory is None:
-            cls._session_factory = sessionmaker(
-                bind=cls.get_engine(), 
-                autocommit=False, 
-                autoflush=False
-            )
+            with _postgres_lock:
+                if cls._session_factory is None:
+                    cls._session_factory = sessionmaker(
+                        bind=cls.get_engine(), 
+                        autocommit=False, 
+                        autoflush=False
+                    )
         return cls._session_factory
     
     @classmethod
     def close(cls):
         """Close the engine and dispose connections."""
-        if cls._engine:
-            cls._engine.dispose()
-            cls._engine = None
-            cls._session_factory = None
+        with _postgres_lock:
+            if cls._engine:
+                cls._engine.dispose()
+                cls._engine = None
+                cls._session_factory = None
 
 
 @contextmanager
@@ -107,17 +124,32 @@ class RedisConnection:
 
     @classmethod
     def get_client(cls) -> redis.Redis:
-        """Get or create Redis client instance."""
+        """Get or create Redis client instance (thread-safe)."""
         if cls._client is None:
-            cls._client = redis.from_url(
-                settings.redis_uri,
-                decode_responses=True
-            )
+            with _redis_lock:
+                # Double-check pattern
+                if cls._client is None:
+                    cls._client = redis.from_url(
+                        settings.redis_uri,
+                        decode_responses=True
+                    )
         return cls._client
 
     @classmethod
     def close(cls):
         """Close the Redis client connection."""
-        if cls._client:
-            cls._client.close()
-            cls._client = None
+        with _redis_lock:
+            if cls._client:
+                cls._client.close()
+                cls._client = None
+
+
+def close_all_connections():
+    """Close all database connections. Called on process shutdown."""
+    Neo4jConnection.close()
+    PostgresConnection.close()
+    RedisConnection.close()
+
+
+# Register cleanup function to run on process exit
+atexit.register(close_all_connections)

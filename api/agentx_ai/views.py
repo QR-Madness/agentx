@@ -3,12 +3,23 @@ import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .kit.translation import TranslationKit
 from .kit.memory_utils import check_memory_health
 
 logger = logging.getLogger(__name__)
 
-translation_kit = TranslationKit()
+# Lazy-loaded translation kit to avoid import-time model loading
+_translation_kit = None
+
+
+def get_translation_kit():
+    """Get or create TranslationKit instance lazily."""
+    global _translation_kit
+    if _translation_kit is None:
+        from .kit.translation import TranslationKit
+        logger.info("Initializing TranslationKit (loading models)...")
+        _translation_kit = TranslationKit()
+        logger.info("TranslationKit initialized successfully")
+    return _translation_kit
 
 
 def index(request):
@@ -24,12 +35,13 @@ def health(request):
     - Translation models (loaded or not)
     - Memory system connections (neo4j, postgres, redis)
     """
-    # Check translation kit
+    # Check translation kit (don't initialize just for health check)
+    kit = _translation_kit  # Check without triggering lazy load
     translation_status = {
-        "status": "healthy" if translation_kit else "unhealthy",
+        "status": "healthy" if kit else "not_loaded",
         "models": {
-            "language_detection": translation_kit.language_detection_model_name if translation_kit else None,
-            "translation": translation_kit.level_ii_translation_model_name if translation_kit else None,
+            "language_detection": kit.language_detection_model_name if kit else None,
+            "translation": kit.level_ii_translation_model_name if kit else None,
         }
     }
     
@@ -85,7 +97,7 @@ def translate(request):
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
-    translated_text = translation_kit.translate_text(text, target_language, target_language_level=2)
+    translated_text = get_translation_kit().translate_text(text, target_language, target_language_level=2)
 
     return JsonResponse({
         'original': text,
@@ -119,7 +131,7 @@ def language_detect(request):
 
     logger.info(f"Language detection request, text_length: {len(unclassified_text)}")
 
-    detected_language, confidence = translation_kit.detect_language_level_i(unclassified_text)
+    detected_language, confidence = get_translation_kit().detect_language_level_i(unclassified_text)
 
     return JsonResponse({
         'original': unclassified_text,
