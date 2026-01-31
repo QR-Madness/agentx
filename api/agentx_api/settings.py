@@ -16,6 +16,27 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from .env files
+# Priority: .env.local > .env (for local overrides)
+try:
+    from dotenv import load_dotenv
+    
+    # Project root is one level up from api/
+    PROJECT_ROOT = BASE_DIR.parent
+    
+    # Load .env first (base configuration)
+    env_file = PROJECT_ROOT / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+    
+    # Load .env.local second (overrides for local development)
+    env_local_file = PROJECT_ROOT / ".env.local"
+    if env_local_file.exists():
+        load_dotenv(env_local_file, override=True)
+        
+except ImportError:
+    pass  # python-dotenv not installed, rely on system environment
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
