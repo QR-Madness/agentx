@@ -2,6 +2,13 @@
 
 Technical architecture documentation for AgentX's cognitive memory system.
 
+## Design Principles
+
+- **Extensibility**: Easy to add new memory types, stores, or extraction methods without backwards-compatibility constraints
+- **Transparency**: All memory operations traceable per session/conversation based on logging settings
+- **Auditability**: Full query trace and operation audit trail in PostgreSQL
+- **Channel Scoping**: Memory organized into channels — `_global` (default, user-wide) and project channels
+
 ## System Architecture
 
 The memory system is organized into four layers:
@@ -10,6 +17,7 @@ The memory system is organized into four layers:
 - **AgentMemory** - Main unified API
 - Provides high-level operations for storing and retrieving memories
 - Manages coordination between different memory types
+- Accepts `channel` parameter (default `"_global"`) for memory scoping
 
 ### 2. Memory Subsystems
 
@@ -18,43 +26,45 @@ Stores conversation history with full context:
 
 ```python
 class EpisodicMemory:
-    def store_turn(turn: Turn) -> None
-    def store_turn_log(turn: Turn) -> None
-    def vector_search(query_embedding, top_k, user_id, time_window_hours) -> List[Dict]
+    def store_turn(turn: Turn, channel: str = "_global") -> None
+    def store_turn_log(turn: Turn, channel: str = "_global") -> None
+    def vector_search(query_embedding, top_k, user_id, channels, time_window_hours) -> List[Dict]
     def get_conversation(conversation_id: str) -> List[Turn]
-    def get_recent_turns(user_id, hours, limit) -> List[Dict]
+    def get_recent_turns(user_id, channels, hours, limit) -> List[Dict]
 ```
 
 **Storage:**
-- Neo4j: Graph structure with Turn nodes and relationships
-- PostgreSQL: Audit log and time-series backup
+- Neo4j: Graph structure with Turn nodes and relationships (with channel property)
+- PostgreSQL: Audit log and time-series backup (with channel column)
 
 **Indexing:**
 - Vector index on turn embeddings (1536 dimensions)
 - BRIN index on timestamps for efficient time-range queries
-- B-tree index on conversation_id
+- B-tree index on conversation_id and channel
 
 #### Semantic Memory (`memory/semantic.py`)
 Manages entities, facts, and conceptual knowledge:
 
 ```python
 class SemanticMemory:
-    def upsert_entity(entity: Entity) -> Entity
-    def store_fact(fact: Fact) -> None
-    def vector_search_facts(query_embedding, top_k, min_confidence) -> List[Dict]
-    def vector_search_entities(query_embedding, top_k) -> List[Dict]
+    def upsert_entity(entity: Entity, channel: str = "_global") -> Entity
+    def store_fact(fact: Fact, channel: str = "_global") -> None
+    def vector_search_facts(query_embedding, top_k, channels, min_confidence) -> List[Dict]
+    def vector_search_entities(query_embedding, top_k, channels) -> List[Dict]
     def get_entity_graph(entity_ids, depth) -> Dict
     def create_relationship(source_id, target_id, rel_type, properties) -> None
+    def promote_to_global(fact_id: str, reason: str) -> None
 ```
 
 **Storage:**
-- Neo4j: Entity and Fact nodes with typed relationships
+- Neo4j: Entity and Fact nodes with typed relationships and channel property
 - Supports multi-hop graph traversal
 
 **Key Relationships:**
 - `RELATED_TO`, `PART_OF`, `LOCATED_IN`, `WORKS_FOR`, `KNOWS`, `CREATED_BY`, `REFERENCES`
 - `DERIVED_FROM` (Fact → Turn)
 - `ABOUT` (Fact → Entity)
+- `PROMOTED_FROM` (Fact in _global → original Fact in project channel)
 
 #### Procedural Memory (`memory/procedural.py`)
 Tracks tool usage and successful strategies:
@@ -62,17 +72,17 @@ Tracks tool usage and successful strategies:
 ```python
 class ProceduralMemory:
     def record_invocation(conversation_id, turn_id, tool_name, tool_input,
-                         tool_output, success, latency_ms) -> None
+                         tool_output, success, latency_ms, channel) -> None
     def learn_strategy(description, context_pattern, tool_sequence,
-                       from_conversation_id, success) -> Strategy
-    def find_strategies(task_description, top_k) -> List[Strategy]
+                       from_conversation_id, success, channel) -> Strategy
+    def find_strategies(task_description, channels, top_k) -> List[Strategy]
     def reinforce_strategy(strategy_id, success) -> None
-    def get_tool_stats(task_type) -> List[Dict]
+    def get_tool_stats(task_type, channel) -> List[Dict]
 ```
 
 **Storage:**
-- Neo4j: Strategy and Tool nodes with performance metrics
-- PostgreSQL: Tool invocation audit log
+- Neo4j: Strategy and Tool nodes with performance metrics and channel property
+- PostgreSQL: Tool invocation audit log with channel column
 
 **Learning Mechanism:**
 - Tracks success/failure counts for strategies
@@ -84,6 +94,7 @@ Fast, ephemeral storage for current session:
 
 ```python
 class WorkingMemory:
+    # Key pattern: working:{user_id}:{channel}:{conversation_id}:*
     def add_turn(turn) -> None
     def get_recent_turns(limit) -> List[Dict]
     def set(key, value, ttl_seconds) -> None
@@ -98,9 +109,16 @@ class WorkingMemory:
 ```
 
 **Storage:**
-- Redis lists for turns and thoughts
+- Redis lists for turns and thoughts (keys include channel segment)
 - Redis strings (with TTL) for context values
 - Automatic expiration after 1 hour (configurable)
+
+**Key Patterns:**
+- `working:{user_id}:{channel}:{conversation_id}:turns` - Recent turns
+- `working:{user_id}:{channel}:{conversation_id}:context` - Context window
+- `consolidation:job:{job_id}` - Consolidation job tracking
+- `consolidation:lock:{conversation_id}` - Consolidation locks
+- `session:{session_id}:*` - Session-scoped ephemeral data
 
 ### 3. Retrieval Layer
 
@@ -108,10 +126,15 @@ Multi-strategy retrieval engine combines:
 
 ```python
 class MemoryRetriever:
-    def retrieve(query, user_id, top_k, include_episodic,
+    def retrieve(query, user_id, channels, top_k, include_episodic,
                 include_semantic, include_procedural,
                 time_window_hours) -> MemoryBundle
 ```
+
+**Channel Behavior:**
+- Retrieval always queries both the active channel AND `_global`
+- Results are merged and deduplicated
+- Cross-channel matches are logged in the audit trail
 
 **Strategies:**
 1. **Vector Similarity**: Embed query and search each memory type
@@ -136,7 +159,9 @@ class ConsolidationWorker:
         "consolidate": {"func": consolidate_episodic_to_semantic, "interval_minutes": 15},
         "patterns": {"func": detect_patterns, "interval_minutes": 60},
         "decay": {"func": apply_memory_decay, "interval_minutes": 1440},
-        "cleanup": {"func": cleanup_old_memories, "interval_minutes": 1440}
+        "cleanup": {"func": cleanup_old_memories, "interval_minutes": 1440},
+        "promote": {"func": promote_prominent_facts, "interval_minutes": 60},
+        "audit_partitions": {"func": manage_audit_partitions, "interval_minutes": 1440}
     }
 ```
 
@@ -145,6 +170,47 @@ class ConsolidationWorker:
 - **detect_patterns**: Learns strategies from successful conversations
 - **apply_memory_decay**: Reduces salience/confidence over time
 - **cleanup_old_memories**: Archives old conversations, deletes low-salience entities
+- **promote_prominent_facts**: Promotes high-confidence project facts to `_global`
+- **manage_audit_partitions**: Creates future partitions, drops old ones per retention policy
+
+### 5. Audit Layer
+
+All memory operations are logged to PostgreSQL for traceability:
+
+```python
+class MemoryAuditLogger:
+    def log_write(operation, memory_type, channel, affected_ids, metadata) -> None
+    def log_read(query, channels_searched, result_count, latency_ms) -> None
+    def log_promotion(fact_id, source_channel, reason, thresholds) -> None
+```
+
+**Log Levels:**
+- `off`: No audit logging
+- `writes`: Only log mutations (default)
+- `reads`: Log reads and writes
+- `verbose`: Full query traces with payloads
+
+**Promotion Thresholds (configurable):**
+- `confidence >= 0.85`
+- `access_count >= 5`
+- `conversations >= 2`
+
+Active thresholds are snapshotted in each audit log entry for reproducibility.
+
+## Memory Channels
+
+Channels organize memory into traceable scopes:
+
+| Channel | Description |
+|---------|-------------|
+| `_global` | Default channel, user-wide memory (preferences, general facts) |
+| `<project>` | Project-specific memory containers (e.g., `my-rust-project`) |
+
+**Key behaviors:**
+- Channels are **traceable scopes, not isolation boundaries**
+- Retrieval queries both active channel + `_global`, merging results
+- Cross-channel intersections are logged in audit trail
+- Prominent project facts auto-promote to `_global` based on thresholds
 
 ## Database Schemas
 
@@ -156,8 +222,9 @@ class ConsolidationWorker:
 ```cypher
 (:Conversation {
     id: string (unique),
-    started_at: datetime,
     user_id: string,
+    channel: string,  -- '_global' or project name
+    started_at: datetime,
     title: string,
     consolidated: datetime,
     patterns_extracted: boolean,
@@ -168,7 +235,9 @@ class ConsolidationWorker:
 **Turn**
 ```cypher
 (:Turn {
-    id: string,
+    id: string (unique),
+    user_id: string,
+    channel: string,
     index: integer,
     timestamp: datetime,
     role: string,
@@ -183,6 +252,8 @@ class ConsolidationWorker:
 ```cypher
 (:Entity {
     id: string (unique),
+    user_id: string,
+    channel: string,
     name: string,
     type: string,
     aliases: list<string>,
@@ -200,6 +271,8 @@ class ConsolidationWorker:
 ```cypher
 (:Fact {
     id: string (unique),
+    user_id: string,
+    channel: string,
     claim: text,
     confidence: float,
     source: string,
@@ -213,6 +286,8 @@ class ConsolidationWorker:
 ```cypher
 (:Goal {
     id: string (unique),
+    user_id: string,
+    channel: string,
     description: text,
     status: string,
     priority: integer,
@@ -226,6 +301,8 @@ class ConsolidationWorker:
 ```cypher
 (:Strategy {
     id: string (unique),
+    user_id: string,
+    channel: string,
     description: text,
     context_pattern: string,
     tool_sequence: list<string>,
@@ -254,12 +331,30 @@ class ConsolidationWorker:
 - `(:Conversation)-[:MENTIONS]->(:Entity)`
 - `(:Fact)-[:DERIVED_FROM]->(:Turn)`
 - `(:Fact)-[:ABOUT]->(:Entity)`
+- `(:Fact)-[:PROMOTED_FROM]->(:Fact)` — Links global fact to original project fact
 - `(:User)-[:HAS_GOAL]->(:Goal)`
 - `(:Goal)-[:SUBGOAL_OF]->(:Goal)`
 - `(:Goal)-[:BLOCKED_BY]->(:Goal)`
 - `(:Strategy)-[:USES_TOOL]->(:Tool)`
 - `(:Strategy)-[:SUCCEEDED_IN]->(:Conversation)`
 - `(:Conversation)-[:USED_TOOL]->(:ToolInvocation)-[:INVOKED]->(:Tool)`
+
+#### Channel Indexes
+
+```cypher
+// Channel indexes for scoped queries
+CREATE INDEX turn_channel IF NOT EXISTS FOR (t:Turn) ON (t.channel);
+CREATE INDEX entity_channel IF NOT EXISTS FOR (e:Entity) ON (e.channel);
+CREATE INDEX fact_channel IF NOT EXISTS FOR (f:Fact) ON (f.channel);
+CREATE INDEX strategy_channel IF NOT EXISTS FOR (s:Strategy) ON (s.channel);
+CREATE INDEX conversation_channel IF NOT EXISTS FOR (c:Conversation) ON (c.channel);
+CREATE INDEX goal_channel IF NOT EXISTS FOR (g:Goal) ON (g.channel);
+
+// Composite indexes for common query patterns
+CREATE INDEX conversation_user_channel IF NOT EXISTS FOR (c:Conversation) ON (c.user_id, c.channel);
+CREATE INDEX entity_user_channel IF NOT EXISTS FOR (e:Entity) ON (e.user_id, e.channel);
+CREATE INDEX fact_user_channel IF NOT EXISTS FOR (f:Fact) ON (f.user_id, f.channel);
+```
 
 #### Vector Indexes
 
@@ -299,6 +394,7 @@ CREATE TABLE conversation_logs (
     content_hash VARCHAR(64),
     token_count INTEGER,
     model VARCHAR(100),
+    channel VARCHAR(100) NOT NULL DEFAULT '_global',
     metadata JSONB DEFAULT '{}',
     embedding vector(1536),
     UNIQUE(conversation_id, turn_index)
@@ -306,6 +402,7 @@ CREATE TABLE conversation_logs (
 
 CREATE INDEX idx_logs_timestamp ON conversation_logs USING BRIN (timestamp);
 CREATE INDEX idx_logs_conversation ON conversation_logs (conversation_id);
+CREATE INDEX idx_logs_channel ON conversation_logs (channel);
 CREATE INDEX idx_logs_embedding ON conversation_logs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 ```
 
@@ -321,6 +418,7 @@ CREATE TABLE memory_timeline (
     importance_score FLOAT DEFAULT 0.5,
     access_count INTEGER DEFAULT 0,
     last_accessed TIMESTAMPTZ,
+    channel VARCHAR(100) NOT NULL DEFAULT '_global',
     archived BOOLEAN DEFAULT FALSE,
     metadata JSONB DEFAULT '{}'
 );
@@ -328,6 +426,7 @@ CREATE TABLE memory_timeline (
 CREATE INDEX idx_timeline_time ON memory_timeline USING BRIN (event_time);
 CREATE INDEX idx_timeline_type ON memory_timeline (memory_type);
 CREATE INDEX idx_timeline_importance ON memory_timeline (importance_score DESC);
+CREATE INDEX idx_timeline_channel ON memory_timeline (channel);
 CREATE INDEX idx_timeline_embedding ON memory_timeline USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 ```
 
@@ -343,12 +442,14 @@ CREATE TABLE tool_invocations (
     tool_output JSONB,
     success BOOLEAN,
     latency_ms INTEGER,
-    error_message TEXT
+    error_message TEXT,
+    channel VARCHAR(100) NOT NULL DEFAULT '_global'
 );
 
 CREATE INDEX idx_tools_conversation ON tool_invocations (conversation_id);
 CREATE INDEX idx_tools_name ON tool_invocations (tool_name);
 CREATE INDEX idx_tools_timestamp ON tool_invocations USING BRIN (timestamp);
+CREATE INDEX idx_tools_channel ON tool_invocations (channel);
 ```
 
 #### user_profiles
@@ -361,6 +462,53 @@ CREATE TABLE user_profiles (
     expertise_areas JSONB DEFAULT '[]',
     communication_style JSONB DEFAULT '{}',
     metadata JSONB DEFAULT '{}'
+);
+```
+
+#### memory_audit_log (Partitioned)
+```sql
+CREATE TABLE memory_audit_log (
+    id BIGSERIAL,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    operation VARCHAR(50) NOT NULL,      -- 'store', 'retrieve', 'update', 'delete', 'promote'
+    memory_type VARCHAR(50) NOT NULL,    -- 'episodic', 'semantic', 'procedural', 'working'
+    user_id VARCHAR(100),
+    session_id VARCHAR(100),
+    conversation_id UUID,
+    source_channel VARCHAR(100),         -- Channel where operation originated
+    target_channels TEXT[],              -- Channels queried/affected
+    query_text TEXT,                     -- For retrieval: the query used
+    result_count INTEGER,
+    latency_ms INTEGER,
+    success BOOLEAN DEFAULT TRUE,
+    error_message TEXT,
+    -- Promotion tracking
+    promoted_from_channel VARCHAR(100),
+    promotion_confidence FLOAT,
+    promotion_access_count INTEGER,
+    promotion_conversation_count INTEGER,
+    -- Configuration snapshot
+    config_snapshot JSONB DEFAULT '{}',
+    metadata JSONB DEFAULT '{}',
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
+
+-- Daily partitions created automatically
+-- Retention managed by drop_old_audit_partitions(retention_days)
+
+CREATE INDEX idx_audit_user ON memory_audit_log (user_id, timestamp);
+CREATE INDEX idx_audit_session ON memory_audit_log (session_id, timestamp);
+CREATE INDEX idx_audit_operation ON memory_audit_log (operation, timestamp);
+CREATE INDEX idx_audit_memory_type ON memory_audit_log (memory_type, timestamp);
+CREATE INDEX idx_audit_source_channel ON memory_audit_log (source_channel, timestamp);
+```
+
+#### schema_version
+```sql
+CREATE TABLE schema_version (
+    version INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 

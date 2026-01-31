@@ -18,12 +18,39 @@ FOR (g:Goal) REQUIRE g.id IS UNIQUE;
 CREATE CONSTRAINT user_id IF NOT EXISTS
 FOR (u:User) REQUIRE u.id IS UNIQUE;
 
+CREATE CONSTRAINT turn_id IF NOT EXISTS
+FOR (t:Turn) REQUIRE t.id IS UNIQUE;
+
+CREATE CONSTRAINT strategy_id IF NOT EXISTS
+FOR (s:Strategy) REQUIRE s.id IS UNIQUE;
+
 // Property indexes for fast lookups
 CREATE INDEX entity_name IF NOT EXISTS FOR (e:Entity) ON (e.name);
 CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type);
 CREATE INDEX fact_confidence IF NOT EXISTS FOR (f:Fact) ON (f.confidence);
 CREATE INDEX goal_status IF NOT EXISTS FOR (g:Goal) ON (g.status);
 CREATE INDEX turn_timestamp IF NOT EXISTS FOR (t:Turn) ON (t.timestamp);
+
+// ============================================
+// CHANNEL INDEXES (Memory Scoping)
+// ============================================
+// Channels organize memory into traceable scopes:
+// - '_global': User-wide memory (preferences, general facts)
+// - '<project-name>': Project-specific memory containers
+// Retrieval merges active channel + _global results
+
+CREATE INDEX turn_channel IF NOT EXISTS FOR (t:Turn) ON (t.channel);
+CREATE INDEX entity_channel IF NOT EXISTS FOR (e:Entity) ON (e.channel);
+CREATE INDEX fact_channel IF NOT EXISTS FOR (f:Fact) ON (f.channel);
+CREATE INDEX strategy_channel IF NOT EXISTS FOR (s:Strategy) ON (s.channel);
+CREATE INDEX conversation_channel IF NOT EXISTS FOR (c:Conversation) ON (c.channel);
+CREATE INDEX goal_channel IF NOT EXISTS FOR (g:Goal) ON (g.channel);
+
+// Composite indexes for common query patterns
+CREATE INDEX turn_user_timestamp IF NOT EXISTS FOR (t:Turn) ON (t.user_id, t.timestamp);
+CREATE INDEX conversation_user_channel IF NOT EXISTS FOR (c:Conversation) ON (c.user_id, c.channel);
+CREATE INDEX entity_user_channel IF NOT EXISTS FOR (e:Entity) ON (e.user_id, e.channel);
+CREATE INDEX fact_user_channel IF NOT EXISTS FOR (f:Fact) ON (f.user_id, f.channel);
 
 // Full-text search indexes
 CREATE FULLTEXT INDEX entity_search IF NOT EXISTS

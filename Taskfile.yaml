@@ -255,6 +255,27 @@ tasks:
       - mkdir -p backups
       - echo "✅ Data directories ready in ./data/"
 
+  db:init:schemas:
+    desc: "Initialize database schemas (Neo4j, PostgreSQL, Redis)"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - echo "🗄️ Initializing memory system schemas..."
+      - echo "   (Waiting for databases to be ready...)"
+      - sleep 5
+      - uv run python api/manage.py init_memory_schema --verbose
+      - echo ""
+      - echo "✅ Schema initialization complete!"
+
+  db:verify:schemas:
+    desc: "Verify database schemas exist (no changes)"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py init_memory_schema --verify
+
   db:status:
     desc: "Show status of database containers"
     cmds:

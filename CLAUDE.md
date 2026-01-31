@@ -65,6 +65,8 @@ task db:up              # Start Neo4j, PostgreSQL, Redis (aliases: runners)
 task db:down            # Stop services (aliases: teardown)
 task db:status          # Show container status
 task db:init            # Create local data directories (data/neo4j, data/postgres, data/redis)
+task db:init:schemas    # Initialize memory system schemas (Neo4j indexes, PostgreSQL tables)
+task db:verify:schemas  # Verify schemas exist (read-only check)
 task db:shell:postgres  # psql shell into agent-postgres
 task db:shell:redis     # redis-cli into agent-redis
 task db:shell:neo4j     # cypher-shell into agent-neo4j

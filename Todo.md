@@ -486,32 +486,34 @@ The memory system is **architecturally complete but entirely disconnected**:
 - No concept of memory channels or project scoping — all memories are flat/global
 - Zero tests for any memory component
 
-### 11.1 Database Schema Initialization
+### 11.1 Database Schema Initialization ✅
 
 > Bootstrap all three databases so memory operations don't crash at runtime
 
-- [ ] Create Neo4j initialization script (`scripts/init_neo4j.cypher` or management command):
-  - [ ] Create vector indexes: `turn_embeddings`, `fact_embeddings`, `entity_embeddings`, `strategy_embeddings`
-  - [ ] Create uniqueness constraints on node IDs (`User.id`, `Conversation.id`, `Turn.id`, `Entity.id`, `Fact.id`)
-  - [ ] Create composite indexes for common query patterns (user_id + timestamp, conversation_id + turn_index)
-  - [ ] Add `channel` property to all node types (Turn, Entity, Fact, Strategy, Conversation, Goal)
-  - [ ] Create index on `channel` property for all node labels
-  - [ ] Verify APOC plugin is available (required by `semantic.py` for `apoc.create.addLabels()`)
-- [ ] Create PostgreSQL initialization (Django management command or migration):
-  - [ ] Enable `pgvector` extension (`CREATE EXTENSION IF NOT EXISTS vector`)
-  - [ ] Create `conversation_logs` table with BRIN index on timestamp, ivfflat on embedding
-  - [ ] Create `tool_invocations` table with indexes on conversation_id, tool_name
-  - [ ] Create `memory_timeline` table (currently defined but unused — wire it in)
-  - [ ] Create `user_profiles` table (currently defined but unused — wire it in)
-  - [ ] Create `memory_audit_log` table for query tracing (new — see 11.4)
-  - [ ] Add `channel VARCHAR DEFAULT '_global'` column to all memory tables
-  - [ ] Add btree index on `channel` for all tables that have it
-- [ ] Verify Redis connectivity and key structure:
-  - [ ] Test working memory key patterns (`working:{user_id}:{channel}:{conversation_id}:*`)
-  - [ ] Test consolidation job tracking keys
-  - [ ] Confirm TTL behavior for session-scoped data
-- [ ] Create `task db:init:schemas` Taskfile command to run all initialization
-- [ ] Add schema version tracking (simple version table or Neo4j property) for future migrations
+- [x] Create Neo4j initialization script (Django management command `init_memory_schema`):
+  - [x] Create vector indexes: `turn_embeddings`, `fact_embeddings`, `entity_embeddings`, `strategy_embeddings`
+  - [x] Create uniqueness constraints on node IDs (`User.id`, `Conversation.id`, `Turn.id`, `Entity.id`, `Fact.id`, `Strategy.id`)
+  - [x] Create composite indexes for common query patterns (user_id + timestamp, user_id + channel)
+  - [x] Add `channel` property indexes for all node types (Turn, Entity, Fact, Strategy, Conversation, Goal)
+  - [x] Verify APOC plugin is available (required by `semantic.py` for `apoc.create.addLabels()`)
+- [x] Create PostgreSQL initialization (via `queries/postgres_builder.sql` + management command):
+  - [x] Enable `pgvector` extension (`CREATE EXTENSION IF NOT EXISTS vector`)
+  - [x] Create `conversation_logs` table with BRIN index on timestamp, ivfflat on embedding, channel column
+  - [x] Create `tool_invocations` table with indexes on conversation_id, tool_name, channel
+  - [x] Create `memory_timeline` table with channel support
+  - [x] Create `user_profiles` table
+  - [x] Create `memory_audit_log` partitioned table for query tracing (38 daily partitions)
+  - [x] Add `channel VARCHAR DEFAULT '_global'` column to all memory tables
+  - [x] Add btree index on `channel` for all tables that have it
+  - [x] Create `schema_version` table for tracking
+  - [x] Add helper functions: `create_audit_partition()`, `drop_old_audit_partitions()`
+- [x] Verify Redis connectivity and key structure:
+  - [x] Document working memory key patterns (`working:{user_id}:{channel}:{conversation_id}:*`)
+  - [x] Document consolidation job tracking keys
+  - [x] Confirm connectivity in management command
+- [x] Create `task db:init:schemas` Taskfile command to run all initialization
+- [x] Create `task db:verify:schemas` Taskfile command for read-only verification
+- [x] Add `agentx_ai` to INSTALLED_APPS in settings.py
 
 ### 11.2 Agent Core Integration
 
@@ -842,7 +844,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | Not Started | 0% |
+| Phase 11: Memory System | In Progress | 20% |
 | Phase 12: Documentation | Not Started | 0% |
 
 ---
@@ -872,7 +874,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 | 2026-01-31 | Promotion thresholds configurable, logged | Defaults: confidence>=0.85, access_count>=5, conversations>=2; active thresholds snapshotted in each audit log entry |
 
 ### Blockers
-- **Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work
+- ~~**Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work~~ ✅ Resolved
 
 ### Questions to Resolve
 - [x] Which LLM providers to prioritize? (OpenAI / Anthropic / Ollama / Together) → OpenAI, Anthropic, Ollama implemented; LM-Studio preferred

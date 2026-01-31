@@ -13,6 +13,37 @@ The memory system provides four types of memory:
 | **Semantic** | Facts, entities, concepts | Neo4j graph | Graph traversal + vector |
 | **Procedural** | Successful strategies, tool patterns | Neo4j graph | Task-type matching |
 
+## Design Principles
+
+- **Extensibility**: Easy to add new memory types, stores, or extraction methods
+- **Transparency**: All memory operations traceable per session/conversation
+- **Auditability**: Full query trace and operation audit trail in PostgreSQL
+- **Channel Scoping**: Memory organized into channels for project-level organization
+
+## Memory Channels
+
+Memory is organized into **channels** — traceable scopes that group related memories:
+
+| Channel | Description | Examples |
+|---------|-------------|----------|
+| `_global` | Default channel, user-wide memory | Preferences, communication style, general facts |
+| `<project>` | Project-specific memory containers | `my-rust-project`, `thesis-research`, `work-api` |
+
+**Key behaviors:**
+- Retrieval queries both the active channel AND `_global`, merging results
+- Channels are traceable scopes, not isolation boundaries
+- Cross-channel operations are logged in the audit trail
+- Prominent project facts can be promoted to `_global` based on confidence/frequency thresholds
+
+```python
+# Using channels
+memory = AgentMemory(user_id="user123", channel="my-rust-project")
+
+# Retrieval automatically merges project + global memories
+context = memory.remember("What error handling pattern should I use?")
+# Returns: project-specific Rust patterns + global user preferences
+```
+
 ## Key Features
 
 ### Episodic Memory
@@ -195,6 +226,51 @@ SALIENCE_DECAY_RATE=0.95
 MAX_WORKING_MEMORY_ITEMS=50
 ```
 
+## Audit Logging
+
+All memory operations are logged to a partitioned PostgreSQL table for traceability:
+
+| Log Level | What's Logged |
+|-----------|---------------|
+| `off` | No audit logging |
+| `writes` | Store, update, delete operations (default) |
+| `reads` | All reads and writes with query details |
+| `verbose` | Full traces including payloads |
+
+**Logged information includes:**
+- Operation type, timestamp, user/session/conversation IDs
+- Source channel and target channels (for cross-channel operations)
+- Query text and result count for retrievals
+- Latency per operation
+- Promotion tracking (when facts are promoted from project to `_global`)
+- Configuration snapshot (active thresholds at time of operation)
+
+```bash
+# Configure audit logging
+AUDIT_LOG_LEVEL=writes
+AUDIT_RETENTION_DAYS=30
+```
+
+## Database Setup
+
+Initialize the memory system schemas before first use:
+
+```bash
+# Start database services
+task db:up
+
+# Initialize all schemas (Neo4j, PostgreSQL, Redis)
+task db:init:schemas
+
+# Or verify existing schemas
+task db:verify:schemas
+```
+
+This creates:
+- **Neo4j**: Vector indexes, uniqueness constraints, channel indexes
+- **PostgreSQL**: Memory tables with channel columns, partitioned audit log
+- **Redis**: Verifies connectivity and documents key patterns
+
 ## Status
 
 The memory system implementation is complete and syntax-error free. Current status:
@@ -204,19 +280,14 @@ The memory system implementation is complete and syntax-error free. Current stat
 - ✅ Multi-strategy retrieval engine
 - ✅ Background consolidation worker
 - ✅ Memory decay and cleanup utilities
-- ⚠️ Entity/fact extraction uses placeholder implementations (requires NER/LLM integration)
-- 🔲 Database schemas need to be initialized (see [Setup Guide](../development/memory-setup.md))
-
-## Next Steps
-
-1. Initialize Neo4j with vector indexes and constraints
-2. Initialize PostgreSQL with tables and pgvector extension
-3. Implement actual entity extraction (spaCy or LLM-based)
-4. Implement fact extraction (LLM-based with structured output)
-5. Set up Docker Compose for development environment
+- ✅ Database schema initialization (`task db:init:schemas`)
+- ✅ Channel scoping support in all schemas
+- ✅ Partitioned audit log table (daily partitions)
+- ⏳ Agent core integration (wiring memory into chat/run flows)
+- ⏳ Entity/fact extraction (LLM-based implementation)
+- ⏳ Audit logger instrumentation
 
 ## Related Documentation
 
 - [Memory System Architecture](../architecture/memory.md) - Detailed technical architecture
-- [Memory Setup Guide](../development/memory-setup.md) - Installation and configuration
 - [Database Stack](../architecture/databases.md) - Infrastructure details
