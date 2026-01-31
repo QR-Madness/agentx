@@ -8,7 +8,9 @@ import {
   ChevronDown,
   ChevronRight,
   Zap,
-  Brain
+  Brain,
+  Settings2,
+  RefreshCw
 } from 'lucide-react';
 import { api, ChatResponse, ReasoningStep } from '../../lib/api';
 import '../../styles/ChatTab.css';
@@ -20,6 +22,13 @@ interface Message {
   timestamp: Date;
   reasoning?: ReasoningStep[];
   tokensUsed?: number;
+  model?: string;
+}
+
+interface ProviderModels {
+  provider: string;
+  status: string;
+  models: Array<{ id: string; name?: string; size?: number; parameter_size?: string }>;
 }
 
 export const ChatTab: React.FC = () => {
@@ -37,6 +46,12 @@ export const ChatTab: React.FC = () => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Model selection state
+  const [availableModels, setAvailableModels] = useState<ProviderModels[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -45,6 +60,58 @@ export const ChatTab: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Fetch available models on mount
+  useEffect(() => {
+    fetchModels();
+  }, []);
+
+  const fetchModels = async () => {
+    setLoadingModels(true);
+    try {
+      const response = await api.checkProvidersHealth();
+      const providers: ProviderModels[] = [];
+      
+      // Response format: { status: string, providers: { [name]: { status, models, ... } } }
+      const providersData = (response as Record<string, unknown>).providers || response;
+      for (const [name, data] of Object.entries(providersData as Record<string, unknown>)) {
+        if (typeof data !== 'object' || data === null) continue;
+        const providerData = data as { status: string; models?: unknown[]; models_available?: number };
+        if (providerData.models && Array.isArray(providerData.models)) {
+          providers.push({
+            provider: name,
+            status: providerData.status,
+            models: providerData.models.map((m: unknown) => {
+              if (typeof m === 'string') {
+                return { id: m };
+              }
+              return m as { id: string; name?: string; size?: number; parameter_size?: string };
+            }),
+          });
+        }
+      }
+      
+      setAvailableModels(providers);
+      
+      // Set default model if none selected
+      if (!selectedModel && providers.length > 0) {
+        const firstProvider = providers.find(p => p.status === 'healthy' && p.models.length > 0);
+        if (firstProvider) {
+          setSelectedModel(firstProvider.models[0].id || firstProvider.models[0].name || '');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const formatModelName = (model: { id: string; name?: string; parameter_size?: string }) => {
+    const name = model.name || model.id;
+    const size = model.parameter_size ? ` (${model.parameter_size})` : '';
+    return `${name}${size}`;
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -64,6 +131,7 @@ export const ChatTab: React.FC = () => {
       const response: ChatResponse = await api.chat({
         message: input,
         session_id: sessionId || undefined,
+        model: selectedModel || undefined,
         show_reasoning: showReasoning,
       });
 
@@ -78,6 +146,7 @@ export const ChatTab: React.FC = () => {
         timestamp: new Date(),
         reasoning: response.reasoning_trace,
         tokensUsed: response.tokens_used,
+        model: selectedModel,
       };
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
@@ -141,12 +210,84 @@ export const ChatTab: React.FC = () => {
           >
             <Brain size={18} />
           </button>
+          <button 
+            className={`button-ghost ${showModelSelector ? 'active' : ''}`}
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            title="Select model"
+          >
+            <Settings2 size={18} />
+          </button>
           <button className="button-secondary" onClick={handleNewChat}>
             <Plus size={16} />
             New Chat
           </button>
         </div>
       </div>
+
+      {/* Model Selector Panel */}
+      {showModelSelector && (
+        <div className="model-selector card">
+          <div className="model-selector-header">
+            <h3>Select Model</h3>
+            <button 
+              className="button-ghost" 
+              onClick={fetchModels}
+              disabled={loadingModels}
+              title="Refresh models"
+            >
+              <RefreshCw size={16} className={loadingModels ? 'spin' : ''} />
+            </button>
+          </div>
+          
+          {loadingModels ? (
+            <div className="model-loading">
+              <Loader2 size={20} className="spin" />
+              <span>Loading models...</span>
+            </div>
+          ) : availableModels.length === 0 ? (
+            <div className="model-empty">
+              <p>No models available. Check your provider configuration.</p>
+            </div>
+          ) : (
+            <div className="model-list">
+              {availableModels.map(provider => (
+                <div key={provider.provider} className="provider-group">
+                  <div className="provider-header">
+                    <span className={`status-dot ${provider.status === 'healthy' ? 'online' : 'offline'}`}></span>
+                    <span className="provider-name">{provider.provider}</span>
+                    <span className="model-count">{provider.models.length} models</span>
+                  </div>
+                  <div className="provider-models">
+                    {provider.models.map(model => (
+                      <button
+                        key={model.id || model.name}
+                        className={`model-option ${selectedModel === (model.id || model.name) ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedModel(model.id || model.name || '');
+                          setShowModelSelector(false);
+                        }}
+                      >
+                        <span className="model-name">{formatModelName(model)}</span>
+                        {selectedModel === (model.id || model.name) && (
+                          <span className="model-selected-badge">Active</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Current Model Badge */}
+      {selectedModel && (
+        <div className="current-model-badge">
+          <Bot size={14} />
+          <span>{selectedModel}</span>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="chat-messages">
@@ -186,6 +327,11 @@ export const ChatTab: React.FC = () => {
                 <span className="message-time">
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                {message.model && (
+                  <span className="message-model" title={message.model}>
+                    {message.model.split('/').pop()}
+                  </span>
+                )}
                 {message.tokensUsed && (
                   <span className="message-tokens">
                     <Zap size={12} />
