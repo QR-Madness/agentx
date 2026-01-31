@@ -1,6 +1,21 @@
+import socket
+from unittest import skipUnless
+
 from django.test import TestCase, Client
 
 from agentx_ai.kit.translation import LanguageLexicon
+
+
+def _docker_services_running():
+    """Check if Docker services (Neo4j, PostgreSQL, Redis) are reachable."""
+    services = [("localhost", 7687), ("localhost", 5432), ("localhost", 6379)]
+    for host, port in services:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                pass
+        except (socket.error, socket.timeout):
+            return False
+    return True
 
 """
 
@@ -73,6 +88,7 @@ class HealthCheckTest(TestCase):
         self.assertIn('translation', data)
         self.assertEqual(data['api']['status'], 'healthy')
 
+    @skipUnless(_docker_services_running(), "Docker services not running")
     def test_health_with_memory_check(self):
         """Test health check with memory system - requires Docker services running."""
         response = self.client.get("/api/health?include_memory=true")

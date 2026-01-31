@@ -104,7 +104,6 @@ def check_memory_health() -> dict:
         threads.append(t)
     
     # Wait for all threads to complete or timeout
-    deadline = threading.Event()
     for t in threads:
         t.join(timeout=HEALTH_CHECK_TIMEOUT)
     
