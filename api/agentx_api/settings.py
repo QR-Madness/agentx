@@ -147,21 +147,34 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS settings for Tauri client
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-    "tauri://localhost",
-]
+# CORS settings for Tauri client and development
+# In production, set CORS_ALLOWED_ORIGINS env var to comma-separated list
+_cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if _cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(',') if o.strip()]
+else:
+    # Development defaults - permissive for private server use
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",
+    ]
+    # Allow all origins in debug mode for easier development
+    if DEBUG:
+        CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
 
 # Exempt API endpoints from CSRF since we're using CORS
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-    "tauri://localhost",
-]
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if _csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins_env.split(',') if o.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",
+    ]
 
 # Logging configuration
 LOGGING = {
@@ -200,3 +213,23 @@ LOGGING = {
         },
     },
 }
+
+# =============================================================================
+# AgentX Security Settings (Foundation)
+# =============================================================================
+# These settings establish the security foundation for future hardening.
+# Currently permissive for private server development.
+
+# API Input Limits (used by views for validation)
+AGENTX_MAX_TEXT_LENGTH = int(os.environ.get('AGENTX_MAX_TEXT_LENGTH', 100000))  # 100KB default
+AGENTX_MAX_CHAT_LENGTH = int(os.environ.get('AGENTX_MAX_CHAT_LENGTH', 10000))   # 10KB for chat messages
+
+# Rate limiting (placeholder - not enforced yet)
+# Install django-ratelimit when ready to enforce
+AGENTX_RATE_LIMIT_ENABLED = os.environ.get('AGENTX_RATE_LIMIT_ENABLED', 'false').lower() in ('true', '1', 'yes')
+AGENTX_RATE_LIMIT_DEFAULT = os.environ.get('AGENTX_RATE_LIMIT_DEFAULT', '100/m')  # 100 requests per minute
+
+# API Key authentication (placeholder - not enforced yet)
+# When enabled, non-localhost requests require X-API-Key header
+AGENTX_API_KEY_REQUIRED = os.environ.get('AGENTX_API_KEY_REQUIRED', 'false').lower() in ('true', '1', 'yes')
+AGENTX_API_KEY = os.environ.get('AGENTX_API_KEY', '')

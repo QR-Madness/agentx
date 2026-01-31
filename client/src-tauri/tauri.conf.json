@@ -12,14 +12,24 @@
   "app": {
     "windows": [
       {
-        "title": "agentx-client",
-        "width": 800,
-        "height": 600
+        "title": "AgentX",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": {
+        "default-src": "'self' 'unsafe-inline' 'unsafe-eval'",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src": "'self' https://fonts.gstatic.com data:",
+        "img-src": "'self' data: blob: https:",
+        "connect-src": "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* wss://localhost:* http://192.168.0.0/16:*"
+      }
+    },
+    "withGlobalTauri": false
   },
   "bundle": {
     "active": true,
