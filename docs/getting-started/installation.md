@@ -18,8 +18,8 @@ Before installing AgentX, ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/agentx-source.git
-cd agentx-source
+git clone https://github.com/QR-Madness/agentx.git
+cd agentx
 ```
 
 ### 2. Install Dependencies
@@ -83,10 +83,13 @@ open http://localhost:7474
 open http://localhost:8081
 ```
 
-Default credentials:
+Default credentials (from `.env.example`):
 
-- **Neo4j**: `neo4j` / `your_secure_password`
-- **PostgreSQL**: `agent` / `your_secure_password`
+- **Neo4j**: `neo4j` / `changeme`
+- **PostgreSQL**: `agent` / `changeme`
+
+!!! warning "Change default passwords"
+    Update passwords in your `.env` file before deploying to production.
 
 ## Manual Installation
 

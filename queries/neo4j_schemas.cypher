@@ -212,3 +212,9 @@ OPTIONS {
 // })
 // MATCH (c:Conversation {id: $conv_id})
 // MERGE (c)-[:HAS_REFLECTION]->(r)
+
+// ============================================
+// END OF SCHEMA (DO NOT DELETE)
+// ============================================
+// The RETURN statement below satisfies parsers that expect a final statement
+RETURN 1;

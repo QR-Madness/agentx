@@ -1,6 +1,6 @@
 # AgentX Documentation
 
-Welcome to the AgentX documentation. AgentX is a hybrid desktop application combining AI-powered language translation with a sophisticated memory system.
+Welcome to the AgentX documentation. AgentX is an AI Agent Platform combining MCP client integration, drafting models, reasoning frameworks, and a sophisticated memory system.
 
 ## Overview
 
@@ -8,7 +8,7 @@ AgentX is built on a modern, two-tier architecture:
 
 - **Backend**: Django REST API providing AI-powered services
 - **Frontend**: Tauri desktop application with React/TypeScript
-- **AI Features**: Multi-level translation using HuggingFace transformers (NLLB-200, M2M100)
+- **AI Features**: Multi-level translation, MCP client, drafting models, reasoning framework
 - **Memory Stack**: Neo4j graph database, PostgreSQL with pgvector, and Redis
 
 ## Key Features
@@ -104,17 +104,21 @@ graph TB
 
 ## Project Status
 
-AgentX is under active development. Key features:
+AgentX is under active development. Current status:
 
 - [x] Django API with translation endpoints
-- [x] Tauri desktop application
-- [x] Two-level translation system
+- [x] Tauri desktop application with cosmic theme
+- [x] Two-level translation system (200+ languages)
 - [x] Database stack (Neo4j, Postgres, Redis)
-- [ ] Memory graph implementation
-- [ ] Vector embedding system
-- [ ] Chat interface
+- [x] MCP client integration
+- [x] Model provider abstraction (OpenAI, Anthropic, Ollama)
+- [x] Drafting framework (speculative, pipeline, candidates)
+- [x] Reasoning framework (CoT, ToT, ReAct, Reflection)
+- [x] Agent core with task planning
+- [ ] Security hardening
+- [ ] Comprehensive testing
 - [ ] Production deployment
 
 ## License
 
-[Add your license information here]
+This project is licensed under the [MIT License](https://github.com/QR-Madness/agentx/blob/main/LICENSE).
