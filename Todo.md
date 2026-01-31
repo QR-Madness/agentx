@@ -471,6 +471,7 @@ AgentX is an AI agent platform that:
 > - **Extensibility**: Easy to add new memory types, stores, or extraction methods without backwards-compatibility constraints
 > - **Transparency**: All memory operations traceable per session/conversation based on logging settings
 > - **Auditability**: Full query trace and operation audit trail in PostgreSQL
+> - **Channel Scoping**: Memory organized into channels — `_global` (default, user-wide) and project channels (e.g. `my-rust-project`). Channels are traceable scopes, not isolation boundaries. Retrieval queries both the active channel and `_global`, merging results. Prominent project facts consolidate upward into global memory.
 
 ### Current State Assessment
 
@@ -482,6 +483,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 - Entity/fact/relationship extraction functions are **stubs returning `[]`**
 - Semantic memory has **no tenant isolation** (users can retrieve each other's data)
 - `ContextManager.inject_memory()` exists but is **never called**
+- No concept of memory channels or project scoping — all memories are flat/global
 - Zero tests for any memory component
 
 ### 11.1 Database Schema Initialization
@@ -492,6 +494,8 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] Create vector indexes: `turn_embeddings`, `fact_embeddings`, `entity_embeddings`, `strategy_embeddings`
   - [ ] Create uniqueness constraints on node IDs (`User.id`, `Conversation.id`, `Turn.id`, `Entity.id`, `Fact.id`)
   - [ ] Create composite indexes for common query patterns (user_id + timestamp, conversation_id + turn_index)
+  - [ ] Add `channel` property to all node types (Turn, Entity, Fact, Strategy, Conversation, Goal)
+  - [ ] Create index on `channel` property for all node labels
   - [ ] Verify APOC plugin is available (required by `semantic.py` for `apoc.create.addLabels()`)
 - [ ] Create PostgreSQL initialization (Django management command or migration):
   - [ ] Enable `pgvector` extension (`CREATE EXTENSION IF NOT EXISTS vector`)
@@ -500,8 +504,10 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] Create `memory_timeline` table (currently defined but unused — wire it in)
   - [ ] Create `user_profiles` table (currently defined but unused — wire it in)
   - [ ] Create `memory_audit_log` table for query tracing (new — see 11.4)
+  - [ ] Add `channel VARCHAR DEFAULT '_global'` column to all memory tables
+  - [ ] Add btree index on `channel` for all tables that have it
 - [ ] Verify Redis connectivity and key structure:
-  - [ ] Test working memory key patterns (`working:{user_id}:{conversation_id}:*`)
+  - [ ] Test working memory key patterns (`working:{user_id}:{channel}:{conversation_id}:*`)
   - [ ] Test consolidation job tracking keys
   - [ ] Confirm TTL behavior for session-scoped data
 - [ ] Create `task db:init:schemas` Taskfile command to run all initialization
@@ -513,6 +519,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 
 - [ ] Initialize `AgentMemory` in `Agent` class (`core.py`):
   - [ ] Implement `_memory` property accessor (lazy-load via `get_agent_memory()`)
+  - [ ] Accept `channel` parameter (default `"_global"`) — passed through to AgentMemory constructor
   - [ ] Respect `AgentConfig.enable_memory` flag
   - [ ] Handle graceful degradation if databases are unavailable (agent works without memory)
 - [ ] Wire `store_turn()` into chat/run flows:
@@ -535,11 +542,10 @@ The memory system is **architecturally complete but entirely disconnected**:
 > Replace stubs with real entity/fact extraction so consolidation produces actual data
 
 - [ ] Implement entity extraction (`extraction/entities.py`):
-  - [ ] Option A: LLM-based NER (use configured model provider with structured output)
-  - [ ] Option B: spaCy NER (lightweight, offline, no API cost)
+  - [ ] LLM-based extraction via configured model provider (structured JSON output)
   - [ ] Extract: person names, organizations, locations, concepts, technical terms
   - [ ] Return `Entity` objects with type, name, description, confidence
-  - [ ] Make extraction provider configurable (LLM vs spaCy vs custom)
+  - [ ] Make extraction model configurable (which provider/model to use for extraction)
 - [ ] Implement fact extraction (`extraction/facts.py`):
   - [ ] LLM-based structured extraction (JSON schema output)
   - [ ] Extract: claims, preferences, relationships, stated goals
@@ -560,38 +566,72 @@ The memory system is **architecturally complete but entirely disconnected**:
 
 - [ ] Create `MemoryAuditLogger` class:
   - [ ] Log all memory write operations (store, update, delete) with:
-    - Operation type, timestamp, user_id, conversation_id, session_id
+    - Operation type, timestamp, user_id, conversation_id, session_id, **channel**
     - Affected node/record IDs
     - Payload summary (truncated content hash, not full content)
   - [ ] Log all memory read operations (retrieve, search, recall) with:
-    - Query text, parameters, result count
+    - Query text, parameters, result count, **channels searched** (e.g. `["my-project", "_global"]`)
     - Retrieval strategy used (episodic/semantic/procedural)
     - Latency per sub-query
+  - [ ] Log cross-channel operations (promote_to_global) with:
+    - Source channel, target channel (`_global`)
+    - Promoted fact/entity IDs and promotion reason (threshold met, frequency, etc.)
   - [ ] Configurable log levels:
     - `off`: No audit logging
     - `writes`: Only log mutations
     - `reads`: Log reads and writes
     - `verbose`: Full query traces with payloads
-- [ ] Create `memory_audit_log` PostgreSQL table:
-  - [ ] Columns: id, timestamp, operation, memory_type, user_id, conversation_id, session_id, query_hash, result_count, latency_ms, metadata (JSONB)
-  - [ ] BRIN index on timestamp for time-range queries
-  - [ ] Btree indexes on user_id, conversation_id, operation
+- [ ] Create `memory_audit_log` PostgreSQL table (partitioned by day):
+  - [ ] Columns: id, timestamp, operation, memory_type, user_id, conversation_id, session_id, channel, query_hash, result_count, latency_ms, metadata (JSONB)
+  - [ ] Use PostgreSQL declarative partitioning: `PARTITION BY RANGE (timestamp)` with daily partitions
+  - [ ] Auto-create daily partitions (via pg_partman or consolidation worker creating next-day partition)
+  - [ ] BRIN index on timestamp for time-range queries (per partition)
+  - [ ] Btree indexes on user_id, conversation_id, operation, channel
+  - [ ] Retention cleanup via `DROP PARTITION` (fast, no row-by-row delete)
 - [ ] Add audit logging config to `MemoryConfig` (pydantic-settings):
   - [ ] `audit_log_level: str = "writes"` (off | writes | reads | verbose)
   - [ ] `audit_retention_days: int = 30`
+  - [ ] `audit_partition_ahead_days: int = 3` (pre-create partitions this many days ahead)
 - [ ] Instrument existing memory operations:
   - [ ] `episodic.py`: Wrap store/retrieve with audit calls
   - [ ] `semantic.py`: Wrap entity/fact operations with audit calls
   - [ ] `procedural.py`: Wrap tool recording and strategy retrieval
   - [ ] `working.py`: Wrap session operations (reads logging optional due to volume)
   - [ ] `retrieval.py`: Log composite retrieval queries with per-strategy breakdown
-- [ ] Add audit log cleanup to consolidation worker (respect retention_days)
+- [ ] Add audit log partition management to consolidation worker:
+  - [ ] Drop partitions older than `audit_retention_days` (daily cleanup job)
+  - [ ] Pre-create future partitions (`audit_partition_ahead_days` ahead)
 - [ ] Add `/api/memory/audit` endpoint for querying audit logs (admin only, future)
 
-### 11.5 Tenant Isolation & Data Safety
+### 11.5 Channel Scoping & Data Safety
 
-> Prevent cross-user data leakage in multi-user scenarios
+> Scope memory into traceable channels; prevent cross-user data leakage
 
+#### Channel Architecture
+- `_global` — default channel, user-wide memory (preferences, general facts, communication style)
+- Project channels (e.g. `my-rust-project`) — full-featured memory containers scoped to a project
+- Channels are **traceable scopes, not isolation boundaries** — retrieval queries both active channel + `_global`
+- Cross-channel intersections are logged in audit trail for traceability
+
+#### Channel Implementation
+- [ ] Add `channel` parameter to `AgentMemory.__init__()` (default `"_global"`):
+  - [ ] Store as instance attribute, pass through to all memory stores
+  - [ ] Add `channel` to all Neo4j MERGE/CREATE operations (episodic, semantic, procedural)
+  - [ ] Add `channel` to all PostgreSQL INSERT statements (conversation_logs, tool_invocations)
+  - [ ] Add `channel` segment to Redis key prefix: `working:{user_id}:{channel}:{conversation_id}:*`
+- [ ] Add `channel` filtering to all read queries:
+  - [ ] `episodic.py`: Filter turns by channel in Cypher WHERE and SQL WHERE
+  - [ ] `semantic.py`: Filter facts/entities by channel
+  - [ ] `procedural.py`: Filter strategies/tool stats by channel
+  - [ ] `working.py`: Channel already scoped via Redis key prefix
+- [ ] Add `channel` to data models (`models.py`):
+  - [ ] Add `channel: str = "_global"` field to Turn, Entity, Fact, Strategy, Goal
+- [ ] Create channel management API:
+  - [ ] `GET /api/memory/channels` — list all channels with item counts
+  - [ ] `POST /api/memory/channels` — create a named channel
+  - [ ] `DELETE /api/memory/channels/{name}` — delete a channel and all its data
+
+#### User Scoping
 - [ ] Add `user_id` filtering to all semantic memory queries (`semantic.py`):
   - [ ] `search_facts()`: Filter by user_id in Cypher WHERE clause
   - [ ] `search_entities()`: Filter by user_id or scope entities to user subgraph
@@ -634,15 +674,21 @@ The memory system is **architecturally complete but entirely disconnected**:
 
 > Improve retrieval beyond the current basic implementation
 
+- [ ] Implement multi-channel retrieval in `retrieval.py`:
+  - [ ] `retrieve()` queries both active channel and `_global` channel
+  - [ ] Merge results from both channels before reranking
+  - [ ] Tag each result with its source channel in `MemoryBundle`
+  - [ ] Allow caller to override which channels to search: `remember(query, channels=["_global", "my-project"])`
+  - [ ] Weight active channel results slightly higher than `_global` (configurable boost factor)
 - [ ] Fix reranking (`retrieval.py`):
   - [ ] Replace conversation-diversity-only filter with proper scoring
   - [ ] Add cross-encoder reranking option (configurable, off by default)
   - [ ] Add relevance score normalization across memory types
 - [ ] Add retrieval caching:
   - [ ] Cache recent retrieval results in Redis with short TTL (~60s)
-  - [ ] Invalidate on new writes to same user/conversation scope
+  - [ ] Invalidate on new writes to same user/conversation/channel scope
 - [ ] Add retrieval metrics:
-  - [ ] Track hit rates per memory type
+  - [ ] Track hit rates per memory type and per channel
   - [ ] Track average latency per retrieval strategy
   - [ ] Log to audit table (when audit level >= reads)
 
@@ -657,6 +703,9 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] Test decay calculations and consolidation priority scoring
   - [ ] Test audit logger writes correct records
   - [ ] Test tenant isolation (user A cannot read user B's data)
+  - [ ] Test channel scoping (project channel data not returned when querying a different channel)
+  - [ ] Test multi-channel retrieval (active channel + `_global` both searched, results merged)
+  - [ ] Test `_global` channel is always included in retrieval regardless of active channel
 - [ ] Integration tests (require Docker services):
   - [ ] Test full cycle: store turn → extract → consolidate → retrieve
   - [ ] Test memory persistence across API server restarts
@@ -664,8 +713,10 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] Test Neo4j vector search returns relevant results
   - [ ] Test PostgreSQL audit log captures operations
   - [ ] Test consolidation worker runs jobs on schedule
+  - [ ] Test cross-channel promotion: fact in project channel meets threshold → appears in `_global`
+  - [ ] Test channel CRUD: create, list, delete channel and verify data cleanup
 - [ ] Agent integration tests:
-  - [ ] Test `/api/agent/chat` stores turns in memory
+  - [ ] Test `/api/agent/chat` stores turns in memory with correct channel
   - [ ] Test `/api/agent/chat` retrieves relevant context from memory
   - [ ] Test `/api/agent/run` records tool usage in procedural memory
   - [ ] Test graceful degradation when databases are down
@@ -679,10 +730,55 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] Verify `detect_patterns()` correctly identifies successful strategies
   - [ ] Verify `apply_memory_decay()` reduces salience scores over time
   - [ ] Verify `cleanup_old_memories()` archives/removes appropriately
+- [ ] Implement `promote_to_global()` consolidation job:
+  - [ ] Scan project channels for facts/entities that meet **all three** promotion criteria:
+    - Confidence >= `promotion_min_confidence` (default: 0.85)
+    - Access count >= `promotion_min_access_count` (default: 5)
+    - Referenced in >= `promotion_min_conversations` distinct conversations (default: 2)
+  - [ ] Add promotion threshold settings to `MemoryConfig`:
+    - [ ] `promotion_min_confidence: float = 0.85`
+    - [ ] `promotion_min_access_count: int = 5`
+    - [ ] `promotion_min_conversations: int = 2`
+  - [ ] Copy promoted facts/entities to `_global` channel (not move — preserve originals)
+  - [ ] Mark promoted items with `promoted_from: channel_name` in metadata
+  - [ ] Log each promotion as `cross_channel_promote` in audit trail with:
+    - Source channel, target channel (`_global`)
+    - Promoted fact/entity IDs
+    - **Active threshold values at time of promotion** (snapshot the config in the log entry)
+    - Which criteria the item exceeded (confidence=0.91, access_count=7, conversations=3)
+  - [ ] Run on same schedule as pattern detection (hourly default)
 - [ ] Add Taskfile command: `task memory:worker` to start consolidation worker
 - [ ] Add health monitoring for worker (Redis heartbeat)
 - [ ] Add configurable job intervals via `MemoryConfig`
 - [ ] Handle worker crash recovery (detect stale job locks, re-run)
+
+### 11.10 Memory Explorer (Client)
+
+> Primitive v1 UI for inspecting memory contents — entities, facts, channels
+
+**Note**: Embeddings are opaque vectors, but every stored memory has human-readable content alongside it (entity names, fact claims, turn content). The explorer renders the readable data; embeddings are just the search index underneath.
+
+- [ ] Create `MemoryTab` component (or subsection within existing tab):
+  - [ ] Channel selector dropdown (list channels via `GET /api/memory/channels`)
+  - [ ] Entity list view:
+    - [ ] Columns: name, type, channel, salience score, last accessed
+    - [ ] Click entity → expand to show connected facts and relationships
+    - [ ] Uses `get_entity_graph()` for expansion (already implemented in semantic.py)
+  - [ ] Fact list view:
+    - [ ] Columns: claim text, confidence, source channel, derived-from conversation
+    - [ ] Filter by channel, confidence threshold
+    - [ ] Show `promoted_from` badge for cross-channel promoted facts
+  - [ ] Strategy list view (procedural memory):
+    - [ ] Columns: description, tool sequence, success rate, channel
+- [ ] Create memory API endpoints to support explorer:
+  - [ ] `GET /api/memory/entities?channel=X` — list entities with pagination
+  - [ ] `GET /api/memory/entities/{id}/graph` — entity subgraph (facts, relationships)
+  - [ ] `GET /api/memory/facts?channel=X` — list facts with pagination
+  - [ ] `GET /api/memory/strategies?channel=X` — list strategies
+  - [ ] `GET /api/memory/stats` — counts per memory type, per channel
+- [ ] Basic search within explorer:
+  - [ ] Text search across entity names and fact claims (Neo4j fulltext or CONTAINS)
+  - [ ] No embedding-based search needed for v1 — just text matching
 
 ---
 
@@ -727,7 +823,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 - [ ] Offline mode with cached models
 - [ ] Cross-encoder reranking model for retrieval quality
 - [ ] Memory export/import (JSON/SQLite backup)
-- [ ] Memory visualization in client UI (knowledge graph browser)
+- [ ] Advanced memory visualization (interactive graph rendering, embedding similarity clusters)
 - [ ] Streaming memory retrieval during chat (progressive context injection)
 
 ---
@@ -766,19 +862,27 @@ The memory system is **architecturally complete but entirely disconnected**:
 | 2026-01-31 | Tenant isolation required | Semantic memory must filter by user_id to prevent cross-user data leakage |
 | 2026-01-31 | Extraction via LLM preferred | Entity/fact extraction uses model providers for quality; spaCy as lightweight fallback |
 | 2026-01-31 | Memory tests deferred to Phase 11 | Cannot test memory until schemas exist and integration is wired |
+| 2026-01-31 | Memory channels over multiple databases | Logical channel scoping (property on nodes/rows) is trivial; multiple DBs would multiply infra complexity for a namespace problem |
+| 2026-01-31 | `_global` as default channel | User-wide memory (preferences, general facts) lives in `_global`; project channels are full-featured containers |
+| 2026-01-31 | Channels are traceable scopes, not isolation | Retrieval merges active channel + `_global`; cross-channel intersections logged in audit trail |
+| 2026-01-31 | Cross-channel promotion via consolidation | Prominent project facts auto-promote to `_global` based on confidence/frequency thresholds |
+| 2026-01-31 | Audit logs partitioned by day | Configurable retention with daily resolution; per-day log chunks for efficient cleanup and querying |
+| 2026-01-31 | Memory retrieval is blocking | Synchronous retrieval in chat flow for simplicity; may scale to concurrent sub-queries for complex tasks later |
+| 2026-01-31 | LLM-only extraction, no spaCy | Entity/fact extraction uses model providers exclusively; spaCy too constraining for open-ended semantic extraction |
+| 2026-01-31 | Promotion thresholds configurable, logged | Defaults: confidence>=0.85, access_count>=5, conversations>=2; active thresholds snapshotted in each audit log entry |
 
 ### Blockers
 - **Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work
-- **Extraction pipeline blocked on**: Deciding between LLM-based vs spaCy-based NER (see 11.3)
 
 ### Questions to Resolve
 - [x] Which LLM providers to prioritize? (OpenAI / Anthropic / Ollama / Together) → OpenAI, Anthropic, Ollama implemented; LM-Studio preferred
-- [ ] Should agent memory require authentication? No, one server = one user. Multiple servers can exist on one system. This makes the architecture simple but requires rich export capability for effective long-term usage.
-- [ ] Target platforms for distribution? (Windows / macOS / Linux)
+- [x] Should agent memory require authentication? → No, one server = one user. Multiple servers can exist on one system. Simple architecture, requires rich export capability for effective long-term usage.
+- [X] Target platforms for distribution? (Windows / macOS / Linux): Target for Linux and Windows for now. 
 - [x] Reasoning trace storage format? (JSON / SQLite / Neo4j) → Neo4j graph + PostgreSQL audit log
-- [ ] Entity extraction method: LLM-based (higher quality, API cost) vs spaCy (offline, faster, less accurate)?
-- [ ] Audit log retention policy: 30 days default — should it be configurable per deployment?
-- [ ] Should memory retrieval be async (non-blocking) or sync (blocking) in the chat flow?
+- [x] Entity extraction method: LLM-based (higher quality, API cost) vs spaCy (offline, faster, less accurate)? → LLM-only via model providers; spaCy too constraining for open-ended extraction
+- [X] Audit log retention policy: 30 days default — should it be configurable per deployment? Leave it configurable with daily resolution with per-day log chunks. 
+- [X] Should memory retrieval be async (non-blocking) or sync (blocking) in the chat flow? Memory retrieval should be blocking for now, but potentially we may need to scale that up to concurrent queries for complex tasks...
+- [x] Cross-channel promotion thresholds: what confidence/frequency values are sensible defaults? → confidence>=0.85, access_count>=5, conversations>=2; all configurable in MemoryConfig, active values snapshotted in audit log entries
 
 ---
 
