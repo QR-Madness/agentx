@@ -1,12 +1,21 @@
 import React from 'react';
+import { 
+  LayoutDashboard, 
+  Bot, 
+  Languages, 
+  MessageSquare, 
+  Wrench, 
+  Settings,
+  Sparkles
+} from 'lucide-react';
 import '../styles/TabBar.css';
 
-export type TabId = 'dashboard' | 'translation' | 'chat' | 'tools';
+export type TabId = 'dashboard' | 'agent' | 'translation' | 'chat' | 'tools' | 'settings';
 
 export interface Tab {
   id: TabId;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 interface TabBarProps {
@@ -19,9 +28,11 @@ export const TabBar: React.FC<TabBarProps> = ({ tabs, activeTab, onTabChange }) 
   return (
     <div className="tab-bar">
       <div className="tab-bar-header">
-        <div className="app-title">
-          <span className="app-icon">✨</span>
-          <span className="gradient-text">AgentX</span>
+        <div className="app-logo">
+          <div className="logo-icon">
+            <Sparkles size={24} />
+          </div>
+          <span className="logo-text gradient-text">AgentX</span>
         </div>
       </div>
 
@@ -40,11 +51,21 @@ export const TabBar: React.FC<TabBarProps> = ({ tabs, activeTab, onTabChange }) 
       </nav>
 
       <div className="tab-bar-footer">
-        <button className="settings-button button-secondary">
-          <span>⚙️</span>
-          <span>Settings</span>
-        </button>
+        <div className="server-status">
+          <span className="status-dot online"></span>
+          <span className="server-label">Connected</span>
+        </div>
       </div>
     </div>
   );
+};
+
+// Export icons for use in App.tsx
+export const TabIcons = {
+  dashboard: <LayoutDashboard size={20} />,
+  agent: <Bot size={20} />,
+  translation: <Languages size={20} />,
+  chat: <MessageSquare size={20} />,
+  tools: <Wrench size={20} />,
+  settings: <Settings size={20} />,
 };

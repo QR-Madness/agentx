@@ -1,8 +1,4 @@
-import {api} from "../lib/api";
-
-const urls = {
-    translate: () => `${api.baseUrl}/tools/translate`
-}
+import { api } from "../lib/api";
 
 export interface TranslationRequest {
     text: string;
@@ -15,12 +11,5 @@ export interface TranslationResponse {
 }
 
 export const postTranslation = async (request: TranslationRequest): Promise<TranslationResponse> => {
-    const response = await fetch(urls.translate(), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(request)
-    });
-    return await response.json();
+    return api.translate(request);
 }

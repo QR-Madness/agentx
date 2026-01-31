@@ -1,31 +1,47 @@
-/* === Design System === */
+/* === AgentX Cosmic Design System === */
 :root {
-  /* Colors */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #131927;
-  --bg-tertiary: #1a2235;
-  --bg-hover: rgba(59, 130, 246, 0.08);
-  --border-color: rgba(255, 255, 255, 0.1);
+  /* Cosmic Background Palette */
+  --bg-space: #05070f;
+  --bg-nebula: #0a0d17;
+  --bg-void: #0d1120;
+  --bg-card: #111827;
+  --bg-elevated: #1a2035;
+  --bg-hover: rgba(139, 92, 246, 0.08);
+  --border-color: rgba(139, 92, 246, 0.15);
+  --border-glow: rgba(139, 92, 246, 0.3);
 
   /* Text Colors */
-  --text-primary: #ffffff;
-  --text-secondary: #b4bcd0;
-  --text-muted: #6b7280;
+  --text-primary: #f0f4ff;
+  --text-secondary: #a5b4d4;
+  --text-muted: #5a6b8a;
 
-  /* Accent Colors */
-  --accent-primary: #3b82f6;
-  --accent-secondary: #8b5cf6;
-  --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  /* Cosmic Accent Colors */
+  --cosmic-purple: #a855f7;
+  --cosmic-violet: #8b5cf6;
+  --cosmic-cyan: #06b6d4;
+  --cosmic-pink: #ec4899;
+  --cosmic-blue: #3b82f6;
+  --cosmic-indigo: #6366f1;
+
+  /* Gradients */
+  --gradient-nebula: linear-gradient(135deg, #a855f7 0%, #06b6d4 50%, #ec4899 100%);
+  --gradient-aurora: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  --gradient-stardust: linear-gradient(180deg, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+  --gradient-cosmic-bg: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%);
 
   /* Status Colors */
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
+  --status-online: #22c55e;
+  --status-warning: #f59e0b;
+  --status-error: #ef4444;
+  --status-inactive: #475569;
 
-  /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  /* Shadows & Glows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --glow-purple: 0 0 20px rgba(139, 92, 246, 0.3);
+  --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.3);
+  --glow-pink: 0 0 20px rgba(236, 72, 153, 0.3);
 
   /* Typography */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -47,7 +63,7 @@
 
 body {
   margin: 0;
-  background: var(--bg-primary);
+  background: var(--bg-space);
   color: var(--text-primary);
   overflow: hidden;
 }
@@ -58,17 +74,44 @@ body {
   overflow: hidden;
 }
 
-/* === App Container === */
+/* === App Container with Cosmic Background === */
 .app-container {
   display: flex;
   width: 100%;
   height: 100%;
-  background: var(--bg-primary);
+  background: var(--bg-space);
+  background-image: var(--gradient-cosmic-bg);
+  position: relative;
+}
+
+/* Animated star particles (CSS only) */
+.app-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 50%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 10% 80%, rgba(139,92,246,0.4) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 90% 10%, rgba(6,182,212,0.4) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: twinkle 8s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
 }
 
 /* === Utility Classes === */
 .gradient-text {
-  background: var(--accent-gradient);
+  background: var(--gradient-nebula);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -96,21 +139,29 @@ body {
 
 /* === Card Components === */
 .card {
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 16px;
   box-shadow: var(--shadow-sm);
   transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
 }
 
 .card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-md), var(--glow-purple);
 }
 
 .glass {
-  background: rgba(26, 34, 53, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+}
+
+.glass:hover {
+  background: rgba(17, 24, 39, 0.85);
+  border-color: var(--cosmic-violet);
 }
 
 /* === Buttons === */
@@ -128,17 +179,34 @@ button {
 }
 
 .button-primary {
-  background: var(--accent-gradient);
+  background: var(--gradient-aurora);
   color: white;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 12px 24px;
   font-size: 15px;
   box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.button-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.button-primary:hover::before {
+  left: 100%;
 }
 
 .button-primary:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), var(--glow-purple);
 }
 
 .button-primary:active {
@@ -152,17 +220,30 @@ button {
 }
 
 .button-secondary {
-  background: var(--bg-tertiary);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 20px;
   font-size: 14px;
 }
 
 .button-secondary:hover {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: var(--accent-primary);
+  background: rgba(139, 92, 246, 0.1);
+  border-color: var(--cosmic-violet);
+  box-shadow: var(--glow-purple);
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.button-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* === Form Controls === */
@@ -172,10 +253,10 @@ select {
   font-family: inherit;
   font-size: 14px;
   color: var(--text-primary);
-  background: var(--bg-tertiary);
+  background: var(--bg-void);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 10px;
+  padding: 12px 16px;
   outline: none;
   transition: all 0.2s ease;
   width: 100%;
@@ -184,8 +265,13 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--cosmic-violet);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15), var(--glow-purple);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
 }
 
 textarea {
@@ -196,10 +282,10 @@ textarea {
 select {
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23b4bcd0' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a5b4d4' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 36px;
+  background-position: right 16px center;
+  padding-right: 40px;
 }
 
 /* === Animations === */
@@ -234,6 +320,24 @@ select {
   }
 }
 
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.5), 0 0 40px rgba(6, 182, 212, 0.2);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 .fade-in {
   animation: fadeIn 0.5s ease forwards;
 }
@@ -243,6 +347,16 @@ select {
   opacity: 0;
 }
 
+.glow-animate {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-card) 0%, var(--bg-elevated) 50%, var(--bg-card) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
 /* === Scrollbar Styling === */
 ::-webkit-scrollbar {
   width: 8px;
@@ -250,33 +364,88 @@ select {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
+  background: var(--bg-void);
   border-radius: 4px;
 }
 
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  border: 2px solid var(--bg-void);
+}
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(59, 130, 246, 0.5);
+  background: var(--cosmic-violet);
 }
 
 /* === Section Titles === */
 .section-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   margin-bottom: 16px;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title-icon {
+  color: var(--cosmic-violet);
 }
 
 /* === Status Indicators === */
-.status-online {
-  color: var(--success);
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
 }
 
-.status-offline {
-  color: var(--text-muted);
+.status-dot.online {
+  background: var(--status-online);
+  box-shadow: 0 0 8px var(--status-online);
+}
+
+.status-dot.warning {
+  background: var(--status-warning);
+  box-shadow: 0 0 8px var(--status-warning);
+}
+
+.status-dot.error {
+  background: var(--status-error);
+  box-shadow: 0 0 8px var(--status-error);
+}
+
+.status-dot.inactive {
+  background: var(--status-inactive);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.healthy {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--status-online);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-badge.degraded {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--status-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-badge.unhealthy {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 /* === Responsive Design === */

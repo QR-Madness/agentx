@@ -114,7 +114,7 @@ class TranslationKit:
         """
         Translate text to a specific language using the translation model.
         Supports over 200 languages.
-        Level I due to usage of a distilled model, not suitable for dense text.
+        Level I is the only supported option right now, due to usage of a distilled model, not suitable for dense text but lightweight.
         :param target_language: Language to translate to (format it based on parameter target_language_level).
         :param target_language_level: 1/Level 1 (format: "en"), 2/Level 2 (format: "eng_Latn").
         :param text: Text to translate.

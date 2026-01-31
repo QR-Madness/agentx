@@ -300,11 +300,50 @@ EMBEDDING_PROVIDER=local
 - This preserves component state when switching between tabs
 - State management done in `App.tsx` via `useState` hook
 
+**Available Tabs:**
+- **Dashboard** - System health, MCP servers, model providers, quick actions
+- **Agent** - Task execution with reasoning trace and tool usage visualization
+- **Translation** - 200+ language translation via NLLB-200
+- **Chat** - Conversational AI with session management
+- **Tools** - MCP tool browser and testing interface
+- **Settings** - Server configuration, API keys, preferences
+
+**Multi-Server Support:**
+The client supports connecting to multiple AgentX backend servers (not concurrent):
+- Server configurations stored in localStorage per-server
+- Each server has its own API keys, preferences, and cached data
+- Switch between servers via Settings tab
+- Storage keys: `agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`
+
 **File Structure:**
-- `client/src/App.tsx` - Main app component with tab routing
-- `client/src/components/TabBar.tsx` - Tab navigation UI
-- `client/src/components/tabs/*.tsx` - Individual tab components
-- `client/src-tauri/` - Rust/Tauri backend code
+```
+client/src/
+├── App.tsx                    # Main app with tab routing
+├── App.css                    # Global styles & cosmic theme
+├── components/
+│   ├── TabBar.tsx             # Navigation sidebar
+│   └── tabs/
+│       ├── DashboardTab.tsx   # System overview
+│       ├── AgentTab.tsx       # Task execution
+│       ├── ChatTab.tsx        # Conversational AI
+│       ├── TranslationTab.tsx # Language translation
+│       ├── ToolsTab.tsx       # MCP tool browser
+│       └── SettingsTab.tsx    # Configuration
+├── contexts/
+│   └── ServerContext.tsx      # Server state management
+├── lib/
+│   ├── api.ts                 # Typed API client
+│   ├── hooks.ts               # React data hooks
+│   └── storage.ts             # Multi-server storage
+└── styles/                    # Component CSS files
+```
+
+**Design System (Cosmic Theme):**
+- Dark space backgrounds (`--bg-space: #05070f`)
+- Nebula gradients (purple → cyan → pink)
+- Glassmorphism effects with backdrop blur
+- Glow animations on interactive elements
+- Lucide-react icons throughout
 
 ## Python Dependencies
 
@@ -335,9 +374,14 @@ See `Todo.md` for detailed task tracking. Current status:
 - ✅ Phase 1: Critical fixes (dependencies, Taskfile, OpenAPI)
 - ✅ Phase 2: Wire up existing code (health endpoint, lazy loading)
 - ✅ Phase 3: MCP Client integration
-- 🔲 Phase 4: Model provider abstraction
-- 🔲 Phase 5: Drafting models framework
-- 🔲 Phase 6: Reasoning framework
+- ✅ Phase 4: Model provider abstraction
+- ✅ Phase 5: Drafting models framework
+- ✅ Phase 6: Reasoning framework
+- ✅ Phase 7: Agent core
+- ✅ Phase 8: Client updates (cosmic theme, new tabs)
+- 🔲 Phase 9: Security & infrastructure
+- 🔲 Phase 10: Testing
+- 🔲 Phase 11: Documentation
 - 🔲 Phase 7: Agent core
 
 ## Known Issues & TODOs

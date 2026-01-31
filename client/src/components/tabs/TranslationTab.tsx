@@ -1,4 +1,13 @@
 import React, {useState} from 'react';
+import {
+  Languages,
+  ArrowRight,
+  Copy,
+  Trash2,
+  Loader2,
+  Sparkles,
+  Search
+} from 'lucide-react';
 import {postTranslation} from '../../models/translation';
 import {nllb200Languages} from '../../data/nllb200Languages';
 import '../../styles/TranslationTab.css';
@@ -9,6 +18,7 @@ export const TranslationTab: React.FC = () => {
     const [targetLanguage, setTargetLanguage] = useState('spa_Latn');
     const [isTranslating, setIsTranslating] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [copied, setCopied] = useState(false);
 
     const handleTranslate = async () => {
         if (!sourceText.trim()) return;
@@ -28,6 +38,16 @@ export const TranslationTab: React.FC = () => {
         }
     };
 
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(translatedText);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy to clipboard:', err);
+        }
+    };
+
     // Filter languages based on search query
     const filteredLanguages = searchQuery.trim()
         ? nllb200Languages.filter(lang =>
@@ -36,54 +56,36 @@ export const TranslationTab: React.FC = () => {
         )
         : nllb200Languages;
 
+    const selectedLanguage = nllb200Languages.find(l => l.code === targetLanguage);
+
     return (<div className="translation-tab">
         <div className="translation-header fade-in">
             <h1 className="page-title">
-                <span className="page-icon">🌐</span>
-                Translation Tool
+                <Languages className="page-icon-svg" />
+                Translation
             </h1>
-            <p className="page-subtitle">Translate text between multiple languages instantly</p>
+            <p className="page-subtitle">Translate text between 200+ languages instantly</p>
         </div>
 
         <div className="translation-container">
-            <div className="translation-controls card">
-                <div className="language-selector">
-                    <div className="language-select-wrapper">
-                        <label htmlFor="target-language" className="language-label">
-                            Translate to:
-                        </label>
-                        <input
-                            type="text"
-                            placeholder="Search languages... (e.g., 'French', 'Arabic', 'Chinese')"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="language-search"
-                        />
-                        <select
-                            id="target-language"
-                            value={targetLanguage}
-                            onChange={(e) => setTargetLanguage(e.target.value)}
-                            className="language-select"
-                            size={8}
-                        >
-                            {filteredLanguages.map(lang => (
-                                <option key={lang.code} value={lang.code}>
-                                    {lang.name}
-                                </option>
-                            ))}
-                        </select>
-                        <div className="language-info">
-                            {filteredLanguages.length} language{filteredLanguages.length !== 1 ? 's' : ''} available
-                        </div>
-                    </div>
+            {/* Language Selection */}
+            <div className="language-bar card glass">
+                <div className="language-from">
+                    <span className="language-label">Auto Detect</span>
+                </div>
+                <ArrowRight size={20} className="language-arrow" />
+                <div className="language-to">
+                    <span className="language-label">{selectedLanguage?.name || 'Select language'}</span>
                 </div>
             </div>
 
+            {/* Main Panels */}
             <div className="translation-panels">
+                {/* Source Panel */}
                 <div className="translation-panel card">
                     <div className="panel-header">
                         <span className="panel-title">Source Text</span>
-                        <span className="char-count">{sourceText.length} characters</span>
+                        <span className="char-count">{sourceText.length} chars</span>
                     </div>
                     <textarea
                         value={sourceText}
@@ -93,45 +95,95 @@ export const TranslationTab: React.FC = () => {
                     />
                 </div>
 
+                {/* Translate Button (between panels) */}
+                <div className="translate-action">
+                    <button
+                        className="translate-button button-primary"
+                        onClick={handleTranslate}
+                        disabled={!sourceText.trim() || isTranslating}
+                    >
+                        {isTranslating ? (
+                            <>
+                                <Loader2 size={18} className="spin" />
+                                Translating
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles size={18} />
+                                Translate
+                            </>
+                        )}
+                    </button>
+                </div>
+
+                {/* Translation Panel */}
                 <div className="translation-panel card">
                     <div className="panel-header">
                         <span className="panel-title">Translation</span>
-                        {translatedText && (<button className="copy-button button-secondary"
-                                                    onClick={async () => {
-                                                        try {
-                                                            await navigator.clipboard.writeText(translatedText);
-                                                        } catch (err) {
-                                                            console.error('Failed to copy to clipboard:', err);
-                                                        }
-                                                    }}>
-                            📋 Copy
-                        </button>)}
+                        {translatedText && (
+                            <button className="button-ghost" onClick={handleCopy}>
+                                <Copy size={14} />
+                                {copied ? 'Copied!' : 'Copy'}
+                            </button>
+                        )}
                     </div>
                     <textarea
                         value={translatedText}
                         readOnly
                         placeholder="Translation will appear here..."
-                        className="translation-textarea"
+                        className="translation-textarea result"
                     />
                 </div>
             </div>
 
+            {/* Language Selector */}
+            <div className="language-selector card">
+                <div className="selector-header">
+                    <h3 className="section-title">
+                        <Languages size={18} className="section-title-icon" />
+                        Target Language
+                    </h3>
+                    <div className="search-wrapper">
+                        <Search size={16} className="search-icon" />
+                        <input
+                            type="text"
+                            placeholder="Search languages..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="language-search"
+                        />
+                    </div>
+                </div>
+                <div className="language-grid">
+                    {filteredLanguages.slice(0, 50).map(lang => (
+                        <button
+                            key={lang.code}
+                            className={`language-chip ${targetLanguage === lang.code ? 'active' : ''}`}
+                            onClick={() => setTargetLanguage(lang.code)}
+                        >
+                            {lang.name}
+                        </button>
+                    ))}
+                    {filteredLanguages.length > 50 && (
+                        <span className="more-languages">+{filteredLanguages.length - 50} more</span>
+                    )}
+                </div>
+                <div className="language-count">
+                    {filteredLanguages.length} languages available
+                </div>
+            </div>
+
+            {/* Actions */}
             <div className="translation-actions">
                 <button
-                    className="translate-button button-primary"
-                    onClick={handleTranslate}
-                    disabled={!sourceText.trim() || isTranslating}
-                >
-                    {isTranslating ? '⏳ Translating...' : '✨ Translate'}
-                </button>
-                <button
-                    className="clear-button button-secondary"
+                    className="button-secondary"
                     onClick={() => {
                         setSourceText('');
                         setTranslatedText('');
                     }}
                 >
-                    🗑️ Clear
+                    <Trash2 size={16} />
+                    Clear All
                 </button>
             </div>
         </div>
