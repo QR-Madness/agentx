@@ -116,7 +116,13 @@ def translate(request):
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
-    translated_text = get_translation_kit().translate_text(text, target_language, target_language_level=2)
+    try:
+        translated_text = get_translation_kit().translate_text(text, target_language, target_language_level=2)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except Exception as e:
+        logger.exception("Translation error")
+        return JsonResponse({'error': f'Translation failed: {str(e)}'}, status=500)
 
     return JsonResponse({
         'original': text,
