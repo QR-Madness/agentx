@@ -4,6 +4,7 @@ Model Provider Abstraction Layer for AgentX.
 This module provides a unified interface to multiple LLM backends:
 - OpenAI (GPT-4, GPT-4-turbo, GPT-3.5)
 - Anthropic (Claude 3 Opus/Sonnet/Haiku)
+- LM Studio (local models with OpenAI-compatible API)
 - Ollama (local models: Llama, Mistral, etc.)
 """
 

@@ -52,24 +52,37 @@ class ProviderRegistry:
     
     def _load_default_config(self) -> None:
         """Load configuration from environment variables."""
-        # OpenAI
+        # OpenAI (cloud)
         if os.environ.get("OPENAI_API_KEY"):
             self._provider_configs["openai"] = ProviderConfig(
                 api_key=os.environ["OPENAI_API_KEY"],
                 base_url=os.environ.get("OPENAI_BASE_URL"),
             )
         
-        # Anthropic
+        # Anthropic (cloud)
         if os.environ.get("ANTHROPIC_API_KEY"):
             self._provider_configs["anthropic"] = ProviderConfig(
                 api_key=os.environ["ANTHROPIC_API_KEY"],
                 base_url=os.environ.get("ANTHROPIC_BASE_URL"),
             )
         
-        # Ollama (local, no API key needed)
-        self._provider_configs["ollama"] = ProviderConfig(
-            base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-        )
+        # LM Studio (local, OpenAI-compatible) - preferred for local models
+        lmstudio_url = os.environ.get("LMSTUDIO_BASE_URL")
+        if lmstudio_url:
+            lmstudio_timeout = float(os.environ.get("LMSTUDIO_TIMEOUT", "300"))
+            self._provider_configs["lmstudio"] = ProviderConfig(
+                base_url=lmstudio_url,
+                timeout=lmstudio_timeout,
+            )
+        
+        # Ollama (local, alternative to LM Studio)
+        ollama_url = os.environ.get("OLLAMA_BASE_URL")
+        if ollama_url:
+            ollama_timeout = float(os.environ.get("OLLAMA_TIMEOUT", "300"))
+            self._provider_configs["ollama"] = ProviderConfig(
+                base_url=ollama_url,
+                timeout=ollama_timeout,
+            )
     
     def load_config(self, config_path: Path) -> None:
         """Load configuration from a YAML file."""
@@ -110,7 +123,7 @@ class ProviderRegistry:
         if name not in self._provider_configs:
             raise ValueError(
                 f"Provider '{name}' not configured. "
-                f"Set {name.upper()}_API_KEY environment variable or provide config."
+                f"Set {name.upper()}_BASE_URL or {name.upper()}_API_KEY environment variable."
             )
         
         config = self._provider_configs[name]
@@ -124,6 +137,9 @@ class ProviderRegistry:
         elif name == "ollama":
             from .ollama_provider import OllamaProvider
             provider = OllamaProvider(config)
+        elif name == "lmstudio":
+            from .lmstudio_provider import LMStudioProvider
+            provider = LMStudioProvider(config)
         else:
             raise ValueError(f"Unknown provider: {name}")
         
@@ -139,7 +155,7 @@ class ProviderRegistry:
         Get the appropriate provider for a model.
         
         Args:
-            model: Model name (e.g., "gpt-4", "claude-3-opus", "llama3")
+            model: Model name (e.g., "gpt-4", "claude-3-opus", "llama3.2")
             
         Returns:
             Tuple of (provider, model_id) where model_id may differ from model name
@@ -154,14 +170,41 @@ class ProviderRegistry:
             model_id = config.model_id or model
             return provider, model_id
         
-        # Infer provider from model name
+        # Local model prefixes - check these FIRST 
+        # because some local models have names like "gpt-oss" or "openai/..."
+        local_prefixes = (
+            "llama", "mistral", "mixtral", "codellama", "llava", 
+            "qwen", "deepseek", "phi", "gemma", "vicuna", "orca",
+            "neural", "dolphin", "openchat", "starling", "yi",
+            "command-r", "dbrx", "nous", "wizardlm", "zephyr",
+            "gpt-oss", "ibm/", "google/", "meta/", "mistralai/",
+            "openai-gpt-oss", "openai/gpt-oss",  # LM Studio naming
+        )
+        
+        # Check if this looks like a local model
+        is_local = (
+            ":" in model or  # Ollama tags like "llama3.2:latest"
+            "/" in model or  # LM Studio paths like "google/gemma-3-12b"
+            model.startswith(local_prefixes)
+        )
+        
+        if is_local:
+            # Prefer LM Studio if configured, fall back to Ollama
+            if "lmstudio" in self._provider_configs:
+                return self.get_provider("lmstudio"), model
+            elif "ollama" in self._provider_configs:
+                return self.get_provider("ollama"), model
+            else:
+                raise ValueError(
+                    f"Local model '{model}' detected but no local provider configured. "
+                    "Set LMSTUDIO_BASE_URL or OLLAMA_BASE_URL environment variable."
+                )
+        
+        # Infer provider from model name (cloud providers)
         if model.startswith("gpt-") or model.startswith("o1"):
             return self.get_provider("openai"), model
         elif model.startswith("claude"):
             return self.get_provider("anthropic"), model
-        elif ":" in model or model in ["llama3", "mistral", "mixtral", "codellama", "llava", "qwen2.5"]:
-            # Ollama models often have tags like "llama3:70b"
-            return self.get_provider("ollama"), model
         
         raise ValueError(
             f"Cannot determine provider for model '{model}'. "
