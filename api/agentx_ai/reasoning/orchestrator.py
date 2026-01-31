@@ -36,7 +36,8 @@ class TaskType(str, Enum):
 @dataclass
 class OrchestratorConfig:
     """Configuration for the reasoning orchestrator."""
-    default_model: str = "gpt-4-turbo"
+    # Offline-first: default to local Ollama model
+    default_model: str = "llama3.2"
     
     # Strategy preferences
     strategy_map: dict[TaskType, str] = field(default_factory=lambda: {

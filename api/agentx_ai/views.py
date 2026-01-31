@@ -302,13 +302,18 @@ def get_agent():
     """Get or create Agent instance lazily."""
     global _agent
     if _agent is None:
+        import os
         from .agent import Agent, AgentConfig
+        
+        # Offline-first: default to local Ollama model
+        default_model = os.environ.get("DEFAULT_MODEL", "llama3.2")
+        
         _agent = Agent(AgentConfig(
-            default_model="gpt-4-turbo",
+            default_model=default_model,
             enable_planning=True,
             enable_reasoning=True,
         ))
-        logger.info("Agent initialized")
+        logger.info(f"Agent initialized with model: {default_model}")
     return _agent
 
 
@@ -372,19 +377,30 @@ def agent_chat(request):
             return JsonResponse({'error': 'Missing required field: message'}, status=400)
         
         session_id = data.get("session_id")
+        model = data.get("model")
         
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
     
-    agent = get_agent()
+    # Get agent, optionally with custom model
+    if model:
+        from .agent import Agent, AgentConfig
+        agent = Agent(AgentConfig(default_model=model))
+        logger.info(f"Using custom model for chat: {model}")
+    else:
+        agent = get_agent()
     
     result = async_to_sync(agent.chat)(message, session_id=session_id)
     
     return JsonResponse({
         "task_id": result.task_id,
         "status": result.status.value,
+        "response": result.answer,  # Alias for UI compatibility
         "answer": result.answer,
+        "session_id": session_id or result.task_id,  # Return session ID for continuity
+        "reasoning_trace": result.reasoning_steps,
         "reasoning_steps": result.reasoning_steps,
+        "tokens_used": result.total_tokens,
         "total_tokens": result.total_tokens,
         "total_time_ms": result.total_time_ms,
     })

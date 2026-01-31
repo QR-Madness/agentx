@@ -67,8 +67,8 @@ class AgentConfig:
     name: str = "agentx"
     user_id: Optional[str] = None
     
-    # Model settings
-    default_model: str = "gpt-4-turbo"
+    # Model settings - offline-first, default to local Ollama
+    default_model: str = "llama3.2"
     reasoning_model: Optional[str] = None
     drafting_model: Optional[str] = None
     
@@ -299,6 +299,7 @@ class Agent:
         self,
         message: str,
         session_id: Optional[str] = None,
+        simple_mode: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """
@@ -309,11 +310,15 @@ class Agent:
         Args:
             message: The user message
             session_id: Optional session ID for context
+            simple_mode: If True, use direct completion without reasoning (default)
             **kwargs: Additional parameters
             
         Returns:
             AgentResult with the response
         """
+        task_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        
         # Get or create session
         from .session import SessionManager
         if self._session_manager is None:
@@ -324,16 +329,69 @@ class Agent:
         # Add user message to session
         session.add_message(Message(role=MessageRole.USER, content=message))
         
-        # Get context from session
-        context = session.get_messages()
+        # Get context from session (excluding current message for the prompt)
+        context = session.get_messages()[:-1]
         
-        # Run the task with context
-        result = await self.run(message, context=context[:-1], **kwargs)  # Exclude current message
-        
-        # Add assistant response to session
-        session.add_message(Message(role=MessageRole.ASSISTANT, content=result.answer))
-        
-        return result
+        try:
+            if simple_mode:
+                # Direct completion without planning/reasoning - best for chat
+                provider, model_id = self.registry.get_provider_for_model(
+                    self.config.default_model
+                )
+                
+                # Build messages with system prompt for chat
+                messages = [
+                    Message(
+                        role=MessageRole.SYSTEM,
+                        content="You are a helpful AI assistant. Respond naturally and conversationally."
+                    )
+                ]
+                if context:
+                    messages.extend(context)
+                messages.append(Message(role=MessageRole.USER, content=message))
+                
+                logger.info(f"Agent chat {task_id} using {model_id}")
+                
+                result = await provider.complete(
+                    messages,
+                    model_id,
+                    temperature=kwargs.get("temperature", 0.7),
+                    max_tokens=kwargs.get("max_tokens", 2000),
+                )
+                
+                answer = result.content
+                total_tokens = result.usage.get("total_tokens", 0) if result.usage else 0
+                
+                # Add assistant response to session
+                session.add_message(Message(role=MessageRole.ASSISTANT, content=answer))
+                
+                total_time = (time.time() - start_time) * 1000
+                
+                return AgentResult(
+                    task_id=task_id,
+                    status=AgentStatus.COMPLETE,
+                    answer=answer,
+                    models_used=[self.config.default_model],
+                    total_tokens=total_tokens,
+                    total_time_ms=total_time,
+                )
+            else:
+                # Full agent pipeline with reasoning
+                result = await self.run(message, context=context, **kwargs)
+                
+                # Add assistant response to session
+                session.add_message(Message(role=MessageRole.ASSISTANT, content=result.answer))
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"Agent chat {task_id} failed: {e}")
+            return AgentResult(
+                task_id=task_id,
+                status=AgentStatus.FAILED,
+                answer=f"Sorry, I encountered an error: {str(e)}",
+                total_time_ms=(time.time() - start_time) * 1000,
+            )
     
     def cancel(self) -> bool:
         """
