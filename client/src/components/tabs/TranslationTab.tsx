@@ -97,7 +97,13 @@ export const TranslationTab: React.FC = () => {
                     <div className="panel-header">
                         <span className="panel-title">Translation</span>
                         {translatedText && (<button className="copy-button button-secondary"
-                                                    onClick={() => navigator.clipboard.writeText(translatedText)}>
+                                                    onClick={async () => {
+                                                        try {
+                                                            await navigator.clipboard.writeText(translatedText);
+                                                        } catch (err) {
+                                                            console.error('Failed to copy to clipboard:', err);
+                                                        }
+                                                    }}>
                             📋 Copy
                         </button>)}
                     </div>

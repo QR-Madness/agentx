@@ -10,5 +10,6 @@ class ApiClient {
     }
 }
 
-// TODO make API URL dynamic
-export const api = new ApiClient('http://localhost:12319/api');
+// Use environment variable for API URL, with fallback for development
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:12319/api';
+export const api = new ApiClient(API_URL);

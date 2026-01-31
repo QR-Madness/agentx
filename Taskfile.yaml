@@ -86,20 +86,23 @@ tasks:
       - uv run python manage.py runserver 127.0.0.1:12319
 
   client:start:
+    desc: Start client in preview mode
     deps: [ client:build ]
     dir: client/
     cmds:
-      - bunx next start
+      - bun run preview
 
   client:build:
+    desc: Build client for production
     dir: client/
     cmds:
-      - bunx next build
+      - bun run build
 
   client:dev:
+    desc: Start client in development mode
     dir: client/
     cmds:
-      - bunx tauri run dev
+      - bun run tauri dev
 
   dev:
     deps: [ runners ]
@@ -129,7 +132,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test
+      - uv run python api/manage.py test -v2
 
   db:clean:
     desc: Remove all database data
@@ -238,3 +241,13 @@ tasks:
     desc: Remove built documentation
     cmds:
       - rm -rf site/
+
+  mcp:list-servers:
+    desc: List configured MCP servers
+    cmds:
+      - curl -s http://127.0.0.1:12319/api/mcp/servers | python -m json.tool
+
+  mcp:list-tools:
+    desc: List available MCP tools (server must be running)
+    cmds:
+      - curl -s http://127.0.0.1:12319/api/mcp/tools | python -m json.tool

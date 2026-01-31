@@ -61,13 +61,15 @@ class LanguageLexicon:
         language = None
         try:
             language = iso639.Language.from_part2t(level_i_detected_language_code.lower())
-        except:
+        except iso639.LanguageNotFoundError:
             try:
                 language = iso639.Language.from_part1(level_i_detected_language_code.lower())
-            except:
+            except iso639.LanguageNotFoundError:
                 raise ValueError(f"Language {level_i_detected_language_code} not supported for conversion to level II.")
 
         terminological_language_code = language.part2t
+        if terminological_language_code not in self.nlb200_list_mapped_to_iso639_terminological:
+            raise ValueError(f"Language {level_i_detected_language_code} (ISO639 {terminological_language_code}) is not supported by NLLB-200.")
         return self.nlb200_list_mapped_to_iso639_terminological[terminological_language_code]
 
 

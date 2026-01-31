@@ -9,7 +9,7 @@ services:
       - "7474:7474"  # Browser
       - "7687:7687"  # Bolt
     environment:
-      - NEO4J_AUTH=neo4j/your_secure_password
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-changeme}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_apoc_export_file_enabled=true
       - NEO4J_apoc_import_file_enabled=true
@@ -34,14 +34,14 @@ services:
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=agent
-      - POSTGRES_PASSWORD=your_secure_password
-      - POSTGRES_DB=agent_memory
+      - POSTGRES_USER=${POSTGRES_USER:-agent}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-agent_memory}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
       - ./queries:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent -d agent_memory"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent} -d ${POSTGRES_DB:-agent_memory}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,6 +70,8 @@ services:
       - REDIS_HOSTS=local:redis:6379
     depends_on:
       - redis
+    profiles:
+      - tools
 
   # Optional: Background worker for consolidation
 #  consolidation-worker:

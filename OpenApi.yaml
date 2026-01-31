@@ -1,17 +1,17 @@
 openapi: 3.0.0
 info:
   title: AgentX AI API
-  description: API documentation for AgentX AI services
+  description: API documentation for AgentX AI services - translation, language detection, and agent capabilities
   version: 1.0.0
 
 servers:
-  - url: http://localhost:8000/api
+  - url: http://localhost:12319/api
     description: Local development server
 
 paths:
   /index:
     get:
-      summary: Get API status
+      summary: Health check
       description: Returns a simple hello message to verify API is running
       responses:
         '200':
@@ -25,18 +25,150 @@ paths:
                     type: string
                     example: "Hello, AgentX AI!"
 
-  /language-detect:
+  /health:
     get:
-      summary: Detect language
-      description: Detects the language of provided text using ML model
+      summary: Health check
+      description: Returns health status of all services including API, translation models, and optionally memory system connections.
+      parameters:
+        - name: include_memory
+          in: query
+          description: Include memory system health (neo4j, postgres, redis)
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
-          description: Successful response
+          description: Health status response
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
+                  status:
                     type: string
-                    example: "Hello, AgentX AI!"
+                    enum: [healthy, degraded, unhealthy]
+                    example: "healthy"
+                  api:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                  translation:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      models:
+                        type: object
+                  memory:
+                    type: object
+                    description: Only present if include_memory=true
+
+  /tools/language-detect-20:
+    post:
+      summary: Detect language (Level I)
+      description: Detects the language of provided text using ML model. Supports ~20 common languages with high accuracy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  description: Text to analyze for language detection
+                  example: "Bonjour, comment allez-vous?"
+      responses:
+        '200':
+          description: Successful language detection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original:
+                    type: string
+                    description: The input text
+                  detected_language:
+                    type: string
+                    description: ISO 639-1 language code
+                    example: "fr"
+                  confidence:
+                    type: number
+                    format: float
+                    description: Confidence score (0-100)
+                    example: 98.5
+        '400':
+          description: Bad request - missing or invalid text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tools/translate:
+    post:
+      summary: Translate text
+      description: Translate text to a target language. Supports 200+ languages via NLLB-200 model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+                - targetLanguage
+              properties:
+                text:
+                  type: string
+                  description: Text to translate
+                  example: "Hello, how are you?"
+                targetLanguage:
+                  type: string
+                  description: Target language code (ISO 639-1 like 'fr' or NLLB format like 'fra_Latn')
+                  example: "fr"
+                sourceLanguage:
+                  type: string
+                  description: Optional source language code (auto-detected if not provided)
+                  example: "en"
+      responses:
+        '200':
+          description: Successful translation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original:
+                    type: string
+                    description: The original input text
+                  translatedText:
+                    type: string
+                    description: The translated text
+                    example: "Bonjour, comment allez-vous?"
+        '400':
+          description: Bad request - missing fields or invalid language code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method not allowed - only POST requests accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Missing required field: text"

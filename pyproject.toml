@@ -1,20 +1,44 @@
 [project]
 name = "agentx-source"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.10"
 dependencies = [
+    # Django Framework
     "django>=5.2.8",
     "django-cors-headers>=4.6.0",
-    "python-iso639>=2025.11.16",
-    "termcolor>=3.2.0",
+    
+    # AI/ML Models
     "torch>=2.9.1",
     "transformers>=4.57.1",
     "sentencepiece>=0.2.1",
+    
+    # Vector & Graph Databases
     "faiss-cpu>=1.13.0",
     "neo4j>=6.0.3",
-    "mkdocs>=1.6.0",
-    "mkdocs-material>=9.5.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "redis>=5.0.0",
+    
+    # MCP Client
+    "mcp>=1.0.0",
+    
+    # Model Providers
+    "openai>=1.0.0",
+    "anthropic>=0.20.0",
+    "httpx>=0.27.0",
+    
+    # Data Validation
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    
+    # Utilities
+    "python-iso639>=2025.11.16",
+    "termcolor>=3.2.0",
+    "networkx>=3.0",
+    "sentence-transformers>=2.2.0",
+    
+    # Documentation
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
 ]

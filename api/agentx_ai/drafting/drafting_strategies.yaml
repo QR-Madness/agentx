@@ -1,0 +1,158 @@
+# Drafting Strategies Configuration for AgentX
+#
+# Defines pre-configured drafting strategies for common use cases.
+# Each strategy specifies models, parameters, and behavior.
+
+strategies:
+  # Speculative Decoding Strategies
+  fast_accurate:
+    type: speculative
+    description: Fast drafting with GPT-3.5, verified by GPT-4
+    draft_model: gpt-3.5-turbo
+    target_model: gpt-4-turbo
+    draft_tokens: 20
+    acceptance_threshold: 0.8
+    max_iterations: 10
+
+  local_cloud:
+    type: speculative
+    description: Local Llama drafts, cloud GPT-4 verifies
+    draft_model: llama3.2
+    target_model: gpt-4o
+    draft_tokens: 30
+    acceptance_threshold: 0.7
+    max_iterations: 8
+
+  claude_fast:
+    type: speculative
+    description: Fast Haiku drafts, Sonnet verifies
+    draft_model: claude-3-haiku
+    target_model: claude-3.5-sonnet
+    draft_tokens: 25
+    acceptance_threshold: 0.75
+    max_iterations: 10
+
+  # Pipeline Strategies
+  code_review:
+    type: pipeline
+    description: Generate code, review with different model, refine
+    stages:
+      - name: generate
+        model: gpt-4-turbo
+        role: code
+        system_prompt: "Generate clean, well-documented code based on the requirements."
+        temperature: 0.7
+
+      - name: review
+        model: claude-3-opus
+        role: critique
+        system_prompt: "Review this code critically. Identify bugs, security issues, and improvements."
+        temperature: 0.3
+
+      - name: refine
+        model: gpt-4-turbo
+        role: refine
+        system_prompt: "Incorporate the review feedback to improve the code."
+        temperature: 0.5
+
+  writing_pipeline:
+    type: pipeline
+    description: Outline, draft, edit, polish
+    stages:
+      - name: outline
+        model: gpt-4o-mini
+        role: analyze
+        system_prompt: "Create a detailed outline for the requested content."
+        temperature: 0.8
+
+      - name: draft
+        model: gpt-4-turbo
+        role: draft
+        system_prompt: "Write a complete first draft based on the outline."
+        temperature: 0.7
+
+      - name: edit
+        model: claude-3.5-sonnet
+        role: review
+        system_prompt: "Edit for clarity, flow, and engagement. Fix any issues."
+        temperature: 0.4
+
+      - name: polish
+        model: gpt-4o
+        role: refine
+        system_prompt: "Polish and finalize. Make it publication-ready."
+        temperature: 0.3
+
+  analysis_pipeline:
+    type: pipeline
+    description: Analyze, research, synthesize
+    stages:
+      - name: decompose
+        model: claude-3-sonnet
+        role: analyze
+        system_prompt: "Break down the problem into components. Identify what needs research."
+        temperature: 0.6
+
+      - name: research
+        model: gpt-4-turbo
+        role: custom
+        system_prompt: "Research each component thoroughly. Gather relevant information."
+        temperature: 0.5
+
+      - name: synthesize
+        model: claude-3-opus
+        role: summarize
+        system_prompt: "Synthesize all research into a coherent, comprehensive analysis."
+        temperature: 0.4
+
+  # Candidate Generation Strategies
+  consensus:
+    type: candidate
+    description: Multiple models vote on best answer
+    models:
+      - gpt-4-turbo
+      - claude-3.5-sonnet
+      - llama3.2
+    candidates_per_model: 1
+    scoring_method: majority_vote
+
+  best_of_n:
+    type: candidate
+    description: Generate multiple candidates, pick best
+    models:
+      - gpt-4o
+    candidates_per_model: 3
+    scoring_method: verifier
+    verifier_model: claude-3-opus
+    base_temperature: 0.7
+    temperature_increment: 0.15
+
+  diverse_ensemble:
+    type: candidate
+    description: Diverse models for varied perspectives
+    models:
+      - gpt-4-turbo
+      - claude-3-opus
+      - mistral
+      - qwen2.5
+    candidates_per_model: 1
+    scoring_method: length_preference
+    prefer_longer: true
+
+  self_consistency:
+    type: candidate
+    description: Same model, multiple samples for consistency
+    models:
+      - gpt-4o
+    candidates_per_model: 5
+    scoring_method: majority_vote
+    base_temperature: 0.9
+    temperature_increment: 0.05
+
+# Default strategies for common tasks
+defaults:
+  general: fast_accurate
+  code: code_review
+  writing: writing_pipeline
+  analysis: analysis_pipeline
+  consensus: consensus
