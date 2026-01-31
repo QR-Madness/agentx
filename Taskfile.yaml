@@ -1,253 +1,722 @@
+# ============================================================================
+# AgentX Taskfile
+# ============================================================================
+# A comprehensive task runner for the AgentX AI Agent Platform.
+#
+# Usage:
+#   task              - Show available tasks
+#   task dev          - Start full development environment
+#   task --list-all   - List all tasks including internal ones
+#
+# Groups:
+#   dev:*      - Development workflow commands
+#   api:*      - Django API server commands
+#   client:*   - Tauri/React client commands
+#   db:*       - Database management (Docker services)
+#   mcp:*      - MCP server inspection tools
+#   docs:*     - Documentation commands
+#   clean:*    - Cleanup and reset commands
+# ============================================================================
+
 version: '3'
+
+vars:
+  # Platform detection
+  OS: '{{if eq OS "windows"}}windows{{else if eq OS "darwin"}}macos{{else}}linux{{end}}'
+  
+  # App data paths by platform
+  APP_DATA_LINUX: "~/.local/share/agentx"
+  APP_DATA_MACOS: "~/Library/Application Support/agentx"
+  APP_DATA_WINDOWS: "%APPDATA%\\agentx"
+  
+  # Tauri app identifier (used for locating app data)
+  TAURI_BUNDLE_ID: "com.agentx.app"
+
+# ============================================================================
+# DEFAULT & SETUP
+# ============================================================================
 
 tasks:
   default:
-    desc: Sanity check task (use to debug Taskfile)
-    prompt: "Taskfile is operational! Do you want to run the development environment?"
-    deps: [ pre-launch-check ]
+    desc: "Show available tasks"
+    silent: true
+    cmds:
+      - task --list
+
+  setup:
+    desc: "First-time setup: install deps, init databases, verify environment"
     cmds:
       - task: install
       - task: db:init
-      - task: dev
-
-  pre-launch-check:
-    desc: Check that the development environment is ready to launch
+      - task: check
+    
+  check:
+    desc: "Verify development environment is ready"
     silent: true
     cmds:
-      - echo "Checking development environment..."
+      - echo "🔍 Checking development environment..."
       - |
         MISSING=""
+        WARNINGS=""
 
-        # Check for data directories
-        if [ ! -d "data/postgres" ]; then
-          MISSING="${MISSING}\n  - data/postgres/ (run: task db:init)"
-        fi
+        # Check data directories
+        [ ! -d "data/postgres" ] && MISSING="${MISSING}\n  ✗ data/postgres/ (run: task db:init)"
+        [ ! -d "data/neo4j" ] && MISSING="${MISSING}\n  ✗ data/neo4j/ (run: task db:init)"
+        [ ! -d "data/redis" ] && MISSING="${MISSING}\n  ✗ data/redis/ (run: task db:init)"
 
-        if [ ! -d "data/neo4j" ]; then
-          MISSING="${MISSING}\n  - data/neo4j/ (run: task db:init)"
-        fi
+        # Check dependencies
+        [ ! -d ".venv" ] && MISSING="${MISSING}\n  ✗ .venv/ (run: task install)"
+        [ ! -d "client/node_modules" ] && MISSING="${MISSING}\n  ✗ client/node_modules/ (run: task install)"
 
-        if [ ! -d "data/redis" ]; then
-          MISSING="${MISSING}\n  - data/redis/ (run: task db:init)"
-        fi
+        # Check optional files
+        [ ! -f ".env" ] && WARNINGS="${WARNINGS}\n  ⚠ .env not found (copy from .env.example)"
+        [ ! -f "mcp_servers.json" ] && WARNINGS="${WARNINGS}\n  ⚠ mcp_servers.json not found (copy from mcp_servers.json.example)"
 
-        # Check for virtual environment
-        if [ ! -d ".venv" ]; then
-          MISSING="${MISSING}\n  - .venv/ (run: task install:api)"
-        fi
-
-        # Check for client node_modules
-        if [ ! -d "client/node_modules" ]; then
-          MISSING="${MISSING}\n  - client/node_modules/ (run: task install:client)"
-        fi
-
-        # Print results
+        # Report
         if [ -n "$MISSING" ]; then
-          echo "⚠️  Missing required directories:"
-          echo -e "$MISSING"
+          echo -e "❌ Missing required components:$MISSING"
           echo ""
-          echo "Run 'task install' or 'task db:init' to set up missing components."
+          echo "Run 'task setup' to initialize everything."
           exit 1
-        else
-          echo "✓ Development environment is ready!"
         fi
 
-  runners:
-    desc: Start all runners/services
-    deps: [ pre-launch-check ]
-    cmds:
-      - docker-compose up -d
+        if [ -n "$WARNINGS" ]; then
+          echo -e "⚠️  Optional configs missing:$WARNINGS"
+          echo ""
+        fi
 
-  teardown:
-    desc: Stop all runners/services
+        echo "✅ Development environment is ready!"
+
+# ============================================================================
+# DEVELOPMENT WORKFLOW
+# ============================================================================
+
+  dev:
+    desc: "Start full dev environment (Docker + API + Client)"
+    deps: [check, db:up]
     cmds:
-      - docker-compose down
+      - defer: { task: db:down }
+      - bunx concurrently -n "API,CLIENT" -c "blue.bold,magenta.bold" 
+          "cd api && uv run python manage.py runserver 127.0.0.1:12319" 
+          "cd client && bun run tauri dev"
+
+  dev:api:
+    desc: "Start only the API server (assumes Docker running)"
+    dir: api
+    cmds:
+      - uv run python manage.py runserver 127.0.0.1:12319
+
+  dev:client:
+    desc: "Start only the Tauri client (assumes API running)"
+    dir: client
+    cmds:
+      - bun run tauri dev
+
+  dev:web:
+    desc: "Start client in browser mode (no Tauri, port 1420)"
+    dir: client
+    cmds:
+      - bun run dev
+
+# ============================================================================
+# INSTALLATION
+# ============================================================================
+
+  install:
+    desc: "Install all dependencies (API + Client)"
+    cmds:
+      - echo "📦 Installing dependencies..."
+      - bun install concurrently
+      - task: install:api
+      - task: install:client
+      - echo "✅ All dependencies installed!"
+
+  install:api:
+    desc: "Install Python dependencies via uv"
+    cmds:
+      - uv sync
+
+  install:client:
+    desc: "Install Node dependencies via bun"
+    dir: client
+    cmds:
+      - bun install
+
+# ============================================================================
+# API SERVER
+# ============================================================================
+
+  api:run:
+    desc: "Run Django development server"
+    aliases: [api:runserver]
+    dir: api
+    cmds:
+      - uv run python manage.py runserver 127.0.0.1:12319
+
+  api:shell:
+    desc: "Open Django interactive shell"
+    dir: api
+    cmds:
+      - uv run python manage.py shell
 
   api:migrate:
-    desc: Run database migrations
+    desc: "Apply database migrations"
     dir: api
     cmds:
       - uv run python manage.py migrate
 
   api:makemigrations:
-    run: once
-    dir: api/
+    desc: "Create new migrations from model changes"
+    dir: api
     cmds:
       - uv run python manage.py makemigrations
 
-  api:shell:
-    dir: api/
-    cmds:
-      - uv run python manage.py shell
-
-  api:runserver:
-    dir: api/
-    cmds:
-      - uv run python manage.py runserver 127.0.0.1:12319
-
-  client:start:
-    desc: Start client in preview mode
-    deps: [ client:build ]
-    dir: client/
-    cmds:
-      - bun run preview
-
-  client:build:
-    desc: Build client for production
-    dir: client/
-    cmds:
-      - bun run build
+# ============================================================================
+# CLIENT
+# ============================================================================
 
   client:dev:
-    desc: Start client in development mode
-    dir: client/
+    desc: "Run Tauri app in development mode"
+    dir: client
     cmds:
       - bun run tauri dev
 
-  dev:
-    deps: [ runners ]
+  client:build:
+    desc: "Build Tauri app for production"
+    dir: client
     cmds:
-      - defer: { task: teardown }
-      - bunx concurrently -n "API,CLIENT" -c "blue,magenta" "cd api && uv run python manage.py runserver 127.0.0.1:12319" "cd client && bunx tauri dev"
+      - bun run tauri build
 
-  install:api:
+  client:preview:
+    desc: "Preview production web build (no Tauri)"
+    deps: [client:build:web]
+    dir: client
     cmds:
-      - uv sync
+      - bun run preview
 
-  install:client:
-    dir: client/
+  client:build:web:
+    desc: "Build web assets only (no Tauri packaging)"
+    dir: client
     cmds:
-      - bun install
+      - bun run build
 
-  install:
-    desc: Install dependencies
-    run: once
-    cmds:
-      - bun install concurrently
-      - task: install:api
-      - task: install:client
+# ============================================================================
+# TESTING
+# ============================================================================
 
   test:
-    desc: Run backend tests
+    desc: "Run all backend tests"
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test -v2
+      - uv run python api/manage.py test agentx_ai.tests -v2
+
+  test:quick:
+    desc: "Run tests without model loading (faster)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest -v2
+
+# ============================================================================
+# DATABASE SERVICES (Docker)
+# ============================================================================
+
+  db:up:
+    desc: "Start database services (Neo4j, PostgreSQL, Redis)"
+    aliases: [runners]
+    deps: [check]
+    cmds:
+      - docker-compose up -d
+
+  db:down:
+    desc: "Stop database services"
+    aliases: [teardown]
+    cmds:
+      - docker-compose down
+
+  db:restart:
+    desc: "Restart database services"
+    cmds:
+      - docker-compose restart
+
+  db:logs:
+    desc: "Tail logs from all database containers"
+    cmds:
+      - docker-compose logs -f
+
+  db:init:
+    desc: "Initialize local data directories for databases"
+    cmds:
+      - echo "📁 Creating data directories..."
+      - mkdir -p data/neo4j/{data,logs,plugins}
+      - mkdir -p data/postgres
+      - mkdir -p data/redis
+      - mkdir -p backups
+      - echo "✅ Data directories ready in ./data/"
+
+  db:status:
+    desc: "Show status of database containers"
+    cmds:
+      - docker-compose ps
 
   db:clean:
-    desc: Remove all database data
-    prompt: Are you sure you want to remove all database data?
+    desc: "⚠️  Remove ALL database data (destructive!)"
+    prompt: "This will DELETE all database data. Are you sure?"
     cmds:
       - rm -rf data/neo4j/data/*
       - rm -rf data/neo4j/logs/*
       - rm -rf data/neo4j/plugins/*
       - rm -rf data/postgres/*
       - rm -rf data/redis/*
+      - echo "✅ Database data cleared"
+
+  db:shell:postgres:
+    desc: "Open PostgreSQL shell (psql)"
+    cmds:
+      - docker exec -it agent-postgres psql -U agent -d agent_memory
+
+  db:shell:redis:
+    desc: "Open Redis CLI"
+    cmds:
+      - docker exec -it agent-redis redis-cli
+
+  db:shell:neo4j:
+    desc: "Open Neo4j Cypher shell"
+    cmds:
+      - docker exec -it agent-neo4j cypher-shell -u neo4j -p "${NEO4J_PASSWORD:-agent_memory}"
+
+  db:backup:
+    desc: "Backup PostgreSQL database"
+    cmds:
+      - echo "💾 Creating backup..."
+      - mkdir -p backups
+      - docker exec agent-postgres pg_dump -U agent agent_memory > "backups/postgres_$(date +%Y%m%d_%H%M%S).sql"
+      - echo "✅ Backup saved to ./backups/"
+
+  db:restore:
+    desc: "Restore PostgreSQL from backup (BACKUP_FILE=path/to/file.sql)"
+    requires:
+      vars: [BACKUP_FILE]
+    cmds:
+      - echo "📥 Restoring from {{.BACKUP_FILE}}..."
+      - docker exec -i agent-postgres psql -U agent -d agent_memory < "{{.BACKUP_FILE}}"
+      - echo "✅ Restore complete!"
 
   db:migrate-volumes:
-    desc: Migrate all database data from Docker volumes to local bind mounts
+    desc: "Migrate data from Docker volumes to local ./data/"
     cmds:
       - task: db:migrate-volumes:neo4j
       - task: db:migrate-volumes:postgres
       - task: db:migrate-volumes:redis
 
   db:migrate-volumes:neo4j:
-    desc: Migrate Neo4j data from Docker volumes to local bind mounts
+    desc: "Migrate Neo4j volumes to local"
+    internal: true
     cmds:
-      - echo "Creating Neo4j data directory structure..."
       - mkdir -p data/neo4j/{data,logs,plugins}
-      - echo "Migrating Neo4j data from volumes..."
       - docker run --rm -v agentx-source_neo4j_data:/from -v "{{.ROOT_DIR}}/data/neo4j/data:/to" alpine sh -c "cp -av /from/. /to/"
       - docker run --rm -v agentx-source_neo4j_logs:/from -v "{{.ROOT_DIR}}/data/neo4j/logs:/to" alpine sh -c "cp -av /from/. /to/"
       - docker run --rm -v agentx-source_neo4j_plugins:/from -v "{{.ROOT_DIR}}/data/neo4j/plugins:/to" alpine sh -c "cp -av /from/. /to/"
-      - echo "✓ Neo4j migration complete! Data is now in ./data/neo4j/"
     status:
       - test -d data/neo4j/data/databases
 
   db:migrate-volumes:postgres:
-    desc: Migrate Postgres data from Docker volumes to local bind mounts
+    desc: "Migrate PostgreSQL volumes to local"
+    internal: true
     cmds:
-      - echo "Creating Postgres data directory..."
       - mkdir -p data/postgres
-      - echo "Migrating Postgres data from volumes..."
       - docker run --rm -v agentx-source_postgres_data:/from -v "{{.ROOT_DIR}}/data/postgres:/to" alpine sh -c "cp -av /from/. /to/"
-      - echo "✓ Postgres migration complete! Data is now in ./data/postgres/"
     status:
       - test -f data/postgres/PG_VERSION
 
   db:migrate-volumes:redis:
-    desc: Migrate Redis data from Docker volumes to local bind mounts
+    desc: "Migrate Redis volumes to local"
+    internal: true
     cmds:
-      - echo "Creating Redis data directory..."
       - mkdir -p data/redis
-      - echo "Migrating Redis data from volumes..."
       - docker run --rm -v agentx-source_redis_data:/from -v "{{.ROOT_DIR}}/data/redis:/to" alpine sh -c "cp -av /from/. /to/"
-      - echo "✓ Redis migration complete! Data is now in ./data/redis/"
     status:
       - test -f data/redis/appendonlydir/appendonly.aof.1.base.rdb || test -f data/redis/appendonly.aof
 
-  db:backup:postgres:
-    desc: Create a backup of Postgres database
-    cmds:
-      - echo "Creating Postgres backup..."
-      - mkdir -p backups
-      - docker exec agent-postgres pg_dump -U agent agent_memory > "backups/postgres_$(date +%Y%m%d_%H%M%S).sql"
-      - echo "✓ Backup created in ./backups/"
+# ============================================================================
+# MCP TOOLS
+# ============================================================================
 
-  db:restore:postgres:
-    desc: Restore Postgres database from backup (provide BACKUP_FILE=path/to/backup.sql)
+  mcp:servers:
+    desc: "List configured MCP servers"
+    aliases: [mcp:list-servers]
     cmds:
-      - echo "Restoring Postgres from {{.BACKUP_FILE}}..."
-      - docker exec -i agent-postgres psql -U agent -d agent_memory < "{{.BACKUP_FILE}}"
-      - echo "✓ Restore complete!"
-    requires:
-      vars: [ BACKUP_FILE ]
+      - curl -s http://127.0.0.1:12319/api/mcp/servers | python -m json.tool
 
-  db:shell:postgres:
-    desc: Open Postgres shell (psql)
+  mcp:tools:
+    desc: "List available MCP tools (requires API running)"
+    aliases: [mcp:list-tools]
     cmds:
-      - docker exec -it agent-postgres psql -U agent -d agent_memory
+      - curl -s http://127.0.0.1:12319/api/mcp/tools | python -m json.tool
 
-  db:shell:redis:
-    desc: Open Redis CLI
+  mcp:resources:
+    desc: "List available MCP resources (requires API running)"
     cmds:
-      - docker exec -it agent-redis redis-cli
+      - curl -s http://127.0.0.1:12319/api/mcp/resources | python -m json.tool
 
-  db:init:
-    desc: Initialize data directories for all databases
+  mcp:health:
+    desc: "Check API health including memory systems"
     cmds:
-      - echo "Creating data directory structure..."
-      - mkdir -p data/neo4j/{data,logs,plugins}
-      - mkdir -p data/postgres
-      - mkdir -p data/redis
-      - echo "✓ Data directories initialized in ./data/"
+      - curl -s "http://127.0.0.1:12319/api/health?include_memory=true" | python -m json.tool
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
 
   docs:serve:
-    desc: Serve documentation locally with live reload
+    desc: "Serve docs locally with live reload (port 8000)"
     cmds:
       - uv run mkdocs serve
 
   docs:build:
-    desc: Build static documentation site
+    desc: "Build static documentation site"
     cmds:
       - uv run mkdocs build
 
   docs:deploy:
-    desc: Deploy documentation to GitHub Pages
+    desc: "Deploy docs to GitHub Pages"
     cmds:
       - uv run mkdocs gh-deploy --force
 
-  docs:clean:
-    desc: Remove built documentation
+# ============================================================================
+# CLEANUP & RESET
+# ============================================================================
+
+  clean:
+    desc: "Remove build artifacts and caches"
     cmds:
+      - echo "🧹 Cleaning build artifacts..."
       - rm -rf site/
+      - rm -rf client/dist/
+      - rm -rf client/src-tauri/target/
+      - rm -rf api/__pycache__/
+      - rm -rf .pytest_cache/
+      - find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type f -name "*.pyc" -delete 2>/dev/null || true
+      - echo "✅ Clean complete!"
 
-  mcp:list-servers:
-    desc: List configured MCP servers
+  clean:all:
+    desc: "⚠️  Full reset: artifacts + node_modules + venv"
+    prompt: "This removes node_modules and .venv. Continue?"
     cmds:
-      - curl -s http://127.0.0.1:12319/api/mcp/servers | python -m json.tool
+      - task: clean
+      - rm -rf client/node_modules/
+      - rm -rf .venv/
+      - echo "✅ Full clean complete! Run 'task install' to reinstall."
 
-  mcp:list-tools:
-    desc: List available MCP tools (server must be running)
+  clean:appdata:
+    desc: "⚠️  Remove AgentX user data (platform-specific)"
+    prompt: "This removes your AgentX settings and data. Continue?"
+    platforms: [linux, darwin]
     cmds:
-      - curl -s http://127.0.0.1:12319/api/mcp/tools | python -m json.tool
+      - |
+        {{if eq .OS "linux"}}
+        echo "🗑️  Removing Linux app data..."
+        rm -rf ~/.local/share/agentx/
+        rm -rf ~/.local/share/com.agentx.app/
+        rm -rf ~/.config/agentx/
+        rm -rf ~/.config/com.agentx.app/
+        {{else if eq .OS "macos"}}
+        echo "🗑️  Removing macOS app data..."
+        rm -rf ~/Library/Application\ Support/agentx/
+        rm -rf ~/Library/Application\ Support/com.agentx.app/
+        rm -rf ~/Library/Preferences/com.agentx.app.plist
+        rm -rf ~/Library/Caches/com.agentx.app/
+        {{end}}
+        echo "✅ App data removed!"
+
+  clean:appdata:windows:
+    desc: "⚠️  Remove AgentX user data (Windows)"
+    platforms: [windows]
+    cmds:
+      - echo "🗑️  Removing Windows app data..."
+      - cmd /c "rmdir /s /q %APPDATA%\\agentx 2>nul"
+      - cmd /c "rmdir /s /q %APPDATA%\\com.agentx.app 2>nul"
+      - cmd /c "rmdir /s /q %LOCALAPPDATA%\\agentx 2>nul"
+      - cmd /c "rmdir /s /q %LOCALAPPDATA%\\com.agentx.app 2>nul"
+      - echo "✅ App data removed!"
+
+  clean:docker:
+    desc: "⚠️  Remove Docker volumes (keeps local ./data/)"
+    prompt: "Remove Docker volumes for this project?"
+    cmds:
+      - docker-compose down -v
+      - echo "✅ Docker volumes removed!"
+
+  reset:
+    desc: "⚠️  Complete reset: stop services, clean everything"
+    prompt: "This performs a FULL reset. All data will be lost. Continue?"
+    cmds:
+      - task: db:down
+      - task: clean:all
+      - task: db:clean
+      - echo ""
+      - echo "🔄 Reset complete! Run 'task setup' to start fresh."
+
+# ============================================================================
+# LINTING & FORMATTING
+# ============================================================================
+
+  lint:
+    desc: "Run all linters"
+    cmds:
+      - task: lint:python
+      - task: lint:client
+
+  lint:python:
+    desc: "Lint Python code with ruff"
+    cmds:
+      - uv run ruff check api/
+
+  lint:python:fix:
+    desc: "Auto-fix Python lint issues"
+    cmds:
+      - uv run ruff check --fix api/
+
+  lint:client:
+    desc: "Lint TypeScript/React code"
+    dir: client
+    cmds:
+      - bun run lint 2>/dev/null || echo "ℹ️  No lint script configured in client"
+
+  format:
+    desc: "Format all code"
+    cmds:
+      - task: format:python
+      - task: format:client
+
+  format:python:
+    desc: "Format Python code with ruff"
+    cmds:
+      - uv run ruff format api/
+
+  format:client:
+    desc: "Format TypeScript/React code with prettier"
+    dir: client
+    cmds:
+      - bunx prettier --write "src/**/*.{ts,tsx,css}" 2>/dev/null || echo "ℹ️  Prettier not configured"
+
+# ============================================================================
+# MODEL MANAGEMENT
+# ============================================================================
+
+  models:download:
+    desc: "Pre-download AI models (translation, embeddings)"
+    cmds:
+      - echo "📥 Downloading translation models..."
+      - uv run python -c "
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+        print('Downloading NLLB-200 translation model...')
+        AutoModelForSeq2SeqLM.from_pretrained('facebook/nllb-200-distilled-600M')
+        AutoTokenizer.from_pretrained('facebook/nllb-200-distilled-600M')
+        print('Downloading language detection model...')
+        pipeline('text-classification', model='eleldar/language-detection')
+        print('✅ Models downloaded!')
+        "
+
+  models:cache:
+    desc: "Show HuggingFace cache location and size"
+    cmds:
+      - |
+        CACHE_DIR="${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}"
+        echo "📁 HuggingFace cache: $CACHE_DIR"
+        if [ -d "$CACHE_DIR" ]; then
+          SIZE=$(du -sh "$CACHE_DIR" 2>/dev/null | cut -f1)
+          echo "📊 Cache size: $SIZE"
+          echo ""
+          echo "Models cached:"
+          ls -1 "$CACHE_DIR/hub" 2>/dev/null | grep "models--" | sed 's/models--/  - /' | sed 's/--/\//g' || echo "  (none)"
+        else
+          echo "  (cache directory not found)"
+        fi
+
+  models:clear:
+    desc: "⚠️  Clear HuggingFace model cache"
+    prompt: "This removes all cached models. They will re-download on next use. Continue?"
+    cmds:
+      - |
+        CACHE_DIR="${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}"
+        rm -rf "$CACHE_DIR/hub"
+        echo "✅ Model cache cleared!"
+
+# ============================================================================
+# LOGS & DEBUGGING
+# ============================================================================
+
+  logs:
+    desc: "Tail all logs (Docker + API)"
+    cmds:
+      - bunx concurrently -n "DOCKER,API" -c "gray,cyan" 
+          "docker-compose logs -f --tail=50" 
+          "tail -f api/*.log 2>/dev/null || echo 'No API logs found'"
+
+  logs:docker:
+    desc: "Tail Docker container logs"
+    cmds:
+      - docker-compose logs -f --tail=100
+
+  logs:api:
+    desc: "Tail Django API logs"
+    cmds:
+      - tail -f api/*.log 2>/dev/null || echo "No log files. Logs go to stdout in dev mode."
+
+  debug:env:
+    desc: "Show environment configuration"
+    cmds:
+      - echo "🔧 Environment Configuration"
+      - echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - echo ""
+      - 'echo "Platform: {{.OS}}"'
+      - 'echo "Python:   $(python --version 2>&1)"'
+      - 'echo "Node:     $(node --version 2>&1)"'
+      - 'echo "Bun:      $(bun --version 2>&1)"'
+      - 'echo "Docker:   $(docker --version 2>&1)"'
+      - 'echo "Task:     $(task --version 2>&1)"'
+      - echo ""
+      - echo "📁 Key Paths:"
+      - 'echo "  Project root: $(pwd)"'
+      - 'echo "  Python venv:  $(which python)"'
+      - 'echo "  uv cache:     ${UV_CACHE_DIR:-~/.cache/uv}"'
+      - 'echo "  HF cache:     ${HF_HOME:-~/.cache/huggingface}"'
+      - echo ""
+      - echo "🔑 API Keys Configured:"
+      - |
+        [ -n "$OPENAI_API_KEY" ] && echo "  ✓ OPENAI_API_KEY" || echo "  ✗ OPENAI_API_KEY"
+        [ -n "$ANTHROPIC_API_KEY" ] && echo "  ✓ ANTHROPIC_API_KEY" || echo "  ✗ ANTHROPIC_API_KEY"
+        [ -n "$GITHUB_TOKEN" ] && echo "  ✓ GITHUB_TOKEN" || echo "  ✗ GITHUB_TOKEN"
+
+  debug:ports:
+    desc: "Check if required ports are available"
+    cmds:
+      - echo "🔌 Port Status"
+      - echo "━━━━━━━━━━━━━━"
+      - |
+        check_port() {
+          if lsof -i ":$1" >/dev/null 2>&1; then
+            PROC=$(lsof -i ":$1" -t 2>/dev/null | head -1)
+            NAME=$(ps -p "$PROC" -o comm= 2>/dev/null)
+            echo "  $1: IN USE by $NAME (PID $PROC)"
+          else
+            echo "  $1: available ✓"
+          fi
+        }
+        echo "API & Client:"
+        check_port 12319
+        check_port 1420
+        check_port 1421
+        echo ""
+        echo "Databases:"
+        check_port 7687
+        check_port 7474
+        check_port 5432
+        check_port 6379
+
+  debug:api:
+    desc: "Test API endpoints"
+    cmds:
+      - echo "🧪 Testing API Endpoints"
+      - echo "━━━━━━━━━━━━━━━━━━━━━━━━"
+      - echo ""
+      - echo "GET /api/index"
+      - curl -s http://127.0.0.1:12319/api/index | python -m json.tool 2>/dev/null || echo "  ❌ Failed (is API running?)"
+      - echo ""
+      - echo "GET /api/health"
+      - curl -s http://127.0.0.1:12319/api/health | python -m json.tool 2>/dev/null || echo "  ❌ Failed"
+      - echo ""
+      - echo "GET /api/providers"
+      - curl -s http://127.0.0.1:12319/api/providers | python -m json.tool 2>/dev/null || echo "  ❌ Failed"
+
+# ============================================================================
+# RELEASE & BUILD
+# ============================================================================
+
+  release:build:
+    desc: "Build release binaries for current platform"
+    cmds:
+      - echo "🔨 Building release..."
+      - task: client:build
+      - echo ""
+      - echo "✅ Build complete! Binaries in client/src-tauri/target/release/"
+      - ls -lh client/src-tauri/target/release/bundle/*/* 2>/dev/null || echo "(check target/release for output)"
+
+  release:build:debug:
+    desc: "Build debug binary (faster, larger)"
+    dir: client
+    cmds:
+      - bun run tauri build --debug
+
+  release:check:
+    desc: "Verify release readiness"
+    cmds:
+      - echo "🔍 Release Checklist"
+      - echo "━━━━━━━━━━━━━━━━━━━━"
+      - |
+        ISSUES=""
+        
+        # Check for uncommitted changes
+        if [ -n "$(git status --porcelain)" ]; then
+          ISSUES="${ISSUES}\n  ⚠️  Uncommitted changes detected"
+        else
+          echo "  ✓ Git working tree clean"
+        fi
+        
+        # Check tests pass
+        echo "  ⏳ Running tests..."
+        if uv run python api/manage.py test agentx_ai.tests --verbosity=0 2>/dev/null; then
+          echo "  ✓ Tests passing"
+        else
+          ISSUES="${ISSUES}\n  ❌ Tests failing"
+        fi
+        
+        # Check TypeScript compiles
+        echo "  ⏳ Checking TypeScript..."
+        if (cd client && bun run build 2>/dev/null); then
+          echo "  ✓ TypeScript compiles"
+        else
+          ISSUES="${ISSUES}\n  ❌ TypeScript errors"
+        fi
+        
+        if [ -n "$ISSUES" ]; then
+          echo ""
+          echo "Issues found:"
+          echo -e "$ISSUES"
+          exit 1
+        else
+          echo ""
+          echo "✅ Ready for release!"
+        fi
+
+# ============================================================================
+# QUICK SHORTCUTS
+# ============================================================================
+
+  s:
+    desc: "Shortcut: task setup"
+    cmds:
+      - task: setup
+
+  d:
+    desc: "Shortcut: task dev"
+    cmds:
+      - task: dev
+
+  t:
+    desc: "Shortcut: task test"
+    cmds:
+      - task: test
+
+  b:
+    desc: "Shortcut: task release:build"
+    cmds:
+      - task: release:build
+
+  c:
+    desc: "Shortcut: task check"
+    cmds:
+      - task: check
