@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework  
 **Status**: Pre-prototype  
-**Last Updated**: 2026-01-21
+**Last Updated**: 2026-01-31
 
 ---
 
@@ -417,10 +417,11 @@ AgentX is an AI agent platform that:
 
 ---
 
-## Phase 10: Testing
+## Phase 10: Testing (Core)
 
-> **Priority**: MEDIUM  
+> **Priority**: MEDIUM
 > **Goal**: Ensure reliability through automated testing
+> **Note**: Memory system tests deferred to Phase 11 (requires functional memory)
 
 ### 10.1 Backend Tests
 - [ ] Fix and unskip `test_language_detect`
@@ -428,10 +429,6 @@ AgentX is an AI agent platform that:
   - [ ] Test multiple language pairs
   - [ ] Test error handling (invalid language codes)
   - [ ] Test long text handling
-- [ ] Add memory system tests:
-  - [ ] Test fact storage and retrieval
-  - [ ] Test goal lifecycle
-  - [ ] Test memory relevance ranking
 - [ ] Add MCP tool tests:
   - [ ] Test each tool with valid inputs
   - [ ] Test error handling
@@ -446,7 +443,6 @@ AgentX is an AI agent platform that:
 
 ### 10.2 Integration Tests
 - [ ] Test full translation flow (client → API → model → response)
-- [ ] Test memory persistence across restarts
 - [ ] Test Docker service dependencies
 
 ### 10.3 Client Tests (Optional for Prototype)
@@ -455,12 +451,236 @@ AgentX is an AI agent platform that:
 
 ---
 
-## Phase 11: Documentation
+## Phase 11: Memory System Activation
 
-> **Priority**: LOW  
+> **Priority**: HIGH
+> **Goal**: Make the memory system functional, auditable, and extensible
+> **Depends on**: Docker services (Neo4j, PostgreSQL, Redis) running
+> **Design Principles**:
+> - **Extensibility**: Easy to add new memory types, stores, or extraction methods without backwards-compatibility constraints
+> - **Transparency**: All memory operations traceable per session/conversation based on logging settings
+> - **Auditability**: Full query trace and operation audit trail in PostgreSQL
+
+### Current State Assessment
+
+The memory system is **architecturally complete but entirely disconnected**:
+- `Agent._memory = None` is never initialized — zero code paths call `store_turn()`, `remember()`, etc.
+- `SessionManager` uses in-process Python dicts (lost on restart) as the de facto memory
+- Neo4j vector indexes referenced in code **do not exist** (no initialization script)
+- PostgreSQL tables defined in `queries/postgres_builder.sql` but **not created** (Docker init-only)
+- Entity/fact/relationship extraction functions are **stubs returning `[]`**
+- Semantic memory has **no tenant isolation** (users can retrieve each other's data)
+- `ContextManager.inject_memory()` exists but is **never called**
+- Zero tests for any memory component
+
+### 11.1 Database Schema Initialization
+
+> Bootstrap all three databases so memory operations don't crash at runtime
+
+- [ ] Create Neo4j initialization script (`scripts/init_neo4j.cypher` or management command):
+  - [ ] Create vector indexes: `turn_embeddings`, `fact_embeddings`, `entity_embeddings`, `strategy_embeddings`
+  - [ ] Create uniqueness constraints on node IDs (`User.id`, `Conversation.id`, `Turn.id`, `Entity.id`, `Fact.id`)
+  - [ ] Create composite indexes for common query patterns (user_id + timestamp, conversation_id + turn_index)
+  - [ ] Verify APOC plugin is available (required by `semantic.py` for `apoc.create.addLabels()`)
+- [ ] Create PostgreSQL initialization (Django management command or migration):
+  - [ ] Enable `pgvector` extension (`CREATE EXTENSION IF NOT EXISTS vector`)
+  - [ ] Create `conversation_logs` table with BRIN index on timestamp, ivfflat on embedding
+  - [ ] Create `tool_invocations` table with indexes on conversation_id, tool_name
+  - [ ] Create `memory_timeline` table (currently defined but unused — wire it in)
+  - [ ] Create `user_profiles` table (currently defined but unused — wire it in)
+  - [ ] Create `memory_audit_log` table for query tracing (new — see 11.4)
+- [ ] Verify Redis connectivity and key structure:
+  - [ ] Test working memory key patterns (`working:{user_id}:{conversation_id}:*`)
+  - [ ] Test consolidation job tracking keys
+  - [ ] Confirm TTL behavior for session-scoped data
+- [ ] Create `task db:init:schemas` Taskfile command to run all initialization
+- [ ] Add schema version tracking (simple version table or Neo4j property) for future migrations
+
+### 11.2 Agent Core Integration
+
+> Wire memory into the agent lifecycle so it's actually used
+
+- [ ] Initialize `AgentMemory` in `Agent` class (`core.py`):
+  - [ ] Implement `_memory` property accessor (lazy-load via `get_agent_memory()`)
+  - [ ] Respect `AgentConfig.enable_memory` flag
+  - [ ] Handle graceful degradation if databases are unavailable (agent works without memory)
+- [ ] Wire `store_turn()` into chat/run flows:
+  - [ ] Create `Turn` objects from `Message` objects in `Agent.chat()` (core.py ~line 330)
+  - [ ] Store turns after each user message and assistant response
+  - [ ] Include metadata: model used, token count, latency
+- [ ] Wire `remember()` into context injection:
+  - [ ] Call `memory.remember(query)` before building LLM context in `Agent.chat()`
+  - [ ] Feed retrieved `MemoryBundle` into `ContextManager.inject_memory()`
+  - [ ] Make retrieval configurable: top_k, time_window, which memory types to include
+- [ ] Wire `record_tool_usage()` into tool execution:
+  - [ ] After each MCP tool call, record invocation in procedural memory
+  - [ ] Capture: tool_name, input, output, success, latency_ms, error_message
+- [ ] Wire `learn_fact()` / `upsert_entity()` into extraction pipeline (see 11.3)
+- [ ] Call `memory.reflect()` after task completion in `Agent.run()` to trigger consolidation
+- [ ] Wire `add_goal()` / `complete_goal()` into task planner lifecycle
+
+### 11.3 Extraction Pipeline
+
+> Replace stubs with real entity/fact extraction so consolidation produces actual data
+
+- [ ] Implement entity extraction (`extraction/entities.py`):
+  - [ ] Option A: LLM-based NER (use configured model provider with structured output)
+  - [ ] Option B: spaCy NER (lightweight, offline, no API cost)
+  - [ ] Extract: person names, organizations, locations, concepts, technical terms
+  - [ ] Return `Entity` objects with type, name, description, confidence
+  - [ ] Make extraction provider configurable (LLM vs spaCy vs custom)
+- [ ] Implement fact extraction (`extraction/facts.py`):
+  - [ ] LLM-based structured extraction (JSON schema output)
+  - [ ] Extract: claims, preferences, relationships, stated goals
+  - [ ] Return `Fact` objects with claim, source, confidence, subject/object entities
+  - [ ] Include source attribution (which turn the fact came from)
+- [ ] Implement relationship extraction (`extraction/relationships.py`):
+  - [ ] Extract entity-to-entity relationships from conversation context
+  - [ ] Support: works_at, knows, uses, prefers, related_to, etc.
+  - [ ] Return relationship triples (source_entity, relation_type, target_entity)
+- [ ] Wire extraction into consolidation jobs:
+  - [ ] `consolidate_episodic_to_semantic()` already calls extractors — verify it works with real output
+  - [ ] Add error handling for extraction failures (don't block consolidation)
+  - [ ] Add extraction metrics logging (entities/facts per consolidation run)
+
+### 11.4 Auditability & Query Tracing
+
+> Make all memory operations transparent and traceable per session
+
+- [ ] Create `MemoryAuditLogger` class:
+  - [ ] Log all memory write operations (store, update, delete) with:
+    - Operation type, timestamp, user_id, conversation_id, session_id
+    - Affected node/record IDs
+    - Payload summary (truncated content hash, not full content)
+  - [ ] Log all memory read operations (retrieve, search, recall) with:
+    - Query text, parameters, result count
+    - Retrieval strategy used (episodic/semantic/procedural)
+    - Latency per sub-query
+  - [ ] Configurable log levels:
+    - `off`: No audit logging
+    - `writes`: Only log mutations
+    - `reads`: Log reads and writes
+    - `verbose`: Full query traces with payloads
+- [ ] Create `memory_audit_log` PostgreSQL table:
+  - [ ] Columns: id, timestamp, operation, memory_type, user_id, conversation_id, session_id, query_hash, result_count, latency_ms, metadata (JSONB)
+  - [ ] BRIN index on timestamp for time-range queries
+  - [ ] Btree indexes on user_id, conversation_id, operation
+- [ ] Add audit logging config to `MemoryConfig` (pydantic-settings):
+  - [ ] `audit_log_level: str = "writes"` (off | writes | reads | verbose)
+  - [ ] `audit_retention_days: int = 30`
+- [ ] Instrument existing memory operations:
+  - [ ] `episodic.py`: Wrap store/retrieve with audit calls
+  - [ ] `semantic.py`: Wrap entity/fact operations with audit calls
+  - [ ] `procedural.py`: Wrap tool recording and strategy retrieval
+  - [ ] `working.py`: Wrap session operations (reads logging optional due to volume)
+  - [ ] `retrieval.py`: Log composite retrieval queries with per-strategy breakdown
+- [ ] Add audit log cleanup to consolidation worker (respect retention_days)
+- [ ] Add `/api/memory/audit` endpoint for querying audit logs (admin only, future)
+
+### 11.5 Tenant Isolation & Data Safety
+
+> Prevent cross-user data leakage in multi-user scenarios
+
+- [ ] Add `user_id` filtering to all semantic memory queries (`semantic.py`):
+  - [ ] `search_facts()`: Filter by user_id in Cypher WHERE clause
+  - [ ] `search_entities()`: Filter by user_id or scope entities to user subgraph
+  - [ ] `get_entity_graph()`: Only traverse within user's subgraph
+- [ ] Add `user_id` property to all Neo4j nodes (Entity, Fact, Strategy):
+  - [ ] Include in MERGE/CREATE operations
+  - [ ] Add to vector search post-filtering
+- [ ] Add user_id to procedural memory queries:
+  - [ ] `find_strategies()`: Filter by user_id
+  - [ ] `get_tool_stats()`: Scope to user
+- [ ] Add user_id validation at `AgentMemory` interface level:
+  - [ ] Validate user_id is set before any write operation
+  - [ ] Reject empty/null user_id with clear error
+
+### 11.6 Extensibility Infrastructure
+
+> Make the memory system easy to extend without backwards-compatibility burden
+
+- [ ] Define clear extension points with abstract base classes:
+  - [ ] `MemoryStore` ABC: `store()`, `retrieve()`, `delete()`, `health_check()`
+  - [ ] `Extractor` ABC: `extract(text, context) -> list[T]`
+  - [ ] `Embedder` ABC: `embed(text) -> list[float]`, `embed_batch(texts) -> list[list[float]]`
+  - [ ] `Reranker` ABC: `rerank(query, results) -> list[ScoredResult]`
+- [ ] Make retrieval strategy weights configurable per-request (not just global config):
+  - [ ] Allow `remember(query, strategy_weights={...})` override
+  - [ ] Support disabling specific memory types per query
+- [ ] Add event hooks for memory lifecycle:
+  - [ ] `on_turn_stored(turn)` — for custom post-processing
+  - [ ] `on_fact_learned(fact)` — for triggering downstream updates
+  - [ ] `on_entity_created(entity)` — for external integrations
+  - [ ] `on_retrieval_complete(query, results)` — for analytics/caching
+  - [ ] Implement as simple callback registry (no framework dependency)
+- [ ] Document extension patterns:
+  - [ ] How to add a new memory store type
+  - [ ] How to add a new extraction method
+  - [ ] How to add a custom reranker
+  - [ ] How to hook into memory events
+
+### 11.7 Retrieval Quality
+
+> Improve retrieval beyond the current basic implementation
+
+- [ ] Fix reranking (`retrieval.py`):
+  - [ ] Replace conversation-diversity-only filter with proper scoring
+  - [ ] Add cross-encoder reranking option (configurable, off by default)
+  - [ ] Add relevance score normalization across memory types
+- [ ] Add retrieval caching:
+  - [ ] Cache recent retrieval results in Redis with short TTL (~60s)
+  - [ ] Invalidate on new writes to same user/conversation scope
+- [ ] Add retrieval metrics:
+  - [ ] Track hit rates per memory type
+  - [ ] Track average latency per retrieval strategy
+  - [ ] Log to audit table (when audit level >= reads)
+
+### 11.8 Memory System Tests
+
+> Tests deferred from Phase 10 — requires functional memory (11.1-11.5)
+
+- [ ] Unit tests (mock databases):
+  - [ ] Test `AgentMemory` interface: store_turn, learn_fact, upsert_entity, add_goal
+  - [ ] Test `MemoryRetriever` with mocked memory stores
+  - [ ] Test extraction functions (entity, fact, relationship)
+  - [ ] Test decay calculations and consolidation priority scoring
+  - [ ] Test audit logger writes correct records
+  - [ ] Test tenant isolation (user A cannot read user B's data)
+- [ ] Integration tests (require Docker services):
+  - [ ] Test full cycle: store turn → extract → consolidate → retrieve
+  - [ ] Test memory persistence across API server restarts
+  - [ ] Test working memory TTL expiration
+  - [ ] Test Neo4j vector search returns relevant results
+  - [ ] Test PostgreSQL audit log captures operations
+  - [ ] Test consolidation worker runs jobs on schedule
+- [ ] Agent integration tests:
+  - [ ] Test `/api/agent/chat` stores turns in memory
+  - [ ] Test `/api/agent/chat` retrieves relevant context from memory
+  - [ ] Test `/api/agent/run` records tool usage in procedural memory
+  - [ ] Test graceful degradation when databases are down
+
+### 11.9 Consolidation & Background Worker
+
+> Verify and harden the background processing pipeline
+
+- [ ] Test consolidation worker end-to-end:
+  - [ ] Verify `consolidate_episodic_to_semantic()` with real extraction output
+  - [ ] Verify `detect_patterns()` correctly identifies successful strategies
+  - [ ] Verify `apply_memory_decay()` reduces salience scores over time
+  - [ ] Verify `cleanup_old_memories()` archives/removes appropriately
+- [ ] Add Taskfile command: `task memory:worker` to start consolidation worker
+- [ ] Add health monitoring for worker (Redis heartbeat)
+- [ ] Add configurable job intervals via `MemoryConfig`
+- [ ] Handle worker crash recovery (detect stale job locks, re-run)
+
+---
+
+## Phase 12: Documentation
+
+> **Priority**: LOW
 > **Goal**: Comprehensive documentation for users and developers
 
-### 11.1 User Documentation
+### 12.1 User Documentation
 - [ ] Update README.md with:
   - Quick start guide
   - Feature overview
@@ -468,13 +688,14 @@ AgentX is an AI agent platform that:
 - [ ] Add installation guide for each platform
 - [ ] Document MCP setup for AI assistants
 
-### 11.2 Developer Documentation  
+### 12.2 Developer Documentation
 - [ ] Update CLAUDE.md with MCP details
 - [ ] Add API documentation (auto-generate from OpenAPI)
 - [ ] Add architecture diagrams
 - [ ] Document contribution guidelines
+- [ ] Document memory system extension patterns (from 11.6)
 
-### 11.3 Inline Documentation
+### 12.3 Inline Documentation
 - [ ] Add docstrings to all public functions
 - [ ] Add type hints throughout Python code
 - [ ] Document complex algorithms/flows
@@ -493,6 +714,10 @@ AgentX is an AI agent platform that:
 - [ ] Voice input/output
 - [ ] Mobile companion app
 - [ ] Offline mode with cached models
+- [ ] Cross-encoder reranking model for retrieval quality
+- [ ] Memory export/import (JSON/SQLite backup)
+- [ ] Memory visualization in client UI (knowledge graph browser)
+- [ ] Streaming memory retrieval during chat (progressive context injection)
 
 ---
 
@@ -509,8 +734,9 @@ AgentX is an AI agent platform that:
 | Phase 7: Agent Core | ✅ Complete | 100% |
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
-| Phase 10: Testing | Not Started | 0% |
-| Phase 11: Documentation | Not Started | 0% |
+| Phase 10: Testing (Core) | Not Started | 0% |
+| Phase 11: Memory System | Not Started | 0% |
+| Phase 12: Documentation | Not Started | 0% |
 
 ---
 
@@ -524,15 +750,24 @@ AgentX is an AI agent platform that:
 | 2026-01-21 | Flexible reasoning | Support CoT, ToT, ReAct, Reflection patterns |
 | 2026-01-21 | Keep agent_memory architecture | Well-designed, integrates with reasoning |
 | 2026-01-21 | Use Todo.md for tracking | Simple, version controlled |
+| 2026-01-31 | Extensible memory over backwards-compat | Memory system prioritizes easy extension; no backwards-compatibility shims |
+| 2026-01-31 | Audit logging in PostgreSQL | All memory operations traceable per session with configurable verbosity |
+| 2026-01-31 | Tenant isolation required | Semantic memory must filter by user_id to prevent cross-user data leakage |
+| 2026-01-31 | Extraction via LLM preferred | Entity/fact extraction uses model providers for quality; spaCy as lightweight fallback |
+| 2026-01-31 | Memory tests deferred to Phase 11 | Cannot test memory until schemas exist and integration is wired |
 
 ### Blockers
-_None currently_
+- **Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work
+- **Extraction pipeline blocked on**: Deciding between LLM-based vs spaCy-based NER (see 11.3)
 
 ### Questions to Resolve
-- [x] Which LLM providers to prioritize? (OpenAI / Anthropic / Ollama / Together) → OpenAI, Anthropic, Ollama implemented
-- [ ] Should agent memory require authentication?
+- [x] Which LLM providers to prioritize? (OpenAI / Anthropic / Ollama / Together) → OpenAI, Anthropic, Ollama implemented; LM-Studio preferred
+- [ ] Should agent memory require authentication? 
 - [ ] Target platforms for distribution? (Windows / macOS / Linux)
-- [ ] Reasoning trace storage format? (JSON / SQLite / Neo4j)
+- [x] Reasoning trace storage format? (JSON / SQLite / Neo4j) → Neo4j graph + PostgreSQL audit log
+- [ ] Entity extraction method: LLM-based (higher quality, API cost) vs spaCy (offline, faster, less accurate)?
+- [ ] Audit log retention policy: 30 days default — should it be configurable per deployment?
+- [ ] Should memory retrieval be async (non-blocking) or sync (blocking) in the chat flow?
 
 ---
 
