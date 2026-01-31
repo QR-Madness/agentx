@@ -126,7 +126,7 @@ tasks:
     desc: "Install all dependencies (API + Client)"
     cmds:
       - echo "📦 Installing dependencies..."
-      - bun install concurrently
+      - bun install -g concurrently
       - task: install:api
       - task: install:client
       - echo "✅ All dependencies installed!"
@@ -448,6 +448,12 @@ tasks:
     cmds:
       - docker-compose down -v
       - echo "✅ Docker volumes removed!"
+  
+  remove:concurrently:
+    prompt: "Remove globally installed 'concurrently' package?"
+    desc: "Remove globally installed 'concurrently' package"
+    cmds:
+      - bun uninstall -g concurrently || echo "ℹ️  'concurrently' not found globally."
 
   reset:
     desc: "⚠️  Complete reset: stop services, clean everything"

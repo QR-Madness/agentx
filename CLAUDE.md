@@ -5,398 +5,158 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 AgentX is an AI Agent Platform combining:
-- **Backend**: Django REST API providing AI-powered language translation, detection, and agent services
-- **Frontend**: Tauri desktop application with React/TypeScript UI and Vite build system
-- **AI Features**: Multi-level language detection/translation, MCP client integration, drafting models, reasoning framework
-- **Memory System**: Persistent agent memory with Neo4j, PostgreSQL (pgvector), and Redis
+- **Backend**: Django REST API (`api/`) on port 12319 — translation, agent memory, MCP client, model providers, drafting, reasoning
+- **Frontend**: Tauri v2 desktop app (`client/`) with React 19, TypeScript, Vite
+- **Data Layer**: Neo4j (graphs), PostgreSQL + pgvector (vectors), Redis (cache) — all via Docker
+- **Ignore**: `client-old/` contains a previous Electron implementation and should not be modified
 
 ## Architecture
 
-### System Overview
-
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         AgentX Desktop App                          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Tauri Client (React 19 + Vite)     │    Django API (port 12319)   │
-│  - Dashboard, Translation, Chat     │    - Translation Kit          │
-│  - Tools tabs                       │    - Agent Memory System      │
-│                                     │    - MCP Client (planned)     │
-├─────────────────────────────────────────────────────────────────────┤
-│                           Data Layer                                 │
-│   Neo4j (graphs)  │  PostgreSQL (pgvector)  │  Redis (cache)        │
-└─────────────────────────────────────────────────────────────────────┘
+Tauri Client (React 19 + Vite)          Django API (port 12319)
+  TabBar → Dashboard, Agent,              Agent Core (planner, session, context)
+           Translation, Chat,             ├── MCP Client (consume external tool servers)
+           Tools, Settings                ├── Reasoning (CoT, ToT, ReAct, Reflection)
+                                          ├── Drafting (speculative, pipeline, candidate)
+     ↕ HTTP                               ├── Model Providers (OpenAI, Anthropic, Ollama)
+                                          ├── Translation Kit (NLLB-200, 200+ languages)
+                                          └── Agent Memory (episodic, semantic, procedural, working)
+                                                ↕
+                                          Neo4j │ PostgreSQL (pgvector) │ Redis
 ```
 
-1. **API Layer** (`api/` directory)
-   - Django 5.2.8 application running on port 12319
-   - Main app: `agentx_ai` with endpoints for translation, language detection, and health
-   - Agent memory system with episodic, semantic, procedural, and working memory
-   - MCP client for consuming external tool servers (planned)
-   - Drafting and reasoning frameworks for multi-model AI workflows (planned)
+### Key Backend Modules (`api/agentx_ai/`)
 
-2. **Client Layer** (`client/` directory)
-   - Tauri v2 desktop app with Rust backend
-   - React 19 with TypeScript for UI
-   - Vite build system for fast development
-   - Tab-based navigation: Dashboard, Translation, Chat, Tools
-   - Communicates with Django API
+- `kit/translation.py` — `TranslationKit` (NLLB-200 translation) and `LanguageLexicon` (ISO 639 code bridging between Level I detection codes and Level II translation codes)
+- `kit/agent_memory/` — Full memory system with lazy-loaded connections (`interface.py` → `connections.py` → memory implementations)
+- `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE). Configure via `mcp_servers.json`
+- `providers/` — Abstract `ModelProvider` with OpenAI, Anthropic, Ollama implementations. Models defined in `models.yaml`
+- `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
+- `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
+- `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition, `SessionManager` for conversations
 
-3. **Data Layer** (Docker services via `docker-compose.yml`)
-   - Neo4j: Graph database for knowledge graphs and relationships
-   - PostgreSQL + pgvector: Relational storage with vector search
-   - Redis: Caching and working memory
-   - Start with: `task runners` (or `docker-compose up -d`)
+### Key Client Patterns (`client/src/`)
 
-**Note**: The `client-old/` directory contains the previous Electron implementation and can be ignored.
-
-### Translation System Architecture
-
-The translation system implements a two-level approach:
-
-**Level I**: Fast language detection (~20 languages)
-- Model: `eleldar/language-detection`
-- Used for: Initial language detection with confidence scores
-- Returns ISO 639-1 codes (e.g., "en", "fr")
-
-**Level II**: Comprehensive translation (200+ languages)
-- Model: `facebook/nllb-200-distilled-600M`
-- Used for: Multi-language translation via NLLB-200 architecture
-- Uses extended ISO 639 codes with script info (e.g., "eng_Latn", "fra_Latn")
-
-The `LanguageLexicon` class bridges Level I and Level II by converting between ISO 639 code formats using the `python-iso639` library.
-
-### Key Components
-
-**API Kit System** (`api/agentx_ai/kit/`)
-- `translation.py`: Contains `TranslationKit` and `LanguageLexicon` classes
-- `memory_utils.py`: Lazy-loading memory initialization and health checks
-- `conversation.py`: Placeholder for conversation management
-- `agent_memory/`: Full memory system package
-  - `interface.py`: Main `AgentMemory` class
-  - `connections.py`: Neo4j, PostgreSQL, Redis connection managers (lazy-loaded)
-  - `models.py`: Pydantic models for Turn, Entity, Fact, Goal, Strategy
-  - `memory/`: Episodic, semantic, procedural, working memory implementations
-
-**MCP Client** (`api/agentx_ai/mcp/`)
-- `client.py`: `MCPClientManager` for managing server connections
-- `server_registry.py`: `ServerRegistry` and `ServerConfig` for configuration
-- `tool_executor.py`: `ToolExecutor` for executing tools on connected servers
-- `transports/`: Transport implementations (stdio, SSE)
-- Configure servers in `mcp_servers.json` (see `mcp_servers.json.example`)
-
-**Model Providers** (`api/agentx_ai/providers/`)
-- `base.py`: Abstract `ModelProvider` interface with `Message`, `CompletionResult`, `StreamChunk`
-- `openai_provider.py`: OpenAI API provider (GPT-4, GPT-4-turbo, GPT-3.5)
-- `anthropic_provider.py`: Anthropic API provider (Claude 3 Opus/Sonnet/Haiku)
-- `ollama_provider.py`: Ollama provider for local models (Llama, Mistral, etc.)
-- `registry.py`: `ProviderRegistry` for managing providers and model configurations
-- `models.yaml`: Model definitions and capabilities
-
-**Drafting Framework** (`api/agentx_ai/drafting/`)
-- `base.py`: `DraftingStrategy`, `DraftResult` base classes
-- `speculative.py`: Speculative decoding (fast draft + accurate verify)
-- `pipeline.py`: Multi-stage model pipelines
-- `candidate.py`: N-best candidate generation with scoring
-- `drafting_strategies.yaml`: Pre-configured strategy definitions
-
-**Reasoning Framework** (`api/agentx_ai/reasoning/`)
-- `base.py`: `ReasoningStrategy`, `ThoughtStep` base classes
-- `chain_of_thought.py`: CoT reasoning (zero-shot, few-shot)
-- `tree_of_thought.py`: ToT with BFS/DFS/beam search
-- `react.py`: ReAct pattern (Thought → Action → Observation)
-- `reflection.py`: Self-critique and revision
-- `orchestrator.py`: Strategy selection based on task type
-
-**Agent Core** (`api/agentx_ai/agent/`)
-- `core.py`: Main `Agent` class orchestrating all capabilities
-- `planner.py`: `TaskPlanner` for task decomposition
-- `session.py`: `Session` and `SessionManager` for conversation state
-- `context.py`: `ContextManager` for context window management
-
-**Client Tabs** (`client/src/components/tabs/`)
-- Each tab is a separate React component (DashboardTab, TranslationTab, ChatTab, ToolsTab)
-- Tab switching handled by `App.tsx` state management
-- All tabs remain mounted to preserve state (visibility controlled via CSS)
+- All tabs are always mounted in DOM; visibility toggled via CSS `display` property to preserve state
+- Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`)
+- `ServerContext` provides app-wide server state; `lib/api.ts` is the typed API client; `lib/hooks.ts` has React data hooks
+- Cosmic dark theme with glassmorphism effects and Lucide-react icons
 
 ## Development Commands
 
-### Running the Application
+All commands use [Task](https://taskfile.dev/) (see `Taskfile.yaml`). Run `task --list-all` for the complete list.
 
-Use Task (Taskfile.yaml) for all development operations:
+### Setup & Development
 
 ```bash
-# Start Docker services + API + Client in development mode
-task dev
-
-# Start only Docker services (Neo4j, PostgreSQL, Redis)
-task runners
-
-# Stop Docker services
-task teardown
-
-# API only
-task api:runserver          # Starts Django server on port 12319
-
-# Client only (Tauri dev mode)
-task client:dev             # Or: cd client && bun run tauri dev
-
-# Install all dependencies
-task install                # Runs: uv sync && bun install
+task setup              # First-time: install deps, init DB dirs, verify env
+task check              # Verify environment is ready
+task dev                # Start Docker + API + Client concurrently (full stack)
+task dev:api            # API server only (assumes Docker running)
+task dev:client         # Tauri client only (assumes API running)
+task dev:web            # Client in browser mode (port 1420, no Tauri)
+task install            # Install all deps (uv sync + bun install)
 ```
 
-### Django API Commands
+### Database Services (Docker)
 
 ```bash
-# Database operations
-task api:migrate
-task api:makemigrations
-
-# Django shell
-task api:shell
-
-# Direct command (if needed)
-cd api && uv run python manage.py runserver 127.0.0.1:12319
-```
-
-### Tauri Client Commands
-
-```bash
-# Development (starts Vite dev server + Tauri window)
-cd client && bun run tauri dev
-
-# Build distributable packages
-cd client && bun run tauri build
-
-# Vite-only development (browser preview, no Tauri)
-cd client && bun run dev          # Runs on localhost:1420
-cd client && bun run build        # TypeScript check + Vite build
-cd client && bun run preview      # Preview production build
+task db:up              # Start Neo4j, PostgreSQL, Redis (aliases: runners)
+task db:down            # Stop services (aliases: teardown)
+task db:status          # Show container status
+task db:init            # Create local data directories (data/neo4j, data/postgres, data/redis)
+task db:shell:postgres  # psql shell into agent-postgres
+task db:shell:redis     # redis-cli into agent-redis
+task db:shell:neo4j     # cypher-shell into agent-neo4j
 ```
 
 ### Testing
 
 ```bash
-# Run all tests
-task test
+task test               # Run all backend tests (slow — loads translation models)
+task test:quick         # Run tests that don't require model loading (HealthCheck, MCP tests)
 
-# Run specific test class
-uv run python api/manage.py test agentx_ai.tests.TranslationKitTest
-
-# Run specific test
-uv run python api/manage.py test agentx_ai.tests.TranslationKitTest.test_translate_to_french
-
-# Run health check tests
-uv run python api/manage.py test agentx_ai.tests.HealthCheckTest
+# Run a specific test class or method:
+uv run python api/manage.py test agentx_ai.tests.TranslationKitTest -v2
+uv run python api/manage.py test agentx_ai.tests.TranslationKitTest.test_translate_to_french -v2
 ```
 
-## Important Technical Details
+Test categories in `api/agentx_ai/tests.py`:
+- `TranslationKitTest` — Requires HuggingFace models to be downloaded (slow first run)
+- `HealthCheckTest` — API structure tests; `test_health_with_memory_check` auto-skips if Docker services aren't running
+- `MCPClientTest`, `MCPServerRegistryTest` — Unit tests for MCP infrastructure (no external dependencies)
 
-### API Endpoints
+The `DJANGO_SETTINGS_MODULE` env var is set automatically by the Taskfile (`agentx_api.settings`).
+
+### Linting & Formatting
+
+```bash
+task lint               # Run all linters (Python + Client)
+task lint:python        # Lint Python with ruff: uv run ruff check api/
+task lint:python:fix    # Auto-fix Python lint issues
+task format             # Format all code
+task format:python      # Format Python with ruff: uv run ruff format api/
+```
+
+### Django Commands
+
+```bash
+task api:run            # Run dev server (aliases: api:runserver)
+task api:migrate        # Apply migrations
+task api:makemigrations # Create new migrations
+task api:shell          # Django interactive shell
+```
+
+### Build & Release
+
+```bash
+task client:build       # Build Tauri app for production
+task client:build:web   # Build web assets only (TypeScript check + Vite build)
+task release:check      # Verify release readiness (clean tree, tests, TS compile)
+task models:download    # Pre-download HuggingFace models (NLLB-200, language detection)
+```
+
+## API Endpoints
 
 Base URL: `http://localhost:12319/api/`
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/index` | GET | Simple hello message |
 | `/api/health` | GET | Health check (add `?include_memory=true` for DB status) |
 | `/api/tools/language-detect-20` | GET/POST | Detect language of text |
-| `/api/tools/translate` | POST | Translate text to target language |
+| `/api/tools/translate` | POST | Translate text (`{"text": "...", "targetLanguage": "fra_Latn"}`) |
 | `/api/mcp/servers` | GET | List configured MCP servers |
 | `/api/mcp/tools` | GET | List available MCP tools |
 | `/api/mcp/resources` | GET | List available MCP resources |
 | `/api/providers` | GET | List configured model providers |
-| `/api/providers/models` | GET | List all available models (add `?provider=openai` to filter) |
+| `/api/providers/models` | GET | List available models (filter: `?provider=openai`) |
 | `/api/providers/health` | GET | Check health of all providers |
 | `/api/agent/run` | POST | Execute a task with the agent |
 | `/api/agent/chat` | POST | Conversational interaction with session |
 | `/api/agent/status` | GET | Get current agent status |
 
-**Language Detection:**
-```json
-POST /api/tools/language-detect-20
-{"text": "Bonjour, comment allez-vous?"}
+## Environment Configuration
 
-Response: {"original": "...", "detected_language": "fr", "confidence": 98.5}
-```
+Copy `.env.example` to `.env`. Key variables:
 
-**Translation:**
-```json
-POST /api/tools/translate
-{"text": "Hello, world!", "targetLanguage": "fra_Latn"}
-
-Response: {"original": "...", "translatedText": "Bonjour, monde!"}
-```
-
-**Health Check:**
-```json
-GET /api/health?include_memory=true
-
-Response: {
-  "status": "healthy",
-  "api": {"status": "healthy"},
-  "translation": {"status": "healthy", "models": {...}},
-  "memory": {
-    "neo4j": {"status": "healthy"},
-    "postgres": {"status": "healthy"},
-    "redis": {"status": "healthy"}
-  }
-}
-```
-
-### Translation Model Loading
-
-The `TranslationKit` class in `api/agentx_ai/kit/translation.py`:
-- Loads models at initialization (not lazy-loaded)
-- Uses NLLB-200-distilled-600M for translation
-- First request may be slow while models download from HuggingFace
-
-### Memory System
-
-The agent memory system in `api/agentx_ai/kit/agent_memory/`:
-- **Lazy initialization**: Connections created on first use, not at import time
-- **Health checks**: `check_memory_health()` in `memory_utils.py`
-- **Configuration**: `agent_memory/config.py` using pydantic-settings (loads from `.env`)
-
-Database connections are managed by:
-- `Neo4jConnection`: Graph database for entities and relationships
-- `PostgresConnection`: Relational storage with pgvector
-- `RedisConnection`: Working memory and caching
-
-### Environment Configuration
-
-Copy `.env.example` to `.env` and configure:
 ```bash
-# Database credentials
-NEO4J_PASSWORD=your_password
-POSTGRES_PASSWORD=your_password
-
-# API keys for model providers
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Embedding provider: "openai" or "local"
-EMBEDDING_PROVIDER=local
+NEO4J_PASSWORD=...          # Used by docker-compose and agent_memory
+POSTGRES_PASSWORD=...       # Used by docker-compose and agent_memory
+OPENAI_API_KEY=sk-...       # For OpenAI provider
+ANTHROPIC_API_KEY=sk-ant-...# For Anthropic provider
+EMBEDDING_PROVIDER=local    # "openai" or "local" (sentence-transformers)
 ```
 
-### Tauri Configuration
+MCP servers are configured in `mcp_servers.json` (see `mcp_servers.json.example`).
 
-- Main window config: `client/src-tauri/tauri.conf.json`
-  - Window dimensions: 800x600
-  - Dev URL: http://localhost:1420
-  - Frontend build output: `../dist`
-- Rust dependencies: `client/src-tauri/Cargo.toml`
-  - tauri v2 with opener plugin
-  - serde for serialization
-- Vite config: `client/vite.config.ts`
-  - Dev server port: 1420 (strict)
-  - HMR port: 1421
+## Important Technical Details
 
-### Client Architecture
+- **Translation models load eagerly** at `TranslationKit` init, not lazily. First request downloads models from HuggingFace (~600MB for NLLB-200).
+- **Memory system is lazy**: Database connections (Neo4j, PostgreSQL, Redis) are created on first use, not at import time. Config via pydantic-settings from `.env`.
+- **Docker data is bind-mounted** to `./data/` (not Docker volumes). Run `task db:init` to create the directory structure.
+- **Tauri dev server** runs Vite on port 1420 with HMR on port 1421. Main window config in `client/src-tauri/tauri.conf.json`.
+- **Python managed by uv**, client packages by **bun**. The `task dev` command uses globally-installed `concurrently` (installed via `task install`).
 
-**Tab Management Pattern:**
-- All tabs are always mounted in the DOM
-- Only one tab visible at a time (controlled by `display` CSS property)
-- This preserves component state when switching between tabs
-- State management done in `App.tsx` via `useState` hook
+## Project Status
 
-**Available Tabs:**
-- **Dashboard** - System health, MCP servers, model providers, quick actions
-- **Agent** - Task execution with reasoning trace and tool usage visualization
-- **Translation** - 200+ language translation via NLLB-200
-- **Chat** - Conversational AI with session management
-- **Tools** - MCP tool browser and testing interface
-- **Settings** - Server configuration, API keys, preferences
-
-**Multi-Server Support:**
-The client supports connecting to multiple AgentX backend servers (not concurrent):
-- Server configurations stored in localStorage per-server
-- Each server has its own API keys, preferences, and cached data
-- Switch between servers via Settings tab
-- Storage keys: `agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`
-
-**File Structure:**
-```
-client/src/
-├── App.tsx                    # Main app with tab routing
-├── App.css                    # Global styles & cosmic theme
-├── components/
-│   ├── TabBar.tsx             # Navigation sidebar
-│   └── tabs/
-│       ├── DashboardTab.tsx   # System overview
-│       ├── AgentTab.tsx       # Task execution
-│       ├── ChatTab.tsx        # Conversational AI
-│       ├── TranslationTab.tsx # Language translation
-│       ├── ToolsTab.tsx       # MCP tool browser
-│       └── SettingsTab.tsx    # Configuration
-├── contexts/
-│   └── ServerContext.tsx      # Server state management
-├── lib/
-│   ├── api.ts                 # Typed API client
-│   ├── hooks.ts               # React data hooks
-│   └── storage.ts             # Multi-server storage
-└── styles/                    # Component CSS files
-```
-
-**Design System (Cosmic Theme):**
-- Dark space backgrounds (`--bg-space: #05070f`)
-- Nebula gradients (purple → cyan → pink)
-- Glassmorphism effects with backdrop blur
-- Glow animations on interactive elements
-- Lucide-react icons throughout
-
-## Python Dependencies
-
-Managed via `pyproject.toml` with uv:
-
-**Core:**
-- django>=5.2.8, django-cors-headers>=4.6.0
-
-**AI/ML:**
-- torch>=2.9.1, transformers>=4.57.1, sentencepiece>=0.2.1
-- sentence-transformers>=2.2.0 (local embeddings)
-
-**Databases:**
-- neo4j>=6.0.3, sqlalchemy>=2.0.0, psycopg2-binary>=2.9.0
-- redis>=5.0.0, faiss-cpu>=1.13.0
-
-**MCP & Model Providers:**
-- mcp>=1.0.0 (Model Context Protocol client)
-- openai>=1.0.0, anthropic>=0.20.0, httpx>=0.27.0
-
-**Utilities:**
-- pydantic>=2.12.5, pydantic-settings>=2.12.0
-- python-iso639>=2025.11.16, networkx>=3.0
-
-## Project Roadmap
-
-See `Todo.md` for detailed task tracking. Current status:
-- ✅ Phase 1: Critical fixes (dependencies, Taskfile, OpenAPI)
-- ✅ Phase 2: Wire up existing code (health endpoint, lazy loading)
-- ✅ Phase 3: MCP Client integration
-- ✅ Phase 4: Model provider abstraction
-- ✅ Phase 5: Drafting models framework
-- ✅ Phase 6: Reasoning framework
-- ✅ Phase 7: Agent core
-- ✅ Phase 8: Client updates (cosmic theme, new tabs)
-- 🔲 Phase 9: Security & infrastructure
-- 🔲 Phase 10: Testing
-- 🔲 Phase 11: Documentation
-- 🔲 Phase 7: Agent core
-
-## Known Issues & TODOs
-
-From `Todo.md` and `api/agentx_ai/tests.py`:
-- MCP client integration (Phase 3)
-- Model provider abstraction for OpenAI/Anthropic/Ollama (Phase 4)
-- Drafting models: speculative decoding, pipelines, candidates (Phase 5)
-- Reasoning: CoT, ToT, ReAct, reflection patterns (Phase 6)
-
-## Migration Notes
-
-The project recently migrated from Electron to Tauri:
-- Old Electron code is in `client-old/` directory (can be ignored)
-- New Tauri implementation is in `client/` directory
-- Tauri provides smaller binary sizes and better security model
-- Frontend stack remains React + TypeScript, but build system changed from Webpack to Vite
-- Package manager changed from npm to bun
+Phases 1-8 are complete (core platform, MCP client, providers, drafting, reasoning, agent, client UI). Phases 9-11 (security, testing, documentation) are pending. See `Todo.md` for detailed tracking.
