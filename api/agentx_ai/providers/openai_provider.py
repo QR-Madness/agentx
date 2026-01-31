@@ -274,12 +274,20 @@ class OpenAIProvider(ModelProvider):
     
     async def health_check(self) -> dict[str, Any]:
         """Check if OpenAI API is reachable."""
+        if not self.config.api_key:
+            return {
+                "status": "not_configured",
+                "error": "OPENAI_API_KEY not set",
+            }
+        
         try:
             # Make a minimal API call to check connectivity
             models = await self.client.models.list()
+            model_list = list(models)
             return {
                 "status": "healthy",
-                "models_available": len(list(models)),
+                "models_available": len(model_list),
+                "models": [m.id for m in model_list[:10]],  # First 10
             }
         except Exception as e:
             logger.error(f"OpenAI health check failed: {e}")

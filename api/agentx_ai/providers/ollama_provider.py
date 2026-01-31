@@ -123,26 +123,39 @@ class OllamaProvider(ModelProvider):
     """Ollama provider for local models."""
     
     DEFAULT_BASE_URL = "http://localhost:11434"
+    DEFAULT_TIMEOUT = 300.0  # 5 minutes for large local models
     
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.base_url = config.base_url or self.DEFAULT_BASE_URL
-        self._client: Optional[httpx.AsyncClient] = None
         self._available_models: Optional[list[str]] = None
+        
+        # Use configured timeout or default to 5 minutes for local models
+        self._timeout = config.timeout if config.timeout != 60.0 else self.DEFAULT_TIMEOUT
     
     @property
     def name(self) -> str:
         return "ollama"
     
-    @property
-    def client(self) -> httpx.AsyncClient:
-        """Lazy-load the HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.config.timeout,
-            )
-        return self._client
+    def _get_client(self) -> httpx.AsyncClient:
+        """Create a fresh HTTP client for each request.
+        
+        This avoids 'Event loop is closed' errors when used with
+        Django's async_to_sync which creates new event loops.
+        
+        Uses separate connect/read timeouts - connect should be fast,
+        but read can be very slow for large models.
+        """
+        timeout = httpx.Timeout(
+            connect=10.0,       # 10s to establish connection
+            read=self._timeout, # Long timeout for model inference
+            write=30.0,         # 30s to send request
+            pool=10.0,          # 10s to acquire connection from pool
+        )
+        return httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=timeout,
+        )
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal Message objects to Ollama format."""
@@ -169,6 +182,15 @@ class OllamaProvider(ModelProvider):
         # Ollama uses similar format to OpenAI for tools
         return tools
     
+    def _messages_to_prompt(self, messages: list[Message]) -> str:
+        """Convert messages to a single prompt string for /api/generate."""
+        parts = []
+        for msg in messages:
+            role = msg.role.value.upper()
+            parts.append(f"{role}: {msg.content}")
+        parts.append("ASSISTANT:")  # Prompt for response
+        return "\n\n".join(parts)
+    
     async def complete(
         self,
         messages: list[Message],
@@ -181,34 +203,75 @@ class OllamaProvider(ModelProvider):
         stop: Optional[list[str]] = None,
         **kwargs: Any,
     ) -> CompletionResult:
-        """Generate a completion using Ollama API."""
-        request_data: dict[str, Any] = {
-            "model": model,
-            "messages": self._convert_messages(messages),
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-            },
-        }
+        """Generate a completion using Ollama API.
         
-        if max_tokens:
-            request_data["options"]["num_predict"] = max_tokens
-        if stop:
-            request_data["options"]["stop"] = stop
-        if tools:
-            request_data["tools"] = self._convert_tools(tools)
-        
+        Tries /api/chat first, falls back to /api/generate for older Ollama versions.
+        """
         logger.debug(f"Ollama request: model={model}, messages={len(messages)}")
         
-        response = await self.client.post("/api/chat", json=request_data)
-        response.raise_for_status()
-        data = response.json()
+        async with self._get_client() as client:
+            # Try /api/chat first (newer Ollama versions)
+            try:
+                request_data: dict[str, Any] = {
+                    "model": model,
+                    "messages": self._convert_messages(messages),
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                    },
+                }
+                
+                if max_tokens:
+                    request_data["options"]["num_predict"] = max_tokens
+                if stop:
+                    request_data["options"]["stop"] = stop
+                if tools:
+                    request_data["tools"] = self._convert_tools(tools)
+                
+                response = await client.post("/api/chat", json=request_data)
+                
+                if response.status_code == 404:
+                    # Fall back to /api/generate for older Ollama versions
+                    raise httpx.HTTPStatusError(
+                        "Chat endpoint not available",
+                        request=response.request,
+                        response=response,
+                    )
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                message = data.get("message", {})
+                content = message.get("content", "")
+                
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 404:
+                    raise
+                
+                # Fall back to /api/generate
+                logger.debug(f"Falling back to /api/generate for model={model}")
+                generate_data: dict[str, Any] = {
+                    "model": model,
+                    "prompt": self._messages_to_prompt(messages),
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                    },
+                }
+                
+                if max_tokens:
+                    generate_data["options"]["num_predict"] = max_tokens
+                if stop:
+                    generate_data["options"]["stop"] = stop
+                
+                response = await client.post("/api/generate", json=generate_data)
+                response.raise_for_status()
+                data = response.json()
+                content = data.get("response", "")
         
-        message = data.get("message", {})
-        content = message.get("content", "")
-        
-        # Parse tool calls if present
+        # Parse tool calls if present (only from /api/chat)
         tool_calls = None
+        message = data.get("message", {})
         if message.get("tool_calls"):
             tool_calls = []
             for i, tc in enumerate(message["tool_calls"]):
@@ -266,30 +329,31 @@ class OllamaProvider(ModelProvider):
         
         logger.debug(f"Ollama stream: model={model}, messages={len(messages)}")
         
-        async with self.client.stream(
-            "POST", "/api/chat", json=request_data
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                
-                message = data.get("message", {})
-                content = message.get("content", "")
-                
-                finish_reason = None
-                if data.get("done"):
-                    finish_reason = data.get("done_reason", "stop")
-                
-                yield StreamChunk(
-                    content=content,
-                    finish_reason=finish_reason,
-                )
+        async with self._get_client() as client:
+            async with client.stream(
+                "POST", "/api/chat", json=request_data
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    
+                    message = data.get("message", {})
+                    content = message.get("content", "")
+                    
+                    finish_reason = None
+                    if data.get("done"):
+                        finish_reason = data.get("done_reason", "stop")
+                    
+                    yield StreamChunk(
+                        content=content,
+                        finish_reason=finish_reason,
+                    )
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for an Ollama model."""
@@ -301,6 +365,11 @@ class OllamaProvider(ModelProvider):
         base_model = model.split(":")[0]
         if base_model in OLLAMA_MODELS:
             return OLLAMA_MODELS[base_model]
+        
+        # Check for versioned models (e.g., "llama3.2" -> check "llama3")
+        for known_model in OLLAMA_MODELS:
+            if base_model.startswith(known_model):
+                return OLLAMA_MODELS[known_model]
         
         logger.warning(f"Unknown Ollama model: {model}, using default capabilities")
         return DEFAULT_LOCAL_CAPABILITIES
@@ -314,9 +383,10 @@ class OllamaProvider(ModelProvider):
     async def fetch_models(self) -> list[str]:
         """Fetch available models from Ollama server."""
         try:
-            response = await self.client.get("/api/tags")
-            response.raise_for_status()
-            data = response.json()
+            async with self._get_client() as client:
+                response = await client.get("/api/tags")
+                response.raise_for_status()
+                data = response.json()
             
             models = [m["name"] for m in data.get("models", [])]
             self._available_models = models
@@ -326,34 +396,53 @@ class OllamaProvider(ModelProvider):
             return []
     
     async def health_check(self) -> dict[str, Any]:
-        """Check if Ollama server is reachable."""
+        """Check if Ollama server is reachable and list available models."""
         try:
-            response = await self.client.get("/api/tags")
-            response.raise_for_status()
-            data = response.json()
+            async with self._get_client() as client:
+                # Get server version
+                version_resp = await client.get("/api/version")
+                version = None
+                if version_resp.status_code == 200:
+                    version = version_resp.json().get("version")
+                
+                # Get available models
+                response = await client.get("/api/tags")
+                response.raise_for_status()
+                data = response.json()
             
-            models = [m["name"] for m in data.get("models", [])]
-            self._available_models = models
+            models = []
+            for m in data.get("models", []):
+                model_info = {
+                    "name": m.get("name"),
+                    "size": m.get("size"),
+                    "parameter_size": m.get("details", {}).get("parameter_size"),
+                }
+                models.append(model_info)
+            
+            self._available_models = [m["name"] for m in models]
             
             return {
                 "status": "healthy",
+                "base_url": self.base_url,
+                "version": version,
                 "models_available": len(models),
-                "models": models[:5],  # First 5 for brevity
+                "models": models,  # Full list with details
+                "timeout_seconds": self._timeout,
             }
         except httpx.ConnectError:
             return {
                 "status": "unhealthy",
+                "base_url": self.base_url,
                 "error": f"Cannot connect to Ollama at {self.base_url}",
             }
         except Exception as e:
             logger.error(f"Ollama health check failed: {e}")
             return {
                 "status": "unhealthy",
+                "base_url": self.base_url,
                 "error": str(e),
             }
     
     async def close(self) -> None:
-        """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        """No persistent client to close."""
+        pass

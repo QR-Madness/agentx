@@ -320,6 +320,12 @@ class AnthropicProvider(ModelProvider):
     
     async def health_check(self) -> dict[str, Any]:
         """Check if Anthropic API is reachable."""
+        if not self.config.api_key:
+            return {
+                "status": "not_configured",
+                "error": "ANTHROPIC_API_KEY not set",
+            }
+        
         try:
             # Make a minimal API call to check connectivity
             response = await self.client.messages.create(
@@ -330,6 +336,7 @@ class AnthropicProvider(ModelProvider):
             return {
                 "status": "healthy",
                 "model": response.model,
+                "models": list(ANTHROPIC_MODELS.keys()),
             }
         except Exception as e:
             logger.error(f"Anthropic health check failed: {e}")
