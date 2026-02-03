@@ -5,20 +5,25 @@ The memory system is initialized on first access to avoid startup delays
 when database services are not running.
 """
 
-from typing import Optional
+from __future__ import annotations
+
+from typing import Optional, TYPE_CHECKING
 import logging
 import threading
 
+if TYPE_CHECKING:
+    from .agent_memory.memory.interface import AgentMemory
+
 logger = logging.getLogger(__name__)
 
-_memory_instance: Optional["AgentMemory"] = None
+_memory_instance: Optional[AgentMemory] = None
 _memory_error: Optional[Exception] = None
 
 # Timeout for health checks in seconds
 HEALTH_CHECK_TIMEOUT = 5
 
 
-def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None):
+def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_global"):
     """
     Get or create an AgentMemory instance.
     
@@ -28,6 +33,7 @@ def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = 
     Args:
         user_id: User identifier for memory isolation
         conversation_id: Optional conversation context
+        channel: Memory channel for scoping (default "_global")
         
     Returns:
         AgentMemory instance or None if initialization fails
@@ -40,8 +46,8 @@ def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = 
     
     if _memory_instance is None:
         try:
-            from .agent_memory.interface import AgentMemory
-            _memory_instance = AgentMemory(user_id=user_id, conversation_id=conversation_id)
+            from .agent_memory.memory.interface import AgentMemory
+            _memory_instance = AgentMemory(user_id=user_id, conversation_id=conversation_id, channel=channel)
             logger.info("Agent memory system initialized successfully")
         except Exception as e:
             _memory_error = e

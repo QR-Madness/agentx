@@ -1,6 +1,5 @@
 """Main memory interface - unified API for agent memory operations."""
 
-from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
@@ -30,9 +29,10 @@ class AgentMemory:
         memory.learn_fact("User prefers concise responses", source="inferred")
     """
 
-    def __init__(self, user_id: str, conversation_id: Optional[str] = None):
+    def __init__(self, user_id: str, conversation_id: Optional[str] = None, channel: str = "_global"):
         self.user_id = user_id
         self.conversation_id = conversation_id
+        self.channel = channel
         self.embedder = get_embedder()
 
         # Sub-modules
