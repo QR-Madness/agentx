@@ -515,28 +515,29 @@ The memory system is **architecturally complete but entirely disconnected**:
 - [x] Create `task db:verify:schemas` Taskfile command for read-only verification
 - [x] Add `agentx_ai` to INSTALLED_APPS in settings.py
 
-### 11.2 Agent Core Integration
+### 11.2 Agent Core Integration ✅
 
 > Wire memory into the agent lifecycle so it's actually used
 
-- [ ] Initialize `AgentMemory` in `Agent` class (`core.py`):
-  - [ ] Implement `_memory` property accessor (lazy-load via `get_agent_memory()`)
-  - [ ] Accept `channel` parameter (default `"_global"`) — passed through to AgentMemory constructor
-  - [ ] Respect `AgentConfig.enable_memory` flag
-  - [ ] Handle graceful degradation if databases are unavailable (agent works without memory)
-- [ ] Wire `store_turn()` into chat/run flows:
-  - [ ] Create `Turn` objects from `Message` objects in `Agent.chat()` (core.py ~line 330)
-  - [ ] Store turns after each user message and assistant response
-  - [ ] Include metadata: model used, token count, latency
-- [ ] Wire `remember()` into context injection:
-  - [ ] Call `memory.remember(query)` before building LLM context in `Agent.chat()`
-  - [ ] Feed retrieved `MemoryBundle` into `ContextManager.inject_memory()`
-  - [ ] Make retrieval configurable: top_k, time_window, which memory types to include
-- [ ] Wire `record_tool_usage()` into tool execution:
-  - [ ] After each MCP tool call, record invocation in procedural memory
-  - [ ] Capture: tool_name, input, output, success, latency_ms, error_message
+- [x] Initialize `AgentMemory` in `Agent` class (`core.py`):
+  - [x] Implement `_memory` property accessor (lazy-load via `get_agent_memory()`)
+  - [x] Accept `channel` parameter (default `"_global"`) — passed through to AgentMemory constructor
+  - [x] Respect `AgentConfig.enable_memory` flag
+  - [x] Handle graceful degradation if databases are unavailable (agent works without memory)
+- [x] Wire `store_turn()` into chat/run flows:
+  - [x] Create `Turn` objects from `Message` objects in `Agent.chat()`
+  - [x] Store turns after each user message and assistant response
+  - [x] Include metadata: model used, token count, latency
+- [x] Wire `remember()` into context injection:
+  - [x] Call `memory.remember(query)` before building LLM context in `Agent.chat()`
+  - [x] Feed retrieved `MemoryBundle` into `ContextManager.inject_memory()`
+  - [x] Make retrieval configurable: top_k, time_window via `AgentConfig`
+- [x] Wire `record_tool_usage()` into tool execution:
+  - [x] Added callback hook to `ToolExecutor.set_usage_recorder()`
+  - [x] Agent wires recorder via `mcp_client` property when memory available
+  - [x] Capture: tool_name, input, output, success, latency_ms, error_message
 - [ ] Wire `learn_fact()` / `upsert_entity()` into extraction pipeline (see 11.3)
-- [ ] Call `memory.reflect()` after task completion in `Agent.run()` to trigger consolidation
+- [x] Call `memory.reflect()` after task completion in `Agent.run()` to trigger consolidation
 - [ ] Wire `add_goal()` / `complete_goal()` into task planner lifecycle
 
 ### 11.3 Extraction Pipeline
@@ -844,7 +845,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 20% |
+| Phase 11: Memory System | In Progress | 40% |
 | Phase 12: Documentation | Not Started | 0% |
 
 ---
