@@ -5,13 +5,17 @@ Tool Executor: Execute tools on connected MCP servers.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Optional
 
 from mcp import ClientSession
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 
 logger = logging.getLogger(__name__)
+
+# Type for tool usage recording callback
+ToolUsageRecorder = Callable[[str, dict, Any, bool, int, Optional[str]], None]
 
 
 @dataclass
@@ -76,6 +80,15 @@ class ToolExecutor:
     
     def __init__(self):
         self._tool_cache: dict[str, list[ToolInfo]] = {}  # server_name -> tools
+        self._usage_recorder: Optional[ToolUsageRecorder] = None
+    
+    def set_usage_recorder(self, recorder: ToolUsageRecorder) -> None:
+        """
+        Set a callback function for recording tool usage.
+        
+        The callback receives: tool_name, input, output, success, latency_ms, error_message
+        """
+        self._usage_recorder = recorder
     
     async def discover_tools(self, session: ClientSession, server_name: str) -> list[ToolInfo]:
         """
@@ -124,6 +137,8 @@ class ToolExecutor:
         Returns:
             ToolResult with execution results
         """
+        start_time = time.time()
+        
         try:
             logger.info(f"Executing tool '{tool_name}' with args: {arguments}")
             
@@ -149,6 +164,21 @@ class ToolExecutor:
                     content.append({"type": "unknown", "data": str(item)})
             
             is_error = getattr(result, 'isError', False)
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            # Record tool usage if recorder is set
+            if self._usage_recorder:
+                try:
+                    self._usage_recorder(
+                        tool_name,
+                        arguments,
+                        content,
+                        not is_error,
+                        latency_ms,
+                        None,
+                    )
+                except Exception as record_error:
+                    logger.warning(f"Failed to record tool usage: {record_error}")
             
             return ToolResult(
                 success=not is_error,
@@ -156,7 +186,23 @@ class ToolExecutor:
                 is_error=is_error,
             )
         except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
             logger.error(f"Tool execution failed: {e}")
+            
+            # Record failed tool usage if recorder is set
+            if self._usage_recorder:
+                try:
+                    self._usage_recorder(
+                        tool_name,
+                        arguments,
+                        None,
+                        False,
+                        latency_ms,
+                        str(e),
+                    )
+                except Exception as record_error:
+                    logger.warning(f"Failed to record tool usage: {record_error}")
+            
             return ToolResult(
                 success=False,
                 error=str(e),
