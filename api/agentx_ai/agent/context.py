@@ -8,11 +8,12 @@ Handles the context window by:
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Union
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..kit.agent_memory.models import MemoryBundle
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ class ContextManager:
     def inject_memory(
         self,
         context: list[Message],
-        memories: list[str],
+        memories: Union[MemoryBundle, list[str]],
         max_memory_tokens: int = 500,
     ) -> list[Message]:
         """
@@ -180,7 +181,7 @@ class ContextManager:
         
         Args:
             context: Current context messages
-            memories: Relevant memories to inject
+            memories: MemoryBundle or list of memory strings to inject
             max_memory_tokens: Maximum tokens for memories
             
         Returns:
@@ -189,8 +190,14 @@ class ContextManager:
         if not memories:
             return context
         
-        # Combine memories
-        memory_text = "\n".join(f"- {m}" for m in memories)
+        # Convert MemoryBundle to formatted string
+        if isinstance(memories, MemoryBundle):
+            memory_text = memories.to_context_string()
+            if not memory_text:
+                return context
+        else:
+            # Legacy list[str] format
+            memory_text = "\n".join(f"- {m}" for m in memories)
         
         # Truncate if needed
         if len(memory_text) > max_memory_tokens * 4:
