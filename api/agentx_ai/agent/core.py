@@ -8,11 +8,10 @@ The Agent class orchestrates all AgentX capabilities:
 - Context and memory management
 """
 
-import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
@@ -25,6 +24,8 @@ from ..reasoning.orchestrator import OrchestratorConfig
 from ..reasoning.react import Tool
 from ..drafting import DraftingStrategy
 from ..drafting.speculative import SpeculativeDecoder, SpeculativeConfig
+from ..kit.memory_utils import get_agent_memory
+from ..kit.agent_memory.models import Turn
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,10 @@ class AgentResult(BaseModel):
     task_id: str
     status: AgentStatus
     answer: str
+    
+    # Parsed output components
+    thinking: Optional[str] = None  # Extracted thinking/reasoning content
+    has_thinking: bool = False
     
     # Execution details
     plan_steps: int = 0
@@ -93,6 +98,14 @@ class AgentConfig:
     # Context settings
     max_context_tokens: int = 8000
     summarize_threshold: int = 6000
+    
+    # Prompt settings
+    prompt_profile_id: Optional[str] = None  # Use default if None
+    
+    # Memory settings
+    memory_channel: str = "_global"  # Channel for memory scoping
+    memory_top_k: int = 10  # Number of memories to retrieve
+    memory_time_window_hours: Optional[int] = None  # Time window filter for retrieval
 
 
 class Agent:
@@ -165,6 +178,55 @@ class Agent:
             ))
         return self._drafting
     
+    @property
+    def memory(self):
+        """
+        Lazy-load the agent memory system.
+        
+        Returns None if memory is disabled or databases are unavailable.
+        """
+        if self._memory is None and self.config.enable_memory:
+            user_id = self.config.user_id or "default"
+            self._memory = get_agent_memory(
+                user_id=user_id,
+                channel=self.config.memory_channel,
+            )
+            if self._memory is None:
+                logger.warning("Memory system unavailable, agent will operate without persistent memory")
+        return self._memory
+    
+    @property
+    def mcp_client(self):
+        """Lazy-load the MCP client manager."""
+        if self._mcp_client is None and self.config.enable_tools:
+            from ..mcp import MCPClientManager
+            self._mcp_client = MCPClientManager()
+            
+            # Wire memory-based tool usage recording if memory is available
+            if self.memory:
+                def record_tool_usage(
+                    tool_name: str,
+                    tool_input: dict,
+                    tool_output,
+                    success: bool,
+                    latency_ms: int,
+                    error_message: str | None,
+                ) -> None:
+                    try:
+                        self.memory.record_tool_usage(
+                            tool_name=tool_name,
+                            tool_input=tool_input,
+                            tool_output=tool_output,
+                            success=success,
+                            latency_ms=latency_ms,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record tool usage in memory: {e}")
+                
+                self._mcp_client.tool_executor.set_usage_recorder(record_tool_usage)
+        
+        return self._mcp_client
+    
     async def run(
         self,
         task: str,
@@ -191,6 +253,23 @@ class Agent:
         
         logger.info(f"Agent task {task_id}: {task[:50]}...")
         
+        # Retrieve relevant memories for task context
+        memory_bundle = None
+        if self.memory:
+            try:
+                memory_bundle = self.memory.remember(
+                    query=task,
+                    top_k=self.config.memory_top_k,
+                    time_window_hours=self.config.memory_time_window_hours,
+                )
+                trace.append({
+                    "phase": "memory_retrieval",
+                    "turns": len(memory_bundle.relevant_turns) if memory_bundle else 0,
+                    "facts": len(memory_bundle.facts) if memory_bundle else 0,
+                })
+            except Exception as e:
+                logger.warning(f"Failed to retrieve memories for task: {e}")
+        
         try:
             self.status = AgentStatus.PLANNING
             
@@ -215,11 +294,22 @@ class Agent:
             if self.config.enable_reasoning:
                 strategy = kwargs.get("reasoning_strategy", self.config.default_reasoning_strategy)
                 
+                # Inject memories into context if available
+                reasoning_context = context
+                if memory_bundle and context:
+                    from .context import ContextManager, ContextConfig
+                    if self._context_manager is None:
+                        self._context_manager = ContextManager(ContextConfig(
+                            max_tokens=self.config.max_context_tokens,
+                            summarize_threshold=self.config.summarize_threshold,
+                        ))
+                    reasoning_context = self._context_manager.inject_memory(context, memory_bundle)
+                
                 if strategy == "auto":
-                    reasoning_result = await self.reasoning.reason(task, context)
+                    reasoning_result = await self.reasoning.reason(task, reasoning_context)
                 else:
                     reasoning_result = await self.reasoning.reason(
-                        task, context, strategy=strategy
+                        task, reasoning_context, strategy=strategy
                     )
                 
                 trace.append({
@@ -253,6 +343,16 @@ class Agent:
                 if context:
                     messages = context + messages
                 
+                # Inject memories if available
+                if memory_bundle:
+                    from .context import ContextManager, ContextConfig
+                    if self._context_manager is None:
+                        self._context_manager = ContextManager(ContextConfig(
+                            max_tokens=self.config.max_context_tokens,
+                            summarize_threshold=self.config.summarize_threshold,
+                        ))
+                    messages = self._context_manager.inject_memory(messages, memory_bundle)
+                
                 result = await provider.complete(
                     messages,
                     model_id,
@@ -268,6 +368,21 @@ class Agent:
             
             total_time = (time.time() - start_time) * 1000
             self.status = AgentStatus.COMPLETE
+            
+            # Trigger memory reflection after task completion
+            if self.memory:
+                try:
+                    self.memory.reflect({
+                        "task_id": task_id,
+                        "task": task[:200],
+                        "status": "complete",
+                        "total_tokens": total_tokens,
+                        "total_time_ms": total_time,
+                        "reasoning_steps": reasoning_steps,
+                        "tools_used": tools_used,
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to trigger memory reflection: {e}")
             
             return AgentResult(
                 task_id=task_id,
@@ -286,6 +401,18 @@ class Agent:
             logger.error(f"Agent task {task_id} failed: {e}")
             self.status = AgentStatus.FAILED
             
+            # Trigger reflection for failed tasks too
+            if self.memory:
+                try:
+                    self.memory.reflect({
+                        "task_id": task_id,
+                        "task": task[:200],
+                        "status": "failed",
+                        "error": str(e),
+                    })
+                except Exception as reflect_error:
+                    logger.warning(f"Failed to trigger memory reflection: {reflect_error}")
+            
             return AgentResult(
                 task_id=task_id,
                 status=AgentStatus.FAILED,
@@ -300,6 +427,7 @@ class Agent:
         message: str,
         session_id: Optional[str] = None,
         simple_mode: bool = True,
+        profile_id: Optional[str] = None,
         **kwargs: Any,
     ) -> AgentResult:
         """
@@ -311,6 +439,7 @@ class Agent:
             message: The user message
             session_id: Optional session ID for context
             simple_mode: If True, use direct completion without reasoning (default)
+            profile_id: Optional prompt profile ID to use
             **kwargs: Additional parameters
             
         Returns:
@@ -325,12 +454,43 @@ class Agent:
             self._session_manager = SessionManager()
         
         session = self._session_manager.get_or_create(session_id)
+        conversation_id = session_id or session.id
+        
+        # Update memory with conversation context if available
+        if self.memory:
+            self.memory.conversation_id = conversation_id
         
         # Add user message to session
-        session.add_message(Message(role=MessageRole.USER, content=message))
+        user_message = Message(role=MessageRole.USER, content=message)
+        session.add_message(user_message)
+        
+        # Store user turn in memory
+        if self.memory:
+            user_turn = Turn(
+                conversation_id=conversation_id,
+                index=len(session.get_messages()) - 1,
+                role="user",
+                content=message,
+            )
+            try:
+                self.memory.store_turn(user_turn)
+            except Exception as e:
+                logger.warning(f"Failed to store user turn in memory: {e}")
         
         # Get context from session (excluding current message for the prompt)
         context = session.get_messages()[:-1]
+        
+        # Retrieve relevant memories for context injection
+        memory_bundle = None
+        if self.memory:
+            try:
+                memory_bundle = self.memory.remember(
+                    query=message,
+                    top_k=self.config.memory_top_k,
+                    time_window_hours=self.config.memory_time_window_hours,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to retrieve memories: {e}")
         
         try:
             if simple_mode:
@@ -339,16 +499,33 @@ class Agent:
                     self.config.default_model
                 )
                 
-                # Build messages with system prompt for chat
+                # Get system prompt from prompt manager
+                from ..prompts import get_prompt_manager
+                prompt_manager = get_prompt_manager()
+                system_prompt = prompt_manager.get_system_prompt(
+                    profile_id=profile_id or self.config.prompt_profile_id
+                )
+                
+                # Build messages with composed system prompt
                 messages = [
                     Message(
                         role=MessageRole.SYSTEM,
-                        content="You are a helpful AI assistant. Respond naturally and conversationally."
+                        content=system_prompt or "You are a helpful AI assistant."
                     )
                 ]
                 if context:
                     messages.extend(context)
                 messages.append(Message(role=MessageRole.USER, content=message))
+                
+                # Inject memories into context
+                if memory_bundle:
+                    from .context import ContextManager, ContextConfig
+                    if self._context_manager is None:
+                        self._context_manager = ContextManager(ContextConfig(
+                            max_tokens=self.config.max_context_tokens,
+                            summarize_threshold=self.config.summarize_threshold,
+                        ))
+                    messages = self._context_manager.inject_memory(messages, memory_bundle)
                 
                 logger.info(f"Agent chat {task_id} using {model_id}")
                 
@@ -359,18 +536,44 @@ class Agent:
                     max_tokens=kwargs.get("max_tokens", 2000),
                 )
                 
-                answer = result.content
+                # Parse output to extract thinking tags
+                from .output_parser import parse_output
+                parsed = parse_output(result.content)
+                
+                answer = parsed.content
+                thinking = parsed.thinking
                 total_tokens = result.usage.get("total_tokens", 0) if result.usage else 0
                 
-                # Add assistant response to session
+                # Add assistant response to session (store parsed content)
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=answer))
                 
                 total_time = (time.time() - start_time) * 1000
+                
+                # Store assistant turn in memory
+                if self.memory:
+                    assistant_turn = Turn(
+                        conversation_id=conversation_id,
+                        index=len(session.get_messages()) - 1,
+                        role="assistant",
+                        content=answer,
+                        token_count=total_tokens,
+                        metadata={
+                            "model": model_id,
+                            "latency_ms": total_time,
+                            "task_id": task_id,
+                        }
+                    )
+                    try:
+                        self.memory.store_turn(assistant_turn)
+                    except Exception as e:
+                        logger.warning(f"Failed to store assistant turn in memory: {e}")
                 
                 return AgentResult(
                     task_id=task_id,
                     status=AgentStatus.COMPLETE,
                     answer=answer,
+                    thinking=thinking,
+                    has_thinking=parsed.has_thinking,
                     models_used=[self.config.default_model],
                     total_tokens=total_tokens,
                     total_time_ms=total_time,
@@ -381,6 +584,27 @@ class Agent:
                 
                 # Add assistant response to session
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=result.answer))
+                
+                # Store assistant turn in memory
+                if self.memory:
+                    assistant_turn = Turn(
+                        conversation_id=conversation_id,
+                        index=len(session.get_messages()) - 1,
+                        role="assistant",
+                        content=result.answer,
+                        token_count=result.total_tokens,
+                        metadata={
+                            "model": result.models_used[0] if result.models_used else self.config.default_model,
+                            "latency_ms": result.total_time_ms,
+                            "task_id": task_id,
+                            "reasoning_steps": result.reasoning_steps,
+                            "tools_used": result.tools_used,
+                        }
+                    )
+                    try:
+                        self.memory.store_turn(assistant_turn)
+                    except Exception as e:
+                        logger.warning(f"Failed to store assistant turn in memory: {e}")
                 
                 return result
                 
