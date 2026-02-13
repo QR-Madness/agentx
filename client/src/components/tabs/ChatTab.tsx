@@ -10,9 +10,12 @@ import {
   Zap,
   Brain,
   Settings2,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  Radio
 } from 'lucide-react';
-import { api, ChatResponse, ReasoningStep } from '../../lib/api';
+import { api, ChatResponse, ReasoningStep, PromptProfile } from '../../lib/api';
+import { MessageContent, ThinkingBubble } from '../chat';
 import '../../styles/ChatTab.css';
 
 interface Message {
@@ -20,6 +23,7 @@ interface Message {
   content: string;
   sender: 'user' | 'assistant';
   timestamp: Date;
+  thinking?: string;  // Extracted thinking content
   reasoning?: ReasoningStep[];
   tokensUsed?: number;
   model?: string;
@@ -52,6 +56,17 @@ export const ChatTab: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [loadingModels, setLoadingModels] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
+  
+  // Prompt profile state
+  const [availableProfiles, setAvailableProfiles] = useState<PromptProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<string>('');
+  const [showProfileSelector, setShowProfileSelector] = useState(false);
+  
+  // Streaming state
+  const [useStreaming, setUseStreaming] = useState(true);
+  const [streamingContent, setStreamingContent] = useState('');
+  const streamAbortRef = useRef<{ abort: () => void } | null>(null);
+  const streamingContentRef = useRef(''); // Track content synchronously
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,12 +74,27 @@ export const ChatTab: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingContent]);
 
-  // Fetch available models on mount
+  // Fetch available models and profiles on mount
   useEffect(() => {
     fetchModels();
+    fetchProfiles();
   }, []);
+
+  const fetchProfiles = async () => {
+    try {
+      const response = await api.listPromptProfiles();
+      setAvailableProfiles(response.profiles);
+      // Set default profile
+      const defaultProfile = response.profiles.find(p => p.is_default);
+      if (defaultProfile && !selectedProfile) {
+        setSelectedProfile(defaultProfile.id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch profiles:', error);
+    }
+  };
 
   const fetchModels = async () => {
     setLoadingModels(true);
@@ -124,41 +154,108 @@ export const ChatTab: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageText = input;
     setInput('');
     setIsTyping(true);
 
-    try {
-      const response: ChatResponse = await api.chat({
-        message: input,
-        session_id: sessionId || undefined,
-        model: selectedModel || undefined,
-        show_reasoning: showReasoning,
-      });
+    if (useStreaming) {
+      // Streaming mode
+      setStreamingContent('');
+      streamingContentRef.current = '';
+      const messageId = (Date.now() + 1).toString();
+      
+      streamAbortRef.current = api.streamChat(
+        {
+          message: messageText,
+          session_id: sessionId || undefined,
+          model: selectedModel || undefined,
+          profile_id: selectedProfile || undefined,
+        },
+        {
+          onStart: (data) => {
+            console.log('Stream started:', data);
+          },
+          onChunk: (content) => {
+            streamingContentRef.current += content;
+            setStreamingContent(streamingContentRef.current);
+          },
+          onDone: (data) => {
+            // Capture content from ref (synchronous, no race condition)
+            const finalContent = streamingContentRef.current;
+            
+            // Clear streaming state immediately
+            streamingContentRef.current = '';
+            setStreamingContent('');
+            setIsTyping(false);
+            
+            // Add finalized message (only if we have content)
+            if (finalContent) {
+              setMessages(msgs => [...msgs, {
+                id: messageId,
+                content: finalContent,
+                sender: 'assistant' as const,
+                timestamp: new Date(),
+                thinking: data.thinking,
+                model: selectedModel,
+              }]);
+            }
+            
+            if (data.session_id) {
+              setSessionId(data.session_id);
+            }
+          },
+          onError: (error) => {
+            console.error('Stream error:', error);
+            streamingContentRef.current = '';
+            setStreamingContent('');
+            setIsTyping(false);
+            const errorMessage: Message = {
+              id: messageId,
+              content: `Sorry, I encountered an error: ${error}`,
+              sender: 'assistant',
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          },
+        }
+      );
+    } else {
+      // Non-streaming mode
+      try {
+        const response: ChatResponse = await api.chat({
+          message: messageText,
+          session_id: sessionId || undefined,
+          model: selectedModel || undefined,
+          show_reasoning: showReasoning,
+          profile_id: selectedProfile || undefined,
+        });
 
-      if (response.session_id) {
-        setSessionId(response.session_id);
+        if (response.session_id) {
+          setSessionId(response.session_id);
+        }
+
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: response.response,
+          sender: 'assistant',
+          timestamp: new Date(),
+          thinking: response.thinking,
+          reasoning: response.reasoning_trace,
+          tokensUsed: response.tokens_used,
+          model: selectedModel,
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      } catch (error) {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: 'Sorry, I encountered an error. Please check if the server is running and try again.',
+          sender: 'assistant',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsTyping(false);
       }
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.response,
-        sender: 'assistant',
-        timestamp: new Date(),
-        reasoning: response.reasoning_trace,
-        tokensUsed: response.tokens_used,
-        model: selectedModel,
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: 'Sorry, I encountered an error. Please check if the server is running and try again.',
-        sender: 'assistant',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsTyping(false);
     }
   };
 
@@ -170,6 +267,9 @@ export const ChatTab: React.FC = () => {
   };
 
   const handleNewChat = () => {
+    // Abort any ongoing stream
+    streamAbortRef.current?.abort();
+    setStreamingContent('');
     setMessages([{
       id: Date.now().toString(),
       content: 'Hello! I\'m your AI assistant powered by AgentX. How can I help you today?',
@@ -204,6 +304,20 @@ export const ChatTab: React.FC = () => {
         </div>
         <div className="chat-actions">
           <button 
+            className={`button-ghost ${useStreaming ? 'active' : ''}`}
+            onClick={() => setUseStreaming(!useStreaming)}
+            title={useStreaming ? 'Streaming enabled' : 'Streaming disabled'}
+          >
+            <Radio size={18} />
+          </button>
+          <button 
+            className={`button-ghost ${showProfileSelector ? 'active' : ''}`}
+            onClick={() => { setShowProfileSelector(!showProfileSelector); setShowModelSelector(false); }}
+            title="Select prompt profile"
+          >
+            <FileText size={18} />
+          </button>
+          <button 
             className={`button-ghost ${showReasoning ? 'active' : ''}`}
             onClick={() => setShowReasoning(!showReasoning)}
             title="Show reasoning traces"
@@ -212,7 +326,7 @@ export const ChatTab: React.FC = () => {
           </button>
           <button 
             className={`button-ghost ${showModelSelector ? 'active' : ''}`}
-            onClick={() => setShowModelSelector(!showModelSelector)}
+            onClick={() => { setShowModelSelector(!showModelSelector); setShowProfileSelector(false); }}
             title="Select model"
           >
             <Settings2 size={18} />
@@ -223,6 +337,62 @@ export const ChatTab: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Profile Selector Panel */}
+      {showProfileSelector && (
+        <div className="model-selector card">
+          <div className="model-selector-header">
+            <h3>Select Prompt Profile</h3>
+            <button 
+              className="button-ghost" 
+              onClick={fetchProfiles}
+              title="Refresh profiles"
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
+          
+          {availableProfiles.length === 0 ? (
+            <div className="model-empty">
+              <p>No profiles available.</p>
+            </div>
+          ) : (
+            <div className="model-list">
+              <div className="provider-group">
+                <div className="provider-header">
+                  <span className="provider-name">Prompt Profiles</span>
+                  <span className="model-count">{availableProfiles.length} profiles</span>
+                </div>
+                <div className="provider-models">
+                  {availableProfiles.map(profile => (
+                    <button
+                      key={profile.id}
+                      className={`model-option ${selectedProfile === profile.id ? 'selected' : ''}`}
+                      onClick={() => {
+                        setSelectedProfile(profile.id);
+                        setShowProfileSelector(false);
+                      }}
+                    >
+                      <div className="profile-option-content">
+                        <span className="model-name">{profile.name}</span>
+                        {profile.description && (
+                          <span className="profile-description">{profile.description}</span>
+                        )}
+                      </div>
+                      {profile.is_default && (
+                        <span className="model-selected-badge">Default</span>
+                      )}
+                      {selectedProfile === profile.id && (
+                        <span className="model-selected-badge">Active</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Model Selector Panel */}
       {showModelSelector && (
@@ -282,10 +452,20 @@ export const ChatTab: React.FC = () => {
       )}
 
       {/* Current Model Badge */}
-      {selectedModel && (
-        <div className="current-model-badge">
-          <Bot size={14} />
-          <span>{selectedModel}</span>
+      {(selectedModel || selectedProfile) && (
+        <div className="current-model-badges">
+          {selectedModel && (
+            <div className="current-model-badge">
+              <Bot size={14} />
+              <span>{selectedModel}</span>
+            </div>
+          )}
+          {selectedProfile && (
+            <div className="current-model-badge profile">
+              <FileText size={14} />
+              <span>{availableProfiles.find(p => p.id === selectedProfile)?.name || selectedProfile}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -297,7 +477,17 @@ export const ChatTab: React.FC = () => {
               {message.sender === 'user' ? <User size={18} /> : <Bot size={18} />}
             </div>
             <div className="message-content">
-              <div className="message-text">{message.content}</div>
+              {/* Thinking bubble for assistant messages */}
+              {message.sender === 'assistant' && message.thinking && (
+                <ThinkingBubble thinking={message.thinking} />
+              )}
+              
+              {/* Message content - markdown for assistant, plain for user */}
+              {message.sender === 'assistant' ? (
+                <MessageContent content={message.content} />
+              ) : (
+                <div className="message-text">{message.content}</div>
+              )}
               
               {/* Reasoning trace */}
               {message.reasoning && message.reasoning.length > 0 && (
@@ -343,17 +533,25 @@ export const ChatTab: React.FC = () => {
           </div>
         ))}
 
+        {/* Streaming message or typing indicator */}
         {isTyping && (
           <div className="message assistant">
             <div className="message-avatar">
               <Bot size={18} />
             </div>
             <div className="message-content">
-              <div className="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
+              {streamingContent ? (
+                <div className="streaming-message">
+                  <MessageContent content={streamingContent} />
+                  <span className="streaming-cursor">▊</span>
+                </div>
+              ) : (
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              )}
             </div>
           </div>
         )}

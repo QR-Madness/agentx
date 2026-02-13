@@ -147,6 +147,64 @@ class AgentMemory:
             )
         return goal
 
+    def get_goal(self, goal_id: str) -> Optional[Goal]:
+        """
+        Retrieve a goal by ID.
+
+        Args:
+            goal_id: ID of the goal to retrieve
+
+        Returns:
+            Goal object if found, None otherwise
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (g:Goal {id: $goal_id})
+                OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
+                RETURN g, parent.id AS parent_goal_id
+            """, goal_id=goal_id)
+
+            record = result.single()
+            if not record or not record["g"]:
+                return None
+
+            goal_data = dict(record["g"])
+            if record["parent_goal_id"]:
+                goal_data["parent_goal_id"] = record["parent_goal_id"]
+            return Goal(**goal_data)
+
+    def complete_goal(
+        self,
+        goal_id: str,
+        status: str = "completed",
+        result: Optional[str] = None
+    ) -> bool:
+        """
+        Update a goal's status.
+
+        Args:
+            goal_id: ID of the goal to update
+            status: New status ('completed', 'abandoned', 'blocked')
+            result: Optional result/summary of goal completion
+
+        Returns:
+            True if goal was found and updated, False otherwise
+        """
+        with Neo4jConnection.session() as session:
+            query_result = session.run("""
+                MATCH (g:Goal {id: $goal_id})
+                SET g.status = $status,
+                    g.completed_at = datetime(),
+                    g.result = $result
+                RETURN g.id AS updated_id
+            """,
+                goal_id=goal_id,
+                status=status,
+                result=result
+            )
+            record = query_result.single()
+            return record is not None and record["updated_id"] is not None
+
     def record_tool_usage(
         self,
         tool_name: str,

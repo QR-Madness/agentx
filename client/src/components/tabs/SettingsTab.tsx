@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Server,
@@ -13,13 +13,17 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
-  ChevronRight
+  ChevronRight,
+  FileText,
+  Edit3,
+  Save
 } from 'lucide-react';
 import { useServer } from '../../contexts/ServerContext';
 import { ServerConfig } from '../../lib/storage';
+import { api, PromptProfile, PromptSection, GlobalPrompt } from '../../lib/api';
 import '../../styles/SettingsTab.css';
 
-type SettingsSection = 'servers' | 'providers' | 'reasoning' | 'memory';
+type SettingsSection = 'servers' | 'providers' | 'prompts' | 'reasoning' | 'memory';
 
 export const SettingsTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('servers');
@@ -40,6 +44,18 @@ export const SettingsTab: React.FC = () => {
 
   // API key visibility
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+
+  // Prompts state
+  const [profiles, setProfiles] = useState<PromptProfile[]>([]);
+  const [_sections, setSections] = useState<PromptSection[]>([]);
+  const [globalPrompt, setGlobalPrompt] = useState<GlobalPrompt | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [selectedProfileDetails, setSelectedProfileDetails] = useState<{profile: PromptProfile; composed_prompt: string} | null>(null);
+  const [editingGlobal, setEditingGlobal] = useState(false);
+  const [globalPromptDraft, setGlobalPromptDraft] = useState('');
+  const [loadingPrompts, setLoadingPrompts] = useState(false);
+  const [mcpToolsPrompt, setMcpToolsPrompt] = useState<string>('');
+  const [mcpToolsCount, setMcpToolsCount] = useState(0);
 
   const handleAddServer = () => {
     if (newServerName.trim() && newServerUrl.trim()) {
@@ -63,9 +79,59 @@ export const SettingsTab: React.FC = () => {
     setShowApiKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
   };
 
-  const sections = [
+  // Fetch prompts data when prompts section is active
+  useEffect(() => {
+    if (activeSection === 'prompts') {
+      fetchPromptsData();
+    }
+  }, [activeSection]);
+
+  const fetchPromptsData = async () => {
+    setLoadingPrompts(true);
+    try {
+      const [profilesRes, sectionsRes, globalRes, mcpRes] = await Promise.all([
+        api.listPromptProfiles(),
+        api.listPromptSections(),
+        api.getGlobalPrompt(),
+        api.getMCPToolsPrompt(),
+      ]);
+      setProfiles(profilesRes.profiles);
+      setSections(sectionsRes.sections);
+      setGlobalPrompt(globalRes.global_prompt);
+      setGlobalPromptDraft(globalRes.global_prompt.content);
+      setMcpToolsPrompt(mcpRes.mcp_tools_prompt);
+      setMcpToolsCount(mcpRes.tools_count);
+    } catch (error) {
+      console.error('Failed to fetch prompts data:', error);
+    } finally {
+      setLoadingPrompts(false);
+    }
+  };
+
+  const handleSelectProfile = async (profileId: string) => {
+    setSelectedProfileId(profileId);
+    try {
+      const details = await api.getPromptProfile(profileId);
+      setSelectedProfileDetails(details);
+    } catch (error) {
+      console.error('Failed to fetch profile details:', error);
+    }
+  };
+
+  const handleSaveGlobalPrompt = async () => {
+    try {
+      const result = await api.updateGlobalPrompt(globalPromptDraft, true);
+      setGlobalPrompt(result.global_prompt);
+      setEditingGlobal(false);
+    } catch (error) {
+      console.error('Failed to save global prompt:', error);
+    }
+  };
+
+  const settingsSections = [
     { id: 'servers' as const, label: 'Servers', icon: <Server size={18} /> },
     { id: 'providers' as const, label: 'Model Providers', icon: <Key size={18} /> },
+    { id: 'prompts' as const, label: 'Prompts', icon: <FileText size={18} /> },
     { id: 'reasoning' as const, label: 'Reasoning', icon: <Brain size={18} /> },
     { id: 'memory' as const, label: 'Memory', icon: <Database size={18} /> },
   ];
@@ -84,7 +150,7 @@ export const SettingsTab: React.FC = () => {
       <div className="settings-layout">
         {/* Sidebar */}
         <nav className="settings-nav card">
-          {sections.map(section => (
+          {settingsSections.map(section => (
             <button
               key={section.id}
               className={`nav-item ${activeSection === section.id ? 'active' : ''}`}
@@ -241,6 +307,156 @@ export const SettingsTab: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Prompts Section */}
+          {activeSection === 'prompts' && (
+            <div className="settings-section fade-in">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">
+                    <FileText size={20} className="section-title-icon" />
+                    Prompt Management
+                  </h2>
+                  <p className="section-description">
+                    Configure system prompts, profiles, and MCP tool prompts
+                  </p>
+                </div>
+                <button 
+                  className="button-secondary"
+                  onClick={fetchPromptsData}
+                  disabled={loadingPrompts}
+                >
+                  <RefreshCw size={16} className={loadingPrompts ? 'spin' : ''} />
+                  Refresh
+                </button>
+              </div>
+
+              {loadingPrompts ? (
+                <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+                  <RefreshCw size={24} className="spin" style={{ marginBottom: '0.5rem' }} />
+                  <p>Loading prompts...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Global Prompt */}
+                  <div className="card prompt-card">
+                    <div className="prompt-card-header">
+                      <h3>Global Prompt</h3>
+                      <p className="prompt-card-description">
+                        Applied to all conversations regardless of profile
+                      </p>
+                    </div>
+                    {editingGlobal ? (
+                      <div className="prompt-editor">
+                        <textarea
+                          value={globalPromptDraft}
+                          onChange={(e) => setGlobalPromptDraft(e.target.value)}
+                          rows={8}
+                          placeholder="Enter your global system prompt..."
+                        />
+                        <div className="prompt-editor-actions">
+                          <button 
+                            className="button-secondary"
+                            onClick={() => {
+                              setEditingGlobal(false);
+                              setGlobalPromptDraft(globalPrompt?.content || '');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            className="button-primary"
+                            onClick={handleSaveGlobalPrompt}
+                          >
+                            <Save size={16} />
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="prompt-preview">
+                        <pre>{globalPrompt?.content || 'No global prompt set'}</pre>
+                        <button 
+                          className="button-ghost edit-btn"
+                          onClick={() => setEditingGlobal(true)}
+                        >
+                          <Edit3 size={16} />
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Prompt Profiles */}
+                  <div className="card prompt-card">
+                    <div className="prompt-card-header">
+                      <h3>Prompt Profiles</h3>
+                      <p className="prompt-card-description">
+                        Named collections of prompt sections for different use cases
+                      </p>
+                    </div>
+                    <div className="profiles-grid">
+                      {profiles.map(profile => (
+                        <button
+                          key={profile.id}
+                          className={`profile-card ${selectedProfileId === profile.id ? 'selected' : ''}`}
+                          onClick={() => handleSelectProfile(profile.id)}
+                        >
+                          <div className="profile-card-header">
+                            <span className="profile-name">{profile.name}</span>
+                            {profile.is_default && <span className="default-badge">Default</span>}
+                          </div>
+                          {profile.description && (
+                            <p className="profile-description">{profile.description}</p>
+                          )}
+                          <div className="profile-meta">
+                            <span>{profile.sections_count || 0} sections</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {selectedProfileDetails && (
+                      <div className="profile-details">
+                        <h4>Composed Prompt Preview</h4>
+                        <pre className="composed-prompt-preview">
+                          {selectedProfileDetails.composed_prompt || 'No content'}
+                        </pre>
+                        <h4>Sections</h4>
+                        <div className="sections-list">
+                          {selectedProfileDetails.profile.sections?.map(section => (
+                            <div 
+                              key={section.id} 
+                              className={`section-item ${section.enabled ? '' : 'disabled'}`}
+                            >
+                              <div className="section-item-header">
+                                <span className="section-name">{section.name}</span>
+                                <span className="section-type">{section.type}</span>
+                              </div>
+                              <pre className="section-content">{section.content}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* MCP Tools Prompt */}
+                  <div className="card prompt-card">
+                    <div className="prompt-card-header">
+                      <h3>MCP Tools Prompt</h3>
+                      <p className="prompt-card-description">
+                        Auto-generated from {mcpToolsCount} available MCP tools (read-only)
+                      </p>
+                    </div>
+                    <div className="prompt-preview">
+                      <pre>{mcpToolsPrompt || 'No MCP tools available'}</pre>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}

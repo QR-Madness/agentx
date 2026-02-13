@@ -536,9 +536,9 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Added callback hook to `ToolExecutor.set_usage_recorder()`
   - [x] Agent wires recorder via `mcp_client` property when memory available
   - [x] Capture: tool_name, input, output, success, latency_ms, error_message
-- [ ] Wire `learn_fact()` / `upsert_entity()` into extraction pipeline (see 11.3)
+- [x] Wire `learn_fact()` / `upsert_entity()` into extraction pipeline (see 11.3)
 - [x] Call `memory.reflect()` after task completion in `Agent.run()` to trigger consolidation
-- [ ] Wire `add_goal()` / `complete_goal()` into task planner lifecycle
+- [x] Wire `add_goal()` / `complete_goal()` into task planner lifecycle
 
 ### 11.3 Extraction Pipeline
 
@@ -812,6 +812,341 @@ The memory system is **architecturally complete but entirely disconnected**:
 
 ---
 
+## Phase 13: UI Implementation (Chat & Agent)
+
+> **Priority**: HIGH
+> **Goal**: Deliver a dual-interface experience — lightweight Chat for quick interactions, powerful Agent for prompt engineering workflows
+> **Design Principles**:
+> - **Chat**: Minimal friction, fast, fun — get answers without configuration overhead
+> - **Agent**: Full control over prompts, models, memory, tools — optimized for iterative prompt development
+> - **Agent Profiles**: Stored configurations that personalize the agent's behavior, model selection, and tool access
+> - **Conversation Management**: Branching, search, organization — treat conversations as first-class artifacts
+
+### Current State Assessment
+
+The existing UI has basic tabs but lacks:
+- Chat tab is placeholder — no actual chat functionality
+- Agent tab has task execution but no conversation management
+- No concept of Agent Profiles (stored configurations)
+- No conversation branching, search, or organization
+- Settings tab doesn't support profile management
+- No prompt library or template system
+
+### 13.1 Chat Tab — Lightweight Interface
+
+> Simple, fast, enjoyable chat experience with minimal configuration
+
+- [ ] Chat message input:
+  - [ ] Auto-growing textarea with submit on Enter (Shift+Enter for newline)
+  - [ ] Character/token counter (subtle, non-intrusive)
+  - [ ] Paste image support (if vision model selected)
+  - [ ] Voice input button (future, placeholder)
+- [ ] Message display:
+  - [ ] Streaming response with typing indicator
+  - [ ] Markdown rendering (code blocks with syntax highlighting, tables, lists)
+  - [ ] Copy button per message
+  - [ ] Regenerate button on assistant messages
+  - [ ] Timestamp on hover
+- [ ] Quick settings bar (minimal, above input):
+  - [ ] Model selector dropdown (default from settings)
+  - [ ] Temperature slider (collapsed by default)
+  - [ ] "Use memory" toggle (on/off, uses `_global` channel)
+- [ ] Session management:
+  - [ ] New chat button (clears current, optionally saves)
+  - [ ] Recent chats list (last 10, ephemeral unless explicitly saved)
+  - [ ] "Save to Agent" button (promotes chat to full Agent conversation)
+- [ ] Styling:
+  - [ ] Compact, centered layout (max-width ~800px)
+  - [ ] Subtle cosmic theme accents without overwhelming
+  - [ ] Fast animations, no blocking transitions
+
+### 13.2 Agent Tab — Power Interface
+
+> Full-featured conversation interface for prompt engineering workflows
+
+#### 13.2.1 Conversation Sidebar
+- [ ] Conversation list with:
+  - [ ] Title (auto-generated or user-set)
+  - [ ] Preview snippet (first user message)
+  - [ ] Timestamp (relative: "2h ago", "Yesterday")
+  - [ ] Active profile badge/icon
+  - [ ] Unread/updated indicator
+- [ ] Organization:
+  - [ ] Folders/workspaces (drag-drop conversations)
+  - [ ] Tags (colored labels, filterable)
+  - [ ] Star/favorite toggle
+  - [ ] Archive (hidden but searchable)
+- [ ] Search:
+  - [ ] Full-text search across all conversations
+  - [ ] Filter by: date range, profile, tags, folder
+  - [ ] Search within current conversation
+- [ ] Bulk actions:
+  - [ ] Multi-select conversations
+  - [ ] Bulk delete, archive, move to folder, apply tag
+
+#### 13.2.2 Conversation View
+- [ ] Message display:
+  - [ ] User messages (editable on click)
+  - [ ] Assistant messages with metadata (model, tokens, latency)
+  - [ ] System messages (profile's system prompt, shown collapsed)
+  - [ ] Tool usage blocks (expandable: input/output/status)
+  - [ ] Reasoning trace toggle (show/hide thinking steps)
+  - [ ] Memory retrieval indicator (what context was injected)
+- [ ] Message operations:
+  - [ ] Edit message → regenerate from that point (creates branch)
+  - [ ] Regenerate with different settings (model, temperature)
+  - [ ] Delete message (and all descendants)
+  - [ ] Pin message (always include in context)
+  - [ ] Add annotation/note (user-only, not sent to model)
+  - [ ] Copy message (plain text or markdown)
+- [ ] Branching:
+  - [ ] Visual branch indicator when conversation forks
+  - [ ] Branch switcher (dropdown or tree view)
+  - [ ] Compare branches side-by-side (split view)
+  - [ ] Merge branch (copy messages from one branch to another)
+  - [ ] Delete branch
+
+#### 13.2.3 Input Area
+- [ ] Rich input:
+  - [ ] Multi-line textarea with auto-grow
+  - [ ] Slash commands (`/profile`, `/clear`, `/export`, `/branch`)
+  - [ ] @-mentions for injecting context (`@memory`, `@file:path`, `@tool:name`)
+  - [ ] Template insertion (from prompt library)
+  - [ ] Drag-drop file attachment (sent as context or tool input)
+- [ ] Context controls:
+  - [ ] Context window visualization (% used, token count)
+  - [ ] "Include in context" checkboxes per message
+  - [ ] Truncation preview (what will be cut if over limit)
+  - [ ] "Continue from here" button (start fresh context from selected point)
+- [ ] Action buttons:
+  - [ ] Send (primary)
+  - [ ] Send with options (dropdown: different model, different profile)
+  - [ ] Stop generation (cancel in-flight request)
+  - [ ] Retry last (regenerate last assistant message)
+
+#### 13.2.4 Conversation Header Bar
+- [ ] Profile selector:
+  - [ ] Current profile name and icon
+  - [ ] Quick-switch dropdown
+  - [ ] "Edit profile" shortcut
+- [ ] Conversation actions:
+  - [ ] Rename conversation
+  - [ ] Export (Markdown, JSON, HTML)
+  - [ ] ~~Share (generate read-only snapshot)~~ — deferred to backlog
+  - [ ] Delete conversation
+- [ ] View toggles:
+  - [ ] Show/hide reasoning traces
+  - [ ] Show/hide tool usage
+  - [ ] Show/hide memory context
+  - [ ] Compact/expanded message view
+
+### 13.3 Agent Profiles
+
+> Stored configurations that define agent behavior, model selection, and tool access
+
+#### 13.3.1 Profile Data Model
+- [ ] Define `AgentProfile` structure:
+  ```typescript
+  interface AgentProfile {
+    id: string;
+    name: string;
+    icon?: string;              // Emoji or icon identifier
+    description?: string;
+
+    // Inheritance
+    extends?: string;           // Parent profile ID (inherit and override)
+
+    // Core settings
+    systemPrompt?: string;      // Optional if inheriting
+    model?: string;             // Primary model ID
+    fallbackModel?: string;     // Fallback if primary unavailable
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+
+    // Reasoning & Drafting
+    reasoningStrategy?: 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
+    draftingStrategy?: 'none' | 'speculative' | 'pipeline' | 'candidate';
+
+    // Memory
+    memoryEnabled?: boolean;
+    memoryChannel?: string;           // Default channel for this profile
+    memoryTopK?: number;              // How many memories to retrieve
+    memoryAllowedChannels?: string[]; // (Optional) Restrict to these channels — if unset, query all accessible channels
+
+    // Tools & MCP
+    enabledMcpServers?: string[];  // Server IDs
+    toolAllowlist?: string[];      // Specific tools to enable (if set, only these)
+    toolBlocklist?: string[];      // Tools to disable (applied after allowlist)
+
+    // Metadata
+    createdAt: string;
+    updatedAt: string;
+    version: number;            // For versioning/history
+  }
+  ```
+- [ ] Profile inheritance:
+  - [ ] `extends` field references parent profile ID
+  - [ ] Child profile values override parent (shallow merge)
+  - [ ] Resolve inheritance chain at runtime (max depth: 3 to prevent cycles)
+  - [ ] UI shows "Inherits from: X" badge with link to parent
+  - [ ] Prevent circular inheritance (validate on save)
+- [ ] Storage:
+  - [ ] localStorage: `agentx:profiles`, `agentx:profile:{id}`
+  - [ ] Default profile: `agentx:defaultProfile`
+  - [ ] Profile history: `agentx:profile:{id}:history` (last N versions)
+
+#### 13.3.2 Profile Management UI (Settings Tab)
+- [ ] Profile list view:
+  - [ ] Grid or list of profiles with icon, name, description
+  - [ ] "Default" badge on default profile
+  - [ ] Quick actions: edit, clone, delete, set as default
+  - [ ] Create new profile button
+- [ ] Profile editor:
+  - [ ] Tabbed interface: General, Model, Reasoning, Memory, Tools
+  - [ ] **General tab**: name, icon picker, description, system prompt (large textarea)
+  - [ ] **Model tab**: primary model selector, fallback model, temperature slider, top_p, max_tokens
+  - [ ] **Reasoning tab**: strategy selector with descriptions, strategy-specific options
+  - [ ] **Memory tab**: enable toggle, channel selector/creator, top_k slider
+    - [ ] (Optional) Allowed channels multi-select — if set, restricts retrieval to selected channels only; default: query all
+  - [ ] **Tools tab**: MCP server toggles, tool allowlist/blocklist editor
+  - [ ] Save / Save as new / Discard changes
+  - [ ] "Test profile" button (opens quick chat with profile applied)
+- [ ] Profile operations:
+  - [ ] Clone profile (creates copy with "Copy of X" name)
+  - [ ] Export profile (JSON download)
+  - [ ] Import profile (JSON upload, conflict resolution)
+  - [ ] View history (list of saved versions)
+  - [ ] Restore from history
+  - [ ] Delete profile (with confirmation, cannot delete if in use)
+
+#### 13.3.3 Built-in Profile Templates
+- [ ] Ship default profiles users can clone:
+  - [ ] **General Assistant**: Balanced settings, memory enabled, all tools
+  - [ ] **Code Helper**: Technical system prompt, reasoning=react, code-related MCP tools
+  - [ ] **Creative Writer**: Higher temperature, drafting=candidate, memory off
+  - [ ] **Researcher**: reasoning=tot, memory enabled, search tools prioritized
+  - [ ] **Minimal**: No memory, no tools, just model + system prompt
+
+### 13.4 Prompt Library
+
+> Global reusable prompt templates and snippets — shared across all profiles, organized by tags
+
+- [ ] Library structure:
+  - [ ] **System prompts**: Full system prompt templates
+  - [ ] **User templates**: Reusable user message templates with placeholders
+  - [ ] **Snippets**: Short text fragments to insert (boilerplate, instructions)
+  - [ ] All templates are **global** (not per-profile)
+- [ ] Tagging system:
+  - [ ] Tags: user-defined labels (e.g., "coding", "creative", "research", "work")
+  - [ ] Filter library by tags (multi-select)
+  - [ ] Suggested tags based on content (optional, future)
+  - [ ] Tag management UI (create, rename, delete, merge)
+- [ ] Library UI:
+  - [ ] Sidebar panel or modal (accessible from Agent input area)
+  - [ ] Tag filter bar at top
+  - [ ] Search within filtered results
+  - [ ] Sort by: name, recently used, created date
+  - [ ] Preview before insert
+  - [ ] Edit in place
+- [ ] Template features:
+  - [ ] Placeholders: `{{variable}}` syntax with fill-in-the-blank on insert
+  - [ ] Import/export (JSON, includes tags)
+  - [ ] Share templates (copy as JSON)
+  - [ ] Duplicate template
+- [ ] Integration:
+  - [ ] `/template` slash command in Agent input (fuzzy search by name/tag)
+  - [ ] Quick insert button next to input area
+  - [ ] Profile can reference a system prompt template by ID (stays in sync if template updated)
+
+### 13.5 Conversation Persistence & Sync
+
+> Backend support for conversation and profile storage
+
+- [ ] API endpoints for conversations:
+  - [ ] `POST /api/conversations` — create conversation
+  - [ ] `GET /api/conversations` — list conversations (with pagination, filters)
+  - [ ] `GET /api/conversations/{id}` — get conversation with messages
+  - [ ] `PUT /api/conversations/{id}` — update conversation metadata
+  - [ ] `DELETE /api/conversations/{id}` — delete conversation
+  - [ ] `POST /api/conversations/{id}/messages` — add message
+  - [ ] `PUT /api/conversations/{id}/messages/{msgId}` — edit message
+  - [ ] `POST /api/conversations/{id}/branch` — create branch from message
+  - [ ] `GET /api/conversations/{id}/branches` — list branches
+  - [ ] `POST /api/conversations/{id}/export` — export conversation
+- [ ] API endpoints for profiles:
+  - [ ] `GET /api/profiles` — list profiles
+  - [ ] `POST /api/profiles` — create profile
+  - [ ] `GET /api/profiles/{id}` — get profile
+  - [ ] `PUT /api/profiles/{id}` — update profile
+  - [ ] `DELETE /api/profiles/{id}` — delete profile
+  - [ ] `POST /api/profiles/{id}/clone` — clone profile
+  - [ ] `GET /api/profiles/{id}/history` — get version history
+  - [ ] `POST /api/profiles/{id}/restore` — restore from history
+- [ ] Database models:
+  - [ ] `Conversation` table: id, user_id, profile_id, title, folder, tags, starred, archived, created_at, updated_at
+  - [ ] `Message` table: id, conversation_id, parent_id (for branching), role, content, metadata (model, tokens, latency), created_at
+  - [ ] `Profile` table: id, user_id, name, config (JSONB), version, created_at, updated_at
+  - [ ] `ProfileHistory` table: id, profile_id, version, config (JSONB), created_at
+  - [ ] `PromptTemplate` table: id, user_id, type (system|user|snippet), name, content, placeholders (JSONB), tags (TEXT[]), created_at, updated_at
+  - [ ] `Tag` table: id, user_id, name, color, created_at (for tag management)
+
+### 13.6 Settings Tab Rework
+
+> Reorganize settings to accommodate profiles and new features
+
+- [ ] Settings sections:
+  - [ ] **General**: Theme, language, keyboard shortcuts
+  - [ ] **Agent Profiles**: Profile list, create/edit (link to 13.3.2)
+  - [ ] **Model Providers**: API keys, provider health, default model
+  - [ ] **MCP Servers**: Server configuration (existing)
+  - [ ] **Memory**: Global memory settings, channel management
+  - [ ] **Prompt Library**: Manage templates and snippets (link to 13.4)
+  - [ ] **Data**: Export all data, import, clear local storage
+- [ ] Settings persistence:
+  - [ ] Migrate existing settings to new structure
+  - [ ] Settings schema versioning for future migrations
+  - [ ] Sync settings across tabs (storage events)
+
+### 13.7 Keyboard Shortcuts & Accessibility
+
+> Power user efficiency features
+
+- [ ] Global shortcuts:
+  - [ ] `Cmd/Ctrl + K`: Command palette (quick actions)
+  - [ ] `Cmd/Ctrl + N`: New conversation
+  - [ ] `Cmd/Ctrl + P`: Switch profile
+  - [ ] `Cmd/Ctrl + /`: Focus search
+  - [ ] `Cmd/Ctrl + Enter`: Send message
+  - [ ] `Escape`: Cancel generation / close modal
+- [ ] Conversation shortcuts:
+  - [ ] `↑/↓`: Navigate messages
+  - [ ] `E`: Edit selected message
+  - [ ] `R`: Regenerate selected message
+  - [ ] `B`: Create branch at selected message
+  - [ ] `D`: Delete selected message
+- [ ] Command palette:
+  - [ ] Quick access to all actions
+  - [ ] Fuzzy search
+  - [ ] Recent commands
+  - [ ] Profile switching
+  - [ ] Conversation switching
+
+### 13.8 Mobile-Responsive Considerations
+
+> Ensure usability on smaller screens (Tauri window resizing)
+
+- [ ] Responsive breakpoints:
+  - [ ] Collapse sidebar at <1024px width
+  - [ ] Stack header controls at <768px
+  - [ ] Full-width input at <640px
+- [ ] Touch-friendly:
+  - [ ] Larger tap targets on mobile
+  - [ ] Swipe gestures for sidebar
+  - [ ] Long-press for context menu
+
+---
+
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete
@@ -828,6 +1163,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 - [ ] Memory export/import (JSON/SQLite backup)
 - [ ] Advanced memory visualization (interactive graph rendering, embedding similarity clusters)
 - [ ] Streaming memory retrieval during chat (progressive context injection)
+- [ ] Conversation sharing (generate read-only shareable links/snapshots)
 
 ---
 
@@ -847,6 +1183,7 @@ The memory system is **architecturally complete but entirely disconnected**:
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
 | Phase 11: Memory System | In Progress | 40% |
 | Phase 12: Documentation | Not Started | 0% |
+| Phase 13: UI Implementation | Not Started | 0% |
 
 ---
 
@@ -873,6 +1210,14 @@ The memory system is **architecturally complete but entirely disconnected**:
 | 2026-01-31 | Memory retrieval is blocking | Synchronous retrieval in chat flow for simplicity; may scale to concurrent sub-queries for complex tasks later |
 | 2026-01-31 | LLM-only extraction, no spaCy | Entity/fact extraction uses model providers exclusively; spaCy too constraining for open-ended semantic extraction |
 | 2026-01-31 | Promotion thresholds configurable, logged | Defaults: confidence>=0.85, access_count>=5, conversations>=2; active thresholds snapshotted in each audit log entry |
+| 2026-02-13 | Dual interface: Chat vs Agent | Chat = minimal friction for quick Q&A; Agent = full power for prompt engineering workflows |
+| 2026-02-13 | Agent Profiles as first-class concept | Stored configurations (system prompt, model, reasoning, tools) that personalize agent behavior; switchable per conversation |
+| 2026-02-13 | Conversation branching over linear history | Power users need to explore alternatives; branching at any message creates forks without losing context |
+| 2026-02-13 | Prompt Library for reusable templates | System prompts, user templates with placeholders, snippets — all importable/exportable |
+| 2026-02-13 | localStorage-first, API-backed persistence | Profiles and conversations in localStorage for speed; API endpoints for sync and backup |
+| 2026-02-13 | Profile inheritance via `extends` | Child profiles inherit parent settings with overrides; max depth 3; prevents code duplication across similar profiles |
+| 2026-02-13 | Non-restrictive memory by default | Profiles query all accessible channels unless `memoryAllowedChannels` is set; simplifies default behavior |
+| 2026-02-13 | Global prompt library with tags | Templates shared across profiles (not per-profile); tags for organization and filtering |
 
 ### Blockers
 - ~~**Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work~~ ✅ Resolved

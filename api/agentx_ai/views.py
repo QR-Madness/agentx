@@ -1,13 +1,12 @@
-import asyncio
 import json
 import logging
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from asgiref.sync import async_to_sync
 
 from .kit.memory_utils import check_memory_health
-from .mcp import MCPClientManager, ServerRegistry, ServerConfig
-from .providers import get_provider, get_model_config, get_registry
+from .mcp import MCPClientManager, ServerRegistry
+from .providers import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +383,7 @@ def agent_chat(request):
         
         session_id = data.get("session_id")
         model = data.get("model")
+        profile_id = data.get("profile_id")  # Prompt profile to use
         
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -396,13 +396,15 @@ def agent_chat(request):
     else:
         agent = get_agent()
     
-    result = async_to_sync(agent.chat)(message, session_id=session_id)
+    result = async_to_sync(agent.chat)(message, session_id=session_id, profile_id=profile_id)
     
     return JsonResponse({
         "task_id": result.task_id,
         "status": result.status.value,
         "response": result.answer,  # Alias for UI compatibility
         "answer": result.answer,
+        "thinking": result.thinking,  # Extracted thinking content
+        "has_thinking": result.has_thinking,
         "session_id": session_id or result.task_id,  # Return session ID for continuity
         "reasoning_trace": result.reasoning_steps,
         "reasoning_steps": result.reasoning_steps,
@@ -412,7 +414,278 @@ def agent_chat(request):
     })
 
 
+@csrf_exempt
+def agent_chat_stream(request):
+    """
+    Handle a streaming conversational message with the agent.
+    
+    Returns Server-Sent Events (SSE) for real-time token streaming.
+    """
+    if request.method == 'OPTIONS':
+        response = JsonResponse({}, status=200)
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        message = data.get("message")
+        if not message:
+            return JsonResponse({'error': 'Missing required field: message'}, status=400)
+        
+        session_id = data.get("session_id")
+        model = data.get("model")
+        profile_id = data.get("profile_id")
+        
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+    
+    def generate_sse():
+        """Generator that yields SSE events."""
+        import time
+        import uuid
+        from .agent import Agent, AgentConfig
+        from .agent.session import SessionManager
+        from .agent.output_parser import parse_output
+        from .prompts import get_prompt_manager
+        from .providers.base import Message, MessageRole
+        
+        task_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        
+        # Get or create agent
+        if model:
+            agent = Agent(AgentConfig(default_model=model))
+        else:
+            agent = get_agent()
+        
+        # Session management
+        if agent._session_manager is None:
+            agent._session_manager = SessionManager()
+        session = agent._session_manager.get_or_create(session_id)
+        session.add_message(Message(role=MessageRole.USER, content=message))
+        context = session.get_messages()[:-1]
+        
+        try:
+            # Get provider and model
+            provider, model_id = agent.registry.get_provider_for_model(
+                agent.config.default_model
+            )
+            
+            # Build messages with system prompt
+            prompt_manager = get_prompt_manager()
+            system_prompt = prompt_manager.get_system_prompt(
+                profile_id=profile_id or agent.config.prompt_profile_id
+            )
+            
+            messages = [
+                Message(
+                    role=MessageRole.SYSTEM,
+                    content=system_prompt or "You are a helpful AI assistant."
+                )
+            ]
+            if context:
+                messages.extend(context)
+            messages.append(Message(role=MessageRole.USER, content=message))
+            
+            # Send start event
+            yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
+            
+            # Stream tokens
+            full_content = ""
+            
+            # Use sync iteration over async stream
+            async def collect_stream():
+                nonlocal full_content
+                chunks = []
+                async for chunk in provider.stream(messages, model_id, temperature=0.7, max_tokens=2000):
+                    chunks.append(chunk)
+                return chunks
+            
+            chunks = async_to_sync(collect_stream)()
+            
+            for chunk in chunks:
+                if chunk.content:
+                    full_content += chunk.content
+                    yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
+            
+            # Parse output for thinking tags
+            parsed = parse_output(full_content)
+            
+            # Add to session
+            session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
+            
+            total_time = (time.time() - start_time) * 1000
+            
+            # Send completion event
+            yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': session_id or task_id})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+    
+    response = StreamingHttpResponse(
+        generate_sse(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+    return response
+
+
 def agent_status(request):
     """Get the current agent status."""
     agent = get_agent()
     return JsonResponse(agent.get_status())
+
+
+# ============== Prompt Management Endpoints ==============
+
+def prompts_profiles(request):
+    """List all prompt profiles."""
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    profiles = manager.list_profiles()
+    return JsonResponse({
+        "profiles": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "is_default": p.is_default,
+                "sections_count": len(p.sections),
+                "enabled_sections": len(p.get_enabled_sections()),
+            }
+            for p in profiles
+        ],
+    })
+
+
+def prompts_profile_detail(request, profile_id):
+    """Get a specific prompt profile with full details."""
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    profile = manager.get_profile(profile_id)
+    if not profile:
+        return JsonResponse({"error": "Profile not found"}, status=404)
+    
+    return JsonResponse({
+        "profile": {
+            "id": profile.id,
+            "name": profile.name,
+            "description": profile.description,
+            "is_default": profile.is_default,
+            "sections": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "type": s.type,
+                    "content": s.content,
+                    "enabled": s.enabled,
+                    "order": s.order,
+                }
+                for s in profile.sections
+            ],
+        },
+        "composed_prompt": profile.compose(),
+    })
+
+
+def prompts_global(request):
+    """Get the global prompt."""
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    global_prompt = manager.get_global_prompt()
+    return JsonResponse({
+        "global_prompt": {
+            "content": global_prompt.content,
+            "enabled": global_prompt.enabled,
+        },
+    })
+
+
+@csrf_exempt
+def prompts_global_update(request):
+    """Update the global prompt."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        content = data.get("content")
+        enabled = data.get("enabled", True)
+        
+        if content is None:
+            return JsonResponse({'error': 'Missing required field: content'}, status=400)
+        
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+    
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    global_prompt = manager.set_global_prompt(content, enabled)
+    return JsonResponse({
+        "global_prompt": {
+            "content": global_prompt.content,
+            "enabled": global_prompt.enabled,
+        },
+    })
+
+
+def prompts_sections(request):
+    """List all available prompt sections."""
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    sections = manager.list_sections()
+    return JsonResponse({
+        "sections": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "type": s.type,
+                "content": s.content,
+                "enabled": s.enabled,
+                "order": s.order,
+            }
+            for s in sections
+        ],
+    })
+
+
+def prompts_compose(request):
+    """Compose a full system prompt for preview."""
+    from .prompts import get_prompt_manager
+    manager = get_prompt_manager()
+    
+    profile_id = request.GET.get('profile_id')
+    
+    system_prompt = manager.get_system_prompt(profile_id=profile_id)
+    
+    return JsonResponse({
+        "system_prompt": system_prompt,
+        "profile_id": profile_id,
+    })
+
+
+def prompts_mcp_tools(request):
+    """Get the auto-generated MCP tools prompt."""
+    from .prompts import generate_mcp_tools_prompt
+    
+    # Get tools from MCP manager
+    mcp_manager = get_mcp_manager()
+    tools = mcp_manager.list_tools()
+    
+    tools_data = [tool.to_dict() for tool in tools]
+    mcp_prompt = generate_mcp_tools_prompt(tools_data)
+    
+    return JsonResponse({
+        "mcp_tools_prompt": mcp_prompt,
+        "tools_count": len(tools_data),
+    })

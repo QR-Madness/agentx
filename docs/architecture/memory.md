@@ -18,6 +18,7 @@ The memory system is organized into four layers:
 - Provides high-level operations for storing and retrieving memories
 - Manages coordination between different memory types
 - Accepts `channel` parameter (default `"_global"`) for memory scoping
+- Goal lifecycle management (add, get, complete)
 
 ### 2. Memory Subsystems
 
@@ -289,13 +290,22 @@ Channels organize memory into traceable scopes:
     user_id: string,
     channel: string,
     description: text,
-    status: string,
+    status: string,          -- 'active', 'completed', 'abandoned', 'blocked'
     priority: integer,
     created_at: datetime,
+    completed_at: datetime,  -- Set by complete_goal()
+    result: text,            -- Completion result/summary
     deadline: datetime,
     embedding: vector(1536)
 })
 ```
+
+**Goal Lifecycle:**
+- `add_goal(goal)` → Creates Goal node, links to User
+- `get_goal(goal_id)` → Retrieves Goal by ID with parent info
+- `complete_goal(goal_id, status, result)` → Updates status, sets completed_at and result
+- TaskPlanner automatically creates goals on `plan()` when memory is provided
+- Agent completes goals on task success/failure in `run()`
 
 **Strategy**
 ```cypher
@@ -544,11 +554,15 @@ Query → AgentMemory.remember()
 ```
 ConsolidationWorker (every 15 min)
     └─→ consolidate_episodic_to_semantic()
-        ├─→ Query unconsolidated conversations
-        ├─→ Extract entities → SemanticMemory.upsert_entity()
-        ├─→ Extract facts → SemanticMemory.store_fact()
+        ├─→ Query unconsolidated conversations (with user_id, channel)
+        ├─→ Create AgentMemory instance per user/channel
+        ├─→ Extract entities → AgentMemory.upsert_entity() (with embeddings)
+        ├─→ Extract facts → AgentMemory.learn_fact() (with embeddings)
         └─→ Mark conversation as consolidated
 ```
+
+The consolidation job uses the AgentMemory interface rather than direct Neo4j writes,
+ensuring consistent embedding generation and data model compliance.
 
 ## Memory Decay
 

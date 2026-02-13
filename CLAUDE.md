@@ -33,7 +33,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - `providers/` — Abstract `ModelProvider` with OpenAI, Anthropic, Ollama implementations. Models defined in `models.yaml`
 - `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
 - `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
-- `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition, `SessionManager` for conversations
+- `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition (with goal tracking), `SessionManager` for conversations
 
 ### Key Client Patterns (`client/src/`)
 
@@ -159,6 +159,34 @@ MCP servers are configured in `mcp_servers.json` (see `mcp_servers.json.example`
 - **Tauri dev server** runs Vite on port 1420 with HMR on port 1421. Main window config in `client/src-tauri/tauri.conf.json`.
 - **Python managed by uv**, client packages by **bun**. The `task dev` command uses globally-installed `concurrently` (installed via `task install`).
 
+## Agent Memory Interface
+
+The `AgentMemory` class (`kit/agent_memory/memory/interface.py`) provides a unified API for memory operations:
+
+### Core Methods
+| Method | Description |
+|--------|-------------|
+| `store_turn(turn)` | Store conversation turn in episodic + working memory |
+| `remember(query, top_k)` | Retrieve relevant memories (turns, facts, entities, strategies) |
+| `learn_fact(claim, source, confidence)` | Store factual knowledge in semantic memory |
+| `upsert_entity(entity)` | Create/update entity in semantic memory |
+| `record_tool_usage(...)` | Record tool invocation for procedural learning |
+| `reflect(outcome)` | Trigger async consolidation job |
+
+### Goal Tracking Methods
+| Method | Description |
+|--------|-------------|
+| `add_goal(goal)` | Create a goal linked to user |
+| `get_goal(goal_id)` | Retrieve goal by ID |
+| `complete_goal(goal_id, status, result)` | Update goal status ('completed', 'abandoned', 'blocked') |
+| `get_active_goals()` | Get all active goals for user |
+
+### TaskPlanner Integration
+`TaskPlanner.plan()` accepts an optional `memory` parameter. When provided:
+- Creates a `Goal` for the main task on plan creation
+- `TaskPlan.goal_id` stores the linked goal ID
+- `Agent.run()` calls `complete_goal()` on task success/failure
+
 ## Project Status
 
-Phases 1-8 are complete (core platform, MCP client, providers, drafting, reasoning, agent, client UI). Phases 9-11 (security, testing, documentation) are pending. See `Todo.md` for detailed tracking.
+Phases 1-10 complete. Phase 11 (Memory System) in progress — 11.1-11.2 complete. See `Todo.md` for detailed tracking.

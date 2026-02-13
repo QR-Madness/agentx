@@ -9,10 +9,14 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+
+if TYPE_CHECKING:
+    from ..kit.agent_memory import AgentMemory
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,7 @@ class Subtask:
     tools_needed: list[str] = field(default_factory=list)
     completed: bool = False
     result: Optional[str] = None
+    goal_id: Optional[str] = None  # For future subtask-level goal tracking
 
 
 @dataclass
@@ -55,6 +60,7 @@ class TaskPlan:
     steps: list[Subtask]
     reasoning_strategy: str = "auto"
     estimated_tokens: int = 0
+    goal_id: Optional[str] = None  # Linked goal in memory system
     
     def get_next_subtask(self) -> Optional[Subtask]:
         """Get the next subtask that can be executed."""
@@ -121,14 +127,16 @@ class TaskPlanner:
         self,
         task: str,
         context: Optional[list[Message]] = None,
+        memory: Optional["AgentMemory"] = None,
     ) -> TaskPlan:
         """
         Create a plan for executing a task.
-        
+
         Args:
             task: The task description
             context: Optional conversation context
-            
+            memory: Optional AgentMemory for goal tracking
+
         Returns:
             TaskPlan with subtasks and execution order
         """
@@ -137,7 +145,7 @@ class TaskPlanner:
         
         if complexity == TaskComplexity.SIMPLE:
             # Simple tasks don't need decomposition
-            return TaskPlan(
+            plan = TaskPlan(
                 task=task,
                 complexity=complexity,
                 steps=[
@@ -150,6 +158,7 @@ class TaskPlanner:
                 ],
                 reasoning_strategy="cot",
             )
+            return self._create_goal_for_plan(plan, memory)
         
         # For complex tasks, use LLM to decompose
         provider, model_id = self.registry.get_provider_for_model(self.model)
@@ -195,19 +204,20 @@ Continue for each subtask."""
             
             # Determine best reasoning strategy
             strategy = self._select_strategy(steps)
-            
-            return TaskPlan(
+
+            plan = TaskPlan(
                 task=task,
                 complexity=complexity,
                 steps=steps,
                 reasoning_strategy=strategy,
                 estimated_tokens=result.usage.get("total_tokens", 0) if result.usage else 0,
             )
+            return self._create_goal_for_plan(plan, memory)
             
         except Exception as e:
             logger.error(f"Planning failed: {e}")
             # Fall back to single-step plan
-            return TaskPlan(
+            plan = TaskPlan(
                 task=task,
                 complexity=complexity,
                 steps=[
@@ -219,6 +229,7 @@ Continue for each subtask."""
                 ],
                 reasoning_strategy="cot",
             )
+            return self._create_goal_for_plan(plan, memory)
     
     def _assess_complexity(self, task: str) -> TaskComplexity:
         """Assess the complexity of a task."""
@@ -312,6 +323,41 @@ Continue for each subtask."""
         
         return steps
     
+    def _create_goal_for_plan(
+        self,
+        plan: TaskPlan,
+        memory: Optional["AgentMemory"]
+    ) -> TaskPlan:
+        """
+        Create a goal in memory for the given plan.
+
+        Args:
+            plan: The task plan to link a goal to
+            memory: Optional AgentMemory instance
+
+        Returns:
+            The plan with goal_id set if memory was available
+        """
+        if memory is None:
+            return plan
+
+        try:
+            from ..kit.agent_memory.models import Goal
+
+            goal = Goal(
+                id=str(uuid4()),
+                description=plan.task[:500],  # Truncate long tasks
+                status="active",
+                priority=3,
+            )
+            memory.add_goal(goal)
+            plan.goal_id = goal.id
+            logger.debug(f"Created goal {goal.id} for task plan")
+        except Exception as e:
+            logger.warning(f"Failed to create goal for plan: {e}")
+
+        return plan
+
     def _select_strategy(self, steps: list[Subtask]) -> str:
         """Select the best reasoning strategy based on subtasks."""
         # Count subtask types

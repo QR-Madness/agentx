@@ -18,5 +18,14 @@ urlpatterns = [
     # Agent endpoints
     path("agent/run", views.agent_run, name="agent-run"),
     path("agent/chat", views.agent_chat, name="agent-chat"),
+    path("agent/chat/stream", views.agent_chat_stream, name="agent-chat-stream"),
     path("agent/status", views.agent_status, name="agent-status"),
+    # Prompt management endpoints
+    path("prompts/profiles", views.prompts_profiles, name="prompts-profiles"),
+    path("prompts/profiles/<str:profile_id>", views.prompts_profile_detail, name="prompts-profile-detail"),
+    path("prompts/global", views.prompts_global, name="prompts-global"),
+    path("prompts/global/update", views.prompts_global_update, name="prompts-global-update"),
+    path("prompts/sections", views.prompts_sections, name="prompts-sections"),
+    path("prompts/compose", views.prompts_compose, name="prompts-compose"),
+    path("prompts/mcp-tools", views.prompts_mcp_tools, name="prompts-mcp-tools"),
 ]

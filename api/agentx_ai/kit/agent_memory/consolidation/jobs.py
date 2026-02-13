@@ -1,7 +1,8 @@
 """Background consolidation jobs for memory processing."""
 
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from uuid import uuid4
 import logging
 import json
 
@@ -10,96 +11,118 @@ from ..embeddings import get_embedder
 from ..config import get_settings
 from ..extraction.entities import extract_entities
 from ..extraction.facts import extract_facts
+from ..models import Entity
+
+if TYPE_CHECKING:
+    from ..memory.interface import AgentMemory
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _get_memory_for_user(user_id: str, channel: str = "_global") -> "AgentMemory":
+    """
+    Get or create an AgentMemory instance for a user.
+
+    Args:
+        user_id: User ID
+        channel: Memory channel (default: "_global")
+
+    Returns:
+        AgentMemory instance
+    """
+    from ..memory.interface import AgentMemory
+    return AgentMemory(user_id=user_id, channel=channel)
+
+
 def consolidate_episodic_to_semantic():
     """
     Extract entities and facts from recent episodic memory
-    and store in semantic memory.
+    and store in semantic memory using the AgentMemory interface.
     """
-    embedder = get_embedder()
+    # Cache memory instances per user to avoid repeated initialization
+    memory_cache: Dict[str, "AgentMemory"] = {}
 
     with Neo4jConnection.session() as session:
-        # Get recent conversations not yet processed
+        # Get recent conversations not yet processed, including user info
         result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
             WHERE NOT EXISTS(c.consolidated)
               OR c.consolidated < datetime() - duration('PT15M')
-            WITH c, collect(t) AS turns
+            OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+            WITH c, u, collect(t) AS turns
             ORDER BY c.started_at DESC
             LIMIT 10
             RETURN c.id AS conversation_id,
+                   coalesce(u.id, 'system') AS user_id,
+                   coalesce(c.channel, '_global') AS channel,
                    [t IN turns | {role: t.role, content: t.content}] AS turns
         """)
 
         for record in result:
             conv_id = record["conversation_id"]
+            user_id = record["user_id"]
+            channel = record["channel"]
             turns = record["turns"]
+
+            # Get or create memory instance for this user/channel
+            cache_key = f"{user_id}:{channel}"
+            if cache_key not in memory_cache:
+                memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
+            memory = memory_cache[cache_key]
 
             # Combine turn content for extraction
             full_text = "\n".join(
                 f"{t['role']}: {t['content']}" for t in turns
             )
 
-            # Entity extraction (simplified - use NER in production)
-            entities = extract_entities(full_text)
+            # Entity extraction
+            extracted_entities = extract_entities(full_text)
+            entity_count = 0
 
-            # Store entities
-            for entity in entities:
-                entity_embedding = embedder.embed_single(
-                    f"{entity['name']}: {entity.get('description', entity['type'])}"
-                )
+            # Store entities via AgentMemory interface
+            for entity_dict in extracted_entities:
+                try:
+                    entity = Entity(
+                        id=str(uuid4()),
+                        name=entity_dict["name"],
+                        type=entity_dict["type"],
+                        description=entity_dict.get("description"),
+                        salience=0.5,
+                    )
+                    memory.upsert_entity(entity)
+                    entity_count += 1
 
-                session.run("""
-                    MERGE (e:Entity {name: $name})
-                    ON CREATE SET
-                        e.id = randomUUID(),
-                        e.type = $type,
-                        e.embedding = $embedding,
-                        e.first_seen = datetime(),
-                        e.salience = 0.5
-                    ON MATCH SET
-                        e.last_accessed = datetime(),
-                        e.access_count = coalesce(e.access_count, 0) + 1
+                    # Create MENTIONS relationship (this is still direct Neo4j for the relationship)
+                    session.run("""
+                        MATCH (c:Conversation {id: $conv_id}), (e:Entity {id: $entity_id})
+                        MERGE (c)-[:MENTIONS]->(e)
+                    """, conv_id=conv_id, entity_id=entity.id)
+                except Exception as e:
+                    logger.warning(f"Failed to store entity {entity_dict.get('name')}: {e}")
 
-                    WITH e
-                    MATCH (c:Conversation {id: $conv_id})
-                    MERGE (c)-[:MENTIONS]->(e)
-                """,
-                    name=entity["name"],
-                    type=entity["type"],
-                    embedding=entity_embedding,
-                    conv_id=conv_id
-                )
+            # Fact extraction
+            extracted_facts = extract_facts(full_text)
+            fact_count = 0
 
-            # Fact extraction (simplified)
-            facts = extract_facts(full_text)
+            # Store facts via AgentMemory interface
+            for fact_dict in extracted_facts:
+                try:
+                    fact = memory.learn_fact(
+                        claim=fact_dict["claim"],
+                        source="extraction",
+                        confidence=fact_dict.get("confidence", 0.7),
+                        source_turn_id=None,  # Could link to specific turns if we tracked them
+                    )
+                    fact_count += 1
 
-            for fact in facts:
-                fact_embedding = embedder.embed_single(fact["claim"])
-
-                session.run("""
-                    CREATE (f:Fact {
-                        id: randomUUID(),
-                        claim: $claim,
-                        confidence: $confidence,
-                        source: 'extraction',
-                        embedding: $embedding,
-                        created_at: datetime()
-                    })
-
-                    WITH f
-                    MATCH (c:Conversation {id: $conv_id})
-                    CREATE (f)-[:DERIVED_FROM]->(c)
-                """,
-                    claim=fact["claim"],
-                    confidence=fact.get("confidence", 0.7),
-                    embedding=fact_embedding,
-                    conv_id=conv_id
-                )
+                    # Create DERIVED_FROM relationship
+                    session.run("""
+                        MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: $fact_id})
+                        MERGE (f)-[:DERIVED_FROM]->(c)
+                    """, conv_id=conv_id, fact_id=fact.id)
+                except Exception as e:
+                    logger.warning(f"Failed to store fact: {e}")
 
             # Mark conversation as consolidated
             session.run("""
@@ -107,7 +130,7 @@ def consolidate_episodic_to_semantic():
                 SET c.consolidated = datetime()
             """, conv_id=conv_id)
 
-            logger.info(f"Consolidated conversation {conv_id}: {len(entities)} entities, {len(facts)} facts")
+            logger.info(f"Consolidated conversation {conv_id}: {entity_count} entities, {fact_count} facts")
 
 
 def detect_patterns():

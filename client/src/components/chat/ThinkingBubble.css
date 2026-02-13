@@ -1,0 +1,127 @@
+/* ThinkingBubble.css - Collapsible thinking display */
+
+.thinking-bubble {
+  margin-bottom: 0.75rem;
+  border-radius: 8px;
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.08) 0%,
+    rgba(245, 158, 11, 0.05) 100%
+  );
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.thinking-bubble:hover {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.thinking-bubble.expanded {
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.1) 0%,
+    rgba(245, 158, 11, 0.06) 100%
+  );
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: color 0.2s;
+}
+
+.thinking-header:hover {
+  color: var(--text-primary);
+}
+
+.thinking-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.thinking-chevron {
+  color: rgba(251, 191, 36, 0.7);
+  transition: transform 0.2s;
+}
+
+.thinking-bubble.expanded .thinking-chevron {
+  transform: rotate(0deg);
+}
+
+.thinking-icon {
+  color: rgba(251, 191, 36, 0.8);
+}
+
+.thinking-label {
+  font-weight: 500;
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.thinking-meta {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.thinking-content {
+  padding: 0 0.875rem 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  border-top: 1px solid rgba(251, 191, 36, 0.1);
+  margin-top: 0;
+  animation: thinking-expand 0.2s ease;
+}
+
+@keyframes thinking-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.thinking-paragraph {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid rgba(251, 191, 36, 0.3);
+}
+
+.thinking-paragraph:first-child {
+  margin-top: 0.75rem;
+}
+
+.thinking-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Thinking steps styling */
+.thinking-content code {
+  background: rgba(251, 191, 36, 0.1);
+  padding: 0.125em 0.375em;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+}
+
+/* Dark variant for better visibility */
+.thinking-bubble.dark {
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.12) 0%,
+    rgba(245, 158, 11, 0.08) 100%
+  );
+}

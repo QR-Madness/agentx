@@ -1,0 +1,261 @@
+/* MessageContent.css - Markdown rendering styles */
+
+.message-content-markdown {
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* Headings */
+.message-content-markdown h1,
+.message-content-markdown h2,
+.message-content-markdown h3,
+.message-content-markdown h4,
+.message-content-markdown h5,
+.message-content-markdown h6 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-content-markdown h1 { font-size: 1.5em; }
+.message-content-markdown h2 { font-size: 1.3em; }
+.message-content-markdown h3 { font-size: 1.15em; }
+.message-content-markdown h4 { font-size: 1.05em; }
+
+.message-content-markdown h1:first-child,
+.message-content-markdown h2:first-child,
+.message-content-markdown h3:first-child {
+  margin-top: 0;
+}
+
+/* Paragraphs */
+.message-content-markdown p {
+  margin: 0.75em 0;
+}
+
+.message-content-markdown p:first-child {
+  margin-top: 0;
+}
+
+.message-content-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.message-content-markdown ul,
+.message-content-markdown ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+
+.message-content-markdown li {
+  margin: 0.25em 0;
+}
+
+.message-content-markdown li > p {
+  margin: 0.25em 0;
+}
+
+/* Nested lists */
+.message-content-markdown ul ul,
+.message-content-markdown ol ol,
+.message-content-markdown ul ol,
+.message-content-markdown ol ul {
+  margin: 0.25em 0;
+}
+
+/* Blockquotes */
+.message-content-markdown blockquote {
+  margin: 0.75em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid var(--accent-primary);
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+
+.message-content-markdown blockquote p {
+  margin: 0;
+}
+
+/* Inline code */
+.message-content-markdown .inline-code {
+  background: rgba(139, 92, 246, 0.15);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+  color: var(--accent-secondary);
+}
+
+/* Code blocks */
+.code-block-wrapper {
+  position: relative;
+  margin: 0.75em 0;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 1;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.message-content-markdown pre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.message-content-markdown pre code {
+  background: none;
+  padding: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.875em;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+/* Syntax highlighting - dark theme */
+.message-content-markdown .hljs {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.message-content-markdown .hljs-keyword,
+.message-content-markdown .hljs-selector-tag {
+  color: #c678dd;
+}
+
+.message-content-markdown .hljs-string,
+.message-content-markdown .hljs-attr {
+  color: #98c379;
+}
+
+.message-content-markdown .hljs-number,
+.message-content-markdown .hljs-literal {
+  color: #d19a66;
+}
+
+.message-content-markdown .hljs-comment {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.message-content-markdown .hljs-function,
+.message-content-markdown .hljs-title {
+  color: #61afef;
+}
+
+.message-content-markdown .hljs-variable,
+.message-content-markdown .hljs-template-variable {
+  color: #e06c75;
+}
+
+.message-content-markdown .hljs-type,
+.message-content-markdown .hljs-class .hljs-title {
+  color: #e5c07b;
+}
+
+.message-content-markdown .hljs-built_in {
+  color: #56b6c2;
+}
+
+/* Links */
+.message-content-markdown a {
+  color: var(--accent-primary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.message-content-markdown a:hover {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+}
+
+/* Tables */
+.table-wrapper {
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.message-content-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.message-content-markdown th,
+.message-content-markdown td {
+  padding: 0.5em 0.75em;
+  border: 1px solid var(--glass-border);
+  text-align: left;
+}
+
+.message-content-markdown th {
+  background: rgba(139, 92, 246, 0.1);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-content-markdown tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Horizontal rule */
+.message-content-markdown hr {
+  border: none;
+  border-top: 1px solid var(--glass-border);
+  margin: 1.5em 0;
+}
+
+/* Images */
+.message-content-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.75em 0;
+}
+
+/* Task lists */
+.message-content-markdown input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: var(--accent-primary);
+}
+
+/* Strong and emphasis */
+.message-content-markdown strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-content-markdown em {
+  font-style: italic;
+}
+
+/* Strikethrough */
+.message-content-markdown del {
+  text-decoration: line-through;
+  opacity: 0.7;
+}

@@ -1,0 +1,50 @@
+/* CipherText.css - Cipher decoding animation styles */
+
+.cipher-text {
+  font-family: inherit;
+  display: inline;
+}
+
+.cipher-revealed {
+  color: var(--text-primary);
+}
+
+.cipher-scramble {
+  color: var(--cosmic-cyan);
+  opacity: 0.7;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+  animation: cipher-glow 0.1s ease-in-out infinite alternate;
+}
+
+@keyframes cipher-glow {
+  from {
+    opacity: 0.5;
+    text-shadow: 0 0 4px rgba(6, 182, 212, 0.3);
+  }
+  to {
+    opacity: 0.9;
+    text-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
+  }
+}
+
+/* Cursor effect for streaming */
+.cipher-text::after {
+  content: '▊';
+  color: var(--cosmic-violet);
+  animation: blink-cursor 0.5s steps(1) infinite;
+  margin-left: 2px;
+}
+
+.cipher-text.complete::after {
+  display: none;
+}
+
+@keyframes blink-cursor {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}

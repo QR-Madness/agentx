@@ -278,10 +278,11 @@ class Agent:
             if self.config.enable_planning:
                 from .planner import TaskPlanner
                 planner = TaskPlanner(self.config.default_model)
-                plan = await planner.plan(task, context)
+                plan = await planner.plan(task, context, memory=self.memory)
                 trace.append({
                     "phase": "planning",
                     "steps": len(plan.steps) if plan else 0,
+                    "goal_id": plan.goal_id if plan else None,
                 })
             
             if self._cancel_requested:
@@ -383,6 +384,17 @@ class Agent:
                     })
                 except Exception as e:
                     logger.warning(f"Failed to trigger memory reflection: {e}")
+
+            # Complete goal in memory if one was created
+            if self.memory and plan and plan.goal_id:
+                try:
+                    self.memory.complete_goal(
+                        plan.goal_id,
+                        status="completed",
+                        result=answer[:500] if answer else None,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to complete goal: {e}")
             
             return AgentResult(
                 task_id=task_id,
@@ -412,6 +424,17 @@ class Agent:
                     })
                 except Exception as reflect_error:
                     logger.warning(f"Failed to trigger memory reflection: {reflect_error}")
+
+            # Mark goal as abandoned on failure
+            if self.memory and plan and plan.goal_id:
+                try:
+                    self.memory.complete_goal(
+                        plan.goal_id,
+                        status="abandoned",
+                        result=f"Task failed: {str(e)[:400]}",
+                    )
+                except Exception as goal_error:
+                    logger.warning(f"Failed to update goal status: {goal_error}")
             
             return AgentResult(
                 task_id=task_id,

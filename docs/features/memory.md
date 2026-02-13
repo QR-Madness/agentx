@@ -147,6 +147,12 @@ goal = Goal(
 )
 memory.add_goal(goal)
 
+# Complete a goal
+memory.complete_goal(goal.id, status="completed", result="Vacation itinerary created")
+
+# Or mark as abandoned/blocked
+memory.complete_goal(goal.id, status="abandoned", result="User cancelled request")
+
 # Record tool usage for learning
 memory.record_tool_usage(
     tool_name="web_search",
@@ -283,7 +289,9 @@ The memory system implementation is complete and syntax-error free. Current stat
 - ✅ Database schema initialization (`task db:init:schemas`)
 - ✅ Channel scoping support in all schemas
 - ✅ Partitioned audit log table (daily partitions)
-- ⏳ Agent core integration (wiring memory into chat/run flows)
+- ✅ Agent core integration (memory wired into chat/run flows)
+- ✅ Goal tracking integrated with TaskPlanner (add_goal, get_goal, complete_goal)
+- ✅ Consolidation uses AgentMemory interface (upsert_entity, learn_fact)
 - ⏳ Entity/fact extraction (LLM-based implementation)
 - ⏳ Audit logger instrumentation
 
