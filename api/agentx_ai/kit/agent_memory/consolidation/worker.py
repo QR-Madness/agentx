@@ -7,15 +7,20 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from ..connections import RedisConnection
+from ..config import get_settings
+from ..audit import MemoryAuditLogger
 from .jobs import (
     consolidate_episodic_to_semantic,
     detect_patterns,
     apply_memory_decay,
-    cleanup_old_memories
+    cleanup_old_memories,
+    manage_audit_partitions
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+settings = get_settings()
 
 
 class ConsolidationWorker:
@@ -24,6 +29,7 @@ class ConsolidationWorker:
     def __init__(self):
         self.redis = RedisConnection.get_client()
         self.running = True
+        self._audit_logger = MemoryAuditLogger(settings)
         self.jobs = {
             "consolidate": {
                 "func": consolidate_episodic_to_semantic,
@@ -39,6 +45,10 @@ class ConsolidationWorker:
             },
             "cleanup": {
                 "func": cleanup_old_memories,
+                "interval_minutes": 60 * 24  # Daily
+            },
+            "audit_partitions": {
+                "func": manage_audit_partitions,
                 "interval_minutes": 60 * 24  # Daily
             }
         }
@@ -93,12 +103,34 @@ class ConsolidationWorker:
 
                 if self._should_run_job(job_name, job_config["interval_minutes"]):
                     logger.info(f"Running job: {job_name}")
+                    start_time = time.perf_counter()
+                    success = True
+                    error_msg = None
+                    items_processed = 0
+
                     try:
-                        job_config["func"]()
+                        result = job_config["func"]()
+                        # Extract items processed if the job returns a count
+                        if isinstance(result, int):
+                            items_processed = result
+                        elif isinstance(result, dict) and "items_processed" in result:
+                            items_processed = result["items_processed"]
+
                         self._mark_job_run(job_name)
                         logger.info(f"Job completed: {job_name}")
                     except Exception as e:
+                        success = False
+                        error_msg = str(e)
                         logger.error(f"Job failed: {job_name} - {e}")
+                    finally:
+                        latency_ms = int((time.perf_counter() - start_time) * 1000)
+                        self._audit_logger.log_job(
+                            job_name=job_name,
+                            items_processed=items_processed,
+                            latency_ms=latency_ms,
+                            success=success,
+                            error_message=error_msg,
+                        )
 
             # Sleep between checks
             time.sleep(60)

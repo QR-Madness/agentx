@@ -60,6 +60,12 @@ class Settings(BaseSettings):
         "located_in", "part_of", "related_to", "mentioned_with"
     ]
 
+    # Audit logging settings
+    audit_log_level: str = "writes"  # off | writes | reads | verbose
+    audit_retention_days: int = 30
+    audit_partition_ahead_days: int = 7
+    audit_sample_rate: float = 1.0  # 0.0-1.0, sampling rate for high-volume reads
+
     class Config:
         env_file = ".env"
 

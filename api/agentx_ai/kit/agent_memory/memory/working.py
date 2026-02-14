@@ -1,11 +1,14 @@
 """Working memory - fast, ephemeral memory for current session state using Redis."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import json
 from datetime import datetime
 
 from ..connections import RedisConnection
 from ..config import get_settings
+
+if TYPE_CHECKING:
+    from ..audit import MemoryAuditLogger
 
 settings = get_settings()
 
@@ -16,10 +19,23 @@ class WorkingMemory:
     Uses Redis for sub-millisecond access.
     """
 
-    def __init__(self, user_id: str, conversation_id: Optional[str] = None):
+    def __init__(
+        self,
+        user_id: str,
+        conversation_id: Optional[str] = None,
+        audit_logger: Optional["MemoryAuditLogger"] = None
+    ):
+        """Initialize working memory.
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+            audit_logger: Optional audit logger for operation tracking.
+        """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.redis = RedisConnection.get_client()
+        self._audit_logger = audit_logger
 
         # Key prefixes
         self.session_key = f"working:{user_id}:{conversation_id or 'global'}"

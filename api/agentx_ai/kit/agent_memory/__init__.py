@@ -9,6 +9,7 @@ This package provides a comprehensive memory system using:
 
 from .models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
 from .memory.interface import AgentMemory
+from .audit import MemoryAuditLogger, AuditLogLevel, OperationType, MemoryType
 
 __all__ = [
     "AgentMemory",
@@ -18,4 +19,8 @@ __all__ = [
     "Goal",
     "Strategy",
     "MemoryBundle",
+    "MemoryAuditLogger",
+    "AuditLogLevel",
+    "OperationType",
+    "MemoryType",
 ]

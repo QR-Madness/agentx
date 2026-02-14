@@ -362,3 +362,99 @@ def trigger_reflection(
 
     redis.xadd("reflection_jobs", {"data": json.dumps(job_data)})
     logger.info(f"Queued reflection for conversation {conversation_id}")
+
+
+def manage_audit_partitions() -> Dict[str, Any]:
+    """
+    Manage audit log partitions.
+    Creates future partitions and drops old ones based on retention settings.
+
+    Returns:
+        Dictionary with partition management results
+    """
+    from sqlalchemy import text
+
+    retention_days = settings.audit_retention_days
+    ahead_days = settings.audit_partition_ahead_days
+
+    partitions_created = 0
+    partitions_dropped = 0
+    errors: List[str] = []
+
+    with get_postgres_session() as session:
+        # Create future partitions
+        for day_offset in range(ahead_days + 1):
+            partition_date = datetime.utcnow().date() + timedelta(days=day_offset)
+            next_date = partition_date + timedelta(days=1)
+
+            partition_name = f"memory_audit_log_{partition_date.strftime('%Y%m%d')}"
+
+            try:
+                # Check if partition already exists
+                result = session.execute(text("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_class
+                        WHERE relname = :partition_name
+                        AND relkind = 'r'
+                    )
+                """), {"partition_name": partition_name})
+
+                exists = result.scalar()
+
+                if not exists:
+                    # Create partition
+                    session.execute(text(f"""
+                        CREATE TABLE IF NOT EXISTS {partition_name}
+                        PARTITION OF memory_audit_log
+                        FOR VALUES FROM ('{partition_date.isoformat()}')
+                        TO ('{next_date.isoformat()}')
+                    """))
+                    partitions_created += 1
+                    logger.info(f"Created audit partition: {partition_name}")
+            except Exception as e:
+                logger.warning(f"Failed to create partition {partition_name}: {e}")
+                errors.append(f"create:{partition_name}:{e}")
+
+        # Drop old partitions beyond retention
+        cutoff_date = datetime.utcnow().date() - timedelta(days=retention_days)
+
+        try:
+            # Get list of existing partitions
+            result = session.execute(text("""
+                SELECT relname FROM pg_class c
+                JOIN pg_inherits i ON c.oid = i.inhrelid
+                JOIN pg_class p ON i.inhparent = p.oid
+                WHERE p.relname = 'memory_audit_log'
+                AND c.relkind = 'r'
+                ORDER BY relname
+            """))
+
+            for row in result:
+                partition_name = row[0]
+                # Extract date from partition name (format: memory_audit_log_YYYYMMDD)
+                try:
+                    date_str = partition_name.replace("memory_audit_log_", "")
+                    partition_date = datetime.strptime(date_str, "%Y%m%d").date()
+
+                    if partition_date < cutoff_date:
+                        session.execute(text(f"DROP TABLE IF EXISTS {partition_name}"))
+                        partitions_dropped += 1
+                        logger.info(f"Dropped old audit partition: {partition_name}")
+                except ValueError:
+                    # Skip partitions with unexpected naming
+                    continue
+        except Exception as e:
+            logger.warning(f"Failed to drop old partitions: {e}")
+            errors.append(f"drop:{e}")
+
+    logger.info(
+        f"Audit partition management: created={partitions_created}, "
+        f"dropped={partitions_dropped}, errors={len(errors)}"
+    )
+
+    return {
+        "items_processed": partitions_created + partitions_dropped,
+        "partitions_created": partitions_created,
+        "partitions_dropped": partitions_dropped,
+        "errors": errors
+    }

@@ -1,20 +1,33 @@
 """Semantic memory - entities, facts, and conceptual knowledge."""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from ..models import Entity, Fact
 from ..connections import Neo4jConnection
+
+if TYPE_CHECKING:
+    from ..audit import MemoryAuditLogger
 
 
 class SemanticMemory:
     """Handles entities, facts, and conceptual knowledge."""
 
-    def upsert_entity(self, entity: Entity) -> Entity:
+    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+        """Initialize semantic memory.
+
+        Args:
+            audit_logger: Optional audit logger for operation tracking.
+        """
+        self._audit_logger = audit_logger
+
+    def upsert_entity(self, entity: Entity, user_id: Optional[str] = None, channel: str = "_global") -> Entity:
         """
         Create or update an entity.
 
         Args:
             entity: Entity object to upsert
+            user_id: User ID for linking
+            channel: Memory channel
 
         Returns:
             Updated entity object
@@ -30,6 +43,8 @@ class SemanticMemory:
                     e.description = $description,
                     e.embedding = $embedding,
                     e.salience = $salience,
+                    e.user_id = $user_id,
+                    e.channel = $channel,
                     e.first_seen = datetime(),
                     e.last_accessed = datetime(),
                     e.access_count = 1,
@@ -41,6 +56,11 @@ class SemanticMemory:
                     e.aliases = $aliases + [x IN e.aliases WHERE NOT x IN $aliases],
                     e.last_accessed = datetime(),
                     e.access_count = e.access_count + 1
+
+                // Link to user
+                WITH e
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_ENTITY]->(e)
 
                 // Add type-specific label
                 WITH e
@@ -54,16 +74,20 @@ class SemanticMemory:
                 description=entity.description,
                 embedding=entity.embedding,
                 salience=entity.salience,
-                properties=entity.properties
+                properties=entity.properties,
+                user_id=user_id,
+                channel=channel
             )
         return entity
 
-    def store_fact(self, fact: Fact) -> None:
+    def store_fact(self, fact: Fact, user_id: Optional[str] = None, channel: str = "_global") -> None:
         """
         Store a fact and link to entities.
 
         Args:
             fact: Fact object to store
+            user_id: User ID for linking
+            channel: Memory channel
         """
         with Neo4jConnection.session() as session:
             session.run("""
@@ -74,8 +98,15 @@ class SemanticMemory:
                     source: $source,
                     source_turn_id: $source_turn_id,
                     embedding: $embedding,
+                    user_id: $user_id,
+                    channel: $channel,
                     created_at: datetime()
                 })
+
+                // Link to user
+                WITH f
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_FACT]->(f)
 
                 // Link to source turn if provided
                 WITH f
@@ -96,14 +127,18 @@ class SemanticMemory:
                 source=fact.source,
                 source_turn_id=fact.source_turn_id,
                 embedding=fact.embedding,
-                entity_ids=fact.entity_ids
+                entity_ids=fact.entity_ids,
+                user_id=user_id,
+                channel=channel
             )
 
     def vector_search_facts(
         self,
         query_embedding: List[float],
         top_k: int = 10,
-        min_confidence: float = 0.5
+        min_confidence: float = 0.5,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Search facts by vector similarity.
@@ -112,35 +147,54 @@ class SemanticMemory:
             query_embedding: Query vector
             top_k: Number of results to return
             min_confidence: Minimum confidence threshold
+            user_id: Filter by user ID
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of matching facts
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND f.user_id = $user_id"
+
+            # Channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (f.channel = $channel OR f.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND f.channel = '_global'"
+
+            result = session.run(f"""
                 CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
                 YIELD node AS f, score
-                WHERE f.confidence >= $min_confidence
+                WHERE f.confidence >= $min_confidence {user_filter} {channel_filter}
                 OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
                 RETURN f.id AS id,
                        f.claim AS claim,
                        f.confidence AS confidence,
                        f.source AS source,
+                       f.channel AS channel,
                        collect(e.name) AS entities,
                        score
                 ORDER BY score DESC
             """,
-                k=top_k,
+                k=top_k * 2,  # Over-fetch for filtering
                 embedding=query_embedding,
-                min_confidence=min_confidence
+                min_confidence=min_confidence,
+                user_id=user_id,
+                channel=channel
             )
 
-            return [dict(record) for record in result]
+            return [dict(record) for record in result][:top_k]
 
     def vector_search_entities(
         self,
         query_embedding: List[float],
-        top_k: int = 10
+        top_k: int = 10,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Search entities by vector similarity.
@@ -148,14 +202,29 @@ class SemanticMemory:
         Args:
             query_embedding: Query vector
             top_k: Number of results to return
+            user_id: Filter by user ID
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of matching entities
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND e.user_id = $user_id"
+
+            # Channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (e.channel = $channel OR e.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND e.channel = '_global'"
+
+            result = session.run(f"""
                 CALL db.index.vector.queryNodes('entity_embeddings', $k, $embedding)
                 YIELD node AS e, score
+                WHERE true {user_filter} {channel_filter}
 
                 // Update access stats
                 SET e.last_accessed = datetime(),
@@ -166,14 +235,17 @@ class SemanticMemory:
                        e.type AS type,
                        e.description AS description,
                        e.salience AS salience,
+                       e.channel AS channel,
                        score
                 ORDER BY score DESC
             """,
-                k=top_k,
-                embedding=query_embedding
+                k=top_k * 2,  # Over-fetch for filtering
+                embedding=query_embedding,
+                user_id=user_id,
+                channel=channel
             )
 
-            return [dict(record) for record in result]
+            return [dict(record) for record in result][:top_k]
 
     def get_entity_graph(
         self,

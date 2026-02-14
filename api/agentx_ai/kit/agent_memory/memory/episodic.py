@@ -1,28 +1,43 @@
 """Episodic memory - conversation history storage and retrieval."""
 
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from sqlalchemy import text
 
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
 
+if TYPE_CHECKING:
+    from ..audit import MemoryAuditLogger
+
 
 class EpisodicMemory:
     """Handles storage and retrieval of conversation history."""
 
-    def store_turn(self, turn: Turn) -> None:
+    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+        """Initialize episodic memory.
+
+        Args:
+            audit_logger: Optional audit logger for operation tracking.
+        """
+        self._audit_logger = audit_logger
+
+    def store_turn(self, turn: Turn, user_id: Optional[str] = None, channel: str = "_global") -> None:
         """
         Store turn in Neo4j graph.
 
         Args:
             turn: Turn object to store
+            user_id: User ID for linking
+            channel: Memory channel
         """
         with Neo4jConnection.session() as session:
             session.run("""
                 MERGE (c:Conversation {id: $conv_id})
-                ON CREATE SET c.started_at = datetime()
+                ON CREATE SET c.started_at = datetime(),
+                              c.user_id = $user_id,
+                              c.channel = $channel
 
                 CREATE (t:Turn {
                     id: $turn_id,
@@ -31,10 +46,16 @@ class EpisodicMemory:
                     role: $role,
                     content: $content,
                     embedding: $embedding,
-                    token_count: $token_count
+                    token_count: $token_count,
+                    channel: $channel
                 })
 
                 MERGE (c)-[:HAS_TURN]->(t)
+
+                // Link user to conversation
+                WITH c, t
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_CONVERSATION]->(c)
 
                 // Link to previous turn if exists
                 WITH c, t
@@ -51,25 +72,29 @@ class EpisodicMemory:
                 role=turn.role,
                 content=turn.content,
                 embedding=turn.embedding,
-                token_count=turn.token_count
+                token_count=turn.token_count,
+                user_id=user_id,
+                channel=channel
             )
 
-    def store_turn_log(self, turn: Turn) -> None:
+    def store_turn_log(self, turn: Turn, channel: str = "_global") -> None:
         """
         Store turn in PostgreSQL for audit/backup.
 
         Args:
             turn: Turn object to store
+            channel: Memory channel
         """
         with get_postgres_session() as session:
             session.execute(text("""
                 INSERT INTO conversation_logs
-                (conversation_id, turn_index, timestamp, role, content, token_count, embedding)
-                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :embedding)
+                (conversation_id, turn_index, timestamp, role, content, token_count, embedding, channel)
+                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :embedding, :channel)
                 ON CONFLICT (conversation_id, turn_index) DO UPDATE
                 SET content = EXCLUDED.content,
                     token_count = EXCLUDED.token_count,
-                    embedding = EXCLUDED.embedding
+                    embedding = EXCLUDED.embedding,
+                    channel = EXCLUDED.channel
             """), {
                 "conv_id": turn.conversation_id,
                 "index": turn.index,
@@ -77,7 +102,8 @@ class EpisodicMemory:
                 "role": turn.role,
                 "content": turn.content,
                 "tokens": turn.token_count,
-                "embedding": str(turn.embedding) if turn.embedding else None
+                "embedding": str(turn.embedding) if turn.embedding else None,
+                "channel": channel
             })
 
     def vector_search(
@@ -85,7 +111,8 @@ class EpisodicMemory:
         query_embedding: List[float],
         top_k: int = 10,
         user_id: Optional[str] = None,
-        time_window_hours: Optional[int] = None
+        time_window_hours: Optional[int] = None,
+        channel: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Search episodic memory by vector similarity.
@@ -95,6 +122,7 @@ class EpisodicMemory:
             top_k: Number of results to return
             user_id: Filter by user ID
             time_window_hours: Filter by time window
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of matching turns
@@ -109,22 +137,31 @@ class EpisodicMemory:
             if user_id:
                 user_filter = "AND c.user_id = $user_id"
 
+            # Channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND t.channel = '_global'"
+
             result = session.run(f"""
                 CALL db.index.vector.queryNodes('turn_embeddings', $k, $embedding)
                 YIELD node AS t, score
                 MATCH (c:Conversation)-[:HAS_TURN]->(t)
-                WHERE true {time_filter} {user_filter}
+                WHERE true {time_filter} {user_filter} {channel_filter}
                 RETURN t.id AS id,
                        t.content AS content,
                        t.role AS role,
                        t.timestamp AS timestamp,
+                       t.channel AS channel,
                        c.id AS conversation_id,
                        score
                 ORDER BY score DESC
             """,
                 k=top_k * 2,  # Over-fetch for filtering
                 embedding=query_embedding,
-                user_id=user_id
+                user_id=user_id,
+                channel=channel
             )
 
             return [dict(record) for record in result][:top_k]
@@ -152,7 +189,8 @@ class EpisodicMemory:
         self,
         user_id: str,
         hours: int = 24,
-        limit: int = 50
+        limit: int = 50,
+        channel: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get recent turns across all conversations.
@@ -161,25 +199,36 @@ class EpisodicMemory:
             user_id: User ID
             hours: Time window in hours
             limit: Maximum number of results
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of turn dictionaries
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
+            # Channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND t.channel = '_global'"
+
+            result = session.run(f"""
                 MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
                 WHERE c.user_id = $user_id
                   AND t.timestamp > datetime() - duration('PT' + $hours + 'H')
+                  {channel_filter}
                 RETURN t.content AS content,
                        t.role AS role,
                        t.timestamp AS timestamp,
+                       t.channel AS channel,
                        c.id AS conversation_id
                 ORDER BY t.timestamp DESC
                 LIMIT $limit
             """,
                 user_id=user_id,
                 hours=str(hours),
-                limit=limit
+                limit=limit,
+                channel=channel
             )
 
             return [dict(record) for record in result]

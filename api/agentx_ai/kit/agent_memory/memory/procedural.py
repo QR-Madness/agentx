@@ -1,19 +1,30 @@
 """Procedural memory - tool usage patterns and successful strategies."""
 
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import json
+
+from sqlalchemy import text
 
 from ..models import Strategy
 from ..connections import Neo4jConnection, get_postgres_session
 from ..embeddings import get_embedder
 
+if TYPE_CHECKING:
+    from ..audit import MemoryAuditLogger
+
 
 class ProceduralMemory:
     """Handles tool usage patterns and successful strategies."""
 
-    def __init__(self):
+    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+        """Initialize procedural memory.
+
+        Args:
+            audit_logger: Optional audit logger for operation tracking.
+        """
         self.embedder = get_embedder()
+        self._audit_logger = audit_logger
 
     def record_invocation(
         self,
@@ -23,7 +34,8 @@ class ProceduralMemory:
         tool_input: Dict[str, Any],
         tool_output: Any,
         success: bool,
-        latency_ms: int
+        latency_ms: int,
+        channel: str = "_global"
     ) -> None:
         """
         Record a tool invocation.
@@ -36,26 +48,28 @@ class ProceduralMemory:
             tool_output: Tool output
             success: Whether invocation was successful
             latency_ms: Latency in milliseconds
+            channel: Memory channel
         """
         # PostgreSQL for audit log
         with get_postgres_session() as session:
-            session.execute("""
+            session.execute(text("""
                 INSERT INTO tool_invocations
-                (conversation_id, turn_index, tool_name, tool_input, tool_output, success, latency_ms)
-                VALUES (:conv_id, :turn_idx, :tool, :input, :output, :success, :latency)
-            """, {
+                (conversation_id, turn_index, tool_name, tool_input, tool_output, success, latency_ms, channel)
+                VALUES (:conv_id, :turn_idx, :tool, :input, :output, :success, :latency, :channel)
+            """), {
                 "conv_id": conversation_id,
                 "turn_idx": 0,  # Would need proper turn index
                 "tool": tool_name,
                 "input": json.dumps(tool_input),
                 "output": json.dumps(tool_output) if tool_output else None,
                 "success": success,
-                "latency": latency_ms
+                "latency": latency_ms,
+                "channel": channel
             })
 
         # Neo4j for graph relationships
-        with Neo4jConnection.session() as session:
-            session.run("""
+        with Neo4jConnection.session() as neo_session:
+            neo_session.run("""
                 MERGE (tool:Tool {name: $tool_name})
                 ON CREATE SET tool.usage_count = 0, tool.success_count = 0
                 SET tool.usage_count = tool.usage_count + 1,
@@ -71,7 +85,8 @@ class ProceduralMemory:
                     timestamp: datetime(),
                     tool_name: $tool_name,
                     success: $success,
-                    latency_ms: $latency
+                    latency_ms: $latency,
+                    channel: $channel
                 })
                 MERGE (c)-[:USED_TOOL]->(inv)
                 MERGE (inv)-[:INVOKED]->(tool)
@@ -79,7 +94,8 @@ class ProceduralMemory:
                 conv_id=conversation_id,
                 tool_name=tool_name,
                 success=success,
-                latency=latency_ms
+                latency=latency_ms,
+                channel=channel
             )
 
     def learn_strategy(
@@ -88,7 +104,9 @@ class ProceduralMemory:
         context_pattern: str,
         tool_sequence: List[str],
         from_conversation_id: Optional[str] = None,
-        success: bool = True
+        success: bool = True,
+        user_id: Optional[str] = None,
+        channel: str = "_global"
     ) -> Strategy:
         """
         Record a successful (or failed) strategy pattern.
@@ -99,6 +117,8 @@ class ProceduralMemory:
             tool_sequence: Sequence of tools used
             from_conversation_id: Source conversation ID
             success: Whether strategy was successful
+            user_id: User ID for linking
+            channel: Memory channel
 
         Returns:
             Strategy object
@@ -125,8 +145,15 @@ class ProceduralMemory:
                     embedding: $embedding,
                     success_count: $success_count,
                     failure_count: $failure_count,
+                    user_id: $user_id,
+                    channel: $channel,
                     last_used: datetime()
                 })
+
+                // Link to user
+                WITH s
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_STRATEGY]->(s)
 
                 // Link to tools
                 WITH s
@@ -152,7 +179,9 @@ class ProceduralMemory:
                 success_count=strategy.success_count,
                 failure_count=strategy.failure_count,
                 conv_id=from_conversation_id,
-                success=success
+                success=success,
+                user_id=user_id,
+                channel=channel
             )
 
         return strategy
@@ -160,7 +189,9 @@ class ProceduralMemory:
     def find_strategies(
         self,
         task_description: str,
-        top_k: int = 5
+        top_k: int = 5,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
     ) -> List[Strategy]:
         """
         Find strategies that worked for similar tasks.
@@ -168,6 +199,8 @@ class ProceduralMemory:
         Args:
             task_description: Description of the task
             top_k: Number of strategies to return
+            user_id: Filter by user ID
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of Strategy objects
@@ -175,22 +208,37 @@ class ProceduralMemory:
         embedding = self.embedder.embed_single(task_description)
 
         with Neo4jConnection.session() as session:
-            result = session.run("""
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND s.user_id = $user_id"
+
+            # Channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND s.channel = '_global'"
+
+            result = session.run(f"""
                 CALL db.index.vector.queryNodes('strategy_embeddings', $k, $embedding)
                 YIELD node AS s, score
-                WHERE s.success_count > 0
+                WHERE s.success_count > 0 {user_filter} {channel_filter}
                 RETURN s.id AS id,
                        s.description AS description,
                        s.context_pattern AS context_pattern,
                        s.tool_sequence AS tool_sequence,
                        s.success_count AS success_count,
                        s.failure_count AS failure_count,
+                       s.channel AS channel,
                        s.success_count * 1.0 / (s.success_count + s.failure_count) AS success_rate,
                        score
                 ORDER BY success_rate * score DESC
             """,
                 k=top_k * 2,
-                embedding=embedding
+                embedding=embedding,
+                user_id=user_id,
+                channel=channel
             )
 
             strategies = []

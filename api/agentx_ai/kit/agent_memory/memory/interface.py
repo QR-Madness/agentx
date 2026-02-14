@@ -1,15 +1,21 @@
 """Main memory interface - unified API for agent memory operations."""
 
+import logging
+import time
 from typing import Optional, List, Dict, Any
 
 from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
 from ..embeddings import get_embedder
 from ..connections import Neo4jConnection
+from ..config import get_settings
+from ..audit import MemoryAuditLogger, OperationType, MemoryType
 from .episodic import EpisodicMemory
 from .semantic import SemanticMemory
 from .procedural import ProceduralMemory
 from .working import WorkingMemory
 from .retrieval import MemoryRetriever
+
+logger = logging.getLogger(__name__)
 
 
 class AgentMemory:
@@ -29,18 +35,29 @@ class AgentMemory:
         memory.learn_fact("User prefers concise responses", source="inferred")
     """
 
-    def __init__(self, user_id: str, conversation_id: Optional[str] = None, channel: str = "_global"):
+    def __init__(
+        self,
+        user_id: str,
+        conversation_id: Optional[str] = None,
+        channel: str = "_global",
+        session_id: Optional[str] = None
+    ):
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.channel = channel
+        self.session_id = session_id
         self.embedder = get_embedder()
 
-        # Sub-modules
-        self.episodic = EpisodicMemory()
-        self.semantic = SemanticMemory()
-        self.procedural = ProceduralMemory()
-        self.working = WorkingMemory(user_id, conversation_id)
-        self.retriever = MemoryRetriever(self)
+        # Audit logger
+        self._settings = get_settings()
+        self._audit_logger = MemoryAuditLogger(self._settings)
+
+        # Sub-modules (with audit logger injection)
+        self.episodic = EpisodicMemory(audit_logger=self._audit_logger)
+        self.semantic = SemanticMemory(audit_logger=self._audit_logger)
+        self.procedural = ProceduralMemory(audit_logger=self._audit_logger)
+        self.working = WorkingMemory(user_id, conversation_id, audit_logger=self._audit_logger)
+        self.retriever = MemoryRetriever(self, audit_logger=self._audit_logger)
 
     # Storage operations
 
@@ -51,18 +68,41 @@ class AgentMemory:
         Args:
             turn: Turn object to store
         """
-        # Generate embedding if not provided
-        if turn.embedding is None:
-            turn.embedding = self.embedder.embed_single(turn.content)
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
 
-        # Store in Neo4j (graph)
-        self.episodic.store_turn(turn)
+        try:
+            # Generate embedding if not provided
+            if turn.embedding is None:
+                turn.embedding = self.embedder.embed_single(turn.content)
 
-        # Store in PostgreSQL (logs)
-        self.episodic.store_turn_log(turn)
+            # Store in Neo4j (graph)
+            self.episodic.store_turn(turn, user_id=self.user_id, channel=self.channel)
 
-        # Update working memory
-        self.working.add_turn(turn)
+            # Store in PostgreSQL (logs)
+            self.episodic.store_turn_log(turn, channel=self.channel)
+
+            # Update working memory
+            self.working.add_turn(turn)
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.STORE.value,
+                memory_type=MemoryType.EPISODIC.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=turn.conversation_id,
+                channel=self.channel,
+                record_ids=[turn.id],
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+            )
 
     def learn_fact(
         self,
@@ -85,16 +125,40 @@ class AgentMemory:
         Returns:
             Created Fact object
         """
-        fact = Fact(
-            claim=claim,
-            source=source,
-            confidence=confidence,
-            entity_ids=entity_ids or [],
-            source_turn_id=source_turn_id,
-            embedding=self.embedder.embed_single(claim)
-        )
-        self.semantic.store_fact(fact)
-        return fact
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
+
+        try:
+            fact = Fact(
+                claim=claim,
+                source=source,
+                confidence=confidence,
+                entity_ids=entity_ids or [],
+                source_turn_id=source_turn_id,
+                embedding=self.embedder.embed_single(claim)
+            )
+            self.semantic.store_fact(fact, user_id=self.user_id, channel=self.channel)
+            return fact
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.STORE.value,
+                memory_type=MemoryType.SEMANTIC.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channel=self.channel,
+                record_ids=[fact.id] if success else None,
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+                metadata={"fact_source": source, "confidence": confidence},
+            )
 
     def upsert_entity(self, entity: Entity) -> Entity:
         """
@@ -106,11 +170,36 @@ class AgentMemory:
         Returns:
             Updated Entity object
         """
-        if entity.embedding is None:
-            text = f"{entity.name}: {entity.description or entity.type}"
-            entity.embedding = self.embedder.embed_single(text)
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
 
-        return self.semantic.upsert_entity(entity)
+        try:
+            if entity.embedding is None:
+                text = f"{entity.name}: {entity.description or entity.type}"
+                entity.embedding = self.embedder.embed_single(text)
+
+            result = self.semantic.upsert_entity(entity, user_id=self.user_id, channel=self.channel)
+            return result
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.STORE.value,
+                memory_type=MemoryType.SEMANTIC.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channel=self.channel,
+                record_ids=[entity.id],
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+                metadata={"entity_type": entity.type, "entity_name": entity.name},
+            )
 
     def add_goal(self, goal: Goal) -> Goal:
         """
@@ -122,30 +211,56 @@ class AgentMemory:
         Returns:
             Created Goal object
         """
-        if goal.embedding is None:
-            goal.embedding = self.embedder.embed_single(goal.description)
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
 
-        with Neo4jConnection.session() as session:
-            session.run("""
-                MERGE (u:User {id: $user_id})
-                CREATE (g:Goal {
-                    id: $goal_id,
-                    description: $description,
-                    status: $status,
-                    priority: $priority,
-                    created_at: datetime(),
-                    embedding: $embedding
-                })
-                MERGE (u)-[:HAS_GOAL]->(g)
-            """,
+        try:
+            if goal.embedding is None:
+                goal.embedding = self.embedder.embed_single(goal.description)
+
+            with Neo4jConnection.session() as session:
+                session.run("""
+                    MERGE (u:User {id: $user_id})
+                    CREATE (g:Goal {
+                        id: $goal_id,
+                        description: $description,
+                        status: $status,
+                        priority: $priority,
+                        channel: $channel,
+                        created_at: datetime(),
+                        embedding: $embedding
+                    })
+                    MERGE (u)-[:HAS_GOAL]->(g)
+                """,
+                    user_id=self.user_id,
+                    goal_id=goal.id,
+                    description=goal.description,
+                    status=goal.status,
+                    priority=goal.priority,
+                    channel=self.channel,
+                    embedding=goal.embedding
+                )
+            return goal
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.STORE.value,
+                memory_type=MemoryType.SEMANTIC.value,
                 user_id=self.user_id,
-                goal_id=goal.id,
-                description=goal.description,
-                status=goal.status,
-                priority=goal.priority,
-                embedding=goal.embedding
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channel=self.channel,
+                record_ids=[goal.id],
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+                metadata={"goal_status": goal.status, "goal_priority": goal.priority},
             )
-        return goal
 
     def get_goal(self, goal_id: str) -> Optional[Goal]:
         """
@@ -190,20 +305,46 @@ class AgentMemory:
         Returns:
             True if goal was found and updated, False otherwise
         """
-        with Neo4jConnection.session() as session:
-            query_result = session.run("""
-                MATCH (g:Goal {id: $goal_id})
-                SET g.status = $status,
-                    g.completed_at = datetime(),
-                    g.result = $result
-                RETURN g.id AS updated_id
-            """,
-                goal_id=goal_id,
-                status=status,
-                result=result
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
+        updated = False
+
+        try:
+            with Neo4jConnection.session() as session:
+                query_result = session.run("""
+                    MATCH (g:Goal {id: $goal_id})
+                    SET g.status = $status,
+                        g.completed_at = datetime(),
+                        g.result = $result
+                    RETURN g.id AS updated_id
+                """,
+                    goal_id=goal_id,
+                    status=status,
+                    result=result
+                )
+                record = query_result.single()
+                updated = record is not None and record["updated_id"] is not None
+                return updated
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.UPDATE.value,
+                memory_type=MemoryType.SEMANTIC.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channel=self.channel,
+                record_ids=[goal_id] if updated else None,
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+                metadata={"new_status": status, "goal_found": updated},
             )
-            record = query_result.single()
-            return record is not None and record["updated_id"] is not None
 
     def record_tool_usage(
         self,
@@ -225,15 +366,39 @@ class AgentMemory:
             latency_ms: Latency in milliseconds
             turn_id: Optional turn ID
         """
-        self.procedural.record_invocation(
-            conversation_id=self.conversation_id,
-            turn_id=turn_id,
-            tool_name=tool_name,
-            tool_input=tool_input,
-            tool_output=tool_output,
-            success=success,
-            latency_ms=latency_ms
-        )
+        start_time = time.perf_counter()
+        record_success = True
+        error_msg = None
+
+        try:
+            self.procedural.record_invocation(
+                conversation_id=self.conversation_id,
+                turn_id=turn_id,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                tool_output=tool_output,
+                success=success,
+                latency_ms=latency_ms,
+                channel=self.channel
+            )
+        except Exception as e:
+            record_success = False
+            error_msg = str(e)
+            raise
+        finally:
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            self._audit_logger.log_write(
+                operation=OperationType.RECORD.value,
+                memory_type=MemoryType.PROCEDURAL.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channel=self.channel,
+                latency_ms=elapsed_ms,
+                success=record_success,
+                error_message=error_msg,
+                metadata={"tool_name": tool_name, "tool_success": success, "tool_latency_ms": latency_ms},
+            )
 
     # Retrieval operations
 
@@ -263,15 +428,64 @@ class AgentMemory:
         Returns:
             MemoryBundle with aggregated results
         """
-        return self.retriever.retrieve(
-            query=query,
-            user_id=self.user_id,
-            top_k=top_k,
-            include_episodic=include_episodic,
-            include_semantic=include_semantic,
-            include_procedural=include_procedural,
-            time_window_hours=time_window_hours
-        )
+        start_time = time.perf_counter()
+        success = True
+        error_msg = None
+        result = None
+
+        try:
+            result = self.retriever.retrieve(
+                query=query,
+                user_id=self.user_id,
+                top_k=top_k,
+                include_episodic=include_episodic,
+                include_semantic=include_semantic,
+                include_procedural=include_procedural,
+                time_window_hours=time_window_hours,
+                channel=self.channel
+            )
+            return result
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Calculate total result count
+            result_count = 0
+            metadata = {
+                "top_k": top_k,
+                "include_episodic": include_episodic,
+                "include_semantic": include_semantic,
+                "include_procedural": include_procedural,
+            }
+            if result:
+                result_count = (
+                    len(result.relevant_turns)
+                    + len(result.entities)
+                    + len(result.facts)
+                    + len(result.strategies)
+                )
+                metadata["turns_count"] = len(result.relevant_turns)
+                metadata["entities_count"] = len(result.entities)
+                metadata["facts_count"] = len(result.facts)
+                metadata["strategies_count"] = len(result.strategies)
+
+            self._audit_logger.log_read(
+                operation=OperationType.RETRIEVE.value,
+                memory_type=MemoryType.COMPOSITE.value,
+                user_id=self.user_id,
+                session_id=self.session_id,
+                conversation_id=self.conversation_id,
+                channels=[self.channel, "_global"] if self.channel != "_global" else ["_global"],
+                query_text=query,
+                result_count=result_count,
+                latency_ms=latency_ms,
+                success=success,
+                error_message=error_msg,
+                metadata=metadata,
+            )
 
     def get_active_goals(self) -> List[Goal]:
         """

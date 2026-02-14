@@ -9,6 +9,7 @@ from ..config import get_settings
 
 if TYPE_CHECKING:
     from .interface import AgentMemory
+    from ..audit import MemoryAuditLogger
 
 settings = get_settings()
 
@@ -30,10 +31,17 @@ class MemoryRetriever:
     Combines vector search, graph traversal, and temporal heuristics.
     """
 
-    def __init__(self, memory: "AgentMemory"):
+    def __init__(self, memory: "AgentMemory", audit_logger: Optional["MemoryAuditLogger"] = None):
+        """Initialize the memory retriever.
+
+        Args:
+            memory: AgentMemory instance to retrieve from.
+            audit_logger: Optional audit logger for operation tracking.
+        """
         self.memory = memory
         self.embedder = get_embedder()
         self.weights = RetrievalWeights()
+        self._audit_logger = audit_logger
 
     def retrieve(
         self,
@@ -43,7 +51,8 @@ class MemoryRetriever:
         include_episodic: bool = True,
         include_semantic: bool = True,
         include_procedural: bool = True,
-        time_window_hours: Optional[int] = None
+        time_window_hours: Optional[int] = None,
+        channel: Optional[str] = None
     ) -> MemoryBundle:
         """
         Main retrieval method combining multiple strategies.
@@ -56,6 +65,7 @@ class MemoryRetriever:
             include_semantic: Include semantic memory
             include_procedural: Include procedural memory
             time_window_hours: Time window filter
+            channel: Memory channel to search (also searches _global)
 
         Returns:
             MemoryBundle with aggregated results
@@ -67,18 +77,18 @@ class MemoryRetriever:
         # Strategy 1: Episodic memory (past conversations)
         if include_episodic:
             bundle.relevant_turns = self._retrieve_episodic(
-                query_embedding, user_id, top_k, time_window_hours
+                query_embedding, user_id, top_k, time_window_hours, channel
             )
 
         # Strategy 2: Semantic memory (facts and entities)
         if include_semantic:
             facts = self.memory.semantic.vector_search_facts(
-                query_embedding, top_k=top_k
+                query_embedding, top_k=top_k, user_id=user_id, channel=channel
             )
             bundle.facts = facts
 
             entities = self.memory.semantic.vector_search_entities(
-                query_embedding, top_k=top_k
+                query_embedding, top_k=top_k, user_id=user_id, channel=channel
             )
             bundle.entities = entities
 
@@ -102,7 +112,9 @@ class MemoryRetriever:
 
         # Strategy 3: Procedural memory (what worked before)
         if include_procedural:
-            strategies = self.memory.procedural.find_strategies(query, top_k=5)
+            strategies = self.memory.procedural.find_strategies(
+                query, top_k=5, user_id=user_id, channel=channel
+            )
             bundle.strategies = [
                 {
                     "description": s.description,
@@ -138,7 +150,8 @@ class MemoryRetriever:
         query_embedding: List[float],
         user_id: str,
         top_k: int,
-        time_window_hours: Optional[int]
+        time_window_hours: Optional[int],
+        channel: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve from episodic memory with recency boost.
@@ -148,6 +161,7 @@ class MemoryRetriever:
             user_id: User ID
             top_k: Number of results
             time_window_hours: Time window filter
+            channel: Memory channel to search (also searches _global)
 
         Returns:
             List of relevant turns
@@ -157,14 +171,16 @@ class MemoryRetriever:
             query_embedding,
             top_k=top_k * 2,
             user_id=user_id,
-            time_window_hours=time_window_hours
+            time_window_hours=time_window_hours,
+            channel=channel
         )
 
         # Get recent turns regardless of similarity
         recent = self.memory.episodic.get_recent_turns(
             user_id,
             hours=time_window_hours or 24,
-            limit=top_k
+            limit=top_k,
+            channel=channel
         )
 
         # Combine and deduplicate

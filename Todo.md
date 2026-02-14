@@ -563,47 +563,50 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Add error handling for extraction failures (don't block consolidation)
   - [x] Add extraction metrics logging (entities/facts per consolidation run)
 
-### 11.4 Auditability & Query Tracing
+### 11.4 Auditability & Query Tracing ✅
 
 > Make all memory operations transparent and traceable per session
 
-- [ ] Create `MemoryAuditLogger` class:
-  - [ ] Log all memory write operations (store, update, delete) with:
+- [x] Create `MemoryAuditLogger` class (`kit/agent_memory/audit.py`):
+  - [x] Log all memory write operations (store, update, delete) with:
     - Operation type, timestamp, user_id, conversation_id, session_id, **channel**
     - Affected node/record IDs
     - Payload summary (truncated content hash, not full content)
-  - [ ] Log all memory read operations (retrieve, search, recall) with:
+  - [x] Log all memory read operations (retrieve, search, recall) with:
     - Query text, parameters, result count, **channels searched** (e.g. `["my-project", "_global"]`)
     - Retrieval strategy used (episodic/semantic/procedural)
     - Latency per sub-query
-  - [ ] Log cross-channel operations (promote_to_global) with:
+  - [x] Log cross-channel operations (promote_to_global) with:
     - Source channel, target channel (`_global`)
     - Promoted fact/entity IDs and promotion reason (threshold met, frequency, etc.)
-  - [ ] Configurable log levels:
+  - [x] Configurable log levels:
     - `off`: No audit logging
     - `writes`: Only log mutations
     - `reads`: Log reads and writes
     - `verbose`: Full query traces with payloads
-- [ ] Create `memory_audit_log` PostgreSQL table (partitioned by day):
-  - [ ] Columns: id, timestamp, operation, memory_type, user_id, conversation_id, session_id, channel, query_hash, result_count, latency_ms, metadata (JSONB)
-  - [ ] Use PostgreSQL declarative partitioning: `PARTITION BY RANGE (timestamp)` with daily partitions
-  - [ ] Auto-create daily partitions (via pg_partman or consolidation worker creating next-day partition)
-  - [ ] BRIN index on timestamp for time-range queries (per partition)
-  - [ ] Btree indexes on user_id, conversation_id, operation, channel
-  - [ ] Retention cleanup via `DROP PARTITION` (fast, no row-by-row delete)
-- [ ] Add audit logging config to `MemoryConfig` (pydantic-settings):
-  - [ ] `audit_log_level: str = "writes"` (off | writes | reads | verbose)
-  - [ ] `audit_retention_days: int = 30`
-  - [ ] `audit_partition_ahead_days: int = 3` (pre-create partitions this many days ahead)
-- [ ] Instrument existing memory operations:
-  - [ ] `episodic.py`: Wrap store/retrieve with audit calls
-  - [ ] `semantic.py`: Wrap entity/fact operations with audit calls
-  - [ ] `procedural.py`: Wrap tool recording and strategy retrieval
-  - [ ] `working.py`: Wrap session operations (reads logging optional due to volume)
-  - [ ] `retrieval.py`: Log composite retrieval queries with per-strategy breakdown
-- [ ] Add audit log partition management to consolidation worker:
-  - [ ] Drop partitions older than `audit_retention_days` (daily cleanup job)
-  - [ ] Pre-create future partitions (`audit_partition_ahead_days` ahead)
+- [x] Create `memory_audit_log` PostgreSQL table (partitioned by day):
+  - [x] Columns: id, timestamp, operation, memory_type, user_id, conversation_id, session_id, channel, query_hash, result_count, latency_ms, metadata (JSONB) — *created in 11.1*
+  - [x] Use PostgreSQL declarative partitioning: `PARTITION BY RANGE (timestamp)` with daily partitions — *created in 11.1*
+  - [x] Auto-create daily partitions (via consolidation worker `manage_audit_partitions` job)
+  - [x] BRIN index on timestamp for time-range queries (per partition) — *created in 11.1*
+  - [x] Btree indexes on user_id, conversation_id, operation, channel — *created in 11.1*
+  - [x] Retention cleanup via `DROP PARTITION` (fast, no row-by-row delete)
+- [x] Add audit logging config to `MemoryConfig` (pydantic-settings):
+  - [x] `audit_log_level: str = "writes"` (off | writes | reads | verbose)
+  - [x] `audit_retention_days: int = 30`
+  - [x] `audit_partition_ahead_days: int = 7` (pre-create partitions this many days ahead)
+  - [x] `audit_sample_rate: float = 1.0` (for high-volume read sampling)
+- [x] Instrument existing memory operations:
+  - [x] `interface.py`: Wrap AgentMemory methods with audit calls
+  - [x] `episodic.py`: Add channel support to store/retrieve operations
+  - [x] `semantic.py`: Add channel support to entity/fact operations
+  - [x] `procedural.py`: Add channel support to tool recording and strategy retrieval
+  - [x] `working.py`: Accept audit_logger parameter (verbose logging only)
+  - [x] `retrieval.py`: Add channel support to composite retrieval
+- [x] Add audit log partition management to consolidation worker:
+  - [x] Drop partitions older than `audit_retention_days` (daily cleanup job)
+  - [x] Pre-create future partitions (`audit_partition_ahead_days` ahead)
+  - [x] Job execution tracking with audit logger
 - [ ] Add `/api/memory/audit` endpoint for querying audit logs (admin only, future)
 
 ### 11.5 Channel Scoping & Data Safety
@@ -617,12 +620,12 @@ The memory system is **architecturally complete but entirely disconnected**:
 - Cross-channel intersections are logged in audit trail for traceability
 
 #### Channel Implementation
-- [ ] Add `channel` parameter to `AgentMemory.__init__()` (default `"_global"`):
-  - [ ] Store as instance attribute, pass through to all memory stores
-  - [ ] Add `channel` to all Neo4j MERGE/CREATE operations (episodic, semantic, procedural)
-  - [ ] Add `channel` to all PostgreSQL INSERT statements (conversation_logs, tool_invocations)
+- [x] Add `channel` parameter to `AgentMemory.__init__()` (default `"_global"`):
+  - [x] Store as instance attribute, pass through to all memory stores
+  - [x] Add `channel` to all Neo4j MERGE/CREATE operations (episodic, semantic, procedural)
+  - [x] Add `channel` to all PostgreSQL INSERT statements (conversation_logs, tool_invocations)
   - [ ] Add `channel` segment to Redis key prefix: `working:{user_id}:{channel}:{conversation_id}:*`
-- [ ] Add `channel` filtering to all read queries:
+- [x] Add `channel` filtering to all read queries:
   - [ ] `episodic.py`: Filter turns by channel in Cypher WHERE and SQL WHERE
   - [ ] `semantic.py`: Filter facts/entities by channel
   - [ ] `procedural.py`: Filter strategies/tool stats by channel
@@ -1181,7 +1184,7 @@ The existing UI has basic tabs but lacks:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 50% |
+| Phase 11: Memory System | In Progress | 60% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | Not Started | 0% |
 
