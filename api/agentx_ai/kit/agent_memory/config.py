@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     default_top_k: int = 10
     reranking_enabled: bool = True
 
+    # Extraction settings
+    extraction_enabled: bool = True
+    extraction_model: str = "claude-3-5-haiku-latest"
+    extraction_provider: str = "anthropic"
+    extraction_temperature: float = 0.3
+    extraction_max_tokens: int = 2000
+    extraction_timeout: float = 30.0
+
+    # Entity types to recognize
+    entity_types: list = [
+        "Person", "Organization", "Location", "Concept",
+        "Technology", "Product", "Event"
+    ]
+
+    # Relationship types to recognize
+    relationship_types: list = [
+        "works_at", "knows", "uses", "prefers", "created",
+        "located_in", "part_of", "related_to", "mentioned_with"
+    ]
+
     class Config:
         env_file = ".env"
 

@@ -11,6 +11,7 @@ from ..embeddings import get_embedder
 from ..config import get_settings
 from ..extraction.entities import extract_entities
 from ..extraction.facts import extract_facts
+from ..extraction.relationships import extract_relationships
 from ..models import Entity
 
 if TYPE_CHECKING:
@@ -37,11 +38,18 @@ def _get_memory_for_user(user_id: str, channel: str = "_global") -> "AgentMemory
 
 def consolidate_episodic_to_semantic():
     """
-    Extract entities and facts from recent episodic memory
+    Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
     """
     # Cache memory instances per user to avoid repeated initialization
     memory_cache: Dict[str, "AgentMemory"] = {}
+
+    # Metrics for logging
+    total_entities = 0
+    total_facts = 0
+    total_relationships = 0
+    total_conversations = 0
+    errors: List[str] = []
 
     with Neo4jConnection.session() as session:
         # Get recent conversations not yet processed, including user info
@@ -65,6 +73,8 @@ def consolidate_episodic_to_semantic():
             channel = record["channel"]
             turns = record["turns"]
 
+            total_conversations += 1
+
             # Get or create memory instance for this user/channel
             cache_key = f"{user_id}:{channel}"
             if cache_key not in memory_cache:
@@ -76,9 +86,16 @@ def consolidate_episodic_to_semantic():
                 f"{t['role']}: {t['content']}" for t in turns
             )
 
-            # Entity extraction
-            extracted_entities = extract_entities(full_text)
+            # Entity extraction with error handling
+            try:
+                extracted_entities = extract_entities(full_text)
+            except Exception as e:
+                logger.warning(f"Entity extraction failed for {conv_id}: {e}")
+                errors.append(f"entity:{conv_id}:{e}")
+                extracted_entities = []
+
             entity_count = 0
+            entity_map: Dict[str, str] = {}  # name -> entity_id for relationship linking
 
             # Store entities via AgentMemory interface
             for entity_dict in extracted_entities:
@@ -88,9 +105,10 @@ def consolidate_episodic_to_semantic():
                         name=entity_dict["name"],
                         type=entity_dict["type"],
                         description=entity_dict.get("description"),
-                        salience=0.5,
+                        salience=entity_dict.get("confidence", 0.5),
                     )
                     memory.upsert_entity(entity)
+                    entity_map[entity_dict["name"]] = entity.id
                     entity_count += 1
 
                     # Create MENTIONS relationship (this is still direct Neo4j for the relationship)
@@ -101,18 +119,34 @@ def consolidate_episodic_to_semantic():
                 except Exception as e:
                     logger.warning(f"Failed to store entity {entity_dict.get('name')}: {e}")
 
-            # Fact extraction
-            extracted_facts = extract_facts(full_text)
+            total_entities += entity_count
+
+            # Fact extraction with error handling
+            try:
+                extracted_facts = extract_facts(full_text)
+            except Exception as e:
+                logger.warning(f"Fact extraction failed for {conv_id}: {e}")
+                errors.append(f"fact:{conv_id}:{e}")
+                extracted_facts = []
+
             fact_count = 0
 
             # Store facts via AgentMemory interface
             for fact_dict in extracted_facts:
                 try:
+                    # Link fact to mentioned entities
+                    entity_ids = [
+                        entity_map[name]
+                        for name in fact_dict.get("entity_names", [])
+                        if name in entity_map
+                    ]
+
                     fact = memory.learn_fact(
                         claim=fact_dict["claim"],
                         source="extraction",
                         confidence=fact_dict.get("confidence", 0.7),
-                        source_turn_id=None,  # Could link to specific turns if we tracked them
+                        source_turn_id=fact_dict.get("source_turn_id"),
+                        entity_ids=entity_ids if entity_ids else None,
                     )
                     fact_count += 1
 
@@ -124,13 +158,68 @@ def consolidate_episodic_to_semantic():
                 except Exception as e:
                     logger.warning(f"Failed to store fact: {e}")
 
+            total_facts += fact_count
+
+            # Relationship extraction with error handling
+            try:
+                extracted_relationships = extract_relationships(full_text, extracted_entities)
+            except Exception as e:
+                logger.warning(f"Relationship extraction failed for {conv_id}: {e}")
+                errors.append(f"relationship:{conv_id}:{e}")
+                extracted_relationships = []
+
+            rel_count = 0
+
+            # Store relationships in Neo4j
+            for rel in extracted_relationships:
+                try:
+                    source_id = entity_map.get(rel["source"])
+                    target_id = entity_map.get(rel["target"])
+
+                    if source_id and target_id:
+                        session.run("""
+                            MATCH (source:Entity {id: $source_id}),
+                                  (target:Entity {id: $target_id})
+                            MERGE (source)-[r:RELATES_TO {type: $rel_type}]->(target)
+                            ON CREATE SET r.confidence = $confidence,
+                                          r.created_at = datetime()
+                            ON MATCH SET r.confidence =
+                                CASE WHEN r.confidence < $confidence
+                                     THEN $confidence
+                                     ELSE r.confidence END
+                        """,
+                            source_id=source_id,
+                            target_id=target_id,
+                            rel_type=rel["type"],
+                            confidence=rel.get("confidence", 0.7)
+                        )
+                        rel_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to store relationship: {e}")
+
+            total_relationships += rel_count
+
             # Mark conversation as consolidated
             session.run("""
                 MATCH (c:Conversation {id: $conv_id})
                 SET c.consolidated = datetime()
             """, conv_id=conv_id)
 
-            logger.info(f"Consolidated conversation {conv_id}: {entity_count} entities, {fact_count} facts")
+            logger.info(
+                f"Consolidated conversation {conv_id}: "
+                f"{entity_count} entities, {fact_count} facts, {rel_count} relationships"
+            )
+
+    # Log summary metrics
+    if total_conversations > 0:
+        logger.info(
+            f"Consolidation complete: {total_conversations} conversations, "
+            f"{total_entities} entities, {total_facts} facts, "
+            f"{total_relationships} relationships"
+        )
+
+    if errors:
+        logger.warning(f"Consolidation had {len(errors)} errors: {errors[:5]}")
 
 
 def detect_patterns():

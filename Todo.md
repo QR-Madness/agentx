@@ -540,28 +540,28 @@ The memory system is **architecturally complete but entirely disconnected**:
 - [x] Call `memory.reflect()` after task completion in `Agent.run()` to trigger consolidation
 - [x] Wire `add_goal()` / `complete_goal()` into task planner lifecycle
 
-### 11.3 Extraction Pipeline
+### 11.3 Extraction Pipeline ✅
 
 > Replace stubs with real entity/fact extraction so consolidation produces actual data
 
-- [ ] Implement entity extraction (`extraction/entities.py`):
-  - [ ] LLM-based extraction via configured model provider (structured JSON output)
-  - [ ] Extract: person names, organizations, locations, concepts, technical terms
-  - [ ] Return `Entity` objects with type, name, description, confidence
-  - [ ] Make extraction model configurable (which provider/model to use for extraction)
-- [ ] Implement fact extraction (`extraction/facts.py`):
-  - [ ] LLM-based structured extraction (JSON schema output)
-  - [ ] Extract: claims, preferences, relationships, stated goals
-  - [ ] Return `Fact` objects with claim, source, confidence, subject/object entities
-  - [ ] Include source attribution (which turn the fact came from)
-- [ ] Implement relationship extraction (`extraction/relationships.py`):
-  - [ ] Extract entity-to-entity relationships from conversation context
-  - [ ] Support: works_at, knows, uses, prefers, related_to, etc.
-  - [ ] Return relationship triples (source_entity, relation_type, target_entity)
-- [ ] Wire extraction into consolidation jobs:
-  - [ ] `consolidate_episodic_to_semantic()` already calls extractors — verify it works with real output
-  - [ ] Add error handling for extraction failures (don't block consolidation)
-  - [ ] Add extraction metrics logging (entities/facts per consolidation run)
+- [x] Implement entity extraction (`extraction/entities.py`):
+  - [x] LLM-based extraction via configured model provider (structured JSON output)
+  - [x] Extract: person names, organizations, locations, concepts, technical terms
+  - [x] Return `Entity` objects with type, name, description, confidence
+  - [x] Make extraction model configurable (which provider/model to use for extraction)
+- [x] Implement fact extraction (`extraction/facts.py`):
+  - [x] LLM-based structured extraction (JSON schema output)
+  - [x] Extract: claims, preferences, relationships, stated goals
+  - [x] Return `Fact` objects with claim, source, confidence, subject/object entities
+  - [x] Include source attribution (which turn the fact came from)
+- [x] Implement relationship extraction (`extraction/relationships.py`):
+  - [x] Extract entity-to-entity relationships from conversation context
+  - [x] Support: works_at, knows, uses, prefers, related_to, etc.
+  - [x] Return relationship triples (source_entity, relation_type, target_entity)
+- [x] Wire extraction into consolidation jobs:
+  - [x] `consolidate_episodic_to_semantic()` already calls extractors — verify it works with real output
+  - [x] Add error handling for extraction failures (don't block consolidation)
+  - [x] Add extraction metrics logging (entities/facts per consolidation run)
 
 ### 11.4 Auditability & Query Tracing
 
@@ -1181,7 +1181,7 @@ The existing UI has basic tabs but lacks:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 40% |
+| Phase 11: Memory System | In Progress | 50% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | Not Started | 0% |
 

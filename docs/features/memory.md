@@ -292,7 +292,7 @@ The memory system implementation is complete and syntax-error free. Current stat
 - ✅ Agent core integration (memory wired into chat/run flows)
 - ✅ Goal tracking integrated with TaskPlanner (add_goal, get_goal, complete_goal)
 - ✅ Consolidation uses AgentMemory interface (upsert_entity, learn_fact)
-- ⏳ Entity/fact extraction (LLM-based implementation)
+- ✅ Entity/fact/relationship extraction (LLM-based via ExtractionService)
 - ⏳ Audit logger instrumentation
 
 ## Related Documentation

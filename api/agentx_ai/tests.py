@@ -752,3 +752,143 @@ class ProviderBaseTest(TestCase):
         self.assertEqual(result.content, "Hello, how can I help?")
         self.assertEqual(result.model, "llama3.2")
         self.assertEqual(result.finish_reason, "stop")
+
+
+# =============================================================================
+# Phase 11.3: Extraction Pipeline Tests
+# =============================================================================
+
+def _extraction_model_available():
+    """Check if extraction model provider is configured."""
+    import os
+    return bool(
+        os.environ.get("ANTHROPIC_API_KEY") or
+        os.environ.get("OPENAI_API_KEY") or
+        os.environ.get("OLLAMA_BASE_URL") or
+        os.environ.get("LMSTUDIO_BASE_URL")
+    )
+
+
+class ExtractionPipelineTest(TestCase):
+    """Tests for the extraction pipeline."""
+
+    def test_extract_entities_empty_text(self):
+        """Empty text should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_entities
+        result = extract_entities("")
+        self.assertEqual(result, [])
+
+    def test_extract_entities_short_text(self):
+        """Very short text should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_entities
+        result = extract_entities("Hi there")
+        self.assertEqual(result, [])
+
+    def test_extract_facts_empty_text(self):
+        """Empty text should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_facts
+        result = extract_facts("")
+        self.assertEqual(result, [])
+
+    def test_extract_facts_short_text(self):
+        """Very short text should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_facts
+        result = extract_facts("OK")
+        self.assertEqual(result, [])
+
+    def test_extract_relationships_no_entities(self):
+        """Relationships extraction with no entities should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_relationships
+        result = extract_relationships("Some text here", [])
+        self.assertEqual(result, [])
+
+    def test_extract_relationships_empty_text(self):
+        """Relationships extraction with empty text should return empty list."""
+        from agentx_ai.kit.agent_memory.extraction import extract_relationships
+        entities = [{"name": "Test", "type": "Person"}]
+        result = extract_relationships("", entities)
+        self.assertEqual(result, [])
+
+    def test_extraction_service_singleton(self):
+        """Extraction service should be a singleton."""
+        from agentx_ai.kit.agent_memory.extraction.service import (
+            get_extraction_service,
+            reset_extraction_service
+        )
+
+        # Reset to ensure clean state
+        reset_extraction_service()
+
+        service1 = get_extraction_service()
+        service2 = get_extraction_service()
+        self.assertIs(service1, service2)
+
+        # Clean up
+        reset_extraction_service()
+
+    def test_extraction_result_model(self):
+        """Test ExtractionResult model structure."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionResult
+
+        result = ExtractionResult(
+            entities=[{"name": "Test", "type": "Person"}],
+            facts=[{"claim": "Test is a person"}],
+            relationships=[],
+            success=True,
+            tokens_used=100
+        )
+
+        self.assertEqual(len(result.entities), 1)
+        self.assertEqual(len(result.facts), 1)
+        self.assertEqual(result.success, True)
+        self.assertEqual(result.tokens_used, 100)
+
+    def test_extraction_config_settings(self):
+        """Test extraction configuration is loaded."""
+        from agentx_ai.kit.agent_memory.config import get_settings
+
+        settings = get_settings()
+
+        self.assertTrue(hasattr(settings, 'extraction_enabled'))
+        self.assertTrue(hasattr(settings, 'extraction_model'))
+        self.assertTrue(hasattr(settings, 'extraction_provider'))
+        self.assertTrue(hasattr(settings, 'extraction_temperature'))
+        self.assertTrue(hasattr(settings, 'entity_types'))
+        self.assertTrue(hasattr(settings, 'relationship_types'))
+
+    @skipUnless(_extraction_model_available(), "Extraction model provider not configured")
+    def test_extract_entities_real(self):
+        """Test real entity extraction with configured provider."""
+        from agentx_ai.kit.agent_memory.extraction import extract_entities
+
+        text = """
+        User: I work at Anthropic in San Francisco as a software engineer.
+        Assistant: That's great! Anthropic is doing interesting AI safety research.
+        """
+        result = extract_entities(text)
+
+        # Should find at least one entity
+        self.assertIsInstance(result, list)
+        # Check structure of results
+        for entity in result:
+            self.assertIn("name", entity)
+            self.assertIn("type", entity)
+            self.assertIn("confidence", entity)
+
+    @skipUnless(_extraction_model_available(), "Extraction model provider not configured")
+    def test_extract_facts_real(self):
+        """Test real fact extraction with configured provider."""
+        from agentx_ai.kit.agent_memory.extraction import extract_facts
+
+        text = """
+        User: I prefer Python over JavaScript for backend development.
+        Assistant: Python is indeed very popular for backend work with Django and FastAPI.
+        """
+        result = extract_facts(text)
+
+        # Should return list
+        self.assertIsInstance(result, list)
+        # Check structure of results
+        for fact in result:
+            self.assertIn("claim", fact)
+            self.assertIn("confidence", fact)
