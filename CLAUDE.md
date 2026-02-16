@@ -87,6 +87,7 @@ Test categories in `api/agentx_ai/tests.py`:
 - `TranslationKitTest` — Requires HuggingFace models to be downloaded (slow first run)
 - `HealthCheckTest` — API structure tests; `test_health_with_memory_check` auto-skips if Docker services aren't running
 - `MCPClientTest`, `MCPServerRegistryTest` — Unit tests for MCP infrastructure (no external dependencies)
+- `ExtractionPipelineTest` — Memory extraction tests; real extraction tests skip without API keys
 
 The `DJANGO_SETTINGS_MODULE` env var is set automatically by the Taskfile (`agentx_api.settings`).
 
@@ -187,6 +188,13 @@ The `AgentMemory` class (`kit/agent_memory/memory/interface.py`) provides a unif
 - `TaskPlan.goal_id` stores the linked goal ID
 - `Agent.run()` calls `complete_goal()` on task success/failure
 
+### Extraction Pipeline
+The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-based extraction:
+- `extract_all(text)` — Combined extraction of entities, facts, and relationships in one LLM call
+- Uses `claude-3-5-haiku-latest` by default (configurable via `extraction_model` setting)
+- Consolidation jobs (`consolidation/jobs.py`) call extractors every 15 minutes
+- Gracefully degrades to empty results when no provider is configured
+
 ## Project Status
 
-Phases 1-10 complete. Phase 11 (Memory System) in progress — 11.1-11.2 complete. See `Todo.md` for detailed tracking.
+Phases 1-10 complete. Phase 11 (Memory System) in progress — 11.1-11.3 complete. See `Todo.md` for detailed tracking.

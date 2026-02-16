@@ -250,7 +250,9 @@ class SemanticMemory:
     def get_entity_graph(
         self,
         entity_ids: List[str],
-        depth: int = 2
+        depth: int = 2,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Traverse entity relationships to get context.
@@ -258,31 +260,56 @@ class SemanticMemory:
         Args:
             entity_ids: List of entity IDs to start from
             depth: Relationship traversal depth
+            user_id: Filter by user ID
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             Dictionary with entities, related entities, and facts
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND e.user_id = $user_id"
+
+            # Build channel filters
+            channel_filter = ""
+            related_channel_filter = ""
+            fact_channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (e.channel = $channel OR e.channel = '_global')"
+                related_channel_filter = "AND (related.channel = $channel OR related.channel = '_global')"
+                fact_channel_filter = "AND (f.channel = $channel OR f.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND e.channel = '_global'"
+                related_channel_filter = "AND related.channel = '_global'"
+                fact_channel_filter = "AND f.channel = '_global'"
+
+            result = session.run(f"""
                 UNWIND $entity_ids AS eid
-                MATCH (e:Entity {id: eid})
+                MATCH (e:Entity {{id: eid}})
+                WHERE true {user_filter} {channel_filter}
 
-                // Get related entities within depth
+                // Get related entities within depth, filtered by channel
                 OPTIONAL MATCH path = (e)-[r*1..$depth]-(related:Entity)
+                WHERE true {related_channel_filter}
 
-                // Get facts about these entities
+                // Get facts about these entities, filtered by channel
                 OPTIONAL MATCH (f:Fact)-[:ABOUT]->(e)
+                WHERE true {fact_channel_filter}
 
                 RETURN e AS entity,
-                       collect(DISTINCT {
+                       collect(DISTINCT {{
                            entity: related,
                            relationship: type(last(relationships(path))),
                            path_length: length(path)
-                       }) AS related,
+                       }}) AS related,
                        collect(DISTINCT f) AS facts
             """,
                 entity_ids=entity_ids,
-                depth=depth
+                depth=depth,
+                user_id=user_id,
+                channel=channel
             )
 
             entities = []
@@ -290,9 +317,10 @@ class SemanticMemory:
             all_facts = []
 
             for record in result:
-                entities.append(dict(record["entity"]))
-                all_related.extend(record["related"])
-                all_facts.extend([dict(f) for f in record["facts"]])
+                if record["entity"]:
+                    entities.append(dict(record["entity"]))
+                all_related.extend([r for r in record["related"] if r.get("entity")])
+                all_facts.extend([dict(f) for f in record["facts"] if f])
 
             return {
                 "entities": entities,
@@ -305,7 +333,9 @@ class SemanticMemory:
         source_id: str,
         target_id: str,
         rel_type: str,
-        properties: Optional[Dict[str, Any]] = None
+        properties: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        channel: str = "_global"
     ) -> None:
         """
         Create a relationship between entities.
@@ -315,16 +345,29 @@ class SemanticMemory:
             target_id: Target entity ID
             rel_type: Relationship type
             properties: Optional relationship properties
+            user_id: User ID (for validation)
+            channel: Channel for the relationship
         """
         with Neo4jConnection.session() as session:
             props = properties or {}
+
+            # Build user filter for security
+            user_filter = ""
+            if user_id:
+                user_filter = "AND s.user_id = $user_id AND t.user_id = $user_id"
+
             session.run(f"""
                 MATCH (s:Entity {{id: $source_id}})
                 MATCH (t:Entity {{id: $target_id}})
+                WHERE true {user_filter}
                 MERGE (s)-[r:{rel_type}]->(t)
-                SET r += $properties
+                SET r += $properties,
+                    r.channel = $channel,
+                    r.created_at = datetime()
             """,
                 source_id=source_id,
                 target_id=target_id,
-                properties=props
+                properties=props,
+                user_id=user_id,
+                channel=channel
             )

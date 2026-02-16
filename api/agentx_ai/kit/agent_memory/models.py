@@ -23,6 +23,7 @@ class Turn(BaseModel):
     embedding: Optional[List[float]] = None
     token_count: Optional[int] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    channel: str = "_global"
 
 
 class Entity(BaseModel):
@@ -39,6 +40,7 @@ class Entity(BaseModel):
     first_seen: datetime = Field(default_factory=_utc_now)
     last_accessed: datetime = Field(default_factory=_utc_now)
     access_count: int = 0
+    channel: str = "_global"
 
 
 class Fact(BaseModel):
@@ -52,6 +54,7 @@ class Fact(BaseModel):
     entity_ids: List[str] = Field(default_factory=list)
     embedding: Optional[List[float]] = None
     created_at: datetime = Field(default_factory=_utc_now)
+    channel: str = "_global"
 
 
 class Goal(BaseModel):
@@ -65,6 +68,7 @@ class Goal(BaseModel):
     embedding: Optional[List[float]] = None
     created_at: datetime = Field(default_factory=_utc_now)
     deadline: Optional[datetime] = None
+    channel: str = "_global"
 
 
 class Strategy(BaseModel):
@@ -78,6 +82,7 @@ class Strategy(BaseModel):
     success_count: int = 0
     failure_count: int = 0
     last_used: Optional[datetime] = None
+    channel: str = "_global"
 
 
 class MemoryBundle(BaseModel):

@@ -677,15 +677,294 @@ def prompts_compose(request):
 def prompts_mcp_tools(request):
     """Get the auto-generated MCP tools prompt."""
     from .prompts import generate_mcp_tools_prompt
-    
+
     # Get tools from MCP manager
     mcp_manager = get_mcp_manager()
     tools = mcp_manager.list_tools()
-    
+
     tools_data = [tool.to_dict() for tool in tools]
     mcp_prompt = generate_mcp_tools_prompt(tools_data)
-    
+
     return JsonResponse({
         "mcp_tools_prompt": mcp_prompt,
         "tools_count": len(tools_data),
     })
+
+
+# ============== Memory Channel Endpoints ==============
+
+@csrf_exempt
+def memory_channels(request):
+    """
+    List or create memory channels.
+
+    GET: List all channels with item counts
+    POST: Create a new named channel
+    """
+    from .kit.agent_memory.connections import Neo4jConnection
+
+    if request.method == 'GET':
+        # List all channels with item counts
+        try:
+            channels = []
+
+            with Neo4jConnection.session() as session:
+                # Get all distinct channels and their counts
+                result = session.run("""
+                    // Get all channels from different node types
+                    MATCH (n)
+                    WHERE n.channel IS NOT NULL
+                    WITH DISTINCT n.channel AS channel
+
+                    // Count items per channel per type
+                    OPTIONAL MATCH (t:Turn {channel: channel})
+                    WITH channel, count(DISTINCT t) AS turn_count
+
+                    OPTIONAL MATCH (e:Entity {channel: channel})
+                    WITH channel, turn_count, count(DISTINCT e) AS entity_count
+
+                    OPTIONAL MATCH (f:Fact {channel: channel})
+                    WITH channel, turn_count, entity_count, count(DISTINCT f) AS fact_count
+
+                    OPTIONAL MATCH (s:Strategy {channel: channel})
+                    WITH channel, turn_count, entity_count, fact_count, count(DISTINCT s) AS strategy_count
+
+                    OPTIONAL MATCH (g:Goal {channel: channel})
+
+                    RETURN channel,
+                           turn_count AS turns,
+                           entity_count AS entities,
+                           fact_count AS facts,
+                           strategy_count AS strategies,
+                           count(DISTINCT g) AS goals
+                    ORDER BY channel
+                """)
+
+                for record in result:
+                    channels.append({
+                        "name": record["channel"],
+                        "is_default": record["channel"] == "_global",
+                        "item_counts": {
+                            "turns": record["turns"],
+                            "entities": record["entities"],
+                            "facts": record["facts"],
+                            "strategies": record["strategies"],
+                            "goals": record["goals"],
+                        }
+                    })
+
+            # Ensure _global channel always exists in the list
+            if not any(c["name"] == "_global" for c in channels):
+                channels.insert(0, {
+                    "name": "_global",
+                    "is_default": True,
+                    "item_counts": {
+                        "turns": 0,
+                        "entities": 0,
+                        "facts": 0,
+                        "strategies": 0,
+                        "goals": 0,
+                    }
+                })
+
+            return JsonResponse({"channels": channels})
+
+        except Exception as e:
+            logger.error(f"Error listing memory channels: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST':
+        # Create a new channel
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            channel_name = data.get("name")
+
+            if not channel_name:
+                return JsonResponse({"error": "Channel name is required"}, status=400)
+
+            # Validate channel name (alphanumeric, hyphens, underscores)
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', channel_name):
+                return JsonResponse({
+                    "error": "Channel name must contain only alphanumeric characters, hyphens, and underscores"
+                }, status=400)
+
+            # Check if channel already exists
+            with Neo4jConnection.session() as session:
+                result = session.run("""
+                    MATCH (n {channel: $channel})
+                    RETURN count(n) AS count
+                """, channel=channel_name)
+                record = result.single()
+                if record and record["count"] > 0:
+                    return JsonResponse({
+                        "error": f"Channel '{channel_name}' already exists"
+                    }, status=409)
+
+            # Channel is created implicitly when first item is added
+            # For now, just confirm it's valid and doesn't exist
+            from datetime import datetime, timezone
+            return JsonResponse({
+                "name": channel_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "message": "Channel created successfully"
+            }, status=201)
+
+        except json.JSONDecodeError as e:
+            return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
+        except Exception as e:
+            logger.error(f"Error creating memory channel: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+def memory_channel_delete(request, name):
+    """
+    Delete a memory channel and all its data.
+
+    DELETE: Remove the channel and all associated data
+    """
+    from .kit.agent_memory.connections import Neo4jConnection, PostgresConnection, RedisConnection
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'DELETE':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    # Prevent deleting the _global channel
+    if name == "_global":
+        return JsonResponse({
+            "error": "Cannot delete the _global channel"
+        }, status=400)
+
+    try:
+        deleted_counts = {
+            "turns": 0,
+            "entities": 0,
+            "facts": 0,
+            "strategies": 0,
+            "goals": 0,
+            "conversations": 0,
+            "postgres_rows": 0,
+            "redis_keys": 0,
+        }
+
+        # Delete from Neo4j
+        with Neo4jConnection.session() as session:
+            # Delete turns
+            result = session.run("""
+                MATCH (t:Turn {channel: $channel})
+                WITH t, count(t) AS cnt
+                DETACH DELETE t
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["turns"] = record["cnt"] or 0
+
+            # Delete entities
+            result = session.run("""
+                MATCH (e:Entity {channel: $channel})
+                WITH e, count(e) AS cnt
+                DETACH DELETE e
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["entities"] = record["cnt"] or 0
+
+            # Delete facts
+            result = session.run("""
+                MATCH (f:Fact {channel: $channel})
+                WITH f, count(f) AS cnt
+                DETACH DELETE f
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["facts"] = record["cnt"] or 0
+
+            # Delete strategies
+            result = session.run("""
+                MATCH (s:Strategy {channel: $channel})
+                WITH s, count(s) AS cnt
+                DETACH DELETE s
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["strategies"] = record["cnt"] or 0
+
+            # Delete goals
+            result = session.run("""
+                MATCH (g:Goal {channel: $channel})
+                WITH g, count(g) AS cnt
+                DETACH DELETE g
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["goals"] = record["cnt"] or 0
+
+            # Delete conversations
+            result = session.run("""
+                MATCH (c:Conversation {channel: $channel})
+                WITH c, count(c) AS cnt
+                DETACH DELETE c
+                RETURN cnt
+            """, channel=name)
+            record = result.single()
+            if record:
+                deleted_counts["conversations"] = record["cnt"] or 0
+
+        # Delete from PostgreSQL
+        try:
+            pg_conn = PostgresConnection.get_connection()
+            with pg_conn.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM conversation_logs WHERE channel = %s",
+                    (name,)
+                )
+                deleted_counts["postgres_rows"] += cursor.rowcount
+
+                cursor.execute(
+                    "DELETE FROM tool_invocations WHERE channel = %s",
+                    (name,)
+                )
+                deleted_counts["postgres_rows"] += cursor.rowcount
+
+                cursor.execute(
+                    "DELETE FROM memory_timeline WHERE channel = %s",
+                    (name,)
+                )
+                deleted_counts["postgres_rows"] += cursor.rowcount
+
+                pg_conn.commit()
+        except Exception as e:
+            logger.warning(f"Error deleting from PostgreSQL: {e}")
+
+        # Delete from Redis
+        try:
+            redis_client = RedisConnection.get_client()
+            pattern = f"working:*:{name}:*"
+            keys = redis_client.keys(pattern)
+            if keys:
+                deleted_counts["redis_keys"] = len(keys)
+                redis_client.delete(*keys)
+        except Exception as e:
+            logger.warning(f"Error deleting from Redis: {e}")
+
+        return JsonResponse({
+            "message": f"Channel '{name}' deleted successfully",
+            "deleted": deleted_counts
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Error deleting memory channel '{name}': {e}")
+        return JsonResponse({"error": str(e)}, status=500)

@@ -1,6 +1,5 @@
 """Episodic memory - conversation history storage and retrieval."""
 
-from datetime import datetime
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from sqlalchemy import text
@@ -166,22 +165,42 @@ class EpisodicMemory:
 
             return [dict(record) for record in result][:top_k]
 
-    def get_conversation(self, conversation_id: str) -> List[Turn]:
+    def get_conversation(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
+    ) -> List[Turn]:
         """
         Get all turns in a conversation.
 
         Args:
             conversation_id: Conversation ID
+            user_id: Filter by user ID (security check)
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of Turn objects
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
-                MATCH (c:Conversation {id: $conv_id})-[:HAS_TURN]->(t:Turn)
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND c.user_id = $user_id"
+
+            # Build channel filter - search both specified channel and _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND t.channel = '_global'"
+
+            result = session.run(f"""
+                MATCH (c:Conversation {{id: $conv_id}})-[:HAS_TURN]->(t:Turn)
+                WHERE true {user_filter} {channel_filter}
                 RETURN t
                 ORDER BY t.index
-            """, conv_id=conversation_id)
+            """, conv_id=conversation_id, user_id=user_id, channel=channel)
 
             return [Turn(**dict(record["t"])) for record in result]
 

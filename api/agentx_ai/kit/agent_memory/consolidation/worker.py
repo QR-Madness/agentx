@@ -4,7 +4,6 @@ import time
 import signal
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
 from ..connections import RedisConnection
 from ..config import get_settings

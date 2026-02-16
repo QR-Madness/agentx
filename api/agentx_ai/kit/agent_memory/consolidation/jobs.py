@@ -1,7 +1,7 @@
 """Background consolidation jobs for memory processing."""
 
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, TYPE_CHECKING
 from uuid import uuid4
 import logging
 import json

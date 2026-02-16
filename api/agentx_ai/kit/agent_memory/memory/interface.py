@@ -42,7 +42,11 @@ class AgentMemory:
         channel: str = "_global",
         session_id: Optional[str] = None
     ):
-        self.user_id = user_id
+        # Validate user_id
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id is required and cannot be empty")
+
+        self.user_id = user_id.strip()
         self.conversation_id = conversation_id
         self.channel = channel
         self.session_id = session_id
@@ -56,7 +60,12 @@ class AgentMemory:
         self.episodic = EpisodicMemory(audit_logger=self._audit_logger)
         self.semantic = SemanticMemory(audit_logger=self._audit_logger)
         self.procedural = ProceduralMemory(audit_logger=self._audit_logger)
-        self.working = WorkingMemory(user_id, conversation_id, audit_logger=self._audit_logger)
+        self.working = WorkingMemory(
+            user_id,
+            conversation_id,
+            channel=self.channel,
+            audit_logger=self._audit_logger
+        )
         self.retriever = MemoryRetriever(self, audit_logger=self._audit_logger)
 
     # Storage operations
@@ -270,14 +279,21 @@ class AgentMemory:
             goal_id: ID of the goal to retrieve
 
         Returns:
-            Goal object if found, None otherwise
+            Goal object if found and accessible, None otherwise
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
-                MATCH (g:Goal {id: $goal_id})
+            # Build channel filter
+            if self.channel and self.channel != "_global":
+                channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
+            else:
+                channel_filter = "AND g.channel = '_global'"
+
+            result = session.run(f"""
+                MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal {{id: $goal_id}})
+                WHERE true {channel_filter}
                 OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
                 RETURN g, parent.id AS parent_goal_id
-            """, goal_id=goal_id)
+            """, goal_id=goal_id, user_id=self.user_id, channel=self.channel)
 
             record = result.single()
             if not record or not record["g"]:
@@ -489,19 +505,25 @@ class AgentMemory:
 
     def get_active_goals(self) -> List[Goal]:
         """
-        Get all active goals for the user.
+        Get all active goals for the user in accessible channels.
 
         Returns:
             List of active Goal objects
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
-                MATCH (u:User {id: $user_id})-[:HAS_GOAL]->(g:Goal)
-                WHERE g.status = 'active'
+            # Build channel filter
+            if self.channel and self.channel != "_global":
+                channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
+            else:
+                channel_filter = "AND g.channel = '_global'"
+
+            result = session.run(f"""
+                MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal)
+                WHERE g.status = 'active' {channel_filter}
                 OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
                 RETURN g, parent
                 ORDER BY g.priority DESC
-            """, user_id=self.user_id)
+            """, user_id=self.user_id, channel=self.channel)
 
             goals = []
             for record in result:
@@ -513,22 +535,29 @@ class AgentMemory:
 
     def get_user_context(self) -> Dict[str, Any]:
         """
-        Get user profile and preferences.
+        Get user profile and preferences scoped to accessible channels.
 
         Returns:
             User context dictionary
         """
         with Neo4jConnection.session() as session:
-            result = session.run("""
-                MATCH (u:User {id: $user_id})
+            # Build channel filter for preferences
+            if self.channel and self.channel != "_global":
+                pref_channel_filter = "AND (p.channel = $channel OR p.channel = '_global' OR p.channel IS NULL)"
+            else:
+                pref_channel_filter = "AND (p.channel = '_global' OR p.channel IS NULL)"
+
+            result = session.run(f"""
+                MATCH (u:User {{id: $user_id}})
                 OPTIONAL MATCH (u)-[:HAS_PREFERENCE]->(p:Preference)
+                WHERE true {pref_channel_filter}
                 OPTIONAL MATCH (u)-[exp:HAS_EXPERTISE]->(t:Topic)
                 OPTIONAL MATCH (u)-[:INTERESTED_IN]->(i:Topic)
                 RETURN u,
                        collect(DISTINCT p) AS preferences,
-                       collect(DISTINCT {topic: t.name, level: exp.level}) AS expertise,
+                       collect(DISTINCT {{topic: t.name, level: exp.level}}) AS expertise,
                        collect(DISTINCT i.name) AS interests
-            """, user_id=self.user_id)
+            """, user_id=self.user_id, channel=self.channel)
 
             record = result.single()
             if not record:
@@ -536,9 +565,9 @@ class AgentMemory:
 
             return {
                 "user": dict(record["u"]) if record["u"] else {},
-                "preferences": [dict(p) for p in record["preferences"]],
-                "expertise": record["expertise"],
-                "interests": record["interests"]
+                "preferences": [dict(p) for p in record["preferences"] if p],
+                "expertise": [e for e in record["expertise"] if e.get("topic")],
+                "interests": [i for i in record["interests"] if i]
             }
 
     def what_worked_for(self, task_description: str, top_k: int = 5) -> List[Strategy]:
@@ -550,9 +579,14 @@ class AgentMemory:
             top_k: Number of strategies to return
 
         Returns:
-            List of Strategy objects
+            List of Strategy objects scoped to accessible channels
         """
-        return self.procedural.find_strategies(task_description, top_k)
+        return self.procedural.find_strategies(
+            task_description,
+            top_k,
+            user_id=self.user_id,
+            channel=self.channel
+        )
 
     # Working memory operations
 

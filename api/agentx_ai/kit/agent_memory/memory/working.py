@@ -23,6 +23,7 @@ class WorkingMemory:
         self,
         user_id: str,
         conversation_id: Optional[str] = None,
+        channel: str = "_global",
         audit_logger: Optional["MemoryAuditLogger"] = None
     ):
         """Initialize working memory.
@@ -30,15 +31,17 @@ class WorkingMemory:
         Args:
             user_id: User ID
             conversation_id: Conversation ID
+            channel: Memory channel (default: _global)
             audit_logger: Optional audit logger for operation tracking.
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
+        self.channel = channel
         self.redis = RedisConnection.get_client()
         self._audit_logger = audit_logger
 
-        # Key prefixes
-        self.session_key = f"working:{user_id}:{conversation_id or 'global'}"
+        # Key prefixes - include channel for isolation
+        self.session_key = f"working:{user_id}:{channel}:{conversation_id or 'global'}"
         self.turns_key = f"{self.session_key}:turns"
         self.context_key = f"{self.session_key}:context"
 

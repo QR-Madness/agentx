@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework  
 **Status**: Pre-prototype  
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-02-16
 
 ---
 
@@ -624,33 +624,33 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Store as instance attribute, pass through to all memory stores
   - [x] Add `channel` to all Neo4j MERGE/CREATE operations (episodic, semantic, procedural)
   - [x] Add `channel` to all PostgreSQL INSERT statements (conversation_logs, tool_invocations)
-  - [ ] Add `channel` segment to Redis key prefix: `working:{user_id}:{channel}:{conversation_id}:*`
+  - [x] Add `channel` segment to Redis key prefix: `working:{user_id}:{channel}:{conversation_id}:*`
 - [x] Add `channel` filtering to all read queries:
-  - [ ] `episodic.py`: Filter turns by channel in Cypher WHERE and SQL WHERE
-  - [ ] `semantic.py`: Filter facts/entities by channel
-  - [ ] `procedural.py`: Filter strategies/tool stats by channel
-  - [ ] `working.py`: Channel already scoped via Redis key prefix
-- [ ] Add `channel` to data models (`models.py`):
-  - [ ] Add `channel: str = "_global"` field to Turn, Entity, Fact, Strategy, Goal
-- [ ] Create channel management API:
-  - [ ] `GET /api/memory/channels` — list all channels with item counts
-  - [ ] `POST /api/memory/channels` — create a named channel
-  - [ ] `DELETE /api/memory/channels/{name}` — delete a channel and all its data
+  - [x] `episodic.py`: Filter turns by channel in Cypher WHERE and SQL WHERE
+  - [x] `semantic.py`: Filter facts/entities by channel
+  - [x] `procedural.py`: Filter strategies/tool stats by channel
+  - [x] `working.py`: Channel already scoped via Redis key prefix
+- [x] Add `channel` to data models (`models.py`):
+  - [x] Add `channel: str = "_global"` field to Turn, Entity, Fact, Strategy, Goal
+- [x] Create channel management API:
+  - [x] `GET /api/memory/channels` — list all channels with item counts
+  - [x] `POST /api/memory/channels` — create a named channel
+  - [x] `DELETE /api/memory/channels/{name}` — delete a channel and all its data
 
 #### User Scoping
-- [ ] Add `user_id` filtering to all semantic memory queries (`semantic.py`):
-  - [ ] `search_facts()`: Filter by user_id in Cypher WHERE clause
-  - [ ] `search_entities()`: Filter by user_id or scope entities to user subgraph
-  - [ ] `get_entity_graph()`: Only traverse within user's subgraph
-- [ ] Add `user_id` property to all Neo4j nodes (Entity, Fact, Strategy):
-  - [ ] Include in MERGE/CREATE operations
-  - [ ] Add to vector search post-filtering
-- [ ] Add user_id to procedural memory queries:
-  - [ ] `find_strategies()`: Filter by user_id
-  - [ ] `get_tool_stats()`: Scope to user
-- [ ] Add user_id validation at `AgentMemory` interface level:
-  - [ ] Validate user_id is set before any write operation
-  - [ ] Reject empty/null user_id with clear error
+- [x] Add `user_id` filtering to all semantic memory queries (`semantic.py`):
+  - [x] `search_facts()`: Filter by user_id in Cypher WHERE clause (already implemented)
+  - [x] `search_entities()`: Filter by user_id or scope entities to user subgraph (already implemented)
+  - [x] `get_entity_graph()`: Only traverse within user's subgraph
+- [x] Add `user_id` property to all Neo4j nodes (Entity, Fact, Strategy):
+  - [x] Include in MERGE/CREATE operations (already implemented)
+  - [x] Add to vector search post-filtering (already implemented)
+- [x] Add user_id to procedural memory queries:
+  - [x] `find_strategies()`: Filter by user_id (already implemented)
+  - [x] `get_tool_stats()`: Scope to user
+- [x] Add user_id validation at `AgentMemory` interface level:
+  - [x] Validate user_id is set before any write operation
+  - [x] Reject empty/null user_id with clear error
 
 ### 11.6 Extensibility Infrastructure
 
@@ -1184,7 +1184,7 @@ The existing UI has basic tabs but lacks:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 60% |
+| Phase 11: Memory System | In Progress | 70% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | Not Started | 0% |
 

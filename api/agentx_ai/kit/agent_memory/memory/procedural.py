@@ -254,43 +254,94 @@ class ProceduralMemory:
 
             return strategies[:top_k]
 
-    def reinforce_strategy(self, strategy_id: str, success: bool) -> None:
+    def reinforce_strategy(
+        self,
+        strategy_id: str,
+        success: bool,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
+    ) -> bool:
         """
         Update strategy success/failure counts.
 
         Args:
             strategy_id: Strategy ID
             success: Whether execution was successful
+            user_id: User ID (for validation)
+            channel: Channel scope (validates strategy is accessible)
+
+        Returns:
+            True if strategy was found and updated, False otherwise
         """
         with Neo4jConnection.session() as session:
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND s.user_id = $user_id"
+
+            # Build channel filter - only reinforce if strategy is in this channel or _global
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND s.channel = '_global'"
+
             if success:
-                session.run("""
-                    MATCH (s:Strategy {id: $id})
+                result = session.run(f"""
+                    MATCH (s:Strategy {{id: $id}})
+                    WHERE true {user_filter} {channel_filter}
                     SET s.success_count = s.success_count + 1,
                         s.last_used = datetime()
-                """, id=strategy_id)
+                    RETURN s.id AS updated_id
+                """, id=strategy_id, user_id=user_id, channel=channel)
             else:
-                session.run("""
-                    MATCH (s:Strategy {id: $id})
+                result = session.run(f"""
+                    MATCH (s:Strategy {{id: $id}})
+                    WHERE true {user_filter} {channel_filter}
                     SET s.failure_count = s.failure_count + 1,
                         s.last_used = datetime()
-                """, id=strategy_id)
+                    RETURN s.id AS updated_id
+                """, id=strategy_id, user_id=user_id, channel=channel)
 
-    def get_tool_stats(self, task_type: Optional[str] = None) -> List[Dict[str, Any]]:
+            record = result.single()
+            return record is not None and record["updated_id"] is not None
+
+    def get_tool_stats(
+        self,
+        task_type: Optional[str] = None,
+        user_id: Optional[str] = None,
+        channel: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get tool usage statistics, optionally filtered by task type.
 
         Args:
             task_type: Optional task type filter
+            user_id: Filter by user ID
+            channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of tool statistics
         """
         with Neo4jConnection.session() as session:
+            # Build user filter
+            user_filter = ""
+            if user_id:
+                user_filter = "AND s.user_id = $user_id"
+
+            # Build channel filter
+            channel_filter = ""
+            if channel and channel != "_global":
+                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
+            elif channel == "_global":
+                channel_filter = "AND s.channel = '_global'"
+
             if task_type:
-                result = session.run("""
+                result = session.run(f"""
                     MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
                     WHERE s.context_pattern CONTAINS $task_type
+                          {user_filter}
+                          {channel_filter}
                     WITH t,
                          sum(s.success_count) AS successes,
                          sum(s.failure_count) AS failures
@@ -300,16 +351,22 @@ class ProceduralMemory:
                            successes * 1.0 / (successes + failures + 0.1) AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY success_rate DESC
-                """, task_type=task_type)
+                """, task_type=task_type, user_id=user_id, channel=channel)
             else:
-                result = session.run("""
-                    MATCH (t:Tool)
+                # For global stats without task_type, still scope to user's strategies
+                result = session.run(f"""
+                    MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
+                    WHERE true {user_filter} {channel_filter}
+                    WITH t,
+                         sum(s.success_count) AS successes,
+                         sum(s.failure_count) AS failures,
+                         count(DISTINCT s) AS strategy_count
                     RETURN t.name AS tool,
-                           t.usage_count AS usage_count,
-                           t.success_count AS success_count,
-                           t.success_count * 1.0 / (t.usage_count + 0.1) AS success_rate,
+                           successes + failures AS usage_count,
+                           successes AS success_count,
+                           successes * 1.0 / (successes + failures + 0.1) AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY usage_count DESC
-                """)
+                """, user_id=user_id, channel=channel)
 
             return [dict(record) for record in result]
