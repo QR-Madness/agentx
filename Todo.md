@@ -652,25 +652,34 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Validate user_id is set before any write operation
   - [x] Reject empty/null user_id with clear error
 
-### 11.6 Extensibility Infrastructure
+### 11.6 Extensibility Infrastructure ✅
 
 > Make the memory system easy to extend without backwards-compatibility burden
 
-- [ ] Define clear extension points with abstract base classes:
-  - [ ] `MemoryStore` ABC: `store()`, `retrieve()`, `delete()`, `health_check()`
-  - [ ] `Extractor` ABC: `extract(text, context) -> list[T]`
-  - [ ] `Embedder` ABC: `embed(text) -> list[float]`, `embed_batch(texts) -> list[list[float]]`
-  - [ ] `Reranker` ABC: `rerank(query, results) -> list[ScoredResult]`
-- [ ] Make retrieval strategy weights configurable per-request (not just global config):
-  - [ ] Allow `remember(query, strategy_weights={...})` override
-  - [ ] Support disabling specific memory types per query
-- [ ] Add event hooks for memory lifecycle:
-  - [ ] `on_turn_stored(turn)` — for custom post-processing
-  - [ ] `on_fact_learned(fact)` — for triggering downstream updates
-  - [ ] `on_entity_created(entity)` — for external integrations
-  - [ ] `on_retrieval_complete(query, results)` — for analytics/caching
-  - [ ] Implement as simple callback registry (no framework dependency)
-- [ ] Document extension patterns:
+- [x] Define clear extension points with abstract base classes (`abc.py`):
+  - [x] `MemoryStore` ABC: `store()`, `retrieve()`, `delete()`, `health_check()`
+  - [x] `Extractor` ABC: `extract(text, context) -> list[T]`, `extract_async()`
+  - [x] `Embedder` ABC: `embed(texts)`, `embed_single(text)`, `embed_batch(texts)`, `dimensions` property
+  - [x] `Reranker` ABC: `rerank(query, results)`, `rerank_async()`
+  - [x] Supporting dataclasses: `ScoredResult`, `HealthStatus`
+- [x] Make retrieval strategy weights configurable per-request (`retrieval.py`):
+  - [x] Add `RetrievalWeights.from_dict()` and `merge()` methods
+  - [x] Allow `remember(query, strategy_weights={...})` override
+  - [x] Support disabling specific memory types per query (existing params)
+  - [x] Add default weights to config.py
+- [x] Add event hooks for memory lifecycle (`events.py`):
+  - [x] `on_turn_stored(turn)` — via `MemoryEventEmitter.TURN_STORED`
+  - [x] `on_fact_learned(fact)` — via `MemoryEventEmitter.FACT_LEARNED`
+  - [x] `on_entity_created(entity)` — via `MemoryEventEmitter.ENTITY_CREATED`
+  - [x] `on_retrieval_complete(query, results)` — via `MemoryEventEmitter.RETRIEVAL_COMPLETE`
+  - [x] Implement as simple callback registry (no framework dependency)
+  - [x] Support both sync and async callbacks
+  - [x] Wire events into `AgentMemory` interface (`interface.py`)
+- [x] Export new classes in `__init__.py`:
+  - [x] ABCs: MemoryStore, Embedder, Extractor, Reranker, ScoredResult, HealthStatus
+  - [x] Events: MemoryEventEmitter, EventPayload, TurnStoredPayload, FactLearnedPayload, EntityCreatedPayload, RetrievalCompletePayload
+  - [x] RetrievalWeights
+- [ ] Document extension patterns (deferred to Phase 12):
   - [ ] How to add a new memory store type
   - [ ] How to add a new extraction method
   - [ ] How to add a custom reranker

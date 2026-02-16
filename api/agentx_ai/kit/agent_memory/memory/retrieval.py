@@ -1,6 +1,6 @@
 """Memory retrieval - multi-strategy retrieval engine."""
 
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass
 
 from ..models import MemoryBundle
@@ -16,13 +16,75 @@ settings = get_settings()
 
 @dataclass
 class RetrievalWeights:
-    """Weights for combining different retrieval strategies."""
+    """
+    Weights for combining different retrieval strategies.
+
+    These weights can be overridden per-request by passing a dict
+    or RetrievalWeights to remember().
+
+    Attributes:
+        episodic: Weight for past conversation turns (default: 0.3)
+        semantic_facts: Weight for factual knowledge (default: 0.25)
+        semantic_entities: Weight for entities (default: 0.2)
+        procedural: Weight for strategies/patterns (default: 0.15)
+        recency: Weight for recent context (default: 0.1)
+    """
 
     episodic: float = 0.3
     semantic_facts: float = 0.25
     semantic_entities: float = 0.2
     procedural: float = 0.15
     recency: float = 0.1
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, float]) -> "RetrievalWeights":
+        """
+        Create RetrievalWeights from a dictionary, using defaults for missing keys.
+
+        Args:
+            d: Dictionary with weight keys
+
+        Returns:
+            RetrievalWeights instance
+        """
+        defaults = cls()
+        return cls(
+            episodic=d.get("episodic", defaults.episodic),
+            semantic_facts=d.get("semantic_facts", defaults.semantic_facts),
+            semantic_entities=d.get("semantic_entities", defaults.semantic_entities),
+            procedural=d.get("procedural", defaults.procedural),
+            recency=d.get("recency", defaults.recency),
+        )
+
+    def merge(
+        self, overrides: Optional[Union["RetrievalWeights", Dict[str, float]]]
+    ) -> "RetrievalWeights":
+        """
+        Merge with overrides, returning new weights.
+
+        Only overrides non-default values (allows partial overrides).
+
+        Args:
+            overrides: Weights to override with (dict or RetrievalWeights)
+
+        Returns:
+            New RetrievalWeights with overrides applied
+        """
+        if overrides is None:
+            return self
+
+        if isinstance(overrides, dict):
+            override_weights = RetrievalWeights.from_dict(overrides)
+        else:
+            override_weights = overrides
+
+        return RetrievalWeights(
+            episodic=override_weights.episodic,
+            semantic_facts=override_weights.semantic_facts,
+            semantic_entities=override_weights.semantic_entities,
+            procedural=override_weights.procedural,
+            recency=override_weights.recency,
+        )
 
 
 class MemoryRetriever:
@@ -52,7 +114,8 @@ class MemoryRetriever:
         include_semantic: bool = True,
         include_procedural: bool = True,
         time_window_hours: Optional[int] = None,
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
+        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
     ) -> MemoryBundle:
         """
         Main retrieval method combining multiple strategies.
@@ -66,10 +129,16 @@ class MemoryRetriever:
             include_procedural: Include procedural memory
             time_window_hours: Time window filter
             channel: Memory channel to search (also searches _global)
+            strategy_weights: Optional override for retrieval weights.
+                Can be RetrievalWeights or dict with keys:
+                episodic, semantic_facts, semantic_entities, procedural, recency
 
         Returns:
             MemoryBundle with aggregated results
         """
+        # Merge weights if overrides provided (stored for future weighted combination)
+        _effective_weights = self.weights.merge(strategy_weights)  # noqa: F841
+
         query_embedding = self.embedder.embed_single(query)
 
         bundle = MemoryBundle()

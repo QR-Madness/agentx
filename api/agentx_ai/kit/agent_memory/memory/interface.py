@@ -2,18 +2,25 @@
 
 import logging
 import time
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
 from ..embeddings import get_embedder
 from ..connections import Neo4jConnection
 from ..config import get_settings
 from ..audit import MemoryAuditLogger, OperationType, MemoryType
+from ..events import (
+    MemoryEventEmitter,
+    TurnStoredPayload,
+    FactLearnedPayload,
+    EntityCreatedPayload,
+    RetrievalCompletePayload,
+)
 from .episodic import EpisodicMemory
 from .semantic import SemanticMemory
 from .procedural import ProceduralMemory
 from .working import WorkingMemory
-from .retrieval import MemoryRetriever
+from .retrieval import MemoryRetriever, RetrievalWeights
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +47,8 @@ class AgentMemory:
         user_id: str,
         conversation_id: Optional[str] = None,
         channel: str = "_global",
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        events: Optional[MemoryEventEmitter] = None
     ):
         # Validate user_id
         if not user_id or not user_id.strip():
@@ -51,6 +59,9 @@ class AgentMemory:
         self.channel = channel
         self.session_id = session_id
         self.embedder = get_embedder()
+
+        # Event emitter (create default if not provided)
+        self.events = events if events is not None else MemoryEventEmitter()
 
         # Audit logger
         self._settings = get_settings()
@@ -94,6 +105,20 @@ class AgentMemory:
 
             # Update working memory
             self.working.add_turn(turn)
+
+            # Emit turn stored event
+            self.events.emit(
+                MemoryEventEmitter.TURN_STORED,
+                TurnStoredPayload(
+                    event_name=MemoryEventEmitter.TURN_STORED,
+                    turn_id=turn.id,
+                    conversation_id=turn.conversation_id,
+                    role=turn.role,
+                    content=turn.content,
+                    user_id=self.user_id,
+                    channel=self.channel,
+                )
+            )
         except Exception as e:
             success = False
             error_msg = str(e)
@@ -148,6 +173,20 @@ class AgentMemory:
                 embedding=self.embedder.embed_single(claim)
             )
             self.semantic.store_fact(fact, user_id=self.user_id, channel=self.channel)
+
+            # Emit fact learned event
+            self.events.emit(
+                MemoryEventEmitter.FACT_LEARNED,
+                FactLearnedPayload(
+                    event_name=MemoryEventEmitter.FACT_LEARNED,
+                    fact_id=fact.id,
+                    claim=claim,
+                    confidence=confidence,
+                    source=source,
+                    user_id=self.user_id,
+                    channel=self.channel,
+                )
+            )
             return fact
         except Exception as e:
             success = False
@@ -189,6 +228,19 @@ class AgentMemory:
                 entity.embedding = self.embedder.embed_single(text)
 
             result = self.semantic.upsert_entity(entity, user_id=self.user_id, channel=self.channel)
+
+            # Emit entity created event
+            self.events.emit(
+                MemoryEventEmitter.ENTITY_CREATED,
+                EntityCreatedPayload(
+                    event_name=MemoryEventEmitter.ENTITY_CREATED,
+                    entity_id=entity.id,
+                    name=entity.name,
+                    entity_type=entity.type,
+                    user_id=self.user_id,
+                    channel=self.channel,
+                )
+            )
             return result
         except Exception as e:
             success = False
@@ -425,7 +477,8 @@ class AgentMemory:
         include_episodic: bool = True,
         include_semantic: bool = True,
         include_procedural: bool = True,
-        time_window_hours: Optional[int] = None
+        time_window_hours: Optional[int] = None,
+        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None
     ) -> MemoryBundle:
         """
         Retrieve relevant memories for the given query.
@@ -440,6 +493,9 @@ class AgentMemory:
             include_semantic: Include semantic memory
             include_procedural: Include procedural memory
             time_window_hours: Time window filter
+            strategy_weights: Optional per-request weight overrides.
+                Can be RetrievalWeights or dict with keys:
+                episodic, semantic_facts, semantic_entities, procedural, recency
 
         Returns:
             MemoryBundle with aggregated results
@@ -458,7 +514,31 @@ class AgentMemory:
                 include_semantic=include_semantic,
                 include_procedural=include_procedural,
                 time_window_hours=time_window_hours,
-                channel=self.channel
+                channel=self.channel,
+                strategy_weights=strategy_weights
+            )
+
+            # Calculate counts for event
+            turns_count = len(result.relevant_turns) if result else 0
+            facts_count = len(result.facts) if result else 0
+            entities_count = len(result.entities) if result else 0
+            result_count = turns_count + facts_count + entities_count
+
+            # Emit retrieval complete event
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            self.events.emit(
+                MemoryEventEmitter.RETRIEVAL_COMPLETE,
+                RetrievalCompletePayload(
+                    event_name=MemoryEventEmitter.RETRIEVAL_COMPLETE,
+                    query=query,
+                    result_count=result_count,
+                    latency_ms=float(latency_ms),
+                    user_id=self.user_id,
+                    channel=self.channel,
+                    turns_count=turns_count,
+                    facts_count=facts_count,
+                    entities_count=entities_count,
+                )
             )
             return result
         except Exception as e:

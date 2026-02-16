@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     default_top_k: int = 10
     reranking_enabled: bool = True
 
+    # Default retrieval weights (used when no per-request overrides provided)
+    retrieval_weight_episodic: float = 0.3
+    retrieval_weight_semantic_facts: float = 0.25
+    retrieval_weight_semantic_entities: float = 0.2
+    retrieval_weight_procedural: float = 0.15
+    retrieval_weight_recency: float = 0.1
+
     # Extraction settings
     extraction_enabled: bool = True
     extraction_model: str = "claude-3-5-haiku-latest"
