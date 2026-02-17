@@ -307,6 +307,216 @@ def apply_memory_decay():
         logger.info(f"Decayed {count} facts")
 
 
+def promote_to_global() -> Dict[str, Any]:
+    """
+    Promote high-quality facts/entities from project channels to _global.
+
+    Criteria (all three must be met for entities):
+    - Salience >= promotion_min_confidence
+    - Access count >= promotion_min_access_count
+    - Referenced in >= promotion_min_conversations conversations
+
+    For facts:
+    - Confidence >= promotion_min_confidence
+    - Access count >= promotion_min_access_count
+
+    Returns:
+        Dictionary with promotion results
+    """
+    from ..audit import MemoryAuditLogger
+
+    min_confidence = settings.promotion_min_confidence
+    min_access = settings.promotion_min_access_count
+    min_conversations = settings.promotion_min_conversations
+
+    entities_promoted = 0
+    facts_promoted = 0
+    entities_updated = 0
+    facts_updated = 0
+    errors: List[str] = []
+
+    audit_logger = MemoryAuditLogger(settings)
+
+    with Neo4jConnection.session() as session:
+        # Find entities meeting promotion criteria
+        result = session.run("""
+            MATCH (e:Entity)
+            WHERE e.channel IS NOT NULL
+              AND e.channel <> '_global'
+              AND coalesce(e.salience, 0) >= $min_confidence
+              AND coalesce(e.access_count, 0) >= $min_access
+            WITH e
+            OPTIONAL MATCH (c:Conversation)-[:MENTIONS]->(e)
+            WITH e, count(DISTINCT c) AS conv_count
+            WHERE conv_count >= $min_conversations
+            RETURN e.id AS id,
+                   e.name AS name,
+                   e.type AS type,
+                   e.description AS description,
+                   e.salience AS salience,
+                   e.access_count AS access_count,
+                   e.channel AS source_channel,
+                   conv_count
+        """, min_confidence=min_confidence, min_access=min_access, min_conversations=min_conversations)
+
+        for record in result:
+            entity_name = record["name"]
+            source_channel = record["source_channel"]
+
+            try:
+                # Check if entity already exists in _global
+                existing = session.run("""
+                    MATCH (e:Entity {name: $name, channel: '_global'})
+                    RETURN e.id AS id, e.salience AS salience
+                """, name=entity_name).single()
+
+                if existing:
+                    # Update salience if higher
+                    if record["salience"] > existing["salience"]:
+                        session.run("""
+                            MATCH (e:Entity {id: $id})
+                            SET e.salience = $salience,
+                                e.last_promoted = datetime(),
+                                e.promoted_from = coalesce(e.promoted_from, []) + $source
+                        """, id=existing["id"], salience=record["salience"], source=source_channel)
+                        entities_updated += 1
+                else:
+                    # Create new entity in _global
+                    new_id = str(uuid4())
+                    session.run("""
+                        CREATE (e:Entity {
+                            id: $id,
+                            name: $name,
+                            type: $type,
+                            description: $description,
+                            salience: $salience,
+                            access_count: 0,
+                            channel: '_global',
+                            promoted_from: [$source],
+                            promoted_at: datetime(),
+                            created_at: datetime()
+                        })
+                    """,
+                        id=new_id,
+                        name=entity_name,
+                        type=record["type"],
+                        description=record["description"],
+                        salience=record["salience"],
+                        source=source_channel
+                    )
+                    entities_promoted += 1
+
+                    # Log promotion
+                    audit_logger.log_promotion(
+                        source_channel=source_channel,
+                        target_channel="_global",
+                        memory_type="entity",
+                        memory_id=new_id,
+                        reason=f"Met promotion criteria: salience={record['salience']:.2f}, "
+                               f"access_count={record['access_count']}, conversations={record['conv_count']}"
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to promote entity {entity_name}: {e}")
+                errors.append(f"entity:{entity_name}:{e}")
+
+        # Find facts meeting promotion criteria
+        result = session.run("""
+            MATCH (f:Fact)
+            WHERE f.channel IS NOT NULL
+              AND f.channel <> '_global'
+              AND coalesce(f.confidence, 0) >= $min_confidence
+              AND coalesce(f.access_count, 0) >= $min_access
+            RETURN f.id AS id,
+                   f.claim AS claim,
+                   f.confidence AS confidence,
+                   f.access_count AS access_count,
+                   f.source AS source,
+                   f.channel AS source_channel
+        """, min_confidence=min_confidence, min_access=min_access)
+
+        for record in result:
+            claim = record["claim"]
+            source_channel = record["source_channel"]
+
+            try:
+                # Check if fact already exists in _global (by claim text)
+                existing = session.run("""
+                    MATCH (f:Fact {claim: $claim, channel: '_global'})
+                    RETURN f.id AS id, f.confidence AS confidence
+                """, claim=claim).single()
+
+                if existing:
+                    # Update confidence if higher
+                    if record["confidence"] > existing["confidence"]:
+                        session.run("""
+                            MATCH (f:Fact {id: $id})
+                            SET f.confidence = $confidence,
+                                f.last_promoted = datetime(),
+                                f.promoted_from = coalesce(f.promoted_from, []) + $source
+                        """, id=existing["id"], confidence=record["confidence"], source=source_channel)
+                        facts_updated += 1
+                else:
+                    # Create new fact in _global
+                    new_id = str(uuid4())
+                    session.run("""
+                        CREATE (f:Fact {
+                            id: $id,
+                            claim: $claim,
+                            confidence: $confidence,
+                            access_count: 0,
+                            source: $fact_source,
+                            channel: '_global',
+                            promoted_from: [$source_channel],
+                            promoted_at: datetime(),
+                            created_at: datetime()
+                        })
+                    """,
+                        id=new_id,
+                        claim=claim,
+                        confidence=record["confidence"],
+                        fact_source=record["source"],
+                        source_channel=source_channel
+                    )
+                    facts_promoted += 1
+
+                    # Log promotion
+                    audit_logger.log_promotion(
+                        source_channel=source_channel,
+                        target_channel="_global",
+                        memory_type="fact",
+                        memory_id=new_id,
+                        reason=f"Met promotion criteria: confidence={record['confidence']:.2f}, "
+                               f"access_count={record['access_count']}"
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to promote fact: {e}")
+                errors.append(f"fact:{claim[:50]}:{e}")
+
+    total_promoted = entities_promoted + facts_promoted
+    total_updated = entities_updated + facts_updated
+
+    if total_promoted > 0 or total_updated > 0:
+        logger.info(
+            f"Promotion complete: {entities_promoted} entities promoted, "
+            f"{facts_promoted} facts promoted, {entities_updated} entities updated, "
+            f"{facts_updated} facts updated"
+        )
+
+    if errors:
+        logger.warning(f"Promotion had {len(errors)} errors: {errors[:5]}")
+
+    return {
+        "items_processed": total_promoted + total_updated,
+        "entities_promoted": entities_promoted,
+        "facts_promoted": facts_promoted,
+        "entities_updated": entities_updated,
+        "facts_updated": facts_updated,
+        "errors": errors
+    }
+
+
 def cleanup_old_memories():
     """Archive or delete old, low-salience memories."""
     retention_days = settings.episodic_retention_days

@@ -85,6 +85,23 @@ class Settings(BaseSettings):
     audit_partition_ahead_days: int = 7
     audit_sample_rate: float = 1.0  # 0.0-1.0, sampling rate for high-volume reads
 
+    # Cross-channel promotion thresholds
+    promotion_min_confidence: float = 0.85
+    promotion_min_access_count: int = 5
+    promotion_min_conversations: int = 2
+
+    # Consolidation job intervals (minutes)
+    job_consolidate_interval: int = 15
+    job_patterns_interval: int = 60
+    job_decay_interval: int = 1440  # 24 hours
+    job_cleanup_interval: int = 1440  # 24 hours
+    job_audit_partitions_interval: int = 1440  # 24 hours
+    job_promote_interval: int = 60  # Same as patterns
+
+    # Worker health settings
+    worker_heartbeat_interval: int = 30  # seconds
+    worker_heartbeat_ttl: int = 90  # seconds (3x interval)
+
     class Config:
         env_file = ".env"
 

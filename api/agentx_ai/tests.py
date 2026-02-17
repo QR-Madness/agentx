@@ -769,6 +769,17 @@ def _extraction_model_available():
     )
 
 
+def _has_configured_provider():
+    """Check if any model provider is configured for agent tests."""
+    import os
+    return bool(
+        os.environ.get("ANTHROPIC_API_KEY") or
+        os.environ.get("OPENAI_API_KEY") or
+        os.environ.get("OLLAMA_BASE_URL") or
+        os.environ.get("LMSTUDIO_BASE_URL")
+    )
+
+
 class ExtractionPipelineTest(TestCase):
     """Tests for the extraction pipeline."""
 
@@ -892,3 +903,799 @@ class ExtractionPipelineTest(TestCase):
         for fact in result:
             self.assertIn("claim", fact)
             self.assertIn("confidence", fact)
+
+
+# =============================================================================
+# Phase 11.8: Memory System Unit Tests
+# =============================================================================
+
+class MemoryEventEmitterUnitTest(TestCase):
+    """Unit tests for MemoryEventEmitter."""
+
+    def test_on_registers_callback(self):
+        """on() adds callback to handlers list."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        emitter.on("test_event", handler)
+
+        self.assertEqual(emitter.handler_count("test_event"), 1)
+
+    def test_on_returns_unsubscribe_function(self):
+        """on() returns callable that removes handler."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        unsubscribe = emitter.on("test_event", handler)
+        self.assertEqual(emitter.handler_count("test_event"), 1)
+
+        unsubscribe()
+        self.assertEqual(emitter.handler_count("test_event"), 0)
+
+    def test_off_removes_callback(self):
+        """off() removes specified callback."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        emitter.on("test_event", handler)
+        result = emitter.off("test_event", handler)
+
+        self.assertTrue(result)
+        self.assertEqual(emitter.handler_count("test_event"), 0)
+
+    def test_off_returns_false_for_nonexistent(self):
+        """off() returns False for nonexistent handler."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        result = emitter.off("nonexistent", handler)
+
+        self.assertFalse(result)
+
+    def test_emit_calls_all_handlers(self):
+        """emit() calls all registered handlers for event."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
+
+        emitter = MemoryEventEmitter()
+        call_count = {"value": 0}
+
+        def handler1(payload):
+            call_count["value"] += 1
+
+        def handler2(payload):
+            call_count["value"] += 1
+
+        emitter.on("test_event", handler1)
+        emitter.on("test_event", handler2)
+
+        payload = EventPayload(event_name="test_event")
+        count = emitter.emit("test_event", payload)
+
+        self.assertEqual(count, 2)
+        self.assertEqual(call_count["value"], 2)
+
+    def test_emit_catches_handler_errors(self):
+        """emit() logs but doesn't propagate handler exceptions."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
+
+        emitter = MemoryEventEmitter()
+        working_called = {"value": False}
+
+        def failing_handler(payload):
+            raise ValueError("Test error")
+
+        def working_handler(payload):
+            working_called["value"] = True
+
+        emitter.on("test_event", failing_handler)
+        emitter.on("test_event", working_handler)
+
+        payload = EventPayload(event_name="test_event")
+        # Should not raise even though first handler fails
+        count = emitter.emit("test_event", payload)
+
+        # Second handler should still be called (emit doesn't stop on error)
+        self.assertTrue(working_called["value"])
+        # Count reflects only successful handlers
+        self.assertEqual(count, 1)
+
+    def test_disable_prevents_emission(self):
+        """disable() prevents handlers from being called."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
+
+        emitter = MemoryEventEmitter()
+        called = {"value": False}
+
+        def handler(payload):
+            called["value"] = True
+
+        emitter.on("test_event", handler)
+        emitter.disable()
+
+        payload = EventPayload(event_name="test_event")
+        count = emitter.emit("test_event", payload)
+
+        self.assertEqual(count, 0)
+        self.assertFalse(called["value"])
+
+    def test_clear_removes_all_handlers(self):
+        """clear() removes all handlers for event or all events."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        emitter.on("event1", handler)
+        emitter.on("event2", handler)
+
+        # Clear single event
+        emitter.clear("event1")
+        self.assertEqual(emitter.handler_count("event1"), 0)
+        self.assertEqual(emitter.handler_count("event2"), 1)
+
+        # Clear all events
+        emitter.clear()
+        self.assertEqual(emitter.handler_count(), 0)
+
+    def test_emit_returns_handler_count(self):
+        """emit() returns number of handlers called."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        emitter.on("test_event", handler)
+        emitter.on("test_event", handler)
+
+        payload = EventPayload(event_name="test_event")
+        count = emitter.emit("test_event", payload)
+
+        self.assertEqual(count, 2)
+
+    def test_handler_count_total(self):
+        """handler_count() returns total when no event specified."""
+        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
+
+        emitter = MemoryEventEmitter()
+
+        def handler(payload):
+            pass
+
+        emitter.on("event1", handler)
+        emitter.on("event2", handler)
+        emitter.on("event2", handler)
+
+        self.assertEqual(emitter.handler_count(), 3)
+
+
+class RetrievalWeightsUnitTest(TestCase):
+    """Unit tests for RetrievalWeights."""
+
+    def test_default_values(self):
+        """RetrievalWeights has correct defaults."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights()
+
+        self.assertEqual(weights.episodic, 0.3)
+        self.assertEqual(weights.semantic_facts, 0.25)
+        self.assertEqual(weights.semantic_entities, 0.2)
+        self.assertEqual(weights.procedural, 0.15)
+        self.assertEqual(weights.recency, 0.1)
+
+    def test_from_dict_uses_defaults(self):
+        """from_dict() uses defaults for missing keys."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights.from_dict({"episodic": 0.5})
+
+        self.assertEqual(weights.episodic, 0.5)
+        # Other values use defaults
+        self.assertEqual(weights.semantic_facts, 0.25)
+        self.assertEqual(weights.procedural, 0.15)
+
+    def test_from_dict_all_values(self):
+        """from_dict() creates weights from complete dict."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights.from_dict({
+            "episodic": 0.4,
+            "semantic_facts": 0.3,
+            "semantic_entities": 0.15,
+            "procedural": 0.1,
+            "recency": 0.05,
+        })
+
+        self.assertEqual(weights.episodic, 0.4)
+        self.assertEqual(weights.semantic_facts, 0.3)
+        self.assertEqual(weights.semantic_entities, 0.15)
+        self.assertEqual(weights.procedural, 0.1)
+        self.assertEqual(weights.recency, 0.05)
+
+    def test_merge_with_none(self):
+        """merge(None) returns self."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights()
+        merged = weights.merge(None)
+
+        self.assertEqual(merged.episodic, weights.episodic)
+        self.assertEqual(merged.semantic_facts, weights.semantic_facts)
+
+    def test_merge_with_dict_overrides(self):
+        """merge() applies dict overrides correctly."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights()
+        merged = weights.merge({"episodic": 0.5, "recency": 0.2})
+
+        # Overridden values
+        self.assertEqual(merged.episodic, 0.5)
+        self.assertEqual(merged.recency, 0.2)
+
+    def test_merge_with_weights_object(self):
+        """merge() works with RetrievalWeights object."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        base = RetrievalWeights()
+        override = RetrievalWeights(episodic=0.5, semantic_facts=0.3)
+        merged = base.merge(override)
+
+        self.assertEqual(merged.episodic, 0.5)
+        self.assertEqual(merged.semantic_facts, 0.3)
+
+    def test_from_config(self):
+        """from_config() loads weights from settings."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights.from_config()
+
+        # Should have valid weights
+        self.assertIsInstance(weights.episodic, float)
+        self.assertIsInstance(weights.semantic_facts, float)
+        self.assertGreater(weights.episodic, 0)
+
+
+class MemoryAuditLoggerUnitTest(TestCase):
+    """Unit tests for MemoryAuditLogger."""
+
+    def test_log_level_off_skips_all(self):
+        """No logging when audit_log_level is 'off'."""
+        from unittest.mock import patch, MagicMock
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="off")
+        logger = MemoryAuditLogger(settings=settings)
+
+        # Should not log for any operation
+        self.assertFalse(logger._should_log("store", "episodic"))
+        self.assertFalse(logger._should_log("retrieve", "semantic"))
+
+    def test_log_level_writes_logs_write_operations(self):
+        """'writes' level logs store/update/delete operations."""
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="writes")
+        logger = MemoryAuditLogger(settings=settings)
+
+        self.assertTrue(logger._should_log("store", "episodic"))
+        self.assertTrue(logger._should_log("update", "semantic"))
+        self.assertTrue(logger._should_log("delete", "procedural"))
+        self.assertTrue(logger._should_log("record", "procedural"))
+
+    def test_log_level_writes_skips_read_operations(self):
+        """'writes' level skips retrieve/search operations."""
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="writes")
+        logger = MemoryAuditLogger(settings=settings)
+
+        self.assertFalse(logger._should_log("retrieve", "episodic"))
+        self.assertFalse(logger._should_log("search", "semantic"))
+
+    def test_log_level_reads_logs_non_working(self):
+        """'reads' level logs reads and writes, not working memory."""
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        # Use sample rate of 1.0 to ensure reads are logged
+        settings = Settings(audit_log_level="reads", audit_sample_rate=1.0)
+        logger = MemoryAuditLogger(settings=settings)
+
+        # Should log episodic reads/writes
+        self.assertTrue(logger._should_log("store", "episodic"))
+        self.assertTrue(logger._should_log("retrieve", "episodic"))
+        # Should NOT log working memory
+        self.assertFalse(logger._should_log("store", "working"))
+
+    def test_log_level_verbose_logs_everything(self):
+        """'verbose' level logs all operations including working memory."""
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="verbose")
+        logger = MemoryAuditLogger(settings=settings)
+
+        self.assertTrue(logger._should_log("store", "episodic"))
+        self.assertTrue(logger._should_log("retrieve", "semantic"))
+        self.assertTrue(logger._should_log("store", "working"))
+
+    def test_log_property(self):
+        """log_level property returns current level."""
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="writes")
+        logger = MemoryAuditLogger(settings=settings)
+
+        self.assertEqual(logger.log_level, "writes")
+
+    def test_timed_operation_context_manager(self):
+        """timed_operation context manager provides context dict."""
+        from unittest.mock import patch, MagicMock
+        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings(audit_log_level="off")  # off to avoid actual logging
+        logger = MemoryAuditLogger(settings=settings)
+
+        with logger.timed_operation("store", "episodic", user_id="test") as ctx:
+            ctx["result_count"] = 5
+            ctx["record_ids"] = ["id1", "id2"]
+
+        # Context was accessible
+        self.assertEqual(ctx["result_count"], 5)
+        self.assertEqual(ctx["record_ids"], ["id1", "id2"])
+
+    def test_operation_type_enum(self):
+        """OperationType enum has expected values."""
+        from agentx_ai.kit.agent_memory.audit import OperationType
+
+        self.assertEqual(OperationType.STORE.value, "store")
+        self.assertEqual(OperationType.RETRIEVE.value, "retrieve")
+        self.assertEqual(OperationType.PROMOTE.value, "promote")
+
+    def test_memory_type_enum(self):
+        """MemoryType enum has expected values."""
+        from agentx_ai.kit.agent_memory.audit import MemoryType
+
+        self.assertEqual(MemoryType.EPISODIC.value, "episodic")
+        self.assertEqual(MemoryType.SEMANTIC.value, "semantic")
+        self.assertEqual(MemoryType.WORKING.value, "working")
+
+    def test_audit_log_level_enum(self):
+        """AuditLogLevel enum has expected values."""
+        from agentx_ai.kit.agent_memory.audit import AuditLogLevel
+
+        self.assertEqual(AuditLogLevel.OFF.value, "off")
+        self.assertEqual(AuditLogLevel.WRITES.value, "writes")
+        self.assertEqual(AuditLogLevel.READS.value, "reads")
+        self.assertEqual(AuditLogLevel.VERBOSE.value, "verbose")
+
+
+class WorkingMemoryUnitTest(TestCase):
+    """Unit tests for WorkingMemory with mocked Redis."""
+
+    def setUp(self):
+        """Set up mocked Redis for tests."""
+        from unittest.mock import patch, MagicMock
+
+        self.mock_redis = MagicMock()
+        self.redis_patcher = patch(
+            'agentx_ai.kit.agent_memory.connections.RedisConnection.get_client'
+        )
+        self.mock_get_client = self.redis_patcher.start()
+        self.mock_get_client.return_value = self.mock_redis
+
+    def tearDown(self):
+        self.redis_patcher.stop()
+
+    def test_key_includes_channel_for_isolation(self):
+        """Working memory keys include channel for isolation."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", channel="project-a", conversation_id="conv1")
+
+        self.assertIn("project-a", wm.session_key)
+        self.assertIn("project-a", wm.turns_key)
+
+    def test_key_uses_global_channel_by_default(self):
+        """Working memory keys use _global channel by default."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", conversation_id="conv1")
+
+        self.assertIn("_global", wm.session_key)
+
+    def test_add_turn_pushes_to_list(self):
+        """add_turn LPUSHes turn data to Redis list."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from datetime import datetime
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+
+        # Create mock turn
+        turn = MagicMock()
+        turn.id = "turn-1"
+        turn.index = 0
+        turn.role = "user"
+        turn.content = "Hello"
+        turn.timestamp = datetime.utcnow()
+
+        wm.add_turn(turn)
+
+        # Verify lpush was called
+        self.mock_redis.lpush.assert_called_once()
+        call_args = self.mock_redis.lpush.call_args
+        self.assertEqual(call_args[0][0], wm.turns_key)
+
+    def test_add_turn_trims_to_max_items(self):
+        """add_turn LTRIMs list to max_working_memory_items."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from agentx_ai.kit.agent_memory.config import get_settings
+        from datetime import datetime
+
+        settings = get_settings()
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+
+        turn = MagicMock()
+        turn.id = "turn-1"
+        turn.index = 0
+        turn.role = "user"
+        turn.content = "Hello"
+        turn.timestamp = datetime.utcnow()
+
+        wm.add_turn(turn)
+
+        # Verify ltrim was called with correct max
+        self.mock_redis.ltrim.assert_called_once()
+        call_args = self.mock_redis.ltrim.call_args
+        self.assertEqual(call_args[0][2], settings.max_working_memory_items - 1)
+
+    def test_add_turn_sets_ttl(self):
+        """add_turn sets 1-hour TTL on turns key."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from datetime import datetime
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+
+        turn = MagicMock()
+        turn.id = "turn-1"
+        turn.index = 0
+        turn.role = "user"
+        turn.content = "Hello"
+        turn.timestamp = datetime.utcnow()
+
+        wm.add_turn(turn)
+
+        # Verify expire was called with 3600 seconds
+        self.mock_redis.expire.assert_called_once_with(wm.turns_key, 3600)
+
+    def test_get_recent_turns_returns_json_decoded(self):
+        """get_recent_turns returns decoded turn dictionaries."""
+        import json
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+
+        # Mock Redis to return encoded turns
+        turn_data = {"id": "turn-1", "role": "user", "content": "Hello"}
+        self.mock_redis.lrange.return_value = [json.dumps(turn_data).encode()]
+
+        result = wm.get_recent_turns(limit=5)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "turn-1")
+        self.assertEqual(result[0]["role"], "user")
+
+    def test_set_stores_with_ttl(self):
+        """set() stores JSON-encoded value with TTL."""
+        import json
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+
+        wm.set("test_key", {"value": 42}, ttl_seconds=300)
+
+        # Verify setex was called
+        self.mock_redis.setex.assert_called_once()
+        call_args = self.mock_redis.setex.call_args
+        self.assertIn("test_key", call_args[0][0])
+        self.assertEqual(call_args[0][1], 300)
+
+    def test_get_returns_none_for_missing(self):
+        """get() returns None for nonexistent key."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+        self.mock_redis.get.return_value = None
+
+        result = wm.get("nonexistent")
+
+        self.assertIsNone(result)
+
+    def test_clear_session_deletes_pattern(self):
+        """clear_session deletes all keys matching session pattern."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+
+        wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
+        self.mock_redis.keys.return_value = [b"key1", b"key2"]
+
+        wm.clear_session()
+
+        self.mock_redis.keys.assert_called_once()
+        self.mock_redis.delete.assert_called_once()
+
+
+class MemoryRetrieverUnitTest(TestCase):
+    """Unit tests for MemoryRetriever with mocked memory stores."""
+
+    def test_retrieval_weights_default_sum(self):
+        """Default weights sum to 1.0."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+
+        weights = RetrievalWeights()
+        total = (
+            weights.episodic +
+            weights.semantic_facts +
+            weights.semantic_entities +
+            weights.procedural +
+            weights.recency
+        )
+
+        self.assertAlmostEqual(total, 1.0, places=5)
+
+    def test_retrieval_metrics_structure(self):
+        """RetrievalMetrics has correct fields."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalMetrics
+
+        metrics = RetrievalMetrics()
+
+        self.assertEqual(metrics.episodic_count, 0)
+        self.assertEqual(metrics.semantic_facts_count, 0)
+        self.assertEqual(metrics.cache_hit, False)
+        self.assertIsInstance(metrics.channels_searched, list)
+        self.assertIsInstance(metrics.results_per_channel, dict)
+
+    def test_normalize_scores_min_max(self):
+        """_normalize_scores uses min-max normalization."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+
+        # Create a minimal mock memory
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        results = [
+            {"score": 0.2},
+            {"score": 0.5},
+            {"score": 0.8},
+        ]
+
+        normalized = retriever._normalize_scores(results, "score")
+
+        # Min score (0.2) should normalize to 0.0
+        self.assertAlmostEqual(normalized[0]["normalized_score"], 0.0, places=5)
+        # Max score (0.8) should normalize to 1.0
+        self.assertAlmostEqual(normalized[2]["normalized_score"], 1.0, places=5)
+
+    def test_normalize_scores_equal_returns_half(self):
+        """_normalize_scores returns 0.5 when all scores equal."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        results = [
+            {"score": 0.5},
+            {"score": 0.5},
+            {"score": 0.5},
+        ]
+
+        normalized = retriever._normalize_scores(results, "score")
+
+        for r in normalized:
+            self.assertEqual(r["normalized_score"], 0.5)
+
+    def test_calculate_recency_score_recent_is_high(self):
+        """Recent timestamps get higher recency scores."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+        from datetime import datetime, timezone, timedelta
+
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        now = datetime.now(timezone.utc)
+        recent = now - timedelta(hours=1)
+        old = now - timedelta(hours=48)
+
+        recent_score = retriever._calculate_recency_score(recent)
+        old_score = retriever._calculate_recency_score(old)
+
+        self.assertGreater(recent_score, old_score)
+
+    def test_calculate_recency_score_decays_exponentially(self):
+        """Recency score decays with 24-hour half-life."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+        from datetime import datetime, timezone, timedelta
+
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        now = datetime.now(timezone.utc)
+        one_day_ago = now - timedelta(hours=24)
+
+        # Score at 24 hours should be approximately 0.5 (half-life)
+        score = retriever._calculate_recency_score(one_day_ago)
+
+        self.assertAlmostEqual(score, 0.5, places=1)
+
+    def test_get_cache_key_includes_user_and_channels(self):
+        """Cache key includes user_id, channels, and query hash."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        cache_key = retriever._get_cache_key(
+            query="test query",
+            user_id="user-123",
+            channels=["project-a", "_global"],
+            top_k=10,
+            include_episodic=True,
+            include_semantic=True,
+            include_procedural=True,
+        )
+
+        self.assertIn("user-123", cache_key)
+        self.assertIn("project-a", cache_key)
+
+    def test_normalize_scores_empty_list(self):
+        """_normalize_scores handles empty list."""
+        from unittest.mock import MagicMock
+        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+
+        mock_memory = MagicMock()
+        retriever = MemoryRetriever(mock_memory)
+
+        result = retriever._normalize_scores([], "score")
+
+        self.assertEqual(result, [])
+
+
+class ChannelScopingUnitTest(TestCase):
+    """Unit tests for channel scoping and tenant isolation."""
+
+    def test_default_channel_is_global(self):
+        """Default channel is _global."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from unittest.mock import patch, MagicMock
+
+        with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
+            mock.return_value = MagicMock()
+            wm = WorkingMemory(user_id="user1")
+
+            self.assertEqual(wm.channel, "_global")
+            self.assertIn("_global", wm.session_key)
+
+    def test_channel_included_in_key_patterns(self):
+        """Channel is included in key patterns for isolation."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from unittest.mock import patch, MagicMock
+
+        with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
+            mock.return_value = MagicMock()
+            wm = WorkingMemory(user_id="user1", channel="my-project")
+
+            self.assertIn("my-project", wm.session_key)
+            self.assertIn("my-project", wm.turns_key)
+            self.assertIn("my-project", wm.context_key)
+
+    def test_user_id_required_in_working_memory(self):
+        """WorkingMemory requires user_id."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from unittest.mock import patch, MagicMock
+
+        with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
+            mock.return_value = MagicMock()
+            # user_id is a required parameter
+            wm = WorkingMemory(user_id="user1")
+            self.assertEqual(wm.user_id, "user1")
+
+    def test_different_channels_have_different_keys(self):
+        """Different channels create different key patterns."""
+        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+        from unittest.mock import patch, MagicMock
+
+        with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
+            mock.return_value = MagicMock()
+
+            wm_a = WorkingMemory(user_id="user1", channel="project-a")
+            wm_b = WorkingMemory(user_id="user1", channel="project-b")
+
+            # Keys should be different
+            self.assertNotEqual(wm_a.session_key, wm_b.session_key)
+            self.assertNotEqual(wm_a.turns_key, wm_b.turns_key)
+
+    def test_retrieval_weights_channel_boost(self):
+        """RetrievalWeights from config includes channel boost."""
+        from agentx_ai.kit.agent_memory.config import get_settings
+
+        settings = get_settings()
+
+        # Channel boost should be configured
+        self.assertIsInstance(settings.channel_active_boost, float)
+        self.assertGreater(settings.channel_active_boost, 1.0)
+
+    def test_event_payload_includes_channel(self):
+        """Event payloads include channel field."""
+        from agentx_ai.kit.agent_memory.events import (
+            TurnStoredPayload,
+            FactLearnedPayload,
+            EntityCreatedPayload,
+        )
+
+        turn_payload = TurnStoredPayload(
+            event_name="turn_stored",
+            turn_id="t1",
+            channel="my-channel"
+        )
+        self.assertEqual(turn_payload.channel, "my-channel")
+
+        fact_payload = FactLearnedPayload(
+            event_name="fact_learned",
+            fact_id="f1",
+            channel="another-channel"
+        )
+        self.assertEqual(fact_payload.channel, "another-channel")
+
+    def test_event_payload_default_channel(self):
+        """Event payloads default to _global channel."""
+        from agentx_ai.kit.agent_memory.events import TurnStoredPayload
+
+        payload = TurnStoredPayload(event_name="turn_stored")
+
+        self.assertEqual(payload.channel, "_global")
+
+    def test_retrieval_metrics_tracks_channels(self):
+        """RetrievalMetrics tracks channels searched."""
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalMetrics
+
+        metrics = RetrievalMetrics(
+            channels_searched=["project-a", "_global"],
+            results_per_channel={"project-a": 5, "_global": 3}
+        )
+
+        self.assertEqual(len(metrics.channels_searched), 2)
+        self.assertEqual(metrics.results_per_channel["project-a"], 5)
+        self.assertEqual(metrics.results_per_channel["_global"], 3)

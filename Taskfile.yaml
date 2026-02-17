@@ -276,6 +276,14 @@ tasks:
     cmds:
       - uv run python api/manage.py init_memory_schema --verify
 
+  memory:worker:
+    desc: "Start background memory consolidation worker"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python -m agentx_ai.kit.agent_memory.consolidation.worker
+
   db:status:
     desc: "Show status of database containers"
     cmds:
