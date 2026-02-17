@@ -9,7 +9,7 @@ This package provides a comprehensive memory system using:
 
 from .models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
 from .memory.interface import AgentMemory
-from .memory.retrieval import RetrievalWeights
+from .memory.retrieval import RetrievalWeights, RetrievalMetrics
 from .audit import MemoryAuditLogger, AuditLogLevel, OperationType, MemoryType
 from .abc import MemoryStore, Embedder, Extractor, Reranker, ScoredResult, HealthStatus
 from .events import (
@@ -33,6 +33,7 @@ __all__ = [
     "MemoryBundle",
     # Retrieval
     "RetrievalWeights",
+    "RetrievalMetrics",
     # Audit
     "MemoryAuditLogger",
     "AuditLogLevel",

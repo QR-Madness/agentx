@@ -685,27 +685,27 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] How to add a custom reranker
   - [ ] How to hook into memory events
 
-### 11.7 Retrieval Quality
+### 11.7 Retrieval Quality ✅
 
 > Improve retrieval beyond the current basic implementation
 
-- [ ] Implement multi-channel retrieval in `retrieval.py`:
-  - [ ] `retrieve()` queries both active channel and `_global` channel
-  - [ ] Merge results from both channels before reranking
-  - [ ] Tag each result with its source channel in `MemoryBundle`
-  - [ ] Allow caller to override which channels to search: `remember(query, channels=["_global", "my-project"])`
-  - [ ] Weight active channel results slightly higher than `_global` (configurable boost factor)
-- [ ] Fix reranking (`retrieval.py`):
-  - [ ] Replace conversation-diversity-only filter with proper scoring
-  - [ ] Add cross-encoder reranking option (configurable, off by default)
-  - [ ] Add relevance score normalization across memory types
-- [ ] Add retrieval caching:
-  - [ ] Cache recent retrieval results in Redis with short TTL (~60s)
-  - [ ] Invalidate on new writes to same user/conversation/channel scope
-- [ ] Add retrieval metrics:
-  - [ ] Track hit rates per memory type and per channel
-  - [ ] Track average latency per retrieval strategy
-  - [ ] Log to audit table (when audit level >= reads)
+- [x] Implement multi-channel retrieval in `retrieval.py`:
+  - [x] `retrieve()` queries both active channel and `_global` channel
+  - [x] Merge results from both channels before reranking
+  - [x] Tag each result with its source channel in `MemoryBundle`
+  - [x] Allow caller to override which channels to search: `remember(query, channels=["_global", "my-project"])`
+  - [x] Weight active channel results slightly higher than `_global` (configurable boost factor)
+- [x] Fix reranking (`retrieval.py`):
+  - [x] Replace conversation-diversity-only filter with proper scoring
+  - [x] Add cross-encoder reranking option (configurable, off by default)
+  - [x] Add relevance score normalization across memory types
+- [x] Add retrieval caching:
+  - [x] Cache recent retrieval results in Redis with short TTL (~60s)
+  - [x] Invalidate on new writes to same user/conversation/channel scope
+- [x] Add retrieval metrics:
+  - [x] Track hit rates per memory type and per channel
+  - [x] Track average latency per retrieval strategy
+  - [x] Log to audit table (when audit level >= reads)
 
 ### 11.8 Memory System Tests
 

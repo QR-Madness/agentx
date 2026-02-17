@@ -81,6 +81,10 @@ class AgentMemory:
 
     # Storage operations
 
+    def _invalidate_retrieval_cache(self) -> None:
+        """Invalidate retrieval cache for current user/channel scope."""
+        self.retriever.invalidate_cache(self.user_id, self.channel)
+
     def store_turn(self, turn: Turn) -> None:
         """
         Store a conversation turn in episodic memory.
@@ -119,6 +123,9 @@ class AgentMemory:
                     channel=self.channel,
                 )
             )
+
+            # Invalidate retrieval cache for this scope
+            self._invalidate_retrieval_cache()
         except Exception as e:
             success = False
             error_msg = str(e)
@@ -187,6 +194,9 @@ class AgentMemory:
                     channel=self.channel,
                 )
             )
+
+            # Invalidate retrieval cache for this scope
+            self._invalidate_retrieval_cache()
             return fact
         except Exception as e:
             success = False
@@ -241,6 +251,9 @@ class AgentMemory:
                     channel=self.channel,
                 )
             )
+
+            # Invalidate retrieval cache for this scope
+            self._invalidate_retrieval_cache()
             return result
         except Exception as e:
             success = False
@@ -478,7 +491,8 @@ class AgentMemory:
         include_semantic: bool = True,
         include_procedural: bool = True,
         time_window_hours: Optional[int] = None,
-        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None
+        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
+        channels: Optional[List[str]] = None
     ) -> MemoryBundle:
         """
         Retrieve relevant memories for the given query.
@@ -496,6 +510,9 @@ class AgentMemory:
             strategy_weights: Optional per-request weight overrides.
                 Can be RetrievalWeights or dict with keys:
                 episodic, semantic_facts, semantic_entities, procedural, recency
+            channels: Optional explicit list of channels to search.
+                If not provided, searches [active_channel, "_global"].
+                Example: channels=["project-a", "project-b", "_global"]
 
         Returns:
             MemoryBundle with aggregated results
@@ -515,6 +532,7 @@ class AgentMemory:
                 include_procedural=include_procedural,
                 time_window_hours=time_window_hours,
                 channel=self.channel,
+                channels=channels,
                 strategy_weights=strategy_weights
             )
 

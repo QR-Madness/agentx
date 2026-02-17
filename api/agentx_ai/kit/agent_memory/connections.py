@@ -189,5 +189,24 @@ def close_all_connections():
         t.join(timeout=2)
 
 
+def get_redis_client() -> Optional[redis.Redis]:
+    """
+    Get Redis client instance, returning None if connection fails.
+
+    This is a convenience function for cases where Redis is optional
+    (e.g., caching) and failure should not raise an exception.
+
+    Returns:
+        Redis client or None if unavailable
+    """
+    try:
+        client = RedisConnection.get_client()
+        # Test connection with a ping
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+
 # Register cleanup function to run on process exit
 atexit.register(close_all_connections)

@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     retrieval_weight_procedural: float = 0.15
     retrieval_weight_recency: float = 0.1
 
+    # Multi-channel retrieval
+    channel_active_boost: float = 1.2  # Boost factor for active channel results vs _global
+
+    # Cross-encoder reranking (optional, higher accuracy but slower)
+    cross_encoder_enabled: bool = False
+    cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+    # Retrieval caching
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_seconds: int = 60
+    retrieval_cache_key_prefix: str = "retrieval_cache"
+
     # Extraction settings
     extraction_enabled: bool = True
     extraction_model: str = "claude-3-5-haiku-latest"
