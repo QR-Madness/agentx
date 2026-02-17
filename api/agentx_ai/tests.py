@@ -1700,3 +1700,6 @@ class ChannelScopingUnitTest(TestCase):
         self.assertEqual(len(metrics.channels_searched), 2)
         self.assertEqual(metrics.results_per_channel["project-a"], 5)
         self.assertEqual(metrics.results_per_channel["_global"], 3)
+
+
+# Phase 11.8+ tests moved to tests_memory.py

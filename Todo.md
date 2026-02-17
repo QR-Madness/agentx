@@ -724,47 +724,47 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Test multi-channel retrieval (active channel + `_global` both searched, results merged)
   - [x] Test `_global` channel is always included in retrieval regardless of active channel
 
-#### Phase 11.8+ Testing Notes (from code review)
-> Issues discovered during comprehensive memory module review should be covered by tests
+#### Phase 11.8+ Testing Notes (from code review) ✅
+> Issues discovered during comprehensive memory module review — now covered by tests in `tests_memory.py`
 
-- [ ] Security tests:
-  - [ ] Test `complete_goal()` access control (user can only complete their own goals)
-  - [ ] Test entity type whitelist validation (invalid types default to "Entity")
-- [ ] Correctness tests:
-  - [ ] Test average latency running mean calculation over many invocations
-  - [ ] Test extraction timeout actually fires after configured seconds
-  - [ ] Test async extraction works from both sync and async contexts
-  - [ ] Test consolidation jobs return proper metrics dictionaries
-  - [ ] Test entity name case normalization in relationship linking
-- [ ] Performance tests:
-  - [ ] Test Redis SCAN pagination works correctly (vs KEYS blocking)
-  - [ ] Test working memory TTL refresh on read access
-  - [ ] Test query length validation rejects oversized queries
-  - [ ] Test graph traversal depth limits (max 3) and result limits
-- [ ] Edge case tests:
-  - [ ] Test time_window_hours bounds validation (negative values handled)
-  - [ ] Test division-by-zero protection in success rate calculations
-  - [ ] Test consolidated timestamp set even on partial extraction failure
-  - [ ] Test SQL partition name validation (alphanumeric only)
-- [ ] Data integrity tests:
-  - [ ] Test embedding stored as JSON (not Python str representation)
-  - [ ] Test turn_index passed correctly to tool invocation recording
+- [x] Security tests:
+  - [x] Test `complete_goal()` access control (user can only complete their own goals)
+  - [x] Test entity type whitelist validation (invalid types default to "Entity")
+- [x] Correctness tests:
+  - [x] Test average latency running mean calculation over many invocations
+  - [x] Test extraction timeout actually fires after configured seconds
+  - [x] Test async extraction works from both sync and async contexts
+  - [x] Test consolidation jobs return proper metrics dictionaries
+  - [x] Test entity name case normalization in relationship linking
+- [x] Performance tests:
+  - [x] Test Redis SCAN pagination works correctly (vs KEYS blocking)
+  - [x] Test working memory TTL refresh on read access
+  - [x] Test query length validation rejects oversized queries
+  - [x] Test graph traversal depth limits (max 3) and result limits
+- [x] Edge case tests:
+  - [x] Test time_window_hours bounds validation (negative values handled)
+  - [x] Test division-by-zero protection in success rate calculations
+  - [x] Test consolidated timestamp set even on partial extraction failure
+  - [x] Test SQL partition name validation (alphanumeric only)
+- [x] Data integrity tests:
+  - [x] Test embedding stored as JSON (not Python str representation)
+  - [x] Test turn_index passed correctly to tool invocation recording
 
-- [ ] Integration tests (require Docker services) — **deferred to post-11.9**:
-  > These tests depend on consolidation worker (11.9) being complete
-  - [ ] Test full cycle: store turn → extract → consolidate → retrieve
-  - [ ] Test memory persistence across API server restarts
-  - [ ] Test working memory TTL expiration
-  - [ ] Test Neo4j vector search returns relevant results
-  - [ ] Test PostgreSQL audit log captures operations
-  - [ ] Test consolidation worker runs jobs on schedule
-  - [ ] Test cross-channel promotion: fact in project channel meets threshold → appears in `_global`
-  - [ ] Test channel CRUD: create, list, delete channel and verify data cleanup
-- [ ] Agent integration tests — **deferred to post-11.9**:
-  - [ ] Test `/api/agent/chat` stores turns in memory with correct channel
-  - [ ] Test `/api/agent/chat` retrieves relevant context from memory
-  - [ ] Test `/api/agent/run` records tool usage in procedural memory
-  - [ ] Test graceful degradation when databases are down
+- [x] Integration tests (require Docker services):
+  > Tests skip gracefully when Docker not running or embedding dimensions mismatch
+  - [x] Test full cycle: store turn → extract → consolidate → retrieve
+  - [x] Test memory persistence across API server restarts
+  - [x] Test working memory TTL expiration
+  - [x] Test Neo4j vector search returns relevant results
+  - [x] Test PostgreSQL audit log captures operations
+  - [x] Test consolidation worker runs jobs on schedule
+  - [x] Test cross-channel promotion: fact in project channel meets threshold → appears in `_global`
+  - [x] Test channel CRUD: create, list, delete channel and verify data cleanup
+- [x] Agent integration tests:
+  - [x] Test `/api/agent/chat` stores turns in memory with correct channel
+  - [x] Test `/api/agent/chat` retrieves relevant context from memory
+  - [x] Test `/api/agent/run` records tool usage in procedural memory
+  - [x] Test graceful degradation when databases are down
 
 ### 11.9 Consolidation & Background Worker ✅
 
@@ -1263,7 +1263,7 @@ The existing UI has basic tabs but lacks:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 80% |
+| Phase 11: Memory System | In Progress | 90% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | Not Started | 0% |
 
