@@ -1,14 +1,18 @@
 """Episodic memory - conversation history storage and retrieval."""
 
+import json
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from sqlalchemy import text
 
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
+from ..config import get_settings
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
+
+settings = get_settings()
 
 
 class EpisodicMemory:
@@ -85,6 +89,9 @@ class EpisodicMemory:
             channel: Memory channel
         """
         with get_postgres_session() as session:
+            # Store embedding as JSON array (not Python str representation) for proper parsing
+            embedding_json = json.dumps(turn.embedding) if turn.embedding else None
+
             session.execute(text("""
                 INSERT INTO conversation_logs
                 (conversation_id, turn_index, timestamp, role, content, token_count, embedding, channel)
@@ -101,7 +108,7 @@ class EpisodicMemory:
                 "role": turn.role,
                 "content": turn.content,
                 "tokens": turn.token_count,
-                "embedding": str(turn.embedding) if turn.embedding else None,
+                "embedding": embedding_json,
                 "channel": channel
             })
 
@@ -120,17 +127,19 @@ class EpisodicMemory:
             query_embedding: Query vector
             top_k: Number of results to return
             user_id: Filter by user ID
-            time_window_hours: Filter by time window
+            time_window_hours: Filter by time window (must be positive, max 8760 = 1 year)
             channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of matching turns
         """
         with Neo4jConnection.session() as session:
-            # Build time filter
+            # Build time filter with bounds validation
             time_filter = ""
-            if time_window_hours:
-                time_filter = f"AND t.timestamp > datetime() - duration('PT{time_window_hours}H')"
+            if time_window_hours is not None:
+                # Validate time_window_hours to prevent invalid queries
+                validated_hours = max(1, min(int(time_window_hours), 8760))  # 1 hour to 1 year
+                time_filter = f"AND t.timestamp > datetime() - duration('PT{validated_hours}H')"
 
             user_filter = ""
             if user_id:
@@ -216,13 +225,17 @@ class EpisodicMemory:
 
         Args:
             user_id: User ID
-            hours: Time window in hours
-            limit: Maximum number of results
+            hours: Time window in hours (must be positive, max 8760 = 1 year)
+            limit: Maximum number of results (capped to 500)
             channel: Filter by channel (searches channel + _global)
 
         Returns:
             List of turn dictionaries
         """
+        # Validate hours and limit to prevent resource exhaustion
+        validated_hours = max(1, min(int(hours), 8760))  # 1 hour to 1 year
+        validated_limit = max(1, min(int(limit), 500))   # Cap at 500 results
+
         with Neo4jConnection.session() as session:
             # Channel filter - search both specified channel and _global
             channel_filter = ""
@@ -245,8 +258,8 @@ class EpisodicMemory:
                 LIMIT $limit
             """,
                 user_id=user_id,
-                hours=str(hours),
-                limit=limit,
+                hours=str(validated_hours),
+                limit=validated_limit,
                 channel=channel
             )
 

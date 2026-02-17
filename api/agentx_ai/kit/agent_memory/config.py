@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Retrieval settings
     default_top_k: int = 10
     reranking_enabled: bool = True
+    max_query_length: int = 10000  # Maximum query length in chars
+    max_results_per_conversation: int = 3  # Diversity: max results from same conversation
 
     # Default retrieval weights (used when no per-request overrides provided)
     retrieval_weight_episodic: float = 0.3

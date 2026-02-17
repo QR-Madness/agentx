@@ -1,6 +1,6 @@
 """Procedural memory - tool usage patterns and successful strategies."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import json
 
@@ -35,7 +35,8 @@ class ProceduralMemory:
         tool_output: Any,
         success: bool,
         latency_ms: int,
-        channel: str = "_global"
+        channel: str = "_global",
+        turn_index: Optional[int] = None
     ) -> None:
         """
         Record a tool invocation.
@@ -49,6 +50,7 @@ class ProceduralMemory:
             success: Whether invocation was successful
             latency_ms: Latency in milliseconds
             channel: Memory channel
+            turn_index: Turn index within conversation (optional)
         """
         # PostgreSQL for audit log
         with get_postgres_session() as session:
@@ -58,7 +60,7 @@ class ProceduralMemory:
                 VALUES (:conv_id, :turn_idx, :tool, :input, :output, :success, :latency, :channel)
             """), {
                 "conv_id": conversation_id,
-                "turn_idx": 0,  # Would need proper turn index
+                "turn_idx": turn_index if turn_index is not None else 0,
                 "tool": tool_name,
                 "input": json.dumps(tool_input),
                 "output": json.dumps(tool_output) if tool_output else None,
@@ -68,16 +70,21 @@ class ProceduralMemory:
             })
 
         # Neo4j for graph relationships
+        # FIX: Calculate running average correctly
+        # Formula: new_avg = old_avg + (new_value - old_avg) / new_count
+        # We need to increment count AFTER calculating the average update
         with Neo4jConnection.session() as neo_session:
             neo_session.run("""
                 MERGE (tool:Tool {name: $tool_name})
-                ON CREATE SET tool.usage_count = 0, tool.success_count = 0
-                SET tool.usage_count = tool.usage_count + 1,
-                    tool.success_count = tool.success_count + CASE WHEN $success THEN 1 ELSE 0 END,
-                    tool.avg_latency_ms = coalesce(
-                        (tool.avg_latency_ms * (tool.usage_count - 1) + $latency) / tool.usage_count,
-                        $latency
-                    )
+                ON CREATE SET tool.usage_count = 0,
+                              tool.success_count = 0,
+                              tool.avg_latency_ms = $latency
+                SET tool.avg_latency_ms = CASE
+                        WHEN tool.usage_count = 0 THEN $latency
+                        ELSE tool.avg_latency_ms + ($latency - tool.avg_latency_ms) / (tool.usage_count + 1)
+                    END,
+                    tool.usage_count = tool.usage_count + 1,
+                    tool.success_count = tool.success_count + CASE WHEN $success THEN 1 ELSE 0 END
 
                 WITH tool
                 MATCH (c:Conversation {id: $conv_id})
@@ -86,7 +93,8 @@ class ProceduralMemory:
                     tool_name: $tool_name,
                     success: $success,
                     latency_ms: $latency,
-                    channel: $channel
+                    channel: $channel,
+                    turn_index: $turn_index
                 })
                 MERGE (c)-[:USED_TOOL]->(inv)
                 MERGE (inv)-[:INVOKED]->(tool)
@@ -95,7 +103,8 @@ class ProceduralMemory:
                 tool_name=tool_name,
                 success=success,
                 latency=latency_ms,
-                channel=channel
+                channel=channel,
+                turn_index=turn_index
             )
 
     def learn_strategy(
@@ -132,7 +141,7 @@ class ProceduralMemory:
             embedding=embedding,
             success_count=1 if success else 0,
             failure_count=0 if success else 1,
-            last_used=datetime.utcnow()
+            last_used=datetime.now(timezone.utc)
         )
 
         with Neo4jConnection.session() as session:
@@ -231,7 +240,10 @@ class ProceduralMemory:
                        s.success_count AS success_count,
                        s.failure_count AS failure_count,
                        s.channel AS channel,
-                       s.success_count * 1.0 / (s.success_count + s.failure_count) AS success_rate,
+                       CASE WHEN (s.success_count + s.failure_count) > 0
+                            THEN s.success_count * 1.0 / (s.success_count + s.failure_count)
+                            ELSE 0.5
+                       END AS success_rate,
                        score
                 ORDER BY success_rate * score DESC
             """,
@@ -348,7 +360,10 @@ class ProceduralMemory:
                     RETURN t.name AS tool,
                            successes,
                            failures,
-                           successes * 1.0 / (successes + failures + 0.1) AS success_rate,
+                           CASE WHEN (successes + failures) > 0
+                                THEN successes * 1.0 / (successes + failures)
+                                ELSE 0.5
+                           END AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY success_rate DESC
                 """, task_type=task_type, user_id=user_id, channel=channel)
@@ -364,7 +379,10 @@ class ProceduralMemory:
                     RETURN t.name AS tool,
                            successes + failures AS usage_count,
                            successes AS success_count,
-                           successes * 1.0 / (successes + failures + 0.1) AS success_rate,
+                           CASE WHEN (successes + failures) > 0
+                                THEN successes * 1.0 / (successes + failures)
+                                ELSE 0.5
+                           END AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY usage_count DESC
                 """, user_id=user_id, channel=channel)

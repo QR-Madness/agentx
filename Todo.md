@@ -723,6 +723,33 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [x] Test channel scoping (project channel data not returned when querying a different channel)
   - [x] Test multi-channel retrieval (active channel + `_global` both searched, results merged)
   - [x] Test `_global` channel is always included in retrieval regardless of active channel
+
+#### Phase 11.8+ Testing Notes (from code review)
+> Issues discovered during comprehensive memory module review should be covered by tests
+
+- [ ] Security tests:
+  - [ ] Test `complete_goal()` access control (user can only complete their own goals)
+  - [ ] Test entity type whitelist validation (invalid types default to "Entity")
+- [ ] Correctness tests:
+  - [ ] Test average latency running mean calculation over many invocations
+  - [ ] Test extraction timeout actually fires after configured seconds
+  - [ ] Test async extraction works from both sync and async contexts
+  - [ ] Test consolidation jobs return proper metrics dictionaries
+  - [ ] Test entity name case normalization in relationship linking
+- [ ] Performance tests:
+  - [ ] Test Redis SCAN pagination works correctly (vs KEYS blocking)
+  - [ ] Test working memory TTL refresh on read access
+  - [ ] Test query length validation rejects oversized queries
+  - [ ] Test graph traversal depth limits (max 3) and result limits
+- [ ] Edge case tests:
+  - [ ] Test time_window_hours bounds validation (negative values handled)
+  - [ ] Test division-by-zero protection in success rate calculations
+  - [ ] Test consolidated timestamp set even on partial extraction failure
+  - [ ] Test SQL partition name validation (alphanumeric only)
+- [ ] Data integrity tests:
+  - [ ] Test embedding stored as JSON (not Python str representation)
+  - [ ] Test turn_index passed correctly to tool invocation recording
+
 - [ ] Integration tests (require Docker services) — **deferred to post-11.9**:
   > These tests depend on consolidation worker (11.9) being complete
   - [ ] Test full cycle: store turn → extract → consolidate → retrieve
@@ -1179,6 +1206,46 @@ The existing UI has basic tabs but lacks:
 - [ ] Advanced memory visualization (interactive graph rendering, embedding similarity clusters)
 - [ ] Streaming memory retrieval during chat (progressive context injection)
 - [ ] Conversation sharing (generate read-only shareable links/snapshots)
+
+### Known Future Issues (from Phase 11.7+ review)
+
+> Architectural concerns that may need addressing at scale
+
+**Distributed Transaction Support**
+- Dual-write to Neo4j + PostgreSQL has no transaction coordination
+- If Neo4j write succeeds but PostgreSQL fails, data becomes inconsistent
+- Mitigation: Consider CDC (Change Data Capture) or event log for consistency
+- Impact: LOW for single-user; HIGH for multi-user deployment
+
+**Connection Timeout Configuration**
+- Neo4j and PostgreSQL queries have no explicit statement timeouts
+- Slow queries could hang indefinitely
+- Fix: Add `statement_timeout` to connection config
+
+**Retry Logic for Transient Failures**
+- No exponential backoff on transient database failures
+- Operations fail immediately if database momentarily unavailable
+- Fix: Add retry decorator with backoff for critical operations
+
+**Rate Limiting on Memory Operations**
+- No protection against rapid-fire memory operations
+- Could exhaust database connections or memory
+- Fix: Add per-user rate limits in AgentMemory
+
+**Encryption at Rest**
+- Conversation history and facts stored unencrypted
+- If database compromised, all user data readable
+- Fix: Enable database-level encryption or app-level encryption for sensitive fields
+
+**Settings Cached at Import Time**
+- `get_settings()` uses `@lru_cache`, loaded at module import
+- Runtime `.env` changes not picked up without restart
+- Mitigation: Document that settings require restart; consider cache invalidation
+
+**Query Embedding Caching**
+- Every `remember()` call generates embedding even for identical queries
+- Wastes computation for repeated queries in rapid succession
+- Fix: Add MRU cache for frequent query embeddings with TTL
 
 ---
 

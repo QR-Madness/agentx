@@ -393,16 +393,26 @@ class AgentMemory:
 
         try:
             with Neo4jConnection.session() as session:
-                query_result = session.run("""
-                    MATCH (g:Goal {id: $goal_id})
+                # Build channel filter to respect access boundaries
+                if self.channel and self.channel != "_global":
+                    channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
+                else:
+                    channel_filter = "AND g.channel = '_global'"
+
+                # SECURITY: Verify user owns the goal via HAS_GOAL relationship
+                query_result = session.run(f"""
+                    MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal {{id: $goal_id}})
+                    WHERE true {channel_filter}
                     SET g.status = $status,
                         g.completed_at = datetime(),
                         g.result = $result
                     RETURN g.id AS updated_id
                 """,
+                    user_id=self.user_id,
                     goal_id=goal_id,
                     status=status,
-                    result=result
+                    result=result,
+                    channel=self.channel
                 )
                 record = query_result.single()
                 updated = record is not None and record["updated_id"] is not None

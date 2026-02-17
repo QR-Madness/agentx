@@ -97,11 +97,15 @@ class ExtractionService:
         ]
 
         try:
-            result = await provider.complete(
-                messages,
-                model_id,
-                temperature=self.settings.extraction_temperature,
-                max_tokens=self.settings.extraction_max_tokens,
+            # Enforce timeout on LLM call to prevent hangs
+            result = await asyncio.wait_for(
+                provider.complete(
+                    messages,
+                    model_id,
+                    temperature=self.settings.extraction_temperature,
+                    max_tokens=self.settings.extraction_max_tokens,
+                ),
+                timeout=self.settings.extraction_timeout
             )
 
             parsed = self._parse_extraction_response(result.content)
@@ -184,6 +188,11 @@ Output ONLY valid JSON with no markdown formatting, code fences, or explanation.
         # Truncate very long texts to avoid token limits
         max_chars = 8000
         if len(text) > max_chars:
+            truncated_chars = len(text) - max_chars
+            logger.warning(
+                f"Text truncated for extraction: {truncated_chars} chars removed "
+                f"({len(text)} -> {max_chars})"
+            )
             text = text[:max_chars] + "\n...[truncated]"
 
         return f'''Extract entities, facts, and relationships from this conversation:

@@ -177,11 +177,12 @@ class MemoryRetriever:
         include_procedural: bool,
     ) -> str:
         """Generate cache key for retrieval."""
-        query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
+        # Use longer hash to reduce collision risk (32 chars = 128 bits)
+        query_hash = hashlib.sha256(query.encode()).hexdigest()[:32]
         channels_str = ",".join(sorted(channels))
         params_hash = hashlib.sha256(
             f"{top_k}:{include_episodic}:{include_semantic}:{include_procedural}".encode()
-        ).hexdigest()[:8]
+        ).hexdigest()[:16]
         return f"{settings.retrieval_cache_key_prefix}:{user_id}:{channels_str}:{query_hash}:{params_hash}"
 
     def _get_cached(self, cache_key: str) -> Optional[MemoryBundle]:
@@ -296,7 +297,17 @@ class MemoryRetriever:
 
         Returns:
             MemoryBundle with aggregated results
+
+        Raises:
+            ValueError: If query exceeds maximum allowed length
         """
+        # Validate query length to prevent embedder crashes or excessive resource usage
+        max_query_length = getattr(settings, 'max_query_length', 10000)
+        if len(query) > max_query_length:
+            raise ValueError(
+                f"Query exceeds maximum length: {len(query)} > {max_query_length} chars"
+            )
+
         total_start = time.perf_counter()
         metrics = RetrievalMetrics(user_id=user_id)
 
@@ -605,14 +616,15 @@ class MemoryRetriever:
             # Sort by final score
             bundle.relevant_turns.sort(key=lambda x: x.get("final_score", 0), reverse=True)
 
-            # Diversity: limit items from same conversation
+            # Diversity: limit items from same conversation (configurable)
+            max_per_conv = getattr(settings, 'max_results_per_conversation', 3)
             seen_convs: Dict[str, int] = {}
             filtered_turns = []
             for turn in bundle.relevant_turns:
                 conv_id = turn.get("conversation_id")
                 if conv_id:
                     seen_convs[conv_id] = seen_convs.get(conv_id, 0) + 1
-                    if seen_convs[conv_id] <= 3:
+                    if seen_convs[conv_id] <= max_per_conv:
                         filtered_turns.append(turn)
                 else:
                     filtered_turns.append(turn)

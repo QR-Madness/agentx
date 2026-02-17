@@ -1,10 +1,11 @@
 """Background consolidation jobs for memory processing."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, TYPE_CHECKING
 from uuid import uuid4
 import logging
 import json
+import re
 
 from ..connections import Neo4jConnection, get_postgres_session, RedisConnection
 from ..embeddings import get_embedder
@@ -36,10 +37,13 @@ def _get_memory_for_user(user_id: str, channel: str = "_global") -> "AgentMemory
     return AgentMemory(user_id=user_id, channel=channel)
 
 
-def consolidate_episodic_to_semantic():
+def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
+
+    Returns:
+        Dictionary with consolidation metrics
     """
     # Cache memory instances per user to avoid repeated initialization
     memory_cache: Dict[str, "AgentMemory"] = {}
@@ -95,7 +99,8 @@ def consolidate_episodic_to_semantic():
                 extracted_entities = []
 
             entity_count = 0
-            entity_map: Dict[str, str] = {}  # name -> entity_id for relationship linking
+            # Use lowercase keys for case-insensitive matching with relationships
+            entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
 
             # Store entities via AgentMemory interface
             for entity_dict in extracted_entities:
@@ -108,7 +113,8 @@ def consolidate_episodic_to_semantic():
                         salience=entity_dict.get("confidence", 0.5),
                     )
                     memory.upsert_entity(entity)
-                    entity_map[entity_dict["name"]] = entity.id
+                    # Store with lowercase key for case-insensitive lookup
+                    entity_map[entity_dict["name"].lower()] = entity.id
                     entity_count += 1
 
                     # Create MENTIONS relationship (this is still direct Neo4j for the relationship)
@@ -134,11 +140,11 @@ def consolidate_episodic_to_semantic():
             # Store facts via AgentMemory interface
             for fact_dict in extracted_facts:
                 try:
-                    # Link fact to mentioned entities
+                    # Link fact to mentioned entities (case-insensitive lookup)
                     entity_ids = [
-                        entity_map[name]
+                        entity_map[name.lower()]
                         for name in fact_dict.get("entity_names", [])
-                        if name in entity_map
+                        if name.lower() in entity_map
                     ]
 
                     fact = memory.learn_fact(
@@ -170,11 +176,11 @@ def consolidate_episodic_to_semantic():
 
             rel_count = 0
 
-            # Store relationships in Neo4j
+            # Store relationships in Neo4j (case-insensitive entity lookup)
             for rel in extracted_relationships:
                 try:
-                    source_id = entity_map.get(rel["source"])
-                    target_id = entity_map.get(rel["target"])
+                    source_id = entity_map.get(rel["source"].lower())
+                    target_id = entity_map.get(rel["target"].lower())
 
                     if source_id and target_id:
                         session.run("""
@@ -199,16 +205,21 @@ def consolidate_episodic_to_semantic():
 
             total_relationships += rel_count
 
-            # Mark conversation as consolidated
-            session.run("""
-                MATCH (c:Conversation {id: $conv_id})
-                SET c.consolidated = datetime()
-            """, conv_id=conv_id)
+            # Mark conversation as consolidated in finally block to ensure it's set
+            # even if some extraction steps fail (prevents reprocessing)
+            try:
+                logger.info(
+                    f"Consolidated conversation {conv_id}: "
+                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships"
+                )
+            finally:
+                session.run("""
+                    MATCH (c:Conversation {id: $conv_id})
+                    SET c.consolidated = datetime()
+                """, conv_id=conv_id)
 
-            logger.info(
-                f"Consolidated conversation {conv_id}: "
-                f"{entity_count} entities, {fact_count} facts, {rel_count} relationships"
-            )
+    # Clean up memory cache to release resources
+    memory_cache.clear()
 
     # Log summary metrics
     if total_conversations > 0:
@@ -221,9 +232,24 @@ def consolidate_episodic_to_semantic():
     if errors:
         logger.warning(f"Consolidation had {len(errors)} errors: {errors[:5]}")
 
+    return {
+        "items_processed": total_conversations,
+        "entities": total_entities,
+        "facts": total_facts,
+        "relationships": total_relationships,
+        "errors": errors
+    }
 
-def detect_patterns():
-    """Analyze successful conversations to extract procedural patterns."""
+
+def detect_patterns() -> Dict[str, Any]:
+    """
+    Analyze successful conversations to extract procedural patterns.
+
+    Returns:
+        Dictionary with pattern detection metrics
+    """
+    patterns_extracted = 0
+
     with Neo4jConnection.session() as session:
         # Find conversations with successful outcomes
         result = session.run("""
@@ -275,12 +301,22 @@ def detect_patterns():
                 conv_id=conv_id
             )
 
+            patterns_extracted += 1
             logger.info(f"Extracted pattern from {conv_id}: {tools}")
 
+    return {"items_processed": patterns_extracted}
 
-def apply_memory_decay():
-    """Apply time-based decay to memory salience scores."""
+
+def apply_memory_decay() -> Dict[str, Any]:
+    """
+    Apply time-based decay to memory salience scores.
+
+    Returns:
+        Dictionary with decay metrics
+    """
     decay_rate = settings.salience_decay_rate
+    entities_decayed = 0
+    facts_decayed = 0
 
     with Neo4jConnection.session() as session:
         # Decay entity salience
@@ -291,8 +327,8 @@ def apply_memory_decay():
             RETURN count(e) AS decayed_count
         """, decay_rate=decay_rate)
 
-        count = result.single()["decayed_count"]
-        logger.info(f"Decayed {count} entities")
+        entities_decayed = result.single()["decayed_count"]
+        logger.info(f"Decayed {entities_decayed} entities")
 
         # Decay fact confidence (slower decay)
         result = session.run("""
@@ -303,8 +339,14 @@ def apply_memory_decay():
             RETURN count(f) AS decayed_count
         """, decay_rate=decay_rate ** 0.5)  # Slower decay for facts
 
-        count = result.single()["decayed_count"]
-        logger.info(f"Decayed {count} facts")
+        facts_decayed = result.single()["decayed_count"]
+        logger.info(f"Decayed {facts_decayed} facts")
+
+    return {
+        "items_processed": entities_decayed + facts_decayed,
+        "entities_decayed": entities_decayed,
+        "facts_decayed": facts_decayed
+    }
 
 
 def promote_to_global() -> Dict[str, Any]:
@@ -567,7 +609,7 @@ def trigger_reflection(
         "conversation_id": conversation_id,
         "user_id": user_id,
         "outcome": outcome,
-        "triggered_at": datetime.utcnow().isoformat()
+        "triggered_at": datetime.now(timezone.utc).isoformat()
     }
 
     redis.xadd("reflection_jobs", {"data": json.dumps(job_data)})
@@ -612,9 +654,16 @@ def manage_audit_partitions() -> Dict[str, Any]:
                 exists = result.scalar()
 
                 if not exists:
-                    # Create partition
+                    # Validate partition name to prevent SQL injection
+                    # (should only contain alphanumeric and underscore)
+                    if not re.match(r'^[a-zA-Z0-9_]+$', partition_name):
+                        logger.error(f"Invalid partition name format: {partition_name}")
+                        errors.append(f"invalid_name:{partition_name}")
+                        continue
+
+                    # Create partition - use identifier quoting for safety
                     session.execute(text(f"""
-                        CREATE TABLE IF NOT EXISTS {partition_name}
+                        CREATE TABLE IF NOT EXISTS "{partition_name}"
                         PARTITION OF memory_audit_log
                         FOR VALUES FROM ('{partition_date.isoformat()}')
                         TO ('{next_date.isoformat()}')
@@ -647,9 +696,11 @@ def manage_audit_partitions() -> Dict[str, Any]:
                     partition_date = datetime.strptime(date_str, "%Y%m%d").date()
 
                     if partition_date < cutoff_date:
-                        session.execute(text(f"DROP TABLE IF EXISTS {partition_name}"))
-                        partitions_dropped += 1
-                        logger.info(f"Dropped old audit partition: {partition_name}")
+                        # Validate partition name before dropping
+                        if re.match(r'^[a-zA-Z0-9_]+$', partition_name):
+                            session.execute(text(f'DROP TABLE IF EXISTS "{partition_name}"'))
+                            partitions_dropped += 1
+                            logger.info(f"Dropped old audit partition: {partition_name}")
                 except ValueError:
                     # Skip partitions with unexpected naming
                     continue

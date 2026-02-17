@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..connections import RedisConnection
 from ..config import get_settings
@@ -72,12 +72,19 @@ class WorkingMemory:
         Get most recent turns from working memory.
 
         Args:
-            limit: Maximum number of turns to return
+            limit: Maximum number of turns to return (capped to max_working_memory_items)
 
         Returns:
             List of turn dictionaries
         """
-        turns = self.redis.lrange(self.turns_key, 0, limit - 1)
+        # Cap limit to configured maximum to prevent resource exhaustion
+        effective_limit = min(max(1, limit), settings.max_working_memory_items)
+        turns = self.redis.lrange(self.turns_key, 0, effective_limit - 1)
+
+        # Refresh TTL on access (sliding window expiry)
+        if turns:
+            self.redis.expire(self.turns_key, 3600)
+
         return [json.loads(t) for t in turns]
 
     def set(self, key: str, value: Any, ttl_seconds: int = 3600) -> None:
@@ -123,14 +130,22 @@ class WorkingMemory:
         Returns:
             Dictionary of all context values
         """
-        # Get all keys matching the context pattern
+        # Use SCAN instead of KEYS to avoid blocking Redis (O(N) blocking)
         pattern = f"{self.context_key}:*"
-        keys = self.redis.keys(pattern)
+        keys = []
+        cursor = 0
+        while True:
+            cursor, batch = self.redis.scan(cursor, match=pattern, count=100)
+            keys.extend(batch)
+            if cursor == 0:
+                break
 
         context = {}
         for key in keys:
-            short_key = key.replace(f"{self.context_key}:", "")
-            value = self.redis.get(key)
+            # Handle both bytes and string keys depending on Redis config
+            key_str = key.decode() if isinstance(key, bytes) else key
+            short_key = key_str.replace(f"{self.context_key}:", "")
+            value = self.redis.get(key_str)
             if value:
                 context[short_key] = json.loads(value)
 
@@ -141,10 +156,17 @@ class WorkingMemory:
 
     def clear_session(self) -> None:
         """Clear all working memory for this session."""
+        # Use SCAN instead of KEYS to avoid blocking Redis
         pattern = f"{self.session_key}:*"
-        keys = self.redis.keys(pattern)
-        if keys:
-            self.redis.delete(*keys)
+        cursor = 0
+        while True:
+            cursor, keys = self.redis.scan(cursor, match=pattern, count=100)
+            if keys:
+                # Handle both bytes and string keys
+                key_strs = [k.decode() if isinstance(k, bytes) else k for k in keys]
+                self.redis.delete(*key_strs)
+            if cursor == 0:
+                break
 
     # Specialized working memory operations
 
@@ -159,7 +181,7 @@ class WorkingMemory:
         self.set("active_goal", {
             "id": goal_id,
             "description": goal_description,
-            "set_at": datetime.utcnow().isoformat()
+            "set_at": datetime.now(timezone.utc).isoformat()
         })
 
     def get_active_goal(self) -> Optional[Dict[str, Any]]:
@@ -181,9 +203,10 @@ class WorkingMemory:
         thoughts_key = f"{self.session_key}:thoughts"
         self.redis.lpush(thoughts_key, json.dumps({
             "thought": thought,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }))
-        self.redis.ltrim(thoughts_key, 0, 99)  # Keep last 100 thoughts
+        # Use configured limit instead of hard-coded value
+        self.redis.ltrim(thoughts_key, 0, settings.max_working_memory_items - 1)
         self.redis.expire(thoughts_key, 3600)
 
     def get_thoughts(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -191,11 +214,13 @@ class WorkingMemory:
         Get recent reasoning steps.
 
         Args:
-            limit: Maximum number of thoughts to return
+            limit: Maximum number of thoughts to return (capped to max_working_memory_items)
 
         Returns:
             List of thought dictionaries
         """
+        # Cap limit to configured maximum
+        effective_limit = min(max(1, limit), settings.max_working_memory_items)
         thoughts_key = f"{self.session_key}:thoughts"
-        thoughts = self.redis.lrange(thoughts_key, 0, limit - 1)
+        thoughts = self.redis.lrange(thoughts_key, 0, effective_limit - 1)
         return [json.loads(t) for t in thoughts]

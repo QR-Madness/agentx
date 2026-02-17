@@ -1,12 +1,18 @@
 """Semantic memory - entities, facts, and conceptual knowledge."""
 
+import re
+import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from ..models import Entity, Fact
 from ..connections import Neo4jConnection
+from ..config import get_settings
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class SemanticMemory:
@@ -20,6 +26,32 @@ class SemanticMemory:
         """
         self._audit_logger = audit_logger
 
+    def _validate_entity_type(self, entity_type: str) -> str:
+        """
+        Validate and sanitize entity type against allowed types.
+
+        Args:
+            entity_type: The entity type to validate
+
+        Returns:
+            Validated entity type (defaults to 'Entity' if invalid)
+        """
+        # Get allowed types from settings
+        allowed_types = set(settings.entity_types)
+
+        # Normalize: uppercase first letter, lowercase rest
+        normalized = entity_type.strip().title().replace(" ", "").replace("_", "")
+
+        if normalized in allowed_types:
+            return normalized
+
+        # Log warning but don't fail - use generic type
+        logger.warning(
+            f"Entity type '{entity_type}' not in allowed types {allowed_types}, "
+            f"using 'Entity' instead"
+        )
+        return "Entity"
+
     def upsert_entity(self, entity: Entity, user_id: Optional[str] = None, channel: str = "_global") -> Entity:
         """
         Create or update an entity.
@@ -32,8 +64,12 @@ class SemanticMemory:
         Returns:
             Updated entity object
         """
+        # Validate entity type against whitelist to prevent arbitrary label creation
+        validated_type = self._validate_entity_type(entity.type)
+
         with Neo4jConnection.session() as session:
             # Use MERGE for idempotent upsert
+            # Store type as property (not dynamic label) for safety
             session.run("""
                 MERGE (e:Entity {id: $id})
                 ON CREATE SET
@@ -51,6 +87,7 @@ class SemanticMemory:
                     e.properties = $properties
                 ON MATCH SET
                     e.name = $name,
+                    e.type = $type,
                     e.description = coalesce($description, e.description),
                     e.embedding = coalesce($embedding, e.embedding),
                     e.aliases = $aliases + [x IN e.aliases WHERE NOT x IN $aliases],
@@ -62,14 +99,11 @@ class SemanticMemory:
                 MERGE (u:User {id: $user_id})
                 MERGE (u)-[:HAS_ENTITY]->(e)
 
-                // Add type-specific label
-                WITH e
-                CALL apoc.create.addLabels(e, [$type]) YIELD node
-                RETURN node
+                RETURN e
             """,
                 id=entity.id,
                 name=entity.name,
-                type=entity.type,
+                type=validated_type,
                 aliases=entity.aliases,
                 description=entity.description,
                 embedding=entity.embedding,
@@ -252,20 +286,26 @@ class SemanticMemory:
         entity_ids: List[str],
         depth: int = 2,
         user_id: Optional[str] = None,
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
+        max_related: int = 50
     ) -> Dict[str, Any]:
         """
         Traverse entity relationships to get context.
 
         Args:
             entity_ids: List of entity IDs to start from
-            depth: Relationship traversal depth
+            depth: Relationship traversal depth (capped at 3)
             user_id: Filter by user ID
             channel: Filter by channel (searches channel + _global)
+            max_related: Maximum number of related entities to return (default 50)
 
         Returns:
             Dictionary with entities, related entities, and facts
         """
+        # Validate depth to prevent expensive traversals
+        validated_depth = max(1, min(int(depth), 3))
+        validated_max_related = max(1, min(int(max_related), 100))
+
         with Neo4jConnection.session() as session:
             # Build user filter
             user_filter = ""
@@ -291,23 +331,29 @@ class SemanticMemory:
                 WHERE true {user_filter} {channel_filter}
 
                 // Get related entities within depth, filtered by channel
-                OPTIONAL MATCH path = (e)-[r*1..$depth]-(related:Entity)
+                // Use validated_depth directly in query (it's an integer, safe)
+                OPTIONAL MATCH path = (e)-[r*1..{validated_depth}]-(related:Entity)
                 WHERE true {related_channel_filter}
 
                 // Get facts about these entities, filtered by channel
                 OPTIONAL MATCH (f:Fact)-[:ABOUT]->(e)
                 WHERE true {fact_channel_filter}
 
+                // Collect results with limits to prevent memory issues
+                WITH e,
+                     collect(DISTINCT {{
+                         entity: related,
+                         relationship: type(last(relationships(path))),
+                         path_length: length(path)
+                     }})[0..$max_related] AS related_limited,
+                     collect(DISTINCT f)[0..50] AS facts_limited
+
                 RETURN e AS entity,
-                       collect(DISTINCT {{
-                           entity: related,
-                           relationship: type(last(relationships(path))),
-                           path_length: length(path)
-                       }}) AS related,
-                       collect(DISTINCT f) AS facts
+                       related_limited AS related,
+                       facts_limited AS facts
             """,
                 entity_ids=entity_ids,
-                depth=depth,
+                max_related=validated_max_related,
                 user_id=user_id,
                 channel=channel
             )

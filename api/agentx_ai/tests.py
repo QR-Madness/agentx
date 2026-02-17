@@ -1441,15 +1441,16 @@ class WorkingMemoryUnitTest(TestCase):
         self.assertIsNone(result)
 
     def test_clear_session_deletes_pattern(self):
-        """clear_session deletes all keys matching session pattern."""
+        """clear_session deletes all keys matching session pattern using SCAN."""
         from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
-        self.mock_redis.keys.return_value = [b"key1", b"key2"]
+        # SCAN returns (cursor, keys) tuple - cursor 0 means end of iteration
+        self.mock_redis.scan.return_value = (0, [b"key1", b"key2"])
 
         wm.clear_session()
 
-        self.mock_redis.keys.assert_called_once()
+        self.mock_redis.scan.assert_called()
         self.mock_redis.delete.assert_called_once()
 
 
