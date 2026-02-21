@@ -12,10 +12,23 @@ import {
   Settings2,
   RefreshCw,
   FileText,
-  Radio
+  Radio,
+  Database,
+  Thermometer,
+  History,
+  Trash2,
+  MessageSquare,
+  Mic,
 } from 'lucide-react';
 import { api, ChatResponse, ReasoningStep, PromptProfile } from '../../lib/api';
-import { MessageContent, ThinkingBubble } from '../chat';
+import { MessageContent, ThinkingBubble, MessageActions } from '../chat';
+import {
+  getRecentChats,
+  addRecentChat,
+  deleteRecentChat,
+  RecentChat,
+  ChatMessage as StoredChatMessage,
+} from '../../lib/storage';
 import '../../styles/ChatTab.css';
 
 interface Message {
@@ -68,6 +81,15 @@ export const ChatTab: React.FC = () => {
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const streamingContentRef = useRef(''); // Track content synchronously
 
+  // Advanced settings state
+  const [temperature, setTemperature] = useState(0.7);
+  const [useMemory, setUseMemory] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Recent chats state
+  const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
+  const [showRecentChats, setShowRecentChats] = useState(false);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -80,7 +102,64 @@ export const ChatTab: React.FC = () => {
   useEffect(() => {
     fetchModels();
     fetchProfiles();
+    loadRecentChats();
   }, []);
+
+  // Save chat to recent chats when messages change (with session)
+  useEffect(() => {
+    if (sessionId && messages.length > 1) {
+      const firstUserMessage = messages.find(m => m.sender === 'user');
+      const title = firstUserMessage
+        ? firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '')
+        : 'New Chat';
+      const preview = firstUserMessage?.content.slice(0, 100) || '';
+
+      const storedMessages: StoredChatMessage[] = messages.map(m => ({
+        id: m.id,
+        content: m.content,
+        sender: m.sender,
+        timestamp: m.timestamp.toISOString(),
+        thinking: m.thinking,
+        tokensUsed: m.tokensUsed,
+        model: m.model,
+      }));
+
+      addRecentChat({
+        sessionId,
+        title,
+        preview,
+        messages: storedMessages,
+        model: selectedModel,
+        createdAt: messages[0]?.timestamp.toISOString() || new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+      });
+
+      loadRecentChats();
+    }
+  }, [messages, sessionId]);
+
+  const loadRecentChats = () => {
+    setRecentChats(getRecentChats());
+  };
+
+  const loadChat = (chat: RecentChat) => {
+    const loadedMessages: Message[] = chat.messages.map(m => ({
+      ...m,
+      timestamp: new Date(m.timestamp),
+    }));
+    setMessages(loadedMessages);
+    setSessionId(chat.sessionId);
+    if (chat.model) {
+      setSelectedModel(chat.model);
+    }
+    setShowRecentChats(false);
+  };
+
+  const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteRecentChat(chatId);
+    loadRecentChats();
+  };
 
   const fetchProfiles = async () => {
     try {
@@ -170,6 +249,8 @@ export const ChatTab: React.FC = () => {
           session_id: sessionId || undefined,
           model: selectedModel || undefined,
           profile_id: selectedProfile || undefined,
+          temperature,
+          use_memory: useMemory,
         },
         {
           onStart: (data) => {
@@ -228,6 +309,8 @@ export const ChatTab: React.FC = () => {
           model: selectedModel || undefined,
           show_reasoning: showReasoning,
           profile_id: selectedProfile || undefined,
+          temperature,
+          use_memory: useMemory,
         });
 
         if (response.session_id) {
@@ -286,6 +369,38 @@ export const ChatTab: React.FC = () => {
     }));
   };
 
+  const handleRegenerate = (messageIndex: number) => {
+    // Find the last user message before this assistant message
+    const userMessageIndex = messages.slice(0, messageIndex).reverse().findIndex(m => m.sender === 'user');
+    if (userMessageIndex === -1) return;
+
+    const actualUserIndex = messageIndex - 1 - userMessageIndex;
+    const userMessage = messages[actualUserIndex];
+    if (!userMessage) return;
+
+    // Remove messages from this assistant message onwards
+    setMessages(prev => prev.slice(0, messageIndex));
+
+    // Set input to the user message and trigger send
+    setInput(userMessage.content);
+    // Use setTimeout to allow state to update before sending
+    setTimeout(() => {
+      const sendEvent = new CustomEvent('chat-regenerate');
+      window.dispatchEvent(sendEvent);
+    }, 50);
+  };
+
+  // Listen for regenerate events
+  useEffect(() => {
+    const handleRegenerateEvent = () => {
+      if (input.trim()) {
+        handleSend();
+      }
+    };
+    window.addEventListener('chat-regenerate', handleRegenerateEvent);
+    return () => window.removeEventListener('chat-regenerate', handleRegenerateEvent);
+  }, [input]);
+
   return (
     <div className="chat-tab">
       {/* Header */}
@@ -303,14 +418,21 @@ export const ChatTab: React.FC = () => {
           </div>
         </div>
         <div className="chat-actions">
-          <button 
+          <button
+            className={`button-ghost ${useMemory ? 'active' : ''}`}
+            onClick={() => setUseMemory(!useMemory)}
+            title={useMemory ? 'Memory enabled' : 'Memory disabled'}
+          >
+            <Database size={18} />
+          </button>
+          <button
             className={`button-ghost ${useStreaming ? 'active' : ''}`}
             onClick={() => setUseStreaming(!useStreaming)}
             title={useStreaming ? 'Streaming enabled' : 'Streaming disabled'}
           >
             <Radio size={18} />
           </button>
-          <button 
+          <button
             className={`button-ghost ${showProfileSelector ? 'active' : ''}`}
             onClick={() => { setShowProfileSelector(!showProfileSelector); setShowModelSelector(false); }}
             title="Select prompt profile"
@@ -324,12 +446,19 @@ export const ChatTab: React.FC = () => {
           >
             <Brain size={18} />
           </button>
-          <button 
+          <button
             className={`button-ghost ${showModelSelector ? 'active' : ''}`}
             onClick={() => { setShowModelSelector(!showModelSelector); setShowProfileSelector(false); }}
             title="Select model"
           >
             <Settings2 size={18} />
+          </button>
+          <button
+            className={`button-ghost ${showRecentChats ? 'active' : ''}`}
+            onClick={() => { setShowRecentChats(!showRecentChats); setShowModelSelector(false); setShowProfileSelector(false); }}
+            title="Recent chats"
+          >
+            <History size={18} />
           </button>
           <button className="button-secondary" onClick={handleNewChat}>
             <Plus size={16} />
@@ -337,6 +466,47 @@ export const ChatTab: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Recent Chats Dropdown */}
+      {showRecentChats && (
+        <div className="recent-chats-panel card">
+          <div className="recent-chats-header">
+            <h3>Recent Chats</h3>
+            <span className="chat-count">{recentChats.length} chats</span>
+          </div>
+          {recentChats.length === 0 ? (
+            <div className="recent-chats-empty">
+              <MessageSquare size={24} />
+              <p>No recent chats yet</p>
+            </div>
+          ) : (
+            <div className="recent-chats-list">
+              {recentChats.map(chat => (
+                <div
+                  key={chat.id}
+                  className={`recent-chat-item ${chat.sessionId === sessionId ? 'active' : ''}`}
+                  onClick={() => loadChat(chat)}
+                >
+                  <div className="recent-chat-content">
+                    <span className="recent-chat-title">{chat.title}</span>
+                    <span className="recent-chat-preview">{chat.preview}</span>
+                    <span className="recent-chat-time">
+                      {new Date(chat.lastMessageAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <button
+                    className="recent-chat-delete"
+                    onClick={(e) => handleDeleteChat(chat.id, e)}
+                    title="Delete chat"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Profile Selector Panel */}
       {showProfileSelector && (
@@ -469,6 +639,43 @@ export const ChatTab: React.FC = () => {
         </div>
       )}
 
+      {/* Advanced Settings Panel */}
+      <div className="advanced-settings">
+        <button
+          className="advanced-toggle"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <Thermometer size={14} />
+          <span>Advanced Settings</span>
+          <span className="advanced-value">Temp: {temperature.toFixed(1)}</span>
+        </button>
+        {showAdvanced && (
+          <div className="advanced-panel card">
+            <div className="setting-row">
+              <label className="setting-label">
+                <Thermometer size={14} />
+                Temperature
+                <span className="setting-value">{temperature.toFixed(2)}</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                className="temperature-slider"
+              />
+              <div className="temperature-hints">
+                <span>Precise</span>
+                <span>Creative</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Messages */}
       <div className="chat-messages">
         {messages.map(message => (
@@ -529,6 +736,16 @@ export const ChatTab: React.FC = () => {
                   </span>
                 )}
               </div>
+              <MessageActions
+                content={message.content}
+                isAssistant={message.sender === 'assistant'}
+                timestamp={message.timestamp}
+                onRegenerate={
+                  message.sender === 'assistant'
+                    ? () => handleRegenerate(messages.findIndex(m => m.id === message.id))
+                    : undefined
+                }
+              />
             </div>
           </div>
         ))}
@@ -560,23 +777,51 @@ export const ChatTab: React.FC = () => {
       </div>
 
       {/* Input */}
-      <div className="chat-input-container card">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Type your message... (Shift+Enter for new line)"
-          className="chat-input"
-          rows={1}
-          disabled={isTyping}
-        />
-        <button
-          className="send-button button-primary"
-          onClick={handleSend}
-          disabled={!input.trim() || isTyping}
-        >
-          {isTyping ? <Loader2 size={20} className="spin" /> : <Send size={20} />}
-        </button>
+      <div className="chat-input-wrapper">
+        <div className="chat-input-container card">
+          <button
+            className="voice-button button-ghost"
+            disabled
+            title="Voice input coming soon"
+          >
+            <Mic size={18} />
+          </button>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onPaste={(e) => {
+              // Check for image paste
+              const items = e.clipboardData?.items;
+              if (items) {
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    // TODO: Show toast notification
+                    console.log('Image paste detected - feature coming soon');
+                    return;
+                  }
+                }
+              }
+            }}
+            placeholder="Type your message... (Shift+Enter for new line)"
+            className="chat-input"
+            rows={1}
+            disabled={isTyping}
+          />
+          <button
+            className="send-button button-primary"
+            onClick={handleSend}
+            disabled={!input.trim() || isTyping}
+          >
+            {isTyping ? <Loader2 size={20} className="spin" /> : <Send size={20} />}
+          </button>
+        </div>
+        <div className="input-stats">
+          <span className={input.length > 4000 ? 'warning' : ''}>
+            {input.length} chars · ~{Math.ceil(input.length / 4)} tokens
+          </span>
+        </div>
       </div>
     </div>
   );

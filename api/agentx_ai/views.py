@@ -384,17 +384,19 @@ def agent_chat(request):
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")  # Prompt profile to use
-        
+        temperature = data.get("temperature", 0.7)
+        use_memory = data.get("use_memory", True)
+
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
-    
-    # Get agent, optionally with custom model
+
+    # Get agent, optionally with custom model and settings
+    from .agent import Agent, AgentConfig
+    config_kwargs = {"enable_memory": use_memory}
     if model:
-        from .agent import Agent, AgentConfig
-        agent = Agent(AgentConfig(default_model=model))
+        config_kwargs["default_model"] = model
         logger.info(f"Using custom model for chat: {model}")
-    else:
-        agent = get_agent()
+    agent = Agent(AgentConfig(**config_kwargs))
     
     result = async_to_sync(agent.chat)(message, session_id=session_id, profile_id=profile_id)
     
@@ -438,10 +440,12 @@ def agent_chat_stream(request):
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")
-        
+        temperature = data.get("temperature", 0.7)
+        use_memory = data.get("use_memory", True)
+
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
-    
+
     def generate_sse():
         """Generator that yields SSE events."""
         import time
@@ -451,15 +455,15 @@ def agent_chat_stream(request):
         from .agent.output_parser import parse_output
         from .prompts import get_prompt_manager
         from .providers.base import Message, MessageRole
-        
+
         task_id = str(uuid.uuid4())[:8]
         start_time = time.time()
-        
-        # Get or create agent
+
+        # Get or create agent with settings
+        config_kwargs = {"enable_memory": use_memory}
         if model:
-            agent = Agent(AgentConfig(default_model=model))
-        else:
-            agent = get_agent()
+            config_kwargs["default_model"] = model
+        agent = Agent(AgentConfig(**config_kwargs))
         
         # Session management
         if agent._session_manager is None:
@@ -500,7 +504,7 @@ def agent_chat_stream(request):
             async def collect_stream():
                 nonlocal full_content
                 chunks = []
-                async for chunk in provider.stream(messages, model_id, temperature=0.7, max_tokens=2000):
+                async for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
                     chunks.append(chunk)
                 return chunks
             

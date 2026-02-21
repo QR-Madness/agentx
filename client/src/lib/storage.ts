@@ -34,6 +34,29 @@ export interface ServerCache {
   lastHealthStatus?: 'healthy' | 'degraded' | 'unhealthy';
 }
 
+// === Chat Types ===
+
+export interface ChatMessage {
+  id: string;
+  content: string;
+  sender: 'user' | 'assistant';
+  timestamp: string;
+  thinking?: string;
+  tokensUsed?: number;
+  model?: string;
+}
+
+export interface RecentChat {
+  id: string;
+  sessionId: string;
+  title: string;
+  preview: string;
+  messages: ChatMessage[];
+  model?: string;
+  createdAt: string;
+  lastMessageAt: string;
+}
+
 export interface ServerMetadata {
   serverId: string;
   apiKeys: ServerApiKeys;
@@ -47,7 +70,10 @@ const STORAGE_KEYS = {
   servers: 'agentx:servers',
   activeServer: 'agentx:activeServer',
   serverMeta: (id: string) => `agentx:server:${id}:meta`,
+  recentChats: (serverId: string) => `agentx:server:${serverId}:recentChats`,
 } as const;
+
+const MAX_RECENT_CHATS = 10;
 
 // === Helper Functions ===
 
@@ -222,17 +248,99 @@ export function markServerConnected(serverId: string): void {
 
 export function ensureDefaultServer(): ServerConfig {
   const servers = getServers();
-  
+
   if (servers.length === 0) {
     return addServer('Local Development', 'http://localhost:12319');
   }
-  
+
   // Ensure there's an active server
   const activeId = getActiveServerId();
   if (!activeId || !servers.find(s => s.id === activeId)) {
     setActiveServerId(servers[0].id);
     return servers[0];
   }
-  
+
   return servers.find(s => s.id === activeId)!;
+}
+
+// === Recent Chats ===
+
+export function getRecentChats(serverId?: string): RecentChat[] {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return [];
+
+  const data = localStorage.getItem(STORAGE_KEYS.recentChats(id));
+  return safeJsonParse<RecentChat[]>(data, []);
+}
+
+export function saveRecentChats(chats: RecentChat[], serverId?: string): void {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return;
+
+  // Keep only the most recent chats
+  const trimmed = chats.slice(0, MAX_RECENT_CHATS);
+  localStorage.setItem(STORAGE_KEYS.recentChats(id), JSON.stringify(trimmed));
+}
+
+export function addRecentChat(chat: Omit<RecentChat, 'id'>): RecentChat {
+  const serverId = getActiveServerId();
+  if (!serverId) throw new Error('No active server');
+
+  const chats = getRecentChats(serverId);
+
+  // Generate ID
+  const newChat: RecentChat = {
+    ...chat,
+    id: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  };
+
+  // Check if this sessionId already exists, update it
+  const existingIndex = chats.findIndex(c => c.sessionId === chat.sessionId);
+  if (existingIndex !== -1) {
+    chats[existingIndex] = { ...newChat, id: chats[existingIndex].id };
+  } else {
+    chats.unshift(newChat);
+  }
+
+  saveRecentChats(chats, serverId);
+  return existingIndex !== -1 ? chats[existingIndex] : newChat;
+}
+
+export function updateRecentChat(
+  chatId: string,
+  updates: Partial<Omit<RecentChat, 'id'>>
+): RecentChat | null {
+  const serverId = getActiveServerId();
+  if (!serverId) return null;
+
+  const chats = getRecentChats(serverId);
+  const index = chats.findIndex(c => c.id === chatId);
+  if (index === -1) return null;
+
+  chats[index] = { ...chats[index], ...updates };
+
+  // Move to top of list
+  const [updated] = chats.splice(index, 1);
+  chats.unshift(updated);
+
+  saveRecentChats(chats, serverId);
+  return updated;
+}
+
+export function deleteRecentChat(chatId: string): boolean {
+  const serverId = getActiveServerId();
+  if (!serverId) return false;
+
+  const chats = getRecentChats(serverId);
+  const filtered = chats.filter(c => c.id !== chatId);
+
+  if (filtered.length === chats.length) return false;
+
+  saveRecentChats(filtered, serverId);
+  return true;
+}
+
+export function getRecentChatBySessionId(sessionId: string): RecentChat | null {
+  const chats = getRecentChats();
+  return chats.find(c => c.sessionId === sessionId) ?? null;
 }

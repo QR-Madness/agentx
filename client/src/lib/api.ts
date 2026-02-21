@@ -92,6 +92,8 @@ export interface ChatRequest {
   model?: string;
   show_reasoning?: boolean;
   profile_id?: string;  // Prompt profile to use
+  temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
+  use_memory?: boolean;  // Enable memory retrieval (default true)
 }
 
 export interface ChatResponse {

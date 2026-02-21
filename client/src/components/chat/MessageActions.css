@@ -1,0 +1,57 @@
+.message-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  height: 24px;
+}
+
+.message-timestamp-hover {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message:hover .message-timestamp-hover {
+  opacity: 1;
+}
+
+.message-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message:hover .message-actions {
+  opacity: 1;
+}
+
+.message-action-btn {
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-action-btn:hover {
+  background: var(--bg-card);
+  color: var(--cosmic-violet);
+  border-color: var(--cosmic-violet);
+}
+
+.message-action-btn:active {
+  transform: scale(0.95);
+}
+
+/* Success state for copy button */
+.message-action-btn svg[data-lucide="check"] {
+  color: var(--status-success);
+}
