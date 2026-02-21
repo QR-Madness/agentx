@@ -44,7 +44,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 
 ## Development Commands
 
-All commands use [Task](https://taskfile.dev/) (see `Taskfile.yaml`). Run `task --list-all` for the complete list.
+All commands use [Task](https://taskfile.dev/) (see `Taskfile.yml`). Run `task --list-all` for the complete list.
 
 ### Setup & Development
 
@@ -83,11 +83,16 @@ uv run python api/manage.py test agentx_ai.tests.TranslationKitTest -v2
 uv run python api/manage.py test agentx_ai.tests.TranslationKitTest.test_translate_to_french -v2
 ```
 
-Test categories in `api/agentx_ai/tests.py`:
-- `TranslationKitTest` — Requires HuggingFace models to be downloaded (slow first run)
-- `HealthCheckTest` — API structure tests; `test_health_with_memory_check` auto-skips if Docker services aren't running
-- `MCPClientTest`, `MCPServerRegistryTest` — Unit tests for MCP infrastructure (no external dependencies)
-- `ExtractionPipelineTest` — Memory extraction tests; real extraction tests skip without API keys
+Test files:
+- `tests.py` — Core tests (TranslationKit, HealthCheck, MCP, Extraction)
+- `tests_memory.py` — Phase 11.8+ memory system tests (80 tests covering security, integration, edge cases)
+
+Test categories:
+- `TranslationKitTest` — Requires HuggingFace models (slow first run)
+- `HealthCheckTest` — API structure tests; auto-skips if Docker not running
+- `MCPClientTest`, `MCPServerRegistryTest` — MCP infrastructure (no external dependencies)
+- `ExtractionPipelineTest` — Memory extraction; skips without API keys
+- Memory integration tests — Skip gracefully when Docker not running or embedding dimensions mismatch
 
 The `DJANGO_SETTINGS_MODULE` env var is set automatically by the Taskfile (`agentx_api.settings`).
 
@@ -197,4 +202,4 @@ The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-
 
 ## Project Status
 
-Phases 1-10 complete. Phase 11 (Memory System) in progress — 11.1-11.3 complete. See `Todo.md` for detailed tracking.
+Phases 1-10 complete. Phase 11 (Memory System) at 90% — 11.1-11.9 complete, 11.10 (Memory Explorer UI) pending. See `Todo.md` for detailed tracking.
