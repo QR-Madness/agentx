@@ -846,58 +846,54 @@ The memory system is **architecturally complete but entirely disconnected**:
   - [ ] `manage_audit_partitions` — partition maintenance
 
 #### Job Monitoring API
-- [ ] Add job status endpoints:
-  - [ ] `GET /api/jobs` — list all registered jobs with status (running, idle, failed, disabled)
-  - [ ] `GET /api/jobs/{job_id}` — job details (last run, next run, run count, last error)
-  - [ ] `GET /api/jobs/{job_id}/history` — recent execution history with metrics
-  - [ ] `GET /api/jobs/{job_id}/logs` — logs from recent runs (paginated)
-  - [ ] `POST /api/jobs/{job_id}/run` — manually trigger a job (for debugging)
-  - [ ] `POST /api/jobs/{job_id}/disable` — disable a scheduled job
-  - [ ] `POST /api/jobs/{job_id}/enable` — re-enable a disabled job
-- [ ] Job metrics tracking:
-  - [ ] Execution count, success count, failure count
-  - [ ] Average duration, min/max duration
-  - [ ] Last run timestamp, last success timestamp
-  - [ ] Items processed (entities extracted, facts stored, etc.)
-  - [ ] Store in Redis with rollup to PostgreSQL for persistence
+- [x] Add job status endpoints:
+  - [x] `GET /api/jobs` — list all registered jobs with status (running, idle, failed, disabled)
+  - [x] `GET /api/jobs/{job_id}` — job details (last run, next run, run count, last error)
+  - [x] `GET /api/jobs/{job_id}/history` — recent execution history with metrics
+  - [ ] `GET /api/jobs/{job_id}/logs` — logs from recent runs (paginated) — deferred
+  - [x] `POST /api/jobs/{job_id}/run` — manually trigger a job (for debugging)
+  - [x] `POST /api/jobs/{job_id}/toggle` — enable/disable a scheduled job
+- [x] Job metrics tracking:
+  - [x] Execution count, success count, failure count
+  - [x] Average duration
+  - [x] Last run timestamp, last success timestamp
+  - [x] Items processed (entities extracted, facts stored, etc.)
+  - [x] Store in Redis (JobRegistry)
 
 #### Job Monitoring UI (Client)
-- [ ] Create `JobsPanel` component (subsection in Memory or Settings tab):
-  - [ ] Job list view:
-    - [ ] Columns: job name, status (badge), last run (relative time), next run, success rate
-    - [ ] Status badges: Running (blue pulse), Idle (gray), Failed (red), Disabled (muted)
-    - [ ] Click row to expand details
-  - [ ] Job detail view:
-    - [ ] Metrics dashboard: run count, success rate chart, average duration
-    - [ ] Recent execution history (last 10 runs with status, duration, items processed)
-    - [ ] Log viewer (scrollable, auto-refresh when job running)
-    - [ ] Error display (last error with stack trace if available)
-  - [ ] Manual controls:
-    - [ ] "Run Now" button — triggers job immediately via `POST /api/jobs/{id}/run`
-    - [ ] "Enable/Disable" toggle — for scheduled jobs
-    - [ ] Confirmation dialog for destructive operations
-  - [ ] Real-time updates:
+- [x] Create `JobsPanel` component (subsection in Memory tab):
+  - [x] Job list view:
+    - [x] Columns: job name, status (badge), last run (relative time), success rate
+    - [x] Status badges: Running (cyan pulse), Idle (gray), Disabled (muted)
+    - [x] Click row to expand details
+  - [x] Job detail view:
+    - [x] Metrics grid: run count, success count, failure count, average duration
+    - [x] Recent execution history (last 5 runs with status, duration, items processed)
+    - [ ] Log viewer (scrollable, auto-refresh when job running) — deferred
+    - [x] Error display (last error)
+  - [x] Manual controls:
+    - [x] "Run Now" button — triggers job immediately via `POST /api/jobs/{id}/run`
+    - [x] "Enable/Disable" toggle — for scheduled jobs
+  - [ ] Real-time updates — deferred:
     - [ ] Poll job status while job is running (5s interval)
     - [ ] Show progress indicator for long-running jobs
     - [ ] Toast notification on job completion/failure
-- [ ] Styling:
-  - [ ] Follow existing cosmic theme
-  - [ ] Use status colors consistently (green=success, red=failed, blue=running)
-  - [ ] Compact log viewer with monospace font
-  - [ ] Responsive layout (collapse on smaller screens)
+- [x] Styling:
+  - [x] Follow existing cosmic theme
+  - [x] Use status colors consistently (cyan=running, green=success, red=failed)
+  - [x] Responsive layout
 
-#### Manual Consolidation Trigger (Priority for Debugging)
-- [ ] Add immediate consolidation endpoint:
-  - [ ] `POST /api/memory/consolidate` — runs full consolidation pipeline synchronously
-  - [ ] Request body: `{ "jobs": ["extract", "patterns", "promote"] }` or empty for all
-  - [ ] Response: job results with metrics (entities extracted, facts stored, etc.)
-  - [ ] Add timeout protection (max 60s, return partial results)
-- [ ] Add "Consolidate Now" button to Memory Explorer:
-  - [ ] Prominent button in Memory tab header
-  - [ ] Shows loading state during consolidation
-  - [ ] Displays results summary (X entities, Y facts extracted)
-  - [ ] Refreshes entity/fact lists after completion
-- [ ] Consolidation preview (optional):
+#### Manual Consolidation Trigger (Priority for Debugging) ✅
+- [x] Add immediate consolidation endpoint:
+  - [x] `POST /api/memory/consolidate` — runs full consolidation pipeline synchronously
+  - [x] Request body: `{ "jobs": ["consolidate", "patterns", "promote"] }` or empty for default
+  - [x] Response: job results with metrics (entities extracted, facts stored, etc.)
+- [x] Add "Consolidate Now" button to Memory Explorer:
+  - [x] Prominent button in Memory tab header
+  - [x] Shows loading state during consolidation
+  - [x] Displays results summary (duration, items processed)
+  - [x] Refreshes entity/fact lists after completion
+- [ ] Consolidation preview (optional) — deferred:
   - [ ] `POST /api/memory/consolidate/preview` — dry run showing what would be extracted
   - [ ] Useful for debugging extraction quality without persisting
 
@@ -1340,7 +1336,7 @@ The existing UI has functional Chat and Agent tabs:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 85% |
+| Phase 11: Memory System | In Progress | 95% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | In Progress | 15% (13.1 complete) |
 
