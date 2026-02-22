@@ -77,8 +77,8 @@ class ProviderConfig:
 class ModelProvider(ABC):
     """
     Abstract base class for model providers.
-    
-    All LLM providers (OpenAI, Anthropic, Ollama) implement this interface
+
+    All LLM providers (LM Studio, Anthropic, OpenAI) implement this interface
     to provide a unified way to interact with different models.
     """
     

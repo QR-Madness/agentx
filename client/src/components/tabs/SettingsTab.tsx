@@ -16,11 +16,13 @@ import {
   ChevronRight,
   FileText,
   Edit3,
-  Save
+  Save,
+  AlertTriangle,
+  Upload
 } from 'lucide-react';
 import { useServer } from '../../contexts/ServerContext';
 import { ServerConfig } from '../../lib/storage';
-import { api, PromptProfile, PromptSection, GlobalPrompt } from '../../lib/api';
+import { api, PromptProfile, PromptSection, GlobalPrompt, ConfigUpdate } from '../../lib/api';
 import '../../styles/SettingsTab.css';
 
 type SettingsSection = 'servers' | 'providers' | 'prompts' | 'reasoning' | 'memory';
@@ -44,6 +46,15 @@ export const SettingsTab: React.FC = () => {
 
   // API key visibility
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+
+  // Provider settings state (local copy for editing)
+  const [providerSettings, setProviderSettings] = useState<{
+    lmstudio: string;
+    anthropic: string;
+    openai: string;
+  }>({ lmstudio: '', anthropic: '', openai: '' });
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configSaveMessage, setConfigSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Prompts state
   const [profiles, setProfiles] = useState<PromptProfile[]>([]);
@@ -78,6 +89,55 @@ export const SettingsTab: React.FC = () => {
   const toggleApiKeyVisibility = (provider: string) => {
     setShowApiKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
   };
+
+  const handleProviderSettingChange = (provider: 'lmstudio' | 'anthropic' | 'openai', value: string) => {
+    setProviderSettings(prev => ({ ...prev, [provider]: value }));
+    // Also update localStorage
+    handleApiKeyChange(provider, value);
+  };
+
+  const handleSaveProviderSettings = async () => {
+    // Confirm with user
+    const confirmed = window.confirm(
+      'Saving will update server configuration and may affect running models. Continue?'
+    );
+    if (!confirmed) return;
+
+    setSavingConfig(true);
+    setConfigSaveMessage(null);
+
+    try {
+      const config: ConfigUpdate = {
+        providers: {
+          lmstudio: providerSettings.lmstudio ? { base_url: providerSettings.lmstudio } : undefined,
+          anthropic: providerSettings.anthropic ? { api_key: providerSettings.anthropic } : undefined,
+          openai: providerSettings.openai ? { api_key: providerSettings.openai } : undefined,
+        },
+      };
+
+      await api.updateConfig(config);
+      setConfigSaveMessage({ type: 'success', text: 'Settings saved and applied to server' });
+
+      // Clear message after 3 seconds
+      setTimeout(() => setConfigSaveMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to save config:', error);
+      setConfigSaveMessage({ type: 'error', text: 'Failed to save settings to server' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  // Initialize provider settings from activeMetadata
+  useEffect(() => {
+    if (activeMetadata?.apiKeys) {
+      setProviderSettings({
+        lmstudio: activeMetadata.apiKeys.lmstudio || '',
+        anthropic: activeMetadata.apiKeys.anthropic || '',
+        openai: activeMetadata.apiKeys.openai || '',
+      });
+    }
+  }, [activeMetadata]);
 
   // Fetch prompts data when prompts section is active
   useEffect(() => {
@@ -255,10 +315,36 @@ export const SettingsTab: React.FC = () => {
                     Model Providers
                   </h2>
                   <p className="section-description">
-                    Configure API keys for AI model providers (stored per-server)
+                    Configure API keys and URLs for AI model providers
                   </p>
                 </div>
+                <button
+                  className="button-primary"
+                  onClick={handleSaveProviderSettings}
+                  disabled={savingConfig}
+                >
+                  {savingConfig ? (
+                    <RefreshCw size={16} className="spin" />
+                  ) : (
+                    <Upload size={16} />
+                  )}
+                  Save to Server
+                </button>
               </div>
+
+              {/* Warning Banner */}
+              <div className="config-warning">
+                <AlertTriangle size={16} />
+                <span>Changes are applied immediately when saved and affect all running models</span>
+              </div>
+
+              {/* Save Message */}
+              {configSaveMessage && (
+                <div className={`config-message ${configSaveMessage.type}`}>
+                  {configSaveMessage.type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+                  <span>{configSaveMessage.text}</span>
+                </div>
+              )}
 
               {!activeServer ? (
                 <div className="empty-state card">
@@ -267,45 +353,113 @@ export const SettingsTab: React.FC = () => {
                 </div>
               ) : (
                 <div className="providers-list">
-                  {['openai', 'anthropic', 'ollama'].map(provider => (
-                    <div key={provider} className="provider-card card">
-                      <div className="provider-header">
-                        <div className="provider-info">
-                          <div className="provider-icon">
-                            <Sparkles size={20} />
-                          </div>
-                          <div>
-                            <h3 className="provider-name">
-                              {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                            </h3>
-                            <p className="provider-description">
-                              {provider === 'ollama' 
-                                ? 'Local model server URL' 
-                                : 'API key for cloud models'}
-                            </p>
-                          </div>
+                  {/* LM Studio - Local */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon local">
+                          <Server size={20} />
                         </div>
-                      </div>
-                      <div className="provider-form">
-                        <div className="api-key-input">
-                          <input
-                            type={showApiKeys[provider] ? 'text' : 'password'}
-                            value={activeMetadata?.apiKeys?.[provider as keyof typeof activeMetadata.apiKeys] || ''}
-                            onChange={(e) => handleApiKeyChange(provider, e.target.value)}
-                            placeholder={provider === 'ollama' 
-                              ? 'http://localhost:11434' 
-                              : `Enter ${provider} API key`}
-                          />
-                          <button 
-                            className="button-ghost visibility-toggle"
-                            onClick={() => toggleApiKeyVisibility(provider)}
-                          >
-                            {showApiKeys[provider] ? <EyeOff size={16} /> : <Eye size={16} />}
-                          </button>
+                        <div>
+                          <h3 className="provider-name">
+                            LM Studio
+                            <span className="provider-badge local">Local</span>
+                          </h3>
+                          <p className="provider-description">
+                            Local model server URL (OpenAI-compatible)
+                          </p>
                         </div>
                       </div>
                     </div>
-                  ))}
+                    <div className="provider-form">
+                      <div className="api-key-input">
+                        <input
+                          type={showApiKeys.lmstudio ? 'text' : 'password'}
+                          value={providerSettings.lmstudio}
+                          onChange={(e) => handleProviderSettingChange('lmstudio', e.target.value)}
+                          placeholder="http://192.168.x.x:1234/v1"
+                        />
+                        <button
+                          className="button-ghost visibility-toggle"
+                          onClick={() => toggleApiKeyVisibility('lmstudio')}
+                        >
+                          {showApiKeys.lmstudio ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Anthropic - Cloud Primary */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon cloud">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <h3 className="provider-name">
+                            Anthropic
+                            <span className="provider-badge primary">Primary</span>
+                          </h3>
+                          <p className="provider-description">
+                            API key for Claude models
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="provider-form">
+                      <div className="api-key-input">
+                        <input
+                          type={showApiKeys.anthropic ? 'text' : 'password'}
+                          value={providerSettings.anthropic}
+                          onChange={(e) => handleProviderSettingChange('anthropic', e.target.value)}
+                          placeholder="sk-ant-..."
+                        />
+                        <button
+                          className="button-ghost visibility-toggle"
+                          onClick={() => toggleApiKeyVisibility('anthropic')}
+                        >
+                          {showApiKeys.anthropic ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OpenAI - Experimental */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon experimental">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <h3 className="provider-name">
+                            OpenAI
+                            <span className="provider-badge experimental">Experimental</span>
+                          </h3>
+                          <p className="provider-description">
+                            API key for GPT models
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="provider-form">
+                      <div className="api-key-input">
+                        <input
+                          type={showApiKeys.openai ? 'text' : 'password'}
+                          value={providerSettings.openai}
+                          onChange={(e) => handleProviderSettingChange('openai', e.target.value)}
+                          placeholder="sk-..."
+                        />
+                        <button
+                          className="button-ghost visibility-toggle"
+                          onClick={() => toggleApiKeyVisibility('openai')}
+                        >
+                          {showApiKeys.openai ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

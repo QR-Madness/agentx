@@ -18,7 +18,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
            Translation, Chat,             ├── MCP Client (consume external tool servers)
            Tools, Settings                ├── Reasoning (CoT, ToT, ReAct, Reflection)
                                           ├── Drafting (speculative, pipeline, candidate)
-     ↕ HTTP                               ├── Model Providers (OpenAI, Anthropic, Ollama)
+     ↕ HTTP                               ├── Model Providers (LM Studio, Anthropic, OpenAI)
                                           ├── Translation Kit (NLLB-200, 200+ languages)
                                           └── Agent Memory (episodic, semantic, procedural, working)
                                                 ↕
@@ -30,7 +30,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - `kit/translation.py` — `TranslationKit` (NLLB-200 translation) and `LanguageLexicon` (ISO 639 code bridging between Level I detection codes and Level II translation codes)
 - `kit/agent_memory/` — Full memory system with lazy-loaded connections (`interface.py` → `connections.py` → memory implementations)
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE). Configure via `mcp_servers.json`
-- `providers/` — Abstract `ModelProvider` with OpenAI, Anthropic, Ollama implementations. Models defined in `models.yaml`
+- `providers/` — Abstract `ModelProvider` with LM Studio, Anthropic, OpenAI implementations. Models defined in `models.yaml`
 - `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
 - `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
 - `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition (with goal tracking), `SessionManager` for conversations

@@ -10,7 +10,8 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel
 
-from .base import ModelCapabilities, ModelProvider, ProviderConfig
+from .base import ModelProvider, ProviderConfig
+from ..config import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -51,37 +52,46 @@ class ProviderRegistry:
             self._load_default_config()
     
     def _load_default_config(self) -> None:
-        """Load configuration from environment variables."""
-        # OpenAI (cloud)
-        if os.environ.get("OPENAI_API_KEY"):
-            self._provider_configs["openai"] = ProviderConfig(
-                api_key=os.environ["OPENAI_API_KEY"],
-                base_url=os.environ.get("OPENAI_BASE_URL"),
-            )
-        
-        # Anthropic (cloud)
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            self._provider_configs["anthropic"] = ProviderConfig(
-                api_key=os.environ["ANTHROPIC_API_KEY"],
-                base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-            )
-        
-        # LM Studio (local, OpenAI-compatible) - preferred for local models
-        lmstudio_url = os.environ.get("LMSTUDIO_BASE_URL")
+        """Load configuration from ConfigManager with environment variable fallback."""
+        config = get_config_manager()
+
+        # LM Studio (local, OpenAI-compatible) - primary local provider
+        lmstudio_url = config.get_provider_value(
+            "lmstudio", "base_url", env_var="LMSTUDIO_BASE_URL"
+        )
         if lmstudio_url:
-            lmstudio_timeout = float(os.environ.get("LMSTUDIO_TIMEOUT", "300"))
+            lmstudio_timeout = config.get_provider_value(
+                "lmstudio", "timeout", env_var="LMSTUDIO_TIMEOUT", default=300
+            )
             self._provider_configs["lmstudio"] = ProviderConfig(
                 base_url=lmstudio_url,
-                timeout=lmstudio_timeout,
+                timeout=float(lmstudio_timeout),
             )
-        
-        # Ollama (local, alternative to LM Studio)
-        ollama_url = os.environ.get("OLLAMA_BASE_URL")
-        if ollama_url:
-            ollama_timeout = float(os.environ.get("OLLAMA_TIMEOUT", "300"))
-            self._provider_configs["ollama"] = ProviderConfig(
-                base_url=ollama_url,
-                timeout=ollama_timeout,
+
+        # Anthropic (cloud) - primary cloud provider
+        anthropic_key = config.get_provider_value(
+            "anthropic", "api_key", env_var="ANTHROPIC_API_KEY"
+        )
+        if anthropic_key:
+            anthropic_url = config.get_provider_value(
+                "anthropic", "base_url", env_var="ANTHROPIC_BASE_URL"
+            )
+            self._provider_configs["anthropic"] = ProviderConfig(
+                api_key=anthropic_key,
+                base_url=anthropic_url,
+            )
+
+        # OpenAI (cloud) - experimental
+        openai_key = config.get_provider_value(
+            "openai", "api_key", env_var="OPENAI_API_KEY"
+        )
+        if openai_key:
+            openai_url = config.get_provider_value(
+                "openai", "base_url", env_var="OPENAI_BASE_URL"
+            )
+            self._provider_configs["openai"] = ProviderConfig(
+                api_key=openai_key,
+                base_url=openai_url,
             )
     
     def load_config(self, config_path: Path) -> None:
@@ -107,42 +117,39 @@ class ProviderRegistry:
     def get_provider(self, name: str) -> ModelProvider:
         """
         Get or create a provider instance.
-        
+
         Args:
-            name: Provider name ("openai", "anthropic", "ollama")
-            
+            name: Provider name ("lmstudio", "anthropic", "openai")
+
         Returns:
             Configured ModelProvider instance
-            
+
         Raises:
             ValueError: If provider is not supported or not configured
         """
         if name in self._providers:
             return self._providers[name]
-        
+
         if name not in self._provider_configs:
             raise ValueError(
                 f"Provider '{name}' not configured. "
-                f"Set {name.upper()}_BASE_URL or {name.upper()}_API_KEY environment variable."
+                f"Configure it in Settings or set {name.upper()}_BASE_URL / {name.upper()}_API_KEY."
             )
-        
+
         config = self._provider_configs[name]
-        
-        if name == "openai":
-            from .openai_provider import OpenAIProvider
-            provider = OpenAIProvider(config)
+
+        if name == "lmstudio":
+            from .lmstudio_provider import LMStudioProvider
+            provider = LMStudioProvider(config)
         elif name == "anthropic":
             from .anthropic_provider import AnthropicProvider
             provider = AnthropicProvider(config)
-        elif name == "ollama":
-            from .ollama_provider import OllamaProvider
-            provider = OllamaProvider(config)
-        elif name == "lmstudio":
-            from .lmstudio_provider import LMStudioProvider
-            provider = LMStudioProvider(config)
+        elif name == "openai":
+            from .openai_provider import OpenAIProvider
+            provider = OpenAIProvider(config)
         else:
             raise ValueError(f"Unknown provider: {name}")
-        
+
         self._providers[name] = provider
         return provider
     
@@ -189,15 +196,13 @@ class ProviderRegistry:
         )
         
         if is_local:
-            # Prefer LM Studio if configured, fall back to Ollama
+            # Use LM Studio for local models
             if "lmstudio" in self._provider_configs:
                 return self.get_provider("lmstudio"), model
-            elif "ollama" in self._provider_configs:
-                return self.get_provider("ollama"), model
             else:
                 raise ValueError(
-                    f"Local model '{model}' detected but no local provider configured. "
-                    "Set LMSTUDIO_BASE_URL or OLLAMA_BASE_URL environment variable."
+                    f"Local model '{model}' detected but LM Studio not configured. "
+                    "Set the LM Studio URL in Settings or LMSTUDIO_BASE_URL environment variable."
                 )
         
         # Infer provider from model name (cloud providers)
@@ -228,15 +233,36 @@ class ProviderRegistry:
     async def health_check(self) -> dict[str, Any]:
         """Check health of all configured providers."""
         results = {}
-        
+
         for name in self._provider_configs:
             try:
                 provider = self.get_provider(name)
                 results[name] = await provider.health_check()
             except Exception as e:
                 results[name] = {"status": "error", "error": str(e)}
-        
+
         return results
+
+    def reload(self) -> None:
+        """
+        Reload configuration and clear cached providers.
+
+        Call this after config changes to apply new settings.
+        Running requests will continue using old providers;
+        new requests will use the updated configuration.
+        """
+        # Clear cached provider instances
+        self._providers.clear()
+        self._provider_configs.clear()
+
+        # Reload config from ConfigManager
+        from ..config import reload_config
+        reload_config()
+
+        # Re-read provider configs
+        self._load_default_config()
+
+        logger.info("Provider registry reloaded")
 
 
 # Global registry instance
@@ -259,3 +285,9 @@ def get_provider(name: str) -> ModelProvider:
 def get_model_config(model: str) -> Optional[ModelConfig]:
     """Get model configuration from the global registry."""
     return get_registry().get_model_config(model)
+
+
+def reload_providers() -> None:
+    """Reload provider configuration from ConfigManager."""
+    registry = get_registry()
+    registry.reload()

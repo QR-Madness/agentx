@@ -36,7 +36,7 @@ class TaskType(str, Enum):
 @dataclass
 class OrchestratorConfig:
     """Configuration for the reasoning orchestrator."""
-    # Offline-first: default to local Ollama model
+    # Default to local LM Studio model
     default_model: str = "llama3.2"
     
     # Strategy preferences

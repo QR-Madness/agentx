@@ -384,7 +384,7 @@ def agent_chat(request):
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")  # Prompt profile to use
-        temperature = data.get("temperature", 0.7)
+        _temperature = data.get("temperature", 0.7)  # Reserved for future Agent config
         use_memory = data.get("use_memory", True)
 
     except json.JSONDecodeError as e:
@@ -396,6 +396,7 @@ def agent_chat(request):
     if model:
         config_kwargs["default_model"] = model
         logger.info(f"Using custom model for chat: {model}")
+    # Note: temperature (_temperature) is reserved for future implementation
     agent = Agent(AgentConfig(**config_kwargs))
     
     result = async_to_sync(agent.chat)(message, session_id=session_id, profile_id=profile_id)
@@ -972,3 +973,81 @@ def memory_channel_delete(request, name):
     except Exception as e:
         logger.error(f"Error deleting memory channel '{name}': {e}")
         return JsonResponse({"error": str(e)}, status=500)
+
+
+# ============== Config Management Endpoint ==============
+
+@csrf_exempt
+def config_update(request):
+    """
+    POST /api/config/update - Update runtime configuration.
+
+    Accepts partial updates and persists to data/config.json.
+    Hot-reloads providers after update.
+
+    Security: POST-only, no GET endpoint to prevent config exposure.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+    from .config import get_config_manager
+    config = get_config_manager()
+
+    updated_keys = []
+
+    # Update providers
+    providers = data.get("providers", {})
+    for provider, settings in providers.items():
+        if provider not in ("lmstudio", "anthropic", "openai"):
+            continue  # Skip unknown providers
+        for key, value in settings.items():
+            if value is not None:
+                config.set(f"providers.{provider}.{key}", value)
+                updated_keys.append(f"providers.{provider}.{key}")
+
+    # Update preferences
+    preferences = data.get("preferences", {})
+    for key, value in preferences.items():
+        if value is not None:
+            config.set(f"preferences.{key}", value)
+            updated_keys.append(f"preferences.{key}")
+
+    # Update LLM settings
+    llm_settings = data.get("llm_settings", {})
+    for key, value in llm_settings.items():
+        if value is not None:
+            config.set(f"llm_settings.{key}", value)
+            updated_keys.append(f"llm_settings.{key}")
+
+    # Persist to disk
+    if not config.save():
+        return JsonResponse({
+            'error': 'Failed to save config to disk'
+        }, status=500)
+
+    # Hot-reload providers
+    try:
+        registry = get_registry()
+        registry.reload()
+        logger.info(f"Config updated and providers reloaded: {updated_keys}")
+    except Exception as e:
+        logger.error(f"Failed to reload providers: {e}")
+        return JsonResponse({
+            'status': 'partial',
+            'message': f'Config saved but provider reload failed: {e}',
+            'updated': updated_keys,
+        })
+
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'Config updated and applied',
+        'updated': updated_keys,
+    })

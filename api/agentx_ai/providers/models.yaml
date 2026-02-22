@@ -4,21 +4,21 @@
 # Provider API keys should be set via environment variables or .env file.
 
 providers:
-  openai:
-    api_key_env: OPENAI_API_KEY
-    # base_url: https://api.openai.com/v1  # Optional, for proxies
-    timeout: 60.0
-    max_retries: 3
+  lmstudio:
+    base_url_env: LMSTUDIO_BASE_URL
+    timeout: 300.0  # Local models may be slower
+    max_retries: 1
 
   anthropic:
     api_key_env: ANTHROPIC_API_KEY
     timeout: 60.0
     max_retries: 3
 
-  ollama:
-    base_url: http://localhost:11434
-    timeout: 120.0  # Local models may be slower
-    max_retries: 1
+  openai:
+    api_key_env: OPENAI_API_KEY
+    # base_url: https://api.openai.com/v1  # Optional, for proxies
+    timeout: 60.0
+    max_retries: 3
 
 models:
   # OpenAI Models
@@ -109,9 +109,10 @@ models:
     cost_per_1k_input: 0.001
     cost_per_1k_output: 0.005
 
-  # Ollama (Local) Models
+  # LM Studio (Local) Models
+  # These models are served locally via LM Studio's OpenAI-compatible API
   llama3.2:
-    provider: ollama
+    provider: lmstudio
     context_window: 128000
     supports_tools: true
     supports_vision: false
@@ -121,7 +122,7 @@ models:
     cost_per_1k_output: 0.0
 
   llama3.1:
-    provider: ollama
+    provider: lmstudio
     context_window: 128000
     supports_tools: true
     supports_vision: false
@@ -131,7 +132,7 @@ models:
     cost_per_1k_output: 0.0
 
   mistral:
-    provider: ollama
+    provider: lmstudio
     context_window: 32768
     supports_tools: true
     supports_vision: false
@@ -141,7 +142,7 @@ models:
     cost_per_1k_output: 0.0
 
   mixtral:
-    provider: ollama
+    provider: lmstudio
     context_window: 32768
     supports_tools: true
     supports_vision: false
@@ -151,7 +152,7 @@ models:
     cost_per_1k_output: 0.0
 
   codellama:
-    provider: ollama
+    provider: lmstudio
     context_window: 16384
     supports_tools: false
     supports_vision: false
@@ -161,7 +162,7 @@ models:
     cost_per_1k_output: 0.0
 
   qwen2.5:
-    provider: ollama
+    provider: lmstudio
     context_window: 128000
     supports_tools: true
     supports_vision: false
@@ -171,7 +172,7 @@ models:
     cost_per_1k_output: 0.0
 
   deepseek-coder-v2:
-    provider: ollama
+    provider: lmstudio
     context_window: 128000
     supports_tools: false
     supports_vision: false

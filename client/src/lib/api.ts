@@ -150,6 +150,28 @@ export interface LanguageDetectResponse {
   confidence: number;
 }
 
+// === Config Types ===
+
+export interface ConfigUpdate {
+  providers?: {
+    lmstudio?: { base_url?: string; timeout?: number };
+    anthropic?: { api_key?: string; base_url?: string };
+    openai?: { api_key?: string; base_url?: string };
+  };
+  preferences?: {
+    default_model?: string;
+    default_reasoning_strategy?: string;
+    enable_memory_by_default?: boolean;
+  };
+  llm_settings?: {
+    default_temperature?: number;
+    default_max_tokens?: number;
+    top_p?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+  };
+}
+
 // === API Client ===
 
 class ApiClient {
@@ -316,6 +338,19 @@ class ApiClient {
 
   async getMCPToolsPrompt(): Promise<{ mcp_tools_prompt: string; tools_count: number }> {
     return this.request('/api/prompts/mcp-tools');
+  }
+
+  // === Config ===
+
+  /**
+   * Update backend configuration (POST-only for security).
+   * Persists to data/config.json and hot-reloads providers.
+   */
+  async updateConfig(config: ConfigUpdate): Promise<{ status: string; message: string; updated?: string[] }> {
+    return this.request('/api/config/update', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
   }
 
   // === Streaming ===

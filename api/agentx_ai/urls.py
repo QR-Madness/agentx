@@ -31,4 +31,6 @@ urlpatterns = [
     # Memory channel management endpoints
     path("memory/channels", views.memory_channels, name="memory-channels"),
     path("memory/channels/<str:name>", views.memory_channel_delete, name="memory-channel-delete"),
+    # Config management endpoint
+    path("config/update", views.config_update, name="config-update"),
 ]

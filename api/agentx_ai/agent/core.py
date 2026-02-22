@@ -72,7 +72,7 @@ class AgentConfig:
     name: str = "agentx"
     user_id: Optional[str] = None
     
-    # Model settings - offline-first, default to local Ollama
+    # Model settings - default to local LM Studio
     default_model: str = "llama3.2"
     reasoning_model: Optional[str] = None
     drafting_model: Optional[str] = None

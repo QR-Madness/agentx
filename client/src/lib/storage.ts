@@ -15,9 +15,9 @@ export interface ServerConfig {
 }
 
 export interface ServerApiKeys {
-  openai?: string;
-  anthropic?: string;
-  ollama?: string; // Ollama base URL if not default
+  lmstudio?: string;  // LM Studio base URL (e.g., http://192.168.x.x:1234/v1)
+  anthropic?: string; // Anthropic API key
+  openai?: string;    // OpenAI API key
 }
 
 export interface ServerPreferences {

@@ -214,7 +214,7 @@ class MemoryAuditLogger:
                         promotion_conversation_count, config_snapshot, metadata
                     ) VALUES (
                         :operation, :memory_type, :user_id, :session_id,
-                        :conversation_id::uuid, :source_channel, :target_channels,
+                        CAST(:conversation_id AS uuid), :source_channel, :target_channels,
                         :query_text, :result_count, :latency_ms, :success,
                         :error_message, :promoted_from_channel, :promotion_confidence,
                         :promotion_access_count, :promotion_conversation_count,
