@@ -116,7 +116,7 @@ class ReasoningOrchestrator:
         
         return self._strategies[key]
     
-    async def reason(
+    def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -126,57 +126,57 @@ class ReasoningOrchestrator:
     ) -> ReasoningResult:
         """
         Apply reasoning to solve a task.
-        
+
         Args:
             task: The task or question to reason about
             context: Optional conversation context
             strategy: Override strategy selection (cot, tot, react, reflection)
             task_type: Override task type detection
             **kwargs: Additional parameters passed to the strategy
-            
+
         Returns:
             ReasoningResult with answer and reasoning trace
         """
         # Determine task type if not provided
         if task_type is None:
             task_type = self._classify_task(task)
-        
+
         logger.info(f"Task classified as: {task_type.value}")
-        
+
         # Determine strategy
         if strategy is None:
             strategy = self.config.strategy_map.get(task_type, self.config.fallback_strategy)
-        
+
         # Determine model
         model = self.config.model_map.get(task_type, self.config.default_model)
-        
+
         logger.info(f"Using strategy: {strategy}, model: {model}")
-        
+
         # Get and execute strategy
         try:
             reasoning_strategy = self._get_strategy(strategy, model)
-            result = await reasoning_strategy.reason(task, context, **kwargs)
-            
+            result = reasoning_strategy.reason(task, context, **kwargs)
+
             # Check for failure and fallback (safely handle status)
             status_value = getattr(result.status, 'value', str(result.status))
             if status_value == "failed" and self.config.enable_fallback:
                 logger.warning(f"Strategy {strategy} failed, trying fallback")
                 fallback = self._get_strategy(self.config.fallback_strategy, model)
-                result = await fallback.reason(task, context, **kwargs)
-            
+                result = fallback.reason(task, context, **kwargs)
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Reasoning failed: {e}")
-            
+
             if self.config.enable_fallback:
                 logger.info("Attempting fallback strategy")
                 try:
                     fallback = self._get_strategy(self.config.fallback_strategy, model)
-                    return await fallback.reason(task, context, **kwargs)
+                    return fallback.reason(task, context, **kwargs)
                 except Exception as e2:
                     logger.error(f"Fallback also failed: {e2}")
-            
+
             return ReasoningResult(
                 answer="Unable to complete reasoning due to an error.",
                 strategy=strategy,

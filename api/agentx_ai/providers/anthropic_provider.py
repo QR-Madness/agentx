@@ -2,9 +2,8 @@
 Anthropic model provider implementation.
 """
 
-import json
 import logging
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Iterator, Optional
 
 from .base import (
     CompletionResult,
@@ -99,13 +98,13 @@ class AnthropicProvider(ModelProvider):
         """Lazy-load the Anthropic client."""
         if self._client is None:
             try:
-                from anthropic import AsyncAnthropic
+                from anthropic import Anthropic
             except ImportError:
                 raise ImportError(
                     "Anthropic package not installed. "
                     "Install with: pip install anthropic"
                 )
-            
+
             client_kwargs: dict[str, Any] = {
                 "api_key": self.config.api_key,
                 "timeout": self.config.timeout,
@@ -113,8 +112,8 @@ class AnthropicProvider(ModelProvider):
             }
             if self.config.base_url:
                 client_kwargs["base_url"] = self.config.base_url
-            
-            self._client = AsyncAnthropic(**client_kwargs)
+
+            self._client = Anthropic(**client_kwargs)
         return self._client
     
     def _resolve_model(self, model: str) -> str:
@@ -198,7 +197,7 @@ class AnthropicProvider(ModelProvider):
                 texts.append(block.text)
         return "".join(texts)
     
-    async def complete(
+    def complete(
         self,
         messages: list[Message],
         model: str,
@@ -213,14 +212,14 @@ class AnthropicProvider(ModelProvider):
         """Generate a completion using Anthropic API."""
         model = self._resolve_model(model)
         system_prompt, converted_messages = self._convert_messages(messages)
-        
+
         request_params: dict[str, Any] = {
             "model": model,
             "messages": converted_messages,
             "temperature": temperature,
             "max_tokens": max_tokens or 4096,  # Anthropic requires max_tokens
         }
-        
+
         if system_prompt:
             request_params["system"] = system_prompt
         if tools:
@@ -235,10 +234,10 @@ class AnthropicProvider(ModelProvider):
                 request_params["tool_choice"] = tool_choice
         if stop:
             request_params["stop_sequences"] = stop
-        
+
         logger.debug(f"Anthropic request: model={model}, messages={len(messages)}")
-        
-        response = await self.client.messages.create(**request_params)
+
+        response = self.client.messages.create(**request_params)
         
         content = self._extract_text(response.content)
         tool_calls = self._parse_tool_calls(response.content)
@@ -258,7 +257,7 @@ class AnthropicProvider(ModelProvider):
             raw_response={"id": response.id, "type": response.type},
         )
     
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         model: str,
@@ -269,33 +268,33 @@ class AnthropicProvider(ModelProvider):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[StreamChunk]:
+    ) -> Iterator[StreamChunk]:
         """Stream a completion using Anthropic API."""
         model = self._resolve_model(model)
         system_prompt, converted_messages = self._convert_messages(messages)
-        
+
         request_params: dict[str, Any] = {
             "model": model,
             "messages": converted_messages,
             "temperature": temperature,
             "max_tokens": max_tokens or 4096,
         }
-        
+
         if system_prompt:
             request_params["system"] = system_prompt
         if tools:
             request_params["tools"] = self._convert_tools(tools)
         if stop:
             request_params["stop_sequences"] = stop
-        
+
         logger.debug(f"Anthropic stream: model={model}, messages={len(messages)}")
-        
-        async with self.client.messages.stream(**request_params) as stream:
-            async for text in stream.text_stream:
+
+        with self.client.messages.stream(**request_params) as stream:
+            for text in stream.text_stream:
                 yield StreamChunk(content=text)
-            
+
             # Final chunk with finish reason
-            response = await stream.get_final_message()
+            response = stream.get_final_message()
             yield StreamChunk(
                 content="",
                 finish_reason=response.stop_reason,
@@ -318,17 +317,17 @@ class AnthropicProvider(ModelProvider):
         """List available Anthropic models."""
         return list(ANTHROPIC_MODELS.keys()) + list(MODEL_ALIASES.keys())
     
-    async def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Check if Anthropic API is reachable."""
         if not self.config.api_key:
             return {
                 "status": "not_configured",
                 "error": "ANTHROPIC_API_KEY not set",
             }
-        
+
         try:
             # Make a minimal API call to check connectivity
-            response = await self.client.messages.create(
+            response = self.client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=10,
                 messages=[{"role": "user", "content": "Hi"}],

@@ -124,7 +124,7 @@ class ReasoningStrategy(ABC):
         pass
     
     @abstractmethod
-    async def reason(
+    def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -132,18 +132,18 @@ class ReasoningStrategy(ABC):
     ) -> ReasoningResult:
         """
         Apply reasoning to solve a task.
-        
+
         Args:
             task: The task or question to reason about
             context: Optional conversation context
             **kwargs: Additional parameters
-            
+
         Returns:
             ReasoningResult with answer and reasoning trace
         """
         pass
-    
-    async def validate(self) -> bool:
+
+    def validate(self) -> bool:
         """Validate that the strategy is properly configured."""
         return True
     

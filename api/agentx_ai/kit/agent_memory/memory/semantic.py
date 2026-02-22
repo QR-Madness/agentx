@@ -1,6 +1,5 @@
 """Semantic memory - entities, facts, and conceptual knowledge."""
 
-import re
 import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 

@@ -6,13 +6,12 @@ then a more accurate target model to verify/correct them in parallel.
 This can significantly speed up generation while maintaining quality.
 """
 
-import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
-from ..providers.base import Message, CompletionResult
+from ..providers.base import Message
 from ..providers.registry import get_registry
 from .base import DraftingConfig, DraftingStrategy, DraftResult, DraftStatus
 

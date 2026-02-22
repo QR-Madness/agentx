@@ -5,7 +5,7 @@ Abstract base classes for model providers.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Iterator, Optional
 
 from pydantic import BaseModel
 
@@ -92,7 +92,7 @@ class ModelProvider(ABC):
         pass
     
     @abstractmethod
-    async def complete(
+    def complete(
         self,
         messages: list[Message],
         model: str,
@@ -123,7 +123,7 @@ class ModelProvider(ABC):
         pass
     
     @abstractmethod
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         model: str,
@@ -134,7 +134,7 @@ class ModelProvider(ABC):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[StreamChunk]:
+    ) -> Iterator[StreamChunk]:
         """
         Stream a completion for the given messages.
         
@@ -178,10 +178,10 @@ class ModelProvider(ABC):
         """
         pass
     
-    async def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """
         Check if the provider is healthy and reachable.
-        
+
         Returns:
             Health status dict with 'status' and optional details
         """

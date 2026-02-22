@@ -5,7 +5,6 @@ Provides unified interface for entity, fact, and relationship extraction
 using configured model providers.
 """
 
-import asyncio
 import json
 import logging
 import re
@@ -57,7 +56,7 @@ class ExtractionService:
             self._settings = get_settings()
         return self._settings
 
-    async def extract_all(
+    def extract_all(
         self,
         text: str,
         source_turn_id: Optional[str] = None,
@@ -97,15 +96,12 @@ class ExtractionService:
         ]
 
         try:
-            # Enforce timeout on LLM call to prevent hangs
-            result = await asyncio.wait_for(
-                provider.complete(
-                    messages,
-                    model_id,
-                    temperature=self.settings.extraction_temperature,
-                    max_tokens=self.settings.extraction_max_tokens,
-                ),
-                timeout=self.settings.extraction_timeout
+            # Timeout is handled by the provider's HTTP client
+            result = provider.complete(
+                messages,
+                model_id,
+                temperature=self.settings.extraction_temperature,
+                max_tokens=self.settings.extraction_max_tokens,
             )
 
             parsed = self._parse_extraction_response(result.content)
@@ -123,24 +119,21 @@ class ExtractionService:
 
             return parsed
 
-        except asyncio.TimeoutError:
-            logger.error(f"Extraction timed out after {self.settings.extraction_timeout}s")
-            return ExtractionResult(success=False, error="Extraction timeout")
         except Exception as e:
             logger.error(f"Extraction failed: {e}")
             return ExtractionResult(success=False, error=str(e))
 
-    async def extract_entities(self, text: str) -> list[dict[str, Any]]:
+    def extract_entities(self, text: str) -> list[dict[str, Any]]:
         """Extract only entities from text."""
-        result = await self.extract_all(text)
+        result = self.extract_all(text)
         return result.entities
 
-    async def extract_facts(self, text: str) -> list[dict[str, Any]]:
+    def extract_facts(self, text: str) -> list[dict[str, Any]]:
         """Extract only facts from text."""
-        result = await self.extract_all(text)
+        result = self.extract_all(text)
         return result.facts
 
-    async def extract_relationships(
+    def extract_relationships(
         self,
         text: str,
         entities: list[dict[str, Any]],
@@ -162,7 +155,7 @@ class ExtractionService:
 
         # For relationship extraction with known entities,
         # we still do combined extraction but focus on relationships
-        result = await self.extract_all(text)
+        result = self.extract_all(text)
         return result.relationships
 
     def _get_system_prompt(self) -> str:

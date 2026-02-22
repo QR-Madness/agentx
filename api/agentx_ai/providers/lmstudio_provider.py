@@ -6,15 +6,13 @@ a wrapper around the OpenAI provider with different defaults.
 """
 
 import logging
-import os
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Iterator, Optional
 
-from openai import AsyncOpenAI
+from openai import OpenAI
 
 from .base import (
     CompletionResult,
     Message,
-    MessageRole,
     ModelCapabilities,
     ModelProvider,
     ProviderConfig,
@@ -55,18 +53,18 @@ class LMStudioProvider(ModelProvider):
         self._available_models: Optional[list[dict[str, Any]]] = None
         
         # LM Studio doesn't need an API key, but OpenAI client requires one
-        self._client = AsyncOpenAI(
+        self._client = OpenAI(
             api_key=config.api_key or "lm-studio",  # Dummy key
             base_url=self.base_url,
             timeout=self._timeout,
         )
-    
+
     @property
     def name(self) -> str:
         return "lmstudio"
-    
+
     @property
-    def client(self) -> AsyncOpenAI:
+    def client(self) -> OpenAI:
         return self._client
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
@@ -84,7 +82,7 @@ class LMStudioProvider(ModelProvider):
             result.append(message_dict)
         return result
     
-    async def complete(
+    def complete(
         self,
         messages: list[Message],
         model: str,
@@ -98,13 +96,13 @@ class LMStudioProvider(ModelProvider):
     ) -> CompletionResult:
         """Generate a completion using LM Studio API."""
         logger.debug(f"LM Studio request: model={model}, messages={len(messages)}")
-        
+
         request_kwargs: dict[str, Any] = {
             "model": model,
             "messages": self._convert_messages(messages),
             "temperature": temperature,
         }
-        
+
         if max_tokens:
             request_kwargs["max_tokens"] = max_tokens
         if stop:
@@ -114,8 +112,8 @@ class LMStudioProvider(ModelProvider):
             request_kwargs["tools"] = tools
             if tool_choice:
                 request_kwargs["tool_choice"] = tool_choice
-        
-        response = await self.client.chat.completions.create(**request_kwargs)
+
+        response = self.client.chat.completions.create(**request_kwargs)
         
         message = response.choices[0].message
         content = message.content or ""
@@ -148,7 +146,7 @@ class LMStudioProvider(ModelProvider):
             raw_response=response.model_dump(),
         )
     
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         model: str,
@@ -159,25 +157,25 @@ class LMStudioProvider(ModelProvider):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[StreamChunk]:
+    ) -> Iterator[StreamChunk]:
         """Stream a completion using LM Studio API."""
         logger.debug(f"LM Studio stream: model={model}, messages={len(messages)}")
-        
+
         request_kwargs: dict[str, Any] = {
             "model": model,
             "messages": self._convert_messages(messages),
             "temperature": temperature,
             "stream": True,
         }
-        
+
         if max_tokens:
             request_kwargs["max_tokens"] = max_tokens
         if stop:
             request_kwargs["stop"] = stop
-        
-        stream = await self.client.chat.completions.create(**request_kwargs)
-        
-        async for chunk in stream:
+
+        stream = self.client.chat.completions.create(**request_kwargs)
+
+        for chunk in stream:
             if chunk.choices and chunk.choices[0].delta:
                 delta = chunk.choices[0].delta
                 yield StreamChunk(
@@ -197,10 +195,10 @@ class LMStudioProvider(ModelProvider):
             return [m["id"] for m in self._available_models]
         return []
     
-    async def fetch_models(self) -> list[dict[str, Any]]:
+    def fetch_models(self) -> list[dict[str, Any]]:
         """Fetch available models from LM Studio server."""
         try:
-            models = await self.client.models.list()
+            models = self.client.models.list()
             self._available_models = [
                 {"id": m.id, "owned_by": m.owned_by}
                 for m in models.data
@@ -209,17 +207,17 @@ class LMStudioProvider(ModelProvider):
         except Exception as e:
             logger.error(f"Failed to fetch LM Studio models: {e}")
             return []
-    
-    async def health_check(self) -> dict[str, Any]:
+
+    def health_check(self) -> dict[str, Any]:
         """Check if LM Studio server is reachable and list models."""
         try:
-            models = await self.client.models.list()
+            models = self.client.models.list()
             model_list = [
                 {"id": m.id, "owned_by": m.owned_by}
                 for m in models.data
             ]
             self._available_models = model_list
-            
+
             return {
                 "status": "healthy",
                 "base_url": self.base_url,
@@ -234,7 +232,7 @@ class LMStudioProvider(ModelProvider):
                 "base_url": self.base_url,
                 "error": str(e),
             }
-    
-    async def close(self) -> None:
+
+    def close(self) -> None:
         """Close the client."""
-        await self._client.close()
+        self._client.close()

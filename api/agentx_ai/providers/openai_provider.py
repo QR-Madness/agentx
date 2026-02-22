@@ -4,7 +4,7 @@ OpenAI model provider implementation.
 
 import json
 import logging
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Iterator, Optional
 
 from .base import (
     CompletionResult,
@@ -99,14 +99,14 @@ class OpenAIProvider(ModelProvider):
         """Lazy-load the OpenAI client."""
         if self._client is None:
             try:
-                from openai import AsyncOpenAI
+                from openai import OpenAI
             except ImportError:
                 raise ImportError(
                     "OpenAI package not installed. "
                     "Install with: pip install openai"
                 )
-            
-            self._client = AsyncOpenAI(
+
+            self._client = OpenAI(
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
                 timeout=self.config.timeout,
@@ -148,7 +148,7 @@ class OpenAIProvider(ModelProvider):
             ))
         return result
     
-    async def complete(
+    def complete(
         self,
         messages: list[Message],
         model: str,
@@ -166,7 +166,7 @@ class OpenAIProvider(ModelProvider):
             "messages": self._convert_messages(messages),
             "temperature": temperature,
         }
-        
+
         if max_tokens:
             request_params["max_tokens"] = max_tokens
         if tools:
@@ -175,13 +175,13 @@ class OpenAIProvider(ModelProvider):
             request_params["tool_choice"] = tool_choice
         if stop:
             request_params["stop"] = stop
-        
+
         # Add any extra kwargs
         request_params.update(kwargs)
-        
+
         logger.debug(f"OpenAI request: model={model}, messages={len(messages)}")
-        
-        response = await self.client.chat.completions.create(**request_params)
+
+        response = self.client.chat.completions.create(**request_params)
         
         choice = response.choices[0]
         tool_calls = None
@@ -205,7 +205,7 @@ class OpenAIProvider(ModelProvider):
             raw_response=response.model_dump(),
         )
     
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         model: str,
@@ -216,7 +216,7 @@ class OpenAIProvider(ModelProvider):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[StreamChunk]:
+    ) -> Iterator[StreamChunk]:
         """Stream a completion using OpenAI API."""
         request_params: dict[str, Any] = {
             "model": model,
@@ -224,7 +224,7 @@ class OpenAIProvider(ModelProvider):
             "temperature": temperature,
             "stream": True,
         }
-        
+
         if max_tokens:
             request_params["max_tokens"] = max_tokens
         if tools:
@@ -233,23 +233,23 @@ class OpenAIProvider(ModelProvider):
             request_params["tool_choice"] = tool_choice
         if stop:
             request_params["stop"] = stop
-        
+
         request_params.update(kwargs)
-        
+
         logger.debug(f"OpenAI stream: model={model}, messages={len(messages)}")
-        
-        stream = await self.client.chat.completions.create(**request_params)
-        
-        async for chunk in stream:
+
+        stream = self.client.chat.completions.create(**request_params)
+
+        for chunk in stream:
             if not chunk.choices:
                 continue
-                
+
             choice = chunk.choices[0]
             delta = choice.delta
-            
+
             content = delta.content or ""
             finish_reason = choice.finish_reason
-            
+
             yield StreamChunk(
                 content=content,
                 finish_reason=finish_reason,
@@ -272,17 +272,17 @@ class OpenAIProvider(ModelProvider):
         """List available OpenAI models."""
         return list(OPENAI_MODELS.keys())
     
-    async def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Check if OpenAI API is reachable."""
         if not self.config.api_key:
             return {
                 "status": "not_configured",
                 "error": "OPENAI_API_KEY not set",
             }
-        
+
         try:
             # Make a minimal API call to check connectivity
-            models = await self.client.models.list()
+            models = self.client.models.list()
             model_list = list(models)
             return {
                 "status": "healthy",

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from ..providers.base import Message, CompletionResult
+from ..providers.base import Message
 
 
 class DraftStatus(str, Enum):

@@ -9,7 +9,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
@@ -123,7 +123,7 @@ class TaskPlanner:
             self._registry = get_registry()
         return self._registry
     
-    async def plan(
+    def plan(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -142,7 +142,7 @@ class TaskPlanner:
         """
         # First, assess complexity
         complexity = self._assess_complexity(task)
-        
+
         if complexity == TaskComplexity.SIMPLE:
             # Simple tasks don't need decomposition
             plan = TaskPlan(
@@ -159,10 +159,10 @@ class TaskPlanner:
                 reasoning_strategy="cot",
             )
             return self._create_goal_for_plan(plan, memory)
-        
+
         # For complex tasks, use LLM to decompose
         provider, model_id = self.registry.get_provider_for_model(self.model)
-        
+
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
@@ -183,25 +183,25 @@ TOOLS: [comma-separated tool names, or "none"]
 Continue for each subtask."""
             ),
         ]
-        
+
         if context:
             messages.extend(context)
-        
+
         messages.append(Message(
             role=MessageRole.USER,
             content=f"Task to plan: {task}"
         ))
-        
+
         try:
-            result = await provider.complete(
+            result = provider.complete(
                 messages,
                 model_id,
                 temperature=0.3,
                 max_tokens=1000,
             )
-            
+
             steps = self._parse_plan(result.content)
-            
+
             # Determine best reasoning strategy
             strategy = self._select_strategy(steps)
 
@@ -213,7 +213,7 @@ Continue for each subtask."""
                 estimated_tokens=result.usage.get("total_tokens", 0) if result.usage else 0,
             )
             return self._create_goal_for_plan(plan, memory)
-            
+
         except Exception as e:
             logger.error(f"Planning failed: {e}")
             # Fall back to single-step plan

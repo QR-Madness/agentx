@@ -110,7 +110,7 @@ class ChainOfThought(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    async def reason(
+    def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -120,18 +120,18 @@ class ChainOfThought(ReasoningStrategy):
         Apply Chain-of-Thought reasoning to a task.
         """
         start_time = time.time()
-        
+
         provider, model_id = self.registry.get_provider_for_model(
             self.cot_config.model
         )
-        
+
         # Build the CoT prompt
         messages = self._build_cot_prompt(task, context)
-        
+
         logger.info(f"CoT reasoning ({self.cot_config.mode}): {task[:50]}...")
-        
+
         try:
-            result = await provider.complete(
+            result = provider.complete(
                 messages,
                 model_id,
                 temperature=kwargs.get("temperature", 0.7),
@@ -261,7 +261,7 @@ class ChainOfThought(ReasoningStrategy):
                 ))
         else:
             # Fall back to splitting by newlines
-            lines = [l.strip() for l in response.split('\n') if l.strip()]
+            lines = [ln.strip() for ln in response.split('\n') if ln.strip()]
             for i, line in enumerate(lines):
                 if line.lower().startswith(('answer:', 'final', 'therefore', 'thus', 'so,')):
                     break

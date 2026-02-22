@@ -6,7 +6,6 @@ allowing the agent to gather information and take actions
 as part of its reasoning process.
 """
 
-import asyncio
 import logging
 import re
 import time
@@ -176,7 +175,7 @@ class ReActAgent(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    async def reason(
+    def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -186,28 +185,28 @@ class ReActAgent(ReasoningStrategy):
         Apply ReAct reasoning to a task.
         """
         start_time = time.time()
-        
+
         provider, model_id = self.registry.get_provider_for_model(
             self.react_config.model
         )
-        
+
         logger.info(f"ReAct reasoning: {task[:50]}...")
-        
+
         # Build initial prompt with tool descriptions
         messages = self._build_initial_prompt(task, context)
-        
+
         steps = []
         actions_taken = 0
         total_tokens = 0
         consecutive_failures = 0
         final_answer = ""
-        
+
         for iteration in range(self.react_config.max_iterations):
             step_num = iteration * 3 + 1  # Each iteration has thought, action, observation
-            
+
             # Get model response (thought + action)
             try:
-                result = await provider.complete(
+                result = provider.complete(
                     messages,
                     model_id,
                     temperature=kwargs.get("temperature", 0.7),
@@ -220,12 +219,12 @@ class ReActAgent(ReasoningStrategy):
                 if consecutive_failures >= self.react_config.max_consecutive_failures:
                     break
                 continue
-            
+
             if result.usage:
                 total_tokens += result.usage.get("total_tokens", 0)
-            
+
             response = result.content
-            
+
             # Check for final answer
             if self.react_config.answer_prefix in response:
                 final_answer = self._extract_final_answer(response)
@@ -236,7 +235,7 @@ class ReActAgent(ReasoningStrategy):
                     model=self.react_config.model,
                 ))
                 break
-            
+
             # Parse thought
             thought = self._extract_thought(response)
             if thought:
@@ -246,10 +245,10 @@ class ReActAgent(ReasoningStrategy):
                     content=thought,
                     model=self.react_config.model,
                 ))
-            
+
             # Parse and execute action
             action_name, action_input = self._extract_action(response)
-            
+
             if action_name:
                 steps.append(ThoughtStep(
                     step_number=step_num + 1,
@@ -259,18 +258,18 @@ class ReActAgent(ReasoningStrategy):
                     action_input=action_input,
                     model=self.react_config.model,
                 ))
-                
+
                 # Execute the action
-                observation = await self._execute_action(action_name, action_input)
+                observation = self._execute_action(action_name, action_input)
                 actions_taken += 1
-                
+
                 steps.append(ThoughtStep(
                     step_number=step_num + 2,
                     thought_type=ThoughtType.RESULT,
                     content=observation,
                     action_output=observation,
                 ))
-                
+
                 # Add to conversation
                 messages.append(Message(
                     role=MessageRole.ASSISTANT,
@@ -280,7 +279,7 @@ class ReActAgent(ReasoningStrategy):
                     role=MessageRole.USER,
                     content=f"{self.react_config.observation_prefix} {observation}",
                 ))
-                
+
                 consecutive_failures = 0
             else:
                 # No valid action found
@@ -288,7 +287,7 @@ class ReActAgent(ReasoningStrategy):
                 if consecutive_failures >= self.react_config.max_consecutive_failures:
                     logger.warning("Max consecutive failures reached, stopping")
                     break
-                
+
                 # Prompt for action
                 messages.append(Message(
                     role=MessageRole.USER,
@@ -399,7 +398,7 @@ Always think before acting. Use observations to inform your next steps."""
             return match.group(1).strip()
         return response
     
-    async def _execute_action(
+    def _execute_action(
         self,
         action_name: str,
         action_input: dict[str, Any],
@@ -407,17 +406,12 @@ Always think before acting. Use observations to inform your next steps."""
         """Execute an action and return the observation."""
         if action_name not in self.tools:
             return f"Error: Unknown tool '{action_name}'. Available tools: {list(self.tools.keys())}"
-        
+
         tool = self.tools[action_name]
-        
+
         try:
             # Execute the tool
             result = tool.execute(action_input)
-            
-            # Handle async tools
-            if asyncio.iscoroutine(result):
-                result = await result
-            
             return str(result)
         except Exception as e:
             logger.error(f"Tool execution failed: {e}")

@@ -2,7 +2,6 @@ import json
 import logging
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from asgiref.sync import async_to_sync
 
 from .kit.memory_utils import check_memory_health
 from .mcp import MCPClientManager, ServerRegistry
@@ -283,14 +282,13 @@ def providers_models(request):
 def providers_health(request):
     """Check health of all configured providers."""
     registry = get_registry()
-    
-    # Run health checks using async_to_sync for proper Django integration
-    results = async_to_sync(registry.health_check)()
-    
+
+    results = registry.health_check()
+
     overall_status = "healthy"
     if any(r.get("status") != "healthy" for r in results.values()):
         overall_status = "degraded"
-    
+
     return JsonResponse({
         "status": overall_status,
         "providers": results,
@@ -327,32 +325,28 @@ def agent_run(request):
     """Execute a task using the agent."""
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
-    
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-    
+
     try:
         data = json.loads(request.body.decode('utf-8'))
         task = data.get("task")
         if not task:
             return JsonResponse({'error': 'Missing required field: task'}, status=400)
-        
+
         reasoning_strategy = data.get("reasoning_strategy")
-        
+
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
-    
+
     agent = get_agent()
-    
-    # Run the agent task using async_to_sync
-    async def run_task():
-        kwargs = {}
-        if reasoning_strategy:
-            kwargs["reasoning_strategy"] = reasoning_strategy
-        return await agent.run(task, **kwargs)
-    
-    result = async_to_sync(run_task)()
-    
+
+    kwargs = {}
+    if reasoning_strategy:
+        kwargs["reasoning_strategy"] = reasoning_strategy
+    result = agent.run(task, **kwargs)
+
     return JsonResponse({
         "task_id": result.task_id,
         "status": result.status.value,
@@ -371,16 +365,16 @@ def agent_chat(request):
     """Handle a conversational message with the agent."""
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
-    
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-    
+
     try:
         data = json.loads(request.body.decode('utf-8'))
         message = data.get("message")
         if not message:
             return JsonResponse({'error': 'Missing required field: message'}, status=400)
-        
+
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")  # Prompt profile to use
@@ -398,9 +392,9 @@ def agent_chat(request):
         logger.info(f"Using custom model for chat: {model}")
     # Note: temperature (_temperature) is reserved for future implementation
     agent = Agent(AgentConfig(**config_kwargs))
-    
-    result = async_to_sync(agent.chat)(message, session_id=session_id, profile_id=profile_id)
-    
+
+    result = agent.chat(message, session_id=session_id, profile_id=profile_id)
+
     return JsonResponse({
         "task_id": result.task_id,
         "status": result.status.value,
@@ -421,23 +415,23 @@ def agent_chat(request):
 def agent_chat_stream(request):
     """
     Handle a streaming conversational message with the agent.
-    
+
     Returns Server-Sent Events (SSE) for real-time token streaming.
     """
     if request.method == 'OPTIONS':
         response = JsonResponse({}, status=200)
         response['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
-    
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-    
+
     try:
         data = json.loads(request.body.decode('utf-8'))
         message = data.get("message")
         if not message:
             return JsonResponse({'error': 'Missing required field: message'}, status=400)
-        
+
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")
@@ -465,26 +459,26 @@ def agent_chat_stream(request):
         if model:
             config_kwargs["default_model"] = model
         agent = Agent(AgentConfig(**config_kwargs))
-        
+
         # Session management
         if agent._session_manager is None:
             agent._session_manager = SessionManager()
         session = agent._session_manager.get_or_create(session_id)
         session.add_message(Message(role=MessageRole.USER, content=message))
         context = session.get_messages()[:-1]
-        
+
         try:
             # Get provider and model
             provider, model_id = agent.registry.get_provider_for_model(
                 agent.config.default_model
             )
-            
+
             # Build messages with system prompt
             prompt_manager = get_prompt_manager()
             system_prompt = prompt_manager.get_system_prompt(
                 profile_id=profile_id or agent.config.prompt_profile_id
             )
-            
+
             messages = [
                 Message(
                     role=MessageRole.SYSTEM,
@@ -494,43 +488,33 @@ def agent_chat_stream(request):
             if context:
                 messages.extend(context)
             messages.append(Message(role=MessageRole.USER, content=message))
-            
+
             # Send start event
             yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
-            
-            # Stream tokens
+
+            # Stream tokens using sync generator
             full_content = ""
-            
-            # Use sync iteration over async stream
-            async def collect_stream():
-                nonlocal full_content
-                chunks = []
-                async for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
-                    chunks.append(chunk)
-                return chunks
-            
-            chunks = async_to_sync(collect_stream)()
-            
-            for chunk in chunks:
+
+            for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
                 if chunk.content:
                     full_content += chunk.content
                     yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
-            
+
             # Parse output for thinking tags
             parsed = parse_output(full_content)
-            
+
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
-            
+
             total_time = (time.time() - start_time) * 1000
-            
+
             # Send completion event
             yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': session_id or task_id})}\n\n"
-            
+
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-    
+
     response = StreamingHttpResponse(
         generate_sse(),
         content_type='text/event-stream'

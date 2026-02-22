@@ -1181,7 +1181,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_off_skips_all(self):
         """No logging when audit_log_level is 'off'."""
-        from unittest.mock import patch, MagicMock
         from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
         from agentx_ai.kit.agent_memory.config import Settings
 
@@ -1255,7 +1254,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_timed_operation_context_manager(self):
         """timed_operation context manager provides context dict."""
-        from unittest.mock import patch, MagicMock
         from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
         from agentx_ai.kit.agent_memory.config import Settings
 
@@ -1416,7 +1414,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_set_stores_with_ttl(self):
         """set() stores JSON-encoded value with TTL."""
-        import json
         from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
@@ -1663,7 +1660,6 @@ class ChannelScopingUnitTest(TestCase):
         from agentx_ai.kit.agent_memory.events import (
             TurnStoredPayload,
             FactLearnedPayload,
-            EntityCreatedPayload,
         )
 
         turn_payload = TurnStoredPayload(

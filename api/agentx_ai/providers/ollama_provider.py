@@ -11,7 +11,6 @@ import httpx
 from .base import (
     CompletionResult,
     Message,
-    MessageRole,
     ModelCapabilities,
     ModelProvider,
     ProviderConfig,

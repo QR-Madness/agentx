@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from ..providers.base import Message, CompletionResult
+from ..providers.base import Message
 from ..providers.registry import get_registry
 from .base import DraftingConfig, DraftingStrategy, DraftResult, DraftStatus
 

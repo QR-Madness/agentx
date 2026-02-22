@@ -13,7 +13,7 @@ This file contains comprehensive tests for the memory system fixes and features:
 
 import json
 import socket
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from unittest import skipUnless
 from unittest.mock import patch, MagicMock
 

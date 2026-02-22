@@ -227,7 +227,7 @@ class Agent:
         
         return self._mcp_client
     
-    async def run(
+    def run(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -235,24 +235,24 @@ class Agent:
     ) -> AgentResult:
         """
         Execute a task using the full agent pipeline.
-        
+
         Args:
             task: The task description
             context: Optional conversation context
             **kwargs: Additional parameters
-            
+
         Returns:
             AgentResult with the answer and execution details
         """
         task_id = str(uuid.uuid4())[:8]
         self._current_task_id = task_id
         self._cancel_requested = False
-        
+
         start_time = time.time()
         trace = []
-        
+
         logger.info(f"Agent task {task_id}: {task[:50]}...")
-        
+
         # Retrieve relevant memories for task context
         memory_bundle = None
         if self.memory:
@@ -269,32 +269,32 @@ class Agent:
                 })
             except Exception as e:
                 logger.warning(f"Failed to retrieve memories for task: {e}")
-        
+
         try:
             self.status = AgentStatus.PLANNING
-            
+
             # Step 1: Planning (if enabled)
             plan = None
             if self.config.enable_planning:
                 from .planner import TaskPlanner
                 planner = TaskPlanner(self.config.default_model)
-                plan = await planner.plan(task, context, memory=self.memory)
+                plan = planner.plan(task, context, memory=self.memory)
                 trace.append({
                     "phase": "planning",
                     "steps": len(plan.steps) if plan else 0,
                     "goal_id": plan.goal_id if plan else None,
                 })
-            
+
             if self._cancel_requested:
                 return self._cancelled_result(task_id, start_time)
-            
+
             # Step 2: Reasoning
             self.status = AgentStatus.REASONING
-            
+
             reasoning_result = None
             if self.config.enable_reasoning:
                 strategy = kwargs.get("reasoning_strategy", self.config.default_reasoning_strategy)
-                
+
                 # Inject memories into context if available
                 reasoning_context = context
                 if memory_bundle and context:
@@ -305,26 +305,26 @@ class Agent:
                             summarize_threshold=self.config.summarize_threshold,
                         ))
                     reasoning_context = self._context_manager.inject_memory(context, memory_bundle)
-                
+
                 if strategy == "auto":
-                    reasoning_result = await self.reasoning.reason(task, reasoning_context)
+                    reasoning_result = self.reasoning.reason(task, reasoning_context)
                 else:
-                    reasoning_result = await self.reasoning.reason(
+                    reasoning_result = self.reasoning.reason(
                         task, reasoning_context, strategy=strategy
                     )
-                
+
                 trace.append({
                     "phase": "reasoning",
                     "strategy": reasoning_result.strategy if reasoning_result else None,
                     "steps": reasoning_result.total_steps if reasoning_result else 0,
                 })
-            
+
             if self._cancel_requested:
                 return self._cancelled_result(task_id, start_time)
-            
+
             # Step 3: Generate final answer
             self.status = AgentStatus.EXECUTING
-            
+
             if reasoning_result:
                 answer = reasoning_result.answer
                 total_tokens = reasoning_result.total_tokens
@@ -339,11 +339,11 @@ class Agent:
                 provider, model_id = self.registry.get_provider_for_model(
                     self.config.default_model
                 )
-                
+
                 messages = [Message(role=MessageRole.USER, content=task)]
                 if context:
                     messages = context + messages
-                
+
                 # Inject memories if available
                 if memory_bundle:
                     from .context import ContextManager, ContextConfig
@@ -353,14 +353,14 @@ class Agent:
                             summarize_threshold=self.config.summarize_threshold,
                         ))
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
-                
-                result = await provider.complete(
+
+                result = provider.complete(
                     messages,
                     model_id,
                     temperature=kwargs.get("temperature", 0.7),
                     max_tokens=kwargs.get("max_tokens", 2000),
                 )
-                
+
                 answer = result.content
                 total_tokens = result.usage.get("total_tokens", 0) if result.usage else 0
                 models_used = [self.config.default_model]
@@ -445,7 +445,7 @@ class Agent:
         finally:
             self._current_task_id = None
     
-    async def chat(
+    def chat(
         self,
         message: str,
         session_id: Optional[str] = None,
@@ -455,38 +455,38 @@ class Agent:
     ) -> AgentResult:
         """
         Handle a conversational message.
-        
+
         Maintains context across messages within a session.
-        
+
         Args:
             message: The user message
             session_id: Optional session ID for context
             simple_mode: If True, use direct completion without reasoning (default)
             profile_id: Optional prompt profile ID to use
             **kwargs: Additional parameters
-            
+
         Returns:
             AgentResult with the response
         """
         task_id = str(uuid.uuid4())[:8]
         start_time = time.time()
-        
+
         # Get or create session
         from .session import SessionManager
         if self._session_manager is None:
             self._session_manager = SessionManager()
-        
+
         session = self._session_manager.get_or_create(session_id)
         conversation_id = session_id or session.id
-        
+
         # Update memory with conversation context if available
         if self.memory:
             self.memory.conversation_id = conversation_id
-        
+
         # Add user message to session
         user_message = Message(role=MessageRole.USER, content=message)
         session.add_message(user_message)
-        
+
         # Store user turn in memory
         if self.memory:
             user_turn = Turn(
@@ -499,10 +499,10 @@ class Agent:
                 self.memory.store_turn(user_turn)
             except Exception as e:
                 logger.warning(f"Failed to store user turn in memory: {e}")
-        
+
         # Get context from session (excluding current message for the prompt)
         context = session.get_messages()[:-1]
-        
+
         # Retrieve relevant memories for context injection
         memory_bundle = None
         if self.memory:
@@ -514,21 +514,21 @@ class Agent:
                 )
             except Exception as e:
                 logger.warning(f"Failed to retrieve memories: {e}")
-        
+
         try:
             if simple_mode:
                 # Direct completion without planning/reasoning - best for chat
                 provider, model_id = self.registry.get_provider_for_model(
                     self.config.default_model
                 )
-                
+
                 # Get system prompt from prompt manager
                 from ..prompts import get_prompt_manager
                 prompt_manager = get_prompt_manager()
                 system_prompt = prompt_manager.get_system_prompt(
                     profile_id=profile_id or self.config.prompt_profile_id
                 )
-                
+
                 # Build messages with composed system prompt
                 messages = [
                     Message(
@@ -539,7 +539,7 @@ class Agent:
                 if context:
                     messages.extend(context)
                 messages.append(Message(role=MessageRole.USER, content=message))
-                
+
                 # Inject memories into context
                 if memory_bundle:
                     from .context import ContextManager, ContextConfig
@@ -549,29 +549,29 @@ class Agent:
                             summarize_threshold=self.config.summarize_threshold,
                         ))
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
-                
+
                 logger.info(f"Agent chat {task_id} using {model_id}")
-                
-                result = await provider.complete(
+
+                result = provider.complete(
                     messages,
                     model_id,
                     temperature=kwargs.get("temperature", 0.7),
                     max_tokens=kwargs.get("max_tokens", 2000),
                 )
-                
+
                 # Parse output to extract thinking tags
                 from .output_parser import parse_output
                 parsed = parse_output(result.content)
-                
+
                 answer = parsed.content
                 thinking = parsed.thinking
                 total_tokens = result.usage.get("total_tokens", 0) if result.usage else 0
-                
+
                 # Add assistant response to session (store parsed content)
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=answer))
-                
+
                 total_time = (time.time() - start_time) * 1000
-                
+
                 # Store assistant turn in memory
                 if self.memory:
                     assistant_turn = Turn(
@@ -590,7 +590,7 @@ class Agent:
                         self.memory.store_turn(assistant_turn)
                     except Exception as e:
                         logger.warning(f"Failed to store assistant turn in memory: {e}")
-                
+
                 return AgentResult(
                     task_id=task_id,
                     status=AgentStatus.COMPLETE,
@@ -603,11 +603,11 @@ class Agent:
                 )
             else:
                 # Full agent pipeline with reasoning
-                result = await self.run(message, context=context, **kwargs)
-                
+                result = self.run(message, context=context, **kwargs)
+
                 # Add assistant response to session
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=result.answer))
-                
+
                 # Store assistant turn in memory
                 if self.memory:
                     assistant_turn = Turn(
@@ -628,9 +628,9 @@ class Agent:
                         self.memory.store_turn(assistant_turn)
                     except Exception as e:
                         logger.warning(f"Failed to store assistant turn in memory: {e}")
-                
+
                 return result
-                
+
         except Exception as e:
             logger.error(f"Agent chat {task_id} failed: {e}")
             return AgentResult(

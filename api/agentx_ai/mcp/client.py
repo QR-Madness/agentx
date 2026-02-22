@@ -4,7 +4,6 @@ MCP Client Manager: Core class for managing MCP server connections.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -12,7 +11,6 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 
 from mcp import ClientSession
-from mcp.types import Resource
 
 from .server_registry import ServerConfig, ServerRegistry, TransportType
 from .tool_executor import ToolExecutor, ToolInfo, ToolResult

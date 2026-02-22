@@ -102,7 +102,7 @@ class ReflectiveReasoner(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    async def reason(
+    def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -112,29 +112,29 @@ class ReflectiveReasoner(ReasoningStrategy):
         Apply reflective reasoning to improve a response.
         """
         start_time = time.time()
-        
+
         provider, model_id = self.registry.get_provider_for_model(
             self.ref_config.model
         )
-        
+
         # Get reflection model (may be same as main model)
         reflection_model = self.ref_config.reflection_model or self.ref_config.model
         ref_provider, ref_model_id = self.registry.get_provider_for_model(
             reflection_model
         )
-        
+
         logger.info(f"Reflective reasoning: {task[:50]}...")
-        
+
         steps = []
         revisions = []
         total_tokens = 0
         step_num = 0
-        
+
         # Step 1: Generate initial response
         initial_messages = self._build_initial_prompt(task, context)
-        
+
         try:
-            initial_result = await provider.complete(
+            initial_result = provider.complete(
                 initial_messages,
                 model_id,
                 temperature=kwargs.get("temperature", 0.7),
@@ -147,12 +147,12 @@ class ReflectiveReasoner(ReasoningStrategy):
                 strategy=self.name,
                 status=ReasoningStatus.FAILED,
             )
-        
+
         if initial_result.usage:
             total_tokens += initial_result.usage.get("total_tokens", 0)
-        
+
         current_response = initial_result.content
-        
+
         step_num += 1
         steps.append(ThoughtStep(
             step_number=step_num,
@@ -160,17 +160,17 @@ class ReflectiveReasoner(ReasoningStrategy):
             content=f"Initial response:\n{current_response[:500]}...",
             model=self.ref_config.model,
         ))
-        
+
         previous_score = 0.0
-        
+
         # Iterate: critique and revise
         for revision_num in range(self.ref_config.max_revisions):
             # Step 2: Critique
-            critique, critique_score, critique_tokens = await self._critique(
+            critique, critique_score, critique_tokens = self._critique(
                 task, current_response, ref_provider, ref_model_id
             )
             total_tokens += critique_tokens
-            
+
             step_num += 1
             steps.append(ThoughtStep(
                 step_number=step_num,
@@ -179,25 +179,25 @@ class ReflectiveReasoner(ReasoningStrategy):
                 confidence=critique_score,
                 model=reflection_model,
             ))
-            
+
             # Check if we should stop
             if critique_score >= self.ref_config.satisfaction_threshold:
                 logger.info(f"Satisfaction threshold reached at revision {revision_num}")
                 break
-            
+
             improvement = critique_score - previous_score
             if revision_num > 0 and improvement < self.ref_config.min_improvement_threshold:
                 logger.info(f"Minimal improvement ({improvement:.2f}), stopping")
                 break
-            
+
             previous_score = critique_score
-            
+
             # Step 3: Revise
-            revised_response, revision_tokens = await self._revise(
+            revised_response, revision_tokens = self._revise(
                 task, current_response, critique, provider, model_id
             )
             total_tokens += revision_tokens
-            
+
             step_num += 1
             steps.append(ThoughtStep(
                 step_number=step_num,
@@ -205,7 +205,7 @@ class ReflectiveReasoner(ReasoningStrategy):
                 content=f"Revision {revision_num + 1}:\n{revised_response[:500]}...",
                 model=self.ref_config.model,
             ))
-            
+
             # Track revision
             revisions.append(Revision(
                 version=revision_num + 1,
@@ -214,7 +214,7 @@ class ReflectiveReasoner(ReasoningStrategy):
                 score=critique_score,
                 improvements=self._extract_improvements(critique),
             ))
-            
+
             current_response = revised_response
         
         total_time = (time.time() - start_time) * 1000
@@ -274,7 +274,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         
         return messages
     
-    async def _critique(
+    def _critique(
         self,
         task: str,
         response: str,
@@ -296,9 +296,9 @@ class ReflectiveReasoner(ReasoningStrategy):
                 )
             ),
         ]
-        
+
         try:
-            result = await provider.complete(
+            result = provider.complete(
                 messages,
                 model_id,
                 temperature=0.3,  # Lower temperature for more consistent critique
@@ -307,15 +307,15 @@ class ReflectiveReasoner(ReasoningStrategy):
         except Exception as e:
             logger.error(f"Critique failed: {e}")
             return "Unable to critique", 0.5, 0
-        
+
         tokens = result.usage.get("total_tokens", 0) if result.usage else 0
-        
+
         # Extract score from response
         score = self._extract_score(result.content)
-        
+
         return result.content, score, tokens
-    
-    async def _revise(
+
+    def _revise(
         self,
         task: str,
         response: str,
@@ -339,9 +339,9 @@ class ReflectiveReasoner(ReasoningStrategy):
                 )
             ),
         ]
-        
+
         try:
-            result = await provider.complete(
+            result = provider.complete(
                 messages,
                 model_id,
                 temperature=0.7,
@@ -350,9 +350,9 @@ class ReflectiveReasoner(ReasoningStrategy):
         except Exception as e:
             logger.error(f"Revision failed: {e}")
             return response, 0  # Return original if revision fails
-        
+
         tokens = result.usage.get("total_tokens", 0) if result.usage else 0
-        
+
         return result.content, tokens
     
     def _extract_score(self, critique: str) -> float:

@@ -6,14 +6,13 @@ by a potentially different model. This enables specialized processing
 like: analyze → draft → review → refine.
 """
 
-import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from ..providers.base import Message, MessageRole, CompletionResult
+from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
 from .base import DraftingConfig, DraftingStrategy, DraftResult, DraftStatus
 
