@@ -416,3 +416,280 @@ class SemanticMemory:
                 user_id=user_id,
                 channel=channel
             )
+
+    def list_entities(
+        self,
+        user_id: str,
+        channel: str = "_global",
+        offset: int = 0,
+        limit: int = 20,
+        search: Optional[str] = None,
+        entity_type: Optional[str] = None
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        List entities with pagination and optional filtering.
+
+        Args:
+            user_id: User ID to filter by
+            channel: Filter by channel (searches channel + _global)
+            offset: Number of records to skip
+            limit: Maximum number of records to return
+            search: Optional text search on entity name
+            entity_type: Optional filter by entity type
+
+        Returns:
+            Tuple of (entities list, total count)
+        """
+        with Neo4jConnection.session() as session:
+            # Build WHERE conditions
+            conditions = ["e.user_id = $user_id"]
+
+            # Channel filter - search both specified channel and _global
+            if channel and channel != "_global":
+                conditions.append("(e.channel = $channel OR e.channel = '_global')")
+            else:
+                conditions.append("e.channel = '_global'")
+
+            # Text search on name
+            if search:
+                conditions.append("toLower(e.name) CONTAINS toLower($search)")
+
+            # Filter by entity type
+            if entity_type:
+                conditions.append("e.type = $entity_type")
+
+            where_clause = " AND ".join(conditions)
+
+            # Get total count
+            count_result = session.run(f"""
+                MATCH (e:Entity)
+                WHERE {where_clause}
+                RETURN count(e) AS total
+            """,
+                user_id=user_id,
+                channel=channel,
+                search=search,
+                entity_type=entity_type
+            )
+            total = count_result.single()["total"]
+
+            # Get paginated results
+            result = session.run(f"""
+                MATCH (e:Entity)
+                WHERE {where_clause}
+                RETURN e.id AS id,
+                       e.name AS name,
+                       e.type AS type,
+                       e.channel AS channel,
+                       e.salience AS salience,
+                       e.description AS description,
+                       e.last_accessed AS last_accessed,
+                       e.access_count AS access_count,
+                       e.first_seen AS first_seen
+                ORDER BY e.salience DESC, e.last_accessed DESC
+                SKIP $offset
+                LIMIT $limit
+            """,
+                user_id=user_id,
+                channel=channel,
+                search=search,
+                entity_type=entity_type,
+                offset=offset,
+                limit=limit
+            )
+
+            entities = [dict(record) for record in result]
+            return entities, total
+
+    def list_facts(
+        self,
+        user_id: str,
+        channel: str = "_global",
+        offset: int = 0,
+        limit: int = 20,
+        min_confidence: float = 0.0,
+        search: Optional[str] = None
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        List facts with pagination and optional filtering.
+
+        Args:
+            user_id: User ID to filter by
+            channel: Filter by channel (searches channel + _global)
+            offset: Number of records to skip
+            limit: Maximum number of records to return
+            min_confidence: Minimum confidence threshold (0.0 to 1.0)
+            search: Optional text search on fact claim
+
+        Returns:
+            Tuple of (facts list, total count)
+        """
+        with Neo4jConnection.session() as session:
+            # Build WHERE conditions
+            conditions = ["f.user_id = $user_id", "f.confidence >= $min_confidence"]
+
+            # Channel filter - search both specified channel and _global
+            if channel and channel != "_global":
+                conditions.append("(f.channel = $channel OR f.channel = '_global')")
+            else:
+                conditions.append("f.channel = '_global'")
+
+            # Text search on claim
+            if search:
+                conditions.append("toLower(f.claim) CONTAINS toLower($search)")
+
+            where_clause = " AND ".join(conditions)
+
+            # Get total count
+            count_result = session.run(f"""
+                MATCH (f:Fact)
+                WHERE {where_clause}
+                RETURN count(f) AS total
+            """,
+                user_id=user_id,
+                channel=channel,
+                min_confidence=min_confidence,
+                search=search
+            )
+            total = count_result.single()["total"]
+
+            # Get paginated results with entity names
+            result = session.run(f"""
+                MATCH (f:Fact)
+                WHERE {where_clause}
+                OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
+                WITH f, collect(e.id) AS entity_ids
+                RETURN f.id AS id,
+                       f.claim AS claim,
+                       f.confidence AS confidence,
+                       f.source AS source,
+                       f.channel AS channel,
+                       f.source_turn_id AS source_turn_id,
+                       f.created_at AS created_at,
+                       f.promoted_from AS promoted_from,
+                       entity_ids
+                ORDER BY f.confidence DESC, f.created_at DESC
+                SKIP $offset
+                LIMIT $limit
+            """,
+                user_id=user_id,
+                channel=channel,
+                min_confidence=min_confidence,
+                search=search,
+                offset=offset,
+                limit=limit
+            )
+
+            facts = [dict(record) for record in result]
+            return facts, total
+
+    def get_entity_by_id(
+        self,
+        entity_id: str,
+        user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a single entity by ID.
+
+        Args:
+            entity_id: Entity ID to retrieve
+            user_id: User ID for access control
+
+        Returns:
+            Entity dict or None if not found
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {id: $entity_id})
+                WHERE e.user_id = $user_id
+                RETURN e.id AS id,
+                       e.name AS name,
+                       e.type AS type,
+                       e.channel AS channel,
+                       e.salience AS salience,
+                       e.description AS description,
+                       e.aliases AS aliases,
+                       e.last_accessed AS last_accessed,
+                       e.access_count AS access_count,
+                       e.first_seen AS first_seen
+            """,
+                entity_id=entity_id,
+                user_id=user_id
+            )
+
+            record = result.single()
+            return dict(record) if record else None
+
+    def get_entity_facts_and_relationships(
+        self,
+        entity_id: str,
+        user_id: str,
+        depth: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Get an entity with its connected facts and relationships.
+
+        Args:
+            entity_id: Entity ID to retrieve
+            user_id: User ID for access control
+            depth: Relationship traversal depth (capped at 3)
+
+        Returns:
+            Dictionary with entity, facts, and relationships
+        """
+        validated_depth = max(1, min(int(depth), 3))
+
+        with Neo4jConnection.session() as session:
+            # Get entity
+            entity = self.get_entity_by_id(entity_id, user_id)
+            if not entity:
+                return {"entity": None, "facts": [], "relationships": []}
+
+            # Get facts about this entity
+            facts_result = session.run("""
+                MATCH (f:Fact)-[:ABOUT]->(e:Entity {id: $entity_id})
+                WHERE f.user_id = $user_id
+                RETURN f.id AS id,
+                       f.claim AS claim,
+                       f.confidence AS confidence,
+                       f.source AS source,
+                       f.channel AS channel,
+                       f.promoted_from AS promoted_from
+                ORDER BY f.confidence DESC
+                LIMIT 50
+            """,
+                entity_id=entity_id,
+                user_id=user_id
+            )
+            facts = [dict(record) for record in facts_result]
+
+            # Get relationships to other entities
+            rel_result = session.run(f"""
+                MATCH (e:Entity {{id: $entity_id}})-[r]->(target:Entity)
+                WHERE e.user_id = $user_id AND target.user_id = $user_id
+                RETURN type(r) AS type,
+                       target.id AS target_id,
+                       target.name AS target_name,
+                       target.type AS target_type
+                LIMIT 50
+            """,
+                entity_id=entity_id,
+                user_id=user_id
+            )
+            relationships = [
+                {
+                    "type": record["type"],
+                    "target": {
+                        "id": record["target_id"],
+                        "name": record["target_name"],
+                        "type": record["target_type"]
+                    }
+                }
+                for record in rel_result
+            ]
+
+            return {
+                "entity": entity,
+                "facts": facts,
+                "relationships": relationships
+            }

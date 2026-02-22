@@ -119,7 +119,7 @@ export const AgentTab: React.FC = () => {
         <div className="header-content">
           <h1 className="page-title">
             <Brain className="page-icon-svg" />
-            <span>Agent</span>
+            <span>Agent (Unstable & Under Heavy Construction)</span>
           </h1>
           <p className="page-subtitle">Execute tasks with AI-powered reasoning</p>
         </div>

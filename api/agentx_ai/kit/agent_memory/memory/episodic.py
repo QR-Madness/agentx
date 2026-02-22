@@ -50,7 +50,8 @@ class EpisodicMemory:
                     content: $content,
                     embedding: $embedding,
                     token_count: $token_count,
-                    channel: $channel
+                    channel: $channel,
+                    user_id: $user_id
                 })
 
                 MERGE (c)-[:HAS_TURN]->(t)

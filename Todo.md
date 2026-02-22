@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework  
 **Status**: Pre-prototype  
-**Last Updated**: 2026-02-17
+**Last Updated**: 2026-02-22
 
 ---
 
@@ -797,33 +797,109 @@ The memory system is **architecturally complete but entirely disconnected**:
 - [x] Add configurable job intervals via `MemoryConfig`
 - [x] Handle worker crash recovery (detect stale job locks, re-run)
 
-### 11.10 Memory Explorer (Client)
+### 11.10 Memory Explorer (Client) ✅
 
 > Primitive v1 UI for inspecting memory contents — entities, facts, channels
 
 **Note**: Embeddings are opaque vectors, but every stored memory has human-readable content alongside it (entity names, fact claims, turn content). The explorer renders the readable data; embeddings are just the search index underneath.
 
-- [ ] Create `MemoryTab` component (or subsection within existing tab):
-  - [ ] Channel selector dropdown (list channels via `GET /api/memory/channels`)
-  - [ ] Entity list view:
-    - [ ] Columns: name, type, channel, salience score, last accessed
-    - [ ] Click entity → expand to show connected facts and relationships
-    - [ ] Uses `get_entity_graph()` for expansion (already implemented in semantic.py)
-  - [ ] Fact list view:
-    - [ ] Columns: claim text, confidence, source channel, derived-from conversation
-    - [ ] Filter by channel, confidence threshold
-    - [ ] Show `promoted_from` badge for cross-channel promoted facts
-  - [ ] Strategy list view (procedural memory):
-    - [ ] Columns: description, tool sequence, success rate, channel
-- [ ] Create memory API endpoints to support explorer:
-  - [ ] `GET /api/memory/entities?channel=X` — list entities with pagination
-  - [ ] `GET /api/memory/entities/{id}/graph` — entity subgraph (facts, relationships)
-  - [ ] `GET /api/memory/facts?channel=X` — list facts with pagination
-  - [ ] `GET /api/memory/strategies?channel=X` — list strategies
-  - [ ] `GET /api/memory/stats` — counts per memory type, per channel
-- [ ] Basic search within explorer:
-  - [ ] Text search across entity names and fact claims (Neo4j fulltext or CONTAINS)
-  - [ ] No embedding-based search needed for v1 — just text matching
+- [x] Create `MemoryTab` component (or subsection within existing tab):
+  - [x] Channel selector dropdown (list channels via `GET /api/memory/channels`)
+  - [x] Entity list view:
+    - [x] Columns: name, type, channel, salience score, last accessed
+    - [x] Click entity → expand to show connected facts and relationships
+    - [x] Uses `get_entity_graph()` for expansion (already implemented in semantic.py)
+  - [x] Fact list view:
+    - [x] Columns: claim text, confidence, source channel, derived-from conversation
+    - [x] Filter by channel, confidence threshold
+    - [x] Show `promoted_from` badge for cross-channel promoted facts
+  - [x] Strategy list view (procedural memory):
+    - [x] Columns: description, tool sequence, success rate, channel
+- [x] Create memory API endpoints to support explorer:
+  - [x] `GET /api/memory/entities?channel=X` — list entities with pagination
+  - [x] `GET /api/memory/entities/{id}/graph` — entity subgraph (facts, relationships)
+  - [x] `GET /api/memory/facts?channel=X` — list facts with pagination
+  - [x] `GET /api/memory/strategies?channel=X` — list strategies
+  - [x] `GET /api/memory/stats` — counts per memory type, per channel
+- [x] Basic search within explorer:
+  - [x] Text search across entity names and fact claims (Neo4j fulltext or CONTAINS)
+  - [x] No embedding-based search needed for v1 — just text matching
+
+### 11.11 Background Job Scheduler & Monitoring
+
+> Job scheduler for running consolidation and other background tasks, with UI for monitoring and manual triggering
+> **Note**: Scheduler implementation is deferred, but monitoring UI should work with manual triggers for debugging
+
+#### Scheduler (Deferred)
+- [ ] Implement background job scheduler:
+  - [ ] Configurable job intervals via `MemoryConfig` (already in config)
+  - [ ] Job registration system (cron-like or interval-based)
+  - [ ] Job persistence (survive API restarts)
+  - [ ] Graceful shutdown handling
+  - [ ] Consider: Django Q, Celery, or lightweight custom scheduler
+- [ ] Register consolidation jobs:
+  - [ ] `consolidate_episodic_to_semantic` — extract entities/facts from turns
+  - [ ] `detect_patterns` — identify successful tool strategies
+  - [ ] `apply_memory_decay` — reduce salience over time
+  - [ ] `cleanup_old_memories` — archive/remove old data
+  - [ ] `promote_to_global` — cross-channel promotion
+  - [ ] `manage_audit_partitions` — partition maintenance
+
+#### Job Monitoring API
+- [ ] Add job status endpoints:
+  - [ ] `GET /api/jobs` — list all registered jobs with status (running, idle, failed, disabled)
+  - [ ] `GET /api/jobs/{job_id}` — job details (last run, next run, run count, last error)
+  - [ ] `GET /api/jobs/{job_id}/history` — recent execution history with metrics
+  - [ ] `GET /api/jobs/{job_id}/logs` — logs from recent runs (paginated)
+  - [ ] `POST /api/jobs/{job_id}/run` — manually trigger a job (for debugging)
+  - [ ] `POST /api/jobs/{job_id}/disable` — disable a scheduled job
+  - [ ] `POST /api/jobs/{job_id}/enable` — re-enable a disabled job
+- [ ] Job metrics tracking:
+  - [ ] Execution count, success count, failure count
+  - [ ] Average duration, min/max duration
+  - [ ] Last run timestamp, last success timestamp
+  - [ ] Items processed (entities extracted, facts stored, etc.)
+  - [ ] Store in Redis with rollup to PostgreSQL for persistence
+
+#### Job Monitoring UI (Client)
+- [ ] Create `JobsPanel` component (subsection in Memory or Settings tab):
+  - [ ] Job list view:
+    - [ ] Columns: job name, status (badge), last run (relative time), next run, success rate
+    - [ ] Status badges: Running (blue pulse), Idle (gray), Failed (red), Disabled (muted)
+    - [ ] Click row to expand details
+  - [ ] Job detail view:
+    - [ ] Metrics dashboard: run count, success rate chart, average duration
+    - [ ] Recent execution history (last 10 runs with status, duration, items processed)
+    - [ ] Log viewer (scrollable, auto-refresh when job running)
+    - [ ] Error display (last error with stack trace if available)
+  - [ ] Manual controls:
+    - [ ] "Run Now" button — triggers job immediately via `POST /api/jobs/{id}/run`
+    - [ ] "Enable/Disable" toggle — for scheduled jobs
+    - [ ] Confirmation dialog for destructive operations
+  - [ ] Real-time updates:
+    - [ ] Poll job status while job is running (5s interval)
+    - [ ] Show progress indicator for long-running jobs
+    - [ ] Toast notification on job completion/failure
+- [ ] Styling:
+  - [ ] Follow existing cosmic theme
+  - [ ] Use status colors consistently (green=success, red=failed, blue=running)
+  - [ ] Compact log viewer with monospace font
+  - [ ] Responsive layout (collapse on smaller screens)
+
+#### Manual Consolidation Trigger (Priority for Debugging)
+- [ ] Add immediate consolidation endpoint:
+  - [ ] `POST /api/memory/consolidate` — runs full consolidation pipeline synchronously
+  - [ ] Request body: `{ "jobs": ["extract", "patterns", "promote"] }` or empty for all
+  - [ ] Response: job results with metrics (entities extracted, facts stored, etc.)
+  - [ ] Add timeout protection (max 60s, return partial results)
+- [ ] Add "Consolidate Now" button to Memory Explorer:
+  - [ ] Prominent button in Memory tab header
+  - [ ] Shows loading state during consolidation
+  - [ ] Displays results summary (X entities, Y facts extracted)
+  - [ ] Refreshes entity/fact lists after completion
+- [ ] Consolidation preview (optional):
+  - [ ] `POST /api/memory/consolidate/preview` — dry run showing what would be extracted
+  - [ ] Useful for debugging extraction quality without persisting
 
 ---
 
@@ -1264,7 +1340,7 @@ The existing UI has functional Chat and Agent tabs:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 90% |
+| Phase 11: Memory System | In Progress | 85% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | In Progress | 15% (13.1 complete) |
 
@@ -1301,6 +1377,7 @@ The existing UI has functional Chat and Agent tabs:
 | 2026-02-13 | Profile inheritance via `extends` | Child profiles inherit parent settings with overrides; max depth 3; prevents code duplication across similar profiles |
 | 2026-02-13 | Non-restrictive memory by default | Profiles query all accessible channels unless `memoryAllowedChannels` is set; simplifies default behavior |
 | 2026-02-13 | Global prompt library with tags | Templates shared across profiles (not per-profile); tags for organization and filtering |
+| 2026-02-22 | Scheduler deferred, manual trigger priority | Background job scheduler implementation deferred; manual consolidation trigger and job monitoring UI added for debugging workflows |
 
 ### Blockers
 - ~~**Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work~~ ✅ Resolved

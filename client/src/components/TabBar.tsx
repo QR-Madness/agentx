@@ -1,16 +1,17 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Bot, 
-  Languages, 
-  MessageSquare, 
-  Wrench, 
+import {
+  LayoutDashboard,
+  Bot,
+  Languages,
+  MessageSquare,
+  Wrench,
   Settings,
-  Sparkles
+  Sparkles,
+  Database
 } from 'lucide-react';
 import '../styles/TabBar.css';
 
-export type TabId = 'dashboard' | 'agent' | 'translation' | 'chat' | 'tools' | 'settings';
+export type TabId = 'dashboard' | 'agent' | 'translation' | 'chat' | 'tools' | 'memory' | 'settings';
 
 export interface Tab {
   id: TabId;
@@ -67,5 +68,6 @@ export const TabIcons = {
   translation: <Languages size={20} />,
   chat: <MessageSquare size={20} />,
   tools: <Wrench size={20} />,
+  memory: <Database size={20} />,
   settings: <Settings size={20} />,
 };

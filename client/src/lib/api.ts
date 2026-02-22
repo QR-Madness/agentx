@@ -172,6 +172,104 @@ export interface ConfigUpdate {
   };
 }
 
+// === Memory Explorer Types ===
+
+export interface MemoryEntity {
+  id: string;
+  name: string;
+  type: string;
+  channel: string;
+  salience: number;
+  description?: string;
+  last_accessed: string;
+  access_count: number;
+  first_seen?: string;
+  aliases?: string[];
+}
+
+export interface MemoryFact {
+  id: string;
+  claim: string;
+  confidence: number;
+  source: string;
+  channel: string;
+  source_turn_id?: string;
+  created_at: string;
+  promoted_from?: string;
+  entity_ids: string[];
+}
+
+export interface MemoryStrategy {
+  id: string;
+  description: string;
+  tool_sequence: string[];
+  success_count: number;
+  failure_count: number;
+  success_rate: number;
+  channel: string;
+  last_used?: string;
+}
+
+export interface MemoryChannel {
+  name: string;
+  is_default: boolean;
+  item_counts: {
+    turns: number;
+    entities: number;
+    facts: number;
+    strategies: number;
+    goals: number;
+  };
+}
+
+export interface PaginatedResponse<T> {
+  total: number;
+  page: number;
+  limit: number;
+  has_next: boolean;
+  items?: T[];
+}
+
+export interface EntitiesResponse extends PaginatedResponse<MemoryEntity> {
+  entities: MemoryEntity[];
+}
+
+export interface FactsResponse extends PaginatedResponse<MemoryFact> {
+  facts: MemoryFact[];
+}
+
+export interface StrategiesResponse extends PaginatedResponse<MemoryStrategy> {
+  strategies: MemoryStrategy[];
+}
+
+export interface EntityGraph {
+  entity: MemoryEntity;
+  facts: MemoryFact[];
+  relationships: Array<{
+    type: string;
+    target: {
+      id: string;
+      name: string;
+      type: string;
+    };
+  }>;
+}
+
+export interface MemoryStats {
+  totals: {
+    entities: number;
+    facts: number;
+    strategies: number;
+    turns: number;
+  };
+  by_channel: Record<string, {
+    entities: number;
+    facts: number;
+    strategies: number;
+    turns: number;
+  }>;
+}
+
 // === API Client ===
 
 class ApiClient {
@@ -351,6 +449,68 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(config),
     });
+  }
+
+  // === Memory Explorer ===
+
+  async listMemoryChannels(): Promise<{ channels: MemoryChannel[] }> {
+    return this.request('/api/memory/channels');
+  }
+
+  async listMemoryEntities(params: {
+    channel?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    type?: string;
+  } = {}): Promise<EntitiesResponse> {
+    const query = new URLSearchParams();
+    if (params.channel) query.set('channel', params.channel);
+    if (params.page) query.set('page', params.page.toString());
+    if (params.limit) query.set('limit', params.limit.toString());
+    if (params.search) query.set('search', params.search);
+    if (params.type) query.set('type', params.type);
+    const queryString = query.toString();
+    return this.request(`/api/memory/entities${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getEntityGraph(entityId: string, depth?: number): Promise<EntityGraph> {
+    const query = depth ? `?depth=${depth}` : '';
+    return this.request(`/api/memory/entities/${entityId}/graph${query}`);
+  }
+
+  async listMemoryFacts(params: {
+    channel?: string;
+    page?: number;
+    limit?: number;
+    min_confidence?: number;
+    search?: string;
+  } = {}): Promise<FactsResponse> {
+    const query = new URLSearchParams();
+    if (params.channel) query.set('channel', params.channel);
+    if (params.page) query.set('page', params.page.toString());
+    if (params.limit) query.set('limit', params.limit.toString());
+    if (params.min_confidence !== undefined) query.set('min_confidence', params.min_confidence.toString());
+    if (params.search) query.set('search', params.search);
+    const queryString = query.toString();
+    return this.request(`/api/memory/facts${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async listMemoryStrategies(params: {
+    channel?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<StrategiesResponse> {
+    const query = new URLSearchParams();
+    if (params.channel) query.set('channel', params.channel);
+    if (params.page) query.set('page', params.page.toString());
+    if (params.limit) query.set('limit', params.limit.toString());
+    const queryString = query.toString();
+    return this.request(`/api/memory/strategies${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async getMemoryStats(): Promise<MemoryStats> {
+    return this.request('/api/memory/stats');
   }
 
   // === Streaming ===

@@ -388,3 +388,73 @@ class ProceduralMemory:
                 """, user_id=user_id, channel=channel)
 
             return [dict(record) for record in result]
+
+    def list_strategies(
+        self,
+        user_id: str,
+        channel: str = "_global",
+        offset: int = 0,
+        limit: int = 20
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        List strategies with pagination.
+
+        Args:
+            user_id: User ID to filter by
+            channel: Filter by channel (searches channel + _global)
+            offset: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (strategies list, total count)
+        """
+        with Neo4jConnection.session() as session:
+            # Build WHERE conditions
+            conditions = ["s.user_id = $user_id"]
+
+            # Channel filter - search both specified channel and _global
+            if channel and channel != "_global":
+                conditions.append("(s.channel = $channel OR s.channel = '_global')")
+            else:
+                conditions.append("s.channel = '_global'")
+
+            where_clause = " AND ".join(conditions)
+
+            # Get total count
+            count_result = session.run(f"""
+                MATCH (s:Strategy)
+                WHERE {where_clause}
+                RETURN count(s) AS total
+            """,
+                user_id=user_id,
+                channel=channel
+            )
+            total = count_result.single()["total"]
+
+            # Get paginated results with success rate
+            result = session.run(f"""
+                MATCH (s:Strategy)
+                WHERE {where_clause}
+                RETURN s.id AS id,
+                       s.description AS description,
+                       s.tool_sequence AS tool_sequence,
+                       s.success_count AS success_count,
+                       s.failure_count AS failure_count,
+                       CASE WHEN (s.success_count + s.failure_count) > 0
+                            THEN s.success_count * 1.0 / (s.success_count + s.failure_count)
+                            ELSE 0.5
+                       END AS success_rate,
+                       s.channel AS channel,
+                       s.last_used AS last_used
+                ORDER BY s.success_count DESC, s.last_used DESC
+                SKIP $offset
+                LIMIT $limit
+            """,
+                user_id=user_id,
+                channel=channel,
+                offset=offset,
+                limit=limit
+            )
+
+            strategies = [dict(record) for record in result]
+            return strategies, total

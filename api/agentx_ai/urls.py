@@ -31,6 +31,12 @@ urlpatterns = [
     # Memory channel management endpoints
     path("memory/channels", views.memory_channels, name="memory-channels"),
     path("memory/channels/<str:name>", views.memory_channel_delete, name="memory-channel-delete"),
+    # Memory explorer endpoints
+    path("memory/entities", views.memory_entities, name="memory-entities"),
+    path("memory/entities/<str:entity_id>/graph", views.memory_entity_graph, name="memory-entity-graph"),
+    path("memory/facts", views.memory_facts, name="memory-facts"),
+    path("memory/strategies", views.memory_strategies, name="memory-strategies"),
+    path("memory/stats", views.memory_stats, name="memory-stats"),
     # Config management endpoint
     path("config/update", views.config_update, name="config-update"),
 ]

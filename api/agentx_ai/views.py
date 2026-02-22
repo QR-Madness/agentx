@@ -959,6 +959,300 @@ def memory_channel_delete(request, name):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+# ============== Memory Explorer Endpoints ==============
+
+DEFAULT_USER_ID = "default_user"  # TODO: Replace with actual auth when multi-user is implemented
+
+
+@csrf_exempt
+def memory_entities(request):
+    """
+    GET /api/memory/entities - List entities with pagination and filtering.
+
+    Query params:
+        - channel: Filter by channel (default: "_global")
+        - page: Page number, 1-indexed (default: 1)
+        - limit: Items per page, max 100 (default: 20)
+        - search: Text search on entity name
+        - type: Filter by entity type
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        channel = request.GET.get('channel', '_global')
+        page = max(1, int(request.GET.get('page', 1)))
+        limit = min(100, max(1, int(request.GET.get('limit', 20))))
+        search = request.GET.get('search', None)
+        entity_type = request.GET.get('type', None)
+        offset = (page - 1) * limit
+
+        # Get semantic memory instance
+        from .kit.agent_memory.memory.semantic import SemanticMemory
+        semantic = SemanticMemory()
+
+        entities, total = semantic.list_entities(
+            user_id=DEFAULT_USER_ID,
+            channel=channel,
+            offset=offset,
+            limit=limit,
+            search=search,
+            entity_type=entity_type
+        )
+
+        return JsonResponse({
+            "entities": entities,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_next": (page * limit) < total
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing entities: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_entity_graph(request, entity_id):
+    """
+    GET /api/memory/entities/{id}/graph - Get entity subgraph.
+
+    Returns the entity with its connected facts and relationships.
+
+    Query params:
+        - depth: Traversal depth, max 3 (default: 2)
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        depth = min(3, max(1, int(request.GET.get('depth', 2))))
+
+        from .kit.agent_memory.memory.semantic import SemanticMemory
+        semantic = SemanticMemory()
+
+        result = semantic.get_entity_facts_and_relationships(
+            entity_id=entity_id,
+            user_id=DEFAULT_USER_ID,
+            depth=depth
+        )
+
+        if not result.get("entity"):
+            return JsonResponse({"error": "Entity not found"}, status=404)
+
+        return JsonResponse(result)
+
+    except Exception as e:
+        logger.error(f"Error getting entity graph: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_facts(request):
+    """
+    GET /api/memory/facts - List facts with pagination and filtering.
+
+    Query params:
+        - channel: Filter by channel (default: "_global")
+        - page: Page number, 1-indexed (default: 1)
+        - limit: Items per page, max 100 (default: 20)
+        - min_confidence: Minimum confidence threshold 0.0-1.0 (default: 0.0)
+        - search: Text search on fact claim
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        channel = request.GET.get('channel', '_global')
+        page = max(1, int(request.GET.get('page', 1)))
+        limit = min(100, max(1, int(request.GET.get('limit', 20))))
+        min_confidence = min(1.0, max(0.0, float(request.GET.get('min_confidence', 0.0))))
+        search = request.GET.get('search', None)
+        offset = (page - 1) * limit
+
+        from .kit.agent_memory.memory.semantic import SemanticMemory
+        semantic = SemanticMemory()
+
+        facts, total = semantic.list_facts(
+            user_id=DEFAULT_USER_ID,
+            channel=channel,
+            offset=offset,
+            limit=limit,
+            min_confidence=min_confidence,
+            search=search
+        )
+
+        return JsonResponse({
+            "facts": facts,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_next": (page * limit) < total
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing facts: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_strategies(request):
+    """
+    GET /api/memory/strategies - List strategies with pagination.
+
+    Query params:
+        - channel: Filter by channel (default: "_global")
+        - page: Page number, 1-indexed (default: 1)
+        - limit: Items per page, max 100 (default: 20)
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        channel = request.GET.get('channel', '_global')
+        page = max(1, int(request.GET.get('page', 1)))
+        limit = min(100, max(1, int(request.GET.get('limit', 20))))
+        offset = (page - 1) * limit
+
+        from .kit.agent_memory.memory.procedural import ProceduralMemory
+        procedural = ProceduralMemory()
+
+        strategies, total = procedural.list_strategies(
+            user_id=DEFAULT_USER_ID,
+            channel=channel,
+            offset=offset,
+            limit=limit
+        )
+
+        return JsonResponse({
+            "strategies": strategies,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_next": (page * limit) < total
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing strategies: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_stats(request):
+    """
+    GET /api/memory/stats - Get memory statistics.
+
+    Returns total counts and per-channel breakdowns for entities, facts,
+    strategies, and turns.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .kit.agent_memory.connections import Neo4jConnection
+
+        with Neo4jConnection.session() as session:
+            # Get totals - query each type separately since they have different structures
+            # Entity, Fact, Strategy have user_id property
+            # Turn is linked via User -> Conversation -> Turn
+            totals = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+
+            entity_count = session.run("""
+                MATCH (e:Entity {user_id: $user_id})
+                RETURN count(e) AS cnt
+            """, user_id=DEFAULT_USER_ID).single()
+            totals["entities"] = entity_count["cnt"] if entity_count else 0
+
+            fact_count = session.run("""
+                MATCH (f:Fact {user_id: $user_id})
+                RETURN count(f) AS cnt
+            """, user_id=DEFAULT_USER_ID).single()
+            totals["facts"] = fact_count["cnt"] if fact_count else 0
+
+            strategy_count = session.run("""
+                MATCH (s:Strategy {user_id: $user_id})
+                RETURN count(s) AS cnt
+            """, user_id=DEFAULT_USER_ID).single()
+            totals["strategies"] = strategy_count["cnt"] if strategy_count else 0
+
+            # Turn is linked through Conversation, not directly to user_id property
+            turn_count = session.run("""
+                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation)-[:HAS_TURN]->(t:Turn)
+                RETURN count(t) AS cnt
+            """, user_id=DEFAULT_USER_ID).single()
+            totals["turns"] = turn_count["cnt"] if turn_count else 0
+
+            # Get per-channel breakdown
+            by_channel = {}
+
+            # Query each type separately for accurate per-channel counts
+            entity_result = session.run("""
+                MATCH (e:Entity {user_id: $user_id})
+                RETURN e.channel AS channel, count(e) AS cnt
+            """, user_id=DEFAULT_USER_ID)
+            for record in entity_result:
+                ch = record["channel"] or "_global"
+                if ch not in by_channel:
+                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+                by_channel[ch]["entities"] = record["cnt"]
+
+            fact_result = session.run("""
+                MATCH (f:Fact {user_id: $user_id})
+                RETURN f.channel AS channel, count(f) AS cnt
+            """, user_id=DEFAULT_USER_ID)
+            for record in fact_result:
+                ch = record["channel"] or "_global"
+                if ch not in by_channel:
+                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+                by_channel[ch]["facts"] = record["cnt"]
+
+            strategy_result = session.run("""
+                MATCH (s:Strategy {user_id: $user_id})
+                RETURN s.channel AS channel, count(s) AS cnt
+            """, user_id=DEFAULT_USER_ID)
+            for record in strategy_result:
+                ch = record["channel"] or "_global"
+                if ch not in by_channel:
+                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+                by_channel[ch]["strategies"] = record["cnt"]
+
+            # Turn linked through Conversation
+            turn_result = session.run("""
+                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation)-[:HAS_TURN]->(t:Turn)
+                RETURN t.channel AS channel, count(t) AS cnt
+            """, user_id=DEFAULT_USER_ID)
+            for record in turn_result:
+                ch = record["channel"] or "_global"
+                if ch not in by_channel:
+                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+                by_channel[ch]["turns"] = record["cnt"]
+
+        return JsonResponse({
+            "totals": totals,
+            "by_channel": by_channel
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting memory stats: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
 # ============== Config Management Endpoint ==============
 
 @csrf_exempt

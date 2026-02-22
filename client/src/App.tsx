@@ -6,6 +6,7 @@ import { AgentTab } from './components/tabs/AgentTab';
 import { TranslationTab } from './components/tabs/TranslationTab';
 import { ChatTab } from './components/tabs/ChatTab';
 import { ToolsTab } from './components/tabs/ToolsTab';
+import { MemoryTab } from './components/tabs/MemoryTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import './App.css';
 
@@ -18,6 +19,7 @@ function AppContent() {
     { id: 'translation', label: 'Translation', icon: TabIcons.translation },
     { id: 'chat', label: 'Chat', icon: TabIcons.chat },
     { id: 'tools', label: 'Tools', icon: TabIcons.tools },
+    { id: 'memory', label: 'Memory', icon: TabIcons.memory },
     { id: 'settings', label: 'Settings', icon: TabIcons.settings },
   ];
 
@@ -41,6 +43,9 @@ function AppContent() {
         </div>
         <div style={{ display: activeTab === 'tools' ? 'block' : 'none', height: '100%' }}>
           <ToolsTab />
+        </div>
+        <div style={{ display: activeTab === 'memory' ? 'block' : 'none', height: '100%' }}>
+          <MemoryTab />
         </div>
         <div style={{ display: activeTab === 'settings' ? 'block' : 'none', height: '100%' }}>
           <SettingsTab />
