@@ -12,10 +12,10 @@ import {
   Search,
   RefreshCw,
   ChevronRight,
-  ChevronDown,
   X,
   ArrowUpRight,
-  ChevronLeft
+  ChevronLeft,
+  Clock
 } from 'lucide-react';
 import {
   useMemoryChannels,
@@ -23,12 +23,14 @@ import {
   useMemoryFacts,
   useMemoryStrategies,
   useMemoryStats,
-  useEntityGraph
+  useEntityGraph,
+  useConsolidate
 } from '../../lib/hooks';
 import { MemoryEntity, MemoryFact, MemoryStrategy } from '../../lib/api';
+import { JobsPanel } from '../JobsPanel';
 import '../../styles/MemoryTab.css';
 
-type MemorySection = 'entities' | 'facts' | 'strategies';
+type MemorySection = 'entities' | 'facts' | 'strategies' | 'jobs';
 
 // Format timestamp for display
 function formatTimestamp(timestamp: string | undefined): string {
@@ -452,8 +454,14 @@ export const MemoryTab: React.FC = () => {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [searchExpanded, setSearchExpanded] = useState(false);
 
+  const [consolidateMessage, setConsolidateMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   const { channels } = useMemoryChannels();
   const { stats, refresh: refreshStats } = useMemoryStats();
+  const { consolidate, loading: consolidating } = useConsolidate();
 
   // Compute hasNext based on current data
   const { hasNext: entitiesHasNext } = useMemoryEntities(selectedChannel, currentPage, searchQuery);
@@ -462,9 +470,11 @@ export const MemoryTab: React.FC = () => {
 
   const hasNext = useMemo(() => {
     switch (activeSection) {
-      case 'entities': return entitiesHasNext;
-      case 'facts': return factsHasNext;
-      case 'strategies': return strategiesHasNext;
+      case 'entities': return entitiesHasNext ?? false;
+      case 'facts': return factsHasNext ?? false;
+      case 'strategies': return strategiesHasNext ?? false;
+      case 'jobs': return false; // Jobs panel handles its own pagination
+      default: return false;
     }
   }, [activeSection, entitiesHasNext, factsHasNext, strategiesHasNext]);
 
@@ -472,6 +482,7 @@ export const MemoryTab: React.FC = () => {
     { id: 'entities' as const, label: 'Entities', icon: <Users size={18} /> },
     { id: 'facts' as const, label: 'Facts', icon: <FileText size={18} /> },
     { id: 'strategies' as const, label: 'Strategies', icon: <Zap size={18} /> },
+    { id: 'jobs' as const, label: 'Jobs', icon: <Clock size={18} /> },
   ];
 
   const handleSectionChange = (section: MemorySection) => {
@@ -487,6 +498,32 @@ export const MemoryTab: React.FC = () => {
     setSelectedEntityId(null);
   };
 
+  const handleConsolidate = async () => {
+    try {
+      const result = await consolidate();
+      const totalEntities = result.results?.consolidate?.entities ?? 0;
+      const totalFacts = result.results?.consolidate?.facts ?? 0;
+      const totalRelationships = result.results?.consolidate?.relationships ?? 0;
+
+      setConsolidateMessage({
+        type: 'success',
+        text: `Extracted ${totalEntities} entities, ${totalFacts} facts, ${totalRelationships} relationships`
+      });
+
+      // Refresh stats and lists
+      refreshStats();
+
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => setConsolidateMessage(null), 5000);
+    } catch (err) {
+      setConsolidateMessage({
+        type: 'error',
+        text: `Consolidation failed: ${(err as Error).message}`
+      });
+      setTimeout(() => setConsolidateMessage(null), 5000);
+    }
+  };
+
   return (
     <div className="memory-tab">
       {/* Header */}
@@ -496,11 +533,40 @@ export const MemoryTab: React.FC = () => {
             <Database className="page-icon-svg" />
             <span>Memory Explorer</span>
           </h1>
-          <button className="button-ghost" onClick={refreshStats} title="Refresh stats">
-            <RefreshCw size={18} />
-          </button>
+          <div className="header-actions">
+            <button
+              className="button-primary consolidate-button"
+              onClick={handleConsolidate}
+              disabled={consolidating}
+              title="Run consolidation to extract entities and facts from conversations"
+            >
+              {consolidating ? (
+                <><RefreshCw size={16} className="spin" /> Consolidating...</>
+              ) : (
+                <><Zap size={16} /> Consolidate Now</>
+              )}
+            </button>
+            <button className="button-ghost" onClick={refreshStats} title="Refresh stats">
+              <RefreshCw size={18} />
+            </button>
+          </div>
         </div>
         <p className="page-subtitle">Browse and inspect stored memories</p>
+
+        {/* Consolidation message */}
+        {consolidateMessage && (
+          <div className={`consolidate-message ${consolidateMessage.type}`}>
+            {consolidateMessage.type === 'success' ? (
+              <Zap size={16} />
+            ) : (
+              <X size={16} />
+            )}
+            <span>{consolidateMessage.text}</span>
+            <button className="dismiss-btn" onClick={() => setConsolidateMessage(null)}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         {/* Stats badges */}
         <div className="memory-stats-bar">
@@ -534,29 +600,36 @@ export const MemoryTab: React.FC = () => {
 
         {/* Content Area */}
         <div className="memory-content">
-          {/* Filters */}
-          <div className="memory-filters card">
-            <div className="filter-group">
-              <label>Channel</label>
-              <select
-                value={selectedChannel}
-                onChange={(e) => handleChannelChange(e.target.value)}
-              >
-                <option value="_global">_global (default)</option>
-                {channels
-                  .filter(ch => ch.name !== '_global')
-                  .map(ch => (
-                    <option key={ch.name} value={ch.name}>
-                      {ch.name}
-                    </option>
-                  ))}
-              </select>
+          {activeSection === 'jobs' ? (
+            /* Jobs Panel - has its own layout */
+            <div className="memory-list-container card">
+              <JobsPanel />
             </div>
+          ) : (
+            <>
+              {/* Filters */}
+              <div className="memory-filters card">
+                <div className="filter-group">
+                  <label>Channel</label>
+                  <select
+                    value={selectedChannel}
+                    onChange={(e) => handleChannelChange(e.target.value)}
+                  >
+                    <option value="_global">_global (default)</option>
+                    {channels
+                      .filter(ch => ch.name !== '_global')
+                      .map(ch => (
+                        <option key={ch.name} value={ch.name}>
+                          {ch.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
 
-            <div className={`filter-group search ${searchExpanded ? 'expanded' : ''}`}>
-              <button
-                className="search-toggle button-ghost"
-                onClick={() => setSearchExpanded(!searchExpanded)}
+                <div className={`filter-group search ${searchExpanded ? 'expanded' : ''}`}>
+                  <button
+                    className="search-toggle button-ghost"
+                    onClick={() => setSearchExpanded(!searchExpanded)}
               >
                 <Search size={16} />
               </button>
@@ -620,12 +693,14 @@ export const MemoryTab: React.FC = () => {
             )}
           </div>
 
-          {/* Pagination */}
-          <Pagination
-            page={currentPage}
-            hasNext={hasNext}
-            onPageChange={setCurrentPage}
-          />
+              {/* Pagination */}
+              <Pagination
+                page={currentPage}
+                hasNext={hasNext}
+                onPageChange={setCurrentPage}
+              />
+            </>
+          )}
         </div>
       </div>
 

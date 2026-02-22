@@ -1253,6 +1253,174 @@ def memory_stats(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+# =============================================================================
+# Job Monitoring Endpoints
+# =============================================================================
+
+@csrf_exempt
+def jobs_list(request):
+    """
+    GET /api/jobs - List all consolidation jobs with status.
+
+    Returns list of jobs with their current status, metrics, and configuration.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+        from dataclasses import asdict
+
+        registry = JobRegistry.get_instance()
+        jobs = registry.list_jobs()
+        worker = registry.get_worker_status()
+
+        return JsonResponse({
+            "jobs": [asdict(job) for job in jobs],
+            "worker": worker
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing jobs: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def job_detail(request, job_name):
+    """
+    GET /api/jobs/{name} - Get job details with history.
+
+    Returns job status and recent execution history.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+        from dataclasses import asdict
+
+        registry = JobRegistry.get_instance()
+        job = registry.get_job(job_name)
+
+        if not job:
+            return JsonResponse({"error": f"Unknown job: {job_name}"}, status=404)
+
+        history = registry.get_job_history(job_name, limit=10)
+
+        return JsonResponse({
+            "job": asdict(job),
+            "history": history
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting job detail: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def job_run(request, job_name):
+    """
+    POST /api/jobs/{name}/run - Manually trigger a job.
+
+    Returns execution result with metrics.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+
+        registry = JobRegistry.get_instance()
+        result = registry.run_job(job_name)
+
+        status_code = 200 if result.get("success") else 400
+        return JsonResponse(result, status=status_code)
+
+    except Exception as e:
+        logger.error(f"Error running job: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def job_toggle(request, job_name):
+    """
+    POST /api/jobs/{name}/toggle - Enable or disable a job.
+
+    Request body: {"enabled": true/false}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+
+        data = json.loads(request.body) if request.body else {}
+        enabled = data.get("enabled", True)
+
+        registry = JobRegistry.get_instance()
+
+        if enabled:
+            success = registry.enable_job(job_name)
+        else:
+            success = registry.disable_job(job_name)
+
+        if not success:
+            return JsonResponse({"error": f"Unknown job: {job_name}"}, status=404)
+
+        return JsonResponse({"enabled": enabled, "job": job_name})
+
+    except Exception as e:
+        logger.error(f"Error toggling job: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_consolidate(request):
+    """
+    POST /api/memory/consolidate - Run consolidation pipeline manually.
+
+    Request body (optional):
+        {"jobs": ["consolidate", "patterns", "promote"]}
+
+    If no jobs specified, runs: consolidate, patterns, promote.
+
+    Returns combined results from all jobs.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+
+        data = json.loads(request.body) if request.body else {}
+        jobs = data.get("jobs")  # None means default set
+
+        registry = JobRegistry.get_instance()
+        result = registry.run_consolidation_pipeline(jobs)
+
+        status_code = 200 if result.get("success") else 400
+        return JsonResponse(result, status=status_code)
+
+    except Exception as e:
+        logger.error(f"Error running consolidation: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
 # ============== Config Management Endpoint ==============
 
 @csrf_exempt

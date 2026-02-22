@@ -15,7 +15,11 @@ import {
   MemoryFact,
   MemoryStrategy,
   MemoryStats,
-  EntityGraph
+  EntityGraph,
+  JobStatus,
+  JobHistory,
+  WorkerStatus,
+  ConsolidateResult,
 } from './api';
 
 export function useHealth(includeMemory = true) {
@@ -329,4 +333,90 @@ export function useMemoryStats() {
   }, [refresh]);
 
   return { stats, loading, error, refresh };
+}
+
+// === Job Hooks ===
+
+export function useJobs() {
+  const [jobs, setJobs] = useState<JobStatus[]>([]);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.listJobs();
+      setJobs(result.jobs);
+      setWorker(result.worker);
+    } catch (err) {
+      setError(err as ApiError);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { jobs, worker, loading, error, refresh };
+}
+
+export function useJob(name: string) {
+  const [job, setJob] = useState<JobStatus | null>(null);
+  const [history, setHistory] = useState<JobHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!name) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.getJob(name);
+      setJob(result.job);
+      setHistory(result.history);
+    } catch (err) {
+      setError(err as ApiError);
+    } finally {
+      setLoading(false);
+    }
+  }, [name]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { job, history, loading, error, refresh };
+}
+
+export function useConsolidate() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ConsolidateResult | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const consolidate = useCallback(async (jobs?: string[]) => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.consolidateNow(jobs);
+      setResult(res);
+      return res;
+    } catch (err) {
+      setError(err as ApiError);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setResult(null);
+    setError(null);
+  }, []);
+
+  return { consolidate, loading, result, error, reset };
 }

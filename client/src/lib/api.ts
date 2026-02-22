@@ -270,6 +270,64 @@ export interface MemoryStats {
   }>;
 }
 
+// === Job Types ===
+
+export interface JobStatus {
+  name: string;
+  description: string;
+  interval_minutes: number;
+  status: 'idle' | 'running' | 'disabled';
+  last_run: string | null;
+  last_success: string | null;
+  last_error: string | null;
+  run_count: number;
+  success_count: number;
+  failure_count: number;
+  avg_duration_ms: number;
+  success_rate: number;
+}
+
+export interface JobHistory {
+  timestamp: string;
+  duration_ms: number;
+  success: boolean;
+  items_processed: number;
+  metrics: Record<string, number>;
+  error?: string;
+}
+
+export interface WorkerStatus {
+  id: string;
+  status: string;
+  uptime_seconds: number;
+  jobs_run: number;
+  last_heartbeat: string;
+}
+
+export interface JobsResponse {
+  jobs: JobStatus[];
+  worker: WorkerStatus | null;
+}
+
+export interface JobDetailResponse {
+  job: JobStatus;
+  history: JobHistory[];
+}
+
+export interface JobRunResult {
+  success: boolean;
+  duration_ms: number;
+  result: Record<string, number>;
+  error?: string;
+}
+
+export interface ConsolidateResult {
+  success: boolean;
+  duration_ms: number;
+  results: Record<string, Record<string, number>>;
+  errors: string[];
+}
+
 // === API Client ===
 
 class ApiClient {
@@ -511,6 +569,36 @@ class ApiClient {
 
   async getMemoryStats(): Promise<MemoryStats> {
     return this.request('/api/memory/stats');
+  }
+
+  // === Jobs ===
+
+  async listJobs(): Promise<JobsResponse> {
+    return this.request('/api/jobs');
+  }
+
+  async getJob(name: string): Promise<JobDetailResponse> {
+    return this.request(`/api/jobs/${encodeURIComponent(name)}`);
+  }
+
+  async runJob(name: string): Promise<JobRunResult> {
+    return this.request(`/api/jobs/${encodeURIComponent(name)}/run`, {
+      method: 'POST',
+    });
+  }
+
+  async toggleJob(name: string, enabled: boolean): Promise<{ enabled: boolean; job: string }> {
+    return this.request(`/api/jobs/${encodeURIComponent(name)}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  async consolidateNow(jobs?: string[]): Promise<ConsolidateResult> {
+    return this.request('/api/memory/consolidate', {
+      method: 'POST',
+      body: JSON.stringify(jobs ? { jobs } : {}),
+    });
   }
 
   // === Streaming ===

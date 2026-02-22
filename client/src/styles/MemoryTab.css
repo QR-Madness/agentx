@@ -17,7 +17,72 @@
 .header-title-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Consolidate Button */
+.consolidate-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.consolidate-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Consolidate Message */
+.consolidate-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: 12px;
+  animation: slideIn 0.2s ease;
+}
+
+.consolidate-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--status-online);
+}
+
+.consolidate-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--status-error);
+}
+
+.consolidate-message .dismiss-btn {
+  margin-left: auto;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.consolidate-message .dismiss-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .memory-header .page-title {
@@ -706,4 +771,301 @@
     width: 100%;
     max-width: 400px;
   }
+}
+
+/* ============================================
+   Jobs Panel Styles
+   ============================================ */
+
+.jobs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.jobs-panel-loading,
+.jobs-panel-error,
+.jobs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--text-secondary);
+  gap: 12px;
+}
+
+.jobs-panel-error {
+  color: var(--status-error);
+}
+
+.jobs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.jobs-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Worker Status */
+.worker-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.worker-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-online);
+}
+
+.worker-indicator.stopped {
+  background: var(--status-error);
+}
+
+.worker-uptime,
+.worker-jobs-run {
+  color: var(--text-muted);
+}
+
+/* Jobs List Header */
+.jobs-list-header {
+  display: grid;
+  grid-template-columns: 24px 2fr 100px 100px 80px 80px;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Job Row */
+.job-row {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.job-row:last-child {
+  border-bottom: none;
+}
+
+.job-summary {
+  display: grid;
+  grid-template-columns: 24px 2fr 100px 100px 80px 80px;
+  gap: 12px;
+  padding: 12px;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.job-summary:hover {
+  background: var(--bg-hover);
+}
+
+.job-expand-icon {
+  color: var(--text-muted);
+}
+
+.job-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.job-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  width: fit-content;
+}
+
+.job-status-badge.idle {
+  background: rgba(107, 114, 128, 0.15);
+  color: var(--text-secondary);
+}
+
+.job-status-badge.running {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--cosmic-cyan);
+}
+
+.job-status-badge.disabled {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--status-warning);
+}
+
+.job-status-icon.running {
+  color: var(--cosmic-cyan);
+}
+
+.job-status-icon.disabled {
+  color: var(--status-warning);
+}
+
+.job-last-run,
+.job-success-rate {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.job-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.job-action-btn {
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.job-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Job Details */
+.job-details {
+  padding: 16px 16px 16px 36px;
+  background: var(--bg-void);
+  border-top: 1px solid var(--border-color);
+}
+
+.job-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.job-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.job-metric {
+  text-align: center;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.job-metric .metric-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: block;
+}
+
+.job-metric .metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.job-info-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.job-info-row .info-label {
+  color: var(--text-muted);
+}
+
+.job-info-row .info-value {
+  color: var(--text-secondary);
+}
+
+.job-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: var(--status-error);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* Job History */
+.job-history h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.history-icon.success {
+  color: var(--status-online);
+}
+
+.history-icon.failure {
+  color: var(--status-error);
+}
+
+.history-time {
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.history-duration {
+  color: var(--text-muted);
+  min-width: 60px;
+}
+
+.history-items {
+  color: var(--text-secondary);
+}
+
+.history-error {
+  color: var(--status-error);
+  font-size: 11px;
+  margin-left: auto;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
