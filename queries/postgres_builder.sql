@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS conversation_logs (
     model VARCHAR(100),
     channel VARCHAR(100) NOT NULL DEFAULT '_global',
     metadata JSONB DEFAULT '{}',
-    embedding vector(1536),  -- Adjust dimension as needed
+    embedding vector(768),  -- nomic-embed-text-v1.5 uses 768 dims (OpenAI uses 1536)
 
     UNIQUE(conversation_id, turn_index)
 );
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS memory_timeline (
     neo4j_node_id VARCHAR(100),
     event_time TIMESTAMPTZ NOT NULL,
     summary TEXT,
-    embedding vector(1536),
+    embedding vector(768),  -- nomic-embed-text-v1.5 uses 768 dims
     importance_score FLOAT DEFAULT 0.5,
     access_count INTEGER DEFAULT 0,
     last_accessed TIMESTAMPTZ,

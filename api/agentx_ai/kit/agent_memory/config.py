@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     connection_timeout: int = 5
 
     # Embeddings
-    embedding_provider: str = "openai"  # or "local"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
+    embedding_provider: str = "local"  # "openai" or "local"
+    embedding_model: str = "text-embedding-3-small"  # for OpenAI
+    embedding_dimensions: int = 768  # 768 for local (nomic), 1536 for OpenAI
     openai_api_key: str = ""
 
     # Local embedding model (if using local)
