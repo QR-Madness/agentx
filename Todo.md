@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework  
 **Status**: Pre-prototype  
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23
 
 ---
 
@@ -899,6 +899,246 @@ The memory system is **architecturally complete but entirely disconnected**:
 
 ---
 
+## Phase 11.12: LLM-Enhanced Consolidation
+
+> **Priority**: HIGH
+> **Goal**: Use LLM providers for intelligent consolidation stages
+> **Design Principle**: Route through existing provider system (not local model loading in API)
+
+### Current State Assessment
+
+The extraction system uses `ExtractionService` which routes through providers but:
+- Uses a small local model by default (`llama-3.2-1b-instruct`)
+- No pre-filtering of irrelevant turns
+- Weak entity-fact linking (string matching only within same batch)
+- No contradiction detection or fact correction
+- Extracted confidence values are arbitrary
+
+### 11.12.1 Pre-Extraction Relevance Filter
+
+> Skip extraction on low-value turns ("thanks", "okay", "got it")
+
+- [ ] Add `filter_relevant_turns()` to consolidation pipeline:
+  - [ ] LLM prompt: "Does this text contain memorable information? YES/NO"
+  - [ ] Skip extraction if NO (don't waste tokens on "thanks")
+  - [ ] Use fast/cheap provider (local LM Studio or Haiku)
+  - [ ] Configurable: `relevance_filter_enabled`, `relevance_provider`
+- [ ] Add heuristic pre-filter (before LLM):
+  - [ ] Skip turns < 10 characters
+  - [ ] Skip turns matching patterns: "ok", "thanks", "got it", "sure", etc.
+- [ ] Metrics: track skip rate, extraction savings
+
+### 11.12.2 Enhanced Fact Extraction + Condensation
+
+> Better extraction prompts with condensation instructions
+
+- [ ] Improve extraction prompt in `ExtractionService`:
+  - [ ] Instruct to extract only user-stated facts (not inferences)
+  - [ ] Condense verbose statements to atomic facts
+  - [ ] Example: "My birthday is on March 15th, I was born in 1990" → two facts
+  - [ ] Require confidence justification
+- [ ] Add extraction quality config:
+  - [ ] `extraction_provider`: which provider to use (lmstudio, anthropic, openai)
+  - [ ] `extraction_model`: specific model ID
+  - [ ] `extraction_condensation_enabled`: true/false
+- [ ] Batch extraction:
+  - [ ] Combine multiple turns into single extraction call
+  - [ ] Reduces API calls, provides more context
+
+### 11.12.3 Entity Matching via Embedding Search
+
+> Link facts to existing entities using embeddings, not just string matching
+
+- [ ] Add `link_facts_to_entities()` consolidation job:
+  - [ ] Find facts with no entity links
+  - [ ] Extract entity mentions from fact claim text
+  - [ ] Search existing entities by embedding similarity
+  - [ ] Create `ABOUT` relationships for matches above threshold
+- [ ] Embedding-based entity resolution:
+  - [ ] Embed entity names and fact claims
+  - [ ] Find similar entities using vector search
+  - [ ] Handle aliases ("John Smith" = "John" = "Mr. Smith")
+- [ ] Optional LLM disambiguation:
+  - [ ] When multiple entities match, ask LLM to choose
+  - [ ] "Does 'John' in this fact refer to Entity A or Entity B?"
+
+### 11.12.4 Contradiction Detection
+
+> Check new facts against existing facts for conflicts
+
+- [ ] Add `check_contradictions()` to extraction pipeline:
+  - [ ] Before storing new fact, retrieve similar existing facts
+  - [ ] LLM prompt: "Do these facts contradict each other?"
+  - [ ] If contradiction detected:
+    - [ ] Flag both facts for review
+    - [ ] Lower confidence on older fact
+    - [ ] Or supersede older fact (mark as outdated)
+- [ ] Contradiction resolution strategies:
+  - [ ] `keep_both`: Store both, let retrieval sort it out
+  - [ ] `prefer_recent`: New fact supersedes old
+  - [ ] `flag_review`: Mark for manual review
+  - [ ] `ask_user`: Present contradiction to user for resolution
+- [ ] Provider routing: Use reasoning-capable model (Haiku/Sonnet)
+
+### 11.12.5 User Correction Handling
+
+> Detect and apply user corrections to stored facts
+
+- [ ] Add correction detection to turn processing:
+  - [ ] Pattern matching: "actually...", "no, I meant...", "that's wrong..."
+  - [ ] LLM classification: "Is this a correction of previous information?"
+- [ ] Correction application:
+  - [ ] Find the fact being corrected (embedding search + LLM confirmation)
+  - [ ] Create superseding fact with higher confidence
+  - [ ] Mark old fact as `superseded_by: new_fact_id`
+  - [ ] Log correction in audit trail
+- [ ] Correction types:
+  - [ ] Value change: "My birthday is March 16, not 15"
+  - [ ] Negation: "I don't actually like coffee"
+  - [ ] Clarification: "When I said X, I meant Y"
+
+### 11.12.6 Confidence Calibration
+
+> Make confidence scores meaningful and consistent
+
+- [ ] Define confidence scale:
+  - [ ] 0.9+: Explicitly stated by user, unambiguous
+  - [ ] 0.7-0.9: Clearly implied, high certainty
+  - [ ] 0.5-0.7: Inferred, moderate certainty
+  - [ ] <0.5: Speculative, low certainty
+- [ ] Calibration factors:
+  - [ ] Source: user-stated > extracted > inferred
+  - [ ] Recency: newer facts slightly higher confidence
+  - [ ] Corroboration: mentioned multiple times → boost
+  - [ ] Contradiction: conflicting facts → lower both
+- [ ] Add confidence decay over time (already in `apply_memory_decay`)
+
+### 11.12.7 Reinforcement Signal
+
+> Boost memories that prove useful in retrieval
+
+- [ ] Track memory usage in chat:
+  - [ ] When memory is retrieved and used in response
+  - [ ] When user confirms information was helpful
+  - [ ] When conversation continues successfully after memory injection
+- [ ] Apply reinforcement:
+  - [ ] Increment `access_count` (already done)
+  - [ ] Boost `salience` based on usage pattern
+  - [ ] Increase retrieval ranking weight for frequently-used memories
+- [ ] Negative reinforcement:
+  - [ ] If user corrects a fact, lower its weight
+  - [ ] If retrieved memory seems irrelevant, decay faster
+
+### 11.12.8 Source Attribution
+
+> Link facts back to original turns
+
+- [ ] Store `source_turn_id` on all extracted facts
+- [ ] Store `source_conversation_id` for context
+- [ ] UI: "Where did I learn this?" → show original conversation
+- [ ] Enable fact provenance tracking
+
+### 11.12.9 Temporal Reasoning
+
+> Track "as of" dates on facts
+
+- [ ] Add temporal fields to Fact model:
+  - [ ] `valid_from`: when fact became true
+  - [ ] `valid_until`: when fact stopped being true (if known)
+  - [ ] `temporal_qualifier`: "as of 2024", "currently", "used to"
+- [ ] Extract temporal context from text:
+  - [ ] "I currently work at X" → valid_from=now
+  - [ ] "I used to live in Y" → valid_until=sometime
+  - [ ] "As of January, I..." → valid_from=January
+- [ ] Retrieval: prefer current facts over outdated ones
+
+### Provider Routing Strategy
+
+| Stage | Recommended Provider | Rationale |
+|-------|---------------------|-----------|
+| Relevance filter | lmstudio (local) | Fast, cheap, simple YES/NO |
+| Fact extraction | lmstudio or haiku | Structured output, medium complexity |
+| Entity matching | Embeddings only | No LLM needed for most cases |
+| Contradiction check | anthropic/haiku | Requires reasoning |
+| User correction | anthropic/haiku | Requires context understanding |
+| Confidence calibration | N/A | Heuristic, no LLM needed |
+
+### Configuration (Backend) ✅
+
+Added to `MemoryConfig` (config.py):
+```python
+# Extraction (main fact/entity extraction)
+extraction_enabled: bool = True
+extraction_provider: str = "lmstudio"
+extraction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+extraction_condense_facts: bool = True
+
+# Relevance Filter
+relevance_filter_enabled: bool = True
+relevance_filter_provider: str = "lmstudio"
+relevance_filter_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+
+# Contradiction Detection
+contradiction_detection_enabled: bool = False
+contradiction_provider: str = "lmstudio"
+contradiction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+
+# User Correction Handling
+correction_detection_enabled: bool = False
+correction_provider: str = "lmstudio"
+correction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+
+# Entity Linking
+entity_linking_enabled: bool = True
+entity_linking_similarity_threshold: float = 0.75
+entity_linking_use_llm_disambiguation: bool = False
+entity_linking_provider: str = "lmstudio"
+entity_linking_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+```
+
+### 11.12.10 Consolidation Settings UI (Client)
+
+> Add settings panel for consolidation LLM configuration
+
+- [ ] Create Consolidation Settings section in Settings tab (under Memory):
+  - [ ] **Extraction Settings**:
+    - [ ] Enable/disable toggle
+    - [ ] Provider dropdown (lmstudio, anthropic, openai)
+    - [ ] Model text input (or dropdown if we can fetch available models)
+    - [ ] Temperature slider (0.0-1.0)
+    - [ ] Condense facts toggle
+  - [ ] **Relevance Filter Settings**:
+    - [ ] Enable/disable toggle
+    - [ ] Provider dropdown
+    - [ ] Model input
+  - [ ] **Contradiction Detection Settings**:
+    - [ ] Enable/disable toggle (default off)
+    - [ ] Provider dropdown
+    - [ ] Model input
+    - [ ] Info text: "Requires reasoning model (Haiku recommended)"
+  - [ ] **User Correction Settings**:
+    - [ ] Enable/disable toggle (default off)
+    - [ ] Provider dropdown
+    - [ ] Model input
+  - [ ] **Entity Linking Settings**:
+    - [ ] Enable/disable toggle
+    - [ ] Similarity threshold slider (0.5-1.0)
+    - [ ] Use LLM disambiguation toggle
+    - [ ] Provider dropdown (only shown if disambiguation enabled)
+- [ ] Add API endpoints for consolidation config:
+  - [ ] `GET /api/memory/config` — get current consolidation settings
+  - [ ] `PUT /api/memory/config` — update consolidation settings
+  - [ ] Settings persist to `.env` or separate config file
+- [ ] Add "Provider Presets" quick-switch:
+  - [ ] "Local (Free)" — all stages use lmstudio
+  - [ ] "Quality (API)" — extraction uses lmstudio, reasoning uses anthropic
+  - [ ] "Full Cloud" — all stages use anthropic
+- [ ] Validation:
+  - [ ] Warn if anthropic selected but no API key configured
+  - [ ] Test connection button per provider
+
+---
+
 ## Phase 12: Documentation
 
 > **Priority**: LOW
@@ -1336,7 +1576,8 @@ The existing UI has functional Chat and Agent tabs:
 | Phase 8: Client Updates | ✅ Complete | 100% |
 | Phase 9: Security | ✅ Complete | 100% (Foundation) |
 | Phase 10: Testing (Core) | ✅ Complete | 100% |
-| Phase 11: Memory System | In Progress | 95% |
+| Phase 11: Memory System | In Progress | 90% |
+| Phase 11.12: LLM-Enhanced Consolidation | Not Started | 0% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | In Progress | 15% (13.1 complete) |
 
@@ -1374,6 +1615,9 @@ The existing UI has functional Chat and Agent tabs:
 | 2026-02-13 | Non-restrictive memory by default | Profiles query all accessible channels unless `memoryAllowedChannels` is set; simplifies default behavior |
 | 2026-02-13 | Global prompt library with tags | Templates shared across profiles (not per-profile); tags for organization and filtering |
 | 2026-02-22 | Scheduler deferred, manual trigger priority | Background job scheduler implementation deferred; manual consolidation trigger and job monitoring UI added for debugging workflows |
+| 2026-02-23 | LLM providers for consolidation stages | Route consolidation LLM calls through existing provider system (not local model loading); fast/cheap tasks to local, reasoning tasks to Haiku/Sonnet |
+| 2026-02-23 | Filter consolidation to user turns only | Extract facts from user messages only, not agent responses; prevents storing agent's verbose restatements |
+| 2026-02-23 | Default memory channel is _default, not _global | New facts go to _default first; _global populated via promotion after facts prove valuable |
 
 ### Blockers
 - ~~**Memory activation blocked on**: Database schema initialization (11.1) must complete before any other 11.x work~~ ✅ Resolved

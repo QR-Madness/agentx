@@ -61,13 +61,49 @@ class Settings(BaseSettings):
     retrieval_cache_ttl_seconds: int = 60
     retrieval_cache_key_prefix: str = "retrieval_cache"
 
-    # Extraction settings
+    # ===========================================
+    # Consolidation LLM Settings
+    # ===========================================
+    # All consolidation stages can be configured independently.
+    # Use "lmstudio" for local/free, "anthropic" for quality.
+    # Model IDs should match your provider's model names.
+
+    # --- Extraction (main fact/entity extraction) ---
     extraction_enabled: bool = True
-    extraction_model: str = "lmstudio-community/llama-3.2-1b-instruct"  # Use local LM Studio
-    extraction_provider: str = "lmstudio"  # or "anthropic" if API key configured
+    extraction_provider: str = "lmstudio"  # "lmstudio", "anthropic", "openai"
+    extraction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
     extraction_temperature: float = 0.3
     extraction_max_tokens: int = 2000
     extraction_timeout: float = 30.0
+    extraction_condense_facts: bool = True  # Condense verbose statements to atomic facts
+
+    # --- Relevance Filter (skip "thanks", "ok" turns) ---
+    relevance_filter_enabled: bool = True
+    relevance_filter_provider: str = "lmstudio"
+    relevance_filter_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+    relevance_filter_temperature: float = 0.1  # Low temp for consistent YES/NO
+    relevance_filter_max_tokens: int = 10  # Only need YES or NO
+
+    # --- Contradiction Detection (check new facts vs existing) ---
+    contradiction_detection_enabled: bool = False  # Off by default until stable
+    contradiction_provider: str = "lmstudio"
+    contradiction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+    contradiction_temperature: float = 0.2
+    contradiction_max_tokens: int = 500
+
+    # --- User Correction Handling (detect "actually...", "no I meant...") ---
+    correction_detection_enabled: bool = False  # Off by default until stable
+    correction_provider: str = "lmstudio"
+    correction_model: str = "lmstudio-community/llama-3.2-1b-instruct"
+    correction_temperature: float = 0.2
+    correction_max_tokens: int = 500
+
+    # --- Entity Linking (match facts to existing entities) ---
+    entity_linking_enabled: bool = True
+    entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity
+    entity_linking_use_llm_disambiguation: bool = False  # Use LLM when ambiguous
+    entity_linking_provider: str = "lmstudio"
+    entity_linking_model: str = "lmstudio-community/llama-3.2-1b-instruct"
 
     # Entity types to recognize
     entity_types: list = [
