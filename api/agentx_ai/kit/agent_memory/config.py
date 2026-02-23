@@ -63,8 +63,8 @@ class Settings(BaseSettings):
 
     # Extraction settings
     extraction_enabled: bool = True
-    extraction_model: str = "claude-3-5-haiku-latest"
-    extraction_provider: str = "anthropic"
+    extraction_model: str = "lmstudio-community/llama-3.2-1b-instruct"  # Use local LM Studio
+    extraction_provider: str = "lmstudio"  # or "anthropic" if API key configured
     extraction_temperature: float = 0.3
     extraction_max_tokens: int = 2000
     extraction_timeout: float = 30.0
