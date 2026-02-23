@@ -42,6 +42,18 @@ interface Message {
   model?: string;
 }
 
+// Strip thinking tags from content (server also does this, but needed for streamed content)
+function stripThinkingTags(content: string): string {
+  return content
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
+    .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
+    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 interface ProviderModels {
   provider: string;
   status: string;
@@ -270,10 +282,12 @@ export const ChatTab: React.FC = () => {
             setIsTyping(false);
             
             // Add finalized message (only if we have content)
-            if (finalContent) {
+            // Strip thinking tags from content (they're extracted separately)
+            const cleanContent = stripThinkingTags(finalContent);
+            if (cleanContent) {
               setMessages(msgs => [...msgs, {
                 id: messageId,
-                content: finalContent,
+                content: cleanContent,
                 sender: 'assistant' as const,
                 timestamp: new Date(),
                 thinking: data.thinking,
