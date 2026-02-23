@@ -451,7 +451,8 @@ def agent_chat_stream(request):
         from .prompts import get_prompt_manager
         from .providers.base import Message, MessageRole
 
-        task_id = str(uuid.uuid4())[:8]
+        task_id = str(uuid.uuid4())[:8]  # Short ID for UI display
+        full_conversation_id = str(uuid.uuid4())  # Full UUID for database storage
         start_time = time.time()
 
         # Get or create agent with settings
@@ -509,10 +510,11 @@ def agent_chat_stream(request):
             total_time = (time.time() - start_time) * 1000
 
             # Store turns in memory if enabled
+            # Use session_id if provided, otherwise use full UUID for database compatibility
+            conv_id = session_id or full_conversation_id
             if use_memory and agent.memory:
                 try:
                     from .kit.agent_memory.models import Turn
-                    conv_id = session_id or task_id
 
                     # Store user turn
                     user_turn = Turn(
@@ -538,8 +540,8 @@ def agent_chat_stream(request):
                 except Exception as mem_err:
                     logger.warning(f"Failed to store turns in memory: {mem_err}")
 
-            # Send completion event
-            yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': session_id or task_id})}\n\n"
+            # Send completion event - return full conversation_id as session_id for continuity
+            yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': conv_id})}\n\n"
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
