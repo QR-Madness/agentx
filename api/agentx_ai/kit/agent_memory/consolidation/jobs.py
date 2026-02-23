@@ -109,7 +109,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             ORDER BY c.started_at DESC
             LIMIT 10
             RETURN c.id AS conversation_id,
-                   coalesce(u.id, 'system') AS user_id,
+                   coalesce(u.id, 'default') AS user_id,
                    coalesce(c.channel, '_default') AS channel,
                    [t IN turns | {content: t.content}] AS turns
         """)

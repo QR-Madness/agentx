@@ -265,24 +265,24 @@ Reply with only YES or NO.'''
         entity_types = ", ".join(self.settings.entity_types)
         relationship_types = ", ".join(self.settings.relationship_types)
         condense_instruction = """
-- CONDENSE compound statements into SEPARATE atomic facts (one claim per fact)
-- If user mentions multiple things, create multiple facts""" if self.settings.extraction_condense_facts else ""
+- CONDENSE compound statements into SEPARATE atomic facts
+- If user mentions N distinct things, extract N separate facts""" if self.settings.extraction_condense_facts else ""
 
-        return f"""You are an information extraction system. Extract personal facts the USER explicitly stated.
+        return f"""You are an information extraction system. Extract entities and facts from what the USER stated.
+
+EXTRACT BOTH:
+1. ENTITIES: People, places, organizations, technologies, products mentioned by name
+2. FACTS: Personal information, preferences, claims the user made about themselves
 
 RULES:
-1. ONLY extract what the user said about themselves, preferences, or their world
-2. IGNORE assistant/AI responses completely
-3. IGNORE generic facts or common knowledge
-4. Each fact must be personal and specific{condense_instruction}
-
-CONFIDENCE:
-- 0.9-1.0: Explicitly stated
-- 0.7-0.9: Clearly implied
-- Below 0.7: Do not extract
+- ONLY extract what the user explicitly said
+- IGNORE assistant/AI responses completely
+- IGNORE generic/common knowledge{condense_instruction}
 
 ENTITY TYPES: {entity_types}
 RELATIONSHIP TYPES: {relationship_types}
+
+CONFIDENCE: 0.9+ explicit, 0.7-0.9 implied, below 0.7 don't extract
 
 Return ONLY valid JSON. No markdown, no code fences, no explanation."""
 
@@ -298,30 +298,31 @@ Return ONLY valid JSON. No markdown, no code fences, no explanation."""
             )
             text = text[:max_chars] + "\n...[truncated]"
 
-        return f'''Analyze what the USER said in this text. Extract any personal facts they stated.
+        return f'''Extract entities and facts from what the USER said:
 
 TEXT:
 """
 {text}
 """
 
-OUTPUT FORMAT (JSON only, no other text):
+JSON FORMAT:
 {{
   "entities": [
-    {{"name": "<entity name>", "type": "<type>", "description": "<brief>", "confidence": <0.0-1.0>}}
+    {{"name": "ExactName", "type": "Person|Organization|Location|Technology|Product|Event", "description": "brief desc", "confidence": 0.9}}
   ],
   "facts": [
-    {{"claim": "<what user stated>", "confidence": <0.0-1.0>, "entity_names": ["<related entity names>"]}}
+    {{"claim": "User prefers/uses/works at/likes X", "confidence": 0.9, "entity_names": ["ExactName"]}}
   ],
   "relationships": [
-    {{"source": "<entity1>", "relation": "<type>", "target": "<entity2>", "confidence": <0.0-1.0>}}
+    {{"source": "Entity1", "relation": "works_at|knows|uses|prefers", "target": "Entity2", "confidence": 0.9}}
   ]
 }}
 
-IMPORTANT:
-- ONLY extract what the user explicitly stated
-- Start claims with "User..." (e.g., "User prefers...", "User works at...")
-- If nothing to extract, return empty arrays: {{"entities": [], "facts": [], "relationships": []}}'''
+INSTRUCTIONS:
+- Extract ALL named entities (people, places, companies, tools, products)
+- Extract ALL distinct facts (one claim per fact, multiple facts if user said multiple things)
+- Link facts to entities via entity_names array
+- Return empty arrays if nothing to extract'''
 
     def _parse_extraction_response(self, content: str) -> ExtractionResult:
         """
