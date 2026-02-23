@@ -1015,7 +1015,7 @@ def memory_entities(request):
         return JsonResponse({'error': 'GET only'}, status=405)
 
     try:
-        channel = request.GET.get('channel', '_global')
+        channel = request.GET.get('channel', '_all')
         page = max(1, int(request.GET.get('page', 1)))
         limit = min(100, max(1, int(request.GET.get('limit', 20))))
         search = request.GET.get('search', None)
@@ -1105,7 +1105,7 @@ def memory_facts(request):
         return JsonResponse({'error': 'GET only'}, status=405)
 
     try:
-        channel = request.GET.get('channel', '_global')
+        channel = request.GET.get('channel', '_all')
         page = max(1, int(request.GET.get('page', 1)))
         limit = min(100, max(1, int(request.GET.get('limit', 20))))
         min_confidence = min(1.0, max(0.0, float(request.GET.get('min_confidence', 0.0))))
@@ -1154,7 +1154,7 @@ def memory_strategies(request):
         return JsonResponse({'error': 'GET only'}, status=405)
 
     try:
-        channel = request.GET.get('channel', '_global')
+        channel = request.GET.get('channel', '_all')
         page = max(1, int(request.GET.get('page', 1)))
         limit = min(100, max(1, int(request.GET.get('limit', 20))))
         offset = (page - 1) * limit

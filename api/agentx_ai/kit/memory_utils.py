@@ -23,17 +23,17 @@ _memory_error: Optional[Exception] = None
 HEALTH_CHECK_TIMEOUT = 5
 
 
-def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_global"):
+def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_default"):
     """
     Get or create an AgentMemory instance.
-    
+
     This function lazily initializes the memory system on first call.
     If database connections fail, it logs the error and returns None.
-    
+
     Args:
         user_id: User identifier for memory isolation
         conversation_id: Optional conversation context
-        channel: Memory channel for scoping (default "_global")
+        channel: Memory channel for scoping (default "_default")
         
     Returns:
         AgentMemory instance or None if initialization fails

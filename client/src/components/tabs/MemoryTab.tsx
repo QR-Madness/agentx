@@ -18,7 +18,6 @@ import {
   Clock
 } from 'lucide-react';
 import {
-  useMemoryChannels,
   useMemoryEntities,
   useMemoryFacts,
   useMemoryStrategies,
@@ -447,7 +446,6 @@ function Pagination({
 // Main Memory Tab Component
 export const MemoryTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<MemorySection>('entities');
-  const [selectedChannel, setSelectedChannel] = useState('_global');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [confidenceFilter, setConfidenceFilter] = useState(0);
@@ -458,15 +456,13 @@ export const MemoryTab: React.FC = () => {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-
-  const { channels } = useMemoryChannels();
   const { stats, loading: statsLoading, refresh: refreshStats } = useMemoryStats();
   const { consolidate, loading: consolidating } = useConsolidate();
 
-  // Compute hasNext based on current data
-  const { hasNext: entitiesHasNext } = useMemoryEntities(selectedChannel, currentPage, searchQuery);
-  const { hasNext: factsHasNext } = useMemoryFacts(selectedChannel, currentPage, confidenceFilter / 100, searchQuery);
-  const { hasNext: strategiesHasNext } = useMemoryStrategies(selectedChannel, currentPage);
+  // Compute hasNext based on current data (no channel filter = show all)
+  const { hasNext: entitiesHasNext } = useMemoryEntities('_all', currentPage, searchQuery);
+  const { hasNext: factsHasNext } = useMemoryFacts('_all', currentPage, confidenceFilter / 100, searchQuery);
+  const { hasNext: strategiesHasNext } = useMemoryStrategies('_all', currentPage);
 
   const hasNext = useMemo(() => {
     switch (activeSection) {
@@ -490,12 +486,6 @@ export const MemoryTab: React.FC = () => {
     setCurrentPage(1);
     setSelectedEntityId(null);
     setSearchQuery('');
-  };
-
-  const handleChannelChange = (channel: string) => {
-    setSelectedChannel(channel);
-    setCurrentPage(1);
-    setSelectedEntityId(null);
   };
 
   const handleConsolidate = async () => {
@@ -614,23 +604,6 @@ export const MemoryTab: React.FC = () => {
             <>
               {/* Filters */}
               <div className="memory-filters card">
-                <div className="filter-group">
-                  <label>Channel</label>
-                  <select
-                    value={selectedChannel}
-                    onChange={(e) => handleChannelChange(e.target.value)}
-                  >
-                    <option value="_global">_global (default)</option>
-                    {channels
-                      .filter(ch => ch.name !== '_global')
-                      .map(ch => (
-                        <option key={ch.name} value={ch.name}>
-                          {ch.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
                 <div className={`filter-group search ${searchExpanded ? 'expanded' : ''}`}>
                   <button
                     className="search-toggle button-ghost"
@@ -673,7 +646,7 @@ export const MemoryTab: React.FC = () => {
           <div className="memory-list-container card">
             {activeSection === 'entities' && (
               <EntityListView
-                channel={selectedChannel}
+                channel="_all"
                 page={currentPage}
                 search={searchQuery}
                 onSelectEntity={setSelectedEntityId}
@@ -683,7 +656,7 @@ export const MemoryTab: React.FC = () => {
 
             {activeSection === 'facts' && (
               <FactListView
-                channel={selectedChannel}
+                channel="_all"
                 page={currentPage}
                 search={searchQuery}
                 minConfidence={confidenceFilter / 100}
@@ -692,7 +665,7 @@ export const MemoryTab: React.FC = () => {
 
             {activeSection === 'strategies' && (
               <StrategyListView
-                channel={selectedChannel}
+                channel="_all"
                 page={currentPage}
               />
             )}

@@ -103,7 +103,7 @@ class AgentConfig:
     prompt_profile_id: Optional[str] = None  # Use default if None
     
     # Memory settings
-    memory_channel: str = "_global"  # Channel for memory scoping
+    memory_channel: str = "_default"  # Channel for memory scoping (use _default, not _global)
     memory_top_k: int = 10  # Number of memories to retrieve
     memory_time_window_hours: Optional[int] = None  # Time window filter for retrieval
 

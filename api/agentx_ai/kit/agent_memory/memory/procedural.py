@@ -412,8 +412,10 @@ class ProceduralMemory:
             # Build WHERE conditions
             conditions = ["s.user_id = $user_id"]
 
-            # Channel filter - search both specified channel and _global
-            if channel and channel != "_global":
+            # Channel filter - _all means no filter, otherwise search both specified channel and _global
+            if channel == "_all":
+                pass  # No channel filter - show all channels
+            elif channel and channel != "_global":
                 conditions.append("(s.channel = $channel OR s.channel = '_global')")
             else:
                 conditions.append("s.channel = '_global'")

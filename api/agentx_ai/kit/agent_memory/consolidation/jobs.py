@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-def _get_memory_for_user(user_id: str, channel: str = "_global") -> "AgentMemory":
+def _get_memory_for_user(user_id: str, channel: str = "_default") -> "AgentMemory":
     """
     Get or create an AgentMemory instance for a user.
 
     Args:
         user_id: User ID
-        channel: Memory channel (default: "_global")
+        channel: Memory channel (default: "_default")
 
     Returns:
         AgentMemory instance
@@ -69,18 +69,19 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             logger.debug(f"  - {conv['id']}: {conv['turn_count']} turns, consolidated={conv['consolidated']}")
 
         # Get recent conversations not yet processed, including user info
+        # Only extract from user turns (not assistant/system/tool responses)
         result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE c.consolidated IS NULL
-              OR c.consolidated < datetime() - duration('PT15M')
+            WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
+              AND t.role = 'user'
             OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
             WITH c, u, collect(t) AS turns
             ORDER BY c.started_at DESC
             LIMIT 10
             RETURN c.id AS conversation_id,
                    coalesce(u.id, 'system') AS user_id,
-                   coalesce(c.channel, '_global') AS channel,
-                   [t IN turns | {role: t.role, content: t.content}] AS turns
+                   coalesce(c.channel, '_default') AS channel,
+                   [t IN turns | {content: t.content}] AS turns
         """)
 
         records = list(result)
@@ -100,10 +101,8 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
             memory = memory_cache[cache_key]
 
-            # Combine turn content for extraction
-            full_text = "\n".join(
-                f"{t['role']}: {t['content']}" for t in turns
-            )
+            # Combine user turn content for extraction
+            full_text = "\n".join(t['content'] for t in turns)
 
             # Entity extraction with error handling
             try:

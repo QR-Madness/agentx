@@ -444,8 +444,10 @@ class SemanticMemory:
             # Build WHERE conditions
             conditions = ["e.user_id = $user_id"]
 
-            # Channel filter - search both specified channel and _global
-            if channel and channel != "_global":
+            # Channel filter - _all means no filter, otherwise search both specified channel and _global
+            if channel == "_all":
+                pass  # No channel filter - show all channels
+            elif channel and channel != "_global":
                 conditions.append("(e.channel = $channel OR e.channel = '_global')")
             else:
                 conditions.append("e.channel = '_global'")
@@ -536,8 +538,10 @@ class SemanticMemory:
             # Build WHERE conditions
             conditions = ["f.user_id = $user_id", "f.confidence >= $min_confidence"]
 
-            # Channel filter - search both specified channel and _global
-            if channel and channel != "_global":
+            # Channel filter - _all means no filter, otherwise search both specified channel and _global
+            if channel == "_all":
+                pass  # No channel filter - show all channels
+            elif channel and channel != "_global":
                 conditions.append("(f.channel = $channel OR f.channel = '_global')")
             else:
                 conditions.append("f.channel = '_global'")
