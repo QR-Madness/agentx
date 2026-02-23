@@ -56,6 +56,18 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     errors: List[str] = []
 
     with Neo4jConnection.session() as session:
+        # First, check what conversations exist at all (for debugging)
+        debug_result = session.run("""
+            MATCH (c:Conversation)
+            OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
+            RETURN c.id AS id, c.consolidated AS consolidated, count(t) AS turn_count
+            LIMIT 20
+        """)
+        conversations_found = list(debug_result)
+        logger.info(f"Consolidation: Found {len(conversations_found)} conversations in Neo4j")
+        for conv in conversations_found:
+            logger.debug(f"  - {conv['id']}: {conv['turn_count']} turns, consolidated={conv['consolidated']}")
+
         # Get recent conversations not yet processed, including user info
         result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
@@ -71,7 +83,10 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                    [t IN turns | {role: t.role, content: t.content}] AS turns
         """)
 
-        for record in result:
+        records = list(result)
+        logger.info(f"Consolidation: {len(records)} conversations need processing")
+
+        for record in records:
             conv_id = record["conversation_id"]
             user_id = record["user_id"]
             channel = record["channel"]

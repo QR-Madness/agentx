@@ -508,6 +508,36 @@ def agent_chat_stream(request):
 
             total_time = (time.time() - start_time) * 1000
 
+            # Store turns in memory if enabled
+            if use_memory and agent.memory:
+                try:
+                    from .kit.agent_memory.models import Turn
+                    conv_id = session_id or task_id
+
+                    # Store user turn
+                    user_turn = Turn(
+                        id=f"{conv_id}-{len(session.get_messages())-2}",
+                        conversation_id=conv_id,
+                        role="user",
+                        content=message,
+                        index=len(session.get_messages()) - 2,
+                    )
+                    agent.memory.store_turn(user_turn)
+
+                    # Store assistant turn
+                    assistant_turn = Turn(
+                        id=f"{conv_id}-{len(session.get_messages())-1}",
+                        conversation_id=conv_id,
+                        role="assistant",
+                        content=parsed.content,
+                        index=len(session.get_messages()) - 1,
+                        metadata={"model": model_id, "latency_ms": total_time},
+                    )
+                    agent.memory.store_turn(assistant_turn)
+                    logger.debug(f"Stored turns in memory for conversation {conv_id}")
+                except Exception as mem_err:
+                    logger.warning(f"Failed to store turns in memory: {mem_err}")
+
             # Send completion event
             yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': session_id or task_id})}\n\n"
 
