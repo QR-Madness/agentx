@@ -309,24 +309,29 @@ TEXT:
 {text}
 """
 
+ENTITY EXAMPLES (extract these as entities):
+- App/project names → type: Product
+- Company names → type: Organization
+- People's names → type: Person
+- Tool/framework names → type: Technology
+- Place names → type: Location
+
 JSON FORMAT:
 {{
   "entities": [
-    {{"name": "ExactName", "type": "Person|Organization|Location|Technology|Product|Event", "description": "brief desc", "confidence": 0.9}}
+    {{"name": "ExactName", "type": "Product|Organization|Person|Technology|Location|Event|Concept", "description": "what it is", "confidence": 0.9}}
   ],
   "facts": [
-    {{"claim": "User prefers/uses/works at/likes X", "confidence": 0.9, "entity_names": ["ExactName"]}}
+    {{"claim": "User is building/uses/prefers X", "confidence": 0.9, "entity_names": ["ExactName"]}}
   ],
-  "relationships": [
-    {{"source": "Entity1", "relation": "works_at|knows|uses|prefers", "target": "Entity2", "confidence": 0.9}}
-  ]
+  "relationships": []
 }}
 
-INSTRUCTIONS:
-- Extract ALL named entities (people, places, companies, tools, products)
-- Extract ALL distinct facts (one claim per fact, multiple facts if user said multiple things)
-- Link facts to entities via entity_names array
-- Return empty arrays if nothing to extract'''
+RULES:
+- ANY proper noun or named thing = entity
+- Extract entities FIRST, then facts that reference them
+- Link facts to entities via entity_names
+- Empty arrays only if truly nothing to extract'''
 
     def _parse_extraction_response(self, content: str) -> ExtractionResult:
         """
