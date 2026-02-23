@@ -10,9 +10,6 @@ import re
 from ..connections import Neo4jConnection, get_postgres_session, RedisConnection
 from ..embeddings import get_embedder
 from ..config import get_settings
-from ..extraction.entities import extract_entities
-from ..extraction.facts import extract_facts
-from ..extraction.relationships import extract_relationships
 from ..extraction.service import get_extraction_service
 from ..models import Entity
 
@@ -154,13 +151,22 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             # Combine relevant user turn content for extraction
             full_text = "\n".join(t['content'] for t in relevant_turns)
 
-            # Entity extraction with error handling
+            # Single extraction call for entities, facts, and relationships
             try:
-                extracted_entities = extract_entities(full_text)
+                extraction_result = extraction_service.extract_all(full_text)
+                extracted_entities = extraction_result.entities
+                extracted_facts = extraction_result.facts
+                extracted_relationships = extraction_result.relationships
+                logger.debug(
+                    f"Extraction result: {len(extracted_entities)} entities, "
+                    f"{len(extracted_facts)} facts, {len(extracted_relationships)} relationships"
+                )
             except Exception as e:
-                logger.warning(f"Entity extraction failed for {conv_id}: {e}")
-                errors.append(f"entity:{conv_id}:{e}")
+                logger.warning(f"Extraction failed for {conv_id}: {e}")
+                errors.append(f"extraction:{conv_id}:{e}")
                 extracted_entities = []
+                extracted_facts = []
+                extracted_relationships = []
 
             entity_count = 0
             # Use lowercase keys for case-insensitive matching with relationships
@@ -190,14 +196,6 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                     logger.warning(f"Failed to store entity {entity_dict.get('name')}: {e}")
 
             total_entities += entity_count
-
-            # Fact extraction with error handling
-            try:
-                extracted_facts = extract_facts(full_text)
-            except Exception as e:
-                logger.warning(f"Fact extraction failed for {conv_id}: {e}")
-                errors.append(f"fact:{conv_id}:{e}")
-                extracted_facts = []
 
             fact_count = 0
             skipped_duplicates = 0
@@ -239,14 +237,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
             total_facts += fact_count
 
-            # Relationship extraction with error handling
-            try:
-                extracted_relationships = extract_relationships(full_text, extracted_entities)
-            except Exception as e:
-                logger.warning(f"Relationship extraction failed for {conv_id}: {e}")
-                errors.append(f"relationship:{conv_id}:{e}")
-                extracted_relationships = []
-
+            # Relationships already extracted from extract_all() above
             rel_count = 0
 
             # Store relationships in Neo4j (case-insensitive entity lookup)
