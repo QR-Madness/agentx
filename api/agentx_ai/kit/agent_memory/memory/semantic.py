@@ -637,7 +637,15 @@ class SemanticMemory:
             )
 
             record = result.single()
-            return dict(record) if record else None
+            if not record:
+                return None
+
+            entity = dict(record)
+            # Convert Neo4j DateTime to ISO strings for JSON serialization
+            for dt_field in ['last_accessed', 'first_seen']:
+                if entity.get(dt_field) and hasattr(entity[dt_field], 'isoformat'):
+                    entity[dt_field] = entity[dt_field].isoformat()
+            return entity
 
     def get_entity_facts_and_relationships(
         self,
