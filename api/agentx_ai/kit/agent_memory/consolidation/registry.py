@@ -17,6 +17,7 @@ from .jobs import (
     cleanup_old_memories,
     manage_audit_partitions,
     promote_to_global,
+    link_facts_to_entities,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,12 @@ class JobRegistry:
                 func=manage_audit_partitions,
                 interval_minutes=settings.job_audit_partitions_interval,
                 description="Manage PostgreSQL audit log partitions",
+            ),
+            "entity_linking": JobDefinition(
+                name="entity_linking",
+                func=link_facts_to_entities,
+                interval_minutes=settings.job_entity_linking_interval,
+                description="Link facts to existing entities via embedding similarity",
             ),
         }
 

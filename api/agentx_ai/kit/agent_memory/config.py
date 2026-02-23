@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     job_cleanup_interval: int = 1440  # 24 hours
     job_audit_partitions_interval: int = 1440  # 24 hours
     job_promote_interval: int = 60  # Same as patterns
+    job_entity_linking_interval: int = 30  # Run after consolidation
 
     # Worker health settings
     worker_heartbeat_interval: int = 30  # seconds

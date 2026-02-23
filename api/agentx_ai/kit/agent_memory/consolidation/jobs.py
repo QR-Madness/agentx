@@ -13,6 +13,7 @@ from ..config import get_settings
 from ..extraction.entities import extract_entities
 from ..extraction.facts import extract_facts
 from ..extraction.relationships import extract_relationships
+from ..extraction.service import get_extraction_service
 from ..models import Entity
 
 if TYPE_CHECKING:
@@ -101,8 +102,28 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
             memory = memory_cache[cache_key]
 
-            # Combine user turn content for extraction
-            full_text = "\n".join(t['content'] for t in turns)
+            # Filter turns by relevance (skip "thanks", "ok", etc.)
+            extraction_service = get_extraction_service()
+            relevant_turns = []
+            for turn in turns:
+                content = turn['content']
+                relevance = extraction_service.check_relevance(content)
+                if relevance.is_relevant:
+                    relevant_turns.append(turn)
+                else:
+                    logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({relevance.reason})")
+
+            if not relevant_turns:
+                logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
+                # Still mark as consolidated
+                session.run("""
+                    MATCH (c:Conversation {id: $conv_id})
+                    SET c.consolidated = datetime()
+                """, conv_id=conv_id)
+                continue
+
+            # Combine relevant user turn content for extraction
+            full_text = "\n".join(t['content'] for t in relevant_turns)
 
             # Entity extraction with error handling
             try:
@@ -731,5 +752,116 @@ def manage_audit_partitions() -> Dict[str, Any]:
         "items_processed": partitions_created + partitions_dropped,
         "partitions_created": partitions_created,
         "partitions_dropped": partitions_dropped,
+        "errors": errors
+    }
+
+
+def link_facts_to_entities() -> Dict[str, Any]:
+    """
+    Link unlinked facts to existing entities using embedding similarity.
+
+    Finds facts without entity connections, extracts potential entity mentions
+    from the claim text, and creates ABOUT relationships to matching entities.
+
+    Returns:
+        Dictionary with linking metrics
+    """
+    if not settings.entity_linking_enabled:
+        logger.debug("Entity linking is disabled")
+        return {"items_processed": 0, "links_created": 0, "skipped": "disabled"}
+
+    embedder = get_embedder()
+    threshold = settings.entity_linking_similarity_threshold
+
+    links_created = 0
+    facts_processed = 0
+    errors = []
+
+    with Neo4jConnection.session() as session:
+        # Find facts that have no ABOUT relationships to entities
+        result = session.run("""
+            MATCH (f:Fact)
+            WHERE NOT (f)-[:ABOUT]->(:Entity)
+              AND f.created_at > datetime() - duration('P7D')
+            RETURN f.id AS fact_id,
+                   f.claim AS claim,
+                   f.user_id AS user_id,
+                   f.channel AS channel
+            LIMIT 100
+        """)
+
+        facts_to_link = list(result)
+        logger.info(f"Entity linking: found {len(facts_to_link)} unlinked facts")
+
+        for record in facts_to_link:
+            fact_id = record["fact_id"]
+            claim = record["claim"]
+            user_id = record["user_id"]
+            channel = record.get("channel", "_default")
+            facts_processed += 1
+
+            try:
+                # Embed the fact claim
+                claim_embedding = embedder.embed_single(claim)
+
+                # Find similar entities by vector search
+                # Note: This requires Neo4j vector index on entity embeddings
+                entity_result = session.run("""
+                    CALL db.index.vector.queryNodes('entity_embeddings', 5, $embedding)
+                    YIELD node, score
+                    WHERE node.user_id = $user_id
+                      AND score >= $threshold
+                    RETURN node.id AS entity_id,
+                           node.name AS entity_name,
+                           score
+                    ORDER BY score DESC
+                    LIMIT 3
+                """, embedding=claim_embedding, user_id=user_id, threshold=threshold)
+
+                matching_entities = list(entity_result)
+
+                # Also try text-based matching for entity names mentioned in claim
+                claim_lower = claim.lower()
+                text_result = session.run("""
+                    MATCH (e:Entity)
+                    WHERE e.user_id = $user_id
+                      AND toLower(e.name) IN $words
+                    RETURN e.id AS entity_id, e.name AS entity_name
+                """, user_id=user_id, words=claim_lower.split())
+
+                for text_match in text_result:
+                    if text_match["entity_id"] not in [m["entity_id"] for m in matching_entities]:
+                        matching_entities.append({
+                            "entity_id": text_match["entity_id"],
+                            "entity_name": text_match["entity_name"],
+                            "score": 0.8  # Text match gets decent confidence
+                        })
+
+                # Create ABOUT relationships for matches
+                for match in matching_entities:
+                    entity_id = match["entity_id"]
+                    entity_name = match["entity_name"]
+                    score = match.get("score", 0.8)
+
+                    session.run("""
+                        MATCH (f:Fact {id: $fact_id}), (e:Entity {id: $entity_id})
+                        MERGE (f)-[r:ABOUT]->(e)
+                        SET r.confidence = $score,
+                            r.linked_at = datetime(),
+                            r.method = 'auto_embedding'
+                    """, fact_id=fact_id, entity_id=entity_id, score=score)
+
+                    links_created += 1
+                    logger.debug(f"Linked fact '{claim[:50]}...' to entity '{entity_name}'")
+
+            except Exception as e:
+                logger.warning(f"Failed to link fact {fact_id}: {e}")
+                errors.append(f"{fact_id}:{e}")
+
+    logger.info(f"Entity linking complete: {facts_processed} facts processed, {links_created} links created")
+
+    return {
+        "items_processed": facts_processed,
+        "links_created": links_created,
         "errors": errors
     }

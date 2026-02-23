@@ -2,13 +2,17 @@
 Extraction Service - LLM-based extraction for memory system.
 
 Provides unified interface for entity, fact, and relationship extraction
-using configured model providers.
+using configured model providers. Supports multiple consolidation stages:
+- Relevance filtering (skip low-value turns)
+- Fact/entity extraction with condensation
+- Contradiction detection
+- User correction handling
 """
 
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from pydantic import BaseModel
 
@@ -28,6 +32,14 @@ class ExtractionResult(BaseModel):
     success: bool = True
     error: Optional[str] = None
     tokens_used: int = 0
+
+
+class RelevanceResult(BaseModel):
+    """Result of relevance check."""
+    is_relevant: bool = False
+    reason: Optional[str] = None
+    success: bool = True
+    error: Optional[str] = None
 
 
 class ExtractionService:
@@ -56,6 +68,99 @@ class ExtractionService:
             self._settings = get_settings()
         return self._settings
 
+    def _get_provider_for_stage(self, stage: str) -> Tuple[Any, str, float, int]:
+        """
+        Get provider, model, temperature, and max_tokens for a consolidation stage.
+
+        Args:
+            stage: One of 'extraction', 'relevance', 'contradiction', 'correction', 'entity_linking'
+
+        Returns:
+            Tuple of (provider, model_id, temperature, max_tokens)
+        """
+        s = self.settings
+
+        stage_config = {
+            'extraction': (s.extraction_model, s.extraction_temperature, s.extraction_max_tokens),
+            'relevance': (s.relevance_filter_model, s.relevance_filter_temperature, s.relevance_filter_max_tokens),
+            'contradiction': (s.contradiction_model, s.contradiction_temperature, s.contradiction_max_tokens),
+            'correction': (s.correction_model, s.correction_temperature, s.correction_max_tokens),
+            'entity_linking': (s.entity_linking_model, 0.2, 500),
+        }
+
+        if stage not in stage_config:
+            raise ValueError(f"Unknown stage: {stage}")
+
+        model, temperature, max_tokens = stage_config[stage]
+
+        try:
+            provider, model_id = self.registry.get_provider_for_model(model)
+            return provider, model_id, temperature, max_tokens
+        except ValueError as e:
+            logger.warning(f"Provider for {stage} not available: {e}")
+            raise
+
+    def check_relevance(self, text: str) -> RelevanceResult:
+        """
+        Check if text contains memorable information worth extracting.
+
+        Uses a fast LLM call to filter out low-value turns like "thanks", "ok", etc.
+
+        Args:
+            text: The text to check
+
+        Returns:
+            RelevanceResult indicating if extraction should proceed
+        """
+        if not self.settings.relevance_filter_enabled:
+            return RelevanceResult(is_relevant=True, reason="filter_disabled")
+
+        # Quick heuristic pre-filter (skip LLM for obvious cases)
+        text_lower = text.strip().lower()
+        skip_patterns = [
+            "ok", "okay", "thanks", "thank you", "got it", "sure", "yes", "no",
+            "yep", "nope", "alright", "sounds good", "perfect", "great", "cool",
+            "understood", "i see", "ah", "oh", "hmm", "hm", "um", "uh",
+        ]
+        if text_lower in skip_patterns or len(text.strip()) < 10:
+            return RelevanceResult(is_relevant=False, reason="heuristic_skip")
+
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('relevance')
+        except ValueError as e:
+            # If provider unavailable, default to allowing extraction
+            return RelevanceResult(is_relevant=True, reason="provider_unavailable", error=str(e))
+
+        prompt = f'''Does this text contain memorable information worth storing long-term?
+Memorable = facts, preferences, personal details, goals, relationships, or specific claims.
+NOT memorable = greetings, acknowledgments, filler words, or generic responses.
+
+Text: "{text}"
+
+Reply with only YES or NO.'''
+
+        messages = [
+            Message(role=MessageRole.USER, content=prompt),
+        ]
+
+        try:
+            result = provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            response = result.content.strip().upper()
+            is_relevant = response.startswith("YES")
+
+            logger.debug(f"Relevance check: '{text[:50]}...' -> {response}")
+            return RelevanceResult(is_relevant=is_relevant, reason=f"llm_{response}")
+
+        except Exception as e:
+            logger.warning(f"Relevance check failed: {e}, defaulting to relevant")
+            return RelevanceResult(is_relevant=True, reason="error_default", error=str(e))
+
     def extract_all(
         self,
         text: str,
@@ -82,9 +187,7 @@ class ExtractionService:
             return ExtractionResult(success=True)
 
         try:
-            provider, model_id = self.registry.get_provider_for_model(
-                self.settings.extraction_model
-            )
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('extraction')
         except ValueError as e:
             logger.warning(f"Extraction model not available: {e}")
             return ExtractionResult(success=False, error=str(e))
@@ -96,12 +199,11 @@ class ExtractionService:
         ]
 
         try:
-            # Timeout is handled by the provider's HTTP client
             result = provider.complete(
                 messages,
                 model_id,
-                temperature=self.settings.extraction_temperature,
-                max_tokens=self.settings.extraction_max_tokens,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
             parsed = self._parse_extraction_response(result.content)
@@ -162,17 +264,29 @@ class ExtractionService:
         """Get the system prompt for extraction."""
         entity_types = ", ".join(self.settings.entity_types)
         relationship_types = ", ".join(self.settings.relationship_types)
+        condense_instruction = """
+- CONDENSE verbose statements into atomic facts (one claim per fact)
+  Example: "My birthday is March 15th and I was born in 1990" → TWO facts:
+    1. "User's birthday is March 15th"
+    2. "User was born in 1990" """ if self.settings.extraction_condense_facts else ""
 
-        return f"""You are an information extraction system. Extract structured information from conversation text.
+        return f"""You are an information extraction system for a personal memory system.
+Extract ONLY information that the USER explicitly stated about themselves, their preferences, or their world.
 
-Rules:
-- Extract only information explicitly stated or strongly implied
-- Assign confidence scores (0.0-1.0) based on how certain the information is
-- Use canonical names (e.g., "John Smith" not "John" if full name is known)
-- For entity types, use: {entity_types}
-- For relationships, use: {relationship_types}
-- Be conservative: prefer fewer high-confidence extractions over many low-confidence ones
-- Facts should be atomic claims that can stand alone
+CRITICAL RULES:
+- Extract ONLY what the user directly stated — not inferences or assumptions
+- DO NOT extract information from assistant/AI responses
+- DO NOT extract generic facts or common knowledge
+- Facts should be personal, specific, and worth remembering long-term{condense_instruction}
+
+CONFIDENCE SCORING:
+- 0.9-1.0: User explicitly stated ("My birthday is March 15")
+- 0.7-0.9: Clearly implied ("I'll be visiting Paris next month" → user is planning a Paris trip)
+- 0.5-0.7: Reasonable inference with some uncertainty
+- Below 0.5: Do not extract — too speculative
+
+ENTITY TYPES: {entity_types}
+RELATIONSHIP TYPES: {relationship_types}
 
 Output ONLY valid JSON with no markdown formatting, code fences, or explanation."""
 
@@ -188,26 +302,32 @@ Output ONLY valid JSON with no markdown formatting, code fences, or explanation.
             )
             text = text[:max_chars] + "\n...[truncated]"
 
-        return f'''Extract entities, facts, and relationships from this conversation:
+        return f'''Extract personal information from what the USER stated in this text:
 
 """
 {text}
 """
 
-Return a JSON object with this exact structure:
+Remember:
+- Only extract what the USER explicitly stated
+- Condense into atomic facts (one claim each)
+- Include confidence based on how explicit the statement was
+- Facts should start with "User..." or reference specific entities
+
+Return a JSON object:
 {{
   "entities": [
-    {{"name": "string", "type": "string", "description": "brief description", "confidence": 0.0-1.0}}
+    {{"name": "string", "type": "Person|Organization|Location|etc", "description": "brief description", "confidence": 0.0-1.0}}
   ],
   "facts": [
-    {{"claim": "atomic factual statement", "confidence": 0.0-1.0, "entity_names": ["related entity names"]}}
+    {{"claim": "User's birthday is March 15th", "confidence": 0.95, "entity_names": []}}
   ],
   "relationships": [
     {{"source": "entity_name", "relation": "relationship_type", "target": "entity_name", "confidence": 0.0-1.0}}
   ]
 }}
 
-If nothing to extract, return: {{"entities": [], "facts": [], "relationships": []}}'''
+If nothing worth remembering, return: {{"entities": [], "facts": [], "relationships": []}}'''
 
     def _parse_extraction_response(self, content: str) -> ExtractionResult:
         """
