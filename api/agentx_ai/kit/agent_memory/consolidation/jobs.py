@@ -59,7 +59,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
         # Get recent conversations not yet processed, including user info
         result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE NOT EXISTS(c.consolidated)
+            WHERE c.consolidated IS NULL
               OR c.consolidated < datetime() - duration('PT15M')
             OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
             WITH c, u, collect(t) AS turns
@@ -254,7 +254,7 @@ def detect_patterns() -> Dict[str, Any]:
         # Find conversations with successful outcomes
         result = session.run("""
             MATCH (c:Conversation)-[:RESULTED_IN]->(o:Outcome {success: true})
-            WHERE NOT EXISTS(c.patterns_extracted)
+            WHERE c.patterns_extracted IS NULL
             WITH c, o
             MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)-[:INVOKED]->(t:Tool)
             WITH c, o, collect(DISTINCT t.name) AS tools
@@ -568,7 +568,7 @@ def cleanup_old_memories():
         result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
             WHERE c.started_at < datetime() - duration('P' + $days + 'D')
-              AND NOT EXISTS(c.archived)
+              AND c.archived IS NULL
             SET c.archived = true, t.archived = true
             RETURN count(DISTINCT c) AS archived_count
         """, days=str(retention_days))
@@ -581,7 +581,7 @@ def cleanup_old_memories():
             MATCH (e:Entity)
             WHERE e.salience < 0.1
               AND e.last_accessed < datetime() - duration('P30D')
-              AND NOT EXISTS((e)<-[:ABOUT]-(:Fact))
+              AND NOT EXISTS { (e)<-[:ABOUT]-(:Fact) }
             DETACH DELETE e
             RETURN count(e) AS deleted_count
         """)
