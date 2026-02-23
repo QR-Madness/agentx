@@ -993,7 +993,7 @@ def memory_channel_delete(request, name):
 
 # ============== Memory Explorer Endpoints ==============
 
-DEFAULT_USER_ID = "default_user"  # TODO: Replace with actual auth when multi-user is implemented
+DEFAULT_USER_ID = "default"  # TODO: Replace with actual auth when multi-user is implemented
 
 
 @csrf_exempt
