@@ -5,7 +5,7 @@ import threading
 from contextlib import contextmanager
 from typing import Generator, Optional
 import redis
-from neo4j import GraphDatabase, Driver, Session
+from neo4j import GraphDatabase, Driver, Session, NotificationMinimumSeverity
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as SQLSession
 
@@ -38,6 +38,8 @@ class Neo4jConnection:
                         connection_timeout=settings.connection_timeout,
                         max_connection_lifetime=300,
                         connection_acquisition_timeout=settings.connection_timeout,
+                        # Suppress warnings about missing labels/properties (expected for empty DB)
+                        notifications_min_severity=NotificationMinimumSeverity.OFF,
                     )
         return cls._driver
 
