@@ -1,5 +1,6 @@
 """Semantic memory - entities, facts, and conceptual knowledge."""
 
+import json
 import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
@@ -107,7 +108,7 @@ class SemanticMemory:
                 description=entity.description,
                 embedding=entity.embedding,
                 salience=entity.salience,
-                properties=entity.properties,
+                properties=json.dumps(entity.properties) if entity.properties else None,
                 user_id=user_id,
                 channel=channel
             ).consume()  # Ensure transaction commits
