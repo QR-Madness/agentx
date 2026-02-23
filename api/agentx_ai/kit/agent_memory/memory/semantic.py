@@ -110,7 +110,7 @@ class SemanticMemory:
                 properties=entity.properties,
                 user_id=user_id,
                 channel=channel
-            )
+            ).consume()  # Ensure transaction commits
         return entity
 
     def store_fact(self, fact: Fact, user_id: Optional[str] = None, channel: str = "_global") -> None:
@@ -163,7 +163,7 @@ class SemanticMemory:
                 entity_ids=fact.entity_ids,
                 user_id=user_id,
                 channel=channel
-            )
+            ).consume()  # Ensure transaction commits
 
     def vector_search_facts(
         self,
