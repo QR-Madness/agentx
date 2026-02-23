@@ -131,13 +131,17 @@ class ExtractionService:
             # If provider unavailable, default to allowing extraction
             return RelevanceResult(is_relevant=True, reason="provider_unavailable", error=str(e))
 
-        prompt = f'''Does this text contain memorable information worth storing long-term?
-Memorable = facts, preferences, personal details, goals, relationships, or specific claims.
-NOT memorable = greetings, acknowledgments, filler words, or generic responses.
+        prompt = f'''Does this text contain ANY of the following?
+- Names (people, places, projects, products, companies)
+- Personal info (preferences, opinions, goals, activities)
+- Facts or claims about anything specific
+- Technical details or descriptions
 
 Text: "{text}"
 
-Reply with only YES or NO.'''
+Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
+
+Reply YES or NO:'''
 
         messages = [
             Message(role=MessageRole.USER, content=prompt),
