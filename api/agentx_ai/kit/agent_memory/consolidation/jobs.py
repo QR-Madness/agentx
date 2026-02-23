@@ -23,6 +23,35 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
+    """
+    Check if a fact with the same or very similar claim already exists.
+
+    Args:
+        session: Neo4j session
+        claim: The fact claim text
+        user_id: User ID
+        channel: Memory channel
+
+    Returns:
+        True if a duplicate exists
+    """
+    # Normalize the claim for comparison
+    normalized = claim.strip().lower()
+
+    # Check for exact or near-exact matches
+    result = session.run("""
+        MATCH (f:Fact)
+        WHERE f.user_id = $user_id
+          AND (f.channel = $channel OR f.channel = '_global')
+          AND toLower(trim(f.claim)) = $normalized_claim
+        RETURN f.id AS id
+        LIMIT 1
+    """, user_id=user_id, channel=channel, normalized_claim=normalized)
+
+    return result.single() is not None
+
+
 def _get_memory_for_user(user_id: str, channel: str = "_default") -> "AgentMemory":
     """
     Get or create an AgentMemory instance for a user.
@@ -171,10 +200,19 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 extracted_facts = []
 
             fact_count = 0
+            skipped_duplicates = 0
 
             # Store facts via AgentMemory interface
             for fact_dict in extracted_facts:
                 try:
+                    claim = fact_dict["claim"]
+
+                    # Check for duplicate facts before storing
+                    if _is_duplicate_fact(session, claim, user_id, channel):
+                        skipped_duplicates += 1
+                        logger.debug(f"Skipping duplicate fact: {claim[:50]}...")
+                        continue
+
                     # Link fact to mentioned entities (case-insensitive lookup)
                     entity_ids = [
                         entity_map[name.lower()]
@@ -183,7 +221,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                     ]
 
                     fact = memory.learn_fact(
-                        claim=fact_dict["claim"],
+                        claim=claim,
                         source="extraction",
                         confidence=fact_dict.get("confidence", 0.7),
                         source_turn_id=fact_dict.get("source_turn_id"),
@@ -243,9 +281,10 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             # Mark conversation as consolidated in finally block to ensure it's set
             # even if some extraction steps fail (prevents reprocessing)
             try:
+                dup_msg = f", {skipped_duplicates} duplicates skipped" if skipped_duplicates > 0 else ""
                 logger.info(
                     f"Consolidated conversation {conv_id}: "
-                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships"
+                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{dup_msg}"
                 )
             finally:
                 session.run("""
@@ -797,7 +836,6 @@ def link_facts_to_entities() -> Dict[str, Any]:
             fact_id = record["fact_id"]
             claim = record["claim"]
             user_id = record["user_id"]
-            channel = record.get("channel", "_default")
             facts_processed += 1
 
             try:

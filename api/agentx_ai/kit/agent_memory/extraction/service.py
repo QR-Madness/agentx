@@ -265,30 +265,26 @@ Reply with only YES or NO.'''
         entity_types = ", ".join(self.settings.entity_types)
         relationship_types = ", ".join(self.settings.relationship_types)
         condense_instruction = """
-- CONDENSE verbose statements into atomic facts (one claim per fact)
-  Example: "My birthday is March 15th and I was born in 1990" → TWO facts:
-    1. "User's birthday is March 15th"
-    2. "User was born in 1990" """ if self.settings.extraction_condense_facts else ""
+- CONDENSE compound statements into SEPARATE atomic facts (one claim per fact)
+- If user mentions multiple things, create multiple facts""" if self.settings.extraction_condense_facts else ""
 
-        return f"""You are an information extraction system for a personal memory system.
-Extract ONLY information that the USER explicitly stated about themselves, their preferences, or their world.
+        return f"""You are an information extraction system. Extract personal facts the USER explicitly stated.
 
-CRITICAL RULES:
-- Extract ONLY what the user directly stated — not inferences or assumptions
-- DO NOT extract information from assistant/AI responses
-- DO NOT extract generic facts or common knowledge
-- Facts should be personal, specific, and worth remembering long-term{condense_instruction}
+RULES:
+1. ONLY extract what the user said about themselves, preferences, or their world
+2. IGNORE assistant/AI responses completely
+3. IGNORE generic facts or common knowledge
+4. Each fact must be personal and specific{condense_instruction}
 
-CONFIDENCE SCORING:
-- 0.9-1.0: User explicitly stated ("My birthday is March 15")
-- 0.7-0.9: Clearly implied ("I'll be visiting Paris next month" → user is planning a Paris trip)
-- 0.5-0.7: Reasonable inference with some uncertainty
-- Below 0.5: Do not extract — too speculative
+CONFIDENCE:
+- 0.9-1.0: Explicitly stated
+- 0.7-0.9: Clearly implied
+- Below 0.7: Do not extract
 
 ENTITY TYPES: {entity_types}
 RELATIONSHIP TYPES: {relationship_types}
 
-Output ONLY valid JSON with no markdown formatting, code fences, or explanation."""
+Return ONLY valid JSON. No markdown, no code fences, no explanation."""
 
     def _build_combined_extraction_prompt(self, text: str) -> str:
         """Build the user prompt with JSON output schema."""
@@ -302,32 +298,30 @@ Output ONLY valid JSON with no markdown formatting, code fences, or explanation.
             )
             text = text[:max_chars] + "\n...[truncated]"
 
-        return f'''Extract personal information from what the USER stated in this text:
+        return f'''Analyze what the USER said in this text. Extract any personal facts they stated.
 
+TEXT:
 """
 {text}
 """
 
-Remember:
-- Only extract what the USER explicitly stated
-- Condense into atomic facts (one claim each)
-- Include confidence based on how explicit the statement was
-- Facts should start with "User..." or reference specific entities
-
-Return a JSON object:
+OUTPUT FORMAT (JSON only, no other text):
 {{
   "entities": [
-    {{"name": "string", "type": "Person|Organization|Location|etc", "description": "brief description", "confidence": 0.0-1.0}}
+    {{"name": "<entity name>", "type": "<type>", "description": "<brief>", "confidence": <0.0-1.0>}}
   ],
   "facts": [
-    {{"claim": "User's birthday is March 15th", "confidence": 0.95, "entity_names": []}}
+    {{"claim": "<what user stated>", "confidence": <0.0-1.0>, "entity_names": ["<related entity names>"]}}
   ],
   "relationships": [
-    {{"source": "entity_name", "relation": "relationship_type", "target": "entity_name", "confidence": 0.0-1.0}}
+    {{"source": "<entity1>", "relation": "<type>", "target": "<entity2>", "confidence": <0.0-1.0>}}
   ]
 }}
 
-If nothing worth remembering, return: {{"entities": [], "facts": [], "relationships": []}}'''
+IMPORTANT:
+- ONLY extract what the user explicitly stated
+- Start claims with "User..." (e.g., "User prefers...", "User works at...")
+- If nothing to extract, return empty arrays: {{"entities": [], "facts": [], "relationships": []}}'''
 
     def _parse_extraction_response(self, content: str) -> ExtractionResult:
         """
