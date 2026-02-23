@@ -460,7 +460,7 @@ export const MemoryTab: React.FC = () => {
   } | null>(null);
 
   const { channels } = useMemoryChannels();
-  const { stats, refresh: refreshStats } = useMemoryStats();
+  const { stats, loading: statsLoading, refresh: refreshStats } = useMemoryStats();
   const { consolidate, loading: consolidating } = useConsolidate();
 
   // Compute hasNext based on current data
@@ -546,8 +546,13 @@ export const MemoryTab: React.FC = () => {
                 <><Zap size={16} /> Consolidate Now</>
               )}
             </button>
-            <button className="button-ghost" onClick={refreshStats} title="Refresh stats">
-              <RefreshCw size={18} />
+            <button
+              className="button-ghost"
+              onClick={refreshStats}
+              title="Refresh stats"
+              disabled={statsLoading}
+            >
+              <RefreshCw size={18} className={statsLoading ? 'spin' : ''} />
             </button>
           </div>
         </div>
