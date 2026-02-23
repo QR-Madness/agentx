@@ -456,5 +456,11 @@ class ProceduralMemory:
                 limit=limit
             )
 
-            strategies = [dict(record) for record in result]
+            strategies = []
+            for record in result:
+                strategy = dict(record)
+                # Convert Neo4j DateTime to ISO string
+                if strategy.get("last_used"):
+                    strategy["last_used"] = strategy["last_used"].isoformat()
+                strategies.append(strategy)
             return strategies, total

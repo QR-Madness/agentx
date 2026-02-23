@@ -498,7 +498,15 @@ class SemanticMemory:
                 limit=limit
             )
 
-            entities = [dict(record) for record in result]
+            entities = []
+            for record in result:
+                entity = dict(record)
+                # Convert Neo4j DateTime to ISO string
+                if entity.get("last_accessed"):
+                    entity["last_accessed"] = entity["last_accessed"].isoformat()
+                if entity.get("first_seen"):
+                    entity["first_seen"] = entity["first_seen"].isoformat()
+                entities.append(entity)
             return entities, total
 
     def list_facts(
@@ -580,7 +588,13 @@ class SemanticMemory:
                 limit=limit
             )
 
-            facts = [dict(record) for record in result]
+            facts = []
+            for record in result:
+                fact = dict(record)
+                # Convert Neo4j DateTime to ISO string
+                if fact.get("created_at"):
+                    fact["created_at"] = fact["created_at"].isoformat()
+                facts.append(fact)
             return facts, total
 
     def get_entity_by_id(
