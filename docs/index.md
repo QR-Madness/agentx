@@ -70,6 +70,14 @@ Native desktop experience with:
 
     [:octicons-arrow-right-24: Databases](architecture/databases.md)
 
+-   :material-road-variant:{ .lg .middle } **Roadmap**
+
+    ---
+
+    Development history and future plans
+
+    [:octicons-arrow-right-24: Roadmap](roadmap.md)
+
 </div>
 
 ## Architecture at a Glance
@@ -104,20 +112,23 @@ graph TB
 
 ## Project Status
 
-AgentX is under active development. Current status:
+AgentX is under active development. See the [Development Roadmap](roadmap.md) for detailed progress.
 
-- [x] Django API with translation endpoints
-- [x] Tauri desktop application with cosmic theme
-- [x] Two-level translation system (200+ languages)
-- [x] Database stack (Neo4j, Postgres, Redis)
-- [x] MCP client integration
-- [x] Model provider abstraction (OpenAI, Anthropic, Ollama)
-- [x] Drafting framework (speculative, pipeline, candidates)
-- [x] Reasoning framework (CoT, ToT, ReAct, Reflection)
-- [x] Agent core with task planning
-- [ ] Security hardening
-- [ ] Comprehensive testing
-- [ ] Production deployment
+**Completed (Phases 1-10):**
+- Django API with translation endpoints
+- Tauri desktop application with cosmic theme
+- Two-level translation system (200+ languages)
+- Database stack (Neo4j, Postgres, Redis)
+- MCP client integration
+- Model provider abstraction (OpenAI, Anthropic, Ollama)
+- Drafting framework (speculative, pipeline, candidates)
+- Reasoning framework (CoT, ToT, ReAct, Reflection)
+- Agent core with task planning
+- Core test suite (50 tests)
+
+**In Progress:**
+- Phase 11: Memory System (90%)
+- Phase 13: UI Implementation (15%)
 
 ## License
 
