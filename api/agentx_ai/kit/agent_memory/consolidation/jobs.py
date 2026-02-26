@@ -654,6 +654,77 @@ def cleanup_old_memories():
         logger.info("Cleaned up low-salience orphan entities")
 
 
+def reset_consolidation(delete_memories: bool = False) -> Dict[str, Any]:
+    """
+    Reset consolidation timestamps for all conversations.
+
+    This allows all conversations to be reprocessed by the consolidation job.
+    Useful when extraction logic has changed or to rebuild semantic memory.
+
+    Args:
+        delete_memories: If True, also delete all entities, facts, and relationships
+                        (but keep turns/conversations for their embeddings)
+
+    Returns:
+        Dictionary with reset metrics
+    """
+    memories_deleted = 0
+
+    with Neo4jConnection.session() as session:
+        # Reset consolidation timestamps
+        result = session.run("""
+            MATCH (c:Conversation)
+            WHERE c.consolidated IS NOT NULL
+            REMOVE c.consolidated
+            RETURN count(c) AS reset_count
+        """)
+
+        record = result.single()
+        reset_count = record["reset_count"] if record else 0
+
+        if delete_memories:
+            # Delete all Facts
+            result = session.run("""
+                MATCH (f:Fact)
+                DETACH DELETE f
+                RETURN count(f) AS deleted
+            """)
+            record = result.single()
+            facts_deleted = record["deleted"] if record else 0
+
+            # Delete all Entities
+            result = session.run("""
+                MATCH (e:Entity)
+                DETACH DELETE e
+                RETURN count(e) AS deleted
+            """)
+            record = result.single()
+            entities_deleted = record["deleted"] if record else 0
+
+            # Delete all Strategies
+            result = session.run("""
+                MATCH (s:Strategy)
+                DETACH DELETE s
+                RETURN count(s) AS deleted
+            """)
+            record = result.single()
+            strategies_deleted = record["deleted"] if record else 0
+
+            memories_deleted = facts_deleted + entities_deleted + strategies_deleted
+            logger.info(
+                f"Deleted memories: {facts_deleted} facts, {entities_deleted} entities, "
+                f"{strategies_deleted} strategies"
+            )
+
+        logger.info(f"Reset consolidation for {reset_count} conversations")
+
+        return {
+            "conversations_reset": reset_count,
+            "memories_deleted": memories_deleted if delete_memories else None,
+            "success": True
+        }
+
+
 def trigger_reflection(
     conversation_id: str,
     user_id: str,

@@ -583,13 +583,14 @@
   top: 0;
   bottom: 0;
   width: 400px;
-  background: var(--bg-surface);
+  background: var(--bg-base);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   z-index: 100;
   animation: slideIn 0.2s ease;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
 }
 
 @keyframes slideIn {
@@ -1068,4 +1069,279 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ============================================
+   Settings Panel Styles
+   ============================================ */
+
+.settings-panel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+
+.settings-section {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+}
+
+.settings-section.experimental {
+  opacity: 0.8;
+}
+
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.settings-section-title svg {
+  color: var(--cosmic-violet);
+}
+
+.settings-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+/* Consolidate Jobs Checkboxes */
+.consolidate-jobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.job-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.job-checkbox input[type="checkbox"] {
+  accent-color: var(--cosmic-violet);
+  width: 16px;
+  height: 16px;
+}
+
+.consolidate-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.consolidate-now-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reinit-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-warning);
+}
+
+.reinit-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Settings Grid */
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-grid.intervals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-row label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.setting-row.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.setting-row.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.setting-row.checkbox input[type="checkbox"] {
+  accent-color: var(--cosmic-violet);
+  width: 16px;
+  height: 16px;
+}
+
+.setting-row input[type="text"],
+.setting-row input[type="number"],
+.setting-row select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.setting-row input[type="text"]:focus,
+.setting-row input[type="number"]:focus,
+.setting-row select:focus {
+  outline: none;
+  border-color: var(--cosmic-violet);
+}
+
+.setting-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--cosmic-violet);
+  height: 6px;
+}
+
+.setting-row input[type="number"] {
+  max-width: 100px;
+}
+
+/* Textarea Settings */
+.setting-textarea {
+  margin-top: 12px;
+}
+
+.textarea-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.textarea-header label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.reset-prompt-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.setting-textarea textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.setting-textarea textarea:focus {
+  outline: none;
+  border-color: var(--cosmic-violet);
+}
+
+.setting-textarea textarea::placeholder {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.prompt-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+/* Save Message */
+.save-message {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.save-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--status-online);
+}
+
+.save-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--status-error);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Settings Actions */
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-actions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .settings-grid.intervals {
+    grid-template-columns: 1fr;
+  }
+
+  .consolidate-jobs {
+    flex-direction: column;
+  }
 }

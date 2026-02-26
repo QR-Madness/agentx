@@ -5,13 +5,15 @@ import './ThinkingBubble.css';
 interface ThinkingBubbleProps {
   thinking: string;
   defaultExpanded?: boolean;
+  isStreaming?: boolean;
 }
 
-export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({ 
-  thinking, 
-  defaultExpanded = false 
+export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
+  thinking,
+  defaultExpanded = false,
+  isStreaming = false,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded || isStreaming);
 
   if (!thinking) return null;
 
@@ -19,8 +21,8 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
   const stepCount = thinking.split(/\n\n+/).filter(s => s.trim()).length;
 
   return (
-    <div className={`thinking-bubble ${isExpanded ? 'expanded' : ''}`}>
-      <button 
+    <div className={`thinking-bubble ${isExpanded ? 'expanded' : ''} ${isStreaming ? 'streaming' : ''}`}>
+      <button
         className="thinking-header"
         onClick={() => setIsExpanded(!isExpanded)}
         aria-expanded={isExpanded}
@@ -31,12 +33,14 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
           ) : (
             <ChevronRight size={16} className="thinking-chevron" />
           )}
-          <Lightbulb size={16} className="thinking-icon" />
-          <span className="thinking-label">Thinking</span>
+          <Lightbulb size={16} className={`thinking-icon ${isStreaming ? 'pulse' : ''}`} />
+          <span className="thinking-label">{isStreaming ? 'Thinking...' : 'Thinking'}</span>
         </div>
-        <span className="thinking-meta">
-          {stepCount} {stepCount === 1 ? 'step' : 'steps'}
-        </span>
+        {!isStreaming && (
+          <span className="thinking-meta">
+            {stepCount} {stepCount === 1 ? 'step' : 'steps'}
+          </span>
+        )}
       </button>
       
       {isExpanded && (

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from ....providers.base import Message, MessageRole
 from ....providers.registry import get_registry
-from ....agent.output_parser import validate_json_output
+from ....agent.output_parser import validate_json_output, parse_output, extract_yes_no_answer
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,11 @@ class ExtractionService:
             # If provider unavailable, default to allowing extraction
             return RelevanceResult(is_relevant=True, reason="provider_unavailable", error=str(e))
 
-        prompt = f'''Does this text contain ANY of the following?
+        # Use custom prompt if configured, otherwise use default
+        if self.settings.relevance_filter_prompt:
+            prompt = self.settings.relevance_filter_prompt.replace("{text}", text)
+        else:
+            prompt = f'''Does this text contain ANY of the following?
 - Names (people, places, projects, products, companies)
 - Personal info (preferences, opinions, goals, activities)
 - Facts or claims about anything specific
@@ -141,7 +145,8 @@ Text: "{text}"
 
 Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
 
-Reply YES or NO:'''
+IMPORTANT: Your response must end with exactly one word on its own line: YES or NO
+Your final answer:'''
 
         messages = [
             Message(role=MessageRole.USER, content=prompt),
@@ -155,11 +160,28 @@ Reply YES or NO:'''
                 max_tokens=max_tokens,
             )
 
-            response = result.content.strip().upper()
-            is_relevant = response.startswith("YES")
+            # Log raw response for debugging
+            logger.debug(f"Relevance raw response:\n{result.content}")
 
-            logger.debug(f"Relevance check: '{text[:50]}...' -> {response}")
-            return RelevanceResult(is_relevant=is_relevant, reason=f"llm_{response}")
+            # Parse to strip thinking tags
+            parsed = parse_output(result.content)
+            logger.debug(f"Relevance parsed content: {parsed.content}")
+            logger.debug(f"Relevance has_thinking: {parsed.has_thinking}")
+
+            # Use robust YES/NO extraction that handles reasoning models
+            is_relevant = extract_yes_no_answer(result.content)
+            logger.debug(f"Relevance extracted answer: {is_relevant}")
+
+            # If extraction failed, default to relevant to avoid missing data
+            if is_relevant is None:
+                logger.warning(f"Could not extract YES/NO from response")
+                is_relevant = True
+                reason = "parse_failed_default_yes"
+            else:
+                reason = f"llm_{'YES' if is_relevant else 'NO'}"
+
+            logger.debug(f"Relevance check: '{text[:50]}...' -> {reason}")
+            return RelevanceResult(is_relevant=is_relevant, reason=reason)
 
         except Exception as e:
             logger.warning(f"Relevance check failed: {e}, defaulting to relevant")
@@ -264,8 +286,8 @@ Reply YES or NO:'''
         result = self.extract_all(text)
         return result.relationships
 
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for extraction."""
+    def _get_default_system_prompt(self) -> str:
+        """Get the default system prompt for extraction (used when no custom prompt set)."""
         entity_types = ", ".join(self.settings.entity_types)
         relationship_types = ", ".join(self.settings.relationship_types)
         condense_instruction = """
@@ -289,6 +311,33 @@ RELATIONSHIP TYPES: {relationship_types}
 CONFIDENCE: 0.9+ explicit, 0.7-0.9 implied, below 0.7 don't extract
 
 Return ONLY valid JSON. No markdown, no code fences, no explanation."""
+
+    def _get_default_relevance_prompt(self) -> str:
+        """Get the default relevance filter prompt (used when no custom prompt set)."""
+        return '''Does this text contain ANY of the following?
+- Names (people, places, projects, products, companies)
+- Personal info (preferences, opinions, goals, activities)
+- Facts or claims about anything specific
+- Technical details or descriptions
+
+Text: "{text}"
+
+Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
+
+Reply YES or NO:'''
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for extraction."""
+        # Use custom prompt if configured
+        if self.settings.extraction_system_prompt:
+            # Allow template variables in custom prompt
+            return self.settings.extraction_system_prompt.replace(
+                "{entity_types}", ", ".join(self.settings.entity_types)
+            ).replace(
+                "{relationship_types}", ", ".join(self.settings.relationship_types)
+            )
+
+        return self._get_default_system_prompt()
 
     def _build_combined_extraction_prompt(self, text: str) -> str:
         """Build the user prompt with JSON output schema."""
@@ -338,6 +387,7 @@ RULES:
         Parse LLM response into ExtractionResult.
 
         Handles various response formats including markdown-wrapped JSON.
+        Strips thinking tags from reasoning models before parsing.
 
         Args:
             content: The raw LLM response content
@@ -345,8 +395,15 @@ RULES:
         Returns:
             ExtractionResult with parsed entities, facts, and relationships
         """
+        # Strip thinking tags from reasoning models (e.g., Nemotron)
+        parsed_output = parse_output(content)
+        cleaned_content = parsed_output.content
+
+        if parsed_output.has_thinking:
+            logger.debug(f"Stripped thinking tags from extraction response")
+
         # First try the output_parser utility
-        is_valid, parsed, error = validate_json_output(content)
+        is_valid, parsed, error = validate_json_output(cleaned_content)
 
         if is_valid and parsed:
             return ExtractionResult(
@@ -365,7 +422,7 @@ RULES:
         ]
 
         for pattern in json_patterns:
-            match = re.search(pattern, content)
+            match = re.search(pattern, cleaned_content)
             if match:
                 try:
                     json_str = match.group(1).strip()
@@ -381,7 +438,7 @@ RULES:
 
         # If all parsing attempts fail, log and return empty result
         logger.warning(f"Failed to parse extraction response: {error}")
-        logger.debug(f"Raw response: {content[:500]}...")
+        logger.debug(f"Raw response: {cleaned_content[:500]}...")
         return ExtractionResult(success=False, error=f"JSON parse error: {error}")
 
 

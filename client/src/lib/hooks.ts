@@ -20,6 +20,7 @@ import {
   JobHistory,
   WorkerStatus,
   ConsolidateResult,
+  ConsolidationSettings,
 } from './api';
 
 export function useHealth(includeMemory = true) {
@@ -419,4 +420,46 @@ export function useConsolidate() {
   }, []);
 
   return { consolidate, loading, result, error, reset };
+}
+
+export function useConsolidationSettings() {
+  const [settings, setSettings] = useState<ConsolidationSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const fetchSettings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getConsolidationSettings();
+      setSettings(res);
+    } catch (err) {
+      setError(err as ApiError);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  const updateSettings = useCallback(async (updates: Partial<ConsolidationSettings>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateConsolidationSettings(updates);
+      // Refresh settings after save
+      await fetchSettings();
+      return true;
+    } catch (err) {
+      setError(err as ApiError);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchSettings]);
+
+  return { settings, loading, saving, error, updateSettings, refresh: fetchSettings };
 }

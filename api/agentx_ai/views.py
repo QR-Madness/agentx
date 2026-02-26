@@ -1285,6 +1285,68 @@ def memory_stats(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@csrf_exempt
+def memory_settings(request):
+    """
+    GET /api/memory/settings - Get consolidation settings.
+    POST /api/memory/settings - Update consolidation settings.
+
+    Returns/accepts settings for extraction, relevance filter, entity linking,
+    quality thresholds, and job scheduling.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method == 'GET':
+        try:
+            from .kit.agent_memory.config import get_consolidation_settings
+
+            settings = get_consolidation_settings()
+
+            # Also include the default prompts for display
+            # (so UI can show what the defaults are when custom is empty)
+            from .kit.agent_memory.extraction.service import ExtractionService
+            service = ExtractionService()
+            settings["default_extraction_prompt"] = service._get_default_system_prompt()
+            settings["default_relevance_prompt"] = service._get_default_relevance_prompt()
+
+            return JsonResponse(settings)
+        except Exception as e:
+            logger.error(f"Error getting memory settings: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            from .kit.agent_memory.config import save_memory_settings, get_consolidation_settings
+
+            data = json.loads(request.body.decode('utf-8'))
+
+            # Validate and filter to only allowed settings
+            allowed_keys = set(get_consolidation_settings().keys())
+            # Remove read-only keys
+            allowed_keys -= {"entity_types", "relationship_types",
+                            "default_extraction_prompt", "default_relevance_prompt"}
+
+            filtered = {k: v for k, v in data.items() if k in allowed_keys}
+
+            if not filtered:
+                return JsonResponse({"error": "No valid settings provided"}, status=400)
+
+            save_memory_settings(filtered)
+
+            return JsonResponse({
+                "success": True,
+                "updated": list(filtered.keys())
+            })
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            logger.error(f"Error updating memory settings: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
 # =============================================================================
 # Job Monitoring Endpoints
 # =============================================================================
@@ -1450,6 +1512,70 @@ def memory_consolidate(request):
 
     except Exception as e:
         logger.error(f"Error running consolidation: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_reset(request):
+    """
+    POST /api/memory/reset - Reset consolidation for all conversations.
+
+    This clears the consolidated timestamp from all conversations,
+    allowing them to be reprocessed by the consolidation job.
+
+    Request body (optional):
+        {"delete_memories": true}  - Also delete all entities, facts, strategies
+
+    Useful when extraction logic has changed or to rebuild semantic memory.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation.jobs import reset_consolidation
+
+        data = json.loads(request.body) if request.body else {}
+        delete_memories = data.get('delete_memories', False)
+
+        result = reset_consolidation(delete_memories=delete_memories)
+        return JsonResponse(result)
+
+    except Exception as e:
+        logger.error(f"Error resetting consolidation: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def jobs_clear_stuck(request):
+    """
+    POST /api/jobs/clear-stuck - Clear any jobs stuck in 'running' state.
+
+    Useful when a job crashed and left its status as 'running',
+    blocking future runs.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.consolidation import JobRegistry
+
+        registry = JobRegistry.get_instance()
+        cleared = registry.clear_stuck_jobs()
+
+        return JsonResponse({
+            "success": True,
+            "cleared_jobs": cleared,
+            "message": f"Cleared {len(cleared)} stuck job(s)" if cleared else "No stuck jobs found"
+        })
+
+    except Exception as e:
+        logger.error(f"Error clearing stuck jobs: {e}")
         return JsonResponse({"error": str(e)}, status=500)
 
 

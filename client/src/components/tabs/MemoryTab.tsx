@@ -3,7 +3,7 @@
  * Browse and inspect memory contents: entities, facts, and strategies.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Database,
   Users,
@@ -15,7 +15,10 @@ import {
   X,
   ArrowUpRight,
   ChevronLeft,
-  Clock
+  Clock,
+  Settings,
+  RotateCcw,
+  Save
 } from 'lucide-react';
 import {
   useMemoryEntities,
@@ -23,13 +26,14 @@ import {
   useMemoryStrategies,
   useMemoryStats,
   useEntityGraph,
-  useConsolidate
+  useConsolidate,
+  useConsolidationSettings
 } from '../../lib/hooks';
-import { MemoryEntity, MemoryFact, MemoryStrategy } from '../../lib/api';
+import { MemoryEntity, MemoryFact, MemoryStrategy, ConsolidationSettings, api } from '../../lib/api';
 import { JobsPanel } from '../JobsPanel';
 import '../../styles/MemoryTab.css';
 
-type MemorySection = 'entities' | 'facts' | 'strategies' | 'jobs';
+type MemorySection = 'entities' | 'facts' | 'strategies' | 'jobs' | 'settings';
 
 // Format timestamp for display
 function formatTimestamp(timestamp: string | undefined): string {
@@ -443,6 +447,492 @@ function Pagination({
   );
 }
 
+// Consolidation Settings Panel Component
+function ConsolidationSettingsPanel({
+  onConsolidate
+}: {
+  onConsolidate: (jobs?: string[]) => Promise<void>;
+}) {
+  const { settings, loading, saving, error, updateSettings, refresh } = useConsolidationSettings();
+  const [localSettings, setLocalSettings] = useState<Partial<ConsolidationSettings>>({});
+  const [consolidating, setConsolidating] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [consolidateJobs, setConsolidateJobs] = useState<string[]>(['consolidate']);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sync local state with loaded settings
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
+  const handleChange = <K extends keyof ConsolidationSettings>(
+    key: K,
+    value: ConsolidationSettings[K]
+  ) => {
+    setLocalSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    const success = await updateSettings(localSettings);
+    if (success) {
+      setSaveMessage({ type: 'success', text: 'Settings saved successfully' });
+    } else {
+      setSaveMessage({ type: 'error', text: 'Failed to save settings' });
+    }
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  const handleReset = () => {
+    if (settings) {
+      // Reset prompts to defaults
+      setLocalSettings({
+        ...settings,
+        extraction_system_prompt: '',
+        relevance_filter_prompt: ''
+      });
+    }
+  };
+
+  const handleConsolidate = async () => {
+    setConsolidating(true);
+    try {
+      await onConsolidate(consolidateJobs.length > 0 ? consolidateJobs : undefined);
+    } finally {
+      setConsolidating(false);
+    }
+  };
+
+  const handleReinitMemory = async () => {
+    // First confirm reset
+    if (!confirm('This will reset consolidation for ALL conversations, allowing them to be reprocessed. Continue?')) {
+      return;
+    }
+
+    // Then ask if they want to delete existing memories
+    const deleteMemories = confirm(
+      'Also DELETE all existing entities, facts, and strategies?\n\n' +
+      'Click OK to delete and rebuild from scratch.\n' +
+      'Click Cancel to keep existing memories and just reprocess conversations.'
+    );
+
+    setResetting(true);
+    try {
+      const result = await api.resetMemory(deleteMemories);
+      let message = `Reset ${result.conversations_reset} conversations for reprocessing`;
+      if (deleteMemories && result.memories_deleted !== undefined) {
+        message += `, deleted ${result.memories_deleted} memories`;
+      }
+      setSaveMessage({ type: 'success', text: message });
+    } catch (err) {
+      setSaveMessage({
+        type: 'error',
+        text: `Reset failed: ${(err as Error).message}`
+      });
+    } finally {
+      setResetting(false);
+      setTimeout(() => setSaveMessage(null), 5000);
+    }
+  };
+
+  const handleClearStuckJobs = async () => {
+    try {
+      const result = await api.clearStuckJobs();
+      setSaveMessage({
+        type: 'success',
+        text: result.message
+      });
+    } catch (err) {
+      setSaveMessage({
+        type: 'error',
+        text: `Failed to clear stuck jobs: ${(err as Error).message}`
+      });
+    }
+    setTimeout(() => setSaveMessage(null), 5000);
+  };
+
+  const toggleJob = (job: string) => {
+    setConsolidateJobs(prev =>
+      prev.includes(job) ? prev.filter(j => j !== job) : [...prev, job]
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="settings-panel">
+        <div className="memory-loading">
+          <RefreshCw size={24} className="spin" />
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="settings-panel">
+        <div className="memory-error">
+          <p>Failed to load settings: {error.message}</p>
+          <button className="button-ghost" onClick={refresh}>
+            <RefreshCw size={16} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-panel">
+      {/* Force Consolidate Section */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">
+          <Zap size={18} />
+          Force Consolidate
+        </h3>
+        <p className="settings-description">
+          Run consolidation immediately to extract entities and facts from recent conversations.
+        </p>
+        <div className="consolidate-jobs">
+          <label className="job-checkbox">
+            <input
+              type="checkbox"
+              checked={consolidateJobs.includes('consolidate')}
+              onChange={() => toggleJob('consolidate')}
+            />
+            <span>Extract (entities, facts, relationships)</span>
+          </label>
+          <label className="job-checkbox">
+            <input
+              type="checkbox"
+              checked={consolidateJobs.includes('patterns')}
+              onChange={() => toggleJob('patterns')}
+            />
+            <span>Patterns (procedural memory)</span>
+          </label>
+          <label className="job-checkbox">
+            <input
+              type="checkbox"
+              checked={consolidateJobs.includes('promote')}
+              onChange={() => toggleJob('promote')}
+            />
+            <span>Promote (cross-channel)</span>
+          </label>
+        </div>
+        <div className="consolidate-buttons">
+          <button
+            className="button-primary consolidate-now-btn"
+            onClick={handleConsolidate}
+            disabled={consolidating || consolidateJobs.length === 0}
+          >
+            {consolidating ? (
+              <><RefreshCw size={16} className="spin" /> Consolidating...</>
+            ) : (
+              <><Zap size={16} /> Run Now</>
+            )}
+          </button>
+          <button
+            className="button-ghost reinit-btn"
+            onClick={handleReinitMemory}
+            disabled={resetting}
+            title="Reset all conversations for reprocessing"
+          >
+            {resetting ? (
+              <><RefreshCw size={16} className="spin" /> Resetting...</>
+            ) : (
+              <><RotateCcw size={16} /> Reinit Memory</>
+            )}
+          </button>
+          <button
+            className="button-ghost clear-stuck-btn"
+            onClick={handleClearStuckJobs}
+            title="Clear any jobs stuck in 'running' state"
+          >
+            <X size={16} /> Clear Stuck
+          </button>
+        </div>
+      </div>
+
+      {/* Extraction Settings */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Extraction</h3>
+        <div className="settings-grid">
+          <div className="setting-row">
+            <label>Provider</label>
+            <select
+              value={localSettings.extraction_provider || 'lmstudio'}
+              onChange={e => handleChange('extraction_provider', e.target.value)}
+            >
+              <option value="lmstudio">LM Studio</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+          <div className="setting-row">
+            <label>Model</label>
+            <input
+              type="text"
+              value={localSettings.extraction_model || ''}
+              onChange={e => handleChange('extraction_model', e.target.value)}
+              placeholder="e.g., google/gemma-3-4b"
+            />
+          </div>
+          <div className="setting-row">
+            <label>Temperature: {(localSettings.extraction_temperature ?? 0.2).toFixed(2)}</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={localSettings.extraction_temperature ?? 0.2}
+              onChange={e => handleChange('extraction_temperature', parseFloat(e.target.value))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Max Tokens</label>
+            <input
+              type="number"
+              value={localSettings.extraction_max_tokens ?? 2000}
+              onChange={e => handleChange('extraction_max_tokens', parseInt(e.target.value) || 2000)}
+              min={100}
+              max={8000}
+            />
+          </div>
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.extraction_condense_facts ?? true}
+                onChange={e => handleChange('extraction_condense_facts', e.target.checked)}
+              />
+              Condense facts into atomic statements
+            </label>
+          </div>
+        </div>
+        <div className="setting-textarea">
+          <div className="textarea-header">
+            <label>System Prompt</label>
+            <button
+              className="button-ghost reset-prompt-btn"
+              onClick={() => handleChange('extraction_system_prompt', '')}
+              title="Reset to default"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+          <textarea
+            value={localSettings.extraction_system_prompt || ''}
+            onChange={e => handleChange('extraction_system_prompt', e.target.value)}
+            placeholder={settings?.default_extraction_prompt || 'Default system prompt will be used...'}
+            rows={8}
+          />
+          {!localSettings.extraction_system_prompt && (
+            <p className="prompt-hint">Leave empty to use default prompt</p>
+          )}
+        </div>
+      </div>
+
+      {/* Relevance Filter Settings */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Relevance Filter</h3>
+        <div className="settings-grid">
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.relevance_filter_enabled ?? true}
+                onChange={e => handleChange('relevance_filter_enabled', e.target.checked)}
+              />
+              Enable relevance filter (skip non-informative turns)
+            </label>
+          </div>
+          <div className="setting-row">
+            <label>Model</label>
+            <input
+              type="text"
+              value={localSettings.relevance_filter_model || ''}
+              onChange={e => handleChange('relevance_filter_model', e.target.value)}
+              placeholder="e.g., google/gemma-3-4b"
+            />
+          </div>
+          <div className="setting-row">
+            <label>Max Tokens</label>
+            <input
+              type="number"
+              value={localSettings.relevance_filter_max_tokens ?? 500}
+              onChange={e => handleChange('relevance_filter_max_tokens', parseInt(e.target.value) || 500)}
+              min={10}
+              max={2000}
+              title="Reasoning models need more tokens (500+)"
+            />
+          </div>
+        </div>
+        <div className="setting-textarea">
+          <div className="textarea-header">
+            <label>Relevance Prompt</label>
+            <button
+              className="button-ghost reset-prompt-btn"
+              onClick={() => handleChange('relevance_filter_prompt', '')}
+              title="Reset to default"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+          <textarea
+            value={localSettings.relevance_filter_prompt || ''}
+            onChange={e => handleChange('relevance_filter_prompt', e.target.value)}
+            placeholder={settings?.default_relevance_prompt || 'Default relevance prompt will be used...'}
+            rows={6}
+          />
+          {!localSettings.relevance_filter_prompt && (
+            <p className="prompt-hint">Leave empty to use default prompt</p>
+          )}
+        </div>
+      </div>
+
+      {/* Entity Linking Settings */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Entity Linking</h3>
+        <div className="settings-grid">
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.entity_linking_enabled ?? true}
+                onChange={e => handleChange('entity_linking_enabled', e.target.checked)}
+              />
+              Enable entity linking (connect facts to entities)
+            </label>
+          </div>
+          <div className="setting-row">
+            <label>Similarity Threshold: {((localSettings.entity_linking_similarity_threshold ?? 0.75) * 100).toFixed(0)}%</label>
+            <input
+              type="range"
+              min="0.5"
+              max="1"
+              step="0.05"
+              value={localSettings.entity_linking_similarity_threshold ?? 0.75}
+              onChange={e => handleChange('entity_linking_similarity_threshold', parseFloat(e.target.value))}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Quality Thresholds */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Quality Thresholds</h3>
+        <div className="settings-grid">
+          <div className="setting-row">
+            <label>Min Fact Confidence: {((localSettings.fact_confidence_threshold ?? 0.7) * 100).toFixed(0)}%</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={localSettings.fact_confidence_threshold ?? 0.7}
+              onChange={e => handleChange('fact_confidence_threshold', parseFloat(e.target.value))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Min Promotion Confidence: {((localSettings.promotion_min_confidence ?? 0.85) * 100).toFixed(0)}%</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={localSettings.promotion_min_confidence ?? 0.85}
+              onChange={e => handleChange('promotion_min_confidence', parseFloat(e.target.value))}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Job Scheduling */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Job Intervals (minutes)</h3>
+        <div className="settings-grid intervals">
+          <div className="setting-row">
+            <label>Consolidation</label>
+            <input
+              type="number"
+              value={localSettings.job_consolidate_interval ?? 15}
+              onChange={e => handleChange('job_consolidate_interval', parseInt(e.target.value) || 15)}
+              min={1}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Promotion</label>
+            <input
+              type="number"
+              value={localSettings.job_promote_interval ?? 60}
+              onChange={e => handleChange('job_promote_interval', parseInt(e.target.value) || 60)}
+              min={1}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Entity Linking</label>
+            <input
+              type="number"
+              value={localSettings.job_entity_linking_interval ?? 30}
+              onChange={e => handleChange('job_entity_linking_interval', parseInt(e.target.value) || 30)}
+              min={1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Experimental */}
+      <div className="settings-section experimental">
+        <h3 className="settings-section-title">Experimental</h3>
+        <div className="settings-grid">
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.contradiction_detection_enabled ?? false}
+                onChange={e => handleChange('contradiction_detection_enabled', e.target.checked)}
+              />
+              Enable contradiction detection
+            </label>
+          </div>
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.correction_detection_enabled ?? false}
+                onChange={e => handleChange('correction_detection_enabled', e.target.checked)}
+              />
+              Enable user correction handling
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Save Message */}
+      {saveMessage && (
+        <div className={`save-message ${saveMessage.type}`}>
+          {saveMessage.text}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="settings-actions">
+        <button className="button-ghost" onClick={handleReset} disabled={saving}>
+          <RotateCcw size={16} />
+          Reset Prompts
+        </button>
+        <button className="button-primary" onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <><RefreshCw size={16} className="spin" /> Saving...</>
+          ) : (
+            <><Save size={16} /> Save Settings</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Main Memory Tab Component
 export const MemoryTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<MemorySection>('entities');
@@ -479,6 +969,7 @@ export const MemoryTab: React.FC = () => {
     { id: 'facts' as const, label: 'Facts', icon: <FileText size={18} /> },
     { id: 'strategies' as const, label: 'Strategies', icon: <Zap size={18} /> },
     { id: 'jobs' as const, label: 'Jobs', icon: <Clock size={18} /> },
+    { id: 'settings' as const, label: 'Settings', icon: <Settings size={18} /> },
   ];
 
   const handleSectionChange = (section: MemorySection) => {
@@ -488,9 +979,9 @@ export const MemoryTab: React.FC = () => {
     setSearchQuery('');
   };
 
-  const handleConsolidate = async () => {
+  const handleConsolidate = async (jobs?: string[]) => {
     try {
-      const result = await consolidate();
+      const result = await consolidate(jobs);
       const totalEntities = result.results?.consolidate?.entities ?? 0;
       const totalFacts = result.results?.consolidate?.facts ?? 0;
       const totalRelationships = result.results?.consolidate?.relationships ?? 0;
@@ -526,7 +1017,7 @@ export const MemoryTab: React.FC = () => {
           <div className="header-actions">
             <button
               className="button-primary consolidate-button"
-              onClick={handleConsolidate}
+              onClick={() => handleConsolidate()}
               disabled={consolidating}
               title="Run consolidation to extract entities and facts from conversations"
             >
@@ -595,7 +1086,12 @@ export const MemoryTab: React.FC = () => {
 
         {/* Content Area */}
         <div className="memory-content">
-          {activeSection === 'jobs' ? (
+          {activeSection === 'settings' ? (
+            /* Settings Panel */
+            <div className="memory-list-container card">
+              <ConsolidationSettingsPanel onConsolidate={handleConsolidate} />
+            </div>
+          ) : activeSection === 'jobs' ? (
             /* Jobs Panel - has its own layout */
             <div className="memory-list-container card">
               <JobsPanel />

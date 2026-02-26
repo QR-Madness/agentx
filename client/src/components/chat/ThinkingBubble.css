@@ -125,3 +125,38 @@
     rgba(245, 158, 11, 0.08) 100%
   );
 }
+
+/* Streaming state */
+.thinking-bubble.streaming {
+  border-color: rgba(251, 191, 36, 0.4);
+  animation: thinking-glow 2s ease-in-out infinite;
+}
+
+.thinking-bubble.streaming .thinking-content {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.thinking-icon.pulse {
+  animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes thinking-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(251, 191, 36, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.35);
+  }
+}

@@ -328,6 +328,47 @@ export interface ConsolidateResult {
   errors: string[];
 }
 
+export interface ConsolidationSettings {
+  // Extraction
+  extraction_enabled: boolean;
+  extraction_provider: string;
+  extraction_model: string;
+  extraction_temperature: number;
+  extraction_max_tokens: number;
+  extraction_condense_facts: boolean;
+  extraction_system_prompt: string;
+
+  // Relevance filter
+  relevance_filter_enabled: boolean;
+  relevance_filter_provider: string;
+  relevance_filter_model: string;
+  relevance_filter_max_tokens: number;
+  relevance_filter_prompt: string;
+
+  // Entity linking
+  entity_linking_enabled: boolean;
+  entity_linking_similarity_threshold: number;
+
+  // Quality thresholds
+  fact_confidence_threshold: number;
+  promotion_min_confidence: number;
+
+  // Job intervals
+  job_consolidate_interval: number;
+  job_promote_interval: number;
+  job_entity_linking_interval: number;
+
+  // Experimental
+  contradiction_detection_enabled: boolean;
+  correction_detection_enabled: boolean;
+
+  // Read-only (from server)
+  entity_types: string[];
+  relationship_types: string[];
+  default_extraction_prompt: string;
+  default_relevance_prompt: string;
+}
+
 // === API Client ===
 
 class ApiClient {
@@ -598,6 +639,30 @@ class ApiClient {
     return this.request('/api/memory/consolidate', {
       method: 'POST',
       body: JSON.stringify(jobs ? { jobs } : {}),
+    });
+  }
+
+  async getConsolidationSettings(): Promise<ConsolidationSettings> {
+    return this.request('/api/memory/settings');
+  }
+
+  async updateConsolidationSettings(settings: Partial<ConsolidationSettings>): Promise<{ success: boolean; updated: string[] }> {
+    return this.request('/api/memory/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  async resetMemory(deleteMemories = false): Promise<{ conversations_reset: number; memories_deleted?: number; success: boolean }> {
+    return this.request('/api/memory/reset', {
+      method: 'POST',
+      body: JSON.stringify({ delete_memories: deleteMemories }),
+    });
+  }
+
+  async clearStuckJobs(): Promise<{ success: boolean; cleared_jobs: string[]; message: string }> {
+    return this.request('/api/jobs/clear-stuck', {
+      method: 'POST',
     });
   }
 

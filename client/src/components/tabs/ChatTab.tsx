@@ -773,7 +773,12 @@ export const ChatTab: React.FC = () => {
             <div className="message-content">
               {streamingContent ? (
                 <div className="streaming-message">
-                  <MessageContent content={streamingContent} />
+                  {/* Show thinking bubble if we have thinking content during streaming */}
+                  {(() => {
+                    const thinkMatch = streamingContent.match(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/i);
+                    return thinkMatch ? <ThinkingBubble thinking={thinkMatch[1]} isStreaming /> : null;
+                  })()}
+                  <MessageContent content={stripThinkingTags(streamingContent)} />
                   <span className="streaming-cursor">▊</span>
                 </div>
               ) : (

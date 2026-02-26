@@ -192,7 +192,14 @@ class JobRegistry:
     def _set_status(self, name: str, status: str) -> None:
         """Set current status of a job."""
         key = self.KEY_STATUS.format(name=name)
-        self.redis.set(key, status)
+        if status == "running":
+            # Set with 5-minute TTL so stuck jobs auto-clear
+            self.redis.set(key, status, ex=300)
+        elif status == "idle":
+            # Delete the key instead of setting to idle
+            self.redis.delete(key)
+        else:
+            self.redis.set(key, status)
 
     def _get_status(self, name: str) -> str:
         """Get current status of a job."""
@@ -367,6 +374,23 @@ class JobRegistry:
         """Check if a job is disabled."""
         key = self.KEY_DISABLED.format(name=name)
         return bool(self.redis.exists(key))
+
+    def clear_stuck_jobs(self) -> List[str]:
+        """
+        Clear any jobs stuck in 'running' state.
+
+        This is useful when a job crashed and left its status as 'running'.
+        Returns list of job names that were cleared.
+        """
+        cleared = []
+        for name in self._jobs.keys():
+            key = self.KEY_STATUS.format(name=name)
+            status = self.redis.get(key)
+            if status == "running":
+                self.redis.delete(key)
+                cleared.append(name)
+                logger.info(f"Cleared stuck job status: {name}")
+        return cleared
 
     def run_consolidation_pipeline(
         self, jobs: Optional[List[str]] = None

@@ -38,8 +38,11 @@ urlpatterns = [
     path("memory/strategies", views.memory_strategies, name="memory-strategies"),
     path("memory/stats", views.memory_stats, name="memory-stats"),
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),
+    path("memory/reset", views.memory_reset, name="memory-reset"),
+    path("memory/settings", views.memory_settings, name="memory-settings"),
     # Job monitoring endpoints
     path("jobs", views.jobs_list, name="jobs-list"),
+    path("jobs/clear-stuck", views.jobs_clear_stuck, name="jobs-clear-stuck"),
     path("jobs/<str:job_name>", views.job_detail, name="job-detail"),
     path("jobs/<str:job_name>/run", views.job_run, name="job-run"),
     path("jobs/<str:job_name>/toggle", views.job_toggle, name="job-toggle"),
