@@ -6,37 +6,37 @@ from django.views.decorators.csrf import csrf_exempt
 from .kit.memory_utils import check_memory_health
 from .mcp import MCPClientManager, ServerRegistry
 from .providers import get_registry
+from .utils.decorators import lazy_singleton
+from .utils.responses import (
+    json_error,
+    json_success,
+    parse_json_body,
+    paginate_request,
+    require_methods,
+)
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded MCP manager
-_mcp_manager = None
 
-
+@lazy_singleton
 def get_mcp_manager():
     """Get or create MCPClientManager instance lazily."""
-    global _mcp_manager
-    if _mcp_manager is None:
-        from pathlib import Path
-        config_path = Path(__file__).parent.parent.parent / "mcp_servers.json"
-        registry = ServerRegistry(config_path) if config_path.exists() else ServerRegistry()
-        _mcp_manager = MCPClientManager(registry)
-        logger.info(f"MCPClientManager initialized with {len(registry.list())} configured servers")
-    return _mcp_manager
-
-# Lazy-loaded translation kit to avoid import-time model loading
-_translation_kit = None
+    from pathlib import Path
+    config_path = Path(__file__).parent.parent.parent / "mcp_servers.json"
+    registry = ServerRegistry(config_path) if config_path.exists() else ServerRegistry()
+    manager = MCPClientManager(registry)
+    logger.info(f"MCPClientManager initialized with {len(registry.list())} configured servers")
+    return manager
 
 
+@lazy_singleton
 def get_translation_kit():
     """Get or create TranslationKit instance lazily."""
-    global _translation_kit
-    if _translation_kit is None:
-        from .kit.translation import TranslationKit
-        logger.info("Initializing TranslationKit (loading models)...")
-        _translation_kit = TranslationKit()
-        logger.info("TranslationKit initialized successfully")
-    return _translation_kit
+    from .kit.translation import TranslationKit
+    logger.info("Initializing TranslationKit (loading models)...")
+    kit = TranslationKit()
+    logger.info("TranslationKit initialized successfully")
+    return kit
 
 
 def index(request):
@@ -46,14 +46,14 @@ def index(request):
 def health(request):
     """
     Health check endpoint for all services.
-    
+
     Returns status of:
     - API server (always healthy if responding)
     - Translation models (loaded or not)
     - Memory system connections (neo4j, postgres, redis)
     """
     # Check translation kit (don't initialize just for health check)
-    kit = _translation_kit  # Check without triggering lazy load
+    kit = get_translation_kit.get_if_initialized()
     translation_status = {
         "status": "healthy" if kit else "not_loaded",
         "models": {
@@ -84,47 +84,37 @@ def health(request):
 
 
 @csrf_exempt
+@require_methods("POST")
 def translate(request):
-    # Handle CORS preflight
-    if request.method == 'OPTIONS':
-        return JsonResponse({}, status=200)
+    """Translate text to a target language."""
+    data, error = parse_json_body(request)
+    if error:
+        return error
 
-    # Only accept POST requests
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-
-    content = request.body.decode('utf-8')
     logger.info(f"Translation request received, body size: {len(request.body)}")
 
-    if not content:
-        return JsonResponse({'error': 'No content provided'}, status=400)
+    text = data.get("text")
+    # Accept both camelCase and snake_case for compatibility
+    target_language = data.get("targetLanguage") or data.get("target_language")
 
-    try:
-        data = json.loads(content)
-        text = data.get("text")
-        # Accept both camelCase and snake_case for compatibility
-        target_language = data.get("targetLanguage") or data.get("target_language")
+    if not text:
+        return json_error("Missing required field: text")
+    if not target_language:
+        return json_error("Missing required field: targetLanguage or target_language")
 
-        if not text:
-            return JsonResponse({'error': 'Missing required field: text'}, status=400)
-        if not target_language:
-            return JsonResponse({'error': 'Missing required field: targetLanguage or target_language'}, status=400)
-
-        logger.debug(f"Translation request: target={target_language}, text_length={len(text)}")
-    except json.JSONDecodeError as e:
-        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+    logger.debug(f"Translation request: target={target_language}, text_length={len(text)}")
 
     try:
         translated_text = get_translation_kit().translate_text(text, target_language, target_language_level=2)
     except ValueError as e:
-        return JsonResponse({'error': str(e)}, status=400)
+        return json_error(str(e))
     except Exception as e:
         logger.exception("Translation error")
-        return JsonResponse({'error': f'Translation failed: {str(e)}'}, status=500)
+        return json_error(f"Translation failed: {str(e)}", status=500)
 
-    return JsonResponse({
-        'original': text,
-        'translatedText': str(translated_text),
+    return json_success({
+        "original": text,
+        "translatedText": str(translated_text),
     })
 
 
@@ -297,48 +287,38 @@ def providers_health(request):
 
 # ============== Agent Endpoints ==============
 
-# Lazy-loaded agent instance
-_agent = None
 
-
+@lazy_singleton
 def get_agent():
     """Get or create Agent instance lazily."""
-    global _agent
-    if _agent is None:
-        import os
-        from .agent import Agent, AgentConfig
-        
-        # Offline-first: default to local Ollama model
-        default_model = os.environ.get("DEFAULT_MODEL", "llama3.2")
-        
-        _agent = Agent(AgentConfig(
-            default_model=default_model,
-            enable_planning=True,
-            enable_reasoning=True,
-        ))
-        logger.info(f"Agent initialized with model: {default_model}")
-    return _agent
+    import os
+    from .agent import Agent, AgentConfig
+
+    # Offline-first: default to local Ollama model
+    default_model = os.environ.get("DEFAULT_MODEL", "llama3.2")
+
+    agent = Agent(AgentConfig(
+        default_model=default_model,
+        enable_planning=True,
+        enable_reasoning=True,
+    ))
+    logger.info(f"Agent initialized with model: {default_model}")
+    return agent
 
 
 @csrf_exempt
+@require_methods("POST")
 def agent_run(request):
     """Execute a task using the agent."""
-    if request.method == 'OPTIONS':
-        return JsonResponse({}, status=200)
+    data, error = parse_json_body(request)
+    if error:
+        return error
 
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    task = data.get("task")
+    if not task:
+        return json_error("Missing required field: task")
 
-    try:
-        data = json.loads(request.body.decode('utf-8'))
-        task = data.get("task")
-        if not task:
-            return JsonResponse({'error': 'Missing required field: task'}, status=400)
-
-        reasoning_strategy = data.get("reasoning_strategy")
-
-    except json.JSONDecodeError as e:
-        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+    reasoning_strategy = data.get("reasoning_strategy")
 
     agent = get_agent()
 
@@ -347,7 +327,7 @@ def agent_run(request):
         kwargs["reasoning_strategy"] = reasoning_strategy
     result = agent.run(task, **kwargs)
 
-    return JsonResponse({
+    return json_success({
         "task_id": result.task_id,
         "status": result.status.value,
         "answer": result.answer,

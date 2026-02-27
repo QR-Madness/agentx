@@ -20,6 +20,15 @@ from .events import (
     EntityCreatedPayload,
     RetrievalCompletePayload,
 )
+from .query_utils import (
+    CypherFilterBuilder,
+    SQLFilterBuilder,
+    convert_record_datetimes,
+    neo4j_datetime_to_iso,
+    validate_pagination,
+    validate_time_window,
+    COMMON_DATETIME_FIELDS,
+)
 
 __all__ = [
     # Core interface
@@ -53,4 +62,12 @@ __all__ = [
     "FactLearnedPayload",
     "EntityCreatedPayload",
     "RetrievalCompletePayload",
+    # Query utilities
+    "CypherFilterBuilder",
+    "SQLFilterBuilder",
+    "convert_record_datetimes",
+    "neo4j_datetime_to_iso",
+    "validate_pagination",
+    "validate_time_window",
+    "COMMON_DATETIME_FIELDS",
 ]

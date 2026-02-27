@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from ..models import Entity, Fact
 from ..connections import Neo4jConnection
 from ..config import get_settings
+from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
@@ -188,22 +189,14 @@ class SemanticMemory:
             List of matching facts
         """
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND f.user_id = $user_id"
-
-            # Channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (f.channel = $channel OR f.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND f.channel = '_global'"
+            # Build filters using utility
+            filters = CypherFilterBuilder("f")
+            filters.add_user_filter(user_id).add_channel_filter(channel)
 
             result = session.run(f"""
                 CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
                 YIELD node AS f, score
-                WHERE f.confidence >= $min_confidence {user_filter} {channel_filter}
+                WHERE f.confidence >= $min_confidence {filters.build_inline()}
                 OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
                 RETURN f.id AS id,
                        f.claim AS claim,
@@ -243,22 +236,14 @@ class SemanticMemory:
             List of matching entities
         """
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND e.user_id = $user_id"
-
-            # Channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (e.channel = $channel OR e.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND e.channel = '_global'"
+            # Build filters using utility
+            filters = CypherFilterBuilder("e")
+            filters.add_user_filter(user_id).add_channel_filter(channel)
 
             result = session.run(f"""
                 CALL db.index.vector.queryNodes('entity_embeddings', $k, $embedding)
                 YIELD node AS e, score
-                WHERE true {user_filter} {channel_filter}
+                WHERE true {filters.build_inline()}
 
                 // Update access stats
                 SET e.last_accessed = datetime(),
@@ -307,37 +292,29 @@ class SemanticMemory:
         validated_max_related = max(1, min(int(max_related), 100))
 
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND e.user_id = $user_id"
+            # Build filters using utilities for each node alias
+            entity_filters = CypherFilterBuilder("e")
+            entity_filters.add_user_filter(user_id).add_channel_filter(channel)
 
-            # Build channel filters
-            channel_filter = ""
-            related_channel_filter = ""
-            fact_channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (e.channel = $channel OR e.channel = '_global')"
-                related_channel_filter = "AND (related.channel = $channel OR related.channel = '_global')"
-                fact_channel_filter = "AND (f.channel = $channel OR f.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND e.channel = '_global'"
-                related_channel_filter = "AND related.channel = '_global'"
-                fact_channel_filter = "AND f.channel = '_global'"
+            related_filters = CypherFilterBuilder("related")
+            related_filters.add_channel_filter(channel)
+
+            fact_filters = CypherFilterBuilder("f")
+            fact_filters.add_channel_filter(channel)
 
             result = session.run(f"""
                 UNWIND $entity_ids AS eid
                 MATCH (e:Entity {{id: eid}})
-                WHERE true {user_filter} {channel_filter}
+                WHERE true {entity_filters.build_inline()}
 
                 // Get related entities within depth, filtered by channel
                 // Use validated_depth directly in query (it's an integer, safe)
                 OPTIONAL MATCH path = (e)-[r*1..{validated_depth}]-(related:Entity)
-                WHERE true {related_channel_filter}
+                WHERE true {related_filters.build_inline()}
 
                 // Get facts about these entities, filtered by channel
                 OPTIONAL MATCH (f:Fact)-[:ABOUT]->(e)
-                WHERE true {fact_channel_filter}
+                WHERE true {fact_filters.build_inline()}
 
                 // Collect results with limits to prevent memory issues
                 WITH e,
@@ -503,12 +480,7 @@ class SemanticMemory:
 
             entities = []
             for record in result:
-                entity = dict(record)
-                # Convert Neo4j DateTime to ISO string
-                if entity.get("last_accessed"):
-                    entity["last_accessed"] = entity["last_accessed"].isoformat()
-                if entity.get("first_seen"):
-                    entity["first_seen"] = entity["first_seen"].isoformat()
+                entity = convert_record_datetimes(dict(record))
                 entities.append(entity)
             return entities, total
 
@@ -595,10 +567,7 @@ class SemanticMemory:
 
             facts = []
             for record in result:
-                fact = dict(record)
-                # Convert Neo4j DateTime to ISO string
-                if fact.get("created_at"):
-                    fact["created_at"] = fact["created_at"].isoformat()
+                fact = convert_record_datetimes(dict(record))
                 facts.append(fact)
             return facts, total
 
@@ -640,12 +609,7 @@ class SemanticMemory:
             if not record:
                 return None
 
-            entity = dict(record)
-            # Convert Neo4j DateTime to ISO strings for JSON serialization
-            for dt_field in ['last_accessed', 'first_seen']:
-                if entity.get(dt_field) and hasattr(entity[dt_field], 'isoformat'):
-                    entity[dt_field] = entity[dt_field].isoformat()
-            return entity
+            return convert_record_datetimes(dict(record))
 
     def get_entity_facts_and_relationships(
         self,

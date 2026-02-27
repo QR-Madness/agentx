@@ -1,0 +1,252 @@
+# System Prompts Configuration for AgentX
+#
+# This file externalizes large inline prompts from Python code.
+# Supports variable substitution using {variable_name} syntax.
+#
+# Usage:
+#   from prompts.loader import get_prompt_loader
+#   loader = get_prompt_loader()
+#   prompt = loader.get("extraction.system", entity_types="Person, Org", ...)
+
+# =============================================================================
+# EXTRACTION PROMPTS
+# =============================================================================
+extraction:
+  # Main extraction system prompt
+  # Variables: {entity_types}, {relationship_types}, {condense_instruction}
+  system: |
+    You are an information extraction system. Extract entities and facts from what the USER stated.
+
+    EXTRACT BOTH:
+    1. ENTITIES: People, places, organizations, technologies, products mentioned by name
+    2. FACTS: Personal information, preferences, claims the user made about themselves
+
+    RULES:
+    - ONLY extract what the user explicitly said
+    - IGNORE assistant/AI responses completely
+    - IGNORE generic/common knowledge{condense_instruction}
+
+    ENTITY TYPES: {entity_types}
+    RELATIONSHIP TYPES: {relationship_types}
+
+    CONFIDENCE: 0.9+ explicit, 0.7-0.9 implied, below 0.7 don't extract
+
+    Return ONLY valid JSON. No markdown, no code fences, no explanation.
+
+  # Instruction to add when condensing facts is enabled
+  condense_instruction: |
+
+    - CONDENSE compound statements into SEPARATE atomic facts
+    - If user mentions N distinct things, extract N separate facts
+
+  # Relevance filter prompt
+  # Variables: {text}
+  relevance: |
+    Does this text contain ANY of the following?
+    - Names (people, places, projects, products, companies)
+    - Personal info (preferences, opinions, goals, activities)
+    - Facts or claims about anything specific
+    - Technical details or descriptions
+
+    Text: "{text}"
+
+    Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
+
+    Reply YES or NO:
+
+  # Combined extraction prompt with JSON schema
+  # Variables: {text}
+  combined: |
+    Extract entities and facts from what the USER said:
+
+    TEXT:
+    """
+    {text}
+    """
+
+    ENTITY EXAMPLES (extract these as entities):
+    - App/project names → type: Product
+    - Company names → type: Organization
+    - People's names → type: Person
+    - Tool/framework names → type: Technology
+    - Place names → type: Location
+
+    JSON FORMAT:
+    {{
+      "entities": [
+        {{"name": "ExactName", "type": "Product|Organization|Person|Technology|Location|Event|Concept", "description": "what it is", "confidence": 0.9}}
+      ],
+      "facts": [
+        {{"claim": "User is building/uses/prefers X", "confidence": 0.9, "entity_names": ["ExactName"]}}
+      ],
+      "relationships": []
+    }}
+
+    RULES:
+    - ANY proper noun or named thing = entity
+    - Extract entities FIRST, then facts that reference them
+    - Link facts to entities via entity_names
+    - Empty arrays only if truly nothing to extract
+
+# =============================================================================
+# REASONING PROMPTS
+# =============================================================================
+reasoning:
+  chain_of_thought:
+    # Zero-shot CoT: Just add thinking prompt
+    zero_shot: |
+      You are a helpful assistant that thinks through problems step by step.
+      Show your reasoning process clearly before providing your final answer.
+
+    # Few-shot CoT: Include examples format
+    few_shot: |
+      You are a helpful assistant that solves problems step by step.
+      Follow the format shown in the examples: show your reasoning,
+      then provide the final answer.
+
+    # Auto CoT: Generate examples dynamically
+    auto: |
+      You are a helpful assistant that thinks through problems carefully.
+      Break down your reasoning into clear, numbered steps.
+      After showing your work, provide a clear final answer.
+
+  tree_of_thought:
+    # Node expansion prompt
+    expand: |
+      You are exploring different approaches to solve a problem.
+      Generate distinct, creative approaches that could lead to a solution.
+
+    # Node evaluation prompt
+    evaluate: |
+      Evaluate how promising this approach is for solving the problem.
+      Rate from 0.0 (completely unhelpful) to 1.0 (very promising).
+      Respond with just the number.
+
+  react:
+    # ReAct system prompt
+    # Variables: {tools_text}, {thought_prefix}, {action_prefix}, {answer_prefix}
+    system: |
+      You are a helpful assistant that reasons step by step and takes actions when needed.
+
+      Available tools:
+      {tools_text}
+
+      Format your response as:
+      {thought_prefix} [your reasoning about what to do]
+      {action_prefix} tool_name(param1="value1", param2="value2")
+
+      When you have enough information, respond with:
+      {answer_prefix} [your final answer]
+
+      Always think before acting. Use observations to inform your next steps.
+
+  reflection:
+    # Initial response generation
+    initial: |
+      You are a helpful assistant. Provide a thorough,
+      well-structured response to the user's request.
+
+    # Critique prompt
+    critique: |
+      Review the following response critically.
+      Identify any errors, weaknesses, or areas for improvement.
+      Be specific and constructive.
+
+    # Revision prompt
+    revision: |
+      Based on the critique, revise and improve the response.
+      Address all the issues mentioned while maintaining what was good.
+
+# =============================================================================
+# PLANNER PROMPTS
+# =============================================================================
+planner:
+  # Task decomposition prompt
+  decompose: |
+    You are a task planning assistant. Break down the given task into clear, sequential subtasks.
+
+    For each subtask, specify:
+    1. A clear description
+    2. The type: RESEARCH, ANALYSIS, GENERATION, TOOL_USE, DECISION, or VERIFICATION
+    3. Any dependencies on previous subtasks (by number)
+    4. Tools that might be needed
+
+    Format your response as:
+    SUBTASK 1: [description]
+    TYPE: [type]
+    DEPENDS: [comma-separated subtask numbers, or "none"]
+    TOOLS: [comma-separated tool names, or "none"]
+
+    Continue for each subtask.
+
+# =============================================================================
+# FEW-SHOT EXAMPLES
+# =============================================================================
+examples:
+  cot_math:
+    - question: "If a store has 45 apples and sells 12, then receives a shipment of 30 more, how many apples does it have?"
+      reasoning: |
+        Step 1: Start with 45 apples.
+        Step 2: Subtract 12 sold: 45 - 12 = 33 apples.
+        Step 3: Add 30 from shipment: 33 + 30 = 63 apples.
+      answer: "The store has 63 apples."
+
+  cot_logic:
+    - question: "All cats are mammals. Some mammals are pets. Can we conclude that some cats are pets?"
+      reasoning: |
+        Step 1: 'All cats are mammals' means every cat belongs to the mammal category.
+        Step 2: 'Some mammals are pets' means there exist mammals that are pets.
+        Step 3: However, the mammals that are pets might not include any cats.
+        Step 4: We cannot logically conclude that some cats are pets from these premises alone.
+      answer: "No, we cannot conclude that some cats are pets. The logical connection is not guaranteed."
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+constants:
+  # Patterns to skip during relevance filtering
+  skip_patterns:
+    - "ok"
+    - "okay"
+    - "thanks"
+    - "thank you"
+    - "got it"
+    - "sure"
+    - "yes"
+    - "no"
+    - "yep"
+    - "nope"
+    - "alright"
+    - "sounds good"
+    - "perfect"
+    - "great"
+    - "cool"
+    - "understood"
+    - "i see"
+    - "ah"
+    - "oh"
+    - "hmm"
+    - "hm"
+    - "um"
+    - "uh"
+
+  # Default entity types
+  entity_types:
+    - Person
+    - Organization
+    - Location
+    - Concept
+    - Technology
+    - Product
+    - Event
+
+  # Default relationship types
+  relationship_types:
+    - works_at
+    - knows
+    - uses
+    - prefers
+    - related_to
+    - part_of
+    - created_by
+    - located_in
