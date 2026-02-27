@@ -1,87 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://agentx.dev/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/api/endpoints/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/roadmap/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/api/models/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/api/endpoints/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/architecture/api/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/api/models/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/architecture/client/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/architecture/api/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/architecture/databases/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/architecture/client/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/architecture/memory/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/architecture/databases/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/architecture/overview/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/architecture/memory/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/deployment/docker/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/architecture/overview/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/deployment/migration/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/deployment/docker/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/development/contributing/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/deployment/migration/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/development/memory-setup/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/development/contributing/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/development/setup/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/development/memory-setup/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/development/tasks/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/development/setup/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/development/testing/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/development/tasks/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/features/chat/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/development/testing/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/features/memory/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/features/chat/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/features/translation/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/features/memory/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/getting-started/configuration/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/features/translation/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/getting-started/installation/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/getting-started/configuration/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
     <url>
-         <loc>https://agentx.dev/getting-started/quickstart/</loc>
-         <lastmod>2025-12-18</lastmod>
+         <loc>https://qr-madness.github.io/agentx/getting-started/installation/</loc>
+         <lastmod>2026-02-27</lastmod>
+    </url>
+    <url>
+         <loc>https://qr-madness.github.io/agentx/getting-started/quickstart/</loc>
+         <lastmod>2026-02-27</lastmod>
     </url>
 </urlset>
