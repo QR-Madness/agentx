@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..prompts.loader import get_prompt_loader
 from .base import (
     ReasoningConfig,
     ReasoningResult,
@@ -327,33 +328,28 @@ class ReActAgent(ReasoningStrategy):
         for name, tool in self.tools.items():
             params = ", ".join(f"{k}: {v}" for k, v in tool.parameters.items())
             tool_descriptions.append(f"- {name}({params}): {tool.description}")
-        
+
         tools_text = "\n".join(tool_descriptions)
-        
-        system_prompt = f"""You are a helpful assistant that reasons step by step and takes actions when needed.
+        loader = get_prompt_loader()
 
-Available tools:
-{tools_text}
-
-Format your response as:
-{self.react_config.thought_prefix} [your reasoning about what to do]
-{self.react_config.action_prefix} tool_name(param1="value1", param2="value2")
-
-When you have enough information, respond with:
-{self.react_config.answer_prefix} [your final answer]
-
-Always think before acting. Use observations to inform your next steps."""
+        system_prompt = loader.get(
+            "reasoning.react.system",
+            tools_text=tools_text,
+            thought_prefix=self.react_config.thought_prefix,
+            action_prefix=self.react_config.action_prefix,
+            answer_prefix=self.react_config.answer_prefix,
+        )
 
         messages = [Message(role=MessageRole.SYSTEM, content=system_prompt)]
-        
+
         if context:
             messages.extend(context)
-        
+
         messages.append(Message(
             role=MessageRole.USER,
             content=f"Task: {task}",
         ))
-        
+
         return messages
     
     def _extract_thought(self, response: str) -> Optional[str]:

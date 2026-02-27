@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..prompts.loader import get_prompt_loader
 from .base import (
     ReasoningConfig,
     ReasoningResult,
@@ -178,30 +179,24 @@ class ChainOfThought(ReasoningStrategy):
     ) -> list[Message]:
         """Build the Chain-of-Thought prompt."""
         messages = []
-        
+        loader = get_prompt_loader()
+
         if self.cot_config.mode == "zero_shot":
             # Zero-shot: Just add the thinking prompt
-            system = (
-                "You are a helpful assistant that thinks through problems step by step. "
-                "Show your reasoning process clearly before providing your final answer."
-            )
+            system = loader.get("reasoning.chain_of_thought.zero_shot")
             messages.append(Message(role=MessageRole.SYSTEM, content=system))
-            
+
             if context:
                 messages.extend(context)
-            
+
             prompt = f"{task}\n\n{self.cot_config.thinking_prompt}"
             messages.append(Message(role=MessageRole.USER, content=prompt))
-            
+
         elif self.cot_config.mode == "few_shot":
             # Few-shot: Include examples
-            system = (
-                "You are a helpful assistant that solves problems step by step. "
-                "Follow the format shown in the examples: show your reasoning, "
-                "then provide the final answer."
-            )
+            system = loader.get("reasoning.chain_of_thought.few_shot")
             messages.append(Message(role=MessageRole.SYSTEM, content=system))
-            
+
             # Add examples
             examples = self.cot_config.examples or DEFAULT_EXAMPLES.get("math", [])
             for ex in examples:
@@ -213,34 +208,30 @@ class ChainOfThought(ReasoningStrategy):
                     role=MessageRole.ASSISTANT,
                     content=f"{ex['reasoning']}\n\nAnswer: {ex['answer']}"
                 ))
-            
+
             if context:
                 messages.extend(context)
-            
+
             messages.append(Message(
                 role=MessageRole.USER,
                 content=f"Question: {task}"
             ))
-            
+
         else:  # auto mode
             # Auto: Generate examples dynamically (simplified version)
-            system = (
-                "You are a helpful assistant that thinks through problems carefully. "
-                "Break down your reasoning into clear, numbered steps. "
-                "After showing your work, provide a clear final answer."
-            )
+            system = loader.get("reasoning.chain_of_thought.auto")
             messages.append(Message(role=MessageRole.SYSTEM, content=system))
-            
+
             if context:
                 messages.extend(context)
-            
+
             prompt = (
                 f"{task}\n\n"
                 f"{self.cot_config.thinking_prompt}\n"
                 f"Show your reasoning as numbered steps, then give your final answer."
             )
             messages.append(Message(role=MessageRole.USER, content=prompt))
-        
+
         return messages
     
     def _extract_steps(self, response: str) -> list[ThoughtStep]:

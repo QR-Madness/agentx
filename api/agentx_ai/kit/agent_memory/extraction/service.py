@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from ....providers.base import Message, MessageRole
 from ....providers.registry import get_registry
 from ....agent.output_parser import validate_json_output, parse_output, extract_yes_no_answer
+from ....prompts.loader import get_prompt_loader
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -116,12 +117,9 @@ class ExtractionService:
             return RelevanceResult(is_relevant=True, reason="filter_disabled")
 
         # Quick heuristic pre-filter (skip LLM for obvious cases)
+        loader = get_prompt_loader()
         text_lower = text.strip().lower()
-        skip_patterns = [
-            "ok", "okay", "thanks", "thank you", "got it", "sure", "yes", "no",
-            "yep", "nope", "alright", "sounds good", "perfect", "great", "cool",
-            "understood", "i see", "ah", "oh", "hmm", "hm", "um", "uh",
-        ]
+        skip_patterns = loader.get_list("constants.skip_patterns")
         if text_lower in skip_patterns or len(text.strip()) < 10:
             return RelevanceResult(is_relevant=False, reason="heuristic_skip")
 
@@ -135,18 +133,7 @@ class ExtractionService:
         if self.settings.relevance_filter_prompt:
             prompt = self.settings.relevance_filter_prompt.replace("{text}", text)
         else:
-            prompt = f'''Does this text contain ANY of the following?
-- Names (people, places, projects, products, companies)
-- Personal info (preferences, opinions, goals, activities)
-- Facts or claims about anything specific
-- Technical details or descriptions
-
-Text: "{text}"
-
-Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
-
-IMPORTANT: Your response must end with exactly one word on its own line: YES or NO
-Your final answer:'''
+            prompt = loader.get("extraction.relevance", text=text)
 
         messages = [
             Message(role=MessageRole.USER, content=prompt),
@@ -288,43 +275,25 @@ Your final answer:'''
 
     def _get_default_system_prompt(self) -> str:
         """Get the default system prompt for extraction (used when no custom prompt set)."""
+        loader = get_prompt_loader()
         entity_types = ", ".join(self.settings.entity_types)
         relationship_types = ", ".join(self.settings.relationship_types)
-        condense_instruction = """
-- CONDENSE compound statements into SEPARATE atomic facts
-- If user mentions N distinct things, extract N separate facts""" if self.settings.extraction_condense_facts else ""
+        condense_instruction = (
+            loader.get("extraction.condense_instruction")
+            if self.settings.extraction_condense_facts else ""
+        )
 
-        return f"""You are an information extraction system. Extract entities and facts from what the USER stated.
-
-EXTRACT BOTH:
-1. ENTITIES: People, places, organizations, technologies, products mentioned by name
-2. FACTS: Personal information, preferences, claims the user made about themselves
-
-RULES:
-- ONLY extract what the user explicitly said
-- IGNORE assistant/AI responses completely
-- IGNORE generic/common knowledge{condense_instruction}
-
-ENTITY TYPES: {entity_types}
-RELATIONSHIP TYPES: {relationship_types}
-
-CONFIDENCE: 0.9+ explicit, 0.7-0.9 implied, below 0.7 don't extract
-
-Return ONLY valid JSON. No markdown, no code fences, no explanation."""
+        return loader.get(
+            "extraction.system",
+            entity_types=entity_types,
+            relationship_types=relationship_types,
+            condense_instruction=condense_instruction,
+        )
 
     def _get_default_relevance_prompt(self) -> str:
         """Get the default relevance filter prompt (used when no custom prompt set)."""
-        return '''Does this text contain ANY of the following?
-- Names (people, places, projects, products, companies)
-- Personal info (preferences, opinions, goals, activities)
-- Facts or claims about anything specific
-- Technical details or descriptions
-
-Text: "{text}"
-
-Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
-
-Reply YES or NO:'''
+        loader = get_prompt_loader()
+        return loader.get("extraction.relevance")
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for extraction."""
@@ -351,36 +320,8 @@ Reply YES or NO:'''
             )
             text = text[:max_chars] + "\n...[truncated]"
 
-        return f'''Extract entities and facts from what the USER said:
-
-TEXT:
-"""
-{text}
-"""
-
-ENTITY EXAMPLES (extract these as entities):
-- App/project names → type: Product
-- Company names → type: Organization
-- People's names → type: Person
-- Tool/framework names → type: Technology
-- Place names → type: Location
-
-JSON FORMAT:
-{{
-  "entities": [
-    {{"name": "ExactName", "type": "Product|Organization|Person|Technology|Location|Event|Concept", "description": "what it is", "confidence": 0.9}}
-  ],
-  "facts": [
-    {{"claim": "User is building/uses/prefers X", "confidence": 0.9, "entity_names": ["ExactName"]}}
-  ],
-  "relationships": []
-}}
-
-RULES:
-- ANY proper noun or named thing = entity
-- Extract entities FIRST, then facts that reference them
-- Link facts to entities via entity_names
-- Empty arrays only if truly nothing to extract'''
+        loader = get_prompt_loader()
+        return loader.get("extraction.combined", text=text)
 
     def _parse_extraction_response(self, content: str) -> ExtractionResult:
         """

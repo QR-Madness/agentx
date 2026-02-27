@@ -9,6 +9,7 @@ from sqlalchemy import text
 from ..models import Strategy
 from ..connections import Neo4jConnection, get_postgres_session
 from ..embeddings import get_embedder
+from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
@@ -217,22 +218,14 @@ class ProceduralMemory:
         embedding = self.embedder.embed_single(task_description)
 
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND s.user_id = $user_id"
-
-            # Channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND s.channel = '_global'"
+            # Build filters using utility
+            filters = CypherFilterBuilder("s")
+            filters.add_user_filter(user_id).add_channel_filter(channel)
 
             result = session.run(f"""
                 CALL db.index.vector.queryNodes('strategy_embeddings', $k, $embedding)
                 YIELD node AS s, score
-                WHERE s.success_count > 0 {user_filter} {channel_filter}
+                WHERE s.success_count > 0 {filters.build_inline()}
                 RETURN s.id AS id,
                        s.description AS description,
                        s.context_pattern AS context_pattern,
@@ -286,22 +279,14 @@ class ProceduralMemory:
             True if strategy was found and updated, False otherwise
         """
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND s.user_id = $user_id"
-
-            # Build channel filter - only reinforce if strategy is in this channel or _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND s.channel = '_global'"
+            # Build filters using utility
+            filters = CypherFilterBuilder("s")
+            filters.add_user_filter(user_id).add_channel_filter(channel)
 
             if success:
                 result = session.run(f"""
                     MATCH (s:Strategy {{id: $id}})
-                    WHERE true {user_filter} {channel_filter}
+                    WHERE true {filters.build_inline()}
                     SET s.success_count = s.success_count + 1,
                         s.last_used = datetime()
                     RETURN s.id AS updated_id
@@ -309,7 +294,7 @@ class ProceduralMemory:
             else:
                 result = session.run(f"""
                     MATCH (s:Strategy {{id: $id}})
-                    WHERE true {user_filter} {channel_filter}
+                    WHERE true {filters.build_inline()}
                     SET s.failure_count = s.failure_count + 1,
                         s.last_used = datetime()
                     RETURN s.id AS updated_id
@@ -336,24 +321,15 @@ class ProceduralMemory:
             List of tool statistics
         """
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND s.user_id = $user_id"
-
-            # Build channel filter
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (s.channel = $channel OR s.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND s.channel = '_global'"
+            # Build filters using utility
+            filters = CypherFilterBuilder("s")
+            filters.add_user_filter(user_id).add_channel_filter(channel)
 
             if task_type:
                 result = session.run(f"""
                     MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
                     WHERE s.context_pattern CONTAINS $task_type
-                          {user_filter}
-                          {channel_filter}
+                          {filters.build_inline()}
                     WITH t,
                          sum(s.success_count) AS successes,
                          sum(s.failure_count) AS failures
@@ -371,7 +347,7 @@ class ProceduralMemory:
                 # For global stats without task_type, still scope to user's strategies
                 result = session.run(f"""
                     MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
-                    WHERE true {user_filter} {channel_filter}
+                    WHERE true {filters.build_inline()}
                     WITH t,
                          sum(s.success_count) AS successes,
                          sum(s.failure_count) AS failures,
@@ -460,9 +436,6 @@ class ProceduralMemory:
 
             strategies = []
             for record in result:
-                strategy = dict(record)
-                # Convert Neo4j DateTime to ISO string
-                if strategy.get("last_used"):
-                    strategy["last_used"] = strategy["last_used"].isoformat()
+                strategy = convert_record_datetimes(dict(record))
                 strategies.append(strategy)
             return strategies, total

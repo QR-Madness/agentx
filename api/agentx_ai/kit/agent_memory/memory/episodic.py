@@ -8,6 +8,7 @@ from sqlalchemy import text
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
 from ..config import get_settings
+from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
@@ -135,29 +136,18 @@ class EpisodicMemory:
             List of matching turns
         """
         with Neo4jConnection.session() as session:
-            # Build time filter with bounds validation
-            time_filter = ""
-            if time_window_hours is not None:
-                # Validate time_window_hours to prevent invalid queries
-                validated_hours = max(1, min(int(time_window_hours), 8760))  # 1 hour to 1 year
-                time_filter = f"AND t.timestamp > datetime() - duration('PT{validated_hours}H')"
+            # Build filters using utilities
+            turn_filters = CypherFilterBuilder("t")
+            turn_filters.add_time_filter(time_window_hours).add_channel_filter(channel)
 
-            user_filter = ""
-            if user_id:
-                user_filter = "AND c.user_id = $user_id"
-
-            # Channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND t.channel = '_global'"
+            conv_filters = CypherFilterBuilder("c")
+            conv_filters.add_user_filter(user_id)
 
             result = session.run(f"""
                 CALL db.index.vector.queryNodes('turn_embeddings', $k, $embedding)
                 YIELD node AS t, score
                 MATCH (c:Conversation)-[:HAS_TURN]->(t)
-                WHERE true {time_filter} {user_filter} {channel_filter}
+                WHERE true {turn_filters.build_inline()} {conv_filters.build_inline()}
                 RETURN t.id AS id,
                        t.content AS content,
                        t.role AS role,
@@ -193,21 +183,16 @@ class EpisodicMemory:
             List of Turn objects
         """
         with Neo4jConnection.session() as session:
-            # Build user filter
-            user_filter = ""
-            if user_id:
-                user_filter = "AND c.user_id = $user_id"
+            # Build filters using utilities
+            conv_filters = CypherFilterBuilder("c")
+            conv_filters.add_user_filter(user_id)
 
-            # Build channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND t.channel = '_global'"
+            turn_filters = CypherFilterBuilder("t")
+            turn_filters.add_channel_filter(channel)
 
             result = session.run(f"""
                 MATCH (c:Conversation {{id: $conv_id}})-[:HAS_TURN]->(t:Turn)
-                WHERE true {user_filter} {channel_filter}
+                WHERE true {conv_filters.build_inline()} {turn_filters.build_inline()}
                 RETURN t
                 ORDER BY t.index
             """, conv_id=conversation_id, user_id=user_id, channel=channel)
@@ -238,18 +223,15 @@ class EpisodicMemory:
         validated_limit = max(1, min(int(limit), 500))   # Cap at 500 results
 
         with Neo4jConnection.session() as session:
-            # Channel filter - search both specified channel and _global
-            channel_filter = ""
-            if channel and channel != "_global":
-                channel_filter = "AND (t.channel = $channel OR t.channel = '_global')"
-            elif channel == "_global":
-                channel_filter = "AND t.channel = '_global'"
+            # Build channel filter using utility
+            turn_filters = CypherFilterBuilder("t")
+            turn_filters.add_channel_filter(channel)
 
             result = session.run(f"""
                 MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
                 WHERE c.user_id = $user_id
                   AND t.timestamp > datetime() - duration('PT' + $hours + 'H')
-                  {channel_filter}
+                  {turn_filters.build_inline()}
                 RETURN t.content AS content,
                        t.role AS role,
                        t.timestamp AS timestamp,

@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..prompts.loader import get_prompt_loader
 
 if TYPE_CHECKING:
     from ..kit.agent_memory import AgentMemory
@@ -162,25 +163,12 @@ class TaskPlanner:
 
         # For complex tasks, use LLM to decompose
         provider, model_id = self.registry.get_provider_for_model(self.model)
+        loader = get_prompt_loader()
 
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content="""You are a task planning assistant. Break down the given task into clear, sequential subtasks.
-
-For each subtask, specify:
-1. A clear description
-2. The type: RESEARCH, ANALYSIS, GENERATION, TOOL_USE, DECISION, or VERIFICATION
-3. Any dependencies on previous subtasks (by number)
-4. Tools that might be needed
-
-Format your response as:
-SUBTASK 1: [description]
-TYPE: [type]
-DEPENDS: [comma-separated subtask numbers, or "none"]
-TOOLS: [comma-separated tool names, or "none"]
-
-Continue for each subtask."""
+                content=loader.get("planner.decompose"),
             ),
         ]
 

@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..prompts.loader import get_prompt_loader
 from .base import (
     ReasoningConfig,
     ReasoningResult,
@@ -257,21 +258,19 @@ class ReflectiveReasoner(ReasoningStrategy):
         context: Optional[list[Message]],
     ) -> list[Message]:
         """Build the initial generation prompt."""
+        loader = get_prompt_loader()
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content=(
-                    "You are a helpful assistant. Provide a thorough, "
-                    "well-structured response to the user's request."
-                )
+                content=loader.get("reasoning.reflection.initial"),
             ),
         ]
-        
+
         if context:
             messages.extend(context)
-        
+
         messages.append(Message(role=MessageRole.USER, content=task))
-        
+
         return messages
     
     def _critique(

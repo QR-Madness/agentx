@@ -13,6 +13,7 @@ import uuid
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
+from ..prompts.loader import get_prompt_loader
 from .base import (
     ReasoningConfig,
     ReasoningResult,
@@ -345,6 +346,7 @@ class TreeOfThought(ReasoningStrategy):
         provider, model_id = self.registry.get_provider_for_model(
             self.tot_config.model
         )
+        loader = get_prompt_loader()
 
         # Build prompt for generating thoughts
         path = self._get_path_content(node)
@@ -353,10 +355,7 @@ class TreeOfThought(ReasoningStrategy):
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content=(
-                    "You are exploring different approaches to solve a problem. "
-                    "Generate distinct, creative approaches that could lead to a solution."
-                )
+                content=loader.get("reasoning.tree_of_thought.expand"),
             ),
             Message(
                 role=MessageRole.USER,
@@ -415,11 +414,10 @@ class TreeOfThought(ReasoningStrategy):
         """Evaluate a node's promise for solving the task."""
         eval_model = self.tot_config.evaluator_model or self.tot_config.model
         provider, model_id = self.registry.get_provider_for_model(eval_model)
+        loader = get_prompt_loader()
 
-        prompt = self.tot_config.evaluation_prompt or (
-            "Evaluate how promising this approach is for solving the problem. "
-            "Rate from 0.0 (completely unhelpful) to 1.0 (very promising). "
-            "Respond with just the number."
+        prompt = self.tot_config.evaluation_prompt or loader.get(
+            "reasoning.tree_of_thought.evaluate"
         )
 
         messages = [
