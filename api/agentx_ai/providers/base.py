@@ -5,7 +5,7 @@ Abstract base classes for model providers.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from pydantic import BaseModel
 
@@ -92,7 +92,7 @@ class ModelProvider(ABC):
         pass
     
     @abstractmethod
-    def complete(
+    async def complete(
         self,
         messages: list[Message],
         model: str,
@@ -106,7 +106,7 @@ class ModelProvider(ABC):
     ) -> CompletionResult:
         """
         Generate a completion for the given messages.
-        
+
         Args:
             messages: The conversation messages
             model: The model to use
@@ -116,11 +116,11 @@ class ModelProvider(ABC):
             tool_choice: How to select tools ("auto", "none", or specific tool)
             stop: Stop sequences
             **kwargs: Additional provider-specific parameters
-            
+
         Returns:
             CompletionResult with the generated content
         """
-        pass
+        ...
     
     @abstractmethod
     def stream(
@@ -134,10 +134,10 @@ class ModelProvider(ABC):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> Iterator[StreamChunk]:
+    ) -> AsyncIterator[StreamChunk]:
         """
         Stream a completion for the given messages.
-        
+
         Args:
             messages: The conversation messages
             model: The model to use
@@ -147,13 +147,11 @@ class ModelProvider(ABC):
             tool_choice: How to select tools
             stop: Stop sequences
             **kwargs: Additional provider-specific parameters
-            
+
         Yields:
             StreamChunk objects as they arrive
         """
-        pass
-        # Subclasses must implement this as an async generator
-        # yield StreamChunk(content="")  # type: ignore
+        ...
     
     @abstractmethod
     def get_capabilities(self, model: str) -> ModelCapabilities:

@@ -99,7 +99,7 @@ def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
 def lazy_singleton_with_fallback(
     init_func: Callable[[], T],
     fallback: Optional[T] = None,
-) -> Callable[[], Optional[T]]:
+) -> LazySingletonCallable[Optional[T]]:
     """
     Lazy singleton that returns fallback on initialization failure.
 
@@ -153,5 +153,15 @@ def lazy_singleton_with_fallback(
             error = None
             logger.debug(f"Reset singleton: {init_func.__name__}")
 
-    wrapper.reset = reset
-    return wrapper
+    def is_initialized() -> bool:
+        """Check if the singleton has been initialized without triggering init."""
+        return instance is not None and error is None
+
+    def get_if_initialized() -> Optional[T]:
+        """Get the instance if initialized, or None without triggering init."""
+        return instance
+
+    wrapper.reset = reset  # type: ignore[attr-defined]
+    wrapper.is_initialized = is_initialized  # type: ignore[attr-defined]
+    wrapper.get_if_initialized = get_if_initialized  # type: ignore[attr-defined]
+    return cast(LazySingletonCallable[Optional[T]], wrapper)

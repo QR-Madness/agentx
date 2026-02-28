@@ -230,14 +230,14 @@ class ProviderRegistry:
         
         return list(set(models))
     
-    def health_check(self) -> dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check health of all configured providers."""
         results = {}
 
         for name in self._provider_configs:
             try:
                 provider = self.get_provider(name)
-                results[name] = provider.health_check()
+                results[name] = await provider.health_check()
             except Exception as e:
                 results[name] = {"status": "error", "error": str(e)}
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from ..providers.base import Message
+from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
 from .base import DraftingConfig, DraftingStrategy, DraftResult, DraftStatus
 
@@ -312,8 +312,8 @@ class CandidateGenerator(DraftingStrategy):
             )
             
             verify_messages = [
-                Message(role="system", content=prompt),
-                Message(role="user", content=f"Response to evaluate:\n\n{c.content}"),
+                Message(role=MessageRole.SYSTEM, content=prompt),
+                Message(role=MessageRole.USER, content=f"Response to evaluate:\n\n{c.content}"),
             ]
             
             try:

@@ -89,6 +89,7 @@ def translate(request):
     data, error = parse_json_body(request)
     if error:
         return error
+    assert data is not None  # Type narrowing for pyright
 
     logger.info(f"Translation request received, body size: {len(request.body)}")
 
@@ -268,11 +269,11 @@ def providers_models(request):
     })
 
 
-def providers_health(request):
+async def providers_health(request):
     """Check health of all configured providers."""
     registry = get_registry()
 
-    results = registry.health_check()
+    results = await registry.health_check()
 
     overall_status = "healthy"
     if any(r.get("status") != "healthy" for r in results.values()):
@@ -312,6 +313,7 @@ def agent_run(request):
     data, error = parse_json_body(request)
     if error:
         return error
+    assert data is not None  # Type narrowing for pyright
 
     task = data.get("task")
     if not task:
@@ -391,7 +393,7 @@ def agent_chat(request):
 
 
 @csrf_exempt
-def agent_chat_stream(request):
+async def agent_chat_stream(request):
     """
     Handle a streaming conversational message with the agent.
 
@@ -420,8 +422,8 @@ def agent_chat_stream(request):
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
-    def generate_sse():
-        """Generator that yields SSE events."""
+    async def generate_sse():
+        """Async generator that yields SSE events."""
         import time
         import uuid
         from .agent import Agent, AgentConfig
@@ -472,10 +474,10 @@ def agent_chat_stream(request):
             # Send start event
             yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
 
-            # Stream tokens using sync generator
+            # Stream tokens using async generator
             full_content = ""
 
-            for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
+            async for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
                 if chunk.content:
                     full_content += chunk.content
                     yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"

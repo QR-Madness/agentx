@@ -4,7 +4,7 @@ OpenAI model provider implementation.
 
 import json
 import logging
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from .base import (
     CompletionResult,
@@ -96,17 +96,17 @@ class OpenAIProvider(ModelProvider):
     
     @property
     def client(self) -> Any:
-        """Lazy-load the OpenAI client."""
+        """Lazy-load the async OpenAI client."""
         if self._client is None:
             try:
-                from openai import OpenAI
+                from openai import AsyncOpenAI
             except ImportError:
                 raise ImportError(
                     "OpenAI package not installed. "
                     "Install with: pip install openai"
                 )
 
-            self._client = OpenAI(
+            self._client = AsyncOpenAI(
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
                 timeout=self.config.timeout,
@@ -148,7 +148,7 @@ class OpenAIProvider(ModelProvider):
             ))
         return result
     
-    def complete(
+    async def complete(
         self,
         messages: list[Message],
         model: str,
@@ -181,13 +181,13 @@ class OpenAIProvider(ModelProvider):
 
         logger.debug(f"OpenAI request: model={model}, messages={len(messages)}")
 
-        response = self.client.chat.completions.create(**request_params)
-        
+        response = await self.client.chat.completions.create(**request_params)
+
         choice = response.choices[0]
         tool_calls = None
         if choice.message.tool_calls:
             tool_calls = self._parse_tool_calls(choice.message.tool_calls)
-        
+
         usage = None
         if response.usage:
             usage = {
@@ -195,7 +195,7 @@ class OpenAIProvider(ModelProvider):
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             }
-        
+
         return CompletionResult(
             content=choice.message.content or "",
             finish_reason=choice.finish_reason or "stop",
@@ -205,7 +205,7 @@ class OpenAIProvider(ModelProvider):
             raw_response=response.model_dump(),
         )
     
-    def stream(
+    async def stream(
         self,
         messages: list[Message],
         model: str,
@@ -216,7 +216,7 @@ class OpenAIProvider(ModelProvider):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> Iterator[StreamChunk]:
+    ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using OpenAI API."""
         request_params: dict[str, Any] = {
             "model": model,
@@ -238,9 +238,9 @@ class OpenAIProvider(ModelProvider):
 
         logger.debug(f"OpenAI stream: model={model}, messages={len(messages)}")
 
-        stream = self.client.chat.completions.create(**request_params)
+        stream = await self.client.chat.completions.create(**request_params)
 
-        for chunk in stream:
+        async for chunk in stream:
             if not chunk.choices:
                 continue
 
@@ -272,7 +272,7 @@ class OpenAIProvider(ModelProvider):
         """List available OpenAI models."""
         return list(OPENAI_MODELS.keys())
     
-    def health_check(self) -> dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check if OpenAI API is reachable."""
         if not self.config.api_key:
             return {
@@ -282,8 +282,8 @@ class OpenAIProvider(ModelProvider):
 
         try:
             # Make a minimal API call to check connectivity
-            models = self.client.models.list()
-            model_list = list(models)
+            models = await self.client.models.list()
+            model_list = [m async for m in models]
             return {
                 "status": "healthy",
                 "models_available": len(model_list),

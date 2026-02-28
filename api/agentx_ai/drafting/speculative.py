@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ..providers.base import Message
+from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
 from .base import DraftingConfig, DraftingStrategy, DraftResult, DraftStatus
 
@@ -148,7 +148,7 @@ class SpeculativeDecoder(DraftingStrategy):
             
             # Create verification prompt
             verify_messages = current_messages + [
-                Message(role="assistant", content=draft_content),
+                Message(role=MessageRole.ASSISTANT, content=draft_content),
             ]
             
             try:
@@ -197,7 +197,7 @@ class SpeculativeDecoder(DraftingStrategy):
             
             # Update messages for next iteration
             current_messages = messages + [
-                Message(role="assistant", content=generated_content),
+                Message(role=MessageRole.ASSISTANT, content=generated_content),
             ]
             
             # Check if complete

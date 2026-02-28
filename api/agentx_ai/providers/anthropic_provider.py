@@ -3,7 +3,7 @@ Anthropic model provider implementation.
 """
 
 import logging
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from .base import (
     CompletionResult,
@@ -95,10 +95,10 @@ class AnthropicProvider(ModelProvider):
     
     @property
     def client(self) -> Any:
-        """Lazy-load the Anthropic client."""
+        """Lazy-load the async Anthropic client."""
         if self._client is None:
             try:
-                from anthropic import Anthropic
+                from anthropic import AsyncAnthropic
             except ImportError:
                 raise ImportError(
                     "Anthropic package not installed. "
@@ -113,7 +113,7 @@ class AnthropicProvider(ModelProvider):
             if self.config.base_url:
                 client_kwargs["base_url"] = self.config.base_url
 
-            self._client = Anthropic(**client_kwargs)
+            self._client = AsyncAnthropic(**client_kwargs)
         return self._client
     
     def _resolve_model(self, model: str) -> str:
@@ -197,7 +197,7 @@ class AnthropicProvider(ModelProvider):
                 texts.append(block.text)
         return "".join(texts)
     
-    def complete(
+    async def complete(
         self,
         messages: list[Message],
         model: str,
@@ -237,17 +237,17 @@ class AnthropicProvider(ModelProvider):
 
         logger.debug(f"Anthropic request: model={model}, messages={len(messages)}")
 
-        response = self.client.messages.create(**request_params)
-        
+        response = await self.client.messages.create(**request_params)
+
         content = self._extract_text(response.content)
         tool_calls = self._parse_tool_calls(response.content)
-        
+
         usage = {
             "prompt_tokens": response.usage.input_tokens,
             "completion_tokens": response.usage.output_tokens,
             "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
         }
-        
+
         return CompletionResult(
             content=content,
             finish_reason=response.stop_reason or "end_turn",
@@ -257,7 +257,7 @@ class AnthropicProvider(ModelProvider):
             raw_response={"id": response.id, "type": response.type},
         )
     
-    def stream(
+    async def stream(
         self,
         messages: list[Message],
         model: str,
@@ -268,7 +268,7 @@ class AnthropicProvider(ModelProvider):
         tool_choice: Optional[str | dict[str, Any]] = None,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> Iterator[StreamChunk]:
+    ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using Anthropic API."""
         model = self._resolve_model(model)
         system_prompt, converted_messages = self._convert_messages(messages)
@@ -289,12 +289,12 @@ class AnthropicProvider(ModelProvider):
 
         logger.debug(f"Anthropic stream: model={model}, messages={len(messages)}")
 
-        with self.client.messages.stream(**request_params) as stream:
-            for text in stream.text_stream:
+        async with self.client.messages.stream(**request_params) as stream:
+            async for text in stream.text_stream:
                 yield StreamChunk(content=text)
 
             # Final chunk with finish reason
-            response = stream.get_final_message()
+            response = await stream.get_final_message()
             yield StreamChunk(
                 content="",
                 finish_reason=response.stop_reason,
@@ -317,7 +317,7 @@ class AnthropicProvider(ModelProvider):
         """List available Anthropic models."""
         return list(ANTHROPIC_MODELS.keys()) + list(MODEL_ALIASES.keys())
     
-    def health_check(self) -> dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """Check if Anthropic API is reachable."""
         if not self.config.api_key:
             return {
@@ -327,7 +327,7 @@ class AnthropicProvider(ModelProvider):
 
         try:
             # Make a minimal API call to check connectivity
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=10,
                 messages=[{"role": "user", "content": "Hi"}],
