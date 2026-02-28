@@ -38,4 +38,5 @@ dependencies = [
     # Development Tools
     "ruff>=0.8.0",
     "einops>=0.8.2",
+    "pyright>=1.1.0",
 ]

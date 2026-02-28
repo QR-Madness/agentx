@@ -500,12 +500,14 @@ tasks:
 
   lint:
     desc: "Run all linters"
+    silent: true
     cmds:
       - task: lint:python
       - task: lint:client
 
   lint:python:
     desc: "Lint Python code with ruff"
+    silent: true
     cmds:
       - uv run ruff check api/
 
@@ -517,8 +519,9 @@ tasks:
   lint:client:
     desc: "Lint TypeScript/React code"
     dir: client
+    silent: true
     cmds:
-      - bun run lint 2>/dev/null || echo "ℹ️  No lint script configured in client"
+      - bun run lint 2>/dev/null || true
 
   format:
     desc: "Format all code"
@@ -536,6 +539,97 @@ tasks:
     dir: client
     cmds:
       - bunx prettier --write "src/**/*.{ts,tsx,css}" 2>/dev/null || echo "ℹ️  Prettier not configured"
+
+# ============================================================================
+# STATIC ANALYSIS & TYPE CHECKING
+# ============================================================================
+
+  check:types:
+    desc: "Run all type checkers (Python + TypeScript)"
+    cmds:
+      - task: check:types:python
+      - task: check:types:client
+
+  check:types:python:
+    desc: "Type check Python code with pyright"
+    silent: true
+    cmds:
+      - uv run pyright api/agentx_ai/
+
+  check:types:client:
+    desc: "Type check TypeScript code"
+    dir: client
+    silent: true
+    cmds:
+      - bun run tsc --noEmit
+
+  check:static:
+    desc: "Run all static analysis (lint + types + build)"
+    cmds:
+      - |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📋 Static Analysis Suite"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        FAILED=""
+
+        echo ""
+        echo "1️⃣  Linting..."
+        if task lint; then
+          echo "  ✓ Linting passed"
+        else
+          FAILED="${FAILED}lint "
+          echo "  ✗ Linting failed"
+        fi
+
+        echo ""
+        echo "2️⃣  Type Checking..."
+        if task check:types; then
+          echo "  ✓ Type checking passed"
+        else
+          FAILED="${FAILED}types "
+          echo "  ✗ Type checking failed"
+        fi
+
+        echo ""
+        echo "3️⃣  Build Verification..."
+        if task check:build; then
+          echo "  ✓ Build verification passed"
+        else
+          FAILED="${FAILED}build "
+          echo "  ✗ Build verification failed"
+        fi
+
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ -n "$FAILED" ]; then
+          echo "❌ Failed checks: $FAILED"
+          exit 1
+        else
+          echo "✅ All static checks passed!"
+        fi
+
+  check:build:
+    desc: "Verify both API and client build successfully"
+    silent: true
+    cmds:
+      - task: check:build:api
+      - task: check:build:client
+
+  check:build:api:
+    desc: "Verify Python imports and Django configuration"
+    silent: true
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python -c "import sys; sys.path.insert(0, 'api'); import agentx_ai"
+      - uv run python api/manage.py check --verbosity=0
+
+  check:build:client:
+    desc: "Build client web assets (TypeScript + Vite)"
+    dir: client
+    silent: true
+    cmds:
+      - bun run build >/dev/null 2>&1
 
 # ============================================================================
 # MODEL MANAGEMENT

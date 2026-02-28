@@ -660,8 +660,8 @@ class SemanticMemory:
             facts = [dict(record) for record in facts_result]
 
             # Get relationships to other entities
-            rel_result = session.run(f"""
-                MATCH (e:Entity {{id: $entity_id}})-[r]->(target:Entity)
+            rel_result = session.run("""
+                MATCH (e:Entity {id: $entity_id})-[r]->(target:Entity)
                 WHERE e.user_id = $user_id AND target.user_id = $user_id
                 RETURN type(r) AS type,
                        target.id AS target_id,

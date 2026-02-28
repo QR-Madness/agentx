@@ -21,7 +21,7 @@ def _docker_services_running():
 def _translation_models_loaded():
     """Check if translation models are available (slow to load)."""
     try:
-        from agentx_ai.kit.translation import TranslationKit
+        from agentx_ai.kit.translation import TranslationKit  # noqa: F401
         # Just check if class is importable, actual loading happens in tests
         return True
     except ImportError:
@@ -697,9 +697,10 @@ class ProviderRegistryTest(TestCase):
     def test_provider_detection_local_prefix(self):
         """Test provider detection for local models by prefix."""
         from agentx_ai.providers.registry import get_registry
-        
-        registry = get_registry()
-        
+
+        # Ensure registry is available (singleton test)
+        _ = get_registry()
+
         # Models with local prefixes should be detected
         # This tests the detection logic without requiring providers to be configured
         local_prefixes = ["llama", "mistral", "qwen", "phi", "gemma"]

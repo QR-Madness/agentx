@@ -161,7 +161,7 @@ class ExtractionService:
 
             # If extraction failed, default to relevant to avoid missing data
             if is_relevant is None:
-                logger.warning(f"Could not extract YES/NO from response")
+                logger.warning("Could not extract YES/NO from response")
                 is_relevant = True
                 reason = "parse_failed_default_yes"
             else:
@@ -341,7 +341,7 @@ class ExtractionService:
         cleaned_content = parsed_output.content
 
         if parsed_output.has_thinking:
-            logger.debug(f"Stripped thinking tags from extraction response")
+            logger.debug("Stripped thinking tags from extraction response")
 
         # First try the output_parser utility
         is_valid, parsed, error = validate_json_output(cleaned_content)

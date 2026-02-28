@@ -106,6 +106,18 @@ task format             # Format all code
 task format:python      # Format Python with ruff: uv run ruff format api/
 ```
 
+### Static Analysis & Type Checking
+
+```bash
+task check:static       # Run all static analysis (lint + types + build)
+task check:types        # Run all type checkers (Python + TypeScript)
+task check:types:python # Type check Python with pyright
+task check:types:client # Type check TypeScript
+task check:build        # Verify both API and client build successfully
+task check:build:api    # Verify Python imports and Django configuration
+task check:build:client # Build client web assets (TypeScript + Vite)
+```
+
 ### Django Commands
 
 ```bash

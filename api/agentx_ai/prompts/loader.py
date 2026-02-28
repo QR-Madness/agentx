@@ -5,9 +5,8 @@ Loads and caches system prompts from YAML configuration,
 with support for variable substitution.
 """
 
-from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 import logging
 
 import yaml

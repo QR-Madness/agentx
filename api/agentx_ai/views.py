@@ -11,7 +11,6 @@ from .utils.responses import (
     json_error,
     json_success,
     parse_json_body,
-    paginate_request,
     require_methods,
 )
 
