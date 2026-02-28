@@ -16,6 +16,7 @@
 #   mcp:*      - MCP server inspection tools
 #   docs:*     - Documentation commands
 #   clean:*    - Cleanup and reset commands
+#   check:*    - Environment checks and static analysis
 # ============================================================================
 
 version: '3'
