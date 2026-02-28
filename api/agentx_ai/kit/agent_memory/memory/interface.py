@@ -169,6 +169,7 @@ class AgentMemory:
         start_time = time.perf_counter()
         success = True
         error_msg = None
+        fact_id: Optional[str] = None
 
         try:
             fact = Fact(
@@ -179,6 +180,7 @@ class AgentMemory:
                 source_turn_id=source_turn_id,
                 embedding=self.embedder.embed_single(claim)
             )
+            fact_id = fact.id
             self.semantic.store_fact(fact, user_id=self.user_id, channel=self.channel)
 
             # Emit fact learned event
@@ -211,7 +213,7 @@ class AgentMemory:
                 session_id=self.session_id,
                 conversation_id=self.conversation_id,
                 channel=self.channel,
-                record_ids=[fact.id] if success else None,
+                record_ids=[fact_id] if fact_id else None,
                 latency_ms=latency_ms,
                 success=success,
                 error_message=error_msg,
@@ -463,7 +465,7 @@ class AgentMemory:
 
         try:
             self.procedural.record_invocation(
-                conversation_id=self.conversation_id,
+                conversation_id=self.conversation_id or "",
                 turn_id=turn_id,
                 tool_name=tool_name,
                 tool_input=tool_input,
@@ -728,6 +730,10 @@ class AgentMemory:
         Args:
             outcome: Outcome dictionary
         """
+        if not self.conversation_id:
+            logger.warning("Cannot reflect without a conversation_id")
+            return
+
         from ..consolidation.jobs import trigger_reflection
         trigger_reflection(
             conversation_id=self.conversation_id,

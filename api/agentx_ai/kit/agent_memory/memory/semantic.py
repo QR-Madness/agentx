@@ -2,7 +2,9 @@
 
 import json
 import logging
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
+
+from typing_extensions import LiteralString
 
 from ..models import Entity, Fact
 from ..connections import Neo4jConnection
@@ -193,7 +195,7 @@ class SemanticMemory:
             filters = CypherFilterBuilder("f")
             filters.add_user_filter(user_id).add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(cast(LiteralString, f"""
                 CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
                 YIELD node AS f, score
                 WHERE f.confidence >= $min_confidence {filters.build_inline()}
@@ -206,7 +208,7 @@ class SemanticMemory:
                        collect(e.name) AS entities,
                        score
                 ORDER BY score DESC
-            """,
+            """),
                 k=top_k * 2,  # Over-fetch for filtering
                 embedding=query_embedding,
                 min_confidence=min_confidence,
@@ -240,7 +242,7 @@ class SemanticMemory:
             filters = CypherFilterBuilder("e")
             filters.add_user_filter(user_id).add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(cast(LiteralString, f"""
                 CALL db.index.vector.queryNodes('entity_embeddings', $k, $embedding)
                 YIELD node AS e, score
                 WHERE true {filters.build_inline()}
@@ -257,7 +259,7 @@ class SemanticMemory:
                        e.channel AS channel,
                        score
                 ORDER BY score DESC
-            """,
+            """),
                 k=top_k * 2,  # Over-fetch for filtering
                 embedding=query_embedding,
                 user_id=user_id,
@@ -302,7 +304,7 @@ class SemanticMemory:
             fact_filters = CypherFilterBuilder("f")
             fact_filters.add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(cast(LiteralString, f"""
                 UNWIND $entity_ids AS eid
                 MATCH (e:Entity {{id: eid}})
                 WHERE true {entity_filters.build_inline()}
@@ -328,7 +330,7 @@ class SemanticMemory:
                 RETURN e AS entity,
                        related_limited AS related,
                        facts_limited AS facts
-            """,
+            """),
                 entity_ids=entity_ids,
                 max_related=validated_max_related,
                 user_id=user_id,
@@ -379,7 +381,7 @@ class SemanticMemory:
             if user_id:
                 user_filter = "AND s.user_id = $user_id AND t.user_id = $user_id"
 
-            session.run(f"""
+            session.run(cast(LiteralString, f"""
                 MATCH (s:Entity {{id: $source_id}})
                 MATCH (t:Entity {{id: $target_id}})
                 WHERE true {user_filter}
@@ -387,7 +389,7 @@ class SemanticMemory:
                 SET r += $properties,
                     r.channel = $channel,
                     r.created_at = datetime()
-            """,
+            """),
                 source_id=source_id,
                 target_id=target_id,
                 properties=props,
@@ -441,20 +443,21 @@ class SemanticMemory:
             where_clause = " AND ".join(conditions)
 
             # Get total count
-            count_result = session.run(f"""
+            count_result = session.run(cast(LiteralString, f"""
                 MATCH (e:Entity)
                 WHERE {where_clause}
                 RETURN count(e) AS total
-            """,
+            """),
                 user_id=user_id,
                 channel=channel,
                 search=search,
                 entity_type=entity_type
             )
-            total = count_result.single()["total"]
+            count_record = count_result.single()
+            total = count_record["total"] if count_record else 0
 
             # Get paginated results
-            result = session.run(f"""
+            result = session.run(cast(LiteralString, f"""
                 MATCH (e:Entity)
                 WHERE {where_clause}
                 RETURN e.id AS id,
@@ -469,7 +472,7 @@ class SemanticMemory:
                 ORDER BY e.salience DESC, e.last_accessed DESC
                 SKIP $offset
                 LIMIT $limit
-            """,
+            """),
                 user_id=user_id,
                 channel=channel,
                 search=search,
@@ -526,20 +529,21 @@ class SemanticMemory:
             where_clause = " AND ".join(conditions)
 
             # Get total count
-            count_result = session.run(f"""
+            count_result = session.run(cast(LiteralString, f"""
                 MATCH (f:Fact)
                 WHERE {where_clause}
                 RETURN count(f) AS total
-            """,
+            """),
                 user_id=user_id,
                 channel=channel,
                 min_confidence=min_confidence,
                 search=search
             )
-            total = count_result.single()["total"]
+            count_record = count_result.single()
+            total = count_record["total"] if count_record else 0
 
             # Get paginated results with entity names
-            result = session.run(f"""
+            result = session.run(cast(LiteralString, f"""
                 MATCH (f:Fact)
                 WHERE {where_clause}
                 OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
@@ -556,7 +560,7 @@ class SemanticMemory:
                 ORDER BY f.confidence DESC, f.created_at DESC
                 SKIP $offset
                 LIMIT $limit
-            """,
+            """),
                 user_id=user_id,
                 channel=channel,
                 min_confidence=min_confidence,
@@ -628,7 +632,8 @@ class SemanticMemory:
         Returns:
             Dictionary with entity, facts, and relationships
         """
-        validated_depth = max(1, min(int(depth), 3))
+        # Note: depth parameter reserved for future use
+        _ = max(1, min(int(depth), 3))
 
         with Neo4jConnection.session() as session:
             # Get entity

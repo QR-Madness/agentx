@@ -1,9 +1,10 @@
 """Procedural memory - tool usage patterns and successful strategies."""
 
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
 import json
 
+from typing_extensions import LiteralString
 from sqlalchemy import text
 
 from ..models import Strategy
@@ -37,7 +38,7 @@ class ProceduralMemory:
         success: bool,
         latency_ms: int,
         channel: str = "_global",
-        turn_index: Optional[int] = None
+        turn_index: Optional[int] = None,
     ) -> None:
         """
         Record a tool invocation.
@@ -55,27 +56,33 @@ class ProceduralMemory:
         """
         # PostgreSQL for audit log
         with get_postgres_session() as session:
-            session.execute(text("""
+            session.execute(
+                text(
+                    """
                 INSERT INTO tool_invocations
                 (conversation_id, turn_index, tool_name, tool_input, tool_output, success, latency_ms, channel)
                 VALUES (:conv_id, :turn_idx, :tool, :input, :output, :success, :latency, :channel)
-            """), {
-                "conv_id": conversation_id,
-                "turn_idx": turn_index if turn_index is not None else 0,
-                "tool": tool_name,
-                "input": json.dumps(tool_input),
-                "output": json.dumps(tool_output) if tool_output else None,
-                "success": success,
-                "latency": latency_ms,
-                "channel": channel
-            })
+            """
+                ),
+                {
+                    "conv_id": conversation_id,
+                    "turn_idx": turn_index if turn_index is not None else 0,
+                    "tool": tool_name,
+                    "input": json.dumps(tool_input),
+                    "output": json.dumps(tool_output) if tool_output else None,
+                    "success": success,
+                    "latency": latency_ms,
+                    "channel": channel,
+                },
+            )
 
         # Neo4j for graph relationships
         # FIX: Calculate running average correctly
         # Formula: new_avg = old_avg + (new_value - old_avg) / new_count
         # We need to increment count AFTER calculating the average update
         with Neo4jConnection.session() as neo_session:
-            neo_session.run("""
+            neo_session.run(
+                """
                 MERGE (tool:Tool {name: $tool_name})
                 ON CREATE SET tool.usage_count = 0,
                               tool.success_count = 0,
@@ -105,7 +112,7 @@ class ProceduralMemory:
                 success=success,
                 latency=latency_ms,
                 channel=channel,
-                turn_index=turn_index
+                turn_index=turn_index,
             )
 
     def learn_strategy(
@@ -116,7 +123,7 @@ class ProceduralMemory:
         from_conversation_id: Optional[str] = None,
         success: bool = True,
         user_id: Optional[str] = None,
-        channel: str = "_global"
+        channel: str = "_global",
     ) -> Strategy:
         """
         Record a successful (or failed) strategy pattern.
@@ -142,11 +149,12 @@ class ProceduralMemory:
             embedding=embedding,
             success_count=1 if success else 0,
             failure_count=0 if success else 1,
-            last_used=datetime.now(timezone.utc)
+            last_used=datetime.now(timezone.utc),
         )
 
         with Neo4jConnection.session() as session:
-            session.run("""
+            session.run(
+                """
                 CREATE (s:Strategy {
                     id: $id,
                     description: $description,
@@ -191,7 +199,7 @@ class ProceduralMemory:
                 conv_id=from_conversation_id,
                 success=success,
                 user_id=user_id,
-                channel=channel
+                channel=channel,
             )
 
         return strategy
@@ -201,7 +209,7 @@ class ProceduralMemory:
         task_description: str,
         top_k: int = 5,
         user_id: Optional[str] = None,
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
     ) -> List[Strategy]:
         """
         Find strategies that worked for similar tasks.
@@ -222,7 +230,8 @@ class ProceduralMemory:
             filters = CypherFilterBuilder("s")
             filters.add_user_filter(user_id).add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(
+                cast(LiteralString, f"""
                 CALL db.index.vector.queryNodes('strategy_embeddings', $k, $embedding)
                 YIELD node AS s, score
                 WHERE s.success_count > 0 {filters.build_inline()}
@@ -239,23 +248,25 @@ class ProceduralMemory:
                        END AS success_rate,
                        score
                 ORDER BY success_rate * score DESC
-            """,
+            """),
                 k=top_k * 2,
                 embedding=embedding,
                 user_id=user_id,
-                channel=channel
+                channel=channel,
             )
 
             strategies = []
             for record in result:
-                strategies.append(Strategy(
-                    id=record["id"],
-                    description=record["description"],
-                    context_pattern=record["context_pattern"],
-                    tool_sequence=record["tool_sequence"],
-                    success_count=record["success_count"],
-                    failure_count=record["failure_count"]
-                ))
+                strategies.append(
+                    Strategy(
+                        id=record["id"],
+                        description=record["description"],
+                        context_pattern=record["context_pattern"],
+                        tool_sequence=record["tool_sequence"],
+                        success_count=record["success_count"],
+                        failure_count=record["failure_count"],
+                    )
+                )
 
             return strategies[:top_k]
 
@@ -264,7 +275,7 @@ class ProceduralMemory:
         strategy_id: str,
         success: bool,
         user_id: Optional[str] = None,
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
     ) -> bool:
         """
         Update strategy success/failure counts.
@@ -284,21 +295,37 @@ class ProceduralMemory:
             filters.add_user_filter(user_id).add_channel_filter(channel)
 
             if success:
-                result = session.run(f"""
+                result = session.run(
+                    cast(
+                        LiteralString,
+                        f"""
                     MATCH (s:Strategy {{id: $id}})
                     WHERE true {filters.build_inline()}
                     SET s.success_count = s.success_count + 1,
                         s.last_used = datetime()
                     RETURN s.id AS updated_id
-                """, id=strategy_id, user_id=user_id, channel=channel)
+                """,
+                    ),
+                    id=strategy_id,
+                    user_id=user_id,
+                    channel=channel,
+                )
             else:
-                result = session.run(f"""
+                result = session.run(
+                    cast(
+                        LiteralString,
+                        f"""
                     MATCH (s:Strategy {{id: $id}})
                     WHERE true {filters.build_inline()}
                     SET s.failure_count = s.failure_count + 1,
                         s.last_used = datetime()
                     RETURN s.id AS updated_id
-                """, id=strategy_id, user_id=user_id, channel=channel)
+                """,
+                    ),
+                    id=strategy_id,
+                    user_id=user_id,
+                    channel=channel,
+                )
 
             record = result.single()
             return record is not None and record["updated_id"] is not None
@@ -307,7 +334,7 @@ class ProceduralMemory:
         self,
         task_type: Optional[str] = None,
         user_id: Optional[str] = None,
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get tool usage statistics, optionally filtered by task type.
@@ -326,7 +353,10 @@ class ProceduralMemory:
             filters.add_user_filter(user_id).add_channel_filter(channel)
 
             if task_type:
-                result = session.run(f"""
+                result = session.run(
+                    cast(
+                        LiteralString,
+                        f"""
                     MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
                     WHERE s.context_pattern CONTAINS $task_type
                           {filters.build_inline()}
@@ -342,10 +372,18 @@ class ProceduralMemory:
                            END AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY success_rate DESC
-                """, task_type=task_type, user_id=user_id, channel=channel)
+                """,
+                    ),
+                    task_type=task_type,
+                    user_id=user_id,
+                    channel=channel,
+                )
             else:
                 # For global stats without task_type, still scope to user's strategies
-                result = session.run(f"""
+                result = session.run(
+                    cast(
+                        LiteralString,
+                        f"""
                     MATCH (s:Strategy)-[:USES_TOOL]->(t:Tool)
                     WHERE true {filters.build_inline()}
                     WITH t,
@@ -361,16 +399,16 @@ class ProceduralMemory:
                            END AS success_rate,
                            t.avg_latency_ms AS avg_latency
                     ORDER BY usage_count DESC
-                """, user_id=user_id, channel=channel)
+                """,
+                    ),
+                    user_id=user_id,
+                    channel=channel,
+                )
 
             return [dict(record) for record in result]
 
     def list_strategies(
-        self,
-        user_id: str,
-        channel: str = "_global",
-        offset: int = 0,
-        limit: int = 20
+        self, user_id: str, channel: str = "_global", offset: int = 0, limit: int = 20
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         List strategies with pagination.
@@ -399,18 +437,25 @@ class ProceduralMemory:
             where_clause = " AND ".join(conditions)
 
             # Get total count
-            count_result = session.run(f"""
+            count_result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
                 MATCH (s:Strategy)
                 WHERE {where_clause}
                 RETURN count(s) AS total
             """,
+                ),
                 user_id=user_id,
-                channel=channel
+                channel=channel,
             )
             total = count_result.single()["total"]
 
             # Get paginated results with success rate
-            result = session.run(f"""
+            result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
                 MATCH (s:Strategy)
                 WHERE {where_clause}
                 RETURN s.id AS id,
@@ -428,10 +473,11 @@ class ProceduralMemory:
                 SKIP $offset
                 LIMIT $limit
             """,
+                ),
                 user_id=user_id,
                 channel=channel,
                 offset=offset,
-                limit=limit
+                limit=limit,
             )
 
             strategies = []
