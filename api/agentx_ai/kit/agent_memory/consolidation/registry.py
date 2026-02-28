@@ -146,7 +146,7 @@ class JobRegistry:
         """Get metrics for a job from Redis."""
         key = self.KEY_METRICS.format(name=name)
         data = self.redis.get(key)
-        if data:
+        if data and isinstance(data, (str, bytes)):
             return json.loads(data)
         return {
             "run_count": 0,
@@ -211,12 +211,13 @@ class JobRegistry:
         # Check if running
         status_key = self.KEY_STATUS.format(name=name)
         status = self.redis.get(status_key)
-        return status if status else "idle"
+        return str(status) if status else "idle"
 
     def _get_last_run(self, name: str) -> Optional[str]:
         """Get last run timestamp from consolidation keys."""
         key = f"consolidation:last_run:{name}"
-        return self.redis.get(key)
+        result = self.redis.get(key)
+        return str(result) if result else None
 
     def list_jobs(self) -> List[JobStatus]:
         """List all jobs with current status."""
@@ -274,7 +275,10 @@ class JobRegistry:
 
         key = self.KEY_HISTORY.format(name=name)
         entries = self.redis.lrange(key, 0, limit - 1)
-        return [json.loads(entry) for entry in entries]
+        if not isinstance(entries, list):
+            return []
+        # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
+        return [json.loads(entry) for entry in entries]  # type: ignore[arg-type]
 
     def run_job(self, name: str) -> Dict[str, Any]:
         """
@@ -436,9 +440,9 @@ class JobRegistry:
     def get_worker_status(self) -> Optional[Dict[str, Any]]:
         """Get status of the background worker if running."""
         pattern = "worker:heartbeat:*"
-        for key in self.redis.scan_iter(match=pattern):
+        for key in self.redis.scan_iter(match=pattern):  # type: ignore[union-attr]
             data = self.redis.get(key)
-            if data:
+            if data and isinstance(data, (str, bytes)):
                 worker_data = json.loads(data)
                 # Calculate uptime
                 started_at = datetime.fromisoformat(worker_data["started_at"])

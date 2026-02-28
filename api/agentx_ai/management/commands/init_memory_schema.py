@@ -56,7 +56,7 @@ class Command(BaseCommand):
         # If no specific flag, do all
         do_all = not (neo4j_only or postgres_only or redis_only)
 
-        results = {"neo4j": None, "postgres": None, "redis": None}
+        results: dict[str, dict | None] = {"neo4j": None, "postgres": None, "redis": None}
 
         if do_all or neo4j_only:
             results["neo4j"] = self._handle_neo4j(verify_only, verbose)
@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
         # Summary
         self.stdout.write("\n" + "=" * 50)
-        self.stdout.write(self.style.SUCCESS("Schema Initialization Summary"))
+        self.stdout.write(self.style.SUCCESS("Schema Initialization Summary"))  # type: ignore[attr-defined]
         self.stdout.write("=" * 50)
 
         all_success = True
@@ -80,12 +80,12 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ✓ {db.upper()}: {result['message']}")
             else:
                 self.stdout.write(
-                    self.style.ERROR(f"  ✗ {db.upper()}: {result['message']}")
+                    self.style.ERROR(f"  ✗ {db.upper()}: {result['message']}")  # type: ignore[attr-defined]
                 )
                 all_success = False
 
         if all_success:
-            self.stdout.write(self.style.SUCCESS("\n✅ All schemas initialized!"))
+            self.stdout.write(self.style.SUCCESS("\n✅ All schemas initialized!"))  # type: ignore[attr-defined]
         else:
             raise CommandError("Some schema initializations failed")
 
@@ -138,7 +138,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  ✓ APOC plugin available (v{apoc_version})")
                 except Exception:
                     self.stdout.write(
-                        self.style.WARNING("  ⚠ APOC plugin not available (some features may not work)")
+                        self.style.WARNING("  ⚠ APOC plugin not available (some features may not work)")  # type: ignore[attr-defined]
                     )
 
             if verify_only:
@@ -176,7 +176,7 @@ class Command(BaseCommand):
                             error_count += 1
                             if verbose:
                                 self.stdout.write(
-                                    self.style.ERROR(f"    ✗ Error: {error_msg[:80]}")
+                                    self.style.ERROR(f"    ✗ Error: {error_msg[:80]}")  # type: ignore[attr-defined]
                                 )
 
             self.stdout.write(f"  Applied {success_count} statements, {error_count} errors")
@@ -307,7 +307,7 @@ class Command(BaseCommand):
 
             # Get server info
             info = client.info("server")
-            redis_version = info.get("redis_version", "unknown")
+            redis_version = info.get("redis_version", "unknown") if isinstance(info, dict) else "unknown"
             self.stdout.write(f"  Redis version: {redis_version}")
 
             # Document key patterns
@@ -326,8 +326,12 @@ class Command(BaseCommand):
 
             # Check memory usage
             info_memory = client.info("memory")
-            used_memory = info_memory.get("used_memory_human", "unknown")
-            max_memory = info_memory.get("maxmemory_human", "not set")
+            if isinstance(info_memory, dict):
+                used_memory = info_memory.get("used_memory_human", "unknown")
+                max_memory = info_memory.get("maxmemory_human", "not set")
+            else:
+                used_memory = "unknown"
+                max_memory = "not set"
             self.stdout.write(f"\n  Memory: {used_memory} used / {max_memory} max")
 
             # List any existing keys (just count)

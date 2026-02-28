@@ -98,10 +98,10 @@ class ConsolidationWorker:
         pattern = "worker:heartbeat:*"
         stale_threshold = timedelta(seconds=settings.worker_heartbeat_ttl * 2)
 
-        for key in self.redis.scan_iter(match=pattern):
+        for key in self.redis.scan_iter(match=pattern):  # type: ignore[union-attr]
             try:
                 data = self.redis.get(key)
-                if not data:
+                if not data or not isinstance(data, (str, bytes)):
                     continue
 
                 worker_data = json.loads(data)
@@ -136,7 +136,7 @@ class ConsolidationWorker:
         if not last_run:
             return True
 
-        last_run_time = datetime.fromisoformat(last_run)
+        last_run_time = datetime.fromisoformat(str(last_run))
         # Handle both naive and aware datetimes from Redis
         if last_run_time.tzinfo is None:
             last_run_time = last_run_time.replace(tzinfo=timezone.utc)

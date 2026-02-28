@@ -197,7 +197,7 @@ class MemoryRetriever:
                 return None
 
             cached = redis.get(cache_key)
-            if cached:
+            if cached and isinstance(cached, (str, bytes)):
                 data = json.loads(cached)
                 return MemoryBundle(**data)
         except Exception as e:
@@ -249,10 +249,12 @@ class MemoryRetriever:
             count = 0
 
             # Use SCAN to find matching keys (safer than KEYS for production)
-            cursor = 0
+            cursor: int = 0
             while True:
-                cursor, keys = redis.scan(cursor, match=pattern, count=100)
-                if keys:
+                result = redis.scan(cursor, match=pattern, count=100)
+                cursor = int(result[0])  # type: ignore[arg-type]
+                keys = result[1]
+                if keys and isinstance(keys, list):
                     redis.delete(*keys)
                     count += len(keys)
                 if cursor == 0:

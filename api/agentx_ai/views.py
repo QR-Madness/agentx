@@ -925,27 +925,30 @@ def memory_channel_delete(request, name):
 
         # Delete from PostgreSQL
         try:
-            pg_conn = PostgresConnection.get_connection()
-            with pg_conn.cursor() as cursor:
-                cursor.execute(
-                    "DELETE FROM conversation_logs WHERE channel = %s",
-                    (name,)
-                )
-                deleted_counts["postgres_rows"] += cursor.rowcount
+            pg_conn = PostgresConnection.get_engine().raw_connection()
+            try:
+                with pg_conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM conversation_logs WHERE channel = %s",
+                        (name,)
+                    )
+                    deleted_counts["postgres_rows"] += cursor.rowcount
 
-                cursor.execute(
-                    "DELETE FROM tool_invocations WHERE channel = %s",
-                    (name,)
-                )
-                deleted_counts["postgres_rows"] += cursor.rowcount
+                    cursor.execute(
+                        "DELETE FROM tool_invocations WHERE channel = %s",
+                        (name,)
+                    )
+                    deleted_counts["postgres_rows"] += cursor.rowcount
 
-                cursor.execute(
-                    "DELETE FROM memory_timeline WHERE channel = %s",
-                    (name,)
-                )
-                deleted_counts["postgres_rows"] += cursor.rowcount
+                    cursor.execute(
+                        "DELETE FROM memory_timeline WHERE channel = %s",
+                        (name,)
+                    )
+                    deleted_counts["postgres_rows"] += cursor.rowcount
 
-                pg_conn.commit()
+                    pg_conn.commit()
+            finally:
+                pg_conn.close()
         except Exception as e:
             logger.warning(f"Error deleting from PostgreSQL: {e}")
 

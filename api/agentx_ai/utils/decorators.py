@@ -6,15 +6,36 @@ Provides reusable patterns for lazy initialization, caching, etc.
 
 from functools import wraps
 from threading import Lock
-from typing import Callable, Optional, TypeVar
+from typing import Callable, Optional, Protocol, TypeVar, cast
 import logging
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
 
 
-def lazy_singleton(init_func: Callable[[], T]) -> Callable[[], T]:
+class LazySingletonCallable(Protocol[T_co]):
+    """Protocol for lazy_singleton decorated functions."""
+
+    def __call__(self) -> T_co:
+        """Get the singleton instance (creates on first call)."""
+        ...
+
+    def reset(self) -> None:
+        """Reset the singleton instance (for testing)."""
+        ...
+
+    def is_initialized(self) -> bool:
+        """Check if the singleton has been initialized without triggering init."""
+        ...
+
+    def get_if_initialized(self) -> Optional[T_co]:
+        """Get the instance if initialized, or None without triggering init."""
+        ...
+
+
+def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
     """
     Decorator for thread-safe lazy singleton initialization.
 
@@ -52,7 +73,7 @@ def lazy_singleton(init_func: Callable[[], T]) -> Callable[[], T]:
                 if instance is None:
                     logger.debug(f"Initializing singleton: {init_func.__name__}")
                     instance = init_func()
-        return instance
+        return instance  # type: ignore[return-value]
 
     def reset() -> None:
         """Reset the singleton instance (for testing)."""
@@ -69,10 +90,10 @@ def lazy_singleton(init_func: Callable[[], T]) -> Callable[[], T]:
         """Get the instance if initialized, or None without triggering init."""
         return instance
 
-    wrapper.reset = reset
-    wrapper.is_initialized = is_initialized
-    wrapper.get_if_initialized = get_if_initialized
-    return wrapper
+    wrapper.reset = reset  # type: ignore[attr-defined]
+    wrapper.is_initialized = is_initialized  # type: ignore[attr-defined]
+    wrapper.get_if_initialized = get_if_initialized  # type: ignore[attr-defined]
+    return cast(LazySingletonCallable[T], wrapper)
 
 
 def lazy_singleton_with_fallback(

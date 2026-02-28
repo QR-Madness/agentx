@@ -449,7 +449,8 @@ class ProceduralMemory:
                 user_id=user_id,
                 channel=channel,
             )
-            total = count_result.single()["total"]
+            record = count_result.single()
+            total = record["total"] if record else 0
 
             # Get paginated results with success rate
             result = session.run(

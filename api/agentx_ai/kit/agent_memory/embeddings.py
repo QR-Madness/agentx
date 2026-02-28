@@ -51,6 +51,7 @@ class EmbeddingProvider:
         """Generate embeddings using OpenAI API."""
         if self._client is None:
             self._init_openai()
+            assert self._client is not None
 
         response = self._client.embeddings.create(
             model=settings.embedding_model,
@@ -62,6 +63,7 @@ class EmbeddingProvider:
         """Generate embeddings using local model."""
         if self._model is None:
             self._init_local()
+            assert self._model is not None
 
         embeddings = self._model.encode(texts, convert_to_numpy=True)
         return embeddings.tolist()

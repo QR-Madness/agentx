@@ -85,7 +85,10 @@ class WorkingMemory:
         if turns:
             self.redis.expire(self.turns_key, 3600)
 
-        return [json.loads(t) for t in turns]
+        if not isinstance(turns, list):
+            return []
+        # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
+        return [json.loads(t) for t in turns]  # type: ignore[arg-type]
 
     def set(self, key: str, value: Any, ttl_seconds: int = 3600) -> None:
         """
@@ -111,7 +114,9 @@ class WorkingMemory:
         """
         full_key = f"{self.context_key}:{key}"
         value = self.redis.get(full_key)
-        return json.loads(value) if value else None
+        if value and isinstance(value, (str, bytes)):
+            return json.loads(value)
+        return None
 
     def delete(self, key: str) -> None:
         """
@@ -132,21 +137,22 @@ class WorkingMemory:
         """
         # Use SCAN instead of KEYS to avoid blocking Redis (O(N) blocking)
         pattern = f"{self.context_key}:*"
-        keys = []
-        cursor = 0
+        keys: list[str] = []
+        cursor: int = 0
         while True:
-            cursor, batch = self.redis.scan(cursor, match=pattern, count=100)
-            keys.extend(batch)
+            result = self.redis.scan(cursor, match=pattern, count=100)
+            cursor = int(result[0])  # type: ignore[arg-type]
+            batch = result[1]
+            if isinstance(batch, list):
+                keys.extend(str(k) for k in batch)
             if cursor == 0:
                 break
 
-        context = {}
+        context: dict[str, Any] = {}
         for key in keys:
-            # Handle both bytes and string keys depending on Redis config
-            key_str = key.decode() if isinstance(key, bytes) else key
-            short_key = key_str.replace(f"{self.context_key}:", "")
-            value = self.redis.get(key_str)
-            if value:
+            short_key = key.replace(f"{self.context_key}:", "")
+            value = self.redis.get(key)
+            if value and isinstance(value, (str, bytes)):
                 context[short_key] = json.loads(value)
 
         # Include recent turns
@@ -158,12 +164,13 @@ class WorkingMemory:
         """Clear all working memory for this session."""
         # Use SCAN instead of KEYS to avoid blocking Redis
         pattern = f"{self.session_key}:*"
-        cursor = 0
+        cursor: int = 0
         while True:
-            cursor, keys = self.redis.scan(cursor, match=pattern, count=100)
-            if keys:
-                # Handle both bytes and string keys
-                key_strs = [k.decode() if isinstance(k, bytes) else k for k in keys]
+            result = self.redis.scan(cursor, match=pattern, count=100)
+            cursor = int(result[0])  # type: ignore[arg-type]
+            keys = result[1]
+            if keys and isinstance(keys, list):
+                key_strs = [str(k) for k in keys]
                 self.redis.delete(*key_strs)
             if cursor == 0:
                 break
@@ -223,4 +230,7 @@ class WorkingMemory:
         effective_limit = min(max(1, limit), settings.max_working_memory_items)
         thoughts_key = f"{self.session_key}:thoughts"
         thoughts = self.redis.lrange(thoughts_key, 0, effective_limit - 1)
-        return [json.loads(t) for t in thoughts]
+        if not isinstance(thoughts, list):
+            return []
+        # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
+        return [json.loads(t) for t in thoughts]  # type: ignore[arg-type]

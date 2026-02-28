@@ -392,7 +392,8 @@ def apply_memory_decay() -> Dict[str, Any]:
             RETURN count(e) AS decayed_count
         """, decay_rate=decay_rate)
 
-        entities_decayed = result.single()["decayed_count"]
+        record = result.single()
+        entities_decayed = record["decayed_count"] if record else 0
         logger.info(f"Decayed {entities_decayed} entities")
 
         # Decay fact confidence (slower decay)
@@ -404,7 +405,8 @@ def apply_memory_decay() -> Dict[str, Any]:
             RETURN count(f) AS decayed_count
         """, decay_rate=decay_rate ** 0.5)  # Slower decay for facts
 
-        facts_decayed = result.single()["decayed_count"]
+        record = result.single()
+        facts_decayed = record["decayed_count"] if record else 0
         logger.info(f"Decayed {facts_decayed} facts")
 
     return {
@@ -516,11 +518,11 @@ def promote_to_global() -> Dict[str, Any]:
                     # Log promotion
                     audit_logger.log_promotion(
                         source_channel=source_channel,
-                        target_channel="_global",
-                        memory_type="entity",
-                        memory_id=new_id,
-                        reason=f"Met promotion criteria: salience={record['salience']:.2f}, "
-                               f"access_count={record['access_count']}, conversations={record['conv_count']}"
+                        promoted_ids=[new_id],
+                        promoted_type="entity",
+                        confidence=float(record["salience"]),
+                        access_count=int(record["access_count"]),
+                        conversation_count=int(record["conv_count"]),
                     )
 
             except Exception as e:
@@ -590,11 +592,11 @@ def promote_to_global() -> Dict[str, Any]:
                     # Log promotion
                     audit_logger.log_promotion(
                         source_channel=source_channel,
-                        target_channel="_global",
-                        memory_type="fact",
-                        memory_id=new_id,
-                        reason=f"Met promotion criteria: confidence={record['confidence']:.2f}, "
-                               f"access_count={record['access_count']}"
+                        promoted_ids=[new_id],
+                        promoted_type="fact",
+                        confidence=float(record["confidence"]),
+                        access_count=int(record["access_count"]),
+                        conversation_count=0,  # Facts don't track conversation count
                     )
 
             except Exception as e:
@@ -624,9 +626,11 @@ def promote_to_global() -> Dict[str, Any]:
     }
 
 
-def cleanup_old_memories():
+def cleanup_old_memories() -> Dict[str, Any]:
     """Archive or delete old, low-salience memories."""
     retention_days = settings.episodic_retention_days
+    archived_count = 0
+    deleted_count = 0
 
     with Neo4jConnection.session() as session:
         # Archive old episodic memories
@@ -638,8 +642,9 @@ def cleanup_old_memories():
             RETURN count(DISTINCT c) AS archived_count
         """, days=str(retention_days))
 
-        count = result.single()["archived_count"]
-        logger.info(f"Archived {count} old conversations")
+        record = result.single()
+        archived_count = record["archived_count"] if record else 0
+        logger.info(f"Archived {archived_count} old conversations")
 
         # Delete very low salience entities
         result = session.run("""
@@ -651,7 +656,14 @@ def cleanup_old_memories():
             RETURN count(e) AS deleted_count
         """)
 
-        logger.info("Cleaned up low-salience orphan entities")
+        record = result.single()
+        deleted_count = record["deleted_count"] if record else 0
+        logger.info(f"Cleaned up {deleted_count} low-salience orphan entities")
+
+    return {
+        "archived_conversations": archived_count,
+        "deleted_entities": deleted_count,
+    }
 
 
 def reset_consolidation(delete_memories: bool = False) -> Dict[str, Any]:
@@ -918,7 +930,7 @@ def link_facts_to_entities() -> Dict[str, Any]:
                     LIMIT 3
                 """, embedding=claim_embedding, user_id=user_id, threshold=threshold)
 
-                matching_entities = list(entity_result)
+                matching_entities: list[dict] = [dict(r) for r in entity_result]
 
                 # Also try text-based matching for entity names mentioned in claim
                 claim_lower = claim.lower()

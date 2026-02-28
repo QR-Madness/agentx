@@ -82,12 +82,17 @@ def paginate_request(
         PaginationInfo with validated parameters
     """
     try:
-        page = max(1, int(request.GET.get("page", 1)))
+        page_param = request.GET.get("page", "1")
+        # Handle case where param is a list (shouldn't happen but Django allows it)
+        page_str = page_param[0] if isinstance(page_param, list) else page_param
+        page = max(1, int(str(page_str)))
     except (ValueError, TypeError):
         page = 1
 
     try:
-        limit = min(max_limit, max(1, int(request.GET.get("limit", default_limit))))
+        limit_param = request.GET.get("limit", str(default_limit))
+        limit_str = limit_param[0] if isinstance(limit_param, list) else limit_param
+        limit = min(max_limit, max(1, int(str(limit_str))))
     except (ValueError, TypeError):
         limit = default_limit
 

@@ -3,10 +3,10 @@
 import atexit
 import threading
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import ClassVar, Generator, Optional
 import redis
 from neo4j import GraphDatabase, Driver, Session, NotificationMinimumSeverity
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session as SQLSession
 
 from .config import get_settings
@@ -23,7 +23,7 @@ _redis_lock = threading.RLock()
 class Neo4jConnection:
     """Neo4j graph database connection manager."""
 
-    _driver: Driver = None
+    _driver: ClassVar[Optional[Driver]] = None
 
     @classmethod
     def get_driver(cls) -> Driver:
@@ -66,40 +66,40 @@ class Neo4jConnection:
 # PostgreSQL Connection Manager (lazy initialization)
 class PostgresConnection:
     """PostgreSQL connection manager with lazy initialization."""
-    
-    _engine = None
-    _session_factory = None
-    
+
+    _engine: ClassVar[Optional[Engine]] = None
+    _session_factory: ClassVar[Optional[sessionmaker[SQLSession]]] = None
+
     @classmethod
-    def get_engine(cls):
+    def get_engine(cls) -> Engine:
         """Get or create SQLAlchemy engine (thread-safe)."""
         if cls._engine is None:
             with _postgres_lock:
                 # Double-check pattern
                 if cls._engine is None:
                     cls._engine = create_engine(
-                        settings.postgres_uri, 
-                        pool_size=10, 
+                        settings.postgres_uri,
+                        pool_size=10,
                         max_overflow=20,
                         connect_args={"connect_timeout": settings.connection_timeout}
                     )
-        return cls._engine
-    
+        return cls._engine  # type: ignore[return-value]
+
     @classmethod
-    def get_session_factory(cls):
+    def get_session_factory(cls) -> sessionmaker[SQLSession]:
         """Get or create session factory (thread-safe)."""
         if cls._session_factory is None:
             with _postgres_lock:
                 if cls._session_factory is None:
                     cls._session_factory = sessionmaker(
-                        bind=cls.get_engine(), 
-                        autocommit=False, 
+                        bind=cls.get_engine(),
+                        autocommit=False,
                         autoflush=False
                     )
-        return cls._session_factory
-    
+        return cls._session_factory  # type: ignore[return-value]
+
     @classmethod
-    def close(cls):
+    def close(cls) -> None:
         """Close the engine and dispose connections."""
         with _postgres_lock:
             if cls._engine:
@@ -126,7 +126,7 @@ def get_postgres_session() -> Generator[SQLSession, None, None]:
 class RedisConnection:
     """Redis in-memory data store connection manager."""
 
-    _client: Optional[redis.Redis] = None
+    _client: ClassVar[Optional[redis.Redis]] = None
 
     @classmethod
     def get_client(cls) -> redis.Redis:
@@ -141,10 +141,10 @@ class RedisConnection:
                         socket_timeout=settings.connection_timeout,
                         socket_connect_timeout=settings.connection_timeout
                     )
-        return cls._client
+        return cls._client  # type: ignore[return-value]
 
     @classmethod
-    def close(cls):
+    def close(cls) -> None:
         """Close the Redis client connection."""
         with _redis_lock:
             if cls._client:

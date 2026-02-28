@@ -1,9 +1,10 @@
 """Episodic memory - conversation history storage and retrieval."""
 
 import json
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
 
 from sqlalchemy import text
+from typing_extensions import LiteralString
 
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
@@ -143,7 +144,8 @@ class EpisodicMemory:
             conv_filters = CypherFilterBuilder("c")
             conv_filters.add_user_filter(user_id)
 
-            result = session.run(f"""
+            result = session.run(
+                cast(LiteralString, f"""
                 CALL db.index.vector.queryNodes('turn_embeddings', $k, $embedding)
                 YIELD node AS t, score
                 MATCH (c:Conversation)-[:HAS_TURN]->(t)
@@ -156,7 +158,7 @@ class EpisodicMemory:
                        c.id AS conversation_id,
                        score
                 ORDER BY score DESC
-            """,
+            """),
                 k=top_k * 2,  # Over-fetch for filtering
                 embedding=query_embedding,
                 user_id=user_id,
@@ -190,12 +192,13 @@ class EpisodicMemory:
             turn_filters = CypherFilterBuilder("t")
             turn_filters.add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(
+                cast(LiteralString, f"""
                 MATCH (c:Conversation {{id: $conv_id}})-[:HAS_TURN]->(t:Turn)
                 WHERE true {conv_filters.build_inline()} {turn_filters.build_inline()}
                 RETURN t
                 ORDER BY t.index
-            """, conv_id=conversation_id, user_id=user_id, channel=channel)
+            """), conv_id=conversation_id, user_id=user_id, channel=channel)
 
             return [Turn(**dict(record["t"])) for record in result]
 
@@ -227,7 +230,8 @@ class EpisodicMemory:
             turn_filters = CypherFilterBuilder("t")
             turn_filters.add_channel_filter(channel)
 
-            result = session.run(f"""
+            result = session.run(
+                cast(LiteralString, f"""
                 MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
                 WHERE c.user_id = $user_id
                   AND t.timestamp > datetime() - duration('PT' + $hours + 'H')
@@ -239,7 +243,7 @@ class EpisodicMemory:
                        c.id AS conversation_id
                 ORDER BY t.timestamp DESC
                 LIMIT $limit
-            """,
+            """),
                 user_id=user_id,
                 hours=str(validated_hours),
                 limit=validated_limit,
