@@ -1578,3 +1578,254 @@ class AgentGracefulDegradationTest(TestCase):
     def test_agent_works_without_redis(self):
         """Agent chat functions when Redis is down."""
         pass
+
+
+# =============================================================================
+# Phase 11.12: Correction and Contradiction Detection Tests
+# =============================================================================
+
+class CorrectionDetectionTest(TestCase):
+    """Test user correction detection in extraction service."""
+
+    def test_check_correction_heuristic_patterns(self):
+        """Heuristic patterns should trigger correction check."""
+        from agentx_ai.kit.agent_memory.extraction.service import CORRECTION_PATTERNS
+        import re
+
+        # Test cases that should match
+        matches = [
+            "Actually, I work at Google not Microsoft",
+            "No, I meant Python not Java",
+            "Sorry, I misspoke - it's version 3",
+            "I meant to say Seattle",
+            "Correction: my name is John",
+            "Wait, that's wrong - I have 5 years",
+            "That's not right, I prefer TypeScript",
+            "Let me correct that - it's 2024",
+            "I misspoke earlier, the deadline is Friday",
+            "Not Python, but JavaScript",
+        ]
+
+        for text in matches:
+            text_lower = text.strip().lower()
+            matched = any(re.search(p, text_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
+            self.assertTrue(matched, f"Pattern should match: {text}")
+
+    def test_check_correction_non_matches(self):
+        """Normal statements should not match correction patterns."""
+        from agentx_ai.kit.agent_memory.extraction.service import CORRECTION_PATTERNS
+        import re
+
+        # Test cases that should NOT match
+        non_matches = [
+            "I work at Google",
+            "My favorite language is Python",
+            "I have 5 years of experience",
+            "The project deadline is Friday",
+            "I started a new project yesterday",
+        ]
+
+        for text in non_matches:
+            text_lower = text.strip().lower()
+            matched = any(re.search(p, text_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
+            self.assertFalse(matched, f"Pattern should NOT match: {text}")
+
+    def test_correction_result_model(self):
+        """CorrectionResult model has expected fields."""
+        from agentx_ai.kit.agent_memory.extraction import CorrectionResult
+
+        result = CorrectionResult(
+            is_correction=True,
+            original_claim="works at Microsoft",
+            corrected_claim="works at Google",
+        )
+
+        self.assertTrue(result.is_correction)
+        self.assertEqual(result.original_claim, "works at Microsoft")
+        self.assertEqual(result.corrected_claim, "works at Google")
+        self.assertTrue(result.success)
+
+    def test_check_correction_disabled_returns_false(self):
+        """check_correction returns False when disabled."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+
+        # Mock settings via _settings attribute (before lazy load)
+        mock_settings = MagicMock()
+        mock_settings.correction_detection_enabled = False
+        service._settings = mock_settings
+
+        result = service.check_correction("Actually, I meant Python")
+        self.assertFalse(result.is_correction)
+
+
+class ContradictionDetectionTest(TestCase):
+    """Test contradiction detection in extraction service."""
+
+    def test_contradiction_result_model(self):
+        """ContradictionResult model has expected fields."""
+        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
+
+        result = ContradictionResult(
+            has_contradiction=True,
+            contradicting_fact_id="fact-123",
+            reason="Location cannot be both Seattle and New York",
+            resolution="prefer_new",
+        )
+
+        self.assertTrue(result.has_contradiction)
+        self.assertEqual(result.contradicting_fact_id, "fact-123")
+        self.assertEqual(result.resolution, "prefer_new")
+        self.assertTrue(result.success)
+
+    def test_check_contradictions_disabled_returns_false(self):
+        """check_contradictions returns False when disabled."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+
+        # Mock settings via _settings attribute (before lazy load)
+        mock_settings = MagicMock()
+        mock_settings.contradiction_detection_enabled = False
+        service._settings = mock_settings
+
+        result = service.check_contradictions(
+            "User lives in Seattle",
+            [{"id": "1", "claim": "User lives in New York"}]
+        )
+        self.assertFalse(result.has_contradiction)
+
+    def test_check_contradictions_empty_facts_returns_false(self):
+        """check_contradictions returns False with no existing facts."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+
+        # Mock settings via _settings attribute (before lazy load)
+        mock_settings = MagicMock()
+        mock_settings.contradiction_detection_enabled = True
+        service._settings = mock_settings
+
+        result = service.check_contradictions("User lives in Seattle", [])
+        self.assertFalse(result.has_contradiction)
+
+    def test_contradiction_resolution_values(self):
+        """ContradictionResult resolution accepts expected values."""
+        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
+
+        for resolution in ["prefer_new", "prefer_old", "flag_review"]:
+            result = ContradictionResult(
+                has_contradiction=True,
+                resolution=resolution,
+            )
+            self.assertEqual(result.resolution, resolution)
+
+
+class FactModelSupersessionTest(TestCase):
+    """Test Fact model supersession fields."""
+
+    def test_fact_model_has_supersession_fields(self):
+        """Fact model includes supersession tracking fields."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="Test fact", source="extraction")
+
+        # Check fields exist and have None defaults
+        self.assertIsNone(fact.superseded_at)
+        self.assertIsNone(fact.superseded_by_id)
+        self.assertIsNone(fact.supersedes_id)
+        self.assertFalse(fact.flagged_for_review)
+
+    def test_fact_model_supersession_fields_settable(self):
+        """Fact supersession fields can be set."""
+        from agentx_ai.kit.agent_memory.models import Fact
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        fact = Fact(
+            claim="Updated fact",
+            source="user_correction",
+            supersedes_id="old-fact-id",
+        )
+
+        self.assertEqual(fact.supersedes_id, "old-fact-id")
+
+        # Test flagged_for_review
+        flagged_fact = Fact(
+            claim="Questionable fact",
+            source="extraction",
+            flagged_for_review=True,
+        )
+        self.assertTrue(flagged_fact.flagged_for_review)
+
+
+class ConsolidationCorrectionHandlerTest(TestCase):
+    """Test correction handling in consolidation pipeline."""
+
+    def test_get_recent_facts_query(self):
+        """_get_recent_facts returns facts in expected format."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _get_recent_facts
+
+        mock_session = _create_mock_neo4j_session()
+        mock_result = MagicMock()
+        mock_result.__iter__ = MagicMock(return_value=iter([
+            {"id": "fact-1", "claim": "User likes Python", "confidence": 0.9, "created_at": datetime.now(timezone.utc)},
+            {"id": "fact-2", "claim": "User works at Google", "confidence": 0.8, "created_at": datetime.now(timezone.utc)},
+        ]))
+        mock_session.run.return_value = mock_result
+
+        facts = _get_recent_facts(mock_session, "user-123", "_default")
+
+        self.assertEqual(len(facts), 2)
+        self.assertEqual(facts[0]["id"], "fact-1")
+        mock_session.run.assert_called_once()
+
+
+class ConsolidationContradictionHandlerTest(TestCase):
+    """Test contradiction handling in consolidation pipeline."""
+
+    def test_handle_contradiction_prefer_old_skips_storage(self):
+        """_handle_contradiction with prefer_old returns 'skipped'."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _handle_contradiction
+        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
+
+        mock_memory = MagicMock()
+        mock_session = _create_mock_neo4j_session()
+
+        contradiction = ContradictionResult(
+            has_contradiction=True,
+            contradicting_fact_id="old-fact",
+            resolution="prefer_old",
+        )
+
+        fact_dict = {"claim": "New contradicting fact", "confidence": 0.7}
+
+        result = _handle_contradiction(
+            mock_memory, mock_session, fact_dict, contradiction, "user-1", "_default"
+        )
+
+        self.assertEqual(result, "skipped")
+
+    def test_handle_contradiction_flag_review_flags_fact(self):
+        """_handle_contradiction with flag_review sets flagged_for_review."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _handle_contradiction
+        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
+
+        mock_memory = MagicMock()
+        mock_session = _create_mock_neo4j_session()
+
+        contradiction = ContradictionResult(
+            has_contradiction=True,
+            contradicting_fact_id="old-fact",
+            resolution="flag_review",
+        )
+
+        fact_dict = {"claim": "Ambiguous fact", "confidence": 0.7}
+
+        result = _handle_contradiction(
+            mock_memory, mock_session, fact_dict, contradiction, "user-1", "_default"
+        )
+
+        self.assertEqual(result, "flagged")
+        self.assertTrue(fact_dict.get("flagged_for_review"))

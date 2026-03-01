@@ -169,6 +169,115 @@ class SemanticMemory:
                 channel=channel
             ).consume()  # Ensure transaction commits
 
+    def supersede_fact(
+        self,
+        original_fact_id: str,
+        new_fact: Fact,
+        user_id: str,
+        channel: str = "_global",
+        reason: str = "user_correction",
+    ) -> Optional[Fact]:
+        """
+        Mark an existing fact as superseded and create a new corrected version.
+
+        Creates a SUPERSEDES relationship between the new and old fact.
+        The original fact's confidence is reduced to 0.1 (effectively deprecated).
+
+        Args:
+            original_fact_id: ID of the fact being superseded
+            new_fact: The new corrected fact to store
+            user_id: User ID for linking
+            channel: Memory channel
+            reason: Reason for supersession (e.g., 'user_correction', 'contradiction')
+
+        Returns:
+            The new fact if successful, None if original not found
+        """
+        from datetime import datetime, timezone
+
+        with Neo4jConnection.session() as session:
+            # First check if original fact exists
+            check_result = session.run("""
+                MATCH (f:Fact {id: $original_id, user_id: $user_id})
+                RETURN f.id AS id
+            """,
+                original_id=original_fact_id,
+                user_id=user_id
+            )
+
+            if not check_result.single():
+                logger.warning(f"Cannot supersede: fact {original_fact_id} not found")
+                return None
+
+            # Create new fact and supersede old one in a single transaction
+            session.run("""
+                // Find and update the original fact
+                MATCH (old:Fact {id: $original_id, user_id: $user_id})
+                SET old.superseded_at = datetime(),
+                    old.superseded_by_id = $new_id,
+                    old.confidence = 0.1
+
+                // Create the new fact
+                CREATE (new:Fact {
+                    id: $new_id,
+                    claim: $claim,
+                    confidence: $confidence,
+                    source: $source,
+                    source_turn_id: $source_turn_id,
+                    embedding: $embedding,
+                    user_id: $user_id,
+                    channel: $channel,
+                    created_at: datetime(),
+                    supersedes_id: $original_id
+                })
+
+                // Create supersession relationship
+                CREATE (new)-[:SUPERSEDES {reason: $reason, at: datetime()}]->(old)
+
+                // Link new fact to user
+                WITH new
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_FACT]->(new)
+
+                // Copy entity links from old fact to new
+                WITH new
+                MATCH (old:Fact {id: $original_id})-[:ABOUT]->(e:Entity)
+                MERGE (new)-[:ABOUT]->(e)
+            """,
+                original_id=original_fact_id,
+                new_id=new_fact.id,
+                claim=new_fact.claim,
+                confidence=new_fact.confidence,
+                source=new_fact.source,
+                source_turn_id=new_fact.source_turn_id,
+                embedding=new_fact.embedding,
+                user_id=user_id,
+                channel=channel,
+                reason=reason
+            ).consume()
+
+            logger.info(
+                f"Superseded fact {original_fact_id} with {new_fact.id} "
+                f"(reason: {reason})"
+            )
+
+            # Log to audit if available
+            if self._audit_logger:
+                self._audit_logger.log_operation(
+                    operation="supersede",
+                    memory_type="semantic",
+                    item_id=new_fact.id,
+                    user_id=user_id,
+                    channel=channel,
+                    metadata={
+                        "superseded_fact_id": original_fact_id,
+                        "reason": reason,
+                        "new_claim": new_fact.claim,
+                    }
+                )
+
+            return new_fact
+
     def vector_search_facts(
         self,
         query_embedding: List[float],

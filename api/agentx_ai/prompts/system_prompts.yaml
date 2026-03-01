@@ -88,6 +88,65 @@ extraction:
     - Link facts to entities via entity_names
     - Empty arrays only if truly nothing to extract
 
+  # User correction detection prompt
+  # Variables: {text}
+  correction: |
+    Does this text indicate the user is CORRECTING previously stated information?
+
+    Examples of corrections:
+    - "Actually, I work at Google not Microsoft"
+    - "No, I meant Python not Java"
+    - "That's wrong, my name is Sarah"
+    - "Let me correct that - I have 5 years experience"
+    - "Sorry, I misspoke - it's version 3, not 2"
+
+    NOT corrections (new information):
+    - "I also work with JavaScript"
+    - "My favorite color is blue"
+    - "I started a new project"
+
+    Text: "{text}"
+
+    If this is a correction, respond:
+    CORRECTION: YES
+    ORIGINAL: [what they said before that was wrong]
+    CORRECTED: [the new correct information]
+
+    If not a correction, respond: CORRECTION: NO
+
+  # Contradiction detection prompt
+  # Variables: {new_claim}, {existing_facts}
+  contradiction: |
+    Check if the NEW FACT contradicts any EXISTING FACT.
+
+    A contradiction exists when two facts CANNOT both be true:
+    - "User lives in Seattle" vs "User lives in New York" (can't live in both)
+    - "User prefers Python" vs "User hates Python" (opposite sentiments)
+    - "User is 25 years old" vs "User is 30 years old" (can't be both)
+
+    NOT contradictions (both can be true):
+    - "User likes Python" + "User likes JavaScript" (can like multiple)
+    - "User works at Google" + "User worked at Microsoft" (past vs present)
+    - "User has a cat" + "User has a dog" (can have both)
+
+    NEW FACT: "{new_claim}"
+
+    EXISTING FACTS:
+    {existing_facts}
+
+    If contradiction found, respond:
+    CONTRADICTION: YES
+    FACT_ID: [id of the contradicting existing fact]
+    REASON: [brief explanation of why they contradict]
+    RESOLUTION: PREFER_NEW | PREFER_OLD | FLAG_REVIEW
+
+    Guidelines for RESOLUTION:
+    - PREFER_NEW: New fact is more specific or recent
+    - PREFER_OLD: Existing fact is more reliable or specific
+    - FLAG_REVIEW: Ambiguous, needs human review
+
+    If no contradiction: CONTRADICTION: NO
+
 # =============================================================================
 # REASONING PROMPTS
 # =============================================================================

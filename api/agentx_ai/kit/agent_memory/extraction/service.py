@@ -43,6 +43,40 @@ class RelevanceResult(BaseModel):
     error: Optional[str] = None
 
 
+class CorrectionResult(BaseModel):
+    """Result of user correction detection."""
+    is_correction: bool = False
+    original_claim: Optional[str] = None
+    corrected_claim: Optional[str] = None
+    success: bool = True
+    error: Optional[str] = None
+
+
+class ContradictionResult(BaseModel):
+    """Result of contradiction check."""
+    has_contradiction: bool = False
+    contradicting_fact_id: Optional[str] = None
+    reason: Optional[str] = None
+    resolution: str = "flag_review"  # prefer_new, prefer_old, flag_review
+    success: bool = True
+    error: Optional[str] = None
+
+
+# Heuristic patterns that suggest user is making a correction
+CORRECTION_PATTERNS = [
+    r"^actually[,\s]",
+    r"^no[,\s].*(?:i meant|that's|it's)",
+    r"^sorry[,\s].*(?:i meant|misspoke|wrong)",
+    r"^i meant\b",
+    r"^correction[:\s]",
+    r"^wait[,\s].*(?:i meant|that's wrong)",
+    r"that'?s (?:not right|wrong|incorrect)",
+    r"^let me correct",
+    r"^i misspoke",
+    r"not .+[,\s]+(?:but|it's|rather)",
+]
+
+
 class ExtractionService:
     """
     Service for LLM-based extraction from text.
@@ -173,6 +207,185 @@ class ExtractionService:
         except Exception as e:
             logger.warning(f"Relevance check failed: {e}, defaulting to relevant")
             return RelevanceResult(is_relevant=True, reason="error_default", error=str(e))
+
+    def check_correction(self, text: str) -> CorrectionResult:
+        """
+        Check if text contains a user correction of previously stated information.
+
+        Uses heuristic patterns first, then LLM if a pattern matches.
+
+        Args:
+            text: The text to check for corrections
+
+        Returns:
+            CorrectionResult with original and corrected claims if found
+        """
+        if not self.settings.correction_detection_enabled:
+            return CorrectionResult(is_correction=False)
+
+        # Quick heuristic pre-filter
+        text_lower = text.strip().lower()
+        pattern_matched = False
+        for pattern in CORRECTION_PATTERNS:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                pattern_matched = True
+                break
+
+        if not pattern_matched:
+            return CorrectionResult(is_correction=False)
+
+        # Pattern matched - use LLM to extract correction details
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('correction')
+        except ValueError as e:
+            logger.warning(f"Correction model not available: {e}")
+            return CorrectionResult(success=False, error=str(e))
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.correction", text=text)
+
+        messages = [
+            Message(role=MessageRole.USER, content=prompt),
+        ]
+
+        try:
+            result = provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            # Parse response
+            parsed = parse_output(result.content)
+            content = parsed.content
+
+            # Check for CORRECTION: YES/NO
+            if "CORRECTION: NO" in content.upper():
+                return CorrectionResult(is_correction=False)
+
+            if "CORRECTION: YES" not in content.upper():
+                logger.debug(f"Unclear correction response: {content[:100]}")
+                return CorrectionResult(is_correction=False)
+
+            # Extract ORIGINAL and CORRECTED
+            original = None
+            corrected = None
+
+            original_match = re.search(r"ORIGINAL:\s*(.+?)(?:\n|CORRECTED:|$)", content, re.IGNORECASE | re.DOTALL)
+            if original_match:
+                original = original_match.group(1).strip()
+
+            corrected_match = re.search(r"CORRECTED:\s*(.+?)(?:\n|$)", content, re.IGNORECASE | re.DOTALL)
+            if corrected_match:
+                corrected = corrected_match.group(1).strip()
+
+            logger.info(f"Correction detected: '{original}' -> '{corrected}'")
+            return CorrectionResult(
+                is_correction=True,
+                original_claim=original,
+                corrected_claim=corrected,
+                success=True,
+            )
+
+        except Exception as e:
+            logger.warning(f"Correction check failed: {e}")
+            return CorrectionResult(success=False, error=str(e))
+
+    def check_contradictions(
+        self,
+        new_claim: str,
+        existing_facts: list[dict[str, Any]],
+    ) -> ContradictionResult:
+        """
+        Check if a new fact contradicts any existing facts.
+
+        Args:
+            new_claim: The new fact claim to check
+            existing_facts: List of existing facts with 'id' and 'claim' keys
+
+        Returns:
+            ContradictionResult indicating if contradiction was found
+        """
+        if not self.settings.contradiction_detection_enabled:
+            return ContradictionResult(has_contradiction=False)
+
+        if not existing_facts:
+            return ContradictionResult(has_contradiction=False)
+
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('contradiction')
+        except ValueError as e:
+            logger.warning(f"Contradiction model not available: {e}")
+            return ContradictionResult(success=False, error=str(e))
+
+        # Format existing facts as numbered list
+        facts_text = "\n".join(
+            f"[{f['id']}] {f['claim']}"
+            for f in existing_facts
+            if f.get('claim')
+        )
+
+        loader = get_prompt_loader()
+        prompt = loader.get(
+            "extraction.contradiction",
+            new_claim=new_claim,
+            existing_facts=facts_text,
+        )
+
+        messages = [
+            Message(role=MessageRole.USER, content=prompt),
+        ]
+
+        try:
+            result = provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            # Parse response
+            parsed = parse_output(result.content)
+            content = parsed.content
+
+            # Check for CONTRADICTION: YES/NO
+            if "CONTRADICTION: NO" in content.upper():
+                return ContradictionResult(has_contradiction=False)
+
+            if "CONTRADICTION: YES" not in content.upper():
+                logger.debug(f"Unclear contradiction response: {content[:100]}")
+                return ContradictionResult(has_contradiction=False)
+
+            # Extract FACT_ID, REASON, RESOLUTION
+            fact_id = None
+            reason = None
+            resolution = "flag_review"
+
+            fact_id_match = re.search(r"FACT_ID:\s*\[?([^\]\n]+)\]?", content, re.IGNORECASE)
+            if fact_id_match:
+                fact_id = fact_id_match.group(1).strip()
+
+            reason_match = re.search(r"REASON:\s*(.+?)(?:\n|RESOLUTION:|$)", content, re.IGNORECASE | re.DOTALL)
+            if reason_match:
+                reason = reason_match.group(1).strip()
+
+            resolution_match = re.search(r"RESOLUTION:\s*(PREFER_NEW|PREFER_OLD|FLAG_REVIEW)", content, re.IGNORECASE)
+            if resolution_match:
+                resolution = resolution_match.group(1).lower()
+
+            logger.info(f"Contradiction detected: fact_id={fact_id}, resolution={resolution}")
+            return ContradictionResult(
+                has_contradiction=True,
+                contradicting_fact_id=fact_id,
+                reason=reason,
+                resolution=resolution,
+                success=True,
+            )
+
+        except Exception as e:
+            logger.warning(f"Contradiction check failed: {e}")
+            return ContradictionResult(success=False, error=str(e))
 
     def extract_all(
         self,

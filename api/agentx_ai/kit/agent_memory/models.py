@@ -56,6 +56,14 @@ class Fact(BaseModel):
     created_at: datetime = Field(default_factory=_utc_now)
     channel: str = "_global"
 
+    # Supersession tracking (for corrections and contradictions)
+    superseded_at: Optional[datetime] = None
+    superseded_by_id: Optional[str] = None
+    supersedes_id: Optional[str] = None  # ID of fact this supersedes
+
+    # Review flags
+    flagged_for_review: bool = False
+
 
 class Goal(BaseModel):
     """Represents a user goal or objective."""

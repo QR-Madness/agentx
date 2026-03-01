@@ -64,6 +64,178 @@ def _get_memory_for_user(user_id: str, channel: str = "_default") -> "AgentMemor
     return AgentMemory(user_id=user_id, channel=channel)
 
 
+def _get_recent_facts(
+    session,
+    user_id: str,
+    channel: str,
+    limit: int = 30,
+) -> List[Dict[str, Any]]:
+    """
+    Get recent facts for a user/channel for contradiction detection.
+
+    Args:
+        session: Neo4j session
+        user_id: User ID
+        channel: Memory channel
+        limit: Maximum facts to return
+
+    Returns:
+        List of facts with id, claim, confidence, created_at
+    """
+    result = session.run("""
+        MATCH (f:Fact)
+        WHERE f.user_id = $user_id
+          AND (f.channel = $channel OR f.channel = '_global')
+          AND f.superseded_at IS NULL
+        RETURN f.id AS id,
+               f.claim AS claim,
+               f.confidence AS confidence,
+               f.created_at AS created_at
+        ORDER BY f.created_at DESC
+        LIMIT $limit
+    """, user_id=user_id, channel=channel, limit=limit)
+
+    return [dict(record) for record in result]
+
+
+def _handle_user_correction(
+    memory: "AgentMemory",
+    session,
+    correction,
+    user_id: str,
+    channel: str,
+) -> bool:
+    """
+    Handle a user correction by finding and superseding the original fact.
+
+    Args:
+        memory: AgentMemory instance
+        session: Neo4j session
+        correction: CorrectionResult with original_claim and corrected_claim
+        user_id: User ID
+        channel: Memory channel
+
+    Returns:
+        True if a fact was superseded
+    """
+    from ..models import Fact
+
+    if not correction.original_claim:
+        logger.debug("Correction detected but no original claim extracted")
+        return False
+
+    # Find facts that might match the original claim (fuzzy match)
+    original_lower = correction.original_claim.strip().lower()
+
+    result = session.run("""
+        MATCH (f:Fact)
+        WHERE f.user_id = $user_id
+          AND (f.channel = $channel OR f.channel = '_global')
+          AND f.superseded_at IS NULL
+          AND toLower(f.claim) CONTAINS $original_lower
+        RETURN f.id AS id, f.claim AS claim
+        ORDER BY f.created_at DESC
+        LIMIT 5
+    """, user_id=user_id, channel=channel, original_lower=original_lower[:50])
+
+    matching_facts = list(result)
+
+    if not matching_facts:
+        logger.debug(f"No matching fact found for correction: {original_lower[:50]}...")
+        return False
+
+    # Use the most recent match
+    original_fact = matching_facts[0]
+    logger.info(f"Found fact to correct: {original_fact['claim'][:50]}...")
+
+    # Create new fact with corrected claim
+    if correction.corrected_claim:
+        new_fact = Fact(
+            claim=correction.corrected_claim,
+            confidence=0.9,  # High confidence for user corrections
+            source="user_correction",
+        )
+
+        # Generate embedding for new fact
+        embedder = get_embedder()
+        new_fact.embedding = embedder.embed(new_fact.claim)
+
+        # Supersede via semantic memory
+        memory._semantic.supersede_fact(
+            original_fact_id=original_fact['id'],
+            new_fact=new_fact,
+            user_id=user_id,
+            channel=channel,
+            reason="user_correction",
+        )
+        return True
+
+    return False
+
+
+def _handle_contradiction(
+    memory: "AgentMemory",
+    session,
+    fact_dict: Dict[str, Any],
+    contradiction,
+    user_id: str,
+    channel: str,
+) -> str:
+    """
+    Handle a contradiction between a new fact and an existing fact.
+
+    Args:
+        memory: AgentMemory instance
+        session: Neo4j session
+        fact_dict: The new fact data
+        contradiction: ContradictionResult with resolution
+        user_id: User ID
+        channel: Memory channel
+
+    Returns:
+        Action taken: 'superseded', 'skipped', 'flagged', 'stored'
+    """
+    from ..models import Fact
+
+    resolution = contradiction.resolution.lower() if contradiction.resolution else "flag_review"
+
+    if resolution == "prefer_new":
+        # Supersede the old fact with the new one
+        if contradiction.contradicting_fact_id:
+            new_fact = Fact(
+                claim=fact_dict["claim"],
+                confidence=fact_dict.get("confidence", 0.7),
+                source="extraction",
+                source_turn_id=fact_dict.get("source_turn_id"),
+            )
+
+            embedder = get_embedder()
+            new_fact.embedding = embedder.embed(new_fact.claim)
+
+            memory._semantic.supersede_fact(
+                original_fact_id=contradiction.contradicting_fact_id,
+                new_fact=new_fact,
+                user_id=user_id,
+                channel=channel,
+                reason="contradiction_prefer_new",
+            )
+            logger.info(f"Superseded contradicting fact: {contradiction.contradicting_fact_id}")
+            return "superseded"
+
+    elif resolution == "prefer_old":
+        # Don't store the new fact
+        logger.info(f"Skipping new fact due to contradiction: {fact_dict['claim'][:50]}...")
+        return "skipped"
+
+    else:  # flag_review
+        # Store the new fact but flag it for review
+        fact_dict["flagged_for_review"] = True
+        logger.info(f"Flagging fact for review due to contradiction: {fact_dict['claim'][:50]}...")
+        return "flagged"
+
+    return "stored"
+
+
 def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
@@ -131,8 +303,19 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             # Filter turns by relevance (skip "thanks", "ok", etc.)
             extraction_service = get_extraction_service()
             relevant_turns = []
+            corrections_applied = 0
+
             for turn in turns:
                 content = turn['content']
+
+                # Check for user corrections first (before relevance filter)
+                if settings.correction_detection_enabled:
+                    correction = extraction_service.check_correction(content)
+                    if correction.is_correction:
+                        if _handle_user_correction(memory, session, correction, user_id, channel):
+                            corrections_applied += 1
+                        # Still extract from the turn - it may have new info
+
                 relevance = extraction_service.check_relevance(content)
                 if relevance.is_relevant:
                     relevant_turns.append(turn)
@@ -199,6 +382,13 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
             fact_count = 0
             skipped_duplicates = 0
+            contradictions_found = 0
+            skipped_contradictions = 0
+
+            # Get existing facts for contradiction detection (once per conversation)
+            existing_facts = []
+            if settings.contradiction_detection_enabled:
+                existing_facts = _get_recent_facts(session, user_id, channel)
 
             # Store facts via AgentMemory interface
             for fact_dict in extracted_facts:
@@ -210,6 +400,23 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                         skipped_duplicates += 1
                         logger.debug(f"Skipping duplicate fact: {claim[:50]}...")
                         continue
+
+                    # Check for contradictions with existing facts
+                    if settings.contradiction_detection_enabled and existing_facts:
+                        contradiction = extraction_service.check_contradictions(claim, existing_facts)
+                        if contradiction.has_contradiction:
+                            contradictions_found += 1
+                            action = _handle_contradiction(
+                                memory, session, fact_dict, contradiction, user_id, channel
+                            )
+                            if action == "skipped":
+                                skipped_contradictions += 1
+                                continue
+                            elif action == "superseded":
+                                # Fact was already stored via supersession
+                                fact_count += 1
+                                continue
+                            # Otherwise continue to store (flagged or normal)
 
                     # Link fact to mentioned entities (case-insensitive lookup)
                     entity_ids = [
@@ -272,10 +479,17 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             # Mark conversation as consolidated in finally block to ensure it's set
             # even if some extraction steps fail (prevents reprocessing)
             try:
-                dup_msg = f", {skipped_duplicates} duplicates skipped" if skipped_duplicates > 0 else ""
+                extras = []
+                if skipped_duplicates > 0:
+                    extras.append(f"{skipped_duplicates} duplicates")
+                if corrections_applied > 0:
+                    extras.append(f"{corrections_applied} corrections")
+                if contradictions_found > 0:
+                    extras.append(f"{contradictions_found} contradictions ({skipped_contradictions} skipped)")
+                extras_msg = f" [{', '.join(extras)}]" if extras else ""
                 logger.info(
                     f"Consolidated conversation {conv_id}: "
-                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{dup_msg}"
+                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{extras_msg}"
                 )
             finally:
                 session.run("""

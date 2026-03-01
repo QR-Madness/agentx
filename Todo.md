@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-03-01
 
 > For completed phases (1-10), decision log, and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -13,8 +13,8 @@
 | Phase | Status | Completion |
 |-------|--------|------------|
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
-| Phase 11: Memory System | **In Progress** | 90% |
-| Phase 11.12: LLM-Enhanced Consolidation | Not Started | 0% |
+| Phase 11: Memory System | **In Progress** | 92% |
+| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 40% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | **In Progress** | 15% |
 
@@ -73,10 +73,10 @@
 > **Priority**: HIGH
 > **Goal**: Use LLM providers for intelligent consolidation stages
 
-### 11.12.1 Pre-Extraction Relevance Filter
-- [ ] Add `filter_relevant_turns()` to consolidation pipeline
-- [ ] LLM prompt: "Does this text contain memorable information? YES/NO"
-- [ ] Heuristic pre-filter (skip turns < 10 chars, "ok", "thanks", etc.)
+### 11.12.1 Pre-Extraction Relevance Filter (Complete)
+- [x] Add `check_relevance()` to consolidation pipeline
+- [x] LLM prompt: "Does this text contain memorable information? YES/NO"
+- [x] Heuristic pre-filter (skip turns < 10 chars, "ok", "thanks", etc.)
 - [ ] Metrics: track skip rate, extraction savings
 
 ### 11.12.2 Enhanced Fact Extraction + Condensation
@@ -85,19 +85,24 @@
 - [ ] Batch extraction (combine multiple turns)
 
 ### 11.12.3 Entity Matching via Embedding Search
-- [ ] Add `link_facts_to_entities()` consolidation job
-- [ ] Embedding-based entity resolution (handle aliases)
+- [x] Add `link_facts_to_entities()` consolidation job
+- [x] Embedding-based entity resolution (handle aliases)
 - [ ] Optional LLM disambiguation for ambiguous matches
 
-### 11.12.4 Contradiction Detection
-- [ ] Add `check_contradictions()` to extraction pipeline
-- [ ] LLM prompt: "Do these facts contradict each other?"
-- [ ] Contradiction resolution strategies (keep_both, prefer_recent, flag_review)
+### 11.12.4 Contradiction Detection (Complete)
+- [x] Add `check_contradictions()` to extraction pipeline
+- [x] LLM prompt comparing new facts against recent existing facts
+- [x] Contradiction resolution strategies (prefer_new, prefer_old, flag_review)
+- [x] `_get_recent_facts()` helper queries Neo4j for existing facts
+- [x] `_handle_contradiction()` applies resolution (supersede, skip, or flag)
+- [x] Integrated into consolidation pipeline (disabled by default)
 
-### 11.12.5 User Correction Handling
-- [ ] Pattern matching: "actually...", "no, I meant...", "that's wrong..."
-- [ ] Find and supersede corrected facts
-- [ ] Log corrections in audit trail
+### 11.12.5 User Correction Handling (Complete)
+- [x] Heuristic patterns: "actually...", "no, I meant...", "that's wrong...", etc.
+- [x] `check_correction()` method with LLM extraction of original/corrected claims
+- [x] `supersede_fact()` marks old facts deprecated (confidence → 0.1)
+- [x] `[:SUPERSEDES]` relationship for audit trail
+- [x] Integrated into consolidation pipeline (disabled by default)
 
 ### 11.12.6 Confidence Calibration
 - [ ] Define confidence scale (0.9+ explicit, 0.7-0.9 implied, 0.5-0.7 inferred)
@@ -108,8 +113,8 @@
 - [ ] Boost salience for frequently-used memories
 - [ ] Negative reinforcement for corrected facts
 
-### 11.12.8 Source Attribution
-- [ ] Store `source_turn_id` on all extracted facts
+### 11.12.8 Source Attribution (Partial)
+- [x] Store `source_turn_id` on all extracted facts
 - [ ] UI: "Where did I learn this?" → show original conversation
 
 ### 11.12.9 Temporal Reasoning
