@@ -612,6 +612,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                         confidence=fact_dict.get("confidence", 0.7),
                         source_turn_id=fact_dict.get("source_turn_id"),
                         entity_ids=entity_ids if entity_ids else None,
+                        temporal_context=fact_dict.get("temporal_context"),
                     )
                     fact_count += 1
                     metrics.facts_stored += 1

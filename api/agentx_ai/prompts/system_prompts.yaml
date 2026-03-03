@@ -114,6 +114,12 @@ extraction:
     - "inferred": Reasonably inferred ("debugging Python" → knows Python)
     - "uncertain": Ambiguous or hedged ("I think I might prefer...")
 
+    TEMPORAL CONTEXT (for facts):
+    - "current": Applies now ("I work at Google", "I'm using React")
+    - "past": No longer applies ("I used to work at...", "I switched from...")
+    - "future": Will apply later ("I'm starting at...", "I plan to...")
+    - null: No clear temporal indicator (default - most facts)
+
     Respond with JSON ONLY:
     {{
       "is_relevant": true|false,
@@ -121,7 +127,7 @@ extraction:
         {{"name": "ExactName", "type": "Person|Organization|Technology|Product|Location|Event|Concept", "description": "brief description", "confidence": 0.0-1.0}}
       ],
       "facts": [
-        {{"claim": "what the user stated", "certainty": "explicit|implied|inferred|uncertain", "entity_names": ["ExactName"]}}
+        {{"claim": "what the user stated", "certainty": "explicit|implied|inferred|uncertain", "temporal_context": "current|past|future|null", "entity_names": ["ExactName"]}}
       ],
       "relationships": [
         {{"source": "EntityA", "target": "EntityB", "type": "works_at|knows|uses|prefers|etc", "confidence": 0.0-1.0}}

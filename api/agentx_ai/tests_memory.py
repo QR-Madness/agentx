@@ -2371,3 +2371,172 @@ class CombinedExtractionProviderUnavailableTest(TestCase):
             self.assertEqual(result.reason, "provider_unavailable")
             self.assertFalse(result.success)
             self.assertIn("Provider unavailable", result.error)
+
+
+# =============================================================================
+# Access Tracking Tests (Session 3 - Reinforcement Signal)
+# =============================================================================
+
+class FactAccessTrackingFieldsTest(TestCase):
+    """Test that Fact model has access tracking fields."""
+
+    def test_fact_has_last_accessed_field(self):
+        """Fact model should have last_accessed field."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="test claim", source="extraction")
+
+        self.assertTrue(hasattr(fact, 'last_accessed'))
+        self.assertIsNotNone(fact.last_accessed)
+
+    def test_fact_has_access_count_field(self):
+        """Fact model should have access_count field with default 0."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="test claim", source="extraction")
+
+        self.assertTrue(hasattr(fact, 'access_count'))
+        self.assertEqual(fact.access_count, 0)
+
+    def test_fact_has_salience_field(self):
+        """Fact model should have salience field with default 0.5."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="test claim", source="extraction")
+
+        self.assertTrue(hasattr(fact, 'salience'))
+        self.assertEqual(fact.salience, 0.5)
+
+    def test_fact_salience_can_be_set(self):
+        """Fact salience should be settable."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="test claim", source="extraction", salience=0.8)
+
+        self.assertEqual(fact.salience, 0.8)
+
+
+# =============================================================================
+# Temporal Context Tests (Session 3 - Temporal Reasoning)
+# =============================================================================
+
+class FactTemporalContextFieldTest(TestCase):
+    """Test that Fact model has temporal_context field."""
+
+    def test_fact_has_temporal_context_field(self):
+        """Fact model should have temporal_context field."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="test claim", source="extraction")
+
+        self.assertTrue(hasattr(fact, 'temporal_context'))
+        self.assertIsNone(fact.temporal_context)  # Default is None
+
+    def test_fact_temporal_context_can_be_set(self):
+        """Fact temporal_context should be settable."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="I work at Google", source="extraction", temporal_context="current")
+
+        self.assertEqual(fact.temporal_context, "current")
+
+
+class TemporalContextNormalizationTest(TestCase):
+    """Test temporal context normalization in extraction service."""
+
+    def test_normalize_valid_current(self):
+        """Current should be normalized to lowercase."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "I work at Google", "temporal_context": "Current"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertEqual(normalized[0]["temporal_context"], "current")
+
+    def test_normalize_valid_past(self):
+        """Past should be normalized to lowercase."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "I used to work at Google", "temporal_context": "PAST"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertEqual(normalized[0]["temporal_context"], "past")
+
+    def test_normalize_valid_future(self):
+        """Future should be normalized to lowercase."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "I'm starting at Google", "temporal_context": "Future"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertEqual(normalized[0]["temporal_context"], "future")
+
+    def test_normalize_invalid_to_none(self):
+        """Invalid temporal_context should become None."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "Some claim", "temporal_context": "invalid_value"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertIsNone(normalized[0]["temporal_context"])
+
+    def test_normalize_null_string_to_none(self):
+        """'null' string should become None."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "Some claim", "temporal_context": "null"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertIsNone(normalized[0]["temporal_context"])
+
+    def test_normalize_missing_field(self):
+        """Missing temporal_context should become None."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        facts = [{"claim": "Some claim"}]
+
+        normalized = service._normalize_temporal_fields(facts)
+
+        self.assertIsNone(normalized[0]["temporal_context"])
+
+
+class TemporalContextInPromptTest(TestCase):
+    """Test temporal context in extraction prompt."""
+
+    def test_prompt_includes_temporal_context(self):
+        """Combined extraction prompt should include temporal context instructions."""
+        from agentx_ai.prompts.loader import get_prompt_loader
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.combined_with_relevance", text="test")
+
+        self.assertIn("temporal_context", prompt.lower())
+        self.assertIn("current", prompt.lower())
+        self.assertIn("past", prompt.lower())
+        self.assertIn("future", prompt.lower())
+
+
+class LearnFactTemporalContextTest(TestCase):
+    """Test learn_fact accepts temporal_context parameter."""
+
+    def test_learn_fact_accepts_temporal_context(self):
+        """learn_fact should accept temporal_context parameter."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        # Check the method signature accepts temporal_context
+        import inspect
+        sig = inspect.signature(AgentMemory.learn_fact)
+        params = list(sig.parameters.keys())
+
+        self.assertIn("temporal_context", params)

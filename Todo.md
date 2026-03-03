@@ -14,7 +14,7 @@
 |-------|--------|------------|
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
 | Phase 11: Memory System | **In Progress** | 94% |
-| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 80% |
+| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | **In Progress** | 15% |
 
@@ -120,19 +120,24 @@
 - [x] Certainty-to-confidence mapping in extraction pipeline
 - [ ] Calibration factors: source, recency, corroboration, contradiction (deferred)
 
-### 11.12.7 Reinforcement Signal
-- [ ] Track memory usage in chat (retrieved and used in response)
-- [ ] Boost salience for frequently-used memories
-- [ ] Negative reinforcement for corrected facts
+### 11.12.7 Reinforcement Signal (Complete)
+- [x] Add `last_accessed`, `access_count`, `salience` fields to Fact model (parity with Entity)
+- [x] Track access on retrieval (`vector_search_facts` increments access_count)
+- [x] Use salience in retrieval scoring (`_rerank()` includes salience factor)
+- [x] Fixes broken promotion system that referenced non-existent Fact.access_count
+- [ ] Negative reinforcement for corrected facts (deferred)
 
 ### 11.12.8 Source Attribution (Partial)
 - [x] Store `source_turn_id` on all extracted facts
 - [ ] UI: "Where did I learn this?" → show original conversation
 
-### 11.12.9 Temporal Reasoning
-- [ ] Add temporal fields to Fact model (valid_from, valid_until)
-- [ ] Extract temporal context from text
-- [ ] Retrieval: prefer current facts over outdated ones
+### 11.12.9 Temporal Reasoning (Complete)
+- [x] Add `temporal_context` field to Fact model (current/past/future)
+- [x] Extract temporal context in combined extraction prompt
+- [x] Normalize temporal fields (`_normalize_temporal_fields()`)
+- [x] Temporal boost in retrieval: current=1.2x, past=0.7x, future/null=1.0x
+- [x] Pass temporal_context through consolidation pipeline
+- [x] 14 unit tests for access tracking and temporal context
 
 ### 11.12.10 Consolidation Settings UI (Client)
 - [ ] Create Consolidation Settings section in Settings tab

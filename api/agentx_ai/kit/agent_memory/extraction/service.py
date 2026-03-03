@@ -431,6 +431,30 @@ class ExtractionService:
 
         return facts
 
+    def _normalize_temporal_fields(self, facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Normalize temporal_context from extraction.
+
+        Validates that temporal_context is one of the allowed values
+        (current, past, future) or sets to None.
+
+        Args:
+            facts: List of fact dictionaries with optional 'temporal_context' field
+
+        Returns:
+            Facts with normalized temporal_context
+        """
+        valid_contexts = {"current", "past", "future"}
+
+        for fact in facts:
+            context = fact.get("temporal_context")
+            if context and str(context).lower() in valid_contexts:
+                fact["temporal_context"] = str(context).lower()
+            else:
+                fact["temporal_context"] = None
+
+        return facts
+
     def check_relevance_and_extract(
         self,
         text: str,
@@ -504,9 +528,10 @@ class ExtractionService:
                     error=parsed.error,
                 )
 
-            # Apply confidence calibration to facts
+            # Apply confidence calibration and normalize temporal fields
             if parsed.facts:
                 parsed.facts = self._apply_confidence_calibration(parsed.facts)
+                parsed.facts = self._normalize_temporal_fields(parsed.facts)
 
             # Add source turn ID to facts
             if source_turn_id:

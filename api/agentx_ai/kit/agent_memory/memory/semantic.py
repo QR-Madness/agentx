@@ -138,7 +138,11 @@ class SemanticMemory:
                     embedding: $embedding,
                     user_id: $user_id,
                     channel: $channel,
-                    created_at: datetime()
+                    created_at: datetime(),
+                    last_accessed: datetime(),
+                    access_count: 0,
+                    salience: $salience,
+                    temporal_context: $temporal_context
                 })
 
                 // Link to user
@@ -168,7 +172,9 @@ class SemanticMemory:
                 embedding=fact.embedding,
                 entity_ids=fact.entity_ids,
                 user_id=user_id,
-                channel=channel
+                channel=channel,
+                salience=fact.salience,
+                temporal_context=fact.temporal_context
             ).consume()  # Ensure transaction commits
 
     def supersede_fact(
@@ -195,7 +201,6 @@ class SemanticMemory:
         Returns:
             The new fact if successful, None if original not found
         """
-        from datetime import datetime, timezone
 
         with Neo4jConnection.session() as session:
             # First check if original fact exists
@@ -311,13 +316,23 @@ class SemanticMemory:
             result = session.run(cast(LiteralString, f"""
                 CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
                 YIELD node AS f, score
-                WHERE f.confidence >= $min_confidence {filters.build_inline()}
+                WHERE f.confidence >= $min_confidence
+                  AND f.superseded_at IS NULL
+                  {filters.build_inline()}
+
+                // Update access stats (like Entity does)
+                SET f.last_accessed = datetime(),
+                    f.access_count = coalesce(f.access_count, 0) + 1
+
+                WITH f, score
                 OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
                 RETURN f.id AS id,
                        f.claim AS claim,
                        f.confidence AS confidence,
                        f.source AS source,
                        f.channel AS channel,
+                       coalesce(f.salience, 0.5) AS salience,
+                       f.temporal_context AS temporal_context,
                        collect(e.name) AS entities,
                        score
                 ORDER BY score DESC

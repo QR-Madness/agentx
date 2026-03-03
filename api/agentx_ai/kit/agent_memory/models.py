@@ -69,6 +69,14 @@ class Fact(BaseModel):
     created_at: datetime = Field(default_factory=_utc_now)
     channel: str = "_global"
 
+    # Access tracking (parity with Entity for reinforcement signal)
+    last_accessed: datetime = Field(default_factory=_utc_now)
+    access_count: int = 0
+    salience: float = 0.5
+
+    # Temporal context (simple: current/past/future)
+    temporal_context: Optional[str] = None  # "current", "past", "future", or None
+
     # Supersession tracking (for corrections and contradictions)
     superseded_at: Optional[datetime] = None
     superseded_by_id: Optional[str] = None

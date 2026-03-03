@@ -640,10 +640,19 @@ class MemoryRetriever:
             for fact in bundle.facts:
                 similarity = fact.get("normalized_score", 0.5)
                 confidence = fact.get("confidence", 0.5)
+                salience = fact.get("salience", 0.5)
                 is_active_channel = fact.get("channel") == active_channel
 
+                # Temporal boost: prefer current facts, demote past (but don't exclude)
+                temporal_context = fact.get("temporal_context")
+                temporal_boost = {
+                    "current": 1.2,   # Prefer active facts
+                    "past": 0.7,      # Demote but don't exclude
+                    "future": 1.0,    # Neutral
+                }.get(temporal_context, 1.0)  # None = neutral
+
                 fact["final_score"] = (
-                    weights.semantic_facts * similarity * confidence
+                    weights.semantic_facts * similarity * confidence * salience * temporal_boost
                 )
 
                 if is_active_channel and active_channel != "_global":

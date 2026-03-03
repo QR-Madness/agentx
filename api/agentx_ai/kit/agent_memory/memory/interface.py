@@ -151,7 +151,8 @@ class AgentMemory:
         source: str = "extraction",
         confidence: float = 0.8,
         entity_ids: Optional[List[str]] = None,
-        source_turn_id: Optional[str] = None
+        source_turn_id: Optional[str] = None,
+        temporal_context: Optional[str] = None
     ) -> Fact:
         """
         Add a fact to semantic memory.
@@ -162,6 +163,7 @@ class AgentMemory:
             confidence: Confidence score (0-1)
             entity_ids: Related entity IDs
             source_turn_id: Source turn ID
+            temporal_context: Temporal context ("current", "past", "future", or None)
 
         Returns:
             Created Fact object
@@ -178,6 +180,7 @@ class AgentMemory:
                 confidence=confidence,
                 entity_ids=entity_ids or [],
                 source_turn_id=source_turn_id,
+                temporal_context=temporal_context,
                 embedding=self.embedder.embed_single(claim)
             )
             fact_id = fact.id
