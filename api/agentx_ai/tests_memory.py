@@ -2035,3 +2035,339 @@ class SettingsCacheTTLTest(TestCase):
 
         self.assertIsInstance(SETTINGS_CACHE_TTL, float)
         self.assertGreater(SETTINGS_CACHE_TTL, 0)
+
+
+# =============================================================================
+# Combined Extraction Tests (Session 2)
+# =============================================================================
+
+class CombinedExtractionResultTest(TestCase):
+    """Test CombinedExtractionResult model."""
+
+    def test_default_values(self):
+        """CombinedExtractionResult should have sensible defaults."""
+        from agentx_ai.kit.agent_memory.extraction.service import CombinedExtractionResult
+
+        result = CombinedExtractionResult()
+
+        self.assertFalse(result.is_relevant)
+        self.assertEqual(result.reason, "")
+        self.assertEqual(result.entities, [])
+        self.assertEqual(result.facts, [])
+        self.assertEqual(result.relationships, [])
+        self.assertEqual(result.tokens_used, 0)
+        self.assertTrue(result.success)
+        self.assertIsNone(result.error)
+
+    def test_with_data(self):
+        """CombinedExtractionResult should hold extraction data."""
+        from agentx_ai.kit.agent_memory.extraction.service import CombinedExtractionResult
+
+        result = CombinedExtractionResult(
+            is_relevant=True,
+            reason="llm_extracted",
+            entities=[{"name": "Acme", "type": "Organization"}],
+            facts=[{"claim": "User works at Acme", "confidence": 0.9}],
+            relationships=[{"source": "User", "target": "Acme", "type": "works_at"}],
+            tokens_used=150,
+        )
+
+        self.assertTrue(result.is_relevant)
+        self.assertEqual(result.reason, "llm_extracted")
+        self.assertEqual(len(result.entities), 1)
+        self.assertEqual(len(result.facts), 1)
+        self.assertEqual(len(result.relationships), 1)
+        self.assertEqual(result.tokens_used, 150)
+
+
+class CombinedExtractionHeuristicTest(TestCase):
+    """Test heuristic skip behavior in combined extraction."""
+
+    def test_heuristic_skip_short_text(self):
+        """Very short text should be skipped via heuristic."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        result = service.check_relevance_and_extract("ok")
+
+        self.assertFalse(result.is_relevant)
+        self.assertEqual(result.reason, "heuristic_skip")
+        self.assertTrue(result.success)
+        self.assertEqual(result.entities, [])
+        self.assertEqual(result.facts, [])
+
+    def test_heuristic_skip_common_phrases(self):
+        """Common filler phrases should be skipped via heuristic."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+        skip_phrases = ["thanks", "got it", "sure", "yes", "no", "cool"]
+
+        for phrase in skip_phrases:
+            result = service.check_relevance_and_extract(phrase)
+            self.assertFalse(result.is_relevant, f"Should skip: {phrase}")
+            self.assertEqual(result.reason, "heuristic_skip")
+
+    def test_non_skip_text_proceeds_to_llm(self):
+        """Meaningful text should not be skipped by heuristic."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+
+        # This text is long enough and not a skip phrase
+        text = "I work at Anthropic as a software engineer"
+
+        # Mock the provider to avoid actual LLM call
+        with patch.object(service, '_get_provider_for_stage') as mock_provider:
+            # Simulate provider unavailable to trigger fallback
+            mock_provider.side_effect = ValueError("Provider unavailable")
+
+            result = service.check_relevance_and_extract(text)
+
+            # Should have attempted to get provider (not skipped by heuristic)
+            # First call should be for 'combined' stage
+            self.assertTrue(mock_provider.called)
+            first_call_args = mock_provider.call_args_list[0][0]
+            self.assertEqual(first_call_args[0], 'combined')
+
+
+class ConfidenceCalibrationTest(TestCase):
+    """Test confidence calibration mapping."""
+
+    def test_explicit_certainty_maps_to_high_confidence(self):
+        """Explicit certainty should map to highest confidence."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "I work at Anthropic", "certainty": "explicit"}]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.95)
+        self.assertNotIn("certainty", calibrated[0])  # Should be removed
+
+    def test_implied_certainty_maps_to_085(self):
+        """Implied certainty should map to 0.85."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "My office is in SF", "certainty": "implied"}]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.85)
+
+    def test_inferred_certainty_maps_to_070(self):
+        """Inferred certainty should map to 0.70."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "User knows Python", "certainty": "inferred"}]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.70)
+
+    def test_uncertain_certainty_maps_to_050(self):
+        """Uncertain certainty should map to lowest confidence."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "I think I might like React", "certainty": "uncertain"}]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.50)
+
+    def test_unknown_certainty_defaults_to_inferred(self):
+        """Unknown certainty levels should default to inferred (0.70)."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "Some claim", "certainty": "unknown_level"}]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.70)
+
+    def test_missing_certainty_defaults_to_inferred(self):
+        """Missing certainty field should default to inferred (0.70)."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{"claim": "Some claim"}]  # No certainty field
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.70)
+
+    def test_calibration_is_case_insensitive(self):
+        """Certainty levels should be matched case-insensitively."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [
+            {"claim": "Claim 1", "certainty": "EXPLICIT"},
+            {"claim": "Claim 2", "certainty": "Implied"},
+            {"claim": "Claim 3", "certainty": "INFERRED"},
+        ]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["confidence"], 0.95)
+        self.assertEqual(calibrated[1]["confidence"], 0.85)
+        self.assertEqual(calibrated[2]["confidence"], 0.70)
+
+    def test_calibration_preserves_other_fields(self):
+        """Calibration should preserve other fact fields."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        service = ExtractionService()
+        service._settings = Settings()
+
+        facts = [{
+            "claim": "I work at Acme",
+            "certainty": "explicit",
+            "entity_names": ["Acme"],
+            "source_turn_id": "turn_123",
+        }]
+        calibrated = service._apply_confidence_calibration(facts)
+
+        self.assertEqual(calibrated[0]["claim"], "I work at Acme")
+        self.assertEqual(calibrated[0]["entity_names"], ["Acme"])
+        self.assertEqual(calibrated[0]["source_turn_id"], "turn_123")
+
+
+class CombinedExtractionConfigTest(TestCase):
+    """Test combined extraction configuration settings."""
+
+    def test_combined_extraction_settings_exist(self):
+        """Combined extraction settings should be defined."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings()
+
+        # Provider settings
+        self.assertIsInstance(settings.combined_extraction_provider, str)
+        self.assertIsInstance(settings.combined_extraction_model, str)
+        self.assertIsInstance(settings.combined_extraction_temperature, float)
+        self.assertIsInstance(settings.combined_extraction_max_tokens, int)
+
+    def test_confidence_calibration_settings_exist(self):
+        """Confidence calibration settings should be defined."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings()
+
+        self.assertIsInstance(settings.confidence_explicit, float)
+        self.assertIsInstance(settings.confidence_implied, float)
+        self.assertIsInstance(settings.confidence_inferred, float)
+        self.assertIsInstance(settings.confidence_uncertain, float)
+
+    def test_default_confidence_values_ordered(self):
+        """Default confidence values should be properly ordered."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings()
+
+        # explicit > implied > inferred > uncertain
+        self.assertGreater(settings.confidence_explicit, settings.confidence_implied)
+        self.assertGreater(settings.confidence_implied, settings.confidence_inferred)
+        self.assertGreater(settings.confidence_inferred, settings.confidence_uncertain)
+
+    def test_default_model_is_reasoning_model(self):
+        """Default combined extraction model should be reasoning model."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        settings = Settings()
+
+        # Should default to nvidia/nemotron-3-nano or similar reasoning model
+        self.assertIn("nemotron", settings.combined_extraction_model.lower())
+
+
+class CombinedExtractionPromptTest(TestCase):
+    """Test combined extraction prompt template."""
+
+    def test_combined_prompt_exists(self):
+        """Combined extraction prompt should be defined."""
+        from agentx_ai.prompts.loader import get_prompt_loader
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.combined_with_relevance", text="test text")
+
+        self.assertIsInstance(prompt, str)
+        self.assertIn("test text", prompt)
+
+    def test_combined_prompt_has_relevance_step(self):
+        """Combined prompt should include relevance check step."""
+        from agentx_ai.prompts.loader import get_prompt_loader
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.combined_with_relevance", text="test")
+
+        self.assertIn("relevant", prompt.lower())
+        self.assertIn("is_relevant", prompt)
+
+    def test_combined_prompt_has_certainty_levels(self):
+        """Combined prompt should include certainty levels."""
+        from agentx_ai.prompts.loader import get_prompt_loader
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.combined_with_relevance", text="test")
+
+        self.assertIn("explicit", prompt.lower())
+        self.assertIn("implied", prompt.lower())
+        self.assertIn("inferred", prompt.lower())
+        self.assertIn("uncertain", prompt.lower())
+
+    def test_combined_prompt_outputs_json(self):
+        """Combined prompt should request JSON output."""
+        from agentx_ai.prompts.loader import get_prompt_loader
+
+        loader = get_prompt_loader()
+        prompt = loader.get("extraction.combined_with_relevance", text="test")
+
+        self.assertIn("JSON", prompt)
+        self.assertIn("is_relevant", prompt)
+        self.assertIn("entities", prompt)
+        self.assertIn("facts", prompt)
+
+
+class CombinedExtractionProviderUnavailableTest(TestCase):
+    """Test behavior when combined provider is unavailable."""
+
+    def test_returns_error_when_provider_unavailable(self):
+        """Should return error result when provider unavailable."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+
+        service = ExtractionService()
+
+        with patch.object(service, '_get_provider_for_stage') as mock_provider:
+            # Simulate combined provider unavailable
+            mock_provider.side_effect = ValueError("Provider unavailable")
+
+            # Meaningful text that won't be skipped by heuristic
+            result = service.check_relevance_and_extract(
+                "I work at Anthropic as a software engineer"
+            )
+
+            # Should return error result (defaults to relevant for safety)
+            self.assertTrue(result.is_relevant)
+            self.assertEqual(result.reason, "provider_unavailable")
+            self.assertFalse(result.success)
+            self.assertIn("Provider unavailable", result.error)

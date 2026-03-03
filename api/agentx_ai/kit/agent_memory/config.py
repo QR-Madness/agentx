@@ -111,6 +111,18 @@ class Settings(BaseSettings):
     correction_temperature: float = 0.2
     correction_max_tokens: int = 500
 
+    # --- Combined Relevance + Extraction (reduces LLM calls by ~75%) ---
+    combined_extraction_provider: str = "lmstudio"
+    combined_extraction_model: str = "nvidia/nemotron-3-nano"  # Reasoning model for better quality
+    combined_extraction_temperature: float = 0.3  # Slightly higher for reasoning
+    combined_extraction_max_tokens: int = 2000
+
+    # --- Confidence Calibration (map LLM certainty to calibrated scores) ---
+    confidence_explicit: float = 0.95  # User directly stated
+    confidence_implied: float = 0.85   # Strongly implied
+    confidence_inferred: float = 0.70  # Reasonably inferred
+    confidence_uncertain: float = 0.50 # Ambiguous or hedged
+
     # --- Entity Linking (match facts to existing entities) ---
     entity_linking_enabled: bool = True
     entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity

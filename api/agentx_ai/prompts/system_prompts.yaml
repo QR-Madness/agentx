@@ -88,6 +88,48 @@ extraction:
     - Link facts to entities via entity_names
     - Empty arrays only if truly nothing to extract
 
+  # Combined relevance check + extraction in a single call (~75% fewer LLM calls)
+  # Variables: {text}
+  # Uses reasoning model (nvidia/nemotron-3-nano) for better two-step analysis
+  combined_with_relevance: |
+    Analyze this text and extract information if relevant.
+
+    TEXT: "{text}"
+
+    STEP 1 - RELEVANCE CHECK:
+    Is this text worth remembering? Think about whether it contains:
+    - Names (people, places, projects, products, companies)
+    - Personal information (preferences, opinions, goals)
+    - Facts or claims about specific things
+    - Technical details or descriptions
+
+    Answer NO if it's just: greetings, acknowledgments, filler ("ok", "thanks", "got it", "sounds good")
+
+    STEP 2 - EXTRACTION (only if relevant):
+    If relevant, extract entities and facts from what the USER said.
+
+    CERTAINTY LEVELS (for facts):
+    - "explicit": User directly stated it ("I work at Anthropic")
+    - "implied": Strongly implied by context ("my office in SF" → works in SF)
+    - "inferred": Reasonably inferred ("debugging Python" → knows Python)
+    - "uncertain": Ambiguous or hedged ("I think I might prefer...")
+
+    Respond with JSON ONLY:
+    {{
+      "is_relevant": true|false,
+      "entities": [
+        {{"name": "ExactName", "type": "Person|Organization|Technology|Product|Location|Event|Concept", "description": "brief description", "confidence": 0.0-1.0}}
+      ],
+      "facts": [
+        {{"claim": "what the user stated", "certainty": "explicit|implied|inferred|uncertain", "entity_names": ["ExactName"]}}
+      ],
+      "relationships": [
+        {{"source": "EntityA", "target": "EntityB", "type": "works_at|knows|uses|prefers|etc", "confidence": 0.0-1.0}}
+      ]
+    }}
+
+    If NOT relevant, return: {{"is_relevant": false, "entities": [], "facts": [], "relationships": []}}
+
   # User correction detection prompt
   # Variables: {text}
   correction: |

@@ -448,10 +448,15 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
             memory = memory_cache[cache_key]
 
-            # Filter turns by relevance (skip "thanks", "ok", etc.)
+            # Filter turns by relevance and extract entities/facts
             extraction_service = get_extraction_service()
             relevant_turns = []
             corrections_applied = 0
+
+            # Accumulated results from combined extraction
+            extracted_entities: List[Dict[str, Any]] = []
+            extracted_facts: List[Dict[str, Any]] = []
+            extracted_relationships: List[Dict[str, Any]] = []
 
             relevance_start = time.perf_counter()
             for turn in turns:
@@ -468,17 +473,26 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                             metrics.corrections_applied += 1
                         # Still extract from the turn - it may have new info
 
-                relevance = extraction_service.check_relevance(content)
-                metrics.relevance_calls += 1
-                if relevance.is_relevant:
+                # Combined relevance + extraction in a single LLM call (~75% fewer calls)
+                combined_result = extraction_service.check_relevance_and_extract(content)
+                metrics.extraction_calls += 1
+                metrics.total_tokens_used += combined_result.tokens_used
+
+                if combined_result.is_relevant:
                     relevant_turns.append(turn)
                     metrics.turns_relevant += 1
+                    extracted_entities.extend(combined_result.entities)
+                    extracted_facts.extend(combined_result.facts)
+                    extracted_relationships.extend(combined_result.relationships)
+                    metrics.entities_extracted += len(combined_result.entities)
+                    metrics.facts_extracted += len(combined_result.facts)
+                    metrics.relationships_extracted += len(combined_result.relationships)
                 else:
-                    if relevance.reason == "heuristic_skip":
+                    if combined_result.reason == "heuristic_skip":
                         metrics.turns_skipped_heuristic += 1
                     else:
                         metrics.turns_skipped_llm += 1
-                    logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({relevance.reason})")
+                    logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({combined_result.reason})")
             metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
 
             if not relevant_turns:
@@ -490,32 +504,10 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 """, conv_id=conv_id)
                 continue
 
-            # Combine relevant user turn content for extraction
-            full_text = "\n".join(t['content'] for t in relevant_turns)
-
-            # Single extraction call for entities, facts, and relationships
-            extraction_start = time.perf_counter()
-            try:
-                extraction_result = extraction_service.extract_all(full_text)
-                extracted_entities = extraction_result.entities
-                extracted_facts = extraction_result.facts
-                extracted_relationships = extraction_result.relationships
-                metrics.extraction_calls += 1
-                metrics.total_tokens_used += extraction_result.tokens_used
-                metrics.entities_extracted += len(extracted_entities)
-                metrics.facts_extracted += len(extracted_facts)
-                metrics.relationships_extracted += len(extracted_relationships)
-                logger.debug(
-                    f"Extraction result: {len(extracted_entities)} entities, "
-                    f"{len(extracted_facts)} facts, {len(extracted_relationships)} relationships"
-                )
-            except Exception as e:
-                logger.warning(f"Extraction failed for {conv_id}: {e}")
-                errors.append(f"extraction:{conv_id}:{e}")
-                extracted_entities = []
-                extracted_facts = []
-                extracted_relationships = []
-            metrics.extraction_latency_ms += int((time.perf_counter() - extraction_start) * 1000)
+            logger.debug(
+                f"Combined extraction result: {len(extracted_entities)} entities, "
+                f"{len(extracted_facts)} facts, {len(extracted_relationships)} relationships"
+            )
 
             # Use lowercase keys for case-insensitive matching with relationships
             entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking

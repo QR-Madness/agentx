@@ -14,7 +14,7 @@
 |-------|--------|------------|
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
 | Phase 11: Memory System | **In Progress** | 94% |
-| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 60% |
+| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 80% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | **In Progress** | 15% |
 
@@ -79,10 +79,12 @@
 - [x] Heuristic pre-filter (skip turns < 10 chars, "ok", "thanks", etc.)
 - [x] Metrics: track skip rate, extraction savings (via ConsolidationMetrics)
 
-### 11.12.2 Enhanced Fact Extraction + Condensation
-- [ ] Improve extraction prompt (user-stated facts only, atomic facts)
-- [ ] Condense verbose statements to atomic facts
-- [ ] Batch extraction (combine multiple turns)
+### 11.12.2 Enhanced Fact Extraction + Condensation (Complete)
+- [x] Combined relevance + extraction in single LLM call (~75% fewer calls)
+- [x] Reasoning model support (nvidia/nemotron-3-nano by default)
+- [x] Confidence calibration mapping (explicit/implied/inferred/uncertain)
+- [x] Per-turn extraction with accumulated results
+- [x] 22 unit tests for combined extraction and confidence
 
 ### 11.12.3 Entity Matching via Embedding Search
 - [x] Add `link_facts_to_entities()` consolidation job
@@ -112,9 +114,11 @@
 - [x] 14 unit tests for metrics, claim hash, and settings cache
 - [ ] LLM timeout enforcement (deferred - requires async/sync architecture fix)
 
-### 11.12.6 Confidence Calibration
-- [ ] Define confidence scale (0.9+ explicit, 0.7-0.9 implied, 0.5-0.7 inferred)
-- [ ] Calibration factors: source, recency, corroboration, contradiction
+### 11.12.6 Confidence Calibration (Complete)
+- [x] Confidence scale: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
+- [x] Configurable thresholds via settings
+- [x] Certainty-to-confidence mapping in extraction pipeline
+- [ ] Calibration factors: source, recency, corroboration, contradiction (deferred)
 
 ### 11.12.7 Reinforcement Signal
 - [ ] Track memory usage in chat (retrieved and used in response)

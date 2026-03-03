@@ -62,6 +62,23 @@ class ContradictionResult(BaseModel):
     error: Optional[str] = None
 
 
+class CombinedExtractionResult(BaseModel):
+    """
+    Result of combined relevance check + extraction in a single LLM call.
+
+    This reduces LLM calls by ~75% compared to separate relevance + extraction.
+    Uses a reasoning model (nvidia/nemotron-3-nano by default) for better quality.
+    """
+    is_relevant: bool = False
+    reason: str = ""  # "heuristic_skip", "llm_not_relevant", "llm_extracted"
+    entities: list[dict[str, Any]] = []
+    facts: list[dict[str, Any]] = []
+    relationships: list[dict[str, Any]] = []
+    tokens_used: int = 0
+    success: bool = True
+    error: Optional[str] = None
+
+
 # Heuristic patterns that suggest user is making a correction
 CORRECTION_PATTERNS = [
     r"^actually[,\s]",
@@ -121,6 +138,7 @@ class ExtractionService:
             'contradiction': (s.contradiction_model, s.contradiction_temperature, s.contradiction_max_tokens),
             'correction': (s.correction_model, s.correction_temperature, s.correction_max_tokens),
             'entity_linking': (s.entity_linking_model, 0.2, 500),
+            'combined': (s.combined_extraction_model, s.combined_extraction_temperature, s.combined_extraction_max_tokens),
         }
 
         if stage not in stage_config:
@@ -386,6 +404,194 @@ class ExtractionService:
         except Exception as e:
             logger.warning(f"Contradiction check failed: {e}")
             return ContradictionResult(success=False, error=str(e))
+
+    def _apply_confidence_calibration(self, facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Map LLM certainty levels to calibrated confidence scores.
+
+        The LLM provides a 'certainty' field (explicit/implied/inferred/uncertain)
+        which we map to numeric confidence values based on settings.
+
+        Args:
+            facts: List of fact dictionaries with 'certainty' field
+
+        Returns:
+            Facts with 'certainty' replaced by calibrated 'confidence' score
+        """
+        mapping = {
+            "explicit": self.settings.confidence_explicit,
+            "implied": self.settings.confidence_implied,
+            "inferred": self.settings.confidence_inferred,
+            "uncertain": self.settings.confidence_uncertain,
+        }
+
+        for fact in facts:
+            certainty = fact.pop("certainty", "inferred")
+            fact["confidence"] = mapping.get(certainty.lower(), self.settings.confidence_inferred)
+
+        return facts
+
+    def check_relevance_and_extract(
+        self,
+        text: str,
+        source_turn_id: Optional[str] = None,
+    ) -> CombinedExtractionResult:
+        """
+        Combined relevance check and extraction in a single LLM call.
+
+        This reduces LLM calls by ~75% compared to separate relevance + extraction.
+        Uses a reasoning model (nvidia/nemotron-3-nano by default) for better quality
+        on the two-step analysis task.
+
+        Args:
+            text: The text to check and extract from
+            source_turn_id: Optional source turn ID for attribution
+
+        Returns:
+            CombinedExtractionResult with relevance and extracted data
+        """
+        # Quick heuristic pre-filter (skip LLM for obvious cases)
+        loader = get_prompt_loader()
+        text_lower = text.strip().lower()
+        skip_patterns = loader.get_list("constants.skip_patterns")
+
+        if text_lower in skip_patterns or len(text.strip()) < 10:
+            return CombinedExtractionResult(
+                is_relevant=False,
+                reason="heuristic_skip",
+                success=True,
+            )
+
+        # Get provider for combined extraction (uses reasoning model)
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('combined')
+        except ValueError as e:
+            logger.warning(f"Combined extraction provider unavailable: {e}")
+            return CombinedExtractionResult(
+                is_relevant=True,  # Default to relevant when provider unavailable
+                reason="provider_unavailable",
+                success=False,
+                error=str(e),
+            )
+
+        # Build prompt using the combined relevance+extraction template
+        prompt = loader.get("extraction.combined_with_relevance", text=text)
+
+        messages = [
+            Message(role=MessageRole.USER, content=prompt),
+        ]
+
+        try:
+            result = provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            tokens_used = result.usage.get("total_tokens", 0) if result.usage else 0
+
+            # Parse the response
+            parsed = self._parse_combined_response(result.content)
+
+            if not parsed.success:
+                logger.warning(f"Failed to parse combined response: {parsed.error}")
+                return CombinedExtractionResult(
+                    is_relevant=True,  # Default to relevant on parse error
+                    reason="parse_error_default_relevant",
+                    tokens_used=tokens_used,
+                    success=False,
+                    error=parsed.error,
+                )
+
+            # Apply confidence calibration to facts
+            if parsed.facts:
+                parsed.facts = self._apply_confidence_calibration(parsed.facts)
+
+            # Add source turn ID to facts
+            if source_turn_id:
+                for fact in parsed.facts:
+                    fact["source_turn_id"] = source_turn_id
+
+            parsed.tokens_used = tokens_used
+            parsed.reason = "llm_extracted" if parsed.is_relevant else "llm_not_relevant"
+
+            logger.debug(
+                f"Combined extraction: relevant={parsed.is_relevant}, "
+                f"{len(parsed.entities)} entities, {len(parsed.facts)} facts"
+            )
+
+            return parsed
+
+        except Exception as e:
+            logger.error(f"Combined extraction failed: {e}")
+            return CombinedExtractionResult(
+                is_relevant=True,  # Default to relevant on error
+                reason="error_default_relevant",
+                success=False,
+                error=str(e),
+            )
+
+    def _parse_combined_response(self, content: str) -> CombinedExtractionResult:
+        """
+        Parse combined relevance+extraction LLM response.
+
+        Handles reasoning model output with thinking tags.
+
+        Args:
+            content: Raw LLM response
+
+        Returns:
+            CombinedExtractionResult with parsed data
+        """
+        # Strip thinking tags from reasoning models
+        parsed_output = parse_output(content)
+        cleaned_content = parsed_output.content
+
+        if parsed_output.has_thinking:
+            logger.debug("Stripped thinking tags from combined response")
+
+        # Try to parse JSON
+        is_valid, parsed, error = validate_json_output(cleaned_content)
+
+        if is_valid and parsed:
+            return CombinedExtractionResult(
+                is_relevant=parsed.get("is_relevant", False),
+                entities=parsed.get("entities", []),
+                facts=parsed.get("facts", []),
+                relationships=parsed.get("relationships", []),
+                success=True,
+            )
+
+        # Try regex patterns for JSON extraction
+        json_patterns = [
+            r'```json\s*([\s\S]*?)```',
+            r'```\s*([\s\S]*?)```',
+            r'(\{[\s\S]*\})',
+        ]
+
+        for pattern in json_patterns:
+            match = re.search(pattern, cleaned_content)
+            if match:
+                try:
+                    json_str = match.group(1).strip()
+                    parsed = json.loads(json_str)
+                    return CombinedExtractionResult(
+                        is_relevant=parsed.get("is_relevant", False),
+                        entities=parsed.get("entities", []),
+                        facts=parsed.get("facts", []),
+                        relationships=parsed.get("relationships", []),
+                        success=True,
+                    )
+                except json.JSONDecodeError:
+                    continue
+
+        logger.warning(f"Failed to parse combined response: {error}")
+        logger.debug(f"Raw combined response: {cleaned_content[:500]}...")
+        return CombinedExtractionResult(
+            success=False,
+            error=f"JSON parse error: {error}",
+        )
 
     def extract_all(
         self,
