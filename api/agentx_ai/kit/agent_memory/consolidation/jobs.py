@@ -6,12 +6,14 @@ from uuid import uuid4
 import logging
 import json
 import re
+import time
 
 from ..connections import Neo4jConnection, get_postgres_session, RedisConnection
 from ..embeddings import get_embedder
 from ..config import get_settings
 from ..extraction.service import get_extraction_service
-from ..models import Entity
+from ..models import Entity, compute_claim_hash
+from .metrics import ConsolidationMetrics
 
 if TYPE_CHECKING:
     from ..memory.interface import AgentMemory
@@ -24,6 +26,9 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     """
     Check if a fact with the same or very similar claim already exists.
 
+    Uses claim_hash for indexed lookup when available, falls back to normalized
+    string comparison for legacy facts without hash.
+
     Args:
         session: Neo4j session
         claim: The fact claim text
@@ -33,14 +38,28 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     Returns:
         True if a duplicate exists
     """
-    # Normalize the claim for comparison
-    normalized = claim.strip().lower()
+    claim_hash = compute_claim_hash(claim)
 
-    # Check for exact or near-exact matches
+    # Check for duplicate using indexed claim_hash (fast path)
     result = session.run("""
         MATCH (f:Fact)
         WHERE f.user_id = $user_id
           AND (f.channel = $channel OR f.channel = '_global')
+          AND f.claim_hash = $claim_hash
+        RETURN f.id AS id
+        LIMIT 1
+    """, user_id=user_id, channel=channel, claim_hash=claim_hash)
+
+    if result.single() is not None:
+        return True
+
+    # Fallback check for legacy facts without claim_hash
+    normalized = " ".join(claim.lower().split())
+    result = session.run("""
+        MATCH (f:Fact)
+        WHERE f.user_id = $user_id
+          AND (f.channel = $channel OR f.channel = '_global')
+          AND f.claim_hash IS NULL
           AND toLower(trim(f.claim)) = $normalized_claim
         RETURN f.id AS id
         LIMIT 1
@@ -236,6 +255,130 @@ def _handle_contradiction(
     return "stored"
 
 
+def _batch_store_entities(
+    session,
+    entities: List[Entity],
+    conv_id: str,
+    user_id: str,
+    channel: str,
+) -> int:
+    """
+    Store multiple entities in a single Neo4j transaction using UNWIND.
+
+    Args:
+        session: Neo4j session
+        entities: List of Entity objects to store
+        conv_id: Conversation ID for MENTIONS relationship
+        user_id: User ID
+        channel: Memory channel
+
+    Returns:
+        Number of entities stored
+    """
+    if not entities:
+        return 0
+
+    # Convert entities to dictionaries for Neo4j
+    entity_data = [
+        {
+            "id": e.id,
+            "name": e.name,
+            "type": e.type,
+            "description": e.description,
+            "salience": e.salience,
+            "aliases": e.aliases,
+            "embedding": e.embedding,
+            "user_id": user_id,
+            "channel": channel,
+        }
+        for e in entities
+    ]
+
+    # Batch upsert entities and create MENTIONS relationships
+    session.run("""
+        UNWIND $entities AS e
+        MERGE (entity:Entity {id: e.id})
+        ON CREATE SET
+            entity.name = e.name,
+            entity.type = e.type,
+            entity.description = e.description,
+            entity.salience = e.salience,
+            entity.aliases = e.aliases,
+            entity.embedding = e.embedding,
+            entity.user_id = e.user_id,
+            entity.channel = e.channel,
+            entity.first_seen = datetime(),
+            entity.last_accessed = datetime(),
+            entity.access_count = 1
+        ON MATCH SET
+            entity.name = e.name,
+            entity.type = e.type,
+            entity.description = coalesce(e.description, entity.description),
+            entity.salience = e.salience,
+            entity.last_accessed = datetime(),
+            entity.access_count = entity.access_count + 1
+        WITH entity, e
+        MERGE (u:User {id: e.user_id})
+        MERGE (u)-[:HAS_ENTITY]->(entity)
+        WITH entity
+        MATCH (c:Conversation {id: $conv_id})
+        MERGE (c)-[:MENTIONS]->(entity)
+    """, entities=entity_data, conv_id=conv_id)
+
+    return len(entities)
+
+
+def _batch_store_relationships(
+    session,
+    relationships: List[Dict[str, Any]],
+    entity_map: Dict[str, str],
+) -> int:
+    """
+    Store multiple relationships in a single Neo4j transaction using UNWIND.
+
+    Args:
+        session: Neo4j session
+        relationships: List of relationship dictionaries
+        entity_map: Map of lowercase entity name to entity ID
+
+    Returns:
+        Number of relationships stored
+    """
+    if not relationships:
+        return 0
+
+    # Filter to only relationships with valid entity mappings
+    valid_rels = []
+    for rel in relationships:
+        source_id = entity_map.get(rel["source"].lower())
+        target_id = entity_map.get(rel["target"].lower())
+        if source_id and target_id:
+            valid_rels.append({
+                "source_id": source_id,
+                "target_id": target_id,
+                "rel_type": rel["type"],
+                "confidence": rel.get("confidence", 0.7),
+            })
+
+    if not valid_rels:
+        return 0
+
+    session.run("""
+        UNWIND $rels AS r
+        MATCH (source:Entity {id: r.source_id}),
+              (target:Entity {id: r.target_id})
+        MERGE (source)-[rel:RELATES_TO {type: r.rel_type}]->(target)
+        ON CREATE SET rel.confidence = r.confidence,
+                      rel.created_at = datetime()
+        ON MATCH SET rel.confidence =
+            CASE WHEN rel.confidence < r.confidence
+                 THEN r.confidence
+                 ELSE rel.confidence END
+    """, rels=valid_rels)
+
+    return len(valid_rels)
+
+
 def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
@@ -244,14 +387,17 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     Returns:
         Dictionary with consolidation metrics
     """
+    job_start = time.perf_counter()
+    job_id = str(uuid4())[:8]
+
     # Cache memory instances per user to avoid repeated initialization
     memory_cache: Dict[str, "AgentMemory"] = {}
 
-    # Metrics for logging
-    total_entities = 0
-    total_facts = 0
-    total_relationships = 0
-    total_conversations = 0
+    # Aggregated metrics across all conversations
+    metrics = ConsolidationMetrics(
+        job_id=job_id,
+        started_at=datetime.now(timezone.utc),
+    )
     errors: List[str] = []
 
     with Neo4jConnection.session() as session:
@@ -292,7 +438,9 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             channel = record["channel"]
             turns = record["turns"]
 
-            total_conversations += 1
+            metrics.conversation_id = conv_id  # Track current conversation
+            metrics.user_id = user_id
+            metrics.channel = channel
 
             # Get or create memory instance for this user/channel
             cache_key = f"{user_id}:{channel}"
@@ -305,22 +453,33 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             relevant_turns = []
             corrections_applied = 0
 
+            relevance_start = time.perf_counter()
             for turn in turns:
                 content = turn['content']
+                metrics.turns_total += 1
 
                 # Check for user corrections first (before relevance filter)
                 if settings.correction_detection_enabled:
                     correction = extraction_service.check_correction(content)
+                    metrics.correction_calls += 1
                     if correction.is_correction:
                         if _handle_user_correction(memory, session, correction, user_id, channel):
                             corrections_applied += 1
+                            metrics.corrections_applied += 1
                         # Still extract from the turn - it may have new info
 
                 relevance = extraction_service.check_relevance(content)
+                metrics.relevance_calls += 1
                 if relevance.is_relevant:
                     relevant_turns.append(turn)
+                    metrics.turns_relevant += 1
                 else:
+                    if relevance.reason == "heuristic_skip":
+                        metrics.turns_skipped_heuristic += 1
+                    else:
+                        metrics.turns_skipped_llm += 1
                     logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({relevance.reason})")
+            metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
 
             if not relevant_turns:
                 logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
@@ -335,11 +494,17 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             full_text = "\n".join(t['content'] for t in relevant_turns)
 
             # Single extraction call for entities, facts, and relationships
+            extraction_start = time.perf_counter()
             try:
                 extraction_result = extraction_service.extract_all(full_text)
                 extracted_entities = extraction_result.entities
                 extracted_facts = extraction_result.facts
                 extracted_relationships = extraction_result.relationships
+                metrics.extraction_calls += 1
+                metrics.total_tokens_used += extraction_result.tokens_used
+                metrics.entities_extracted += len(extracted_entities)
+                metrics.facts_extracted += len(extracted_facts)
+                metrics.relationships_extracted += len(extracted_relationships)
                 logger.debug(
                     f"Extraction result: {len(extracted_entities)} entities, "
                     f"{len(extracted_facts)} facts, {len(extracted_relationships)} relationships"
@@ -350,14 +515,21 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 extracted_entities = []
                 extracted_facts = []
                 extracted_relationships = []
+            metrics.extraction_latency_ms += int((time.perf_counter() - extraction_start) * 1000)
 
-            entity_count = 0
             # Use lowercase keys for case-insensitive matching with relationships
             entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
 
-            # Store entities via AgentMemory interface
+            # Prepare entities for batch storage
+            storage_start = time.perf_counter()
+            entities_to_store: List[Entity] = []
             for entity_dict in extracted_entities:
                 try:
+                    # Validate required fields
+                    if not entity_dict.get("name") or not entity_dict.get("type"):
+                        logger.warning(f"Skipping entity with missing name/type: {entity_dict}")
+                        continue
+
                     entity = Entity(
                         id=str(uuid4()),
                         name=entity_dict["name"],
@@ -365,20 +537,25 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                         description=entity_dict.get("description"),
                         salience=entity_dict.get("confidence", 0.5),
                     )
-                    memory.upsert_entity(entity)
+                    entities_to_store.append(entity)
                     # Store with lowercase key for case-insensitive lookup
                     entity_map[entity_dict["name"].lower()] = entity.id
-                    entity_count += 1
-
-                    # Create MENTIONS relationship (this is still direct Neo4j for the relationship)
-                    session.run("""
-                        MATCH (c:Conversation {id: $conv_id}), (e:Entity {id: $entity_id})
-                        MERGE (c)-[:MENTIONS]->(e)
-                    """, conv_id=conv_id, entity_id=entity.id)
                 except Exception as e:
-                    logger.warning(f"Failed to store entity {entity_dict.get('name')}: {e}")
+                    logger.warning(f"Failed to prepare entity {entity_dict.get('name')}: {e}")
+                    metrics.storage_errors += 1
+                    errors.append(f"entity_prep:{conv_id}:{e}")
 
-            total_entities += entity_count
+            # Batch store all entities
+            try:
+                entity_count = _batch_store_entities(
+                    session, entities_to_store, conv_id, user_id, channel
+                )
+                metrics.entities_stored += entity_count
+            except Exception as e:
+                logger.warning(f"Batch entity storage failed for {conv_id}: {e}")
+                metrics.storage_errors += 1
+                errors.append(f"entity_batch:{conv_id}:{e}")
+                entity_count = 0
 
             fact_count = 0
             skipped_duplicates = 0
@@ -391,21 +568,31 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                 existing_facts = _get_recent_facts(session, user_id, channel)
 
             # Store facts via AgentMemory interface
+            # Collect fact IDs for batch DERIVED_FROM relationship creation
+            stored_fact_ids: List[str] = []
+
             for fact_dict in extracted_facts:
                 try:
-                    claim = fact_dict["claim"]
+                    # Validate required fields
+                    claim = fact_dict.get("claim")
+                    if not claim:
+                        logger.warning(f"Skipping fact with missing claim: {fact_dict}")
+                        continue
 
                     # Check for duplicate facts before storing
                     if _is_duplicate_fact(session, claim, user_id, channel):
                         skipped_duplicates += 1
+                        metrics.duplicates_skipped += 1
                         logger.debug(f"Skipping duplicate fact: {claim[:50]}...")
                         continue
 
                     # Check for contradictions with existing facts
                     if settings.contradiction_detection_enabled and existing_facts:
                         contradiction = extraction_service.check_contradictions(claim, existing_facts)
+                        metrics.contradiction_calls += 1
                         if contradiction.has_contradiction:
                             contradictions_found += 1
+                            metrics.contradictions_found += 1
                             action = _handle_contradiction(
                                 memory, session, fact_dict, contradiction, user_id, channel
                             )
@@ -415,6 +602,8 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                             elif action == "superseded":
                                 # Fact was already stored via supersession
                                 fact_count += 1
+                                metrics.facts_stored += 1
+                                metrics.contradictions_resolved += 1
                                 continue
                             # Otherwise continue to store (flagged or normal)
 
@@ -433,48 +622,39 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                         entity_ids=entity_ids if entity_ids else None,
                     )
                     fact_count += 1
+                    metrics.facts_stored += 1
+                    stored_fact_ids.append(fact.id)
 
-                    # Create DERIVED_FROM relationship
-                    session.run("""
-                        MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: $fact_id})
-                        MERGE (f)-[:DERIVED_FROM]->(c)
-                    """, conv_id=conv_id, fact_id=fact.id)
                 except Exception as e:
                     logger.warning(f"Failed to store fact: {e}")
+                    metrics.storage_errors += 1
+                    errors.append(f"fact:{conv_id}:{e}")
 
-            total_facts += fact_count
-
-            # Relationships already extracted from extract_all() above
-            rel_count = 0
-
-            # Store relationships in Neo4j (case-insensitive entity lookup)
-            for rel in extracted_relationships:
+            # Batch create DERIVED_FROM relationships for all stored facts
+            if stored_fact_ids:
                 try:
-                    source_id = entity_map.get(rel["source"].lower())
-                    target_id = entity_map.get(rel["target"].lower())
-
-                    if source_id and target_id:
-                        session.run("""
-                            MATCH (source:Entity {id: $source_id}),
-                                  (target:Entity {id: $target_id})
-                            MERGE (source)-[r:RELATES_TO {type: $rel_type}]->(target)
-                            ON CREATE SET r.confidence = $confidence,
-                                          r.created_at = datetime()
-                            ON MATCH SET r.confidence =
-                                CASE WHEN r.confidence < $confidence
-                                     THEN $confidence
-                                     ELSE r.confidence END
-                        """,
-                            source_id=source_id,
-                            target_id=target_id,
-                            rel_type=rel["type"],
-                            confidence=rel.get("confidence", 0.7)
-                        )
-                        rel_count += 1
+                    session.run("""
+                        UNWIND $fact_ids AS fid
+                        MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: fid})
+                        MERGE (f)-[:DERIVED_FROM]->(c)
+                    """, conv_id=conv_id, fact_ids=stored_fact_ids)
                 except Exception as e:
-                    logger.warning(f"Failed to store relationship: {e}")
+                    logger.warning(f"Batch DERIVED_FROM creation failed: {e}")
 
-            total_relationships += rel_count
+            # Batch store relationships using UNWIND
+            try:
+                rel_count = _batch_store_relationships(
+                    session, extracted_relationships, entity_map
+                )
+                metrics.relationships_stored += rel_count
+            except Exception as e:
+                logger.warning(f"Batch relationship storage failed for {conv_id}: {e}")
+                metrics.storage_errors += 1
+                errors.append(f"relationship_batch:{conv_id}:{e}")
+                rel_count = 0
+
+            # Track storage latency
+            metrics.storage_latency_ms += int((time.perf_counter() - storage_start) * 1000)
 
             # Mark conversation as consolidated in finally block to ensure it's set
             # even if some extraction steps fail (prevents reprocessing)
@@ -500,22 +680,27 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     # Clean up memory cache to release resources
     memory_cache.clear()
 
-    # Log summary metrics
-    if total_conversations > 0:
-        logger.info(
-            f"Consolidation complete: {total_conversations} conversations, "
-            f"{total_entities} entities, {total_facts} facts, "
-            f"{total_relationships} relationships"
-        )
+    # Finalize metrics
+    metrics.completed_at = datetime.now(timezone.utc)
+    metrics.total_latency_ms = int((time.perf_counter() - job_start) * 1000)
+    metrics.total_llm_calls = (
+        metrics.relevance_calls + metrics.correction_calls +
+        metrics.extraction_calls + metrics.contradiction_calls
+    )
+    metrics.errors = errors
+
+    # Log summary
+    metrics.log_summary()
 
     if errors:
         logger.warning(f"Consolidation had {len(errors)} errors: {errors[:5]}")
 
     return {
-        "items_processed": total_conversations,
-        "entities": total_entities,
-        "facts": total_facts,
-        "relationships": total_relationships,
+        "items_processed": metrics.turns_total,
+        "entities": metrics.entities_stored,
+        "facts": metrics.facts_stored,
+        "relationships": metrics.relationships_stored,
+        "metrics": metrics.to_dict(),
         "errors": errors
     }
 

@@ -9,6 +9,7 @@ from .jobs import (
     cleanup_old_memories,
     trigger_reflection,
 )
+from .metrics import ConsolidationMetrics, AggregatedMetrics
 
 __all__ = [
     "ConsolidationWorker",
@@ -21,4 +22,6 @@ __all__ = [
     "apply_memory_decay",
     "cleanup_old_memories",
     "trigger_reflection",
+    "ConsolidationMetrics",
+    "AggregatedMetrics",
 ]

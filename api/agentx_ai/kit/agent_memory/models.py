@@ -1,9 +1,21 @@
 """Data models for the agent memory system."""
 
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from uuid import uuid4
+
+
+def compute_claim_hash(claim: str) -> str:
+    """
+    Compute a hash of the normalized claim for duplicate detection.
+
+    Normalizes by lowercasing and removing extra whitespace.
+    Returns first 16 chars of SHA256 hash.
+    """
+    normalized = " ".join(claim.lower().split())
+    return sha256(normalized.encode()).hexdigest()[:16]
 
 
 def _utc_now():
@@ -48,6 +60,7 @@ class Fact(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     claim: str
+    claim_hash: Optional[str] = None  # SHA256 hash for indexed duplicate detection
     confidence: float = 0.8
     source: str  # 'extraction', 'user_stated', 'inferred'
     source_turn_id: Optional[str] = None
@@ -63,6 +76,11 @@ class Fact(BaseModel):
 
     # Review flags
     flagged_for_review: bool = False
+
+    def model_post_init(self, __context) -> None:
+        """Compute claim_hash after initialization if not set."""
+        if self.claim_hash is None and self.claim:
+            self.claim_hash = compute_claim_hash(self.claim)
 
 
 class Goal(BaseModel):

@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype
-**Last Updated**: 2026-03-01
+**Last Updated**: 2026-03-02
 
 > For completed phases (1-10), decision log, and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -13,8 +13,8 @@
 | Phase | Status | Completion |
 |-------|--------|------------|
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
-| Phase 11: Memory System | **In Progress** | 92% |
-| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 40% |
+| Phase 11: Memory System | **In Progress** | 94% |
+| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 60% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UI Implementation | **In Progress** | 15% |
 
@@ -77,7 +77,7 @@
 - [x] Add `check_relevance()` to consolidation pipeline
 - [x] LLM prompt: "Does this text contain memorable information? YES/NO"
 - [x] Heuristic pre-filter (skip turns < 10 chars, "ok", "thanks", etc.)
-- [ ] Metrics: track skip rate, extraction savings
+- [x] Metrics: track skip rate, extraction savings (via ConsolidationMetrics)
 
 ### 11.12.2 Enhanced Fact Extraction + Condensation
 - [ ] Improve extraction prompt (user-stated facts only, atomic facts)
@@ -103,6 +103,14 @@
 - [x] `supersede_fact()` marks old facts deprecated (confidence → 0.1)
 - [x] `[:SUPERSEDES]` relationship for audit trail
 - [x] Integrated into consolidation pipeline (disabled by default)
+
+### 11.12.X Infrastructure Improvements (Complete)
+- [x] `ConsolidationMetrics` dataclass for pipeline observability
+- [x] Batch entity/relationship storage with UNWIND (fixes N+1 queries)
+- [x] `claim_hash` field on Fact model for indexed duplicate detection
+- [x] Settings cache with 60s TTL refresh (UI changes take effect without restart)
+- [x] 14 unit tests for metrics, claim hash, and settings cache
+- [ ] LLM timeout enforcement (deferred - requires async/sync architecture fix)
 
 ### 11.12.6 Confidence Calibration
 - [ ] Define confidence scale (0.9+ explicit, 0.7-0.9 implied, 0.5-0.7 inferred)

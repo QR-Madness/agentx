@@ -52,6 +52,9 @@ CREATE INDEX conversation_user_channel IF NOT EXISTS FOR (c:Conversation) ON (c.
 CREATE INDEX entity_user_channel IF NOT EXISTS FOR (e:Entity) ON (e.user_id, e.channel);
 CREATE INDEX fact_user_channel IF NOT EXISTS FOR (f:Fact) ON (f.user_id, f.channel);
 
+// Claim hash index for efficient duplicate detection
+CREATE INDEX fact_claim_hash IF NOT EXISTS FOR (f:Fact) ON (f.claim_hash);
+
 // Full-text search indexes
 CREATE FULLTEXT INDEX entity_search IF NOT EXISTS
 FOR (e:Entity) ON EACH [e.name, e.aliases, e.description];

@@ -1,12 +1,16 @@
 """Configuration settings for the agent memory system."""
 
 import json
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 from pydantic_settings import BaseSettings
 
 # Path to user-configurable settings file
 MEMORY_SETTINGS_PATH = Path("data/memory_settings.json")
+
+# Settings cache TTL in seconds
+SETTINGS_CACHE_TTL = 60.0
 
 
 class Settings(BaseSettings):
@@ -156,13 +160,26 @@ class Settings(BaseSettings):
 
 # Mutable settings that can be updated at runtime
 _runtime_settings: Optional[Settings] = None
+_settings_cache_time: float = 0.0
 
 
 def get_settings() -> Settings:
-    """Get settings instance with runtime overrides applied."""
-    global _runtime_settings
-    if _runtime_settings is None:
+    """
+    Get settings instance with runtime overrides applied.
+
+    Settings are cached with a TTL. If the cache is older than SETTINGS_CACHE_TTL
+    seconds, it will be automatically refreshed. This allows UI changes to take
+    effect without restarting the API server.
+    """
+    global _runtime_settings, _settings_cache_time
+
+    current_time = time.time()
+    cache_expired = (current_time - _settings_cache_time) > SETTINGS_CACHE_TTL
+
+    if _runtime_settings is None or cache_expired:
         _runtime_settings = _load_settings_with_overrides()
+        _settings_cache_time = current_time
+
     return _runtime_settings
 
 
@@ -213,9 +230,10 @@ def save_memory_settings(settings_dict: Dict[str, Any]) -> None:
     with open(MEMORY_SETTINGS_PATH, "w") as f:
         json.dump(existing, f, indent=2)
 
-    # Clear cached settings so next get_settings() reloads
-    global _runtime_settings
+    # Clear cached settings so next get_settings() reloads immediately
+    global _runtime_settings, _settings_cache_time
     _runtime_settings = None
+    _settings_cache_time = 0.0
 
 
 def load_memory_settings() -> Dict[str, Any]:

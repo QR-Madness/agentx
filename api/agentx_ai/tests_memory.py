@@ -1829,3 +1829,209 @@ class ConsolidationContradictionHandlerTest(TestCase):
 
         self.assertEqual(result, "flagged")
         self.assertTrue(fact_dict.get("flagged_for_review"))
+
+
+class ConsolidationMetricsTest(TestCase):
+    """Test ConsolidationMetrics dataclass and its methods."""
+
+    def test_metrics_initialization(self):
+        """ConsolidationMetrics should initialize with default values."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+
+        metrics = ConsolidationMetrics()
+        self.assertEqual(metrics.turns_total, 0)
+        self.assertEqual(metrics.entities_stored, 0)
+        self.assertEqual(metrics.facts_stored, 0)
+        self.assertEqual(metrics.total_llm_calls, 0)
+
+    def test_skip_rate_calculation(self):
+        """skip_rate should calculate percentage of skipped turns."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+
+        metrics = ConsolidationMetrics(
+            turns_total=10,
+            turns_skipped_heuristic=3,
+            turns_skipped_llm=2,
+        )
+        self.assertAlmostEqual(metrics.skip_rate, 0.5)
+
+    def test_skip_rate_zero_turns(self):
+        """skip_rate should return 0 when no turns processed."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+
+        metrics = ConsolidationMetrics(turns_total=0)
+        self.assertEqual(metrics.skip_rate, 0.0)
+
+    def test_extraction_efficiency_calculation(self):
+        """extraction_efficiency should calculate facts per LLM call."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+
+        metrics = ConsolidationMetrics(
+            extraction_calls=5,
+            facts_extracted=15,
+        )
+        self.assertAlmostEqual(metrics.extraction_efficiency, 3.0)
+
+    def test_to_dict_serialization(self):
+        """to_dict should properly serialize metrics including computed properties."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        metrics = ConsolidationMetrics(
+            job_id="test-123",
+            started_at=now,
+            turns_total=10,
+            turns_skipped_heuristic=5,
+        )
+        d = metrics.to_dict()
+
+        self.assertEqual(d["job_id"], "test-123")
+        self.assertEqual(d["turns_total"], 10)
+        self.assertIn("skip_rate", d)
+        self.assertAlmostEqual(d["skip_rate"], 0.5)
+        self.assertIsInstance(d["started_at"], str)
+
+    def test_from_dict_deserialization(self):
+        """from_dict should reconstruct metrics from dictionary."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+
+        d = {
+            "job_id": "test-456",
+            "turns_total": 20,
+            "facts_extracted": 5,
+            "started_at": "2024-03-01T12:00:00+00:00",
+        }
+        metrics = ConsolidationMetrics.from_dict(d)
+
+        self.assertEqual(metrics.job_id, "test-456")
+        self.assertEqual(metrics.turns_total, 20)
+        self.assertIsNotNone(metrics.started_at)
+
+
+class AggregatedMetricsTest(TestCase):
+    """Test AggregatedMetrics for dashboard aggregation."""
+
+    def test_add_run_aggregates_correctly(self):
+        """add_run should aggregate metrics from multiple consolidation runs."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import (
+            ConsolidationMetrics,
+            AggregatedMetrics,
+        )
+
+        agg = AggregatedMetrics(period="2024-03-01")
+
+        # Add first run
+        run1 = ConsolidationMetrics(
+            turns_total=10,
+            turns_skipped_heuristic=2,
+            total_llm_calls=5,
+            total_tokens_used=1000,
+            entities_stored=3,
+            facts_stored=7,
+            errors=["error1"],
+        )
+        agg.add_run(run1)
+
+        self.assertEqual(agg.runs, 1)
+        self.assertEqual(agg.total_turns, 10)
+        self.assertEqual(agg.total_errors, 1)
+
+        # Add second run
+        run2 = ConsolidationMetrics(
+            turns_total=20,
+            turns_skipped_heuristic=5,
+            total_llm_calls=10,
+            total_tokens_used=2000,
+            entities_stored=5,
+            facts_stored=10,
+        )
+        agg.add_run(run2)
+
+        self.assertEqual(agg.runs, 2)
+        self.assertEqual(agg.total_turns, 30)
+        self.assertEqual(agg.total_tokens, 3000)
+        self.assertEqual(agg.avg_tokens_per_run, 1500)
+
+
+class ClaimHashTest(TestCase):
+    """Test claim hash computation for duplicate detection."""
+
+    def test_compute_claim_hash(self):
+        """compute_claim_hash should return consistent hash."""
+        from agentx_ai.kit.agent_memory.models import compute_claim_hash
+
+        claim = "User prefers Python programming"
+        hash1 = compute_claim_hash(claim)
+        hash2 = compute_claim_hash(claim)
+
+        self.assertEqual(hash1, hash2)
+        self.assertEqual(len(hash1), 16)
+
+    def test_claim_hash_case_insensitive(self):
+        """Hash should be case-insensitive."""
+        from agentx_ai.kit.agent_memory.models import compute_claim_hash
+
+        hash1 = compute_claim_hash("User prefers Python")
+        hash2 = compute_claim_hash("user prefers python")
+
+        self.assertEqual(hash1, hash2)
+
+    def test_claim_hash_whitespace_normalized(self):
+        """Hash should normalize whitespace."""
+        from agentx_ai.kit.agent_memory.models import compute_claim_hash
+
+        hash1 = compute_claim_hash("User prefers Python")
+        hash2 = compute_claim_hash("  User   prefers    Python  ")
+
+        self.assertEqual(hash1, hash2)
+
+    def test_fact_auto_computes_hash(self):
+        """Fact model should auto-compute claim_hash on creation."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(claim="User prefers Python", source="extraction")
+
+        self.assertIsNotNone(fact.claim_hash)
+        self.assertEqual(len(fact.claim_hash), 16)
+
+    def test_fact_preserves_explicit_hash(self):
+        """Fact should preserve explicitly provided claim_hash."""
+        from agentx_ai.kit.agent_memory.models import Fact
+
+        fact = Fact(
+            claim="Test claim",
+            claim_hash="explicit123456ab",
+            source="extraction",
+        )
+
+        self.assertEqual(fact.claim_hash, "explicit123456ab")
+
+
+class SettingsCacheTTLTest(TestCase):
+    """Test settings cache TTL refresh mechanism."""
+
+    def test_settings_cache_respects_ttl(self):
+        """Settings should be cached and respect TTL."""
+        from agentx_ai.kit.agent_memory import config
+
+        # Reset cache
+        config._runtime_settings = None
+        config._settings_cache_time = 0.0
+
+        # First load
+        s1 = config.get_settings()
+        time1 = config._settings_cache_time
+
+        # Second load (should use cache)
+        s2 = config.get_settings()
+
+        self.assertIs(s1, s2)
+        self.assertEqual(config._settings_cache_time, time1)
+
+    def test_cache_ttl_constant_exists(self):
+        """SETTINGS_CACHE_TTL should be defined."""
+        from agentx_ai.kit.agent_memory.config import SETTINGS_CACHE_TTL
+
+        self.assertIsInstance(SETTINGS_CACHE_TTL, float)
+        self.assertGreater(SETTINGS_CACHE_TTL, 0)

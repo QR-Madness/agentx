@@ -131,6 +131,7 @@ class SemanticMemory:
                 CREATE (f:Fact {
                     id: $id,
                     claim: $claim,
+                    claim_hash: $claim_hash,
                     confidence: $confidence,
                     source: $source,
                     source_turn_id: $source_turn_id,
@@ -160,6 +161,7 @@ class SemanticMemory:
             """,
                 id=fact.id,
                 claim=fact.claim,
+                claim_hash=fact.claim_hash,
                 confidence=fact.confidence,
                 source=fact.source,
                 source_turn_id=fact.source_turn_id,
@@ -221,6 +223,7 @@ class SemanticMemory:
                 CREATE (new:Fact {
                     id: $new_id,
                     claim: $claim,
+                    claim_hash: $claim_hash,
                     confidence: $confidence,
                     source: $source,
                     source_turn_id: $source_turn_id,
@@ -247,6 +250,7 @@ class SemanticMemory:
                 original_id=original_fact_id,
                 new_id=new_fact.id,
                 claim=new_fact.claim,
+                claim_hash=new_fact.claim_hash,
                 confidence=new_fact.confidence,
                 source=new_fact.source,
                 source_turn_id=new_fact.source_turn_id,
