@@ -369,6 +369,40 @@ export interface ConsolidationSettings {
   default_relevance_prompt: string;
 }
 
+export interface RecallSettings {
+  // Feature toggles
+  recall_enable_hybrid: boolean;
+  recall_enable_entity_centric: boolean;
+  recall_enable_query_expansion: boolean;
+  recall_enable_hyde: boolean;
+  recall_enable_self_query: boolean;
+
+  // Hybrid search settings
+  recall_hybrid_bm25_weight: number;
+  recall_hybrid_vector_weight: number;
+  recall_hybrid_rrf_k: number;
+
+  // Entity-centric settings
+  recall_entity_similarity_threshold: number;
+  recall_entity_max_entities: number;
+  recall_entity_graph_depth: number;
+
+  // Query expansion settings
+  recall_expansion_max_variants: number;
+
+  // HyDE settings
+  recall_hyde_provider: string;
+  recall_hyde_model: string;
+  recall_hyde_temperature: number;
+  recall_hyde_max_tokens: number;
+
+  // Self-query settings
+  recall_self_query_provider: string;
+  recall_self_query_model: string;
+  recall_self_query_temperature: number;
+  recall_self_query_max_tokens: number;
+}
+
 // === API Client ===
 
 class ApiClient {
@@ -648,6 +682,17 @@ class ApiClient {
 
   async updateConsolidationSettings(settings: Partial<ConsolidationSettings>): Promise<{ success: boolean; updated: string[] }> {
     return this.request('/api/memory/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  async getRecallSettings(): Promise<RecallSettings> {
+    return this.request('/api/memory/recall-settings');
+  }
+
+  async updateRecallSettings(settings: Partial<RecallSettings>): Promise<{ success: boolean; updated: string[] }> {
+    return this.request('/api/memory/recall-settings', {
       method: 'POST',
       body: JSON.stringify(settings),
     });

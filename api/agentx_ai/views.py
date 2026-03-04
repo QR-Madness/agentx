@@ -1331,6 +1331,57 @@ def memory_settings(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@csrf_exempt
+def recall_settings(request):
+    """
+    GET /api/memory/recall-settings - Get RecallLayer settings.
+    POST /api/memory/recall-settings - Update RecallLayer settings.
+
+    Returns/accepts settings for enhanced retrieval techniques:
+    hybrid search, entity-centric, query expansion, HyDE, self-query.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method == 'GET':
+        try:
+            from .kit.agent_memory.config import get_recall_settings
+
+            settings = get_recall_settings()
+            return JsonResponse(settings)
+        except Exception as e:
+            logger.error(f"Error getting recall settings: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == 'POST':
+        try:
+            from .kit.agent_memory.config import save_memory_settings, get_recall_settings
+
+            data = json.loads(request.body.decode('utf-8'))
+
+            # Validate and filter to only allowed settings
+            allowed_keys = set(get_recall_settings().keys())
+
+            filtered = {k: v for k, v in data.items() if k in allowed_keys}
+
+            if not filtered:
+                return JsonResponse({"error": "No valid settings provided"}, status=400)
+
+            save_memory_settings(filtered)
+
+            return JsonResponse({
+                "success": True,
+                "updated": list(filtered.keys())
+            })
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            logger.error(f"Error updating recall settings: {e}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
 # =============================================================================
 # Job Monitoring Endpoints
 # =============================================================================

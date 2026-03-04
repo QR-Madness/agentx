@@ -21,6 +21,7 @@ import {
   WorkerStatus,
   ConsolidateResult,
   ConsolidationSettings,
+  RecallSettings,
 } from './api';
 
 export function useHealth(includeMemory = true) {
@@ -450,6 +451,48 @@ export function useConsolidationSettings() {
     setError(null);
     try {
       await api.updateConsolidationSettings(updates);
+      // Refresh settings after save
+      await fetchSettings();
+      return true;
+    } catch (err) {
+      setError(err as ApiError);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchSettings]);
+
+  return { settings, loading, saving, error, updateSettings, refresh: fetchSettings };
+}
+
+export function useRecallSettings() {
+  const [settings, setSettings] = useState<RecallSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const fetchSettings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getRecallSettings();
+      setSettings(res);
+    } catch (err) {
+      setError(err as ApiError);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  const updateSettings = useCallback(async (updates: Partial<RecallSettings>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateRecallSettings(updates);
       // Refresh settings after save
       await fetchSettings();
       return true;

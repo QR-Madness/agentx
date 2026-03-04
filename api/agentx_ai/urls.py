@@ -40,6 +40,7 @@ urlpatterns = [
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),
     path("memory/reset", views.memory_reset, name="memory-reset"),
     path("memory/settings", views.memory_settings, name="memory-settings"),
+    path("memory/recall-settings", views.recall_settings, name="recall-settings"),
     # Job monitoring endpoints
     path("jobs", views.jobs_list, name="jobs-list"),
     path("jobs/clear-stuck", views.jobs_clear_stuck, name="jobs-clear-stuck"),

@@ -27,9 +27,10 @@ import {
   useMemoryStats,
   useEntityGraph,
   useConsolidate,
-  useConsolidationSettings
+  useConsolidationSettings,
+  useRecallSettings
 } from '../../lib/hooks';
-import { MemoryEntity, MemoryFact, MemoryStrategy, ConsolidationSettings, api } from '../../lib/api';
+import { MemoryEntity, MemoryFact, MemoryStrategy, ConsolidationSettings, RecallSettings, api } from '../../lib/api';
 import { JobsPanel } from '../JobsPanel';
 import '../../styles/MemoryTab.css';
 
@@ -933,6 +934,329 @@ function ConsolidationSettingsPanel({
   );
 }
 
+// RecallLayer Settings Panel Component
+function RecallSettingsPanel() {
+  const { settings, loading, saving, error, updateSettings } = useRecallSettings();
+  const [localSettings, setLocalSettings] = useState<Partial<RecallSettings>>({});
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sync local state with loaded settings
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
+  const handleChange = <K extends keyof RecallSettings>(
+    key: K,
+    value: RecallSettings[K]
+  ) => {
+    setLocalSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    const success = await updateSettings(localSettings);
+    if (success) {
+      setSaveMessage({ type: 'success', text: 'Recall settings saved successfully' });
+    } else {
+      setSaveMessage({ type: 'error', text: 'Failed to save recall settings' });
+    }
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  if (loading) {
+    return (
+      <div className="settings-panel">
+        <div className="memory-loading">
+          <RefreshCw size={24} className="spin" />
+          <span>Loading recall settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="settings-panel">
+        <div className="memory-error">
+          Failed to load recall settings: {error.message}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-panel recall-settings">
+      <h2 className="settings-title">
+        <Search size={20} />
+        Recall Layer Settings
+      </h2>
+      <p className="settings-description">
+        Configure enhanced retrieval techniques to improve memory recall accuracy.
+        These techniques help bridge the semantic gap between questions and stored facts.
+      </p>
+
+      {/* Technique Toggles */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Retrieval Techniques</h3>
+        <div className="settings-grid">
+          <div className="setting-row checkbox">
+            <label title="Combine BM25 keyword matching with vector similarity using Reciprocal Rank Fusion">
+              <input
+                type="checkbox"
+                checked={localSettings.recall_enable_hybrid ?? true}
+                onChange={e => handleChange('recall_enable_hybrid', e.target.checked)}
+              />
+              <span className="setting-label">
+                Hybrid Search (BM25 + Vector)
+                <span className="setting-badge recommended">Recommended</span>
+              </span>
+            </label>
+            <span className="setting-hint">Combines keyword matching with semantic similarity</span>
+          </div>
+
+          <div className="setting-row checkbox">
+            <label title="Traverse entity relationships to find linked facts">
+              <input
+                type="checkbox"
+                checked={localSettings.recall_enable_entity_centric ?? true}
+                onChange={e => handleChange('recall_enable_entity_centric', e.target.checked)}
+              />
+              <span className="setting-label">
+                Entity-Centric Retrieval
+                <span className="setting-badge recommended">Recommended</span>
+              </span>
+            </label>
+            <span className="setting-hint">Finds facts via entity graph traversal</span>
+          </div>
+
+          <div className="setting-row checkbox">
+            <label title="Transform questions to statement form for better matching">
+              <input
+                type="checkbox"
+                checked={localSettings.recall_enable_query_expansion ?? true}
+                onChange={e => handleChange('recall_enable_query_expansion', e.target.checked)}
+              />
+              <span className="setting-label">
+                Query Expansion
+                <span className="setting-badge recommended">Recommended</span>
+              </span>
+            </label>
+            <span className="setting-hint">Transforms "When is my birthday?" → "birthday is"</span>
+          </div>
+
+          <div className="setting-row checkbox">
+            <label title="Generate hypothetical answer and search with that embedding (requires LLM)">
+              <input
+                type="checkbox"
+                checked={localSettings.recall_enable_hyde ?? false}
+                onChange={e => handleChange('recall_enable_hyde', e.target.checked)}
+              />
+              <span className="setting-label">
+                HyDE (Hypothetical Document Embedding)
+                <span className="setting-badge expensive">LLM Required</span>
+              </span>
+            </label>
+            <span className="setting-hint">LLM generates hypothetical answer for better embedding match</span>
+          </div>
+
+          <div className="setting-row checkbox">
+            <label title="LLM extracts structured filters from natural language (requires LLM)">
+              <input
+                type="checkbox"
+                checked={localSettings.recall_enable_self_query ?? false}
+                onChange={e => handleChange('recall_enable_self_query', e.target.checked)}
+              />
+              <span className="setting-label">
+                Self-Query (Filter Extraction)
+                <span className="setting-badge expensive">LLM Required</span>
+              </span>
+            </label>
+            <span className="setting-hint">Extracts time filters, keywords from queries</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Hybrid Search Settings */}
+      {localSettings.recall_enable_hybrid && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">Hybrid Search Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-row">
+              <label>BM25 Weight</label>
+              <div className="setting-input-group">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.recall_hybrid_bm25_weight ?? 0.3}
+                  onChange={e => handleChange('recall_hybrid_bm25_weight', parseFloat(e.target.value))}
+                />
+                <span className="setting-value">{(localSettings.recall_hybrid_bm25_weight ?? 0.3).toFixed(1)}</span>
+              </div>
+            </div>
+            <div className="setting-row">
+              <label>Vector Weight</label>
+              <div className="setting-input-group">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.recall_hybrid_vector_weight ?? 0.7}
+                  onChange={e => handleChange('recall_hybrid_vector_weight', parseFloat(e.target.value))}
+                />
+                <span className="setting-value">{(localSettings.recall_hybrid_vector_weight ?? 0.7).toFixed(1)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Entity-Centric Settings */}
+      {localSettings.recall_enable_entity_centric && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">Entity-Centric Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-row">
+              <label>Similarity Threshold</label>
+              <div className="setting-input-group">
+                <input
+                  type="range"
+                  min="0.3"
+                  max="0.95"
+                  step="0.05"
+                  value={localSettings.recall_entity_similarity_threshold ?? 0.65}
+                  onChange={e => handleChange('recall_entity_similarity_threshold', parseFloat(e.target.value))}
+                />
+                <span className="setting-value">{(localSettings.recall_entity_similarity_threshold ?? 0.65).toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="setting-row">
+              <label>Max Entities</label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={localSettings.recall_entity_max_entities ?? 5}
+                onChange={e => handleChange('recall_entity_max_entities', parseInt(e.target.value))}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Query Expansion Settings */}
+      {localSettings.recall_enable_query_expansion && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">Query Expansion Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-row">
+              <label>Max Variants</label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={localSettings.recall_expansion_max_variants ?? 3}
+                onChange={e => handleChange('recall_expansion_max_variants', parseInt(e.target.value))}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HyDE Settings */}
+      {localSettings.recall_enable_hyde && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">HyDE Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-row">
+              <label>Provider</label>
+              <select
+                value={localSettings.recall_hyde_provider ?? 'lmstudio'}
+                onChange={e => handleChange('recall_hyde_provider', e.target.value)}
+              >
+                <option value="lmstudio">LM Studio</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+            <div className="setting-row">
+              <label>Model</label>
+              <input
+                type="text"
+                value={localSettings.recall_hyde_model ?? 'google/gemma-3-4b'}
+                onChange={e => handleChange('recall_hyde_model', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <label>Temperature</label>
+              <div className="setting-input-group">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={localSettings.recall_hyde_temperature ?? 0.7}
+                  onChange={e => handleChange('recall_hyde_temperature', parseFloat(e.target.value))}
+                />
+                <span className="setting-value">{(localSettings.recall_hyde_temperature ?? 0.7).toFixed(1)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Self-Query Settings */}
+      {localSettings.recall_enable_self_query && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">Self-Query Settings</h3>
+          <div className="settings-grid">
+            <div className="setting-row">
+              <label>Provider</label>
+              <select
+                value={localSettings.recall_self_query_provider ?? 'lmstudio'}
+                onChange={e => handleChange('recall_self_query_provider', e.target.value)}
+              >
+                <option value="lmstudio">LM Studio</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+            <div className="setting-row">
+              <label>Model</label>
+              <input
+                type="text"
+                value={localSettings.recall_self_query_model ?? 'google/gemma-3-4b'}
+                onChange={e => handleChange('recall_self_query_model', e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Message */}
+      {saveMessage && (
+        <div className={`save-message ${saveMessage.type}`}>
+          {saveMessage.text}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="settings-actions">
+        <button className="button-primary" onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <><RefreshCw size={16} className="spin" /> Saving...</>
+          ) : (
+            <><Save size={16} /> Save Settings</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Main Memory Tab Component
 export const MemoryTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<MemorySection>('entities');
@@ -1087,8 +1411,9 @@ export const MemoryTab: React.FC = () => {
         {/* Content Area */}
         <div className="memory-content">
           {activeSection === 'settings' ? (
-            /* Settings Panel */
-            <div className="memory-list-container card">
+            /* Settings Panels */
+            <div className="memory-list-container card settings-container">
+              <RecallSettingsPanel />
               <ConsolidationSettingsPanel onConsolidate={handleConsolidate} />
             </div>
           ) : activeSection === 'jobs' ? (

@@ -341,3 +341,46 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "entity_types": settings.entity_types,
         "relationship_types": settings.relationship_types,
     }
+
+
+def get_recall_settings() -> Dict[str, Any]:
+    """
+    Get RecallLayer settings for the UI.
+
+    Returns settings for the enhanced retrieval (RecallLayer) panel.
+    """
+    settings = get_settings()
+
+    return {
+        # Feature toggles
+        "recall_enable_hybrid": settings.recall_enable_hybrid,
+        "recall_enable_entity_centric": settings.recall_enable_entity_centric,
+        "recall_enable_query_expansion": settings.recall_enable_query_expansion,
+        "recall_enable_hyde": settings.recall_enable_hyde,
+        "recall_enable_self_query": settings.recall_enable_self_query,
+
+        # Hybrid search settings
+        "recall_hybrid_bm25_weight": settings.recall_hybrid_bm25_weight,
+        "recall_hybrid_vector_weight": settings.recall_hybrid_vector_weight,
+        "recall_hybrid_rrf_k": settings.recall_hybrid_rrf_k,
+
+        # Entity-centric settings
+        "recall_entity_similarity_threshold": settings.recall_entity_similarity_threshold,
+        "recall_entity_max_entities": settings.recall_entity_max_entities,
+        "recall_entity_graph_depth": settings.recall_entity_graph_depth,
+
+        # Query expansion settings
+        "recall_expansion_max_variants": settings.recall_expansion_max_variants,
+
+        # HyDE settings
+        "recall_hyde_provider": settings.recall_hyde_provider,
+        "recall_hyde_model": settings.recall_hyde_model,
+        "recall_hyde_temperature": settings.recall_hyde_temperature,
+        "recall_hyde_max_tokens": settings.recall_hyde_max_tokens,
+
+        # Self-query settings
+        "recall_self_query_provider": settings.recall_self_query_provider,
+        "recall_self_query_model": settings.recall_self_query_model,
+        "recall_self_query_temperature": settings.recall_self_query_temperature,
+        "recall_self_query_max_tokens": settings.recall_self_query_max_tokens,
+    }
