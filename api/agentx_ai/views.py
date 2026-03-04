@@ -467,6 +467,26 @@ async def agent_chat_stream(request):
                     content=system_prompt or "You are a helpful AI assistant."
                 )
             ]
+
+            # Retrieve relevant memories and inject into context
+            if use_memory and agent.memory:
+                try:
+                    memory_bundle = agent.memory.remember(
+                        query=message,
+                        top_k=agent.config.memory_top_k,
+                        time_window_hours=agent.config.memory_time_window_hours,
+                    )
+                    if memory_bundle:
+                        memory_context = memory_bundle.to_context_string()
+                        if memory_context:
+                            messages.append(Message(
+                                role=MessageRole.SYSTEM,
+                                content=f"Relevant information from memory:\n{memory_context}"
+                            ))
+                            logger.debug(f"Injected memory context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities")
+                except Exception as mem_err:
+                    logger.warning(f"Failed to retrieve memories: {mem_err}")
+
             if context:
                 messages.extend(context)
             messages.append(Message(role=MessageRole.USER, content=message))
