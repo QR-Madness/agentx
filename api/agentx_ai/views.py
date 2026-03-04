@@ -547,6 +547,7 @@ async def agent_chat_stream(request):
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            return  # Ensure generator terminates after error
 
     response = StreamingHttpResponse(
         generate_sse(),
