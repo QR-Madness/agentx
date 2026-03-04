@@ -204,7 +204,7 @@ class RecallLayer:
         )
 
         # Generate embedding for the query (used by multiple techniques)
-        embedding = self.memory.embedder.embed(query)
+        embedding = self.memory.embedder.embed_single(query)
 
         # Step 1: Base retrieval (always runs)
         base_start = time.perf_counter()
@@ -371,9 +371,9 @@ class RecallLayer:
 
         # Vector search (already done in base, but we need rankings)
         vector_results = self.memory.semantic.vector_search_facts(
-            embedding=embedding,
+            query_embedding=embedding,
             user_id=user_id,
-            channels=channels,
+            channel=channels[0] if channels else "_global",
             top_k=top_k * 2,
             min_confidence=0.0,  # Don't filter yet, RRF will handle ranking
         )
@@ -436,17 +436,15 @@ class RecallLayer:
         """
 
         try:
-            with Neo4jConnection() as conn:
-                results = conn.query(
+            with Neo4jConnection.session() as session:
+                result = session.run(
                     query,
-                    {
-                        "keywords": escaped_keywords,
-                        "user_id": user_id,
-                        "channels": channels,
-                        "limit": limit,
-                    },
+                    keywords=escaped_keywords,
+                    user_id=user_id,
+                    channels=channels,
+                    limit=limit,
                 )
-                return [dict(r) for r in results]
+                return [dict(r) for r in result]
         except Exception as e:
             logger.warning(f"[RecallLayer:Hybrid] BM25 search failed: {e}")
             return []
@@ -549,9 +547,9 @@ class RecallLayer:
 
         # Find matching entities
         entities = self.memory.semantic.vector_search_entities(
-            embedding=embedding,
+            query_embedding=embedding,
             user_id=user_id,
-            channels=channels,
+            channel=channels[0] if channels else None,
             top_k=max_entities,
         )
 
@@ -625,17 +623,15 @@ class RecallLayer:
         """
 
         try:
-            with Neo4jConnection() as conn:
-                results = conn.query(
+            with Neo4jConnection.session() as session:
+                result = session.run(
                     query,
-                    {
-                        "entity_ids": entity_ids,
-                        "user_id": user_id,
-                        "channels": channels,
-                        "limit": limit,
-                    },
+                    entity_ids=entity_ids,
+                    user_id=user_id,
+                    channels=channels,
+                    limit=limit,
                 )
-                return [dict(r) for r in results]
+                return [dict(r) for r in result]
         except Exception as e:
             logger.warning(f"[RecallLayer:EntityCentric] Graph query failed: {e}")
             return []
@@ -670,11 +666,12 @@ class RecallLayer:
         # Search with each variant
         all_results = []
         for variant in variants:
-            variant_embedding = self.memory.embedder.embed(variant)
+            variant_embedding = self.memory.embedder.embed_single(variant)
+            channel = channels[0] if channels else self.memory.channel
             results = self.memory.semantic.vector_search_facts(
-                embedding=variant_embedding,
+                query_embedding=variant_embedding,
                 user_id=user_id,
-                channels=channels or [self.memory.channel, "_global"],
+                channel=channel,
                 top_k=top_k,
                 min_confidence=0.5,
             )
@@ -809,11 +806,12 @@ class RecallLayer:
         logger.debug(f"[RecallLayer:HyDE] Generated: \"{hypothetical[:100]}...\"")
 
         # Embed hypothetical and search
-        hyde_embedding = self.memory.embedder.embed(hypothetical)
+        hyde_embedding = self.memory.embedder.embed_single(hypothetical)
+        channel = channels[0] if channels else self.memory.channel
         results = self.memory.semantic.vector_search_facts(
-            embedding=hyde_embedding,
+            query_embedding=hyde_embedding,
             user_id=user_id,
-            channels=channels or [self.memory.channel, "_global"],
+            channel=channel,
             top_k=top_k,
             min_confidence=0.5,
         )
@@ -908,11 +906,11 @@ class RecallLayer:
         keywords = filters.get("keywords", [])
 
         # Get base results with time filter
-        embedding = self.memory.embedder.embed(query)
+        embedding = self.memory.embedder.embed_single(query)
         results = self.memory.semantic.vector_search_facts(
-            embedding=embedding,
+            query_embedding=embedding,
             user_id=user_id,
-            channels=channels or [self.memory.channel, "_global"],
+            channel=channels[0] if channels else self.memory.channel,
             top_k=top_k * 2,  # Over-fetch to allow filtering
             min_confidence=0.5,
         )
@@ -1133,8 +1131,8 @@ class RecallLayer:
                 from ..audit import OperationType, MemoryType
 
                 self.audit_logger.log_read(
-                    operation=OperationType.READ,
-                    memory_type=MemoryType.SEMANTIC,
+                    operation=OperationType.SEARCH.value,
+                    memory_type=MemoryType.SEMANTIC.value,
                     user_id=metrics.user_id,
                     channels=[metrics.channel],
                     result_count=metrics.final_results,
