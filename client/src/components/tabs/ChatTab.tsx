@@ -183,6 +183,13 @@ export const ChatTab: React.FC = () => {
 
   const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const chats = recentChats.filter(c => c.id === chatId);
+    const chat = chats[0];
+    if (chat?.sessionId) {
+      api.deleteConversation(chat.sessionId).catch(err =>
+        console.warn('Failed to delete conversation from backend:', err)
+      );
+    }
     deleteRecentChat(chatId);
     loadRecentChats();
   };

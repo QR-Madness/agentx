@@ -256,6 +256,12 @@ tasks:
       - mkdir -p backups
       - echo "✅ Data directories ready in ./data/"
 
+  db:full-init:
+    desc: "Full database setup: directories, containers, and schemas"
+    cmds:
+      - task: db:init
+      - task: db:init:schemas
+
   db:init:schemas:
     desc: "Initialize database schemas (Neo4j, PostgreSQL, Redis)"
     deps: [db:up]
@@ -264,7 +270,7 @@ tasks:
     cmds:
       - echo "🗄️ Initializing memory system schemas..."
       - echo "   (Waiting for databases to be ready...)"
-      - sleep 5
+      - sleep 25
       - uv run python api/manage.py init_memory_schema --verbose
       - echo ""
       - echo "✅ Schema initialization complete!"
@@ -300,6 +306,14 @@ tasks:
       - rm -rf data/postgres/*
       - rm -rf data/redis/*
       - echo "✅ Database data cleared"
+
+  db:reset:
+    desc: "⚠️  Wipe all database data and reinitialize schemas"
+    prompt: "This will DELETE all database data and recreate schemas. Are you sure?"
+    cmds:
+      - task: db:down
+      - task: db:clean
+      - task: db:full-init
 
   db:shell:postgres:
     desc: "Open PostgreSQL shell (psql)"

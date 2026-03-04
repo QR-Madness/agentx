@@ -71,7 +71,7 @@ CREATE VECTOR INDEX turn_embeddings IF NOT EXISTS
 FOR (t:Turn) ON (t.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 768,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -81,7 +81,7 @@ CREATE VECTOR INDEX entity_embeddings IF NOT EXISTS
 FOR (e:Entity) ON (e.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 768,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -91,7 +91,7 @@ CREATE VECTOR INDEX fact_embeddings IF NOT EXISTS
 FOR (f:Fact) ON (f.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 768,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -101,7 +101,7 @@ CREATE VECTOR INDEX strategy_embeddings IF NOT EXISTS
 FOR (s:Strategy) ON (s.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 768,
         `vector.similarity_function`: 'cosine'
     }
 };

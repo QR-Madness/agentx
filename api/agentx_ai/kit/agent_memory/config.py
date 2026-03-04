@@ -206,6 +206,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 # Mutable settings that can be updated at runtime

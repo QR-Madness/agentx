@@ -510,39 +510,45 @@ async def agent_chat_stream(request):
 
             total_time = (time.time() - start_time) * 1000
 
-            # Store turns in memory if enabled
             # Use session_id if provided, otherwise use full UUID for database compatibility
             conv_id = session_id or full_conversation_id
-            if use_memory and agent.memory:
-                try:
-                    from .kit.agent_memory.models import Turn
 
-                    # Store user turn
-                    user_turn = Turn(
-                        id=f"{conv_id}-{len(session.get_messages())-2}",
-                        conversation_id=conv_id,
-                        role="user",
-                        content=message,
-                        index=len(session.get_messages()) - 2,
-                    )
-                    agent.memory.store_turn(user_turn)
-
-                    # Store assistant turn
-                    assistant_turn = Turn(
-                        id=f"{conv_id}-{len(session.get_messages())-1}",
-                        conversation_id=conv_id,
-                        role="assistant",
-                        content=parsed.content,
-                        index=len(session.get_messages()) - 1,
-                        metadata={"model": model_id, "latency_ms": total_time},
-                    )
-                    agent.memory.store_turn(assistant_turn)
-                    logger.debug(f"Stored turns in memory for conversation {conv_id}")
-                except Exception as mem_err:
-                    logger.warning(f"Failed to store turns in memory: {mem_err}")
-
-            # Send completion event - return full conversation_id as session_id for continuity
+            # Send completion event
             yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': conv_id})}\n\n"
+
+            # Store turns in memory in a background thread so the response closes immediately
+            if use_memory and agent.memory:
+                import threading
+
+                def _store_turns():
+                    try:
+                        from .kit.agent_memory.models import Turn
+
+                        user_turn = Turn(
+                            id=f"{conv_id}-{len(session.get_messages())-2}",
+                            conversation_id=conv_id,
+                            role="user",
+                            content=message,
+                            index=len(session.get_messages()) - 2,
+                        )
+                        agent.memory.store_turn(user_turn)
+
+                        assistant_turn = Turn(
+                            id=f"{conv_id}-{len(session.get_messages())-1}",
+                            conversation_id=conv_id,
+                            role="assistant",
+                            content=parsed.content,
+                            index=len(session.get_messages()) - 1,
+                            metadata={"model": model_id, "latency_ms": total_time},
+                        )
+                        agent.memory.store_turn(assistant_turn)
+                        logger.debug(f"Stored turns in memory for conversation {conv_id}")
+                    except Exception as mem_err:
+                        logger.warning(f"Failed to store turns in memory: {mem_err}")
+
+                threading.Thread(target=_store_turns, daemon=True).start()
+
+            return  # Close the stream immediately
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
@@ -843,6 +849,92 @@ def memory_channels(request):
         return JsonResponse({}, status=200)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+def memory_conversation_delete(request, conversation_id):
+    """
+    Delete a single conversation and its associated data.
+
+    DELETE: Remove the conversation's turns from Neo4j, PostgreSQL, and Redis.
+    """
+    from .kit.agent_memory.connections import Neo4jConnection, PostgresConnection, RedisConnection
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'DELETE':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        deleted_counts = {
+            "turns": 0,
+            "conversation": 0,
+            "postgres_rows": 0,
+            "redis_keys": 0,
+        }
+
+        # Delete from Neo4j: conversation node and its turns
+        try:
+            with Neo4jConnection.session() as session:
+                # Delete turns linked to this conversation
+                result = session.run("""
+                    MATCH (c:Conversation {id: $conv_id})-[:HAS_TURN]->(t:Turn)
+                    WITH t, count(t) AS cnt
+                    DETACH DELETE t
+                    RETURN cnt
+                """, conv_id=conversation_id)
+                record = result.single()
+                if record:
+                    deleted_counts["turns"] = record["cnt"] or 0
+
+                # Delete the conversation node itself
+                result = session.run("""
+                    MATCH (c:Conversation {id: $conv_id})
+                    DETACH DELETE c
+                    RETURN count(c) AS cnt
+                """, conv_id=conversation_id)
+                record = result.single()
+                if record:
+                    deleted_counts["conversation"] = record["cnt"] or 0
+        except Exception as e:
+            logger.warning(f"Error deleting conversation from Neo4j: {e}")
+
+        # Delete from PostgreSQL
+        try:
+            pg_conn = PostgresConnection.get_engine().raw_connection()
+            try:
+                with pg_conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM conversation_logs WHERE conversation_id = %s",
+                        (conversation_id,)
+                    )
+                    deleted_counts["postgres_rows"] += cursor.rowcount
+                    pg_conn.commit()
+            finally:
+                pg_conn.close()
+        except Exception as e:
+            logger.warning(f"Error deleting conversation from PostgreSQL: {e}")
+
+        # Delete from Redis: working memory for this conversation
+        try:
+            redis_client = RedisConnection.get_client()
+            pattern = f"working:*:*:{conversation_id}"
+            keys = redis_client.keys(pattern)
+            if keys:
+                deleted_counts["redis_keys"] = len(keys)
+                redis_client.delete(*keys)
+        except Exception as e:
+            logger.warning(f"Error deleting conversation from Redis: {e}")
+
+        return JsonResponse({
+            "message": f"Conversation '{conversation_id}' deleted successfully",
+            "deleted": deleted_counts
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Error deleting conversation '{conversation_id}': {e}")
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 @csrf_exempt

@@ -705,6 +705,12 @@ class ApiClient {
     });
   }
 
+  async deleteConversation(conversationId: string): Promise<{ message: string; deleted: Record<string, number> }> {
+    return this.request(`/api/memory/conversations/${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+    });
+  }
+
   async clearStuckJobs(): Promise<{ success: boolean; cleared_jobs: string[]; message: string }> {
     return this.request('/api/jobs/clear-stuck', {
       method: 'POST',

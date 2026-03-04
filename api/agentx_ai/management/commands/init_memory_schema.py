@@ -110,17 +110,26 @@ class Command(BaseCommand):
 
         schema_content = schema_file.read_text()
 
+        # Substitute vector dimensions from config
+        from agentx_ai.kit.agent_memory.config import get_settings
+        settings = get_settings()
+        dims = settings.embedding_dimensions
+        schema_content = schema_content.replace(
+            "`vector.dimensions`: 768",
+            f"`vector.dimensions`: {dims}",
+        )
+        self.stdout.write(f"  Vector dimensions: {dims}")
+
         # Parse individual statements (split on semicolons, filter empty/comments)
         statements = []
         for stmt in schema_content.split(";"):
-            stmt = stmt.strip()
-            # Skip empty statements and pure comment blocks
-            if not stmt or stmt.startswith("//"):
+            # Strip comment lines, then check if anything remains
+            lines = [line for line in stmt.strip().splitlines()
+                     if line.strip() and not line.strip().startswith("//")]
+            cleaned = "\n".join(lines).strip()
+            if not cleaned or cleaned == "RETURN 1":
                 continue
-            # Skip the final RETURN 1 statement
-            if stmt.strip() == "RETURN 1":
-                continue
-            statements.append(stmt)
+            statements.append(cleaned)
 
         if verbose:
             self.stdout.write(f"  Found {len(statements)} schema statements")
