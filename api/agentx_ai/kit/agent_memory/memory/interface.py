@@ -21,6 +21,7 @@ from .semantic import SemanticMemory
 from .procedural import ProceduralMemory
 from .working import WorkingMemory
 from .retrieval import MemoryRetriever, RetrievalWeights
+from .recall import RecallLayer
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,11 @@ class AgentMemory:
             audit_logger=self._audit_logger
         )
         self.retriever = MemoryRetriever(self, audit_logger=self._audit_logger)
+        self.recall_layer = RecallLayer(
+            memory=self,
+            base_retriever=self.retriever,
+            audit_logger=self._audit_logger,
+        )
 
     # Storage operations
 
@@ -507,7 +513,8 @@ class AgentMemory:
         include_procedural: bool = True,
         time_window_hours: Optional[int] = None,
         strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
-        channels: Optional[List[str]] = None
+        channels: Optional[List[str]] = None,
+        use_recall_layer: bool = True,
     ) -> MemoryBundle:
         """
         Retrieve relevant memories for the given query.
@@ -528,6 +535,9 @@ class AgentMemory:
             channels: Optional explicit list of channels to search.
                 If not provided, searches [active_channel, "_global"].
                 Example: channels=["project-a", "project-b", "_global"]
+            use_recall_layer: If True (default), use RecallLayer with enhanced
+                retrieval techniques (hybrid search, entity-centric, query expansion).
+                Set to False for basic vector search only.
 
         Returns:
             MemoryBundle with aggregated results
@@ -538,18 +548,33 @@ class AgentMemory:
         result = None
 
         try:
-            result = self.retriever.retrieve(
-                query=query,
-                user_id=self.user_id,
-                top_k=top_k,
-                include_episodic=include_episodic,
-                include_semantic=include_semantic,
-                include_procedural=include_procedural,
-                time_window_hours=time_window_hours,
-                channel=self.channel,
-                channels=channels,
-                strategy_weights=strategy_weights
-            )
+            if use_recall_layer:
+                # Use RecallLayer for enhanced retrieval with multiple techniques
+                result = self.recall_layer.recall(
+                    query=query,
+                    user_id=self.user_id,
+                    top_k=top_k,
+                    channels=channels or ([self.channel, "_global"] if self.channel != "_global" else ["_global"]),
+                    time_window_hours=time_window_hours,
+                    include_episodic=include_episodic,
+                    include_semantic=include_semantic,
+                    include_procedural=include_procedural,
+                    strategy_weights=strategy_weights,
+                )
+            else:
+                # Use base retriever for basic vector search
+                result = self.retriever.retrieve(
+                    query=query,
+                    user_id=self.user_id,
+                    top_k=top_k,
+                    include_episodic=include_episodic,
+                    include_semantic=include_semantic,
+                    include_procedural=include_procedural,
+                    time_window_hours=time_window_hours,
+                    channel=self.channel,
+                    channels=channels,
+                    strategy_weights=strategy_weights
+                )
 
             # Calculate counts for event
             turns_count = len(result.relevant_turns) if result else 0

@@ -71,6 +71,44 @@ class Settings(BaseSettings):
     retrieval_cache_key_prefix: str = "retrieval_cache"
 
     # ===========================================
+    # RecallLayer Settings (Enhanced Retrieval)
+    # ===========================================
+    # Multiple retrieval techniques to bridge the semantic gap between
+    # questions and stored facts. Enable/disable each technique independently.
+
+    # --- Feature Toggles ---
+    recall_enable_hybrid: bool = True  # BM25 + vector fusion (recommended)
+    recall_enable_entity_centric: bool = True  # Graph traversal (recommended)
+    recall_enable_query_expansion: bool = True  # Question→statement (recommended)
+    recall_enable_hyde: bool = False  # Hypothetical doc embedding (expensive LLM call)
+    recall_enable_self_query: bool = False  # LLM filter extraction (expensive LLM call)
+
+    # --- Hybrid Search Settings ---
+    recall_hybrid_bm25_weight: float = 0.3  # BM25 contribution to RRF
+    recall_hybrid_vector_weight: float = 0.7  # Vector contribution to RRF
+    recall_hybrid_rrf_k: int = 60  # RRF constant (standard value)
+
+    # --- Entity-Centric Settings ---
+    recall_entity_similarity_threshold: float = 0.65  # Min similarity to consider entity
+    recall_entity_max_entities: int = 5  # Max entities to traverse
+    recall_entity_graph_depth: int = 1  # Graph traversal depth
+
+    # --- Query Expansion Settings ---
+    recall_expansion_max_variants: int = 3  # Max query variants to generate
+
+    # --- HyDE Settings (only used if recall_enable_hyde=True) ---
+    recall_hyde_provider: str = "lmstudio"
+    recall_hyde_model: str = "google/gemma-3-4b"
+    recall_hyde_temperature: float = 0.7
+    recall_hyde_max_tokens: int = 150
+
+    # --- Self-Query Settings (only used if recall_enable_self_query=True) ---
+    recall_self_query_provider: str = "lmstudio"
+    recall_self_query_model: str = "google/gemma-3-4b"
+    recall_self_query_temperature: float = 0.2
+    recall_self_query_max_tokens: int = 200
+
+    # ===========================================
     # Consolidation LLM Settings
     # ===========================================
     # All consolidation stages can be configured independently.

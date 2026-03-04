@@ -2540,3 +2540,325 @@ class LearnFactTemporalContextTest(TestCase):
         params = list(sig.parameters.keys())
 
         self.assertIn("temporal_context", params)
+
+
+# =============================================================================
+# RecallLayer Tests (Phase 11.11)
+# =============================================================================
+
+
+class RecallLayerConfigTest(TestCase):
+    """Test RecallLayer configuration settings."""
+
+    def test_config_has_recall_settings(self):
+        """Config should have all RecallLayer settings."""
+        from agentx_ai.kit.agent_memory.config import get_settings
+
+        settings = get_settings()
+
+        # Feature toggles
+        self.assertIsInstance(settings.recall_enable_hybrid, bool)
+        self.assertIsInstance(settings.recall_enable_entity_centric, bool)
+        self.assertIsInstance(settings.recall_enable_query_expansion, bool)
+        self.assertIsInstance(settings.recall_enable_hyde, bool)
+        self.assertIsInstance(settings.recall_enable_self_query, bool)
+
+        # Hybrid settings
+        self.assertIsInstance(settings.recall_hybrid_bm25_weight, float)
+        self.assertIsInstance(settings.recall_hybrid_vector_weight, float)
+        self.assertIsInstance(settings.recall_hybrid_rrf_k, int)
+
+        # Entity-centric settings
+        self.assertIsInstance(settings.recall_entity_similarity_threshold, float)
+        self.assertIsInstance(settings.recall_entity_max_entities, int)
+
+    def test_default_techniques_enabled(self):
+        """Hybrid, entity-centric, and expansion should be enabled by default."""
+        from agentx_ai.kit.agent_memory.config import get_settings
+
+        settings = get_settings()
+
+        # These should be ON by default (cheap, high impact)
+        self.assertTrue(settings.recall_enable_hybrid)
+        self.assertTrue(settings.recall_enable_entity_centric)
+        self.assertTrue(settings.recall_enable_query_expansion)
+
+        # These should be OFF by default (expensive LLM calls)
+        self.assertFalse(settings.recall_enable_hyde)
+        self.assertFalse(settings.recall_enable_self_query)
+
+
+class RecallLayerMetricsTest(TestCase):
+    """Test RecallMetrics dataclass."""
+
+    def test_metrics_to_dict(self):
+        """RecallMetrics.to_dict() should return all fields."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallMetrics
+
+        metrics = RecallMetrics(
+            query="test query",
+            user_id="user123",
+            channel="_global",
+            techniques_enabled={"hybrid": True},
+            base_results=5,
+        )
+
+        result = metrics.to_dict()
+
+        self.assertEqual(result["query"], "test query")
+        self.assertEqual(result["user_id"], "user123")
+        self.assertEqual(result["channel"], "_global")
+        self.assertEqual(result["base_results"], 5)
+        self.assertIn("techniques_enabled", result)
+
+    def test_metrics_defaults(self):
+        """RecallMetrics should have sensible defaults."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallMetrics
+
+        metrics = RecallMetrics(
+            query="test",
+            user_id="user",
+            channel="ch",
+        )
+
+        self.assertEqual(metrics.hyde_results, 0)
+        self.assertEqual(metrics.hybrid_bm25_results, 0)
+        self.assertEqual(metrics.entity_centric_facts, 0)
+        self.assertEqual(metrics.expansion_results, 0)
+        self.assertEqual(metrics.duplicates_removed, 0)
+
+
+class RecallLayerQueryExpansionTest(TestCase):
+    """Test query expansion transforms."""
+
+    def test_question_to_statement_when(self):
+        """'When is my X?' should transform to 'X is'."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        # Create mock objects
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        result = recall._question_to_statement("when is my birthday?")
+        self.assertIn("birthday", result)
+        self.assertIn("is", result)
+
+    def test_question_to_statement_what(self):
+        """'What is my X?' should transform to 'X is'."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        result = recall._question_to_statement("what is my favorite color?")
+        self.assertIn("favorite color", result)
+
+    def test_extract_keywords(self):
+        """Keywords should exclude stopwords and question words."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        result = recall._extract_keywords("When is my birthday?")
+
+        # Should include 'birthday' but not 'when', 'is', 'my'
+        self.assertIn("birthday", result)
+        self.assertNotIn("when", result.lower())
+        self.assertNotIn(" is ", result.lower())
+
+    def test_expand_query_generates_variants(self):
+        """expand_query should generate query variants."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        variants = recall._expand_query("When is my birthday?")
+
+        self.assertIsInstance(variants, list)
+        # Should generate at least 1 variant
+        self.assertGreater(len(variants), 0)
+
+
+class RecallLayerRRFFusionTest(TestCase):
+    """Test Reciprocal Rank Fusion scoring."""
+
+    def test_rrf_fusion_combines_results(self):
+        """RRF should combine BM25 and vector results."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        bm25_results = [
+            {"id": "a", "claim": "fact A", "score": 5.0},
+            {"id": "b", "claim": "fact B", "score": 3.0},
+        ]
+        vector_results = [
+            {"id": "b", "claim": "fact B", "score": 0.9},
+            {"id": "c", "claim": "fact C", "score": 0.8},
+        ]
+
+        merged = recall._rrf_fusion(
+            bm25_results=bm25_results,
+            vector_results=vector_results,
+            bm25_weight=0.3,
+            vector_weight=0.7,
+            rrf_k=60,
+            top_k=10,
+        )
+
+        # Should have 3 unique results (a, b, c)
+        self.assertEqual(len(merged), 3)
+
+        # Results should have rrf_score
+        for r in merged:
+            self.assertIn("rrf_score", r)
+
+    def test_rrf_fusion_ranks_by_score(self):
+        """RRF results should be sorted by score descending."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        bm25_results = [{"id": "a", "claim": "A", "score": 5.0}]
+        vector_results = [{"id": "a", "claim": "A", "score": 0.9}]
+
+        merged = recall._rrf_fusion(
+            bm25_results=bm25_results,
+            vector_results=vector_results,
+            bm25_weight=0.3,
+            vector_weight=0.7,
+            rrf_k=60,
+            top_k=10,
+        )
+
+        scores = [r["rrf_score"] for r in merged]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+
+class RecallLayerMergeBundlesTest(TestCase):
+    """Test bundle merging and deduplication."""
+
+    def test_merge_deduplicates_by_id(self):
+        """Merging should deduplicate by ID."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        bundle1 = MemoryBundle(
+            facts=[{"id": "a", "claim": "A"}, {"id": "b", "claim": "B"}]
+        )
+        bundle2 = MemoryBundle(
+            facts=[{"id": "b", "claim": "B"}, {"id": "c", "claim": "C"}]
+        )
+
+        merged, stats = recall._merge_bundles(bundle1, bundle2)
+
+        # Should have 3 unique facts
+        self.assertEqual(len(merged.facts), 3)
+
+        # Should track 1 duplicate removed
+        self.assertEqual(stats["duplicates_removed"], 1)
+
+    def test_merge_preserves_entities_and_turns(self):
+        """Merging should also deduplicate entities and turns."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        bundle1 = MemoryBundle(
+            entities=[{"id": "e1", "name": "User"}],
+            relevant_turns=[{"id": "t1", "content": "Hello"}],
+        )
+        bundle2 = MemoryBundle(
+            entities=[{"id": "e1", "name": "User"}, {"id": "e2", "name": "Project"}],
+            relevant_turns=[{"id": "t2", "content": "World"}],
+        )
+
+        merged, _ = recall._merge_bundles(bundle1, bundle2)
+
+        self.assertEqual(len(merged.entities), 2)
+        self.assertEqual(len(merged.relevant_turns), 2)
+
+
+class RecallLayerInterfaceIntegrationTest(TestCase):
+    """Test RecallLayer integration with AgentMemory interface."""
+
+    def test_agent_memory_has_recall_layer(self):
+        """AgentMemory should have a recall_layer attribute."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        # Check the class has the attribute in __init__
+        import inspect
+        source = inspect.getsource(AgentMemory.__init__)
+
+        self.assertIn("recall_layer", source)
+        self.assertIn("RecallLayer", source)
+
+    def test_remember_has_use_recall_layer_param(self):
+        """remember() should have use_recall_layer parameter."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        import inspect
+        sig = inspect.signature(AgentMemory.remember)
+        params = list(sig.parameters.keys())
+
+        self.assertIn("use_recall_layer", params)
+
+    def test_remember_defaults_to_recall_layer(self):
+        """use_recall_layer should default to True."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        import inspect
+        sig = inspect.signature(AgentMemory.remember)
+        param = sig.parameters["use_recall_layer"]
+
+        self.assertEqual(param.default, True)
+
+
+class RecallLayerEscapeLuceneTest(TestCase):
+    """Test Lucene query escaping for BM25 search."""
+
+    def test_escape_special_chars(self):
+        """Special Lucene characters should be escaped."""
+        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
+
+        mock_memory = MagicMock()
+        mock_retriever = MagicMock()
+
+        recall = RecallLayer(mock_memory, mock_retriever)
+
+        # Test various special characters
+        result = recall._escape_lucene("test+query")
+        self.assertIn("\\+", result)
+
+        result = recall._escape_lucene("user@email.com")
+        # @ is not a special Lucene char, should remain
+        self.assertIn("@", result)
+
+        result = recall._escape_lucene("path/to/file")
+        self.assertIn("\\/", result)
