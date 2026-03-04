@@ -43,13 +43,27 @@ interface Message {
 }
 
 // Strip thinking tags from content (server also does this, but needed for streamed content)
-function stripThinkingTags(content: string): string {
-  return content
+// During streaming, we may only have opening tag without closing tag
+function stripThinkingTags(content: string, isStreaming = false): string {
+  let result = content
+    // Complete tags first
     .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
     .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
-    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '')
+    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '');
+
+  // During streaming, also strip unclosed thinking tags (opening tag to end of content)
+  if (isStreaming) {
+    result = result
+      .replace(/<thinking>[\s\S]*$/gi, '')
+      .replace(/<think>[\s\S]*$/gi, '')
+      .replace(/\[thinking\][\s\S]*$/gi, '')
+      .replace(/\[think\][\s\S]*$/gi, '')
+      .replace(/<internal_monologue>[\s\S]*$/gi, '');
+  }
+
+  return result
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -778,7 +792,7 @@ export const ChatTab: React.FC = () => {
                     const thinkMatch = streamingContent.match(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/i);
                     return thinkMatch ? <ThinkingBubble thinking={thinkMatch[1]} isStreaming /> : null;
                   })()}
-                  <MessageContent content={stripThinkingTags(streamingContent)} />
+                  <MessageContent content={stripThinkingTags(streamingContent, true)} />
                   <span className="streaming-cursor">▊</span>
                 </div>
               ) : (
