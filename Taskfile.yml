@@ -97,15 +97,15 @@ tasks:
     deps: [check, db:up]
     cmds:
       - defer: { task: db:down }
-      - bunx concurrently -n "API,CLIENT" -c "blue.bold,magenta.bold" 
-          "cd api && uv run python manage.py runserver 127.0.0.1:12319" 
+      - bunx concurrently -n "API,CLIENT" -c "blue.bold,magenta.bold"
+          "cd api && uv run uvicorn agentx_api.asgi:application --host 127.0.0.1 --port 12319 --reload"
           "cd client && bun run tauri dev"
 
   dev:api:
     desc: "Start only the API server (assumes Docker running)"
     dir: api
     cmds:
-      - uv run python manage.py runserver 127.0.0.1:12319
+      - uv run uvicorn agentx_api.asgi:application --host 127.0.0.1 --port 12319 --reload
 
   dev:client:
     desc: "Start only the Tauri client (assumes API running)"
@@ -148,11 +148,11 @@ tasks:
 # ============================================================================
 
   api:run:
-    desc: "Run Django development server"
+    desc: "Run Django API server (uvicorn ASGI)"
     aliases: [api:runserver]
     dir: api
     cmds:
-      - uv run python manage.py runserver 127.0.0.1:12319
+      - uv run uvicorn agentx_api.asgi:application --host 127.0.0.1 --port 12319 --reload
 
   api:shell:
     desc: "Open Django interactive shell"

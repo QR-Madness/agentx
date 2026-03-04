@@ -35,6 +35,8 @@ dependencies = [
     # Documentation
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
+    # ASGI Server
+    "uvicorn[standard]>=0.34.0",
     # Development Tools
     "ruff>=0.8.0",
     "einops>=0.8.2",
