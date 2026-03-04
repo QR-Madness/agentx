@@ -1,5 +1,6 @@
 """Central registry for consolidation jobs with status tracking."""
 
+import inspect
 import json
 import time
 import logging
@@ -280,7 +281,7 @@ class JobRegistry:
         # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
         return [json.loads(entry) for entry in entries]  # type: ignore[arg-type]
 
-    def run_job(self, name: str) -> Dict[str, Any]:
+    async def run_job(self, name: str) -> Dict[str, Any]:
         """
         Manually run a job.
 
@@ -306,13 +307,17 @@ class JobRegistry:
         items_processed = 0
 
         try:
-            result = job_def.func() or {}
+            # Handle both sync and async job functions
+            if inspect.iscoroutinefunction(job_def.func):
+                result = await job_def.func() or {}
+            else:
+                result = job_def.func() or {}
             if isinstance(result, dict):
                 items_processed = result.get("items_processed", 0)
         except Exception as e:
             success = False
             error_msg = str(e)
-            logger.error(f"Manual job run failed: {name} - {e}")
+            logger.exception(f"Manual job run failed: {name} - {e}")
         finally:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -396,7 +401,7 @@ class JobRegistry:
                 logger.info(f"Cleared stuck job status: {name}")
         return cleared
 
-    def run_consolidation_pipeline(
+    async def run_consolidation_pipeline(
         self, jobs: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
@@ -420,7 +425,7 @@ class JobRegistry:
                 errors.append(f"Unknown job: {job_name}")
                 continue
 
-            result = self.run_job(job_name)
+            result = await self.run_job(job_name)
             if result.get("success"):
                 results[job_name] = result.get("result", {})
             else:

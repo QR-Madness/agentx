@@ -379,7 +379,7 @@ def _batch_store_relationships(
     return len(valid_rels)
 
 
-def consolidate_episodic_to_semantic() -> Dict[str, Any]:
+async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
@@ -452,6 +452,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             extraction_service = get_extraction_service()
             relevant_turns = []
             corrections_applied = 0
+            extraction_failed = False  # Track if any extraction call failed
 
             # Accumulated results from combined extraction
             extracted_entities: List[Dict[str, Any]] = []
@@ -465,7 +466,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
                 # Check for user corrections first (before relevance filter)
                 if settings.correction_detection_enabled:
-                    correction = extraction_service.check_correction(content)
+                    correction = await extraction_service.check_correction(content)
                     metrics.correction_calls += 1
                     if correction.is_correction:
                         if _handle_user_correction(memory, session, correction, user_id, channel):
@@ -474,9 +475,15 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
                         # Still extract from the turn - it may have new info
 
                 # Combined relevance + extraction in a single LLM call (~75% fewer calls)
-                combined_result = extraction_service.check_relevance_and_extract(content)
+                combined_result = await extraction_service.check_relevance_and_extract(content)
                 metrics.extraction_calls += 1
                 metrics.total_tokens_used += combined_result.tokens_used
+
+                # Track extraction failures - don't mark conversation as consolidated
+                if not combined_result.success:
+                    extraction_failed = True
+                    logger.warning(f"Extraction failed for turn in {conv_id}: {combined_result.error}")
+                    continue  # Skip this turn but continue with others
 
                 if combined_result.is_relevant:
                     relevant_turns.append(turn)
@@ -497,11 +504,14 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
             if not relevant_turns:
                 logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
-                # Still mark as consolidated
-                session.run("""
-                    MATCH (c:Conversation {id: $conv_id})
-                    SET c.consolidated = datetime()
-                """, conv_id=conv_id)
+                # Only mark as consolidated if extraction didn't fail
+                if not extraction_failed:
+                    session.run("""
+                        MATCH (c:Conversation {id: $conv_id})
+                        SET c.consolidated = datetime()
+                    """, conv_id=conv_id)
+                else:
+                    logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
                 continue
 
             logger.debug(
@@ -580,7 +590,7 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
                     # Check for contradictions with existing facts
                     if settings.contradiction_detection_enabled and existing_facts:
-                        contradiction = extraction_service.check_contradictions(claim, existing_facts)
+                        contradiction = await extraction_service.check_contradictions(claim, existing_facts)
                         metrics.contradiction_calls += 1
                         if contradiction.has_contradiction:
                             contradictions_found += 1
@@ -649,26 +659,29 @@ def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             # Track storage latency
             metrics.storage_latency_ms += int((time.perf_counter() - storage_start) * 1000)
 
-            # Mark conversation as consolidated in finally block to ensure it's set
-            # even if some extraction steps fail (prevents reprocessing)
-            try:
-                extras = []
-                if skipped_duplicates > 0:
-                    extras.append(f"{skipped_duplicates} duplicates")
-                if corrections_applied > 0:
-                    extras.append(f"{corrections_applied} corrections")
-                if contradictions_found > 0:
-                    extras.append(f"{contradictions_found} contradictions ({skipped_contradictions} skipped)")
-                extras_msg = f" [{', '.join(extras)}]" if extras else ""
-                logger.info(
-                    f"Consolidated conversation {conv_id}: "
-                    f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{extras_msg}"
-                )
-            finally:
+            # Log consolidation results
+            extras = []
+            if skipped_duplicates > 0:
+                extras.append(f"{skipped_duplicates} duplicates")
+            if corrections_applied > 0:
+                extras.append(f"{corrections_applied} corrections")
+            if contradictions_found > 0:
+                extras.append(f"{contradictions_found} contradictions ({skipped_contradictions} skipped)")
+            extras_msg = f" [{', '.join(extras)}]" if extras else ""
+            logger.info(
+                f"Consolidated conversation {conv_id}: "
+                f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{extras_msg}"
+            )
+
+            # Only mark as consolidated if extraction succeeded
+            # This ensures failed conversations will be retried
+            if not extraction_failed:
                 session.run("""
                     MATCH (c:Conversation {id: $conv_id})
                     SET c.consolidated = datetime()
                 """, conv_id=conv_id)
+            else:
+                logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
 
     # Clean up memory cache to release resources
     memory_cache.clear()

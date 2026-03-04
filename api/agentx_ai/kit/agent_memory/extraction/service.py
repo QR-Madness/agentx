@@ -153,7 +153,7 @@ class ExtractionService:
             logger.warning(f"Provider for {stage} not available: {e}")
             raise
 
-    def check_relevance(self, text: str) -> RelevanceResult:
+    async def check_relevance(self, text: str) -> RelevanceResult:
         """
         Check if text contains memorable information worth extracting.
 
@@ -192,7 +192,7 @@ class ExtractionService:
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=temperature,
@@ -226,7 +226,7 @@ class ExtractionService:
             logger.warning(f"Relevance check failed: {e}, defaulting to relevant")
             return RelevanceResult(is_relevant=True, reason="error_default", error=str(e))
 
-    def check_correction(self, text: str) -> CorrectionResult:
+    async def check_correction(self, text: str) -> CorrectionResult:
         """
         Check if text contains a user correction of previously stated information.
 
@@ -267,7 +267,7 @@ class ExtractionService:
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=temperature,
@@ -310,7 +310,7 @@ class ExtractionService:
             logger.warning(f"Correction check failed: {e}")
             return CorrectionResult(success=False, error=str(e))
 
-    def check_contradictions(
+    async def check_contradictions(
         self,
         new_claim: str,
         existing_facts: list[dict[str, Any]],
@@ -356,7 +356,7 @@ class ExtractionService:
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=temperature,
@@ -455,7 +455,7 @@ class ExtractionService:
 
         return facts
 
-    def check_relevance_and_extract(
+    async def check_relevance_and_extract(
         self,
         text: str,
         source_turn_id: Optional[str] = None,
@@ -506,7 +506,7 @@ class ExtractionService:
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=temperature,
@@ -549,7 +549,7 @@ class ExtractionService:
             return parsed
 
         except Exception as e:
-            logger.error(f"Combined extraction failed: {e}")
+            logger.exception(f"Combined extraction failed: {e}")
             return CombinedExtractionResult(
                 is_relevant=True,  # Default to relevant on error
                 reason="error_default_relevant",
@@ -575,6 +575,9 @@ class ExtractionService:
 
         if parsed_output.has_thinking:
             logger.debug("Stripped thinking tags from combined response")
+
+        # Normalize double braces (LLM sometimes outputs {{ }} instead of { })
+        cleaned_content = cleaned_content.replace("{{", "{").replace("}}", "}")
 
         # Try to parse JSON
         is_valid, parsed, error = validate_json_output(cleaned_content)
@@ -618,7 +621,7 @@ class ExtractionService:
             error=f"JSON parse error: {error}",
         )
 
-    def extract_all(
+    async def extract_all(
         self,
         text: str,
         source_turn_id: Optional[str] = None,
@@ -656,7 +659,7 @@ class ExtractionService:
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=temperature,

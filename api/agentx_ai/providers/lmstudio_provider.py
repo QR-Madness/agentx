@@ -51,21 +51,24 @@ class LMStudioProvider(ModelProvider):
         self.base_url = config.base_url or self.DEFAULT_BASE_URL
         self._timeout = config.timeout if config.timeout != 60.0 else self.DEFAULT_TIMEOUT
         self._available_models: Optional[list[dict[str, Any]]] = None
-
-        # LM Studio doesn't need an API key, but OpenAI client requires one
-        self._client = AsyncOpenAI(
-            api_key=config.api_key or "lm-studio",  # Dummy key
-            base_url=self.base_url,
-            timeout=self._timeout,
-        )
+        self._api_key = config.api_key or "lm-studio"
 
     @property
     def name(self) -> str:
         return "lmstudio"
 
-    @property
-    def client(self) -> AsyncOpenAI:
-        return self._client
+    def _get_client(self) -> AsyncOpenAI:
+        """Create a fresh async client for each request.
+
+        This ensures the httpx connection pool is created in the correct event loop,
+        avoiding 'Connection error' issues when Django's async view runs in different loops.
+        """
+        return AsyncOpenAI(
+            api_key=self._api_key,
+            base_url=self.base_url,
+            timeout=self._timeout,
+            max_retries=0,
+        )
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert internal Message objects to OpenAI format."""
@@ -113,7 +116,11 @@ class LMStudioProvider(ModelProvider):
             if tool_choice:
                 request_kwargs["tool_choice"] = tool_choice
 
-        response = await self.client.chat.completions.create(**request_kwargs)
+        client = self._get_client()
+        try:
+            response = await client.chat.completions.create(**request_kwargs)
+        finally:
+            await client.close()
 
         message = response.choices[0].message
         content = message.content or ""
@@ -173,15 +180,19 @@ class LMStudioProvider(ModelProvider):
         if stop:
             request_kwargs["stop"] = stop
 
-        stream = await self.client.chat.completions.create(**request_kwargs)
+        client = self._get_client()
+        try:
+            stream = await client.chat.completions.create(**request_kwargs)
 
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta:
-                delta = chunk.choices[0].delta
-                yield StreamChunk(
-                    content=delta.content or "",
-                    finish_reason=chunk.choices[0].finish_reason,
-                )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta:
+                    delta = chunk.choices[0].delta
+                    yield StreamChunk(
+                        content=delta.content or "",
+                        finish_reason=chunk.choices[0].finish_reason,
+                    )
+        finally:
+            await client.close()
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for a local model."""
@@ -197,8 +208,9 @@ class LMStudioProvider(ModelProvider):
     
     async def fetch_models(self) -> list[dict[str, Any]]:
         """Fetch available models from LM Studio server."""
+        client = self._get_client()
         try:
-            models = await self.client.models.list()
+            models = await client.models.list()
             self._available_models = [
                 {"id": m.id, "owned_by": m.owned_by}
                 for m in models.data
@@ -207,11 +219,14 @@ class LMStudioProvider(ModelProvider):
         except Exception as e:
             logger.error(f"Failed to fetch LM Studio models: {e}")
             return []
+        finally:
+            await client.close()
 
     async def health_check(self) -> dict[str, Any]:
         """Check if LM Studio server is reachable and list models."""
+        client = self._get_client()
         try:
-            models = await self.client.models.list()
+            models = await client.models.list()
             model_list = [
                 {"id": m.id, "owned_by": m.owned_by}
                 for m in models.data
@@ -232,7 +247,9 @@ class LMStudioProvider(ModelProvider):
                 "base_url": self.base_url,
                 "error": str(e),
             }
+        finally:
+            await client.close()
 
     async def close(self) -> None:
-        """Close the client."""
-        await self._client.close()
+        """Close the provider. No-op since clients are created per-request."""
+        pass

@@ -1465,7 +1465,7 @@ def job_toggle(request, job_name):
 
 
 @csrf_exempt
-def memory_consolidate(request):
+async def memory_consolidate(request):
     """
     POST /api/memory/consolidate - Run consolidation pipeline manually.
 
@@ -1489,9 +1489,11 @@ def memory_consolidate(request):
         jobs = data.get("jobs")  # None means default set
 
         registry = JobRegistry.get_instance()
-        result = registry.run_consolidation_pipeline(jobs)
+        result = await registry.run_consolidation_pipeline(jobs)
 
         status_code = 200 if result.get("success") else 400
+        if not result.get("success"):
+            logger.warning(f"Consolidation failed: {result}")
         return JsonResponse(result, status=status_code)
 
     except Exception as e:
