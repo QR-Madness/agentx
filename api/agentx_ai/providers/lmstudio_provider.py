@@ -5,6 +5,7 @@ LM Studio provides an OpenAI-compatible API, so this is essentially
 a wrapper around the OpenAI provider with different defaults.
 """
 
+import json
 import logging
 from typing import Any, AsyncIterator, Optional
 
@@ -191,13 +192,60 @@ class LMStudioProvider(ModelProvider):
         try:
             stream = await client.chat.completions.create(**request_kwargs)
 
+            # Accumulate tool call fragments across chunks
+            pending_tool_calls: dict[int, dict[str, Any]] = {}
+
             async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta:
-                    delta = chunk.choices[0].delta
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                delta = choice.delta
+                if not delta:
+                    continue
+
+                # Accumulate tool call deltas
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in pending_tool_calls:
+                            pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                        entry = pending_tool_calls[idx]
+                        if tc_delta.id:
+                            entry["id"] = tc_delta.id
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                entry["name"] = tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                entry["arguments"] += tc_delta.function.arguments
+
+                # Emit content chunks as they arrive
+                if delta.content:
                     yield StreamChunk(
-                        content=delta.content or "",
-                        finish_reason=chunk.choices[0].finish_reason,
+                        content=delta.content,
+                        finish_reason=choice.finish_reason,
                     )
+
+                # When stream ends with tool_calls, emit accumulated tool calls
+                if choice.finish_reason == "tool_calls" and pending_tool_calls:
+                    completed = []
+                    for tc_data in pending_tool_calls.values():
+                        try:
+                            args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                        except json.JSONDecodeError:
+                            args = {"raw": tc_data["arguments"]}
+                        completed.append(ToolCall(
+                            id=tc_data["id"],
+                            name=tc_data["name"],
+                            arguments=args,
+                        ))
+                    yield StreamChunk(
+                        content="",
+                        finish_reason="tool_calls",
+                        tool_calls=completed,
+                    )
+                    pending_tool_calls.clear()
+                elif choice.finish_reason and choice.finish_reason != "tool_calls":
+                    yield StreamChunk(content="", finish_reason=choice.finish_reason)
         finally:
             await client.close()
     

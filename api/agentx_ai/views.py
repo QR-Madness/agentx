@@ -543,30 +543,59 @@ async def agent_chat_stream(request):
             # Send start event
             yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
 
-            # Stream tokens using async generator
+            # Stream tokens with tool-use loop
             full_content = ""
             tools_used = []
+            max_tool_rounds = 10
 
-            async for chunk in provider.stream(
-                messages, model_id,
-                temperature=temperature,
-                max_tokens=2000,
-                tools=tools,
-                tool_choice="auto" if tools else None,
-            ):
-                # Handle tool calls from streaming response
-                if chunk.tool_calls:
-                    for tc in chunk.tool_calls:
-                        tools_used.append(tc.name)
-                        yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'arguments': tc.arguments})}\n\n"
-                        # Execute tool via MCP
-                        tool_messages = agent._execute_tool_calls([tc])
-                        for tm in tool_messages:
-                            yield f"event: tool_result\ndata: {json.dumps({'tool': tc.name, 'content': tm.content[:500]})}\n\n"
+            for tool_round in range(max_tool_rounds + 1):
+                round_tool_calls = []
 
-                if chunk.content:
-                    full_content += chunk.content
-                    yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
+                async for chunk in provider.stream(
+                    messages, model_id,
+                    temperature=temperature,
+                    max_tokens=2000,
+                    tools=tools if tool_round < max_tool_rounds else None,
+                    tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
+                ):
+                    # Collect tool calls from the stream
+                    if chunk.tool_calls:
+                        round_tool_calls.extend(chunk.tool_calls)
+
+                    if chunk.content:
+                        full_content += chunk.content
+                        yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
+
+                # If no tool calls, we're done
+                if not round_tool_calls:
+                    break
+
+                # Execute tool calls and build follow-up messages
+                for tc in round_tool_calls:
+                    tools_used.append(tc.name)
+                    yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'arguments': tc.arguments})}\n\n"
+
+                # Add assistant message with tool_calls to conversation
+                messages.append(Message(
+                    role=MessageRole.ASSISTANT,
+                    content="",
+                    tool_calls=[
+                        {"id": tc.id, "type": "function",
+                         "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
+                        for tc in round_tool_calls
+                    ],
+                ))
+
+                # Execute tools and append results
+                tool_messages = agent._execute_tool_calls(round_tool_calls)
+                for tm in tool_messages:
+                    yield f"event: tool_result\ndata: {json.dumps({'tool': tm.name, 'content': tm.content[:500]})}\n\n"
+                messages.extend(tool_messages)
+
+                logger.info(
+                    f"Stream tool round {tool_round + 1}: executed "
+                    f"{', '.join(tc.name for tc in round_tool_calls)}"
+                )
 
             # Parse output for thinking tags
             parsed = parse_output(full_content)
