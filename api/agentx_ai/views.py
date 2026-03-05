@@ -538,6 +538,7 @@ async def agent_chat_stream(request):
 
             # Get MCP tools for function calling
             tools = agent._get_tools_for_provider()
+            logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
 
             # Send start event
             yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"

@@ -244,6 +244,10 @@ class Agent:
             return None
         
         mcp_tools = self.mcp_client.list_tools()
+        logger.debug(
+            f"MCP tools for provider: {len(mcp_tools)} tools from "
+            f"{len(self.mcp_client.list_connections())} connections"
+        )
         if not mcp_tools:
             return None
         
