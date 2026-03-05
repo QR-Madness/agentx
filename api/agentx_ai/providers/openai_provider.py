@@ -239,6 +239,7 @@ class OpenAIProvider(ModelProvider):
         request_params.update(kwargs)
 
         logger.debug(f"OpenAI stream: model={model}, messages={len(messages)}")
+        log_llm_request("OpenAI (stream)", request_params)
 
         stream = await self.client.chat.completions.create(**request_params)
 

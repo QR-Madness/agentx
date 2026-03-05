@@ -183,6 +183,7 @@ class LMStudioProvider(ModelProvider):
             request_kwargs["stop"] = stop
 
         client = self._get_client()
+        log_llm_request("LM Studio (stream)", request_kwargs)
         try:
             stream = await client.chat.completions.create(**request_kwargs)
 

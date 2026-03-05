@@ -290,6 +290,7 @@ class AnthropicProvider(ModelProvider):
             request_params["stop_sequences"] = stop
 
         logger.debug(f"Anthropic stream: model={model}, messages={len(messages)}")
+        log_llm_request("Anthropic (stream)", request_params)
 
         async with self.client.messages.stream(**request_params) as stream:
             async for text in stream.text_stream:

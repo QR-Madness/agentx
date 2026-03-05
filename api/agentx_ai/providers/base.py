@@ -14,13 +14,9 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Debug flag — set DEBUG_LOG_LLM_REQUESTS=1 to log full request payloads
-_DEBUG_LLM = os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() not in ("", "0", "false")
-
-
 def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
     """Log the full LLM request payload when DEBUG_LOG_LLM_REQUESTS is set."""
-    if not _DEBUG_LLM:
+    if os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() in ("", "0", "false"):
         return
     try:
         dumped = json.dumps(request_params, indent=2, default=str)
