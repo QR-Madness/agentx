@@ -181,6 +181,10 @@ class LMStudioProvider(ModelProvider):
             request_kwargs["max_tokens"] = max_tokens
         if stop:
             request_kwargs["stop"] = stop
+        if tools:
+            request_kwargs["tools"] = tools
+            if tool_choice:
+                request_kwargs["tool_choice"] = tool_choice
 
         client = self._get_client()
         log_llm_request("LM Studio (stream)", request_kwargs)
