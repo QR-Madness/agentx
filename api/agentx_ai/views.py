@@ -4,7 +4,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .kit.memory_utils import check_memory_health
-from .mcp import MCPClientManager, ServerRegistry
+from .mcp import get_mcp_manager
 from .providers import get_registry
 from .utils.decorators import lazy_singleton
 from .utils.responses import (
@@ -15,17 +15,6 @@ from .utils.responses import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-@lazy_singleton
-def get_mcp_manager():
-    """Get or create MCPClientManager instance lazily."""
-    from pathlib import Path
-    config_path = Path(__file__).parent.parent.parent / "mcp_servers.json"
-    registry = ServerRegistry(config_path) if config_path.exists() else ServerRegistry()
-    manager = MCPClientManager(registry)
-    logger.info(f"MCPClientManager initialized with {len(registry.list())} configured servers")
-    return manager
 
 
 @lazy_singleton
@@ -154,31 +143,23 @@ def language_detect(request):
 
 
 def mcp_servers(request):
-    """List configured MCP servers and their status."""
+    """List configured MCP servers and their connection status."""
     manager = get_mcp_manager()
     
-    # Get configured servers from registry
-    configured = [
-        {
+    servers = []
+    for config in manager.registry.list():
+        connection = manager.get_connection(config.name)
+        server_data = {
             "name": config.name,
             "transport": config.transport.value,
-            "command": config.command,
-            "url": config.url,
-            "connected": manager.is_connected(config.name),
+            "status": "connected" if connection else "disconnected",
+            "tools": [t.name for t in connection.tools] if connection else [],
+            "tools_count": len(connection.tools) if connection else 0,
+            "resources_count": len(connection.resources) if connection else 0,
         }
-        for config in manager.registry.list()
-    ]
+        servers.append(server_data)
     
-    # Get active connections
-    active = [
-        conn.to_dict()
-        for conn in manager.list_connections()
-    ]
-    
-    return JsonResponse({
-        "configured_servers": configured,
-        "active_connections": active,
-    })
+    return JsonResponse({"servers": servers})
 
 
 def mcp_tools(request):
@@ -205,6 +186,70 @@ def mcp_resources(request):
         "resources": [res.to_dict() for res in resources],
         "count": len(resources),
     })
+
+
+@csrf_exempt
+def mcp_connect(request):
+    """Connect to one or all configured MCP servers."""
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+    
+    data, error = parse_json_body(request)
+    if error:
+        return error
+    
+    manager = get_mcp_manager()
+    server_name = data.get("server")
+    connect_all = data.get("all", False)
+    
+    if connect_all:
+        results = manager.connect_all()
+        return JsonResponse({"results": results})
+    
+    if not server_name:
+        return json_error("Provide 'server' name or 'all': true", status=400)
+    
+    try:
+        connection = manager.connect(server_name)
+        return JsonResponse({
+            "status": "connected",
+            "server": server_name,
+            "tools_count": len(connection.tools),
+            "resources_count": len(connection.resources),
+        })
+    except ValueError as e:
+        return json_error(str(e), status=404)
+    except Exception as e:
+        logger.error(f"Failed to connect to '{server_name}': {e}")
+        return json_error(f"Connection failed: {e}", status=500)
+
+
+@csrf_exempt
+def mcp_disconnect(request):
+    """Disconnect from an MCP server."""
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+    
+    data, error = parse_json_body(request)
+    if error:
+        return error
+    
+    manager = get_mcp_manager()
+    server_name = data.get("server")
+    disconnect_all = data.get("all", False)
+    
+    if disconnect_all:
+        manager.disconnect_all()
+        return JsonResponse({"status": "disconnected_all"})
+    
+    if not server_name:
+        return json_error("Provide 'server' name or 'all': true", status=400)
+    
+    disconnected = manager.disconnect(server_name)
+    if not disconnected:
+        return json_error(f"Server '{server_name}' is not connected", status=404)
+    
+    return JsonResponse({"status": "disconnected", "server": server_name})
 
 
 # ============== Provider Endpoints ==============
@@ -520,25 +565,42 @@ async def agent_chat_stream(request):
             if use_memory and agent.memory:
                 import threading
 
+                user_turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-user"
+                asst_turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-asst"
+
                 def _store_turns():
                     try:
                         from .kit.agent_memory.models import Turn
+                        from .kit.agent_memory.connections import get_postgres_session
+                        from sqlalchemy import text as sa_text
+
+                        # Query max existing turn_index for this conversation to avoid collisions
+                        next_index = 0
+                        try:
+                            with get_postgres_session() as pg:
+                                row = pg.execute(
+                                    sa_text("SELECT COALESCE(MAX(turn_index), -1) FROM conversation_logs WHERE conversation_id = :cid"),
+                                    {"cid": conv_id},
+                                ).scalar()
+                                next_index = (row or 0) + 1
+                        except Exception:
+                            pass  # Fallback to 0 if DB query fails
 
                         user_turn = Turn(
-                            id=f"{conv_id}-{len(session.get_messages())-2}",
+                            id=user_turn_id,
                             conversation_id=conv_id,
                             role="user",
                             content=message,
-                            index=len(session.get_messages()) - 2,
+                            index=next_index,
                         )
                         agent.memory.store_turn(user_turn)
 
                         assistant_turn = Turn(
-                            id=f"{conv_id}-{len(session.get_messages())-1}",
+                            id=asst_turn_id,
                             conversation_id=conv_id,
                             role="assistant",
                             content=parsed.content,
-                            index=len(session.get_messages()) - 1,
+                            index=next_index + 1,
                             metadata={"model": model_id, "latency_ms": total_time},
                         )
                         agent.memory.store_turn(assistant_turn)

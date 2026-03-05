@@ -197,10 +197,10 @@ class Agent:
     
     @property
     def mcp_client(self):
-        """Lazy-load the MCP client manager."""
+        """Lazy-load the MCP client manager using the global singleton."""
         if self._mcp_client is None and self.config.enable_tools:
-            from ..mcp import MCPClientManager
-            self._mcp_client = MCPClientManager()
+            from ..mcp import get_mcp_manager
+            self._mcp_client = get_mcp_manager()
             
             # Wire memory-based tool usage recording if memory is available
             if self.memory:

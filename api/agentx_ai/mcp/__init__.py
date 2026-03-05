@@ -6,7 +6,7 @@ external MCP servers, enabling integration with filesystem access, GitHub,
 databases, and custom servers through a standardized protocol.
 """
 
-from .client import MCPClientManager
+from .client import MCPClientManager, get_mcp_manager
 from .server_registry import ServerRegistry, ServerConfig
 from .tool_executor import ToolExecutor
 
@@ -15,4 +15,5 @@ __all__ = [
     "ServerRegistry",
     "ServerConfig",
     "ToolExecutor",
+    "get_mcp_manager",
 ]

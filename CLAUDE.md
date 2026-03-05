@@ -145,9 +145,11 @@ Base URL: `http://localhost:12319/api/`
 | `/api/health` | GET | Health check (add `?include_memory=true` for DB status) |
 | `/api/tools/language-detect-20` | GET/POST | Detect language of text |
 | `/api/tools/translate` | POST | Translate text (`{"text": "...", "targetLanguage": "fra_Latn"}`) |
-| `/api/mcp/servers` | GET | List configured MCP servers |
-| `/api/mcp/tools` | GET | List available MCP tools |
-| `/api/mcp/resources` | GET | List available MCP resources |
+| `/api/mcp/servers` | GET | List configured MCP servers and connection status |
+| `/api/mcp/tools` | GET | List available MCP tools (filter: `?server=name`) |
+| `/api/mcp/resources` | GET | List available MCP resources (filter: `?server=name`) |
+| `/api/mcp/connect` | POST | Connect to MCP server (`{"server": "name"}` or `{"all": true}`) |
+| `/api/mcp/disconnect` | POST | Disconnect MCP server (`{"server": "name"}` or `{"all": true}`) |
 | `/api/providers` | GET | List configured model providers |
 | `/api/providers/models` | GET | List available models (filter: `?provider=openai`) |
 | `/api/providers/health` | GET | Check health of all providers |

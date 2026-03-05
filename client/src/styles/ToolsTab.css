@@ -270,6 +270,27 @@
   font-size: 14px;
 }
 
+/* Server Actions */
+.server-actions {
+  display: flex;
+  gap: 4px;
+  margin-right: 4px;
+}
+
+.button-sm {
+  padding: 4px 8px !important;
+  min-width: unset !important;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .tools-header {

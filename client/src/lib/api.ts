@@ -41,7 +41,10 @@ export interface ModelInfo {
 export interface MCPServer {
   name: string;
   status: string;
+  transport?: string;
   tools?: string[];
+  tools_count?: number;
+  resources_count?: number;
 }
 
 export interface MCPTool {
@@ -499,6 +502,27 @@ class ApiClient {
 
   async listMCPResources(): Promise<{ resources: unknown[] }> {
     return this.request('/api/mcp/resources');
+  }
+
+  async connectMCPServer(server: string): Promise<{ status: string; server: string; tools_count: number; resources_count: number }> {
+    return this.request('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify({ server }),
+    });
+  }
+
+  async connectAllMCPServers(): Promise<{ results: Record<string, { status: string; error?: string }> }> {
+    return this.request('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify({ all: true }),
+    });
+  }
+
+  async disconnectMCPServer(server: string): Promise<{ status: string; server: string }> {
+    return this.request('/api/mcp/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ server }),
+    });
   }
 
   // === Agent ===

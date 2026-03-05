@@ -92,11 +92,38 @@ export function useMCPServers() {
     }
   }, []);
 
+  const connectServer = useCallback(async (name: string) => {
+    try {
+      await api.connectMCPServer(name);
+      await refresh();
+    } catch (err) {
+      setError(err as ApiError);
+    }
+  }, [refresh]);
+
+  const connectAll = useCallback(async () => {
+    try {
+      await api.connectAllMCPServers();
+      await refresh();
+    } catch (err) {
+      setError(err as ApiError);
+    }
+  }, [refresh]);
+
+  const disconnectServer = useCallback(async (name: string) => {
+    try {
+      await api.disconnectMCPServer(name);
+      await refresh();
+    } catch (err) {
+      setError(err as ApiError);
+    }
+  }, [refresh]);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { servers, loading, error, refresh };
+  return { servers, loading, error, refresh, connectServer, connectAll, disconnectServer };
 }
 
 export function useMCPTools() {

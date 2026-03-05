@@ -557,6 +557,66 @@ class ExtractionService:
                 error=str(e),
             )
 
+    @staticmethod
+    def _repair_truncated_json(text: str) -> Optional[dict]:
+        """
+        Attempt to repair truncated JSON from LLM output.
+
+        Handles common truncation cases: unterminated strings, unclosed
+        arrays/objects. Tries progressively aggressive truncation to find
+        a parseable prefix.
+
+        Returns:
+            Parsed dict if repair succeeded, None otherwise.
+        """
+        # Strip trailing incomplete tokens (e.g. partial key/value after last comma)
+        # Then close open brackets/braces
+        for trim_pattern in [
+            # Try as-is first, just closing brackets
+            None,
+            # Trim after last complete array element or object entry
+            re.compile(r',\s*(?:"[^"]*":\s*)?(?:"[^"]*)?$', re.DOTALL),
+            # Trim after last complete object in an array
+            re.compile(r',\s*\{[^}]*$', re.DOTALL),
+        ]:
+            attempt = text
+            if trim_pattern:
+                attempt = trim_pattern.sub('', attempt)
+
+            # Close unterminated string
+            if attempt.count('"') % 2 != 0:
+                attempt += '"'
+
+            # Close open brackets/braces in reverse order
+            open_stack = []
+            in_string = False
+            escape = False
+            for ch in attempt:
+                if escape:
+                    escape = False
+                    continue
+                if ch == '\\' and in_string:
+                    escape = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch in ('{', '['):
+                    open_stack.append('}' if ch == '{' else ']')
+                elif ch in ('}', ']') and open_stack:
+                    open_stack.pop()
+
+            attempt += ''.join(reversed(open_stack))
+
+            try:
+                return json.loads(attempt)
+            except json.JSONDecodeError:
+                continue
+
+        return None
+
     def _parse_combined_response(self, content: str) -> CombinedExtractionResult:
         """
         Parse combined relevance+extraction LLM response.
@@ -579,10 +639,7 @@ class ExtractionService:
         # Normalize double braces (LLM sometimes outputs {{ }} instead of { })
         cleaned_content = cleaned_content.replace("{{", "{").replace("}}", "}")
 
-        # Try to parse JSON
-        is_valid, parsed, error = validate_json_output(cleaned_content)
-
-        if is_valid and parsed:
+        def _make_result(parsed: dict) -> CombinedExtractionResult:
             return CombinedExtractionResult(
                 is_relevant=parsed.get("is_relevant", False),
                 entities=parsed.get("entities", []),
@@ -590,6 +647,12 @@ class ExtractionService:
                 relationships=parsed.get("relationships", []),
                 success=True,
             )
+
+        # Try to parse JSON
+        is_valid, parsed, error = validate_json_output(cleaned_content)
+
+        if is_valid and parsed:
+            return _make_result(parsed)
 
         # Try regex patterns for JSON extraction
         json_patterns = [
@@ -604,15 +667,17 @@ class ExtractionService:
                 try:
                     json_str = match.group(1).strip()
                     parsed = json.loads(json_str)
-                    return CombinedExtractionResult(
-                        is_relevant=parsed.get("is_relevant", False),
-                        entities=parsed.get("entities", []),
-                        facts=parsed.get("facts", []),
-                        relationships=parsed.get("relationships", []),
-                        success=True,
-                    )
+                    return _make_result(parsed)
                 except json.JSONDecodeError:
                     continue
+
+        # Try to repair truncated JSON (common with local/small models)
+        json_start = cleaned_content.find('{')
+        if json_start >= 0:
+            repaired = self._repair_truncated_json(cleaned_content[json_start:])
+            if repaired and isinstance(repaired, dict):
+                logger.debug("Repaired truncated JSON from combined response")
+                return _make_result(repaired)
 
         logger.warning(f"Failed to parse combined response: {error}")
         logger.debug(f"Raw combined response: {cleaned_content[:500]}...")

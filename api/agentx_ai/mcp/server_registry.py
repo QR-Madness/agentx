@@ -19,6 +19,7 @@ class TransportType(str, Enum):
     """Supported MCP transport types."""
     STDIO = "stdio"
     SSE = "sse"
+    STREAMABLE_HTTP = "streamable_http"
     WEBSOCKET = "websocket"
 
 
@@ -51,7 +52,7 @@ class ServerConfig:
         if self.transport == TransportType.STDIO:
             if not self.command:
                 raise ValueError(f"Server '{self.name}': stdio transport requires 'command'")
-        elif self.transport in (TransportType.SSE, TransportType.WEBSOCKET):
+        elif self.transport in (TransportType.SSE, TransportType.STREAMABLE_HTTP, TransportType.WEBSOCKET):
             if not self.url:
                 raise ValueError(f"Server '{self.name}': {self.transport.value} transport requires 'url'")
         return True

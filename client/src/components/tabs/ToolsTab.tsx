@@ -10,16 +10,20 @@ import {
   Database,
   FileText,
   Globe,
-  RefreshCw
+  RefreshCw,
+  Plug,
+  Unplug,
+  Loader2
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
 import '../../styles/ToolsTab.css';
 
 export const ToolsTab: React.FC = () => {
-  const { servers, loading: serversLoading, refresh: refreshServers } = useMCPServers();
+  const { servers, loading: serversLoading, refresh: refreshServers, connectServer, connectAll, disconnectServer } = useMCPServers();
   const { tools, loading: toolsLoading, refresh: refreshTools } = useMCPTools();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
 
   const filteredTools = tools.filter(tool =>
     tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -57,6 +61,21 @@ export const ToolsTab: React.FC = () => {
           <RefreshCw size={16} />
           Refresh
         </button>
+        {servers.length > 0 && (
+          <button 
+            className="button-primary"
+            onClick={async () => {
+              setConnecting('__all__');
+              await connectAll();
+              await refreshTools();
+              setConnecting(null);
+            }}
+            disabled={connecting !== null}
+          >
+            {connecting === '__all__' ? <Loader2 size={16} className="spin" /> : <Plug size={16} />}
+            Connect All
+          </button>
+        )}
       </div>
 
       {/* MCP Servers Overview */}
@@ -86,8 +105,41 @@ export const ToolsTab: React.FC = () => {
                 <div className="server-info">
                   <span className="server-name">{server.name}</span>
                   <span className="server-tools">
-                    {server.tools?.length || 0} tools available
+                    {server.status === 'connected'
+                      ? `${server.tools_count || server.tools?.length || 0} tools available`
+                      : server.transport || 'disconnected'}
                   </span>
+                </div>
+                <div className="server-actions">
+                  {server.status === 'connected' ? (
+                    <button
+                      className="button-ghost button-sm"
+                      title="Disconnect"
+                      onClick={async () => {
+                        setConnecting(server.name);
+                        await disconnectServer(server.name);
+                        await refreshTools();
+                        setConnecting(null);
+                      }}
+                      disabled={connecting !== null}
+                    >
+                      {connecting === server.name ? <Loader2 size={14} className="spin" /> : <Unplug size={14} />}
+                    </button>
+                  ) : (
+                    <button
+                      className="button-ghost button-sm"
+                      title="Connect"
+                      onClick={async () => {
+                        setConnecting(server.name);
+                        await connectServer(server.name);
+                        await refreshTools();
+                        setConnecting(null);
+                      }}
+                      disabled={connecting !== null}
+                    >
+                      {connecting === server.name ? <Loader2 size={14} className="spin" /> : <Plug size={14} />}
+                    </button>
+                  )}
                 </div>
                 <div className={`status-dot ${server.status === 'connected' ? 'online' : 'offline'}`}></div>
               </div>

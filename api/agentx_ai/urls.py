@@ -11,6 +11,8 @@ urlpatterns = [
     path("mcp/servers", views.mcp_servers, name="mcp-servers"),
     path("mcp/tools", views.mcp_tools, name="mcp-tools"),
     path("mcp/resources", views.mcp_resources, name="mcp-resources"),
+    path("mcp/connect", views.mcp_connect, name="mcp-connect"),
+    path("mcp/disconnect", views.mcp_disconnect, name="mcp-disconnect"),
     # Provider endpoints
     path("providers", views.providers_list, name="providers-list"),
     path("providers/models", views.providers_models, name="providers-models"),

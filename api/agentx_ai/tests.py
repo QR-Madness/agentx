@@ -118,10 +118,13 @@ class MCPClientTest(TestCase):
         response = self.client.get("/api/mcp/servers")
         data = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertIn('configured_servers', data)
-        self.assertIn('active_connections', data)
-        self.assertIsInstance(data['configured_servers'], list)
-        self.assertIsInstance(data['active_connections'], list)
+        self.assertIn('servers', data)
+        self.assertIsInstance(data['servers'], list)
+        # Each server should have name, status, transport
+        for server in data['servers']:
+            self.assertIn('name', server)
+            self.assertIn('status', server)
+            self.assertIn('transport', server)
 
     def test_mcp_tools_endpoint(self):
         """Test that the MCP tools endpoint returns expected structure."""
@@ -140,6 +143,34 @@ class MCPClientTest(TestCase):
         self.assertIn('resources', data)
         self.assertIn('count', data)
         self.assertIsInstance(data['resources'], list)
+
+    def test_mcp_connect_requires_post(self):
+        """Test that connect endpoint rejects GET requests."""
+        response = self.client.get("/api/mcp/connect")
+        self.assertEqual(response.status_code, 405)
+
+    def test_mcp_connect_requires_server_name(self):
+        """Test that connect endpoint requires server name or all flag."""
+        response = self.client.post(
+            "/api/mcp/connect",
+            data="{}",
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_mcp_disconnect_requires_post(self):
+        """Test that disconnect endpoint rejects GET requests."""
+        response = self.client.get("/api/mcp/disconnect")
+        self.assertEqual(response.status_code, 405)
+
+    def test_mcp_disconnect_unknown_server(self):
+        """Test disconnecting a server that isn't connected."""
+        response = self.client.post(
+            "/api/mcp/disconnect",
+            data='{"server": "nonexistent"}',
+            content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 404)
 
 
 class MCPServerRegistryTest(TestCase):
