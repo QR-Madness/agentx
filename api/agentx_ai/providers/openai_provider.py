@@ -14,6 +14,7 @@ from .base import (
     ProviderConfig,
     StreamChunk,
     ToolCall,
+    log_llm_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,7 @@ class OpenAIProvider(ModelProvider):
         request_params.update(kwargs)
 
         logger.debug(f"OpenAI request: model={model}, messages={len(messages)}")
+        log_llm_request("OpenAI", request_params)
 
         response = await self.client.chat.completions.create(**request_params)
 

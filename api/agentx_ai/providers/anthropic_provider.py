@@ -14,6 +14,7 @@ from .base import (
     ProviderConfig,
     StreamChunk,
     ToolCall,
+    log_llm_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -236,6 +237,7 @@ class AnthropicProvider(ModelProvider):
             request_params["stop_sequences"] = stop
 
         logger.debug(f"Anthropic request: model={model}, messages={len(messages)}")
+        log_llm_request("Anthropic", request_params)
 
         response = await self.client.messages.create(**request_params)
 

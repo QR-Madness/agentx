@@ -2,12 +2,31 @@
 Abstract base classes for model providers.
 """
 
+import json
+import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncIterator, Optional
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# Debug flag — set DEBUG_LOG_LLM_REQUESTS=1 to log full request payloads
+_DEBUG_LLM = os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() not in ("", "0", "false")
+
+
+def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
+    """Log the full LLM request payload when DEBUG_LOG_LLM_REQUESTS is set."""
+    if not _DEBUG_LLM:
+        return
+    try:
+        dumped = json.dumps(request_params, indent=2, default=str)
+    except Exception:
+        dumped = str(request_params)
+    logger.info(f"[DEBUG LLM REQUEST] {provider_name}:\n{dumped}")
 
 
 class MessageRole(str, Enum):

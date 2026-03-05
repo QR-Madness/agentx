@@ -18,6 +18,7 @@ from .base import (
     ProviderConfig,
     StreamChunk,
     ToolCall,
+    log_llm_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ class LMStudioProvider(ModelProvider):
                 request_kwargs["tool_choice"] = tool_choice
 
         client = self._get_client()
+        log_llm_request("LM Studio", request_kwargs)
         try:
             response = await client.chat.completions.create(**request_kwargs)
         finally:
