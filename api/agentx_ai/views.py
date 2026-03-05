@@ -536,13 +536,33 @@ async def agent_chat_stream(request):
                 messages.extend(context)
             messages.append(Message(role=MessageRole.USER, content=message))
 
+            # Get MCP tools for function calling
+            tools = agent._get_tools_for_provider()
+
             # Send start event
             yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
 
             # Stream tokens using async generator
             full_content = ""
+            tools_used = []
 
-            async for chunk in provider.stream(messages, model_id, temperature=temperature, max_tokens=2000):
+            async for chunk in provider.stream(
+                messages, model_id,
+                temperature=temperature,
+                max_tokens=2000,
+                tools=tools,
+                tool_choice="auto" if tools else None,
+            ):
+                # Handle tool calls from streaming response
+                if chunk.tool_calls:
+                    for tc in chunk.tool_calls:
+                        tools_used.append(tc.name)
+                        yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'arguments': tc.arguments})}\n\n"
+                        # Execute tool via MCP
+                        tool_messages = agent._execute_tool_calls([tc])
+                        for tm in tool_messages:
+                            yield f"event: tool_result\ndata: {json.dumps({'tool': tc.name, 'content': tm.content[:500]})}\n\n"
+
                 if chunk.content:
                     full_content += chunk.content
                     yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
