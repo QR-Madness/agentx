@@ -8,6 +8,7 @@ The Agent class orchestrates all AgentX capabilities:
 - Context and memory management
 """
 
+import json
 import logging
 import time
 import uuid
@@ -17,7 +18,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from ..providers.base import Message, MessageRole
+from ..providers.base import CompletionResult, Message, MessageRole, ToolCall
 from ..providers.registry import get_registry, ProviderRegistry
 from ..reasoning import ReasoningOrchestrator
 from ..reasoning.orchestrator import OrchestratorConfig
@@ -94,6 +95,7 @@ class AgentConfig:
     # Tool settings
     allowed_tools: Optional[list[str]] = None
     blocked_tools: Optional[list[str]] = None
+    max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
     
     # Context settings
     max_context_tokens: int = 8000
@@ -227,6 +229,145 @@ class Agent:
         
         return self._mcp_client
     
+    # ──────────────────────────────────────────────
+    #  Tool helpers
+    # ──────────────────────────────────────────────
+    
+    def _get_tools_for_provider(self) -> list[dict[str, Any]] | None:
+        """
+        Convert MCP tools to OpenAI function-calling format.
+        
+        Returns None when tools are disabled or no tools are available,
+        which tells providers to skip tool-calling entirely.
+        """
+        if not self.config.enable_tools or not self.mcp_client:
+            return None
+        
+        mcp_tools = self.mcp_client.list_tools()
+        if not mcp_tools:
+            return None
+        
+        tools = []
+        for t in mcp_tools:
+            # Apply allow/block filters
+            if self.config.allowed_tools and t.name not in self.config.allowed_tools:
+                continue
+            if self.config.blocked_tools and t.name in self.config.blocked_tools:
+                continue
+            
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema or {"type": "object"},
+                },
+            })
+        
+        return tools if tools else None
+    
+    def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[Message]:
+        """
+        Execute tool calls via MCP and return tool-result messages.
+        
+        Each tool call produces a Message with role=TOOL containing the result
+        text, keyed by tool_call_id so the provider can match call → result.
+        """
+        results: list[Message] = []
+        
+        for tc in tool_calls:
+            # Find which server owns this tool
+            tool_info = self.mcp_client.tool_executor.find_tool(tc.name)
+            if not tool_info:
+                results.append(Message(
+                    role=MessageRole.TOOL,
+                    content=json.dumps({"error": f"Tool '{tc.name}' not found"}),
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                ))
+                continue
+            
+            try:
+                tool_result = self.mcp_client.call_tool_sync(
+                    tool_info.server_name,
+                    tc.name,
+                    tc.arguments,
+                )
+                content = tool_result.text if tool_result.success else (
+                    tool_result.error or "Tool execution failed"
+                )
+            except Exception as e:
+                logger.error(f"Tool execution error for '{tc.name}': {e}")
+                content = json.dumps({"error": str(e)})
+            
+            results.append(Message(
+                role=MessageRole.TOOL,
+                content=content,
+                tool_call_id=tc.id,
+                name=tc.name,
+            ))
+        
+        return results
+    
+    def _complete_with_tools(
+        self,
+        provider,
+        model_id: str,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        **kwargs: Any,
+    ) -> tuple[CompletionResult, list[str]]:
+        """
+        Call provider.complete() in a tool-use loop.
+        
+        If the model returns tool_calls, execute them, append results to
+        messages, and call again — up to max_tool_rounds iterations.
+        
+        Returns:
+            (final CompletionResult, list of tool names used)
+        """
+        tools_used: list[str] = []
+        
+        for _ in range(self.config.max_tool_rounds):
+            result = provider.complete(
+                messages,
+                model_id,
+                tools=tools,
+                tool_choice="auto" if tools else None,
+                **kwargs,
+            )
+            
+            if not result.tool_calls:
+                return result, tools_used
+            
+            # Model wants to call tools — build assistant + tool messages
+            tools_used.extend(tc.name for tc in result.tool_calls)
+            
+            # Add the assistant message with tool_calls attached
+            messages.append(Message(
+                role=MessageRole.ASSISTANT,
+                content=result.content or "",
+                tool_calls=[
+                    {"id": tc.id, "type": "function",
+                     "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
+                    for tc in result.tool_calls
+                ],
+            ))
+            
+            # Execute and append results
+            tool_messages = self._execute_tool_calls(result.tool_calls)
+            messages.extend(tool_messages)
+            
+            logger.info(
+                f"Tool round: executed {len(result.tool_calls)} tools "
+                f"({', '.join(tc.name for tc in result.tool_calls)})"
+            )
+        
+        # Exhausted rounds — do one final call without tools
+        logger.warning(f"Reached max tool rounds ({self.config.max_tool_rounds})")
+        result = provider.complete(messages, model_id, **kwargs)
+        return result, tools_used
+
     def run(
         self,
         task: str,
@@ -354,9 +495,14 @@ class Agent:
                         ))
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
 
-                result = provider.complete(
-                    messages,
+                # Get MCP tools for function calling
+                tools = self._get_tools_for_provider()
+
+                result, tools_used = self._complete_with_tools(
+                    provider,
                     model_id,
+                    messages,
+                    tools,
                     temperature=kwargs.get("temperature", 0.7),
                     max_tokens=kwargs.get("max_tokens", 2000),
                 )
@@ -365,7 +511,6 @@ class Agent:
                 total_tokens = result.usage.get("total_tokens", 0) if result.usage else 0
                 models_used = [self.config.default_model]
                 reasoning_steps = 0
-                tools_used = []
             
             total_time = (time.time() - start_time) * 1000
             self.status = AgentStatus.COMPLETE
@@ -552,9 +697,14 @@ class Agent:
 
                 logger.info(f"Agent chat {task_id} using {model_id}")
 
-                result = provider.complete(
-                    messages,
+                # Get MCP tools for function calling
+                tools = self._get_tools_for_provider()
+
+                result, tools_used = self._complete_with_tools(
+                    provider,
                     model_id,
+                    messages,
+                    tools,
                     temperature=kwargs.get("temperature", 0.7),
                     max_tokens=kwargs.get("max_tokens", 2000),
                 )
@@ -597,6 +747,7 @@ class Agent:
                     answer=answer,
                     thinking=thinking,
                     has_thinking=parsed.has_thinking,
+                    tools_used=tools_used,
                     models_used=[self.config.default_model],
                     total_tokens=total_tokens,
                     total_time_ms=total_time,
