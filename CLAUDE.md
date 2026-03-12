@@ -8,7 +8,6 @@ AgentX is an AI Agent Platform combining:
 - **Backend**: Django REST API (`api/`) on port 12319 — translation, agent memory, MCP client, model providers, drafting, reasoning
 - **Frontend**: Tauri v2 desktop app (`client/`) with React 19, TypeScript, Vite
 - **Data Layer**: Neo4j (graphs), PostgreSQL + pgvector (vectors), Redis (cache) — all via Docker
-- **Ignore**: `client-old/` contains a previous Electron implementation and should not be modified
 
 ## Architecture
 

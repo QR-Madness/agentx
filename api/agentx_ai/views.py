@@ -494,6 +494,11 @@ async def agent_chat_stream(request):
         session.add_message(Message(role=MessageRole.USER, content=message))
         context = session.get_messages()[:-1]
 
+        # Resolve conversation ID early so tool usage recording has it
+        conv_id = session_id or full_conversation_id
+        if use_memory and agent.memory:
+            agent.memory.conversation_id = conv_id
+
         try:
             # Get provider and model
             provider, model_id = agent.registry.get_provider_for_model(
@@ -604,9 +609,6 @@ async def agent_chat_stream(request):
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
 
             total_time = (time.time() - start_time) * 1000
-
-            # Use session_id if provided, otherwise use full UUID for database compatibility
-            conv_id = session_id or full_conversation_id
 
             # Send completion event
             yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': conv_id})}\n\n"

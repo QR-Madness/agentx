@@ -217,7 +217,7 @@ class MCPClientManager:
                     self._sse_transport.connect(
                         name=config.name,
                         url=config.url,
-                        headers=config.headers,
+                        headers=config.resolve_headers(),
                     )
                 )
             elif config.transport == TransportType.STREAMABLE_HTTP:
@@ -225,7 +225,7 @@ class MCPClientManager:
                     self._streamable_http_transport.connect(
                         name=config.name,
                         url=config.url,
-                        headers=config.headers,
+                        headers=config.resolve_headers(),
                     )
                 )
             else:
@@ -311,7 +311,7 @@ class MCPClientManager:
         async with self._sse_transport.connect(
             name=config.name,
             url=config.url,
-            headers=config.headers,
+            headers=config.resolve_headers(),
         ) as session:
             connection = await self._setup_connection(session, config)
             try:
@@ -325,7 +325,7 @@ class MCPClientManager:
         async with self._streamable_http_transport.connect(
             name=config.name,
             url=config.url,
-            headers=config.headers,
+            headers=config.resolve_headers(),
         ) as session:
             connection = await self._setup_connection(session, config)
             try:

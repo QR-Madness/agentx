@@ -59,8 +59,16 @@ class ServerConfig:
     
     def resolve_env(self) -> dict[str, str]:
         """Resolve environment variables (e.g., ${GITHUB_TOKEN} -> actual value)."""
+        return self._resolve_vars(self.env)
+
+    def resolve_headers(self) -> dict[str, str]:
+        """Resolve environment variables in headers (e.g., ${API_KEY} -> actual value)."""
+        return self._resolve_vars(self.headers)
+
+    def _resolve_vars(self, mapping: dict[str, str]) -> dict[str, str]:
+        """Resolve ${VAR} references in a string dict from os.environ."""
         resolved = {}
-        for key, value in self.env.items():
+        for key, value in mapping.items():
             if value.startswith("${") and value.endswith("}"):
                 env_var = value[2:-1]
                 env_value = os.environ.get(env_var)

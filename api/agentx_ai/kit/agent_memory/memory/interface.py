@@ -472,9 +472,13 @@ class AgentMemory:
         record_success = True
         error_msg = None
 
+        if not self.conversation_id:
+            logger.debug("Skipping tool usage recording: no conversation_id set")
+            return
+
         try:
             self.procedural.record_invocation(
-                conversation_id=self.conversation_id or "",
+                conversation_id=self.conversation_id,
                 turn_id=turn_id,
                 tool_name=tool_name,
                 tool_input=tool_input,
