@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { TabBar, Tab, TabId, TabIcons } from './components/TabBar';
 import { ServerProvider } from './contexts/ServerContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { ModalProvider } from './contexts/ModalContext';
+import { ModalPortal } from './components/modals/ModalPortal';
 import { DashboardTab } from './components/tabs/DashboardTab';
 import { AgentTab } from './components/tabs/AgentTab';
 import { TranslationTab } from './components/tabs/TranslationTab';
@@ -58,7 +61,12 @@ function AppContent() {
 function App() {
   return (
     <ServerProvider>
-      <AppContent />
+      <ThemeProvider>
+        <ModalProvider>
+          <AppContent />
+          <ModalPortal />
+        </ModalProvider>
+      </ThemeProvider>
     </ServerProvider>
   );
 }

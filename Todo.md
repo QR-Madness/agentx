@@ -188,26 +188,26 @@
 > Infrastructure that all subsequent sub-phases depend on
 
 #### Theme System
-- [ ] Create `ThemeProvider` context (`contexts/ThemeContext.tsx`)
-- [ ] Extract CSS variables from `App.css` `:root` into `ThemeDefinition` object (`lib/theme.ts`)
-- [ ] `ThemeProvider` applies variables to `document.documentElement.style` on mount/change
-- [ ] Ship `cosmic` theme as default; architecture supports adding themes later
-- [ ] Move non-variable CSS (resets, animations, component base styles) into `styles/base.css`
-- [ ] `App.css` becomes thin wrapper importing `base.css`
+- [x] Create `ThemeProvider` context (`contexts/ThemeContext.tsx`)
+- [x] Extract CSS variables from `App.css` `:root` into `ThemeDefinition` object (`lib/theme.ts`)
+- [x] `ThemeProvider` applies variables to `document.documentElement.style` on mount/change
+- [x] Ship `cosmic` theme as default; architecture supports adding themes later
+- [x] Move non-variable CSS (resets, animations, component base styles) into `styles/base.css`
+- [x] `App.css` becomes thin wrapper importing `base.css`
 
 #### Modal/Portal System
-- [ ] Add `<div id="modal-root" />` to `index.html`
-- [ ] Create `ModalContext` (`contexts/ModalContext.tsx`) — `openModal(config)`, `closeModal(id)`, stack-based
-- [ ] Create `ModalPortal.tsx` — renders children into `#modal-root` via `ReactDOM.createPortal`
-- [ ] Create `DrawerPanel.tsx` — slide-in panel (left/right), backdrop overlay, sizes (sm/md/lg)
-- [ ] Create `ModalDialog.tsx` — centered overlay modal
-- [ ] Lazy-loaded component registry to avoid circular imports
+- [x] Add `<div id="modal-root" />` to `index.html`
+- [x] Create `ModalContext` (`contexts/ModalContext.tsx`) — `openModal(config)`, `closeModal(id)`, stack-based
+- [x] Create `ModalPortal.tsx` — renders children into `#modal-root` via `ReactDOM.createPortal`
+- [x] Create `DrawerPanel.tsx` — slide-in panel (left/right), backdrop overlay, sizes (sm/md/lg)
+- [x] Create `ModalDialog.tsx` — centered overlay modal
+- [x] Lazy-loaded component registry to avoid circular imports
 
 #### Message Type System
-- [ ] Create `lib/messages.ts` — discriminated union: `UserMessage | AssistantMessage | ToolCallMessage | ToolResultMessage | MemoryInjectionMessage | SystemMessage | ErrorMessage`
-- [ ] Each type carries specific metadata (tool names, confidence scores, model info, etc.)
-- [ ] Type guards for each message type
-- [ ] `ToolCallMessage.status` field: `pending | approved | rejected | completed` (prep for future blocking)
+- [x] Create `lib/messages.ts` — discriminated union: `UserMessage | AssistantMessage | ToolCallMessage | ToolResultMessage | MemoryInjectionMessage | SystemMessage | ErrorMessage`
+- [x] Each type carries specific metadata (tool names, confidence scores, model info, etc.)
+- [x] Type guards for each message type
+- [x] `ToolCallMessage.status` field: `pending | approved | rejected | completed` (prep for future blocking)
 
 ### 13.2 Root Layout Shell
 

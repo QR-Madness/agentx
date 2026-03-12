@@ -1,0 +1,522 @@
+/* === AgentX Base Styles ===
+ * Non-variable styles extracted from App.css.
+ * CSS variables are applied dynamically by ThemeProvider.
+ * This file contains resets, component styles, animations, and utilities.
+ */
+
+/* === Typography Defaults (on :root) === */
+:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* === Global Resets === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-space);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* === App Container with Cosmic Background === */
+.app-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-space);
+  background-image: var(--gradient-cosmic-bg);
+  position: relative;
+}
+
+/* Animated star particles (CSS only) */
+.app-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 50%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 10% 80%, rgba(139,92,246,0.4) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 90% 10%, rgba(6,182,212,0.4) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: twinkle 8s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* === Utility Classes === */
+.gradient-text {
+  background: var(--gradient-nebula);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.page-icon {
+  font-size: 28px;
+  margin-right: 12px;
+}
+
+.page-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+/* === Card Components === */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.card:hover {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-md), var(--glow-purple);
+}
+
+.glass {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+}
+
+.glass:hover {
+  background: rgba(17, 24, 39, 0.85);
+  border-color: var(--cosmic-violet);
+}
+
+/* === Buttons === */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.button-primary {
+  background: var(--gradient-aurora);
+  color: white;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 15px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.button-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.button-primary:hover::before {
+  left: 100%;
+}
+
+.button-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), var(--glow-purple);
+}
+
+.button-primary:active {
+  transform: translateY(0);
+}
+
+.button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.button-secondary {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.button-secondary:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: var(--cosmic-violet);
+  box-shadow: var(--glow-purple);
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.button-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* === Form Controls === */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-void);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 16px;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--cosmic-violet);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15), var(--glow-purple);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a5b4d4' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 40px;
+}
+
+/* === Animations === */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.5), 0 0 40px rgba(6, 182, 212, 0.2);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+.slide-in {
+  animation: slideIn 0.5s ease forwards;
+  opacity: 0;
+}
+
+.glow-animate {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-card) 0%, var(--bg-elevated) 50%, var(--bg-card) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* === Scrollbar Styling === */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-void);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  border: 2px solid var(--bg-void);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cosmic-violet);
+}
+
+/* === Section Titles === */
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title-icon {
+  color: var(--cosmic-violet);
+}
+
+/* === Status Indicators === */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.online {
+  background: var(--status-online);
+  box-shadow: 0 0 8px var(--status-online);
+}
+
+.status-dot.warning {
+  background: var(--status-warning);
+  box-shadow: 0 0 8px var(--status-warning);
+}
+
+.status-dot.error {
+  background: var(--status-error);
+  box-shadow: 0 0 8px var(--status-error);
+}
+
+.status-dot.inactive {
+  background: var(--status-inactive);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.healthy {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--status-online);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-badge.degraded {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--status-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-badge.unhealthy {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* === Modal & Drawer System === */
+.modal-backdrop,
+.drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  animation: fadeInBackdrop 0.2s ease;
+}
+
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-backdrop {
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: modalSlideUp 0.25s ease;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  z-index: 1001;
+}
+
+.drawer-panel.drawer-right {
+  right: 0;
+  border-radius: 16px 0 0 16px;
+  animation: drawerSlideLeft 0.25s ease;
+}
+
+.drawer-panel.drawer-left {
+  left: 0;
+  border-radius: 0 16px 16px 0;
+  animation: drawerSlideRight 0.25s ease;
+}
+
+@keyframes drawerSlideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes drawerSlideRight {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.drawer-content {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* === Responsive Design === */
+@media (max-width: 768px) {
+  :root {
+    font-size: 14px;
+  }
+
+  .page-title {
+    font-size: 24px;
+  }
+
+  .page-subtitle {
+    font-size: 14px;
+  }
+}
+
+/* === Print Styles === */
+@media print {
+  .app-container {
+    display: block;
+  }
+
+  button {
+    display: none;
+  }
+}
