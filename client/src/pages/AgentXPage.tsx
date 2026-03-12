@@ -1,9 +1,9 @@
 /**
- * AgentXPage — Wrapper for existing ChatTab (will evolve into full workspace)
+ * AgentXPage — Main chat workspace with conversation tabs
  */
 
-import { ChatTab } from '../components/tabs/ChatTab';
+import { ChatPanel } from '../components/chat';
 
 export function AgentXPage() {
-  return <ChatTab />;
+  return <ChatPanel />;
 }

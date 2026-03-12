@@ -71,6 +71,8 @@ const STORAGE_KEYS = {
   activeServer: 'agentx:activeServer',
   serverMeta: (id: string) => `agentx:server:${id}:meta`,
   recentChats: (serverId: string) => `agentx:server:${serverId}:recentChats`,
+  conversationTabs: (serverId: string) => `agentx:server:${serverId}:tabs`,
+  activeTabId: (serverId: string) => `agentx:server:${serverId}:activeTab`,
 } as const;
 
 const MAX_RECENT_CHATS = 10;
@@ -343,4 +345,82 @@ export function deleteRecentChat(chatId: string): boolean {
 export function getRecentChatBySessionId(sessionId: string): RecentChat | null {
   const chats = getRecentChats();
   return chats.find(c => c.sessionId === sessionId) ?? null;
+}
+
+// === Conversation Tabs ===
+
+import type { ConversationMessage } from './messages';
+
+export interface ConversationTab {
+  id: string;
+  title: string;
+  sessionId: string | null;
+  profileId: string | null;
+  messages: ConversationMessage[];
+  isStreaming: boolean;
+  createdAt: string;
+  lastMessageAt: string;
+}
+
+const MAX_TABS = 20;
+const MAX_MESSAGES_PER_TAB = 200;
+
+export function generateTabId(): string {
+  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function createDefaultTab(): ConversationTab {
+  const now = new Date().toISOString();
+  return {
+    id: generateTabId(),
+    title: 'New Conversation',
+    sessionId: null,
+    profileId: null,
+    messages: [],
+    isStreaming: false,
+    createdAt: now,
+    lastMessageAt: now,
+  };
+}
+
+export function getConversationTabs(serverId?: string): ConversationTab[] {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return [];
+
+  const data = localStorage.getItem(STORAGE_KEYS.conversationTabs(id));
+  return safeJsonParse<ConversationTab[]>(data, []);
+}
+
+export function saveConversationTabs(tabs: ConversationTab[], serverId?: string): void {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return;
+
+  // Enforce max tabs limit
+  const trimmed = tabs.slice(0, MAX_TABS);
+
+  // Enforce max messages per tab
+  const capped = trimmed.map(tab => ({
+    ...tab,
+    messages: tab.messages.slice(-MAX_MESSAGES_PER_TAB),
+  }));
+
+  localStorage.setItem(STORAGE_KEYS.conversationTabs(id), JSON.stringify(capped));
+}
+
+export function getActiveTabId(serverId?: string): string | null {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return null;
+
+  return localStorage.getItem(STORAGE_KEYS.activeTabId(id));
+}
+
+export function saveActiveTabId(tabId: string | null, serverId?: string): void {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return;
+
+  if (tabId) {
+    localStorage.setItem(STORAGE_KEYS.activeTabId(id), tabId);
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.activeTabId(id));
+  }
 }

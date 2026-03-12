@@ -229,18 +229,18 @@
 > Browser-style tabs in top bar, each representing a conversation
 
 #### ConversationContext
-- [ ] Create `ConversationContext` (`contexts/ConversationContext.tsx`)
-- [ ] `ConversationTab` model: `id`, `title`, `sessionId`, `profileId`, `messages: ConversationMessage[]`, `isStreaming`, timestamps
-- [ ] Actions: `addTab()`, `closeTab(id)`, `switchTab(id)`, `renameTab()`, `reorderTabs()`
-- [ ] Persistence: `agentx:server:{id}:convTabs` (tab list), `agentx:server:{id}:conv:{tabId}:msgs` (messages)
-- [ ] Max ~20 tabs, messages capped at ~200 per tab in localStorage (backend has full history)
+- [x] Create `ConversationContext` (`contexts/ConversationContext.tsx`)
+- [x] `ConversationTab` model: `id`, `title`, `sessionId`, `profileId`, `messages: ConversationMessage[]`, `isStreaming`, timestamps
+- [x] Actions: `addTab()`, `closeTab(id)`, `switchTab(id)`, `renameTab()`, `reorderTabs()`
+- [x] Persistence: `agentx:server:{id}:convTabs` (tab list), `agentx:server:{id}:conv:{tabId}:msgs` (messages)
+- [x] Max ~20 tabs, messages capped at ~200 per tab in localStorage (backend has full history)
 
 #### ConversationTabBar
-- [ ] Create `ConversationTabBar.tsx` (`layouts/`) — horizontal scrollable tabs with close buttons
-- [ ] "+" button to add new tab (inherits active profile)
-- [ ] History button (clock icon) opens dropdown of past conversations
-- [ ] Active tab highlighted; only visible on AgentX page
-- [ ] Wire into `TopBar` center area
+- [x] Create `ConversationTabBar.tsx` (`layouts/`) — horizontal scrollable tabs with close buttons
+- [x] "+" button to add new tab (inherits active profile)
+- [x] History button (clock icon) opens dropdown of past conversations
+- [x] Active tab highlighted; only visible on AgentX page
+- [x] Wire into `TopBar` center area
 
 ### 13.4 Agent Profiles (Frontend + Backend)
 

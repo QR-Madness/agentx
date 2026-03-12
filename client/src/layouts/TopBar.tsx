@@ -13,6 +13,7 @@ import {
   Languages,
 } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
+import { ConversationTabBar } from './ConversationTabBar';
 import './TopBar.css';
 
 export type PageId = 'start' | 'dashboard' | 'agentx';
@@ -96,9 +97,9 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         ))}
       </nav>
 
-      {/* Center: Conversation tabs slot (wired in 13.3) */}
-      <div className="top-bar-center" id="conversation-tabs-slot">
-        {/* ConversationTabBar will be rendered here */}
+      {/* Center: Conversation tabs (visible only on AgentX page) */}
+      <div className="top-bar-center">
+        <ConversationTabBar visible={activePage === 'agentx'} />
       </div>
 
       {/* Right: Toolbar icons */}
