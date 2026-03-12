@@ -1,0 +1,163 @@
+/* === TopBar — Horizontal Navigation Bar === */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, var(--bg-nebula) 0%, var(--bg-space) 100%);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  z-index: 100;
+  gap: 16px;
+}
+
+/* Subtle glow at bottom edge */
+.top-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--cosmic-violet) 50%, transparent 100%);
+  opacity: 0.3;
+}
+
+/* === Left Section: Logo === */
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.top-bar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gradient-aurora);
+  border-radius: 8px;
+  color: white;
+  box-shadow: var(--glow-purple);
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: 700;
+  background: var(--gradient-nebula);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* === Navigation Pills === */
+.top-bar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nav-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.nav-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-pill.active {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.3);
+}
+
+.nav-pill.active::before {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 2px;
+  background: var(--gradient-aurora);
+  border-radius: 1px;
+}
+
+/* === Center Section: Conversation Tabs Slot === */
+.top-bar-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* === Right Section: Toolbar Icons === */
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.toolbar-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: var(--glow-purple);
+}
+
+.toolbar-icon:active {
+  transform: scale(0.95);
+}
+
+/* === Responsive === */
+@media (max-width: 768px) {
+  .top-bar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .nav-pill span {
+    display: none;
+  }
+
+  .nav-pill {
+    padding: 8px 10px;
+  }
+}

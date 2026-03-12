@@ -214,15 +214,15 @@
 > Replace sidebar TabBar with horizontal top bar + page routing
 
 #### RootLayout & TopBar
-- [ ] Create `RootLayout.tsx` (`layouts/`) — top bar + full-height page content area
-- [ ] Create `TopBar.tsx` (`layouts/`) with sections:
+- [x] Create `RootLayout.tsx` (`layouts/`) — top bar + full-height page content area
+- [x] Create `TopBar.tsx` (`layouts/`) with sections:
   - Left: Logo + active agent name (dynamic from profile)
   - Center-left: Page nav pills (Start, Dashboard, AgentX)
   - Center: ConversationTabBar placeholder (wired in 13.3)
   - Right: Toolbar icons (Settings, Memory, Tools, Translation) → open modals
-- [ ] Page switching via `useState<'start' | 'dashboard' | 'agentx'>`
-- [ ] Migrate `App.tsx` from `TabBar` + 7 display-toggled divs to `RootLayout` + page routing
-- [ ] Initially, "AgentX" page renders existing `ChatTab` as-is (incremental migration)
+- [x] Page switching via `useState<'start' | 'dashboard' | 'agentx'>`
+- [x] Migrate `App.tsx` from `TabBar` + 7 display-toggled divs to `RootLayout` + page routing
+- [x] Initially, "AgentX" page renders existing `ChatTab` as-is (incremental migration)
 
 ### 13.3 Conversation Tabs
 

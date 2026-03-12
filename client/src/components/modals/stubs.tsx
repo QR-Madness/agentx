@@ -1,8 +1,52 @@
 /**
- * Stub modal component — placeholder until real modals are built in Phase 13.5
+ * Modal content components — wrappers for tabs rendered in modals/drawers
  */
 
-export function StubModal({ onClose }: { onClose: () => void }) {
+import { SettingsTab } from '../tabs/SettingsTab';
+import { MemoryTab } from '../tabs/MemoryTab';
+import { ToolsTab } from '../tabs/ToolsTab';
+import { TranslationTab } from '../tabs/TranslationTab';
+
+interface ModalContentProps {
+  onClose: () => void;
+}
+
+export function SettingsModalContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <SettingsTab />
+    </div>
+  );
+}
+
+export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <MemoryTab />
+    </div>
+  );
+}
+
+export function ToolsModalContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <ToolsTab />
+    </div>
+  );
+}
+
+export function TranslationModalContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <TranslationTab />
+    </div>
+  );
+}
+
+/**
+ * Fallback stub for unregistered components
+ */
+export function StubModal({ onClose }: ModalContentProps) {
   return (
     <div style={{ padding: 24 }}>
       <h3 style={{ color: 'var(--text-primary)', marginBottom: 12 }}>Coming Soon</h3>

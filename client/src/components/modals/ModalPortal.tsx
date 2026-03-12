@@ -13,14 +13,12 @@ type ModalComponentProps = Record<string, unknown> & { onClose: () => void };
 /**
  * Lazy-loaded component registry.
  * Keys added here become valid `component` values for openModal().
- * Actual modal components will be created in Phase 13.5.
- * Placeholder stubs are provided for now so the registry compiles.
  */
 const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<ModalComponentProps>>> = {
-  settings: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
-  memory: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
-  tools: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
-  translation: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
+  settings: lazy(() => import('./stubs').then(m => ({ default: m.SettingsModalContent }))),
+  memory: lazy(() => import('./stubs').then(m => ({ default: m.MemoryModalContent }))),
+  tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
+  translation: lazy(() => import('./stubs').then(m => ({ default: m.TranslationModalContent }))),
   profileEditor: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
   promptLibrary: lazy(() => import('./stubs').then(m => ({ default: m.StubModal }))),
 };
