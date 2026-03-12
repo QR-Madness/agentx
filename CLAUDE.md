@@ -27,9 +27,11 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 ### Key Backend Modules (`api/agentx_ai/`)
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200 translation) and `LanguageLexicon` (ISO 639 code bridging between Level I detection codes and Level II translation codes)
-- `kit/agent_memory/` — Full memory system with lazy-loaded connections (`interface.py` → `connections.py` → memory implementations)
+- `kit/agent_memory/` — Full memory system with lazy-loaded connections (`interface.py` → `connections.py` → memory implementations). `RecallLayer` provides 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query)
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE). Configure via `mcp_servers.json`
 - `providers/` — Abstract `ModelProvider` with LM Studio, Anthropic, OpenAI implementations. Models defined in `models.yaml`
+- `prompts/` — `PromptManager` singleton for profile-based prompt composition. `models.py` defines PromptProfile, PromptSection, GlobalPrompt. Config in `data/system_prompts.yaml`
+- `config.py` — `ConfigManager` singleton for runtime settings. Persists to `data/config.json` with dot-notation access and env var fallback
 - `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
 - `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
 - `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition (with goal tracking), `SessionManager` for conversations
@@ -154,7 +156,33 @@ Base URL: `http://localhost:12319/api/`
 | `/api/providers/health` | GET | Check health of all providers |
 | `/api/agent/run` | POST | Execute a task with the agent |
 | `/api/agent/chat` | POST | Conversational interaction with session |
+| `/api/agent/chat/stream` | POST | Streaming chat via SSE (events: start, chunk, tool_call, tool_result, done, error) |
 | `/api/agent/status` | GET | Get current agent status |
+| `/api/prompts/profiles` | GET | List all prompt profiles |
+| `/api/prompts/profiles/{id}` | GET | Get profile detail with composed preview |
+| `/api/prompts/global` | GET | Get global prompt |
+| `/api/prompts/global/update` | POST | Update global prompt |
+| `/api/prompts/sections` | GET | List all prompt sections |
+| `/api/prompts/compose` | GET | Preview composed system prompt |
+| `/api/prompts/mcp-tools` | GET | Get auto-generated MCP tools prompt |
+| `/api/memory/channels` | GET | List memory channels |
+| `/api/memory/entities` | GET | List entities (filter: `?channel=`, `?type=`) |
+| `/api/memory/entities/graph` | GET | Get entity relationship graph |
+| `/api/memory/facts` | GET | List facts (filter: `?channel=`, `?entity_id=`) |
+| `/api/memory/strategies` | GET | List procedural strategies |
+| `/api/memory/stats` | GET | Memory system statistics |
+| `/api/memory/recall` | POST | Recall relevant memories for a query |
+| `/api/memory/recall-settings` | GET/POST | Get or update recall layer settings |
+| `/api/memory/consolidate` | POST | Trigger manual consolidation |
+| `/api/memory/reset` | POST | Reset memory data (with confirmation) |
+| `/api/memory/settings` | GET/POST | Get or update memory settings |
+| `/api/jobs` | GET | List background jobs |
+| `/api/jobs/clear-stuck` | POST | Clear stuck jobs |
+| `/api/jobs/{id}` | GET | Get job detail |
+| `/api/jobs/{id}/run` | POST | Manually run a job |
+| `/api/jobs/{id}/toggle` | POST | Enable/disable a job |
+| `/api/config` | GET | Get runtime configuration |
+| `/api/config/update` | POST | Update runtime config (`{"key": "dot.path", "value": ...}`) |
 
 ## Environment Configuration
 
@@ -215,4 +243,4 @@ The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-
 
 ## Project Status
 
-Phases 1-10 complete. Phase 11 (Memory System) at 90% — 11.1-11.9 complete, 11.10 (Memory Explorer UI) pending. See `Todo.md` for detailed tracking.
+Phases 1-10 complete. Phase 11 (Memory System) at 94% — 11.1-11.9, 11.11-11.12 complete, 11.10 (Memory Explorer UI) pending. Phase 12 (Documentation) in progress. See `Todo.md` for detailed tracking.

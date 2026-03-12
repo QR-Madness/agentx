@@ -1,34 +1,216 @@
 # Configuration
 
-Configure AgentX for your environment.
+AgentX uses four configuration layers: environment variables (`.env`), runtime config (`data/config.json`), MCP server config (`mcp_servers.json`), and prompt config (`data/system_prompts.yaml`).
 
 ## Environment Variables
 
-Create a `.env` file in the project root (optional):
+Copy `.env.example` to `.env` in the project root. Variables are grouped by subsystem.
+
+### Default Model
 
 ```bash
-# Django Settings
-DJANGO_SECRET_KEY=your-secret-key-here
-DJANGO_DEBUG=True
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+DEFAULT_MODEL=llama3.2              # Model used for agent chat/reasoning
+```
 
-# Database Connections
+### LM Studio (Local Models)
+
+```bash
+LMSTUDIO_BASE_URL=http://localhost:1234/v1   # OpenAI-compatible endpoint
+LMSTUDIO_TIMEOUT=600                         # Request timeout (seconds)
+HF_TOKEN=                                    # HuggingFace token (gated models)
+```
+
+### Cloud Providers
+
+```bash
+ANTHROPIC_API_KEY=                  # Anthropic (Claude models)
+OPENAI_API_KEY=                     # OpenAI (GPT models)
+TOGETHER_API_KEY=                   # Together.ai (hosted open models)
+```
+
+All three can also be configured at runtime via the Settings UI or `POST /api/config/update`.
+
+### Database Credentials
+
+```bash
+# Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_secure_password
+NEO4J_PASSWORD=changeme
 
-POSTGRES_URI=postgresql://agent:your_secure_password@localhost:5432/agent_memory
+# PostgreSQL (with pgvector)
+POSTGRES_USER=agent
+POSTGRES_PASSWORD=changeme
+POSTGRES_DB=agent_memory
+POSTGRES_URI=postgresql://agent:changeme@localhost:5432/agent_memory
+
+# Redis
 REDIS_URI=redis://localhost:6379
+```
 
-# API Settings
+These must match the values in `docker-compose.yml`.
+
+### Embeddings
+
+```bash
+EMBEDDING_PROVIDER=local                          # "local" or "openai"
+EMBEDDING_MODEL=text-embedding-3-small            # OpenAI model (if provider=openai)
+LOCAL_EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5  # Local model (if provider=local)
+```
+
+Switching providers changes vector dimensions. If you switch after data exists, reset memory schemas (`task db:init:schemas`) or use `POST /api/memory/reset`.
+
+### Django / Application
+
+```bash
+DJANGO_SECRET_KEY=your-secret-key-here   # Generate for production
+DJANGO_DEBUG=true                        # false in production
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 API_PORT=12319
 ```
+
+### Security
+
+```bash
+AGENTX_MAX_TEXT_LENGTH=100000        # Max input length (translation)
+AGENTX_MAX_CHAT_LENGTH=10000         # Max input length (chat)
+AGENTX_RATE_LIMIT_ENABLED=false      # Enable rate limiting
+AGENTX_RATE_LIMIT_DEFAULT=100/m      # Default rate limit
+AGENTX_API_KEY_REQUIRED=false        # Require X-API-Key header
+AGENTX_API_KEY=                      # API key value
+```
+
+### Client
+
+```bash
+VITE_API_URL=http://localhost:12319/api   # API URL for Tauri client
+```
+
+---
+
+## Runtime Config
+
+`data/config.json` stores settings that can be changed without restarting the server. Managed by `ConfigManager` (singleton).
+
+### Structure
+
+```json
+{
+  "providers": {
+    "lmstudio": { "base_url": null, "timeout": 300 },
+    "anthropic": { "api_key": null, "base_url": null },
+    "openai": { "api_key": null, "base_url": null }
+  },
+  "models": {
+    "defaults": { "chat": null, "reasoning": null, "extraction": null },
+    "overrides": {}
+  },
+  "llm_settings": {
+    "default_temperature": 0.7,
+    "default_max_tokens": 4096,
+    "top_p": 1.0,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0
+  },
+  "preferences": {
+    "default_model": null,
+    "default_reasoning_strategy": "auto",
+    "enable_memory_by_default": true
+  }
+}
+```
+
+### Priority
+
+Runtime config takes priority over environment variables. The `ConfigManager.get_provider_value()` method checks: config file value → env var → default.
+
+### API
+
+```bash
+# Read current config
+curl http://localhost:12319/api/config
+
+# Update a value (dot-notation keys)
+curl -X POST http://localhost:12319/api/config/update \
+  -H "Content-Type: application/json" \
+  -d '{"key": "providers.lmstudio.base_url", "value": "http://localhost:1234/v1"}'
+```
+
+---
+
+## MCP Server Config
+
+`mcp_servers.json` defines external MCP tool servers. See `mcp_servers.json.example` for the full format.
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "transport": "stdio",
+      "timeout": 30.0,
+      "auto_reconnect": true
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Executable for stdio transport |
+| `args` | list | Command arguments |
+| `env` | dict | Environment variables (`${VAR}` syntax resolved from process env) |
+| `transport` | string | `"stdio"`, `"sse"`, or `"streamable_http"` |
+| `url` | string | Server URL (for SSE/HTTP transports) |
+| `headers` | dict | HTTP headers (env vars resolved in values) |
+| `timeout` | float | Connection timeout in seconds |
+| `auto_reconnect` | bool | Reconnect on connection loss |
+
+See [MCP Feature Guide](../features/mcp.md) for details on connection modes and tool execution.
+
+---
+
+## Prompt Config
+
+`data/system_prompts.yaml` stores prompt profiles and the global prompt. Managed by `PromptManager` (singleton).
+
+```yaml
+global_prompt:
+  content: "You are a helpful AI assistant."
+  enabled: true
+
+profiles:
+  - id: default
+    name: Default Assistant
+    description: General-purpose AI assistant
+    is_default: true
+    sections:
+      - id: identity
+        name: Identity
+        type: persona
+        content: "You are a helpful AI assistant."
+        enabled: true
+        order: 0
+```
+
+Profiles can be managed via the prompts API endpoints. See [Prompts Feature Guide](../features/prompts.md) for the composition pipeline.
+
+---
 
 ## Database Configuration
 
 ### Neo4j
 
-Edit `docker-compose.yml` to customize Neo4j settings:
+Configured in `docker-compose.yml`:
 
 ```yaml
 services:
@@ -39,9 +221,9 @@ services:
       - NEO4J_server_memory_pagecache_size=1G
 ```
 
-### PostgreSQL
+Web browser available at `http://localhost:7474`.
 
-Configure PostgreSQL in `docker-compose.yml`:
+### PostgreSQL
 
 ```yaml
 services:
@@ -52,9 +234,9 @@ services:
       - POSTGRES_DB=agent_memory
 ```
 
-### Redis
+The pgvector extension is installed automatically. Django ORM uses a separate SQLite database (`api/db.sqlite3`).
 
-Adjust Redis memory limits:
+### Redis
 
 ```yaml
 services:
@@ -62,195 +244,11 @@ services:
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
 ```
 
-## Django Settings
+---
 
-Located in `api/agentx_api/settings.py`:
+## Related
 
-### Database Backend
-
-Currently using SQLite for Django ORM:
-
-```python
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
-```
-
-To switch to PostgreSQL:
-
-```python
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'agent_memory',
-        'USER': 'agent',
-        'PASSWORD': 'your_secure_password',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
-}
-```
-
-### CORS Settings
-
-Configure allowed origins in `settings.py`:
-
-```python
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:1420",  # Vite dev server
-    "tauri://localhost",       # Tauri window
-]
-```
-
-## Tauri Configuration
-
-Located in `client/src-tauri/tauri.conf.json`:
-
-### Window Settings
-
-```json
-{
-  "windows": [
-    {
-      "title": "AgentX",
-      "width": 800,
-      "height": 600,
-      "resizable": true,
-      "fullscreen": false
-    }
-  ]
-}
-```
-
-### Development URL
-
-```json
-{
-  "build": {
-    "devUrl": "http://localhost:1420"
-  }
-}
-```
-
-## Translation Models
-
-Configure models in `api/agentx_ai/kit/translation.py`:
-
-### Language Detection Model
-
-```python
-DETECTION_MODEL = "eleldar/language-detection"
-```
-
-### Translation Model
-
-Currently using M2M100:
-
-```python
-TRANSLATION_MODEL = "facebook/m2m100_418M"
-```
-
-To switch to NLLB-200 (larger, more accurate):
-
-```python
-TRANSLATION_MODEL = "facebook/nllb-200-distilled-600M"
-```
-
-!!! note
-    Larger models provide better quality but require more memory and slower inference.
-
-## Development Tools
-
-### Task Configuration
-
-Edit `Taskfile.yaml` to customize commands:
-
-```yaml
-tasks:
-  api:runserver:
-    dir: api/
-    cmds:
-      - uv run python manage.py runserver 127.0.0.1:12319
-```
-
-### Vite Configuration
-
-Located in `client/vite.config.ts`:
-
-```typescript
-export default defineConfig({
-  server: {
-    port: 1420,
-    strictPort: true,
-  },
-  // ... other settings
-})
-```
-
-## Security Considerations
-
-### Production Checklist
-
-- [ ] Change default database passwords
-- [ ] Set `DJANGO_DEBUG=False`
-- [ ] Configure `DJANGO_ALLOWED_HOSTS`
-- [ ] Use environment variables for secrets
-- [ ] Enable HTTPS for API
-- [ ] Configure firewall rules
-- [ ] Set up database backups
-- [ ] Review CORS settings
-
-### Password Management
-
-Never commit passwords to version control. Use:
-
-- Environment variables
-- Secret management tools (HashiCorp Vault, AWS Secrets Manager)
-- `.env` files (gitignored)
-
-## Performance Tuning
-
-### Model Loading
-
-Translation models are loaded at startup. To reduce memory:
-
-```python
-# Use smaller models
-TRANSLATION_MODEL = "facebook/m2m100_418M"  # ~500MB
-# vs
-TRANSLATION_MODEL = "facebook/nllb-200-3.3B"  # ~13GB
-```
-
-### Database Connections
-
-Adjust connection pools in production:
-
-```python
-DATABASES = {
-    'default': {
-        # ...
-        'OPTIONS': {
-            'MAX_CONNS': 20,
-            'MIN_CONNS': 5,
-        }
-    }
-}
-```
-
-### Redis Caching
-
-Configure Redis for optimal performance:
-
-```bash
-# In docker-compose.yml
-command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
-```
-
-## Next Steps
-
-- [Development Setup](../development/setup.md) - Advanced configuration
-- [Database Migration](../deployment/migration.md) - Data management
-- [Task Commands](../development/tasks.md) - Available automation
+- [Development Setup](../development/setup.md) — First-time setup walkthrough
+- [MCP](../features/mcp.md) — MCP server configuration details
+- [Prompts](../features/prompts.md) — Prompt profile system
+- [Providers](../features/providers.md) — Model provider setup

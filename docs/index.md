@@ -1,38 +1,48 @@
 # AgentX Documentation
 
-Welcome to the AgentX documentation. AgentX is an AI Agent Platform combining MCP client integration, drafting models, reasoning frameworks, and a sophisticated memory system.
+AgentX is an AI Agent Platform combining MCP client integration, multi-model reasoning, drafting strategies, and a persistent memory system — all backed by a Django REST API.
 
-## Overview
+## Architecture at a Glance
 
-AgentX is built on a modern, two-tier architecture:
+```mermaid
+graph TB
+    Client[Tauri Client<br/>React 19 + Vite]
 
-- **Backend**: Django REST API providing AI-powered services
-- **Frontend**: Tauri desktop application with React/TypeScript
-- **AI Features**: Multi-level translation, MCP client, drafting models, reasoning framework
-- **Memory Stack**: Neo4j graph database, PostgreSQL with pgvector, and Redis
+    subgraph API["Django API (port 12319)"]
+        Agent[Agent Core<br/>planner · session · context]
+        Reasoning[Reasoning<br/>CoT · ToT · ReAct · Reflection]
+        Drafting[Drafting<br/>speculative · pipeline · candidate]
+        Providers[Providers<br/>LM Studio · Anthropic · OpenAI]
+        MCP[MCP Client<br/>stdio · SSE · HTTP]
+        Prompts[Prompt System<br/>profiles · composition]
+        Translation[Translation Kit<br/>NLLB-200 · 200+ languages]
+        Memory[Agent Memory<br/>episodic · semantic · procedural · working]
+    end
+
+    subgraph Data["Data Layer (Docker)"]
+        Neo4j[Neo4j<br/>entity graphs]
+        Postgres[PostgreSQL + pgvector<br/>vectors · episodic · audit]
+        Redis[Redis<br/>working memory cache]
+    end
+
+    Client -->|HTTP| API
+    Agent --> Reasoning & Drafting & Providers & MCP & Prompts & Memory
+    Memory --> Neo4j & Postgres & Redis
+    MCP -->|stdio/SSE| ExtServers[External MCP Servers]
+```
 
 ## Key Features
 
-### Translation System
-Multi-level language detection and translation supporting 200+ languages:
-
-- Fast initial detection (~20 languages)
-- Comprehensive translation using NLLB-200 architecture
-- Confidence scoring and fallback mechanisms
-
-### Memory System
-Hybrid memory architecture combining:
-
-- **Neo4j**: Graph-based relationship analysis
-- **PostgreSQL + pgvector**: Vector embeddings for semantic search
-- **Redis**: Fast in-memory caching
-
-### Desktop Application
-Native desktop experience with:
-
-- Tab-based interface (Dashboard, Translation, Chat, Tools)
-- Cross-platform support via Tauri v2
-- Fast development with Vite + React 19
+| Feature | Description | Docs |
+|---------|-------------|------|
+| **Agent Chat** | Conversational AI with streaming, tool use, and session management | [Chat](features/chat.md) |
+| **Reasoning** | 4 strategies (CoT, ToT, ReAct, Reflection) with auto-selection | [Reasoning](features/reasoning.md) |
+| **Drafting** | Speculative decoding, multi-stage pipelines, N-best candidates | [Drafting](features/drafting.md) |
+| **MCP Client** | Connect to external tool servers via stdio, SSE, or HTTP | [MCP](features/mcp.md) |
+| **Providers** | Unified interface for LM Studio, Anthropic, and OpenAI | [Providers](features/providers.md) |
+| **Prompts** | Profile-based prompt composition with global prompt layer | [Prompts](features/prompts.md) |
+| **Memory** | 4-type persistent memory with recall, extraction, and consolidation | [Memory](features/memory.md) |
+| **Translation** | Two-level detection + NLLB-200 translation for 200+ languages | [Translation](features/translation.md) |
 
 ## Quick Links
 
@@ -44,29 +54,37 @@ Native desktop experience with:
 
     Install and run AgentX in minutes
 
-    [:octicons-arrow-right-24: Installation](getting-started/installation.md)
-
--   :material-code-braces:{ .lg .middle } **Development**
-
-    ---
-
-    Set up your development environment
-
-    [:octicons-arrow-right-24: Setup Guide](development/setup.md)
+    [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
 
 -   :material-api:{ .lg .middle } **API Reference**
 
     ---
 
-    Explore the REST API endpoints
+    All REST API endpoints with examples
 
-    [:octicons-arrow-right-24: API Docs](api/endpoints.md)
+    [:octicons-arrow-right-24: Endpoints](api/endpoints.md)
+
+-   :material-sitemap:{ .lg .middle } **Architecture**
+
+    ---
+
+    System design, module layout, request lifecycle
+
+    [:octicons-arrow-right-24: Overview](architecture/overview.md)
+
+-   :material-code-braces:{ .lg .middle } **Development**
+
+    ---
+
+    Setup, contributing, and testing
+
+    [:octicons-arrow-right-24: Setup Guide](development/setup.md)
 
 -   :material-database:{ .lg .middle } **Database Stack**
 
     ---
 
-    Learn about the database architecture
+    Neo4j, PostgreSQL + pgvector, Redis
 
     [:octicons-arrow-right-24: Databases](architecture/databases.md)
 
@@ -80,55 +98,41 @@ Native desktop experience with:
 
 </div>
 
-## Architecture at a Glance
-
-```mermaid
-graph TB
-    Client[Tauri Client<br/>React + TypeScript]
-    API[Django API<br/>Port 12319]
-    Neo4j[Neo4j<br/>Graph DB]
-    Postgres[PostgreSQL<br/>+ pgvector]
-    Redis[Redis<br/>Cache]
-
-    Client -->|HTTP| API
-    API --> Neo4j
-    API --> Postgres
-    API --> Redis
-```
-
 ## Technology Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Frontend** | Tauri v2 + React 19 | Desktop application shell |
-| **Build** | Vite + TypeScript | Fast development & bundling |
-| **Backend** | Django 5.2.8 | REST API framework |
-| **AI/ML** | HuggingFace Transformers | Language models |
-| **Graph DB** | Neo4j 5.15 | Relationship analysis |
-| **Vector DB** | PostgreSQL + pgvector | Semantic search |
-| **Cache** | Redis 7 | In-memory data store |
+| **Build** | Vite + TypeScript | Fast development and bundling |
+| **Backend** | Django 5.2 | REST API framework |
+| **AI/ML** | HuggingFace Transformers | Translation models (NLLB-200) |
+| **Graph DB** | Neo4j 5.15 | Entity relationships and knowledge graphs |
+| **Vector DB** | PostgreSQL + pgvector | Semantic search and episodic memory |
+| **Cache** | Redis 7 | Working memory and session state |
 | **Task Runner** | Task (Taskfile) | Development automation |
-| **Package Manager** | uv | Fast Python dependency management |
+| **Python** | uv | Fast dependency management |
+| **Client** | bun | Client package management |
 
 ## Project Status
 
-AgentX is under active development. See the [Development Roadmap](roadmap.md) for detailed progress.
-
-**Completed (Phases 1-10):**
-- Django API with translation endpoints
+**Completed (Phases 1-11):**
+- Django API with 54 endpoints across 8 subsystems
 - Tauri desktop application with cosmic theme
 - Two-level translation system (200+ languages)
-- Database stack (Neo4j, Postgres, Redis)
-- MCP client integration
-- Model provider abstraction (OpenAI, Anthropic, Ollama)
-- Drafting framework (speculative, pipeline, candidates)
+- Database stack (Neo4j, PostgreSQL + pgvector, Redis)
+- MCP client with stdio/SSE/HTTP transports
+- Model provider abstraction (LM Studio, Anthropic, OpenAI)
+- Drafting framework (speculative, pipeline, candidate)
 - Reasoning framework (CoT, ToT, ReAct, Reflection)
-- Agent core with task planning
-- Core test suite (50 tests)
+- Agent core with task planning and goal tracking
+- Memory system: 4 types, recall layer (5 techniques), extraction pipeline, consolidation
+- 130+ backend tests
 
 **In Progress:**
-- Phase 11: Memory System (90%)
-- Phase 13: UI Implementation (15%)
+- Phase 12: Documentation refresh
+- Phase 13: UI implementation (15%)
+
+See the [Roadmap](roadmap.md) for detailed phase history.
 
 ## License
 

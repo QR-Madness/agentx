@@ -189,20 +189,85 @@ for goal in goals:
     print(f"[P{goal.priority}] {goal.description} - {goal.status}")
 ```
 
+## Recall Layer
+
+The `RecallLayer` augments base vector retrieval with multiple techniques:
+
+```mermaid
+graph LR
+    Q[Query] --> BASE[Base Retrieval<br/>vector similarity]
+    Q --> HYB[Hybrid Search<br/>BM25 + vector, RRF fusion]
+    Q --> ENT[Entity-Centric<br/>graph traversal from matched entities]
+    Q --> QE[Query Expansion<br/>question→statement transforms]
+    Q --> HYDE[HyDE<br/>hypothetical document embedding]
+    Q --> SQ[Self-Query<br/>LLM filter extraction]
+
+    BASE & HYB & ENT & QE & HYDE & SQ --> MERGE[Merge + Deduplicate]
+    MERGE --> RANK[Rerank<br/>salience, temporal, access boosts]
+    RANK --> MB[MemoryBundle]
+```
+
+Each technique is independently toggleable via `GET/POST /api/memory/recall-settings`.
+
+| Technique | Description |
+|-----------|-------------|
+| **Hybrid search** | Combines BM25 keyword matching with vector similarity using Reciprocal Rank Fusion |
+| **Entity-centric** | Finds entities matching the query, then traverses the graph for related facts |
+| **Query expansion** | Rewrites questions as statements to improve vector match quality |
+| **HyDE** | Generates a hypothetical answer, then searches for similar real content |
+| **Self-query** | Uses LLM to extract structured filters (time, entity type, channel) from natural language |
+
+## Consolidation Pipeline
+
+The consolidation pipeline processes recent conversations into structured knowledge:
+
+```mermaid
+graph TD
+    T[Recent Turns] --> RF[Relevance Filter<br/>skip trivial messages]
+    RF --> EX[Combined Extraction<br/>entities + facts + relationships in one LLM call]
+    EX --> EL[Entity Linking<br/>embedding-based entity resolution]
+    EL --> CD[Contradiction Detection<br/>compare new facts against existing]
+    CD --> |contradicts| RS[Resolution<br/>prefer_new / prefer_old / flag_review]
+    CD --> |no conflict| ST[Store<br/>upsert_entity + learn_fact]
+    RS --> ST
+```
+
+**Phase 11.12 features:**
+
+- **Confidence calibration** — Certainty mapping: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
+- **Temporal reasoning** — Facts tagged as `current`, `past`, or `future` with temporal boost in retrieval (current=1.2x, past=0.7x)
+- **Reinforcement signals** — `access_count` and `salience` on facts, incremented on retrieval, used in reranking
+- **Source attribution** — `source_turn_id` on extracted facts links back to the originating conversation turn
+- **User correction handling** — Detects "actually...", "no, I meant..." patterns; supersedes old facts via `[:SUPERSEDES]` relationship
+- **Contradiction detection** — Compares new facts against recent existing facts; resolution strategies: prefer_new, prefer_old, flag_review
+
 ## Background Processing
 
-The system includes a consolidation worker that runs background jobs:
+The `JobRegistry` manages background consolidation jobs:
 
 - **Consolidation** (every 15 min): Extracts entities and facts from recent conversations
 - **Pattern Detection** (hourly): Learns successful strategies from conversation outcomes
 - **Memory Decay** (daily): Applies time-based decay to salience scores
 - **Cleanup** (daily): Archives old conversations and removes low-salience entities
 
-To run the worker:
+Jobs can be monitored and controlled via the [Jobs API](../api/endpoints.md#jobs).
 
-```bash
-python -m agentx_ai.kit.agent_memory.consolidation.worker
-```
+## Memory API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/memory/channels` | GET/POST | List or create channels |
+| `/api/memory/entities` | GET | Browse entities with pagination |
+| `/api/memory/entities/{id}/graph` | GET | Entity subgraph with connected facts |
+| `/api/memory/facts` | GET | Browse facts with confidence filtering |
+| `/api/memory/strategies` | GET | Browse learned strategies |
+| `/api/memory/stats` | GET | Total and per-channel counts |
+| `/api/memory/settings` | GET/POST | Consolidation settings |
+| `/api/memory/recall-settings` | GET/POST | Recall layer settings |
+| `/api/memory/consolidate` | POST | Manually run consolidation |
+| `/api/memory/reset` | POST | Reset consolidation state |
+
+See [API Endpoints: Memory](../api/endpoints.md#memory) for full details.
 
 ## Configuration
 
@@ -277,25 +342,8 @@ This creates:
 - **PostgreSQL**: Memory tables with channel columns, partitioned audit log
 - **Redis**: Verifies connectivity and documents key patterns
 
-## Status
+## Related
 
-The memory system implementation is complete and syntax-error free. Current status:
-
-- ✅ Core memory interfaces implemented
-- ✅ Episodic, semantic, procedural, and working memory modules
-- ✅ Multi-strategy retrieval engine
-- ✅ Background consolidation worker
-- ✅ Memory decay and cleanup utilities
-- ✅ Database schema initialization (`task db:init:schemas`)
-- ✅ Channel scoping support in all schemas
-- ✅ Partitioned audit log table (daily partitions)
-- ✅ Agent core integration (memory wired into chat/run flows)
-- ✅ Goal tracking integrated with TaskPlanner (add_goal, get_goal, complete_goal)
-- ✅ Consolidation uses AgentMemory interface (upsert_entity, learn_fact)
-- ✅ Entity/fact/relationship extraction (LLM-based via ExtractionService)
-- ⏳ Audit logger instrumentation
-
-## Related Documentation
-
-- [Memory System Architecture](../architecture/memory.md) - Detailed technical architecture
-- [Database Stack](../architecture/databases.md) - Infrastructure details
+- [Memory System Architecture](../architecture/memory.md) — Detailed technical architecture
+- [Database Stack](../architecture/databases.md) — Infrastructure details
+- [API Models: Memory](../api/models.md#memory-models) — Turn, Entity, Fact, Goal, Strategy schemas

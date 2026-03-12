@@ -101,15 +101,23 @@ nav:
     - API Layer: architecture/api.md
     - Client Layer: architecture/client.md
     - Database Stack: architecture/databases.md
+    - Memory Architecture: architecture/memory.md
   - Features:
-    - Translation System: features/translation.md
-    - Memory System: features/memory.md
-    - Chat Interface: features/chat.md
+    - Chat: features/chat.md
+    - Reasoning: features/reasoning.md
+    - Drafting: features/drafting.md
+    - MCP Client: features/mcp.md
+    - Providers: features/providers.md
+    - Prompts: features/prompts.md
+    - Memory: features/memory.md
+    - Translation: features/translation.md
   - Development:
     - Setup: development/setup.md
     - Task Commands: development/tasks.md
     - Testing: development/testing.md
+    - Memory Setup: development/memory-setup.md
     - Contributing: development/contributing.md
+  - Roadmap: roadmap.md
   - API Reference:
     - Endpoints: api/endpoints.md
     - Models: api/models.md

@@ -16,8 +16,8 @@ This document tracks the development history and future direction of AgentX.
 | Phase 8: Client Updates | Complete | Tauri UI with cosmic theme |
 | Phase 9: Security | Complete | Foundation security measures |
 | Phase 10: Testing (Core) | Complete | 50 tests covering core functionality |
-| Phase 11: Memory System | **In Progress** | Persistent knowledge graphs |
-| Phase 12: Documentation | Planned | Comprehensive docs |
+| Phase 11: Memory System | **94%** | Persistent knowledge graphs |
+| Phase 12: Documentation | **In Progress** | Comprehensive docs refresh |
 | Phase 13: UI Implementation | **In Progress** | Chat and Agent interfaces |
 
 ---
@@ -383,6 +383,52 @@ Implemented `Session` and `SessionManager`:
 #### 10.2 Integration Tests
 - Full translation flow (via API endpoint tests)
 - Docker service dependencies (health check with skipUnless)
+
+---
+
+### Phase 11: Memory System (94%)
+
+> **Goal**: Persistent knowledge graphs with extraction, consolidation, and intelligent recall
+
+#### 11.1–11.7: Core Memory Infrastructure
+- 4-type memory architecture: episodic (PostgreSQL), semantic (Neo4j + PostgreSQL), procedural (Neo4j), working (Redis)
+- `AgentMemory` unified interface with lazy-loaded database connections
+- Memory models: Turn, Entity, Fact, Goal, Strategy with embeddings and salience scoring
+- Channel-scoped memory with `_global` and `_default` channels
+- Memory API: 12 endpoints for recall, entities, facts, strategies, stats, settings
+
+#### 11.8: Testing & Security
+- 80+ memory tests covering integration, security, and edge cases
+- Tenant isolation (user_id filtering), audit logging, input validation
+- Graceful degradation when databases are unavailable
+
+#### 11.9: Extraction & Consolidation
+- `ExtractionService`: LLM-based entity/fact/relationship extraction in single call
+- Consolidation pipeline: scheduled jobs for extraction, entity linking, contradiction detection
+- `JobRegistry` with worker threads and configurable intervals
+
+#### 11.10: Memory Explorer UI — *Pending*
+
+#### 11.11–11.12: Advanced Recall & Intelligence
+- `RecallLayer`: 5 retrieval techniques (hybrid search, entity-centric, query expansion, HyDE, self-query)
+- Confidence calibration, temporal reasoning, reinforcement signals
+- Source attribution, user correction handling, contradiction detection
+
+---
+
+### Phase 12: Documentation (In Progress)
+
+> **Goal**: Comprehensive backend documentation refresh
+
+- Rewrote architecture docs (overview, API layer, memory)
+- Expanded API reference: all 54 endpoints documented with request/response examples
+- Comprehensive API models reference (providers, agent, memory, prompts, MCP, SSE)
+- Created 5 new feature docs: reasoning, drafting, MCP, providers, prompts
+- Rewrote/expanded 3 existing feature docs: chat, translation, memory
+- Expanded development docs: contributing guide, setup guide
+- Updated configuration reference with all config layers
+- Updated quickstart with examples for streaming, MCP, memory, prompts
+- Mermaid diagrams throughout for architecture and data flow visualization
 
 ---
 

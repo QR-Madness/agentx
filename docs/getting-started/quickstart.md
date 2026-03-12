@@ -1,161 +1,251 @@
 # Quick Start
 
-Get started with AgentX in 5 minutes.
+Get AgentX running and make your first API calls.
 
-## Starting AgentX
-
-### Development Mode
+## Start the Stack
 
 ```bash
+# Full stack: Docker services + Django API + Tauri client
 task dev
 ```
 
-This starts:
+This starts Neo4j, PostgreSQL, Redis, the Django API on port 12319, and the Tauri desktop app. All support hot reload.
 
-- All database services (Neo4j, Postgres, Redis)
-- Django API on port 12319
-- Tauri desktop application
-
-### API Only
+For API-only development:
 
 ```bash
-task api:runserver
+task db:up        # Start database services
+task dev:api      # Start Django API (port 12319)
 ```
 
-### Client Only
+## Health Check
+
+Verify the API is running:
 
 ```bash
-cd client
-bunx tauri dev
+curl http://localhost:12319/api/health
 ```
 
-## Using the Translation API
+```json
+{"status": "ok", "version": "0.1.0"}
+```
+
+Include database status:
+
+```bash
+curl http://localhost:12319/api/health?include_memory=true
+```
+
+---
+
+## Chat (Simple Completion)
+
+Send a message and get a response:
+
+```bash
+curl -X POST http://localhost:12319/api/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is the capital of France?",
+    "model": "llama3.2"
+  }'
+```
+
+```json
+{
+  "status": "success",
+  "response": "The capital of France is Paris.",
+  "session_id": "abc123",
+  "model": "llama3.2"
+}
+```
+
+### Streaming Chat
+
+Stream responses via Server-Sent Events:
+
+```bash
+curl -N -X POST http://localhost:12319/api/agent/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Explain quantum computing briefly",
+    "model": "llama3.2"
+  }'
+```
+
+Events arrive as SSE:
+
+```
+event: start
+data: {"task_id": "t_abc123", "model": "llama3.2"}
+
+event: chunk
+data: {"content": "Quantum computing uses "}
+
+event: chunk
+data: {"content": "quantum mechanical phenomena..."}
+
+event: done
+data: {"task_id": "t_abc123", "total_time_ms": 1423.5, "session_id": "s_def456"}
+```
+
+### Session Continuity
+
+Pass `session_id` to maintain conversation context:
+
+```bash
+curl -X POST http://localhost:12319/api/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What about its population?",
+    "session_id": "abc123"
+  }'
+```
+
+---
+
+## Translation
 
 ### Detect Language
 
 ```bash
-curl http://localhost:12319/api/language-detect
+curl -X POST http://localhost:12319/api/tools/language-detect-20 \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Bonjour le monde"}'
+```
+
+```json
+{
+  "status": "success",
+  "language": "fr",
+  "confidence": 0.99,
+  "language_name": "French"
+}
 ```
 
 ### Translate Text
 
 ```bash
-curl -X POST http://localhost:12319/api/translate \
+curl -X POST http://localhost:12319/api/tools/translate \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Hello, world!",
-    "target_language": "fr"
+    "targetLanguage": "fra_Latn"
   }'
 ```
 
-Response:
 ```json
 {
-  "original": "Hello, world!",
-  "translated": "Bonjour le monde!",
-  "source_language": "en",
-  "target_language": "fr",
-  "confidence": 0.98
+  "status": "success",
+  "translated_text": "Bonjour le monde!",
+  "source_language": "eng_Latn",
+  "target_language": "fra_Latn"
 }
 ```
 
-### Supported Language Codes
+Target languages use NLLB-200 codes (e.g., `fra_Latn`, `deu_Latn`, `spa_Latn`). See [Translation](../features/translation.md) for the full language code reference.
 
-Use ISO 639-1 codes for target languages:
+---
 
-- `en` - English
-- `fr` - French
-- `es` - Spanish
-- `de` - German
-- `zh` - Chinese
-- `ja` - Japanese
-- `ar` - Arabic
-- And 193+ more...
+## MCP Tools
 
-## Using the Desktop Application
+### Connect a Server
 
-### Tab Navigation
+```bash
+curl -X POST http://localhost:12319/api/mcp/connect \
+  -H "Content-Type: application/json" \
+  -d '{"server": "filesystem"}'
+```
 
-The application has four main tabs:
+Connect all configured servers:
 
-1. **Dashboard** - Overview and stats
-2. **Translation** - Interactive translation interface
-3. **Chat** - AI conversation interface
-4. **Tools** - Utilities and settings
+```bash
+curl -X POST http://localhost:12319/api/mcp/connect \
+  -H "Content-Type: application/json" \
+  -d '{"all": true}'
+```
 
-### Translation Tab
+### List Available Tools
 
-1. Enter text in the source field
-2. Select target language
-3. Click "Translate"
-4. View results with confidence scores
+```bash
+curl http://localhost:12319/api/mcp/tools
+```
+
+```json
+{
+  "status": "success",
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read the contents of a file",
+      "server": "filesystem"
+    }
+  ]
+}
+```
+
+Once tools are connected, the agent can use them automatically during chat. See [MCP](../features/mcp.md) for server configuration.
+
+---
+
+## Prompt Profiles
+
+### List Profiles
+
+```bash
+curl http://localhost:12319/api/prompts/profiles
+```
+
+### Use a Profile in Chat
+
+```bash
+curl -X POST http://localhost:12319/api/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Help me write a poem",
+    "profile_id": "creative"
+  }'
+```
+
+See [Prompts](../features/prompts.md) for profile management.
+
+---
+
+## Memory
+
+### Recall Memories
+
+```bash
+curl -X POST http://localhost:12319/api/memory/recall \
+  -H "Content-Type: application/json" \
+  -d '{"query": "user preferences", "top_k": 5}'
+```
+
+### View Memory Stats
+
+```bash
+curl http://localhost:12319/api/memory/stats
+```
+
+Memory is automatically populated during chat when `enable_memory` is true (default). See [Memory](../features/memory.md) for the full memory system reference.
+
+---
 
 ## Database Access
 
-### PostgreSQL Shell
-
 ```bash
-task db:shell:postgres
+task db:shell:postgres    # psql shell
+task db:shell:redis       # redis-cli
+task db:shell:neo4j       # cypher-shell
 ```
 
-### Redis CLI
+Neo4j web browser: [http://localhost:7474](http://localhost:7474)
 
-```bash
-task db:shell:redis
-```
-
-### Neo4j Browser
-
-Open [http://localhost:7474](http://localhost:7474)
-
-Credentials: `neo4j` / `your_secure_password`
-
-## Common Tasks
-
-### Run Tests
-
-```bash
-task test
-```
-
-### Database Backup
-
-```bash
-task db:backup:postgres
-```
-
-Backups are saved in `./backups/`
-
-### Clean Database
-
-```bash
-task db:clean
-```
-
-!!! warning
-    This removes all database data. Use with caution!
-
-### Stop Services
-
-```bash
-task teardown
-```
-
-Or press `Ctrl+C` to stop the dev environment.
-
-## Development Workflow
-
-1. **Start dev environment**: `task dev`
-2. **Make changes** to API or client code
-3. **Hot reload** happens automatically
-   - Vite for frontend changes
-   - Django autoreload for API changes
-4. **Run tests**: `task test`
-5. **Commit changes**: `git commit`
-6. **Stop services**: `Ctrl+C` or `task teardown`
+---
 
 ## Next Steps
 
-- [Configuration Guide](configuration.md) - Customize settings
-- [Architecture Overview](../architecture/overview.md) - Understand the system
-- [Development Setup](../development/setup.md) - Advanced development
+- [Configuration](configuration.md) — Environment variables and config files
+- [API Endpoints](../api/endpoints.md) — Full API reference
+- [Architecture Overview](../architecture/overview.md) — System design
+- [Chat](../features/chat.md) — Chat modes, streaming, and tool-use loops

@@ -137,7 +137,7 @@ class MemoryRetriever:
 - Results are merged and deduplicated
 - Cross-channel matches are logged in the audit trail
 
-**Strategies:**
+**Base Strategies:**
 1. **Vector Similarity**: Embed query and search each memory type
 2. **Graph Traversal**: Expand from matched entities to related nodes
 3. **Temporal Filtering**: Boost recent memories, filter by time window
@@ -149,6 +149,38 @@ class MemoryRetriever:
 - Semantic (Entities): 0.2
 - Procedural: 0.15
 - Recency: 0.1
+
+#### RecallLayer (`memory/recall.py`)
+
+Enhanced retrieval layer that wraps the base `MemoryRetriever` with additional techniques:
+
+| Technique | Description | When Useful |
+|-----------|-------------|-------------|
+| Hybrid search | BM25 + vector with RRF fusion | Keyword-heavy queries |
+| Entity-centric | Graph traversal from matched entities | "Tell me about X" queries |
+| Query expansion | Rewrites questions as statements | Improves vector match quality |
+| HyDE | Generates hypothetical answer, searches for similar real content | Abstract or vague queries |
+| Self-query | LLM extracts structured filters from natural language | "What did I say last week about..." |
+
+Each technique is independently configurable via recall settings. `RecallMetrics` tracks per-technique latency and result counts.
+
+#### Extraction Pipeline (`extraction/service.py`)
+
+LLM-based extraction of entities, facts, and relationships from conversation text:
+
+- **Combined extraction** — Single LLM call extracts entities + facts + relationships (~75% fewer API calls vs. separate extraction)
+- **Confidence calibration** — Maps LLM certainty labels to numeric scores: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
+- **Temporal context** — Extracts temporal tags (`current`, `past`, `future`) per fact
+- **Contradiction detection** — Compares new facts against recent existing facts; resolution via prefer_new, prefer_old, or flag_review
+- **User correction handling** — Detects correction patterns ("actually...", "no, I meant..."); supersedes old facts via `[:SUPERSEDES]` relationship
+- Uses `claude-3-5-haiku-latest` by default (configurable via `extraction_model` setting)
+
+#### Reinforcement Signals
+
+Facts and entities gain reinforcement through usage:
+- `access_count` increments on each retrieval
+- `last_accessed` updates on each retrieval
+- `salience` is used as a boost factor in reranking (temporal boost: current=1.2x, past=0.7x)
 
 ### 4. Background Processing
 
