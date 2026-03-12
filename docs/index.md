@@ -46,57 +46,11 @@ graph TB
 
 ## Quick Links
 
-<div class="grid cards" markdown>
-
--   :material-rocket-launch:{ .lg .middle } **Getting Started**
-
-    ---
-
-    Install and run AgentX in minutes
-
-    [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
-
--   :material-api:{ .lg .middle } **API Reference**
-
-    ---
-
-    All REST API endpoints with examples
-
-    [:octicons-arrow-right-24: Endpoints](api/endpoints.md)
-
--   :material-sitemap:{ .lg .middle } **Architecture**
-
-    ---
-
-    System design, module layout, request lifecycle
-
-    [:octicons-arrow-right-24: Overview](architecture/overview.md)
-
--   :material-code-braces:{ .lg .middle } **Development**
-
-    ---
-
-    Setup, contributing, and testing
-
-    [:octicons-arrow-right-24: Setup Guide](development/setup.md)
-
--   :material-database:{ .lg .middle } **Database Stack**
-
-    ---
-
-    Neo4j, PostgreSQL + pgvector, Redis
-
-    [:octicons-arrow-right-24: Databases](architecture/databases.md)
-
--   :material-road-variant:{ .lg .middle } **Roadmap**
-
-    ---
-
-    Development history and future plans
-
-    [:octicons-arrow-right-24: Roadmap](roadmap.md)
-
-</div>
+| | |
+|---|---|
+| **[Quick Start](getting-started/quickstart.md)** — Install and run AgentX in minutes | **[API Reference](api/endpoints.md)** — All REST API endpoints with examples |
+| **[Architecture](architecture/overview.md)** — System design, module layout, request lifecycle | **[Development](development/setup.md)** — Setup, contributing, and testing |
+| **[Database Stack](architecture/databases.md)** — Neo4j, PostgreSQL + pgvector, Redis | **[Roadmap](roadmap.md)** — Development history and future plans |
 
 ## Technology Stack
 
