@@ -15,10 +15,10 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/features/memory/">
       
       
-        <link rel="prev" href="../translation/">
+        <link rel="prev" href="../prompts/">
       
       
-        <link rel="next" href="../chat/">
+        <link rel="next" href="../translation/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Memory System - AgentX Documentation</title>
+        <title>Memory - AgentX Documentation</title>
       
     
     
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Memory System
+              Memory
             
           </span>
         </div>
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../translation/" class="md-tabs__link">
+        <a href="../chat/" class="md-tabs__link">
           
   
   
@@ -323,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -745,6 +764,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -816,14 +863,154 @@
   
   
     <li class="md-nav__item">
-      <a href="../translation/" class="md-nav__link">
+      <a href="../chat/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Translation System
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
   
 
     
@@ -860,7 +1047,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -878,7 +1065,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -1059,10 +1246,43 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recall-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recall Layer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consolidation-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidation Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#background-processing" class="md-nav__link">
     <span class="md-ellipsis">
       
         Background Processing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory API
       
     </span>
   </a>
@@ -1103,21 +1323,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
+  <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Documentation
+        Related
       
     </span>
   </a>
@@ -1140,14 +1349,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../chat/" class="md-nav__link">
+      <a href="../translation/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Chat Interface
+    Translation
   
 
     
@@ -1311,6 +1520,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/contributing/" class="md-nav__link">
         
   
@@ -1345,6 +1582,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1359,10 +1623,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1380,8 +1644,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1474,10 +1738,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1495,8 +1759,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1751,10 +2015,43 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recall-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recall Layer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consolidation-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consolidation Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#background-processing" class="md-nav__link">
     <span class="md-ellipsis">
       
         Background Processing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory API
       
     </span>
   </a>
@@ -1795,21 +2092,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
+  <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Documentation
+        Related
       
     </span>
   </a>
@@ -2083,40 +2369,164 @@
 </span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="k">for</span> <span class="n">goal</span> <span class="ow">in</span> <span class="n">goals</span><span class="p">:</span>
 </span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[P</span><span class="si">{</span><span class="n">goal</span><span class="o">.</span><span class="n">priority</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">goal</span><span class="o">.</span><span class="n">description</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="n">goal</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </span></code></pre></div>
+<h2 id="recall-layer">Recall Layer<a class="headerlink" href="#recall-layer" title="Permanent link">&para;</a></h2>
+<p>The <code>RecallLayer</code> augments base vector retrieval with multiple techniques:</p>
+<pre class="mermaid"><code>graph LR
+    Q[Query] --&gt; BASE[Base Retrieval&lt;br/&gt;vector similarity]
+    Q --&gt; HYB[Hybrid Search&lt;br/&gt;BM25 + vector, RRF fusion]
+    Q --&gt; ENT[Entity-Centric&lt;br/&gt;graph traversal from matched entities]
+    Q --&gt; QE[Query Expansion&lt;br/&gt;question→statement transforms]
+    Q --&gt; HYDE[HyDE&lt;br/&gt;hypothetical document embedding]
+    Q --&gt; SQ[Self-Query&lt;br/&gt;LLM filter extraction]
+
+    BASE &amp; HYB &amp; ENT &amp; QE &amp; HYDE &amp; SQ --&gt; MERGE[Merge + Deduplicate]
+    MERGE --&gt; RANK[Rerank&lt;br/&gt;salience, temporal, access boosts]
+    RANK --&gt; MB[MemoryBundle]</code></pre>
+<p>Each technique is independently toggleable via <code>GET/POST /api/memory/recall-settings</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hybrid search</strong></td>
+<td>Combines BM25 keyword matching with vector similarity using Reciprocal Rank Fusion</td>
+</tr>
+<tr>
+<td><strong>Entity-centric</strong></td>
+<td>Finds entities matching the query, then traverses the graph for related facts</td>
+</tr>
+<tr>
+<td><strong>Query expansion</strong></td>
+<td>Rewrites questions as statements to improve vector match quality</td>
+</tr>
+<tr>
+<td><strong>HyDE</strong></td>
+<td>Generates a hypothetical answer, then searches for similar real content</td>
+</tr>
+<tr>
+<td><strong>Self-query</strong></td>
+<td>Uses LLM to extract structured filters (time, entity type, channel) from natural language</td>
+</tr>
+</tbody>
+</table>
+<h2 id="consolidation-pipeline">Consolidation Pipeline<a class="headerlink" href="#consolidation-pipeline" title="Permanent link">&para;</a></h2>
+<p>The consolidation pipeline processes recent conversations into structured knowledge:</p>
+<pre class="mermaid"><code>graph TD
+    T[Recent Turns] --&gt; RF[Relevance Filter&lt;br/&gt;skip trivial messages]
+    RF --&gt; EX[Combined Extraction&lt;br/&gt;entities + facts + relationships in one LLM call]
+    EX --&gt; EL[Entity Linking&lt;br/&gt;embedding-based entity resolution]
+    EL --&gt; CD[Contradiction Detection&lt;br/&gt;compare new facts against existing]
+    CD --&gt; |contradicts| RS[Resolution&lt;br/&gt;prefer_new / prefer_old / flag_review]
+    CD --&gt; |no conflict| ST[Store&lt;br/&gt;upsert_entity + learn_fact]
+    RS --&gt; ST</code></pre>
+<p><strong>Phase 11.12 features:</strong></p>
+<ul>
+<li><strong>Confidence calibration</strong> — Certainty mapping: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50</li>
+<li><strong>Temporal reasoning</strong> — Facts tagged as <code>current</code>, <code>past</code>, or <code>future</code> with temporal boost in retrieval (current=1.2x, past=0.7x)</li>
+<li><strong>Reinforcement signals</strong> — <code>access_count</code> and <code>salience</code> on facts, incremented on retrieval, used in reranking</li>
+<li><strong>Source attribution</strong> — <code>source_turn_id</code> on extracted facts links back to the originating conversation turn</li>
+<li><strong>User correction handling</strong> — Detects "actually...", "no, I meant..." patterns; supersedes old facts via <code>[:SUPERSEDES]</code> relationship</li>
+<li><strong>Contradiction detection</strong> — Compares new facts against recent existing facts; resolution strategies: prefer_new, prefer_old, flag_review</li>
+</ul>
 <h2 id="background-processing">Background Processing<a class="headerlink" href="#background-processing" title="Permanent link">&para;</a></h2>
-<p>The system includes a consolidation worker that runs background jobs:</p>
+<p>The <code>JobRegistry</code> manages background consolidation jobs:</p>
 <ul>
 <li><strong>Consolidation</strong> (every 15 min): Extracts entities and facts from recent conversations</li>
 <li><strong>Pattern Detection</strong> (hourly): Learns successful strategies from conversation outcomes</li>
 <li><strong>Memory Decay</strong> (daily): Applies time-based decay to salience scores</li>
 <li><strong>Cleanup</strong> (daily): Archives old conversations and removes low-salience entities</li>
 </ul>
-<p>To run the worker:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>agentx_ai.kit.agent_memory.consolidation.worker
-</span></code></pre></div>
+<p>Jobs can be monitored and controlled via the <a href="../../api/endpoints/#jobs">Jobs API</a>.</p>
+<h2 id="memory-api">Memory API<a class="headerlink" href="#memory-api" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/memory/channels</code></td>
+<td>GET/POST</td>
+<td>List or create channels</td>
+</tr>
+<tr>
+<td><code>/api/memory/entities</code></td>
+<td>GET</td>
+<td>Browse entities with pagination</td>
+</tr>
+<tr>
+<td><code>/api/memory/entities/{id}/graph</code></td>
+<td>GET</td>
+<td>Entity subgraph with connected facts</td>
+</tr>
+<tr>
+<td><code>/api/memory/facts</code></td>
+<td>GET</td>
+<td>Browse facts with confidence filtering</td>
+</tr>
+<tr>
+<td><code>/api/memory/strategies</code></td>
+<td>GET</td>
+<td>Browse learned strategies</td>
+</tr>
+<tr>
+<td><code>/api/memory/stats</code></td>
+<td>GET</td>
+<td>Total and per-channel counts</td>
+</tr>
+<tr>
+<td><code>/api/memory/settings</code></td>
+<td>GET/POST</td>
+<td>Consolidation settings</td>
+</tr>
+<tr>
+<td><code>/api/memory/recall-settings</code></td>
+<td>GET/POST</td>
+<td>Recall layer settings</td>
+</tr>
+<tr>
+<td><code>/api/memory/consolidate</code></td>
+<td>POST</td>
+<td>Manually run consolidation</td>
+</tr>
+<tr>
+<td><code>/api/memory/reset</code></td>
+<td>POST</td>
+<td>Reset consolidation state</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../api/endpoints/#memory">API Endpoints: Memory</a> for full details.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <p>Configure the memory system via environment variables:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Neo4j</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nv">NEO4J_URI</span><span class="o">=</span>bolt://localhost:7687
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">NEO4J_USER</span><span class="o">=</span>neo4j
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nv">NEO4J_PASSWORD</span><span class="o">=</span>your_password
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># PostgreSQL</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="nv">POSTGRES_URI</span><span class="o">=</span>postgresql://agent:password@localhost:5432/agent_memory
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1"># Redis</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="nv">REDIS_URI</span><span class="o">=</span>redis://localhost:6379
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># Embeddings</span>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="nv">EMBEDDING_PROVIDER</span><span class="o">=</span>openai<span class="w">  </span><span class="c1"># or &quot;local&quot;</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="nv">EMBEDDING_MODEL</span><span class="o">=</span>text-embedding-3-small
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="c1"># Memory settings</span>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="nv">EPISODIC_RETENTION_DAYS</span><span class="o">=</span><span class="m">90</span>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="nv">FACT_CONFIDENCE_THRESHOLD</span><span class="o">=</span><span class="m">0</span>.7
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="nv">SALIENCE_DECAY_RATE</span><span class="o">=</span><span class="m">0</span>.95
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="nv">MAX_WORKING_MEMORY_ITEMS</span><span class="o">=</span><span class="m">50</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Neo4j</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nv">NEO4J_URI</span><span class="o">=</span>bolt://localhost:7687
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nv">NEO4J_USER</span><span class="o">=</span>neo4j
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nv">NEO4J_PASSWORD</span><span class="o">=</span>your_password
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># PostgreSQL</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="nv">POSTGRES_URI</span><span class="o">=</span>postgresql://agent:password@localhost:5432/agent_memory
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># Redis</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="nv">REDIS_URI</span><span class="o">=</span>redis://localhost:6379
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="c1"># Embeddings</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="nv">EMBEDDING_PROVIDER</span><span class="o">=</span>openai<span class="w">  </span><span class="c1"># or &quot;local&quot;</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="nv">EMBEDDING_MODEL</span><span class="o">=</span>text-embedding-3-small
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="c1"># Memory settings</span>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="nv">EPISODIC_RETENTION_DAYS</span><span class="o">=</span><span class="m">90</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="nv">FACT_CONFIDENCE_THRESHOLD</span><span class="o">=</span><span class="m">0</span>.7
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="nv">SALIENCE_DECAY_RATE</span><span class="o">=</span><span class="m">0</span>.95
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="nv">MAX_WORKING_MEMORY_ITEMS</span><span class="o">=</span><span class="m">50</span>
 </span></code></pre></div>
 <h2 id="audit-logging">Audit Logging<a class="headerlink" href="#audit-logging" title="Permanent link">&para;</a></h2>
 <p>All memory operations are logged to a partitioned PostgreSQL table for traceability:</p>
@@ -2153,46 +2563,30 @@
 - Latency per operation
 - Promotion tracking (when facts are promoted from project to <code>_global</code>)
 - Configuration snapshot (active thresholds at time of operation)</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Configure audit logging</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nv">AUDIT_LOG_LEVEL</span><span class="o">=</span>writes
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nv">AUDIT_RETENTION_DAYS</span><span class="o">=</span><span class="m">30</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Configure audit logging</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nv">AUDIT_LOG_LEVEL</span><span class="o">=</span>writes
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">AUDIT_RETENTION_DAYS</span><span class="o">=</span><span class="m">30</span>
 </span></code></pre></div>
 <h2 id="database-setup">Database Setup<a class="headerlink" href="#database-setup" title="Permanent link">&para;</a></h2>
 <p>Initialize the memory system schemas before first use:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Start database services</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>task<span class="w"> </span>db:up
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Initialize all schemas (Neo4j, PostgreSQL, Redis)</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>task<span class="w"> </span>db:init:schemas
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Or verify existing schemas</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>task<span class="w"> </span>db:verify:schemas
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Start database services</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>task<span class="w"> </span>db:up
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Initialize all schemas (Neo4j, PostgreSQL, Redis)</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>task<span class="w"> </span>db:init:schemas
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Or verify existing schemas</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>task<span class="w"> </span>db:verify:schemas
 </span></code></pre></div>
 <p>This creates:
 - <strong>Neo4j</strong>: Vector indexes, uniqueness constraints, channel indexes
 - <strong>PostgreSQL</strong>: Memory tables with channel columns, partitioned audit log
 - <strong>Redis</strong>: Verifies connectivity and documents key patterns</p>
-<h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
-<p>The memory system implementation is complete and syntax-error free. Current status:</p>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
-<li>✅ Core memory interfaces implemented</li>
-<li>✅ Episodic, semantic, procedural, and working memory modules</li>
-<li>✅ Multi-strategy retrieval engine</li>
-<li>✅ Background consolidation worker</li>
-<li>✅ Memory decay and cleanup utilities</li>
-<li>✅ Database schema initialization (<code>task db:init:schemas</code>)</li>
-<li>✅ Channel scoping support in all schemas</li>
-<li>✅ Partitioned audit log table (daily partitions)</li>
-<li>✅ Agent core integration (memory wired into chat/run flows)</li>
-<li>✅ Goal tracking integrated with TaskPlanner (add_goal, get_goal, complete_goal)</li>
-<li>✅ Consolidation uses AgentMemory interface (upsert_entity, learn_fact)</li>
-<li>✅ Entity/fact/relationship extraction (LLM-based via ExtractionService)</li>
-<li>⏳ Audit logger instrumentation</li>
-</ul>
-<h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="../../architecture/memory/">Memory System Architecture</a> - Detailed technical architecture</li>
-<li><a href="../../architecture/databases/">Database Stack</a> - Infrastructure details</li>
+<li><a href="../../architecture/memory/">Memory System Architecture</a> — Detailed technical architecture</li>
+<li><a href="../../architecture/databases/">Database Stack</a> — Infrastructure details</li>
+<li><a href="../../api/models/#memory-models">API Models: Memory</a> — Turn, Entity, Fact, Goal, Strategy schemas</li>
 </ul>
 
 

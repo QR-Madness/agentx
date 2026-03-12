@@ -15,6 +15,10 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/architecture/memory/">
       
       
+        <link rel="prev" href="../databases/">
+      
+      
+        <link rel="next" href="../../features/chat/">
       
       
         
@@ -25,7 +29,7 @@
     
     
       
-        <title>Memory System Architecture - AgentX Documentation</title>
+        <title>Memory Architecture - AgentX Documentation</title>
       
     
     
@@ -114,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Memory System Architecture
+              Memory Architecture
             
           </span>
         </div>
@@ -264,10 +268,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../overview/" class="md-tabs__link">
           
   
@@ -288,7 +294,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../features/translation/" class="md-tabs__link">
+        <a href="../../features/chat/" class="md-tabs__link">
           
   
   
@@ -317,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -579,26 +604,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -616,7 +646,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -739,6 +769,408 @@
 
               
             
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#system-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="System Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-interface-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Interface Layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-memory-subsystems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Memory Subsystems
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-retrieval-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Retrieval Layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-background-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Background Processing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-audit-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Audit Layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Channels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#database-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Database Schemas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Database Schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#neo4j-graph-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neo4j Graph Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-storing-a-conversation-turn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Storing a Conversation Turn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-memory-retrieval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Memory Retrieval
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-background-consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Background Consolidation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-decay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Decay
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Considerations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Considerations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vector-search-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vector Search Optimization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graph-traversal-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graph Traversal Limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis-memory-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis Memory Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-time-series-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL Time-Series Optimization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scaling-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaling Considerations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scaling Considerations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#horizontal-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Horizontal Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vertical-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vertical Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-retention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Retention
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Considerations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -805,14 +1237,154 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/translation/" class="md-nav__link">
+      <a href="../../features/chat/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Translation System
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
   
 
     
@@ -840,7 +1412,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -861,14 +1433,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/chat/" class="md-nav__link">
+      <a href="../../features/translation/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Chat Interface
+    Translation
   
 
     
@@ -1032,6 +1604,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/contributing/" class="md-nav__link">
         
   
@@ -1066,6 +1666,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1080,10 +1707,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1101,8 +1728,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1195,10 +1822,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1216,8 +1843,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1773,7 +2400,7 @@
 - Retrieval always queries both the active channel AND <code>_global</code>
 - Results are merged and deduplicated
 - Cross-channel matches are logged in the audit trail</p>
-<p><strong>Strategies:</strong>
+<p><strong>Base Strategies:</strong>
 1. <strong>Vector Similarity</strong>: Embed query and search each memory type
 2. <strong>Graph Traversal</strong>: Expand from matched entities to related nodes
 3. <strong>Temporal Filtering</strong>: Boost recent memories, filter by time window
@@ -1784,6 +2411,60 @@
 - Semantic (Entities): 0.2
 - Procedural: 0.15
 - Recency: 0.1</p>
+<h4 id="recalllayer-memoryrecallpy">RecallLayer (<code>memory/recall.py</code>)<a class="headerlink" href="#recalllayer-memoryrecallpy" title="Permanent link">&para;</a></h4>
+<p>Enhanced retrieval layer that wraps the base <code>MemoryRetriever</code> with additional techniques:</p>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Description</th>
+<th>When Useful</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hybrid search</td>
+<td>BM25 + vector with RRF fusion</td>
+<td>Keyword-heavy queries</td>
+</tr>
+<tr>
+<td>Entity-centric</td>
+<td>Graph traversal from matched entities</td>
+<td>"Tell me about X" queries</td>
+</tr>
+<tr>
+<td>Query expansion</td>
+<td>Rewrites questions as statements</td>
+<td>Improves vector match quality</td>
+</tr>
+<tr>
+<td>HyDE</td>
+<td>Generates hypothetical answer, searches for similar real content</td>
+<td>Abstract or vague queries</td>
+</tr>
+<tr>
+<td>Self-query</td>
+<td>LLM extracts structured filters from natural language</td>
+<td>"What did I say last week about..."</td>
+</tr>
+</tbody>
+</table>
+<p>Each technique is independently configurable via recall settings. <code>RecallMetrics</code> tracks per-technique latency and result counts.</p>
+<h4 id="extraction-pipeline-extractionservicepy">Extraction Pipeline (<code>extraction/service.py</code>)<a class="headerlink" href="#extraction-pipeline-extractionservicepy" title="Permanent link">&para;</a></h4>
+<p>LLM-based extraction of entities, facts, and relationships from conversation text:</p>
+<ul>
+<li><strong>Combined extraction</strong> — Single LLM call extracts entities + facts + relationships (~75% fewer API calls vs. separate extraction)</li>
+<li><strong>Confidence calibration</strong> — Maps LLM certainty labels to numeric scores: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50</li>
+<li><strong>Temporal context</strong> — Extracts temporal tags (<code>current</code>, <code>past</code>, <code>future</code>) per fact</li>
+<li><strong>Contradiction detection</strong> — Compares new facts against recent existing facts; resolution via prefer_new, prefer_old, or flag_review</li>
+<li><strong>User correction handling</strong> — Detects correction patterns ("actually...", "no, I meant..."); supersedes old facts via <code>[:SUPERSEDES]</code> relationship</li>
+<li>Uses <code>claude-3-5-haiku-latest</code> by default (configurable via <code>extraction_model</code> setting)</li>
+</ul>
+<h4 id="reinforcement-signals">Reinforcement Signals<a class="headerlink" href="#reinforcement-signals" title="Permanent link">&para;</a></h4>
+<p>Facts and entities gain reinforcement through usage:
+- <code>access_count</code> increments on each retrieval
+- <code>last_accessed</code> updates on each retrieval
+- <code>salience</code> is used as a boost factor in reranking (temporal boost: current=1.2x, past=0.7x)</p>
 <h3 id="4-background-processing">4. Background Processing<a class="headerlink" href="#4-background-processing" title="Permanent link">&para;</a></h3>
 <p>Consolidation worker runs scheduled jobs:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ConsolidationWorker</span><span class="p">:</span>

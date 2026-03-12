@@ -15,10 +15,10 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/features/translation/">
       
       
-        <link rel="prev" href="../../architecture/databases/">
+        <link rel="prev" href="../memory/">
       
       
-        <link rel="next" href="../memory/">
+        <link rel="next" href="../../development/setup/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Translation System - AgentX Documentation</title>
+        <title>Translation - AgentX Documentation</title>
       
     
     
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Translation System
+              Translation
             
           </span>
         </div>
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../chat/" class="md-tabs__link">
           
   
   
@@ -323,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -745,6 +764,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -813,6 +860,202 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../chat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -832,7 +1075,7 @@
   <span class="md-ellipsis">
     
   
-    Translation System
+    Translation
   
 
     
@@ -850,7 +1093,7 @@
   <span class="md-ellipsis">
     
   
-    Translation System
+    Translation
   
 
     
@@ -876,10 +1119,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Architecture
       
     </span>
   </a>
@@ -887,10 +1130,88 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#models" class="md-nav__link">
+  <a href="#two-level-design" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Models
+        Two-Level Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two-Level Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#level-i-language-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level I: Language Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-ii-translation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level II: Translation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#translationkit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TranslationKit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#languagelexicon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LanguageLexicon
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#language-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language Codes
       
     </span>
   </a>
@@ -906,68 +1227,62 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="API Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#detect-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detect Language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translate-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translate Text
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
 </li>
       
     </ul>
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../memory/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Memory System
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../chat/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Chat Interface
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -1123,6 +1438,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/contributing/" class="md-nav__link">
         
   
@@ -1157,6 +1500,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1171,10 +1541,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1192,8 +1562,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1286,10 +1656,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1307,8 +1677,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1408,13 +1778,141 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Architecture
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-level-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two-Level Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two-Level Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#level-i-language-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level I: Language Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#level-ii-translation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Level II: Translation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#translationkit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TranslationKit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#languagelexicon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LanguageLexicon
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#language-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language Codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#detect-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detect Language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translate-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translate Text
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1430,10 +1928,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#api-usage" class="md-nav__link">
+  <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
-        API Usage
+        Related
       
     </span>
   </a>
@@ -1461,24 +1959,166 @@
 
 
 <h1 id="translation-system">Translation System<a class="headerlink" href="#translation-system" title="Permanent link">&para;</a></h1>
-<p>Multi-level language detection and translation system.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Two-level architecture:</p>
-<ul>
-<li><strong>Level I</strong>: Fast detection (~20 languages)</li>
-<li><strong>Level II</strong>: Comprehensive translation (200+ languages)</li>
-</ul>
-<h2 id="models">Models<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Detection: <code>eleldar/language-detection</code></li>
-<li>Translation: <code>facebook/m2m100_418M</code> or <code>facebook/nllb-200-distilled-600M</code></li>
-</ul>
+<p>Two-level language detection and translation system supporting 200+ languages via NLLB-200.</p>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph LR
+    IN[Input Text] --&gt; L1[Level I Detection&lt;br/&gt;~20 languages, fast]
+    L1 --&gt; |ISO 639-1 code| LEX[LanguageLexicon&lt;br/&gt;Level I→II conversion]
+    LEX --&gt; |NLLB-200 code| L2[Level II Translation&lt;br/&gt;200+ languages]
+    L2 --&gt; OUT[Translated Text]</code></pre>
+<h2 id="two-level-design">Two-Level Design<a class="headerlink" href="#two-level-design" title="Permanent link">&para;</a></h2>
+<h3 id="level-i-language-detection">Level I: Language Detection<a class="headerlink" href="#level-i-language-detection" title="Permanent link">&para;</a></h3>
+<p>Fast detection across ~20 common languages using <code>eleldar/language-detection</code>.</p>
+<p>Returns an ISO 639-1 code (e.g., <code>fr</code>, <code>de</code>, <code>ja</code>) with a confidence score.</p>
+<p><strong>Supported languages:</strong> Arabic, Bulgarian, German, Greek, English, Spanish, French, Hindi, Italian, Japanese, Dutch, Polish, Portuguese, Russian, Swahili, Thai, Turkish, Urdu, Vietnamese, Chinese.</p>
+<h3 id="level-ii-translation">Level II: Translation<a class="headerlink" href="#level-ii-translation" title="Permanent link">&para;</a></h3>
+<p>Comprehensive translation across 200+ languages using <code>facebook/nllb-200-distilled-600M</code>.</p>
+<p>Uses NLLB-200 language codes in <code>{language}_{script}</code> format (e.g., <code>fra_Latn</code>, <code>deu_Latn</code>, <code>jpn_Jpan</code>).</p>
+<h2 id="key-classes">Key Classes<a class="headerlink" href="#key-classes" title="Permanent link">&para;</a></h2>
+<h3 id="translationkit">TranslationKit<a class="headerlink" href="#translationkit" title="Permanent link">&para;</a></h3>
+<p>Manages model loading and provides detection/translation methods.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>detect_language_level_i(text)</code></td>
+<td>Detect language → <code>{language, confidence}</code></td>
+</tr>
+<tr>
+<td><code>translate_text(text, target_language)</code></td>
+<td>Translate to target NLLB-200 code</td>
+</tr>
+</tbody>
+</table>
+<p>Models load eagerly at initialization (~600 MB download on first run from HuggingFace). The <code>TranslationKit</code> is wrapped in a <code>@lazy_singleton</code> so models only load on the first translation request, not at server startup.</p>
+<h3 id="languagelexicon">LanguageLexicon<a class="headerlink" href="#languagelexicon" title="Permanent link">&para;</a></h3>
+<p>Bridges ISO 639 Level I detection codes to Level II translation codes.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>convert_level_i_detection_to_level_ii(code)</code></td>
+<td>Convert <code>"fr"</code> → <code>"fra_Latn"</code></td>
+</tr>
+</tbody>
+</table>
+<p>Uses the <code>iso639</code> library for terminological code lookup, then maps to the NLLB-200 code list.</p>
+<h2 id="language-codes">Language Codes<a class="headerlink" href="#language-codes" title="Permanent link">&para;</a></h2>
+<p>Translation uses NLLB-200 codes in <code>{iso639-3}_{script}</code> format:</p>
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>NLLB-200 Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>English</td>
+<td><code>eng_Latn</code></td>
+</tr>
+<tr>
+<td>French</td>
+<td><code>fra_Latn</code></td>
+</tr>
+<tr>
+<td>German</td>
+<td><code>deu_Latn</code></td>
+</tr>
+<tr>
+<td>Spanish</td>
+<td><code>spa_Latn</code></td>
+</tr>
+<tr>
+<td>Chinese (Simplified)</td>
+<td><code>zho_Hans</code></td>
+</tr>
+<tr>
+<td>Japanese</td>
+<td><code>jpn_Jpan</code></td>
+</tr>
+<tr>
+<td>Arabic</td>
+<td><code>arb_Arab</code></td>
+</tr>
+<tr>
+<td>Hindi</td>
+<td><code>hin_Deva</code></td>
+</tr>
+<tr>
+<td>Russian</td>
+<td><code>rus_Cyrl</code></td>
+</tr>
+<tr>
+<td>Korean</td>
+<td><code>kor_Hang</code></td>
+</tr>
+</tbody>
+</table>
+<p>The full list of 200+ supported codes is in <code>kit/translation.py</code> (<code>nlb200_list</code>).</p>
 <h2 id="api-usage">API Usage<a class="headerlink" href="#api-usage" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/translate<span class="w"> </span><span class="se">\</span>
+<h3 id="detect-language">Detect Language<a class="headerlink" href="#detect-language" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/tools/language-detect-20<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;text&quot;: &quot;Hello&quot;, &quot;target_language&quot;: &quot;fr&quot;}&#39;</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;text&quot;: &quot;Bonjour, comment allez-vous?&quot;}&#39;</span>
 </span></code></pre></div>
-<p>See <a href="../../api/endpoints/">API Endpoints</a> for details.</p>
+<p><strong>Response:</strong>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;original&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bonjour, comment allez-vous?&quot;</span><span class="p">,</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;detected_language&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fr&quot;</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;confidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">98.5</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">}</span>
+</span></code></pre></div></p>
+<h3 id="translate-text">Translate Text<a class="headerlink" href="#translate-text" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/tools/translate<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;text&quot;: &quot;Hello, world!&quot;, &quot;targetLanguage&quot;: &quot;fra_Latn&quot;}&#39;</span>
+</span></code></pre></div>
+<p><strong>Response:</strong>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;original&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello, world!&quot;</span><span class="p">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;translatedText&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bonjour, monde!&quot;</span><span class="p">,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;targetLanguage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fra_Latn&quot;</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">}</span>
+</span></code></pre></div></p>
+<h2 id="models">Models<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Model</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Language detection</td>
+<td><code>eleldar/language-detection</code></td>
+<td>~50 MB</td>
+</tr>
+<tr>
+<td>Translation</td>
+<td><code>facebook/nllb-200-distilled-600M</code></td>
+<td>~600 MB</td>
+</tr>
+</tbody>
+</table>
+<p>Models are downloaded from HuggingFace on first use. Pre-download with <code>task models:download</code>.</p>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../api/endpoints/#translation">API Endpoints: Translation</a> — Full endpoint reference</li>
+<li>Source: <code>api/agentx_ai/kit/translation.py</code></li>
+</ul>
 
 
 

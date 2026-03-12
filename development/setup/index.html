@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/development/setup/">
       
       
-        <link rel="prev" href="../../features/chat/">
+        <link rel="prev" href="../../features/translation/">
       
       
         <link rel="next" href="../tasks/">
@@ -292,7 +292,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../features/translation/" class="md-tabs__link">
+        <a href="../../features/chat/" class="md-tabs__link">
           
   
   
@@ -323,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -745,6 +764,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -811,14 +858,154 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/translation/" class="md-nav__link">
+      <a href="../../features/chat/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Translation System
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
   
 
     
@@ -846,7 +1033,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -867,14 +1054,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/chat/" class="md-nav__link">
+      <a href="../../features/translation/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Chat Interface
+    Translation
   
 
     
@@ -1030,10 +1217,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#initial-setup" class="md-nav__link">
+  <a href="#first-time-setup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial Setup
+        First-Time Setup
       
     </span>
   </a>
@@ -1041,10 +1228,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#development-workflow" class="md-nav__link">
+  <a href="#docker-services" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development Workflow
+        Docker Services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-dev-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Dev Stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
       
     </span>
   </a>
@@ -1123,6 +1365,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../contributing/" class="md-nav__link">
         
   
@@ -1157,6 +1427,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1171,10 +1468,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1192,8 +1489,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1286,10 +1583,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1307,8 +1604,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1419,10 +1716,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#initial-setup" class="md-nav__link">
+  <a href="#first-time-setup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Initial Setup
+        First-Time Setup
       
     </span>
   </a>
@@ -1430,10 +1727,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#development-workflow" class="md-nav__link">
+  <a href="#docker-services" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development Workflow
+        Docker Services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-dev-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Dev Stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
       
     </span>
   </a>
@@ -1463,38 +1815,200 @@
 <h1 id="development-setup">Development Setup<a class="headerlink" href="#development-setup" title="Permanent link">&para;</a></h1>
 <p>Set up your development environment for contributing to AgentX.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
-<p>Install required tools:</p>
-<ul>
-<li>Python 3.10+ with uv</li>
-<li>Node.js 18+ with bun</li>
-<li>Docker &amp; Docker Compose</li>
-<li>Task runner</li>
-<li>Git</li>
-</ul>
-<p>See <a href="../../getting-started/installation/">Installation</a> for details.</p>
-<h2 id="initial-setup">Initial Setup<a class="headerlink" href="#initial-setup" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Clone repository</span>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Python</strong></td>
+<td>3.10+</td>
+<td>Backend runtime</td>
+</tr>
+<tr>
+<td><strong>uv</strong></td>
+<td>latest</td>
+<td>Python package manager (<a href="https://docs.astral.sh/uv/getting-started/installation/">install</a>)</td>
+</tr>
+<tr>
+<td><strong>Node.js</strong></td>
+<td>18+</td>
+<td>Client tooling</td>
+</tr>
+<tr>
+<td><strong>bun</strong></td>
+<td>latest</td>
+<td>Client package manager (<a href="https://bun.sh/docs/installation">install</a>)</td>
+</tr>
+<tr>
+<td><strong>Docker</strong></td>
+<td>24+</td>
+<td>Database services (Neo4j, PostgreSQL, Redis)</td>
+</tr>
+<tr>
+<td><strong>Docker Compose</strong></td>
+<td>v2+</td>
+<td>Multi-container orchestration</td>
+</tr>
+<tr>
+<td><strong>Task</strong></td>
+<td>3+</td>
+<td>Task runner (<a href="https://taskfile.dev/installation/">install</a>)</td>
+</tr>
+<tr>
+<td><strong>Git</strong></td>
+<td>2.30+</td>
+<td>Version control</td>
+</tr>
+</tbody>
+</table>
+<p>Optional for Tauri desktop builds:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Rust</strong> (stable)</td>
+<td>Tauri native compilation</td>
+</tr>
+<tr>
+<td><strong>System libs</strong></td>
+<td><code>libwebkit2gtk-4.1-dev</code>, <code>libssl-dev</code>, etc. — see <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="first-time-setup">First-Time Setup<a class="headerlink" href="#first-time-setup" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1. Clone the repository</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/yourusername/agentx-source.git
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>agentx-source
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Install dependencies</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>task<span class="w"> </span>install
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 2. Run the automated setup (installs deps, creates data dirs, verifies env)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>task<span class="w"> </span>setup
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># Initialize databases</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>task<span class="w"> </span>db:init
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Start development environment</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>task<span class="w"> </span>dev
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># 3. Copy and configure environment variables</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Edit .env — at minimum set NEO4J_PASSWORD and POSTGRES_PASSWORD</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># 4. Start database services</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>task<span class="w"> </span>db:up
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1"># 5. Initialize database schemas (Neo4j indexes, PostgreSQL tables)</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>task<span class="w"> </span>db:init:schemas
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># 6. Start the full development stack</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>task<span class="w"> </span>dev
 </span></code></pre></div>
-<h2 id="development-workflow">Development Workflow<a class="headerlink" href="#development-workflow" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Create feature branch</li>
-<li>Make changes with hot reload</li>
-<li>Run tests</li>
-<li>Commit and push</li>
-<li>Create pull request</li>
-</ol>
-<p>See <a href="../contributing/">Contributing Guide</a> for detailed workflow.</p>
+<p><code>task setup</code> runs <code>task install</code> (uv sync + bun install), <code>task db:init</code> (creates <code>data/</code> directories), and <code>task check</code> (verifies prerequisites).</p>
+<h2 id="docker-services">Docker Services<a class="headerlink" href="#docker-services" title="Permanent link">&para;</a></h2>
+<p><code>task db:up</code> starts three containers defined in <code>docker-compose.yml</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Container</th>
+<th>Port</th>
+<th>Data Directory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Neo4j</td>
+<td><code>agent-neo4j</code></td>
+<td>7474 (HTTP), 7687 (Bolt)</td>
+<td><code>data/neo4j/</code></td>
+</tr>
+<tr>
+<td>PostgreSQL + pgvector</td>
+<td><code>agent-postgres</code></td>
+<td>5432</td>
+<td><code>data/postgres/</code></td>
+</tr>
+<tr>
+<td>Redis</td>
+<td><code>agent-redis</code></td>
+<td>6379</td>
+<td><code>data/redis/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Data is <strong>bind-mounted</strong> to <code>./data/</code> (not Docker volumes). Run <code>task db:init</code> to create the directory structure if it doesn't exist.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>task<span class="w"> </span>db:status<span class="w">          </span><span class="c1"># Check container health</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>task<span class="w"> </span>db:down<span class="w">            </span><span class="c1"># Stop all services</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>task<span class="w"> </span>db:shell:postgres<span class="w">  </span><span class="c1"># psql shell</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>task<span class="w"> </span>db:shell:redis<span class="w">     </span><span class="c1"># redis-cli</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>task<span class="w"> </span>db:shell:neo4j<span class="w">     </span><span class="c1"># cypher-shell</span>
+</span></code></pre></div>
+<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>Copy <code>.env.example</code> to <code>.env</code>. See <a href="../../getting-started/configuration/">Configuration</a> for the full reference.</p>
+<p>Key variables for development:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Database passwords — must match docker-compose.yml</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">NEO4J_PASSWORD</span><span class="o">=</span>changeme
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">POSTGRES_PASSWORD</span><span class="o">=</span>changeme
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Default model (used by agent chat)</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nv">DEFAULT_MODEL</span><span class="o">=</span>llama3.2
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># Provider API keys (optional — only needed for cloud models)</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># Embedding provider: &quot;local&quot; (sentence-transformers) or &quot;openai&quot;</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="nv">EMBEDDING_PROVIDER</span><span class="o">=</span><span class="nb">local</span>
+</span></code></pre></div>
+<h2 id="running-the-dev-stack">Running the Dev Stack<a class="headerlink" href="#running-the-dev-stack" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Full stack: Docker + API + Tauri client (hot reload)</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>task<span class="w"> </span>dev
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># API only (assumes Docker is already running)</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>task<span class="w"> </span>dev:api
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Client only in browser mode (no Tauri, port 1420)</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>task<span class="w"> </span>dev:web
+</span></code></pre></div>
+<p><code>task dev</code> uses <code>concurrently</code> to run Docker services, the Django API (port 12319), and the Tauri client in parallel. All three support hot reload.</p>
+<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
+<p>After setup, verify everything is working:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># 1. Check prerequisites are installed</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>task<span class="w"> </span>check
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># 2. Verify database schemas exist</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>task<span class="w"> </span>db:verify:schemas
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># 3. Run fast tests (no model loading)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>task<span class="w"> </span>test:quick
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1"># 4. Hit the health endpoint</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>curl<span class="w"> </span>http://localhost:12319/api/health?include_memory<span class="o">=</span><span class="nb">true</span>
+</span></code></pre></div>
+<p>A healthy response includes <code>"status": "ok"</code> with database connection statuses.</p>
+<h2 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Permanent link">&para;</a></h2>
+<p><strong>Docker containers won't start</strong>
+Check if ports 5432, 6379, 7474, or 7687 are already in use. Stop conflicting services or adjust ports in <code>docker-compose.yml</code>.</p>
+<p><strong><code>task: command not found</code></strong>
+Install Task: <code>sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin</code></p>
+<p><strong><code>uv: command not found</code></strong>
+Install uv: <code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></p>
+<p><strong>Schema initialization fails</strong>
+Ensure Docker containers are healthy (<code>task db:status</code>) before running <code>task db:init:schemas</code>. Neo4j takes 10-20 seconds to become ready after container start.</p>
+<p><strong>Translation tests are slow on first run</strong>
+The <code>TranslationKitTest</code> suite downloads NLLB-200 (~600MB) on first execution. Use <code>task test:quick</code> to skip model-dependent tests during development.</p>
+<p><strong>Embedding dimension mismatch errors</strong>
+If you switch <code>EMBEDDING_PROVIDER</code> between <code>local</code> and <code>openai</code>, the vector dimensions differ. Reset the memory tables with <code>task db:init:schemas</code> or use the memory reset API endpoint.</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../contributing/">Contributing Guide</a> — Branch naming, commit style, PR checklist</li>
+<li><a href="../tasks/">Task Commands</a> — Full list of available <code>task</code> commands</li>
+<li><a href="../../getting-started/configuration/">Configuration</a> — All environment variables and config files</li>
+<li><a href="../../architecture/overview/">Architecture Overview</a> — System design and module layout</li>
+</ul>
 
 
 

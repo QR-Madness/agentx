@@ -15,10 +15,10 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/development/contributing/">
       
       
-        <link rel="prev" href="../testing/">
+        <link rel="prev" href="../memory-setup/">
       
       
-        <link rel="next" href="../../api/endpoints/">
+        <link rel="next" href="../../roadmap/">
       
       
         
@@ -292,7 +292,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../features/translation/" class="md-tabs__link">
+        <a href="../../features/chat/" class="md-tabs__link">
           
   
   
@@ -323,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -745,6 +764,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -811,14 +858,154 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/translation/" class="md-nav__link">
+      <a href="../../features/chat/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Translation System
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../features/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
   
 
     
@@ -846,7 +1033,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -867,14 +1054,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/chat/" class="md-nav__link">
+      <a href="../../features/translation/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Chat Interface
+    Translation
   
 
     
@@ -1040,6 +1227,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1103,43 +1318,199 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#development-workflow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Started
+        Development Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branch-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branch Naming
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#development-guidelines" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#commit-style" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development Guidelines
+        Commit Style
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#code-review-process" class="md-nav__link">
+  <a href="#code-style" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Code Review Process
+        Code Style
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Style">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#questions" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#typescript" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Questions?
+        TypeScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Guidelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lazy-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lazy Initialization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncasync-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync/Async Boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-reasoning-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Reasoning Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-memory-subsystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Memory Subsystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Checklist
       
     </span>
   </a>
@@ -1168,6 +1539,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1182,10 +1580,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1203,8 +1601,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1297,10 +1695,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1318,8 +1716,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1419,43 +1817,199 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#development-workflow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Started
+        Development Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branch-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branch Naming
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#development-guidelines" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#commit-style" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Development Guidelines
+        Commit Style
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#code-review-process" class="md-nav__link">
+  <a href="#code-style" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Code Review Process
+        Code Style
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Style">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#questions" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#typescript" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Questions?
+        TypeScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Guidelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lazy-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lazy Initialization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncasync-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync/Async Boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-reasoning-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Reasoning Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-memory-subsystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a Memory Subsystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Checklist
       
     </span>
   </a>
@@ -1483,27 +2037,115 @@
 
 
 <h1 id="contributing">Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h1>
-<p>Thank you for contributing to AgentX!</p>
-<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<h2 id="development-workflow">Development Workflow<a class="headerlink" href="#development-workflow" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Fork the repository</li>
-<li>Clone your fork</li>
-<li>Create a feature branch</li>
-<li>Make your changes</li>
-<li>Run tests</li>
+<li>Fork and clone the repository</li>
+<li>Create a feature branch from <code>master</code>: <code>git checkout -b feat/my-feature</code></li>
+<li>Run <code>task setup</code> (first time) or <code>task install</code> (subsequent)</li>
+<li>Make changes — <code>task dev</code> for hot reload</li>
+<li>Run <code>task test:quick</code> (fast) or <code>task test</code> (full)</li>
+<li>Run <code>task lint</code> and <code>task check:types</code></li>
+<li>Commit with a descriptive message</li>
 <li>Submit a pull request</li>
 </ol>
-<h2 id="development-guidelines">Development Guidelines<a class="headerlink" href="#development-guidelines" title="Permanent link">&para;</a></h2>
+<h3 id="branch-naming">Branch Naming<a class="headerlink" href="#branch-naming" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>feat/</code></td>
+<td>New features</td>
+</tr>
+<tr>
+<td><code>fix/</code></td>
+<td>Bug fixes</td>
+</tr>
+<tr>
+<td><code>refactor/</code></td>
+<td>Code restructuring</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>Documentation changes</td>
+</tr>
+<tr>
+<td><code>test/</code></td>
+<td>Test additions/fixes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="commit-style">Commit Style<a class="headerlink" href="#commit-style" title="Permanent link">&para;</a></h3>
+<p>Use imperative mood: "Add memory recall layer" not "Added memory recall layer".</p>
+<p>Prefix with scope when relevant: <code>fix(mcp): resolve env var expansion in headers</code>.</p>
+<h2 id="code-style">Code Style<a class="headerlink" href="#code-style" title="Permanent link">&para;</a></h2>
+<h3 id="python">Python<a class="headerlink" href="#python" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Follow existing code style</li>
-<li>Write tests for new features</li>
-<li>Update documentation</li>
-<li>Keep commits atomic and meaningful</li>
+<li><strong>Linter/formatter</strong>: ruff (<code>task lint:python</code>, <code>task format:python</code>)</li>
+<li><strong>Type checker</strong>: pyright (<code>task check:types:python</code>)</li>
+<li>Follow existing patterns — look at neighboring code before writing new code</li>
+<li>Use type hints on all public function signatures</li>
+<li>Docstrings on public classes and non-obvious functions</li>
 </ul>
-<h2 id="code-review-process">Code Review Process<a class="headerlink" href="#code-review-process" title="Permanent link">&para;</a></h2>
-<p>All changes require code review before merging.</p>
-<h2 id="questions">Questions?<a class="headerlink" href="#questions" title="Permanent link">&para;</a></h2>
-<p>Open an issue or discussion on GitHub.</p>
+<h3 id="typescript">TypeScript<a class="headerlink" href="#typescript" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Type check: <code>task check:types:client</code></li>
+<li>Build check: <code>task check:build:client</code></li>
+</ul>
+<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
+<h3 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>task<span class="w"> </span>test:quick<span class="w">     </span><span class="c1"># Fast — skips model loading (HealthCheck, MCP tests)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>task<span class="w"> </span><span class="nb">test</span><span class="w">           </span><span class="c1"># Full — includes TranslationKit tests (slow first run)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Specific test class or method:</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>api/manage.py<span class="w"> </span><span class="nb">test</span><span class="w"> </span>agentx_ai.tests.MCPClientTest<span class="w"> </span>-v2
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>api/manage.py<span class="w"> </span><span class="nb">test</span><span class="w"> </span>agentx_ai.tests_memory.MemoryIntegrationTest<span class="w"> </span>-v2
+</span></code></pre></div>
+<h3 id="writing-tests">Writing Tests<a class="headerlink" href="#writing-tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add tests to <code>tests.py</code> (core) or <code>tests_memory.py</code> (memory system)</li>
+<li>Use <code>@unittest.skipUnless</code> for tests that require Docker or API keys</li>
+<li>Tests should be independent — no shared mutable state between test methods</li>
+<li>Memory tests: skip gracefully when databases are unavailable</li>
+</ul>
+<h2 id="architecture-guidelines">Architecture Guidelines<a class="headerlink" href="#architecture-guidelines" title="Permanent link">&para;</a></h2>
+<h3 id="lazy-initialization">Lazy Initialization<a class="headerlink" href="#lazy-initialization" title="Permanent link">&para;</a></h3>
+<p>Heavy subsystems use <code>@lazy_singleton</code> (see <code>utils/decorators.py</code>). Never import heavy modules at file scope — use deferred imports inside functions.</p>
+<h3 id="syncasync-boundary">Sync/Async Boundary<a class="headerlink" href="#syncasync-boundary" title="Permanent link">&para;</a></h3>
+<p>Django is synchronous. MCP and provider streaming use asyncio. Bridge with <code>call_tool_sync()</code> or <code>asyncio.run_coroutine_threadsafe()</code>. Only <code>agent_chat_stream</code> and <code>providers_health</code> are async views.</p>
+<h3 id="adding-a-new-provider">Adding a New Provider<a class="headerlink" href="#adding-a-new-provider" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create <code>providers/my_provider.py</code> implementing <code>ModelProvider</code> ABC</li>
+<li>Add models to <code>providers/models.yaml</code> with <code>provider: my_provider</code></li>
+<li>Register in <code>providers/registry.py</code> loader</li>
+<li>Add env vars to <code>.env.example</code></li>
+</ol>
+<h3 id="adding-a-reasoning-strategy">Adding a Reasoning Strategy<a class="headerlink" href="#adding-a-reasoning-strategy" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create <code>reasoning/my_strategy.py</code> implementing <code>ReasoningStrategy</code> ABC</li>
+<li>Add to orchestrator's strategy map in <code>orchestrator.py</code></li>
+<li>Add task type classification keywords if needed</li>
+</ol>
+<h3 id="adding-a-memory-subsystem">Adding a Memory Subsystem<a class="headerlink" href="#adding-a-memory-subsystem" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create module under <code>kit/agent_memory/memory/</code></li>
+<li>Wire into <code>AgentMemory</code> interface (<code>memory/interface.py</code>)</li>
+<li>Add database schema if needed (<code>management/commands/init_memory_schemas.py</code>)</li>
+<li>Add tests in <code>tests_memory.py</code></li>
+</ol>
+<h2 id="pr-checklist">PR Checklist<a class="headerlink" href="#pr-checklist" title="Permanent link">&para;</a></h2>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Tests pass (<code>task test:quick</code> at minimum)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Linter passes (<code>task lint</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Type checker passes (<code>task check:types</code>)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> New public APIs have docstrings</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Documentation updated if user-facing behavior changed</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> No hardcoded API keys or secrets</li>
+</ul>
 
 
 

@@ -15,10 +15,10 @@
         <link rel="canonical" href="https://qr-madness.github.io/agentx/features/chat/">
       
       
-        <link rel="prev" href="../memory/">
+        <link rel="prev" href="../../architecture/memory/">
       
       
-        <link rel="next" href="../../development/setup/">
+        <link rel="next" href="../reasoning/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Chat Interface - AgentX Documentation</title>
+        <title>Chat - AgentX Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#chat-interface" class="md-skip">
+        <a href="#chat" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Chat Interface
+              Chat
             
           </span>
         </div>
@@ -294,7 +294,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../translation/" class="md-tabs__link">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -323,6 +323,25 @@
         </a>
       </li>
     
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
   
 
       
@@ -745,6 +764,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -813,17 +860,342 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../translation/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
   <span class="md-ellipsis">
     
   
-    Translation System
+    Chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#chat-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chat Flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two Modes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two Modes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simple-mode-default-for-chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simple Mode (default for chat)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#full-agent-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Agent Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prompt-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt Composition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-use-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool-Use Loop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Parsing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reasoning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
   
 
     
@@ -851,7 +1223,7 @@
   <span class="md-ellipsis">
     
   
-    Memory System
+    Memory
   
 
     
@@ -869,44 +1241,17 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Chat Interface
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../translation/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Chat Interface
+    Translation
   
 
     
@@ -915,148 +1260,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#starting-a-conversation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Starting a Conversation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#session-continuity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Session Continuity
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Features
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Features">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#context-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Context Management
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reasoning-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reasoning Strategies
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tool-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tool Integration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#client-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Client Integration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#api-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        API Reference
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1212,6 +1415,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/memory-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/contributing/" class="md-nav__link">
         
   
@@ -1246,6 +1477,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1260,10 +1518,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -1281,8 +1539,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1375,10 +1633,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1396,8 +1654,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1497,10 +1755,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#chat-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Chat Flow
       
     </span>
   </a>
@@ -1508,22 +1766,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
+  <a href="#two-modes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Usage
+        Two Modes
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Usage">
+    <nav class="md-nav" aria-label="Two Modes">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#starting-a-conversation" class="md-nav__link">
+  <a href="#simple-mode-default-for-chat" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Starting a Conversation
+        Simple Mode (default for chat)
       
     </span>
   </a>
@@ -1531,10 +1789,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#session-continuity" class="md-nav__link">
+  <a href="#full-agent-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Session Continuity
+        Full Agent Mode
       
     </span>
   </a>
@@ -1547,60 +1805,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#streaming" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Features">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#context-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Context Management
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reasoning-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reasoning Strategies
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tool-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tool Integration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#client-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Client Integration
+        Streaming
       
     </span>
   </a>
@@ -1608,10 +1816,76 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#api-reference" class="md-nav__link">
+  <a href="#session-management" class="md-nav__link">
     <span class="md-ellipsis">
       
-        API Reference
+        Session Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prompt-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt Composition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-use-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool-Use Loop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Parsing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
       
     </span>
   </a>
@@ -1638,86 +1912,195 @@
   
 
 
-<h1 id="chat-interface">Chat Interface<a class="headerlink" href="#chat-interface" title="Permanent link">&para;</a></h1>
-<p>AI-powered conversational interface with session management and memory integration.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Chat interface provides multi-turn conversations with the AgentX agent, featuring:</p>
-<ul>
-<li><strong>Session Management</strong>: Persistent conversation sessions</li>
-<li><strong>Context Awareness</strong>: Sliding window context with summarization</li>
-<li><strong>Memory Integration</strong>: Access to episodic and semantic memory</li>
-<li><strong>Reasoning Traces</strong>: Visibility into agent's thought process</li>
-</ul>
-<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
-<h3 id="starting-a-conversation">Starting a Conversation<a class="headerlink" href="#starting-a-conversation" title="Permanent link">&para;</a></h3>
-<p>Send a message to begin or continue a chat session:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/agent/chat<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;message&quot;: &quot;Hello, what can you help me with?&quot;}&#39;</span>
-</span></code></pre></div>
-<h3 id="session-continuity">Session Continuity<a class="headerlink" href="#session-continuity" title="Permanent link">&para;</a></h3>
-<p>Include a <code>session_id</code> to continue an existing conversation:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/agent/chat<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="s1">    &quot;message&quot;: &quot;Tell me more about that&quot;,</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="s1">    &quot;session_id&quot;: &quot;550e8400-e29b-41d4-a716-446655440000&quot;</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="s1">  }&#39;</span>
-</span></code></pre></div>
-<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
-<h3 id="context-management">Context Management<a class="headerlink" href="#context-management" title="Permanent link">&para;</a></h3>
-<p>The agent automatically manages conversation context:</p>
-<ul>
-<li><strong>Token Estimation</strong>: Tracks context window usage</li>
-<li><strong>Sliding Window</strong>: Keeps recent messages in full detail</li>
-<li><strong>Summarization</strong>: Compresses older context when needed</li>
-</ul>
-<h3 id="reasoning-strategies">Reasoning Strategies<a class="headerlink" href="#reasoning-strategies" title="Permanent link">&para;</a></h3>
-<p>Chat interactions can use various reasoning patterns:</p>
+<h1 id="chat">Chat<a class="headerlink" href="#chat" title="Permanent link">&para;</a></h1>
+<p>The chat system provides multi-turn conversations with session management, memory integration, tool use, and streaming support.</p>
+<h2 id="chat-flow">Chat Flow<a class="headerlink" href="#chat-flow" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>sequenceDiagram
+    participant C as Client
+    participant A as Agent
+    participant PM as PromptManager
+    participant M as AgentMemory
+    participant P as Provider
+    participant T as ToolExecutor
+
+    C-&gt;&gt;A: chat(message, session_id, profile_id)
+    A-&gt;&gt;A: SessionManager.get_or_create(session_id)
+    A-&gt;&gt;M: store_turn(user_turn)
+    A-&gt;&gt;M: remember(message) → MemoryBundle
+
+    A-&gt;&gt;PM: get_system_prompt(profile_id)
+    A-&gt;&gt;A: Build messages: system + context + memory + user
+    A-&gt;&gt;A: _get_tools_for_provider() → MCP tools
+
+    loop Tool-use loop (max 10 rounds)
+        A-&gt;&gt;P: complete(messages, tools)
+        alt Model requests tool calls
+            A-&gt;&gt;T: Execute each tool call
+            T--&gt;&gt;A: Tool results
+            A-&gt;&gt;A: Append results to messages
+        else No tool calls
+            Note over A: Break loop
+        end
+    end
+
+    A-&gt;&gt;A: parse_output() → extract &lt;think&gt; tags
+    A-&gt;&gt;A: Session.add_message(assistant)
+    A-&gt;&gt;M: store_turn(assistant_turn)
+    A--&gt;&gt;C: AgentResult</code></pre>
+<h2 id="two-modes">Two Modes<a class="headerlink" href="#two-modes" title="Permanent link">&para;</a></h2>
+<h3 id="simple-mode-default-for-chat">Simple Mode (default for chat)<a class="headerlink" href="#simple-mode-default-for-chat" title="Permanent link">&para;</a></h3>
+<p>Direct provider completion without planning or reasoning. Used by <code>POST /api/agent/chat</code> and <code>POST /api/agent/chat/stream</code>.</p>
+<p>Flow: prompt composition → provider completion → tool-use loop → output parsing → memory storage.</p>
+<h3 id="full-agent-mode">Full Agent Mode<a class="headerlink" href="#full-agent-mode" title="Permanent link">&para;</a></h3>
+<p>Full pipeline with task planning and reasoning. Used by <code>POST /api/agent/run</code>.</p>
+<p>Flow: task decomposition → reasoning strategy selection → execution → memory storage.</p>
+<h2 id="streaming">Streaming<a class="headerlink" href="#streaming" title="Permanent link">&para;</a></h2>
+<p><code>POST /api/agent/chat/stream</code> returns Server-Sent Events for real-time token streaming.</p>
+<p><strong>SSE events:</strong></p>
 <table>
 <thead>
 <tr>
-<th>Strategy</th>
-<th>Use Case</th>
+<th>Event</th>
+<th>Data</th>
+<th>When</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Chain-of-Thought</td>
-<td>Step-by-step reasoning</td>
+<td><code>start</code></td>
+<td><code>{task_id, model}</code></td>
+<td>Stream begins</td>
 </tr>
 <tr>
-<td>Tree-of-Thought</td>
-<td>Exploring multiple approaches</td>
+<td><code>chunk</code></td>
+<td><code>{content}</code></td>
+<td>Each token</td>
 </tr>
 <tr>
-<td>ReAct</td>
-<td>Tasks requiring tool use</td>
+<td><code>tool_call</code></td>
+<td><code>{tool, arguments}</code></td>
+<td>Tool invocation</td>
 </tr>
 <tr>
-<td>Reflection</td>
-<td>Self-critique and improvement</td>
+<td><code>tool_result</code></td>
+<td><code>{tool, content}</code></td>
+<td>Tool result</td>
+</tr>
+<tr>
+<td><code>done</code></td>
+<td><code>{task_id, thinking, has_thinking, total_time_ms, session_id}</code></td>
+<td>Complete</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><code>{error}</code></td>
+<td>On failure</td>
 </tr>
 </tbody>
 </table>
-<h3 id="tool-integration">Tool Integration<a class="headerlink" href="#tool-integration" title="Permanent link">&para;</a></h3>
-<p>The chat interface can access tools from connected MCP servers:</p>
+<p>The streaming endpoint supports the same tool-use loop as the non-streaming endpoint. Memory storage happens in a background thread after the stream closes.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:12319/api/agent/chat/stream<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;message&quot;: &quot;Hello!&quot;, &quot;model&quot;: &quot;llama3.2&quot;}&#39;</span>
+</span></code></pre></div>
+<h2 id="session-management">Session Management<a class="headerlink" href="#session-management" title="Permanent link">&para;</a></h2>
+<p><code>SessionManager</code> maintains conversation context across messages within a session.</p>
 <ul>
-<li>File system operations</li>
-<li>Web search</li>
-<li>Database queries</li>
-<li>Custom tools</li>
+<li>Sessions are identified by <code>session_id</code> (UUID)</li>
+<li>If no <code>session_id</code> is provided, a new session is created</li>
+<li>Include the returned <code>session_id</code> in subsequent requests for continuity</li>
+<li>Context includes all prior messages in the session</li>
 </ul>
-<h2 id="client-integration">Client Integration<a class="headerlink" href="#client-integration" title="Permanent link">&para;</a></h2>
-<p>The Tauri client provides a dedicated Chat tab with:</p>
+<h2 id="memory-integration">Memory Integration<a class="headerlink" href="#memory-integration" title="Permanent link">&para;</a></h2>
+<p>When <code>use_memory</code> is <code>true</code> (default):</p>
+<ol>
+<li><strong>Store user turn</strong> — The user message is saved to episodic memory</li>
+<li><strong>Recall</strong> — <code>AgentMemory.remember(query)</code> retrieves relevant turns, facts, entities, and strategies</li>
+<li><strong>Inject</strong> — <code>ContextManager.inject_memory()</code> adds the <code>MemoryBundle</code> to the message context</li>
+<li><strong>Store assistant turn</strong> — The response is saved with model/latency metadata</li>
+</ol>
+<p>Memory operations are wrapped in try/except — the system works normally if databases are unavailable.</p>
+<h2 id="prompt-composition">Prompt Composition<a class="headerlink" href="#prompt-composition" title="Permanent link">&para;</a></h2>
+<p>Each chat request composes a system prompt from:</p>
+<ol>
+<li><strong>Global prompt</strong> — Core persona (always applied)</li>
+<li><strong>MCP tools prompt</strong> — Auto-generated tool descriptions</li>
+<li><strong>Profile sections</strong> — From the selected profile (via <code>profile_id</code>)</li>
+<li><strong>Memory context</strong> — Injected relevant memories</li>
+</ol>
+<p>See <a href="../prompts/">Prompts</a> for details.</p>
+<h2 id="tool-use-loop">Tool-Use Loop<a class="headerlink" href="#tool-use-loop" title="Permanent link">&para;</a></h2>
+<p>When MCP servers are connected, tools are exposed to the model as function-calling tools. The agent runs a tool-use loop:</p>
+<ol>
+<li>Provider returns a completion with <code>tool_calls</code></li>
+<li>Agent executes each tool via <code>ToolExecutor.call_tool_sync()</code></li>
+<li>Tool results are appended as tool messages</li>
+<li>Provider is called again with the updated messages</li>
+<li>Repeat until no more tool calls or <code>max_tool_rounds</code> (10) is reached</li>
+</ol>
+<h2 id="output-parsing">Output Parsing<a class="headerlink" href="#output-parsing" title="Permanent link">&para;</a></h2>
+<p>The <code>OutputParser</code> extracts <code>&lt;think&gt;</code> tags from model output:</p>
 <ul>
-<li>Message history display</li>
-<li>Session selector</li>
-<li>Reasoning trace viewer</li>
-<li>Tool usage visualization</li>
+<li>Content within <code>&lt;think&gt;...&lt;/think&gt;</code> is separated into <code>AgentResult.thinking</code></li>
+<li><code>has_thinking</code> is set to <code>true</code> when thinking is extracted</li>
+<li>The remaining content becomes <code>AgentResult.answer</code></li>
 </ul>
-<h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
-<p>See <a href="../../api/endpoints/#agent-endpoints">Agent Endpoints</a> for full API documentation.</p>
+<h2 id="request-parameters">Request Parameters<a class="headerlink" href="#request-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>message</code></td>
+<td>string</td>
+<td>required</td>
+<td>User message</td>
+</tr>
+<tr>
+<td><code>session_id</code></td>
+<td>string</td>
+<td>auto</td>
+<td>Session for continuity</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>from config</td>
+<td>Model override</td>
+</tr>
+<tr>
+<td><code>profile_id</code></td>
+<td>string</td>
+<td><code>"default"</code></td>
+<td>Prompt profile</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>float</td>
+<td><code>0.7</code></td>
+<td>Sampling temperature</td>
+</tr>
+<tr>
+<td><code>use_memory</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Enable memory</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../api/endpoints/#agent">API Endpoints: Agent</a> — Full endpoint documentation</li>
+<li><a href="../prompts/">Prompts</a> — Prompt composition system</li>
+<li><a href="../mcp/">MCP</a> — Tool integration</li>
+<li><a href="../memory/">Memory</a> — Memory system</li>
+</ul>
 
 
 

@@ -12,13 +12,13 @@
         <meta name="author" content="AgentX Team">
       
       
-        <link rel="canonical" href="https://qr-madness.github.io/agentx/deployment/docker/">
+        <link rel="canonical" href="https://qr-madness.github.io/agentx/features/reasoning/">
       
       
-        <link rel="prev" href="../../api/models/">
+        <link rel="prev" href="../chat/">
       
       
-        <link rel="next" href="../migration/">
+        <link rel="next" href="../drafting/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Docker - AgentX Documentation</title>
+        <title>Reasoning - AgentX Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#docker-deployment" class="md-skip">
+        <a href="#reasoning-framework" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docker
+              Reasoning
             
           </span>
         </div>
@@ -288,11 +288,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../features/chat/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../chat/" class="md-tabs__link">
           
   
   
@@ -367,13 +369,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../deployment/docker/" class="md-tabs__link">
           
   
   
@@ -803,26 +803,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
@@ -840,7 +845,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -858,7 +863,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/chat/" class="md-nav__link">
+      <a href="../chat/" class="md-nav__link">
         
   
   
@@ -883,10 +888,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../features/reasoning/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reasoning
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -902,6 +934,164 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Classification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strategy-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy Configs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Strategy Configs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#chain-of-thought-cotconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chain-of-Thought (CoTConfig)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tree-of-thought-totconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tree-of-Thought (ToTConfig)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#react-reactconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReAct (ReActConfig)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reflection-reflectionconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reflection (ReflectionConfig)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orchestrator-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Orchestrator Config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -914,7 +1104,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/drafting/" class="md-nav__link">
+      <a href="../drafting/" class="md-nav__link">
         
   
   
@@ -942,7 +1132,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/mcp/" class="md-nav__link">
+      <a href="../mcp/" class="md-nav__link">
         
   
   
@@ -970,7 +1160,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/providers/" class="md-nav__link">
+      <a href="../providers/" class="md-nav__link">
         
   
   
@@ -998,7 +1188,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/prompts/" class="md-nav__link">
+      <a href="../prompts/" class="md-nav__link">
         
   
   
@@ -1026,7 +1216,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/memory/" class="md-nav__link">
+      <a href="../memory/" class="md-nav__link">
         
   
   
@@ -1054,7 +1244,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../features/translation/" class="md-nav__link">
+      <a href="../translation/" class="md-nav__link">
         
   
   
@@ -1427,31 +1617,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -1469,7 +1654,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1484,37 +1669,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Docker
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
         
   
   
@@ -1530,270 +1688,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#services" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Services
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Services">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#neo4j" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#postgresql-with-pgvector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PostgreSQL with pgvector
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#redis" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Redis
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#docker-compose-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docker Compose Commands
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-persistence" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Persistence
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Data Persistence">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#initializing-data-directories" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initializing Data Directories
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#migrating-from-docker-volumes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Migrating from Docker Volumes
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#environment-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#production-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Production Considerations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Production Considerations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#security-checklist" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Checklist
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#backups" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backups
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#monitoring" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monitoring
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#resource-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Resource Limits
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#port-conflicts" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Port Conflicts
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connection-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection Issues
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#data-directory-permissions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Directory Permissions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        See Also
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1806,7 +1700,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../migration/" class="md-nav__link">
+      <a href="../../deployment/migration/" class="md-nav__link">
         
   
   
@@ -1861,10 +1755,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
+  <a href="#architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quick Start
+        Architecture
       
     </span>
   </a>
@@ -1872,22 +1766,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#services" class="md-nav__link">
+  <a href="#strategies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Services
+        Strategies
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Services">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task Classification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strategy-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy Configs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Strategy Configs">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#neo4j" class="md-nav__link">
+  <a href="#chain-of-thought-cotconfig" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Neo4j
+        Chain-of-Thought (CoTConfig)
       
     </span>
   </a>
@@ -1895,10 +1811,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#postgresql-with-pgvector" class="md-nav__link">
+  <a href="#tree-of-thought-totconfig" class="md-nav__link">
     <span class="md-ellipsis">
       
-        PostgreSQL with pgvector
+        Tree-of-Thought (ToTConfig)
       
     </span>
   </a>
@@ -1906,10 +1822,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#redis" class="md-nav__link">
+  <a href="#react-reactconfig" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Redis
+        ReAct (ReActConfig)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reflection-reflectionconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reflection (ReflectionConfig)
       
     </span>
   </a>
@@ -1922,10 +1849,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#docker-compose-commands" class="md-nav__link">
+  <a href="#result-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Docker Compose Commands
+        Result Structure
       
     </span>
   </a>
@@ -1933,49 +1860,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#data-persistence" class="md-nav__link">
+  <a href="#orchestrator-config" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Data Persistence
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Data Persistence">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#initializing-data-directories" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Initializing Data Directories
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#migrating-from-docker-volumes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Migrating from Docker Volumes
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#environment-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Configuration
+        Orchestrator Config
       
     </span>
   </a>
@@ -1983,121 +1871,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#production-considerations" class="md-nav__link">
+  <a href="#integration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Production Considerations
+        Integration
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Production Considerations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#security-checklist" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Checklist
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#backups" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backups
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#monitoring" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monitoring
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#resource-limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Resource Limits
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
+  <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#port-conflicts" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Port Conflicts
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connection-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection Issues
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#data-directory-permissions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Directory Permissions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        See Also
+        Related
       
     </span>
   </a>
@@ -2124,184 +1912,334 @@
   
 
 
-<h1 id="docker-deployment">Docker Deployment<a class="headerlink" href="#docker-deployment" title="Permanent link">&para;</a></h1>
-<p>Deploying AgentX with Docker.</p>
-<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Start all database services</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>task<span class="w"> </span>runners
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Or use docker-compose directly</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d
-</span></code></pre></div>
-<h2 id="services">Services<a class="headerlink" href="#services" title="Permanent link">&para;</a></h2>
-<p>The project includes three database services:</p>
+<h1 id="reasoning-framework">Reasoning Framework<a class="headerlink" href="#reasoning-framework" title="Permanent link">&para;</a></h1>
+<p>The reasoning framework provides structured thinking strategies for complex tasks. An orchestrator classifies tasks and selects the appropriate strategy automatically.</p>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph TD
+    T[Task Input] --&gt; O[Orchestrator]
+    O --&gt; CL[_classify_task]
+    CL --&gt; |math, analytical| CoT[Chain-of-Thought]
+    CL --&gt; |planning| ToT[Tree-of-Thought]
+    CL --&gt; |research| ReAct[ReAct]
+    CL --&gt; |creative, code| Ref[Reflection]
+
+    CoT --&gt; P[Provider]
+    ToT --&gt; P
+    ReAct --&gt; P
+    Ref --&gt; P
+    ReAct --&gt; TE[Tool Executor]
+
+    P --&gt; R[ReasoningResult]
+
+    CoT -.-&gt; |fallback| FB[Fallback Strategy]
+    ToT -.-&gt; |fallback| FB
+    ReAct -.-&gt; |fallback| FB
+    Ref -.-&gt; |fallback| FB</code></pre>
+<h2 id="strategies">Strategies<a class="headerlink" href="#strategies" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Service</th>
-<th>Port</th>
-<th>Purpose</th>
+<th>Strategy</th>
+<th>Class</th>
+<th>Use Case</th>
+<th>How It Works</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Neo4j</td>
-<td>7474 (HTTP), 7687 (Bolt)</td>
-<td>Graph database for knowledge graphs</td>
+<td>Chain-of-Thought</td>
+<td><code>ChainOfThought</code></td>
+<td>Math, analytical, simple</td>
+<td>Step-by-step reasoning with explicit intermediate steps</td>
 </tr>
 <tr>
-<td>PostgreSQL</td>
-<td>5432</td>
-<td>Relational storage with pgvector</td>
+<td>Tree-of-Thought</td>
+<td><code>TreeOfThought</code></td>
+<td>Planning, design</td>
+<td>Explores multiple solution branches (BFS/DFS/beam search)</td>
 </tr>
 <tr>
-<td>Redis</td>
-<td>6379</td>
-<td>Caching and working memory</td>
+<td>ReAct</td>
+<td><code>ReActAgent</code></td>
+<td>Research, tool-heavy tasks</td>
+<td>Interleaves reasoning with tool actions (Reason-Act-Observe loop)</td>
+</tr>
+<tr>
+<td>Reflection</td>
+<td><code>ReflectiveReasoner</code></td>
+<td>Creative, code</td>
+<td>Generates, self-critiques, and revises through multiple rounds</td>
 </tr>
 </tbody>
 </table>
-<h3 id="neo4j">Neo4j<a class="headerlink" href="#neo4j" title="Permanent link">&para;</a></h3>
-<p>Graph database for entity relationships and knowledge graphs.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Access Neo4j Browser</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>open<span class="w"> </span>http://localhost:7474
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Default credentials (from .env)</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Username: neo4j</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># Password: changeme</span>
+<h2 id="task-classification">Task Classification<a class="headerlink" href="#task-classification" title="Permanent link">&para;</a></h2>
+<p>The orchestrator classifies tasks by keyword matching in <code>_classify_task()</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Task Type</th>
+<th>Keywords</th>
+<th>Default Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>math</code></td>
+<td>calculate, compute, solve, equation, formula</td>
+<td>CoT</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>code, program, function, implement, debug</td>
+<td>Reflection</td>
+</tr>
+<tr>
+<td><code>research</code></td>
+<td>search, find information, look up, research</td>
+<td>ReAct</td>
+</tr>
+<tr>
+<td><code>planning</code></td>
+<td>plan, design, strategy, organize, roadmap</td>
+<td>ToT</td>
+</tr>
+<tr>
+<td><code>creative</code></td>
+<td>write, create, compose, draft, story, poem</td>
+<td>Reflection</td>
+</tr>
+<tr>
+<td><code>analytical</code></td>
+<td>analyze, compare, evaluate, assess, review</td>
+<td>CoT</td>
+</tr>
+<tr>
+<td><code>simple</code></td>
+<td>what is, who is, when did, define, list</td>
+<td>CoT</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>(no match)</td>
+<td>CoT (fallback)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="strategy-configs">Strategy Configs<a class="headerlink" href="#strategy-configs" title="Permanent link">&para;</a></h2>
+<h3 id="chain-of-thought-cotconfig">Chain-of-Thought (<code>CoTConfig</code>)<a class="headerlink" href="#chain-of-thought-cotconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>"llama3.2"</code></td>
+<td>Model to use</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>"zero_shot"</code></td>
+<td><code>"zero_shot"</code> or <code>"few_shot"</code></td>
+</tr>
+<tr>
+<td><code>examples</code></td>
+<td><code>[]</code></td>
+<td>Few-shot examples (if <code>few_shot</code> mode)</td>
+</tr>
+<tr>
+<td><code>max_steps</code></td>
+<td><code>10</code></td>
+<td>Maximum reasoning steps</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tree-of-thought-totconfig">Tree-of-Thought (<code>ToTConfig</code>)<a class="headerlink" href="#tree-of-thought-totconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>"llama3.2"</code></td>
+<td>Model to use</td>
+</tr>
+<tr>
+<td><code>branching_factor</code></td>
+<td><code>3</code></td>
+<td>Branches per node</td>
+</tr>
+<tr>
+<td><code>max_depth</code></td>
+<td><code>3</code></td>
+<td>Maximum tree depth</td>
+</tr>
+<tr>
+<td><code>search_strategy</code></td>
+<td><code>"bfs"</code></td>
+<td><code>"bfs"</code>, <code>"dfs"</code>, or <code>"beam"</code></td>
+</tr>
+<tr>
+<td><code>beam_width</code></td>
+<td><code>2</code></td>
+<td>Beam width (if beam search)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="react-reactconfig">ReAct (<code>ReActConfig</code>)<a class="headerlink" href="#react-reactconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>"llama3.2"</code></td>
+<td>Model to use</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td><code>[]</code></td>
+<td>Available <code>Tool</code> objects</td>
+</tr>
+<tr>
+<td><code>max_iterations</code></td>
+<td><code>10</code></td>
+<td>Max reason-act-observe cycles</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reflection-reflectionconfig">Reflection (<code>ReflectionConfig</code>)<a class="headerlink" href="#reflection-reflectionconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>"llama3.2"</code></td>
+<td>Model to use</td>
+</tr>
+<tr>
+<td><code>max_revisions</code></td>
+<td><code>3</code></td>
+<td>Maximum self-revision rounds</td>
+</tr>
+<tr>
+<td><code>critique_model</code></td>
+<td><code>null</code></td>
+<td>Optional separate model for critique</td>
+</tr>
+</tbody>
+</table>
+<h2 id="result-structure">Result Structure<a class="headerlink" href="#result-structure" title="Permanent link">&para;</a></h2>
+<p><code>ReasoningResult</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>answer</code></td>
+<td>string</td>
+<td>Final response</td>
+</tr>
+<tr>
+<td><code>strategy</code></td>
+<td>string</td>
+<td>Strategy used</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>ReasoningStatus</td>
+<td><code>"complete"</code> or <code>"failed"</code></td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>list[ThoughtStep]</td>
+<td>Full reasoning trace</td>
+</tr>
+<tr>
+<td><code>total_steps</code></td>
+<td>int</td>
+<td>Step count</td>
+</tr>
+<tr>
+<td><code>branches_explored</code></td>
+<td>int</td>
+<td>ToT branches explored</td>
+</tr>
+<tr>
+<td><code>actions_taken</code></td>
+<td>int</td>
+<td>ReAct actions executed</td>
+</tr>
+<tr>
+<td><code>revisions</code></td>
+<td>int</td>
+<td>Reflection revision count</td>
+</tr>
+<tr>
+<td><code>total_tokens</code></td>
+<td>int</td>
+<td>Token usage</td>
+</tr>
+<tr>
+<td><code>total_time_ms</code></td>
+<td>float</td>
+<td>Elapsed time</td>
+</tr>
+</tbody>
+</table>
+<h2 id="orchestrator-config">Orchestrator Config<a class="headerlink" href="#orchestrator-config" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentx_ai.reasoning.orchestrator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReasoningOrchestrator</span><span class="p">,</span> <span class="n">OrchestratorConfig</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">OrchestratorConfig</span><span class="p">(</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">default_model</span><span class="o">=</span><span class="s2">&quot;llama3.2&quot;</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">fallback_strategy</span><span class="o">=</span><span class="s2">&quot;cot&quot;</span><span class="p">,</span>    <span class="c1"># Fallback if primary fails</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">enable_fallback</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">orchestrator</span> <span class="o">=</span> <span class="n">ReasoningOrchestrator</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">orchestrator</span><span class="o">.</span><span class="n">reason</span><span class="p">(</span><span class="s2">&quot;Plan a week-long trip to Japan&quot;</span><span class="p">)</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># result.strategy == &quot;tot&quot; (auto-classified as planning)</span>
 </span></code></pre></div>
-<h3 id="postgresql-with-pgvector">PostgreSQL with pgvector<a class="headerlink" href="#postgresql-with-pgvector" title="Permanent link">&para;</a></h3>
-<p>Relational database with vector similarity search.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Connect via psql</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>agentx-postgres<span class="w"> </span>psql<span class="w"> </span>-U<span class="w"> </span>agent<span class="w"> </span>-d<span class="w"> </span>agentx_memory
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Default credentials (from .env)</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Username: agent</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># Password: changeme</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Database: agentx_memory</span>
-</span></code></pre></div>
-<h3 id="redis">Redis<a class="headerlink" href="#redis" title="Permanent link">&para;</a></h3>
-<p>In-memory cache for working memory and session data.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Connect via redis-cli</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>agentx-redis<span class="w"> </span>redis-cli
-</span></code></pre></div>
-<h2 id="docker-compose-commands">Docker Compose Commands<a class="headerlink" href="#docker-compose-commands" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Start services</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Stop services</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>docker-compose<span class="w"> </span>down
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># View logs</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1"># View specific service logs</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>neo4j
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Restart a service</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>docker-compose<span class="w"> </span>restart<span class="w"> </span>postgres
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="c1"># Remove volumes (WARNING: deletes data)</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>docker-compose<span class="w"> </span>down<span class="w"> </span>-v
-</span></code></pre></div>
-<h2 id="data-persistence">Data Persistence<a class="headerlink" href="#data-persistence" title="Permanent link">&para;</a></h2>
-<p>Data is stored in local bind mounts under <code>./data/</code>:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>data/
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>├── neo4j/
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>│   ├── data/
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>│   └── logs/
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>├── postgres/
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>│   └── data/
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>└── redis/
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    └── data/
-</span></code></pre></div>
-<h3 id="initializing-data-directories">Initializing Data Directories<a class="headerlink" href="#initializing-data-directories" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>task<span class="w"> </span>db:init
-</span></code></pre></div>
-<h3 id="migrating-from-docker-volumes">Migrating from Docker Volumes<a class="headerlink" href="#migrating-from-docker-volumes" title="Permanent link">&para;</a></h3>
-<p>If you previously used Docker volumes:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>task<span class="w"> </span>db:migrate-volumes
-</span></code></pre></div>
-<h2 id="environment-configuration">Environment Configuration<a class="headerlink" href="#environment-configuration" title="Permanent link">&para;</a></h2>
-<p>Configure services via <code>.env</code> file (copy from <code>.env.example</code>):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Database passwords</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nv">NEO4J_PASSWORD</span><span class="o">=</span>your_secure_password
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nv">POSTGRES_PASSWORD</span><span class="o">=</span>your_secure_password
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="c1"># Neo4j settings</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nv">NEO4J_AUTH</span><span class="o">=</span>neo4j/<span class="si">${</span><span class="nv">NEO4J_PASSWORD</span><span class="si">}</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="nv">NEO4J_PLUGINS</span><span class="o">=[</span><span class="s2">&quot;apoc&quot;</span><span class="o">]</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="c1"># PostgreSQL settings</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="nv">POSTGRES_USER</span><span class="o">=</span>agent
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="nv">POSTGRES_DB</span><span class="o">=</span>agentx_memory
-</span></code></pre></div>
-<h2 id="production-considerations">Production Considerations<a class="headerlink" href="#production-considerations" title="Permanent link">&para;</a></h2>
-<h3 id="security-checklist">Security Checklist<a class="headerlink" href="#security-checklist" title="Permanent link">&para;</a></h3>
-<ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Change all default passwords in <code>.env</code></li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Use strong, unique passwords for each service</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Restrict network access (don't expose ports publicly)</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Enable SSL/TLS for database connections</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Set up firewall rules</li>
-</ul>
-<h3 id="backups">Backups<a class="headerlink" href="#backups" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Backup Neo4j</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>agentx-neo4j<span class="w"> </span>neo4j-admin<span class="w"> </span>database<span class="w"> </span>dump<span class="w"> </span>neo4j<span class="w"> </span>--to-path<span class="o">=</span>/backups
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Backup PostgreSQL</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>agentx-postgres<span class="w"> </span>pg_dump<span class="w"> </span>-U<span class="w"> </span>agent<span class="w"> </span>agentx_memory<span class="w"> </span>&gt;<span class="w"> </span>backup.sql
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Backup Redis</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>agentx-redis<span class="w"> </span>redis-cli<span class="w"> </span>BGSAVE
-</span></code></pre></div>
-<h3 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Permanent link">&para;</a></h3>
-<p>Consider adding:</p>
+<p>The strategy map can be overridden in <code>OrchestratorConfig.strategy_map</code> to change which strategy handles each task type.</p>
+<h2 id="integration">Integration<a class="headerlink" href="#integration" title="Permanent link">&para;</a></h2>
+<p>The Agent uses reasoning through <code>Agent.run()</code>:</p>
+<ol>
+<li>Agent receives a task</li>
+<li><code>TaskPlanner</code> decomposes into subtasks</li>
+<li>For each subtask, <code>ReasoningOrchestrator.reason()</code> is called</li>
+<li>Results are aggregated into the final <code>AgentResult</code></li>
+</ol>
+<p>In chat mode (<code>Agent.chat(simple_mode=True)</code>), reasoning is bypassed — the agent uses direct provider completion instead.</p>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Prometheus metrics exporters</li>
-<li>Grafana dashboards</li>
-<li>Log aggregation (ELK stack, Loki)</li>
-<li>Health check endpoints</li>
-</ul>
-<h3 id="resource-limits">Resource Limits<a class="headerlink" href="#resource-limits" title="Permanent link">&para;</a></h3>
-<p>Add resource constraints in <code>docker-compose.yml</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">neo4j</span><span class="p">:</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">deploy</span><span class="p">:</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">        </span><span class="nt">limits</span><span class="p">:</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">          </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2G</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">          </span><span class="nt">cpus</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;1.0&#39;</span>
-</span></code></pre></div>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
-<h3 id="port-conflicts">Port Conflicts<a class="headerlink" href="#port-conflicts" title="Permanent link">&para;</a></h3>
-<p>If ports are already in use:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Check what&#39;s using a port</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>lsof<span class="w"> </span>-i<span class="w"> </span>:7474
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Modify ports in docker-compose.yml</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>ports:
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span>-<span class="w"> </span><span class="s2">&quot;17474:7474&quot;</span><span class="w">  </span><span class="c1"># Use different host port</span>
-</span></code></pre></div>
-<h3 id="connection-issues">Connection Issues<a class="headerlink" href="#connection-issues" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Verify containers are running</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>docker-compose<span class="w"> </span>ps
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Check container logs</span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>neo4j
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1"># Test connectivity</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>nc<span class="w"> </span>-zv<span class="w"> </span>localhost<span class="w"> </span><span class="m">7687</span>
-</span></code></pre></div>
-<h3 id="data-directory-permissions">Data Directory Permissions<a class="headerlink" href="#data-directory-permissions" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Fix permissions if needed</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="nv">$USER</span>:<span class="nv">$USER</span><span class="w"> </span>./data
-</span></code></pre></div>
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="https://github.com/QR-Madness/agentx/blob/main/docker-compose.yml">docker-compose.yml</a></li>
-<li><a href="../migration/">Database Migration Guide</a></li>
-<li><a href="../../development/memory-setup/">Memory Setup</a></li>
+<li><a href="../../architecture/overview/">Agent Core</a> — How reasoning fits into the agent pipeline</li>
+<li><a href="../../api/endpoints/#run-task">API: Agent Run</a> — Endpoint with <code>reasoning_strategy</code> parameter</li>
+<li><a href="../../api/models/#agent-models">API Models: ReasoningResult</a> — Result schema</li>
 </ul>
 
 
