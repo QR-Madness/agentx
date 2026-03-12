@@ -16,7 +16,7 @@
 | Phase 11: Memory System | **In Progress** | 94% |
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
-| Phase 13: UI Implementation | **In Progress** | 15% |
+| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 5% |
 
 ---
 
@@ -153,16 +153,15 @@
 > **Goal**: Comprehensive documentation for users and developers
 
 ### 12.1 User Documentation
-- [ ] Update README.md with quick start guide, feature overview, screenshots
-- [ ] Add installation guide for each platform
-- [ ] Document MCP setup for AI assistants
+- [X] Update README.md with quick start guide, feature overview, screenshots
+- [X] Add installation guide for each platform
+- [X] Document MCP setup for AI assistants
 
 ### 12.2 Developer Documentation
-- [ ] Update CLAUDE.md with MCP details
 - [ ] Add API documentation (auto-generate from OpenAPI)
-- [ ] Add architecture diagrams
+- [X] Add architecture diagrams
 - [ ] Document contribution guidelines
-- [ ] Document memory system extension patterns (from 11.6)
+- [X] Document memory system extension patterns (from 11.6)
 
 ### 12.3 Inline Documentation
 - [ ] Add docstrings to all public functions
@@ -171,68 +170,202 @@
 
 ---
 
-## Phase 13: UI Implementation (Chat & Agent)
+## Phase 13: UX Overhaul — Immersive AgentX
 
 > **Priority**: HIGH
-> **Goal**: Dual-interface experience — lightweight Chat for quick interactions, powerful Agent for prompt engineering
+> **Goal**: Immersive 3-page app with browser-style conversation tabs, portal-based modals, theme system, customizable agent profiles, and rich inline feedback
+> **Replaces**: Old 7-tab sidebar layout. Chat + Agent merged into single workspace.
 
-### 13.1 Chat Tab — Lightweight Interface (Complete)
-- [x] Chat message input (auto-grow, Enter to send, character counter)
-- [x] Message display (streaming, markdown, code highlighting, copy/regenerate)
-- [x] Quick settings bar (model selector, temperature, memory toggle)
-- [x] Session management (new chat, recent chats list)
+**Design Decisions:**
+- Tool call approval: visual-only for now (message types support future blocking approval)
+- Former tabs (Settings, Memory, Tools) → right-side slide-out drawers from toolbar icons
+- Translation → centered modal from toolbar
+- Conversation history → dropdown near tab bar "+" button (not a persistent sidebar)
+- Data is server-first, client caches only (prep for future multi-server auth)
 
-### 13.2 Agent Tab — Power Interface
+### 13.1 Foundation (No Visible UI Changes)
 
-#### 13.2.1 Conversation Sidebar
-- [ ] Conversation list with title, preview, timestamp, profile badge
-- [ ] Organization: folders, tags, star/favorite, archive
-- [ ] Search: full-text, filter by date/profile/tags
-- [ ] Bulk actions: multi-select, delete, archive, move
+> Infrastructure that all subsequent sub-phases depend on
 
-#### 13.2.2 Conversation View
-- [ ] Message display with metadata (model, tokens, latency)
-- [ ] Message operations: edit, regenerate, delete, pin, annotate, copy
-- [ ] Branching: visual indicator, branch switcher, compare side-by-side
+#### Theme System
+- [ ] Create `ThemeProvider` context (`contexts/ThemeContext.tsx`)
+- [ ] Extract CSS variables from `App.css` `:root` into `ThemeDefinition` object (`lib/theme.ts`)
+- [ ] `ThemeProvider` applies variables to `document.documentElement.style` on mount/change
+- [ ] Ship `cosmic` theme as default; architecture supports adding themes later
+- [ ] Move non-variable CSS (resets, animations, component base styles) into `styles/base.css`
+- [ ] `App.css` becomes thin wrapper importing `base.css`
 
-#### 13.2.3 Input Area
-- [ ] Rich input: slash commands, @-mentions, template insertion
-- [ ] Context controls: window visualization, include checkboxes
-- [ ] Action buttons: send, send with options, stop, retry
+#### Modal/Portal System
+- [ ] Add `<div id="modal-root" />` to `index.html`
+- [ ] Create `ModalContext` (`contexts/ModalContext.tsx`) — `openModal(config)`, `closeModal(id)`, stack-based
+- [ ] Create `ModalPortal.tsx` — renders children into `#modal-root` via `ReactDOM.createPortal`
+- [ ] Create `DrawerPanel.tsx` — slide-in panel (left/right), backdrop overlay, sizes (sm/md/lg)
+- [ ] Create `ModalDialog.tsx` — centered overlay modal
+- [ ] Lazy-loaded component registry to avoid circular imports
 
-#### 13.2.4 Conversation Header Bar
-- [ ] Profile selector with quick-switch
-- [ ] Conversation actions: rename, export, delete
-- [ ] View toggles: reasoning traces, tool usage, memory context
+#### Message Type System
+- [ ] Create `lib/messages.ts` — discriminated union: `UserMessage | AssistantMessage | ToolCallMessage | ToolResultMessage | MemoryInjectionMessage | SystemMessage | ErrorMessage`
+- [ ] Each type carries specific metadata (tool names, confidence scores, model info, etc.)
+- [ ] Type guards for each message type
+- [ ] `ToolCallMessage.status` field: `pending | approved | rejected | completed` (prep for future blocking)
 
-### 13.3 Agent Profiles
-- [ ] Define `AgentProfile` data model (system prompt, model, reasoning, memory, tools)
-- [ ] Profile inheritance via `extends`
-- [ ] Profile Management UI in Settings tab
-- [ ] Built-in profile templates (General Assistant, Code Helper, Creative Writer, etc.)
+### 13.2 Root Layout Shell
 
-### 13.4 Prompt Library
-- [ ] Library structure: system prompts, user templates, snippets
-- [ ] Tagging system with filter/search
-- [ ] Template features: placeholders, import/export
-- [ ] Integration: `/template` slash command, quick insert
+> Replace sidebar TabBar with horizontal top bar + page routing
 
-### 13.5 Conversation Persistence & Sync
-- [ ] API endpoints for conversations (CRUD, messages, branches, export)
-- [ ] API endpoints for profiles (CRUD, clone, history, restore)
-- [ ] Database models: Conversation, Message, Profile, ProfileHistory, PromptTemplate, Tag
+#### RootLayout & TopBar
+- [ ] Create `RootLayout.tsx` (`layouts/`) — top bar + full-height page content area
+- [ ] Create `TopBar.tsx` (`layouts/`) with sections:
+  - Left: Logo + active agent name (dynamic from profile)
+  - Center-left: Page nav pills (Start, Dashboard, AgentX)
+  - Center: ConversationTabBar placeholder (wired in 13.3)
+  - Right: Toolbar icons (Settings, Memory, Tools, Translation) → open modals
+- [ ] Page switching via `useState<'start' | 'dashboard' | 'agentx'>`
+- [ ] Migrate `App.tsx` from `TabBar` + 7 display-toggled divs to `RootLayout` + page routing
+- [ ] Initially, "AgentX" page renders existing `ChatTab` as-is (incremental migration)
 
-### 13.6 Settings Tab Rework
-- [ ] Reorganize: General, Agent Profiles, Model Providers, MCP Servers, Memory, Prompt Library, Data
+### 13.3 Conversation Tabs
 
-### 13.7 Keyboard Shortcuts & Accessibility
-- [ ] Global shortcuts: Cmd+K (command palette), Cmd+N (new), Cmd+P (switch profile)
-- [ ] Conversation shortcuts: navigate, edit, regenerate, branch
-- [ ] Command palette with fuzzy search
+> Browser-style tabs in top bar, each representing a conversation
 
-### 13.8 Mobile-Responsive Considerations
-- [ ] Responsive breakpoints (collapse sidebar <1024px)
-- [ ] Touch-friendly tap targets and gestures
+#### ConversationContext
+- [ ] Create `ConversationContext` (`contexts/ConversationContext.tsx`)
+- [ ] `ConversationTab` model: `id`, `title`, `sessionId`, `profileId`, `messages: ConversationMessage[]`, `isStreaming`, timestamps
+- [ ] Actions: `addTab()`, `closeTab(id)`, `switchTab(id)`, `renameTab()`, `reorderTabs()`
+- [ ] Persistence: `agentx:server:{id}:convTabs` (tab list), `agentx:server:{id}:conv:{tabId}:msgs` (messages)
+- [ ] Max ~20 tabs, messages capped at ~200 per tab in localStorage (backend has full history)
+
+#### ConversationTabBar
+- [ ] Create `ConversationTabBar.tsx` (`layouts/`) — horizontal scrollable tabs with close buttons
+- [ ] "+" button to add new tab (inherits active profile)
+- [ ] History button (clock icon) opens dropdown of past conversations
+- [ ] Active tab highlighted; only visible on AgentX page
+- [ ] Wire into `TopBar` center area
+
+### 13.4 Agent Profiles (Frontend + Backend)
+
+> Customizable agent profiles with names that carry across UI and prompts
+
+#### Backend
+- [ ] Create `ProfileManager` class (`agent/profiles.py`) — pattern follows `prompts/manager.py`
+- [ ] Storage: `data/agent_profiles.yaml` with default profiles
+- [ ] API endpoints: `GET/POST /api/agent/profiles`, `GET/PUT/DELETE /api/agent/profiles/<id>`
+- [ ] Views in `views.py` for profile CRUD
+- [ ] Agent name injection: prepend `"Your name is {profile.name}."` to system prompt in `agent/core.py`
+
+#### Frontend
+- [ ] Create `AgentProfileContext` (`contexts/AgentProfileContext.tsx`)
+- [ ] `AgentProfile` model: `id`, `name` (the "X"), `avatar`, `defaultModel`, `temperature`, `promptProfileId`, `reasoningStrategy`, `enableMemory`, `memoryChannel`, `enableTools`, `isDefault`, timestamps
+- [ ] Fetch from server, cache in localStorage per-server
+- [ ] `activeProfile`, `setActiveProfile(id)`, `createProfile()`, `updateProfile()`
+- [ ] `getAgentName()` used by TopBar logo and StartPage greeting
+- [ ] Create `ProfileEditorModal.tsx` — form: name, avatar, model, temperature, prompt profile, reasoning, memory/tools toggles
+- [ ] Add profile API methods to `lib/api.ts` and `useAgentProfiles()` hook to `lib/hooks.ts`
+
+### 13.5 Modals Migration
+
+> Convert former tabs into modal/drawer panels opened from toolbar
+
+- [ ] `SettingsModal.tsx` — wrap `SettingsTab` content in `DrawerPanel` (right, md). Trigger: gear icon
+- [ ] `MemoryExplorerModal.tsx` — wrap `MemoryTab` content in `DrawerPanel` (right, lg). Trigger: database icon
+- [ ] `ToolsModal.tsx` — wrap `ToolsTab` content in `DrawerPanel` (right, md). Trigger: wrench icon
+- [ ] `TranslationModal.tsx` — wrap `TranslationTab` content in `ModalDialog` (center). Trigger: globe icon
+- [ ] Wire toolbar icons in `TopBar` to open each modal via `useModal().openModal()`
+- [ ] Remove old tab entries from `App.tsx` page routing
+
+### 13.6 Merged AgentX Page
+
+> Core of the overhaul — combines Chat + Agent into one rich workspace
+
+#### AgentXPage
+- [ ] Create `AgentXPage.tsx` (`pages/`) — reads active conversation tab from `ConversationContext`
+- [ ] Full-width message area + input bar (maximally immersive)
+- [ ] Profile badge in header shows agent name + model
+
+#### Message Components
+- [ ] `MessageBubble.tsx` — renders any `ConversationMessage` via switch on type:
+  - `user`: avatar + content + edit action
+  - `assistant`: agent avatar/name + markdown + expandable thinking + metadata bar + actions (copy, regenerate, pin)
+  - `tool_call`: compact inline block with tool name, arguments preview, status badge
+  - `tool_result`: compact block with tool name, result preview, success/fail, duration
+  - `memory_injection`: collapsible facts with confidence bars, entities with type badges
+  - `system`: subtle centered text
+  - `error`: red-tinted block
+- [ ] `MessageInput.tsx` — auto-grow textarea, Enter/Shift+Enter, model badge, temperature, profile selector, send/stop
+- [ ] `ToolCallBlock.tsx` — tool name + collapsible arguments JSON + status badge (visual-only, no blocking yet)
+- [ ] `MemoryInjectionBlock.tsx` — facts list with confidence, entities with type badges, collapsible (default collapsed)
+- [ ] `ThinkingBlock.tsx` — collapsible reasoning content, step count, streaming indicator
+- [ ] `MetadataBar.tsx` — per-message footer: model name, token count (in/out), latency
+- [ ] `ConversationHistoryDropdown.tsx` — dropdown near tab bar "+" for browsing past conversations
+- [ ] Reuse existing `chat/MessageContent.tsx` (markdown renderer) inside `MessageBubble`
+
+### 13.7 SSE & Metadata Enhancements
+
+> Extend streaming backend to emit richer events for new message types
+
+#### Backend (views.py — `agent_chat_stream` / `generate_sse`)
+- [ ] New SSE event `memory_context`: emit after memory retrieval, before first chunk. Data: `{ facts, entities, query }`
+- [ ] Extend `tool_call` event: add `tool_call_id` field for linking to results
+- [ ] Extend `tool_result` event: add `tool_call_id` and `duration_ms`
+- [ ] Extend `start` event: add `profile_name`, `agent_name`, `model_display_name`
+- [ ] Extend `done` event: add `tokens_input`, `tokens_output`, `profile_name`, `agent_name`
+
+#### Frontend (lib/api.ts)
+- [ ] Update `streamChat()` to handle `memory_context`, `tool_call`, `tool_result` events
+- [ ] Add callbacks: `onToolCall`, `onToolResult`, `onMemoryContext`
+- [ ] AgentXPage converts SSE events into typed `ConversationMessage` objects in the message list
+
+### 13.8 Prompt Library
+
+> Profile-agnostic prompt templates with tag-based organization
+
+#### Backend
+- [ ] Create `PromptTemplateManager` (`prompts/templates.py`) — follows `PromptManager` pattern
+- [ ] Storage: `data/prompt_templates.yaml`
+- [ ] Endpoints: `GET/POST/PUT/DELETE /api/prompts/templates`
+- [ ] Fields: `id`, `name`, `content`, `tags[]`, `placeholders[]`, `type` (system/user/snippet)
+
+#### Frontend
+- [ ] Create `PromptLibraryModal.tsx` — opened from toolbar or slash command in input
+- [ ] Tag filter sidebar, search bar, template list
+- [ ] Template preview with placeholder highlighting
+- [ ] "Use in conversation" action (inserts into input)
+- [ ] "Attach to profile" action (sets as profile's prompt)
+- [ ] Add template API methods to `lib/api.ts`
+
+### 13.9 Start Page & Dashboard Refresh
+
+#### Start Page
+- [ ] Create `StartPage.tsx` (`pages/`) — centered agent avatar + "Hello, I'm {agentName}" greeting
+- [ ] Quick actions: "New Conversation", "Open Dashboard"
+- [ ] Minimal placeholder (future: onboarding, tips, recent activity)
+
+#### Dashboard Refresh
+- [ ] Create `DashboardPage.tsx` (`pages/`) — refactored from `DashboardTab`
+- [ ] Keep: health status grid, server banner
+- [ ] Add: token usage metrics, memory stats (from `/api/memory/stats`), active conversation count
+- [ ] Add: running agents indicator
+- [ ] Remove: quick action buttons (replaced by toolbar/page nav)
+
+### 13.10 Polish & Cleanup
+
+- [ ] Remove `components/tabs/` directory (all old tab components)
+- [ ] Remove `components/TabBar.tsx`
+- [ ] Remove old `styles/*Tab.css` files
+- [ ] Clean up dead `TabId` type and related code
+- [ ] Final CSS consistency pass
+- [ ] Keyboard shortcuts: Cmd+T (new tab), Cmd+W (close tab), Cmd+K (command palette placeholder)
+
+### Dependency Graph
+
+```
+13.1 Foundation ──────┬──→ 13.2 Root Layout ──→ 13.3 Conv Tabs ──→ 13.6 AgentX Page ──→ 13.7 SSE
+                      ├──→ 13.5 Modals ────────┘                                            │
+                      └──→ 13.4 Profiles (backend can start early) ──────────────────────────┘
+                                     └──→ 13.8 Prompt Library
+13.2 ──→ 13.9 Start/Dashboard (can parallel with 13.6)
+ALL ──→ 13.10 Cleanup
+```
 
 ---
 
@@ -242,7 +375,7 @@
 
 - [ ] GPU acceleration for translation models
 - [ ] Lazy model loading with progress indicator
-- [ ] Multiple user support
+- [ ] Multiple server support (user can log out of server, and into another one seamlessly)
 - [ ] Cloud sync for memories
 - [ ] Plugin system for additional tools
 - [ ] Voice input/output
@@ -253,6 +386,11 @@
 - [ ] Advanced memory visualization (interactive graph, embedding clusters)
 - [ ] Streaming memory retrieval during chat
 - [ ] Conversation sharing (read-only shareable links)
+- [ ] Blocking tool call approval (pause stream, user approves/rejects before execution)
+- [ ] Server authentication (single access key per server, session resume on reconnect)
+- [ ] Multi-agent collaboration modes (multiple agents/models working together on a task)
+- [ ] Mobile-responsive breakpoints and touch-friendly gestures
+- [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 
 ---
 
