@@ -22,6 +22,10 @@ urlpatterns = [
     path("agent/chat", views.agent_chat, name="agent-chat"),
     path("agent/chat/stream", views.agent_chat_stream, name="agent-chat-stream"),
     path("agent/status", views.agent_status, name="agent-status"),
+    # Agent profile endpoints
+    path("agent/profiles", views.agent_profiles_list, name="agent-profiles-list"),
+    path("agent/profiles/<str:profile_id>", views.agent_profile_detail, name="agent-profile-detail"),
+    path("agent/profiles/<str:profile_id>/set-default", views.agent_profile_set_default, name="agent-profile-set-default"),
     # Prompt management endpoints
     path("prompts/profiles", views.prompts_profiles, name="prompts-profiles"),
     path("prompts/profiles/<str:profile_id>", views.prompts_profile_detail, name="prompts-profile-detail"),

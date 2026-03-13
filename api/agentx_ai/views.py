@@ -460,7 +460,8 @@ async def agent_chat_stream(request):
 
         session_id = data.get("session_id")
         model = data.get("model")
-        profile_id = data.get("profile_id")
+        profile_id = data.get("profile_id")  # Prompt profile
+        agent_profile_id = data.get("agent_profile_id")  # Agent profile
         temperature = data.get("temperature", 0.7)
         use_memory = data.get("use_memory", True)
 
@@ -474,6 +475,7 @@ async def agent_chat_stream(request):
         from .agent import Agent, AgentConfig
         from .agent.session import SessionManager
         from .agent.output_parser import parse_output
+        from .agent.profiles import get_profile_manager
         from .prompts import get_prompt_manager
         from .providers.base import Message, MessageRole
 
@@ -507,8 +509,19 @@ async def agent_chat_stream(request):
 
             # Build messages with system prompt
             prompt_manager = get_prompt_manager()
+
+            # Look up agent profile for name injection
+            agent_name = None
+            if agent_profile_id:
+                profile_manager = get_profile_manager()
+                agent_profile = profile_manager.get_profile(agent_profile_id)
+                if agent_profile:
+                    agent_name = agent_profile.name
+                    logger.debug(f"Using agent profile: {agent_profile.name}")
+
             system_prompt = prompt_manager.get_system_prompt(
-                profile_id=profile_id or agent.config.prompt_profile_id
+                profile_id=profile_id or agent.config.prompt_profile_id,
+                agent_name=agent_name,
             )
 
             messages = [
@@ -1919,3 +1932,182 @@ def config_update(request):
         'message': 'Config updated and applied',
         'updated': updated_keys,
     })
+
+
+# ============== Agent Profile Endpoints ==============
+
+
+@csrf_exempt
+def agent_profiles_list(request):
+    """
+    GET /api/agent/profiles - List all agent profiles.
+    POST /api/agent/profiles - Create a new agent profile.
+    """
+    from .agent.profiles import get_profile_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    manager = get_profile_manager()
+
+    if request.method == 'GET':
+        profiles = manager.list_profiles()
+        return JsonResponse({
+            "profiles": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "avatar": p.avatar,
+                    "description": p.description,
+                    "default_model": p.default_model,
+                    "temperature": p.temperature,
+                    "prompt_profile_id": p.prompt_profile_id,
+                    "reasoning_strategy": p.reasoning_strategy,
+                    "enable_memory": p.enable_memory,
+                    "memory_channel": p.memory_channel,
+                    "enable_tools": p.enable_tools,
+                    "is_default": p.is_default,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+                for p in profiles
+            ],
+        })
+
+    if request.method == 'POST':
+        data, error = parse_json_body(request)
+        if error:
+            return error
+
+        # Validate required fields
+        if not data.get("name"):
+            return json_error("Missing required field: name")
+
+        # Generate ID if not provided
+        if not data.get("id"):
+            import uuid
+            data["id"] = str(uuid.uuid4())[:8]
+
+        from .agent.models import AgentProfile
+        try:
+            profile = AgentProfile(**data)
+            created = manager.create_profile(profile)
+            return JsonResponse({
+                "profile": {
+                    "id": created.id,
+                    "name": created.name,
+                    "avatar": created.avatar,
+                    "description": created.description,
+                    "default_model": created.default_model,
+                    "temperature": created.temperature,
+                    "prompt_profile_id": created.prompt_profile_id,
+                    "reasoning_strategy": created.reasoning_strategy,
+                    "enable_memory": created.enable_memory,
+                    "memory_channel": created.memory_channel,
+                    "enable_tools": created.enable_tools,
+                    "is_default": created.is_default,
+                    "created_at": created.created_at.isoformat() if created.created_at else None,
+                    "updated_at": created.updated_at.isoformat() if created.updated_at else None,
+                },
+            }, status=201)
+        except Exception as e:
+            return json_error(str(e), status=400)
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
+def agent_profile_detail(request, profile_id):
+    """
+    GET /api/agent/profiles/{id} - Get a specific profile.
+    PUT /api/agent/profiles/{id} - Update a profile.
+    DELETE /api/agent/profiles/{id} - Delete a profile.
+    """
+    from .agent.profiles import get_profile_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    manager = get_profile_manager()
+
+    if request.method == 'GET':
+        profile = manager.get_profile(profile_id)
+        if not profile:
+            return json_error("Profile not found", status=404)
+
+        return JsonResponse({
+            "profile": {
+                "id": profile.id,
+                "name": profile.name,
+                "avatar": profile.avatar,
+                "description": profile.description,
+                "default_model": profile.default_model,
+                "temperature": profile.temperature,
+                "prompt_profile_id": profile.prompt_profile_id,
+                "reasoning_strategy": profile.reasoning_strategy,
+                "enable_memory": profile.enable_memory,
+                "memory_channel": profile.memory_channel,
+                "enable_tools": profile.enable_tools,
+                "is_default": profile.is_default,
+                "created_at": profile.created_at.isoformat() if profile.created_at else None,
+                "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+            },
+        })
+
+    if request.method == 'PUT':
+        data, error = parse_json_body(request)
+        if error:
+            return error
+
+        updated = manager.update_profile(profile_id, data)
+        if not updated:
+            return json_error("Profile not found", status=404)
+
+        return JsonResponse({
+            "profile": {
+                "id": updated.id,
+                "name": updated.name,
+                "avatar": updated.avatar,
+                "description": updated.description,
+                "default_model": updated.default_model,
+                "temperature": updated.temperature,
+                "prompt_profile_id": updated.prompt_profile_id,
+                "reasoning_strategy": updated.reasoning_strategy,
+                "enable_memory": updated.enable_memory,
+                "memory_channel": updated.memory_channel,
+                "enable_tools": updated.enable_tools,
+                "is_default": updated.is_default,
+                "created_at": updated.created_at.isoformat() if updated.created_at else None,
+                "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
+            },
+        })
+
+    if request.method == 'DELETE':
+        try:
+            if not manager.delete_profile(profile_id):
+                return json_error("Profile not found", status=404)
+            return JsonResponse({"deleted": True})
+        except ValueError as e:
+            return json_error(str(e), status=400)
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
+def agent_profile_set_default(request, profile_id):
+    """
+    POST /api/agent/profiles/{id}/set-default - Set a profile as the default.
+    """
+    from .agent.profiles import get_profile_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return json_error("Method not allowed", status=405)
+
+    manager = get_profile_manager()
+    if not manager.set_default_profile(profile_id):
+        return json_error("Profile not found", status=404)
+
+    return JsonResponse({"default_profile_id": profile_id})

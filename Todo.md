@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype
-**Last Updated**: 2026-03-02
+**Last Updated**: 2026-03-13
 
 > For completed phases (1-10), decision log, and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -16,7 +16,7 @@
 | Phase 11: Memory System | **In Progress** | 94% |
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
-| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 5% |
+| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 40% |
 
 ---
 
@@ -242,25 +242,25 @@
 - [x] Active tab highlighted; only visible on AgentX page
 - [x] Wire into `TopBar` center area
 
-### 13.4 Agent Profiles (Frontend + Backend)
+### 13.4 Agent Profiles (Frontend + Backend) ✓
 
 > Customizable agent profiles with names that carry across UI and prompts
 
 #### Backend
-- [ ] Create `ProfileManager` class (`agent/profiles.py`) — pattern follows `prompts/manager.py`
-- [ ] Storage: `data/agent_profiles.yaml` with default profiles
-- [ ] API endpoints: `GET/POST /api/agent/profiles`, `GET/PUT/DELETE /api/agent/profiles/<id>`
-- [ ] Views in `views.py` for profile CRUD
-- [ ] Agent name injection: prepend `"Your name is {profile.name}."` to system prompt in `agent/core.py`
+- [x] Create `ProfileManager` class (`agent/profiles.py`) — pattern follows `prompts/manager.py`
+- [x] Storage: `data/agent_profiles.yaml` with default profiles (auto-created from code defaults)
+- [x] API endpoints: `GET/POST /api/agent/profiles`, `GET/PUT/DELETE /api/agent/profiles/<id>`
+- [x] Views in `views.py` for profile CRUD
+- [x] Agent name injection: prepend `"Your name is {profile.name}."` to system prompt via `PromptConfig`
 
 #### Frontend
-- [ ] Create `AgentProfileContext` (`contexts/AgentProfileContext.tsx`)
-- [ ] `AgentProfile` model: `id`, `name` (the "X"), `avatar`, `defaultModel`, `temperature`, `promptProfileId`, `reasoningStrategy`, `enableMemory`, `memoryChannel`, `enableTools`, `isDefault`, timestamps
-- [ ] Fetch from server, cache in localStorage per-server
-- [ ] `activeProfile`, `setActiveProfile(id)`, `createProfile()`, `updateProfile()`
-- [ ] `getAgentName()` used by TopBar logo and StartPage greeting
-- [ ] Create `ProfileEditorModal.tsx` — form: name, avatar, model, temperature, prompt profile, reasoning, memory/tools toggles
-- [ ] Add profile API methods to `lib/api.ts` and `useAgentProfiles()` hook to `lib/hooks.ts`
+- [x] Create `AgentProfileContext` (`contexts/AgentProfileContext.tsx`)
+- [x] `AgentProfile` model: `id`, `name`, `avatar`, `defaultModel`, `temperature`, `promptProfileId`, `reasoningStrategy`, `enableMemory`, `memoryChannel`, `enableTools`, `isDefault`, timestamps
+- [x] Fetch from server, cache in localStorage per-server
+- [x] `activeProfile`, `setActiveProfile(id)`, `createProfile()`, `updateProfile()`
+- [x] `getAgentName()` used by TopBar logo and StartPage greeting
+- [x] Create `ProfileEditorModal.tsx` — form: name, avatar picker, temperature slider, reasoning dropdown, memory/tools toggles
+- [x] Add profile API methods to `lib/api.ts`
 
 ### 13.5 Modals Migration
 

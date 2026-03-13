@@ -13,6 +13,7 @@ import {
   Languages,
 } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
+import { useAgentProfile } from '../contexts/AgentProfileContext';
 import { ConversationTabBar } from './ConversationTabBar';
 import './TopBar.css';
 
@@ -31,6 +32,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 
 export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { openModal } = useModal();
+  const { getAgentName } = useAgentProfile();
 
   const openSettings = () => {
     openModal({
@@ -79,7 +81,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           <div className="logo-icon">
             <Sparkles size={20} />
           </div>
-          <span className="logo-text">AgentX</span>
+          <span className="logo-text">{getAgentName()}</span>
         </div>
       </div>
 

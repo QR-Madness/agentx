@@ -1,0 +1,272 @@
+/**
+ * ProfileEditorModal styles
+ */
+
+.profile-editor-modal {
+  padding: 0;
+  min-width: 440px;
+  max-width: 520px;
+}
+
+.profile-editor-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-editor-modal .modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.profile-editor-modal .avatar-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.profile-editor-modal h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.profile-editor-modal .close-btn {
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.profile-editor-modal form {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.profile-editor-modal .error-banner {
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+.profile-editor-modal .form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.profile-editor-modal .section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin: 0 0 0.25rem 0;
+}
+
+.profile-editor-modal .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-editor-modal .form-group.nested {
+  margin-left: 1.5rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border-subtle);
+}
+
+.profile-editor-modal label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.profile-editor-modal input[type="text"],
+.profile-editor-modal textarea,
+.profile-editor-modal select {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.profile-editor-modal input[type="text"]:focus,
+.profile-editor-modal textarea:focus,
+.profile-editor-modal select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.profile-editor-modal textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+/* Avatar Picker */
+.profile-editor-modal .avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-editor-modal .avatar-option {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.profile-editor-modal .avatar-option:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.profile-editor-modal .avatar-option.selected {
+  background: var(--accent-gradient);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+/* Slider */
+.profile-editor-modal .slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  outline: none;
+  border: none;
+  padding: 0;
+}
+
+.profile-editor-modal .slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.profile-editor-modal .slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.profile-editor-modal .slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 0.25rem;
+}
+
+/* Toggle Rows */
+.profile-editor-modal .toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-editor-modal .toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.profile-editor-modal .toggle-row:hover {
+  background: var(--bg-hover);
+}
+
+.profile-editor-modal .toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.profile-editor-modal .toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.profile-editor-modal .toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--border-subtle);
+  border-radius: 12px;
+  transition: background 0.2s;
+}
+
+.profile-editor-modal .toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.profile-editor-modal .toggle-input:checked + .toggle-switch {
+  background: var(--accent-primary);
+}
+
+.profile-editor-modal .toggle-input:checked + .toggle-switch::after {
+  transform: translateX(20px);
+}
+
+/* Form Actions */
+.profile-editor-modal .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}

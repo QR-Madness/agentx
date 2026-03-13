@@ -228,16 +228,18 @@ class PromptManager:
         mcp_tools: Optional[list[dict]] = None,
         additional_context: Optional[str] = None,
         structured_output: Optional[StructuredOutputConfig] = None,
+        agent_name: Optional[str] = None,
     ) -> PromptConfig:
         """
         Compose a complete prompt configuration.
-        
+
         Args:
             profile_id: Profile to use (None for default)
             mcp_tools: List of available MCP tools
             additional_context: Additional context to append
             structured_output: Structured output configuration
-            
+            agent_name: Agent name to inject as "Your name is {name}."
+
         Returns:
             Complete PromptConfig ready for use
         """
@@ -247,18 +249,19 @@ class PromptManager:
             profile = self.get_profile(profile_id)
         if not profile:
             profile = self.get_default_profile()
-        
+
         # Generate MCP tools prompt if tools provided
         mcp_tools_prompt = None
         if mcp_tools:
             mcp_tools_prompt = generate_mcp_tools_prompt(mcp_tools)
-        
+
         return PromptConfig(
             global_prompt=self._global_prompt,
             profile=profile,
             mcp_tools_prompt=mcp_tools_prompt,
             additional_context=additional_context,
             structured_output=structured_output,
+            agent_name=agent_name,
         )
     
     def get_system_prompt(
@@ -266,16 +269,24 @@ class PromptManager:
         profile_id: Optional[str] = None,
         mcp_tools: Optional[list[dict]] = None,
         additional_context: Optional[str] = None,
+        agent_name: Optional[str] = None,
     ) -> str:
         """
         Get the composed system prompt string.
-        
+
         Convenience method that returns just the final string.
+
+        Args:
+            profile_id: Profile to use (None for default)
+            mcp_tools: List of available MCP tools
+            additional_context: Additional context to append
+            agent_name: Agent name to inject as "Your name is {name}."
         """
         config = self.compose_prompt(
             profile_id=profile_id,
             mcp_tools=mcp_tools,
             additional_context=additional_context,
+            agent_name=agent_name,
         )
         return config.compose_system_prompt()
 

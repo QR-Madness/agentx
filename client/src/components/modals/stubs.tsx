@@ -7,6 +7,9 @@ import { MemoryTab } from '../tabs/MemoryTab';
 import { ToolsTab } from '../tabs/ToolsTab';
 import { TranslationTab } from '../tabs/TranslationTab';
 
+// Re-export ProfileEditorModal for the modal registry
+export { ProfileEditorModal } from './ProfileEditorModal';
+
 interface ModalContentProps {
   onClose: () => void;
 }

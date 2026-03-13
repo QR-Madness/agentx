@@ -84,33 +84,41 @@ class StructuredOutputConfig(BaseModel):
 class PromptConfig(BaseModel):
     """
     Complete prompt configuration for a request.
-    
+
     Combines global prompt, profile, and any request-specific overrides.
     """
     global_prompt: Optional[GlobalPrompt] = None
     profile: Optional[PromptProfile] = None
     mcp_tools_prompt: Optional[str] = None
     structured_output: Optional[StructuredOutputConfig] = None
-    
+
     # Request-specific overrides
     additional_context: Optional[str] = None
     system_override: Optional[str] = None  # Completely replace system prompt
+
+    # Agent identity
+    agent_name: Optional[str] = None  # Name to inject as "Your name is {name}."
     
     def compose_system_prompt(self) -> str:
         """
         Compose the final system prompt from all components.
-        
+
         Order:
-        1. Global prompt (persona, core behavior)
-        2. MCP tools prompt (if tools are available)
-        3. Profile sections (in defined order)
-        4. Additional context (if provided)
+        1. Agent name introduction (if provided)
+        2. Global prompt (persona, core behavior)
+        3. MCP tools prompt (if tools are available)
+        4. Profile sections (in defined order)
+        5. Additional context (if provided)
         """
         if self.system_override:
             return self.system_override
-        
+
         parts = []
-        
+
+        # Agent name introduction
+        if self.agent_name:
+            parts.append(f"Your name is {self.agent_name}.")
+
         # Global prompt
         if self.global_prompt and self.global_prompt.enabled:
             parts.append(self.global_prompt.content)

@@ -134,6 +134,42 @@ export interface GlobalPrompt {
   enabled: boolean;
 }
 
+// === Agent Profile Types ===
+
+export type ReasoningStrategy = 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  avatar?: string;
+  description?: string;
+  defaultModel?: string;
+  temperature: number;
+  promptProfileId?: string;
+  reasoningStrategy: ReasoningStrategy;
+  enableMemory: boolean;
+  memoryChannel: string;
+  enableTools: boolean;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentProfileCreate {
+  id?: string;
+  name: string;
+  avatar?: string;
+  description?: string;
+  default_model?: string;
+  temperature?: number;
+  prompt_profile_id?: string;
+  reasoning_strategy?: ReasoningStrategy;
+  enable_memory?: boolean;
+  memory_channel?: string;
+  enable_tools?: boolean;
+  is_default?: boolean;
+}
+
 export interface TranslateRequest {
   text: string;
   targetLanguage: string;
@@ -593,6 +629,178 @@ class ApiClient {
 
   async getMCPToolsPrompt(): Promise<{ mcp_tools_prompt: string; tools_count: number }> {
     return this.request('/api/prompts/mcp-tools');
+  }
+
+  // === Agent Profiles ===
+
+  async listAgentProfiles(): Promise<{ profiles: AgentProfile[] }> {
+    const response = await this.request<{ profiles: Array<{
+      id: string;
+      name: string;
+      avatar?: string;
+      description?: string;
+      default_model?: string;
+      temperature: number;
+      prompt_profile_id?: string;
+      reasoning_strategy: string;
+      enable_memory: boolean;
+      memory_channel: string;
+      enable_tools: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    }> }>('/api/agent/profiles');
+    // Transform snake_case to camelCase
+    return {
+      profiles: response.profiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        description: p.description,
+        defaultModel: p.default_model,
+        temperature: p.temperature,
+        promptProfileId: p.prompt_profile_id,
+        reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
+        enableMemory: p.enable_memory,
+        memoryChannel: p.memory_channel,
+        enableTools: p.enable_tools,
+        isDefault: p.is_default,
+        createdAt: p.created_at || '',
+        updatedAt: p.updated_at || '',
+      })),
+    };
+  }
+
+  async getAgentProfile(id: string): Promise<{ profile: AgentProfile }> {
+    const response = await this.request<{ profile: {
+      id: string;
+      name: string;
+      avatar?: string;
+      description?: string;
+      default_model?: string;
+      temperature: number;
+      prompt_profile_id?: string;
+      reasoning_strategy: string;
+      enable_memory: boolean;
+      memory_channel: string;
+      enable_tools: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    } }>(`/api/agent/profiles/${encodeURIComponent(id)}`);
+    const p = response.profile;
+    return {
+      profile: {
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        description: p.description,
+        defaultModel: p.default_model,
+        temperature: p.temperature,
+        promptProfileId: p.prompt_profile_id,
+        reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
+        enableMemory: p.enable_memory,
+        memoryChannel: p.memory_channel,
+        enableTools: p.enable_tools,
+        isDefault: p.is_default,
+        createdAt: p.created_at || '',
+        updatedAt: p.updated_at || '',
+      },
+    };
+  }
+
+  async createAgentProfile(profile: AgentProfileCreate): Promise<{ profile: AgentProfile }> {
+    const response = await this.request<{ profile: {
+      id: string;
+      name: string;
+      avatar?: string;
+      description?: string;
+      default_model?: string;
+      temperature: number;
+      prompt_profile_id?: string;
+      reasoning_strategy: string;
+      enable_memory: boolean;
+      memory_channel: string;
+      enable_tools: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    } }>('/api/agent/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    });
+    const p = response.profile;
+    return {
+      profile: {
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        description: p.description,
+        defaultModel: p.default_model,
+        temperature: p.temperature,
+        promptProfileId: p.prompt_profile_id,
+        reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
+        enableMemory: p.enable_memory,
+        memoryChannel: p.memory_channel,
+        enableTools: p.enable_tools,
+        isDefault: p.is_default,
+        createdAt: p.created_at || '',
+        updatedAt: p.updated_at || '',
+      },
+    };
+  }
+
+  async updateAgentProfile(id: string, updates: Partial<AgentProfileCreate>): Promise<{ profile: AgentProfile }> {
+    const response = await this.request<{ profile: {
+      id: string;
+      name: string;
+      avatar?: string;
+      description?: string;
+      default_model?: string;
+      temperature: number;
+      prompt_profile_id?: string;
+      reasoning_strategy: string;
+      enable_memory: boolean;
+      memory_channel: string;
+      enable_tools: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    } }>(`/api/agent/profiles/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    const p = response.profile;
+    return {
+      profile: {
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        description: p.description,
+        defaultModel: p.default_model,
+        temperature: p.temperature,
+        promptProfileId: p.prompt_profile_id,
+        reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
+        enableMemory: p.enable_memory,
+        memoryChannel: p.memory_channel,
+        enableTools: p.enable_tools,
+        isDefault: p.is_default,
+        createdAt: p.created_at || '',
+        updatedAt: p.updated_at || '',
+      },
+    };
+  }
+
+  async deleteAgentProfile(id: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/agent/profiles/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async setDefaultAgentProfile(id: string): Promise<{ default_profile_id: string }> {
+    return this.request(`/api/agent/profiles/${encodeURIComponent(id)}/set-default`, {
+      method: 'POST',
+    });
   }
 
   // === Config ===
