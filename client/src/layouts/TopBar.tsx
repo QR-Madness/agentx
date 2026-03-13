@@ -73,16 +73,29 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
     });
   };
 
+  const openProfileEditor = () => {
+    openModal({
+      id: 'profile-editor',
+      type: 'modal',
+      component: 'profileEditor',
+      size: 'md',
+    });
+  };
+
   return (
     <header className="top-bar">
-      {/* Left: Logo */}
+      {/* Left: Logo (clickable to edit profile) */}
       <div className="top-bar-left">
-        <div className="top-bar-logo">
+        <button
+          className="top-bar-logo"
+          onClick={openProfileEditor}
+          title="Edit agent profile"
+        >
           <div className="logo-icon">
             <Sparkles size={20} />
           </div>
           <span className="logo-text">{getAgentName()}</span>
-        </div>
+        </button>
       </div>
 
       {/* Center-left: Navigation pills */}

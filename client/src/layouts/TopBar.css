@@ -35,6 +35,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.top-bar-logo:hover {
+  background: var(--bg-hover);
+}
+
+.top-bar-logo:hover .logo-icon {
+  box-shadow: var(--glow-purple), 0 0 12px rgba(139, 92, 246, 0.4);
 }
 
 .logo-icon {

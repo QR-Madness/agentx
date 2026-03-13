@@ -10,7 +10,7 @@ import './ConversationHistoryDropdown.css';
 interface ConversationHistoryDropdownProps {
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLElement>;
+  anchorRef: React.RefObject<HTMLElement | null>;
 }
 
 export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: ConversationHistoryDropdownProps) {
