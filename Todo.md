@@ -16,7 +16,7 @@
 | Phase 11: Memory System | **In Progress** | 94% |
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
-| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 40% |
+| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 50% |
 
 ---
 
@@ -262,16 +262,19 @@
 - [x] Create `ProfileEditorModal.tsx` — form: name, avatar picker, temperature slider, reasoning dropdown, memory/tools toggles
 - [x] Add profile API methods to `lib/api.ts`
 
-### 13.5 Modals Migration
+### 13.5 Modals Migration ✓
 
 > Convert former tabs into modal/drawer panels opened from toolbar
 
-- [ ] `SettingsModal.tsx` — wrap `SettingsTab` content in `DrawerPanel` (right, md). Trigger: gear icon
-- [ ] `MemoryExplorerModal.tsx` — wrap `MemoryTab` content in `DrawerPanel` (right, lg). Trigger: database icon
-- [ ] `ToolsModal.tsx` — wrap `ToolsTab` content in `DrawerPanel` (right, md). Trigger: wrench icon
-- [ ] `TranslationModal.tsx` — wrap `TranslationTab` content in `ModalDialog` (center). Trigger: globe icon
-- [ ] Wire toolbar icons in `TopBar` to open each modal via `useModal().openModal()`
-- [ ] Remove old tab entries from `App.tsx` page routing
+- [x] `SettingsModalContent` — wraps `SettingsTab` in DrawerPanel (right, lg). Trigger: gear icon
+- [x] `MemoryModalContent` — wraps `MemoryTab` in DrawerPanel (right, lg). Trigger: database icon
+- [x] `ToolsModalContent` — wraps `ToolsTab` in DrawerPanel (right, md). Trigger: wrench icon
+- [x] `TranslationModalContent` — wraps `TranslationTab` in ModalDialog (center). Trigger: globe icon
+- [x] Wire toolbar icons in `TopBar` to open each modal via `useModal().openModal()`
+- [x] Remove old tab entries from `App.tsx` page routing
+- [x] Delete dead code: `TabBar.tsx`, `TabBar.css`
+
+Note: Modal wrappers implemented in `stubs.tsx` during Phase 13.1 Foundation.
 
 ### 13.6 Merged AgentX Page
 
