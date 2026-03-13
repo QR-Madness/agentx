@@ -37,8 +37,24 @@
   gap: 10px;
 }
 
-.chat-panel-info svg {
-  color: var(--cosmic-violet);
+.agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--accent-gradient);
+  border-radius: 6px;
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.agent-badge svg {
+  color: white;
+}
+
+.agent-name {
+  color: white;
 }
 
 .chat-panel-title {
@@ -335,6 +351,53 @@
 .send-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* === Input Controls === */
+.input-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.profile-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.profile-indicator:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.profile-indicator svg {
+  color: var(--cosmic-violet);
+}
+
+.stop-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--status-error);
+  color: white;
+  transition: all 0.15s ease;
+}
+
+.stop-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
 }
 
 .input-stats {

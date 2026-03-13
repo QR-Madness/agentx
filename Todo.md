@@ -16,7 +16,7 @@
 | Phase 11: Memory System | **In Progress** | 94% |
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
-| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 50% |
+| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 60% |
 
 ---
 
@@ -276,17 +276,17 @@
 
 Note: Modal wrappers implemented in `stubs.tsx` during Phase 13.1 Foundation.
 
-### 13.6 Merged AgentX Page
+### 13.6 Merged AgentX Page (Partial)
 
 > Core of the overhaul — combines Chat + Agent into one rich workspace
 
-#### AgentXPage
+#### AgentXPage (Deferred)
 - [ ] Create `AgentXPage.tsx` (`pages/`) — reads active conversation tab from `ConversationContext`
 - [ ] Full-width message area + input bar (maximally immersive)
-- [ ] Profile badge in header shows agent name + model
+- [x] Profile badge in header shows agent name + model (in ChatPanel)
 
-#### Message Components
-- [ ] `MessageBubble.tsx` — renders any `ConversationMessage` via switch on type:
+#### Message Components ✓
+- [x] `MessageBubble.tsx` — renders any `ConversationMessage` via switch on type:
   - `user`: avatar + content + edit action
   - `assistant`: agent avatar/name + markdown + expandable thinking + metadata bar + actions (copy, regenerate, pin)
   - `tool_call`: compact inline block with tool name, arguments preview, status badge
@@ -294,13 +294,15 @@ Note: Modal wrappers implemented in `stubs.tsx` during Phase 13.1 Foundation.
   - `memory_injection`: collapsible facts with confidence bars, entities with type badges
   - `system`: subtle centered text
   - `error`: red-tinted block
-- [ ] `MessageInput.tsx` — auto-grow textarea, Enter/Shift+Enter, model badge, temperature, profile selector, send/stop
-- [ ] `ToolCallBlock.tsx` — tool name + collapsible arguments JSON + status badge (visual-only, no blocking yet)
-- [ ] `MemoryInjectionBlock.tsx` — facts list with confidence, entities with type badges, collapsible (default collapsed)
-- [ ] `ThinkingBlock.tsx` — collapsible reasoning content, step count, streaming indicator
-- [ ] `MetadataBar.tsx` — per-message footer: model name, token count (in/out), latency
-- [ ] `ConversationHistoryDropdown.tsx` — dropdown near tab bar "+" for browsing past conversations
-- [ ] Reuse existing `chat/MessageContent.tsx` (markdown renderer) inside `MessageBubble`
+- [x] `MessageInput.tsx` — auto-grow textarea, Enter/Shift+Enter, model badge, temperature, profile selector, send/stop (enhanced in ChatPanel)
+- [x] `ToolCallBlock.tsx` — tool name + collapsible arguments JSON + status badge (visual-only, no blocking yet)
+- [x] `MemoryInjectionBlock.tsx` — facts list with confidence, entities with type badges, collapsible (default collapsed)
+- [x] `ThinkingBlock.tsx` — collapsible reasoning content, step count, streaming indicator (exists as ThinkingBubble)
+- [x] `MetadataBar.tsx` — per-message footer: model name, token count (in/out), latency
+- [x] `ConversationHistoryDropdown.tsx` — dropdown near tab bar "+" for browsing past conversations
+- [x] Reuse existing `chat/MessageContent.tsx` (markdown renderer) inside `MessageBubble`
+
+Note: AgentXPage extraction deferred — ChatPanel already provides full functionality.
 
 ### 13.7 SSE & Metadata Enhancements
 

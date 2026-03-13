@@ -7,29 +7,23 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Send,
   Bot,
-  User,
-  Loader2,
-  Zap,
   Mic,
-  Settings2,
   Radio,
   Database,
+  Square,
+  ChevronDown,
+  Sparkles,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
-import { MessageContent, ThinkingBubble, MessageActions } from '../chat';
+import { MessageContent } from './MessageContent';
+import { ThinkingBubble } from './ThinkingBubble';
+import { MessageBubble } from './MessageBubble';
 import { useConversation } from '../../contexts/ConversationContext';
+import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import {
-  type ConversationMessage,
   type UserMessage,
   type AssistantMessage,
   createMessageId,
-  isUserMessage,
-  isAssistantMessage,
-  isToolCallMessage,
-  isToolResultMessage,
-  isMemoryInjectionMessage,
-  isSystemMessage,
-  isErrorMessage,
 } from '../../lib/messages';
 import './ChatPanel.css';
 
@@ -61,12 +55,14 @@ export function ChatPanel() {
     setStreaming,
     setSessionId,
   } = useConversation();
+  const { activeProfile, getAgentName } = useAgentProfile();
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [useStreamingMode, setUseStreamingMode] = useState(true);
   const [useMemory, setUseMemory] = useState(true);
   const [streamingContent, setStreamingContent] = useState('');
+  const agentName = getAgentName();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
@@ -221,7 +217,10 @@ export function ChatPanel() {
       {/* Header */}
       <div className="chat-panel-header">
         <div className="chat-panel-info">
-          <Bot size={20} />
+          <div className="agent-badge">
+            <Sparkles size={16} />
+            <span className="agent-name">{agentName}</span>
+          </div>
           <span className="chat-panel-title">{activeTab.title}</span>
           {activeTab.sessionId && (
             <span className="chat-panel-session">
@@ -244,12 +243,6 @@ export function ChatPanel() {
           >
             <Radio size={16} />
           </button>
-          <button
-            className="icon-button"
-            title="Settings"
-          >
-            <Settings2 size={16} />
-          </button>
         </div>
       </div>
 
@@ -263,7 +256,7 @@ export function ChatPanel() {
         )}
 
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble key={message.id} message={message} agentName={agentName} />
         ))}
 
         {/* Streaming message or typing indicator */}
@@ -302,6 +295,15 @@ export function ChatPanel() {
 
       {/* Input */}
       <div className="chat-panel-input">
+        <div className="input-controls">
+          {activeProfile && (
+            <div className="profile-indicator">
+              <Sparkles size={12} />
+              <span>{activeProfile.name}</span>
+              <ChevronDown size={10} />
+            </div>
+          )}
+        </div>
         <div className="input-container">
           <button className="voice-button" disabled title="Voice input coming soon">
             <Mic size={18} />
@@ -314,13 +316,23 @@ export function ChatPanel() {
             rows={1}
             disabled={isTyping}
           />
-          <button
-            className="send-button"
-            onClick={handleSend}
-            disabled={!input.trim() || isTyping}
-          >
-            {isTyping ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
-          </button>
+          {isTyping ? (
+            <button
+              className="stop-button"
+              onClick={() => streamAbortRef.current?.abort()}
+              title="Stop generating"
+            >
+              <Square size={16} />
+            </button>
+          ) : (
+            <button
+              className="send-button"
+              onClick={handleSend}
+              disabled={!input.trim()}
+            >
+              <Send size={18} />
+            </button>
+          )}
         </div>
         <div className="input-stats">
           <span className={input.length > 4000 ? 'warning' : ''}>
@@ -332,69 +344,3 @@ export function ChatPanel() {
   );
 }
 
-function MessageBubble({ message }: { message: ConversationMessage }) {
-  // Determine message content based on type
-  const getContent = (): string => {
-    if (isUserMessage(message)) return message.content;
-    if (isAssistantMessage(message)) return message.content;
-    if (isToolResultMessage(message)) return message.content;
-    if (isSystemMessage(message)) return message.content;
-    if (isErrorMessage(message)) return message.content;
-    if (isToolCallMessage(message)) return `Tool call: ${message.toolName}`;
-    if (isMemoryInjectionMessage(message)) return `Memory: ${message.facts.length} facts`;
-    return '';
-  };
-
-  const content = getContent();
-  const isUser = isUserMessage(message);
-  const isAssistant = isAssistantMessage(message);
-
-  return (
-    <div className={`message-bubble ${message.type}`}>
-      <div className="message-avatar">
-        {isUser ? <User size={16} /> : <Bot size={16} />}
-      </div>
-      <div className="message-body">
-        {/* Thinking bubble for assistant */}
-        {isAssistant && message.thinking && (
-          <ThinkingBubble thinking={message.thinking} />
-        )}
-
-        {/* Content */}
-        {isAssistant ? (
-          <MessageContent content={content} />
-        ) : (
-          <div className="message-text">{content}</div>
-        )}
-
-        {/* Meta info */}
-        <div className="message-meta">
-          <span className="message-time">
-            {new Date(message.timestamp).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
-          {isAssistant && message.model && (
-            <span className="message-model">{message.model.split('/').pop()}</span>
-          )}
-          {isAssistant && message.tokensUsed && (
-            <span className="message-tokens">
-              <Zap size={10} />
-              {message.tokensUsed}
-            </span>
-          )}
-        </div>
-
-        {/* Actions */}
-        {isAssistant && (
-          <MessageActions
-            content={content}
-            isAssistant={true}
-            timestamp={new Date(message.timestamp)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
