@@ -95,6 +95,7 @@ export interface ChatRequest {
   model?: string;
   show_reasoning?: boolean;
   profile_id?: string;  // Prompt profile to use
+  agent_profile_id?: string;  // Agent profile to use (includes model, temperature, etc.)
   temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
   use_memory?: boolean;  // Enable memory retrieval (default true)
 }
@@ -1069,6 +1070,10 @@ class ApiClient {
                     case 'done':
                       callbacks.onDone?.(data);
                       break;
+                    case 'close':
+                      // Server signals stream is complete - abort to close connection
+                      controller.abort();
+                      return;
                     case 'error':
                       callbacks.onError?.(data.error);
                       break;

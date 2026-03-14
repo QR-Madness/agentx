@@ -113,6 +113,7 @@ export function ChatPanel() {
         {
           message: messageText,
           session_id: activeTab.sessionId || undefined,
+          agent_profile_id: activeProfile?.id,
           use_memory: useMemory,
         },
         {

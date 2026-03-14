@@ -474,7 +474,7 @@ async def agent_chat_stream(request):
         model = data.get("model")
         profile_id = data.get("profile_id")  # Prompt profile
         agent_profile_id = data.get("agent_profile_id")  # Agent profile
-        temperature = data.get("temperature", 0.7)
+        temperature = data.get("temperature")  # None if not specified
         use_memory = data.get("use_memory", True)
 
     except json.JSONDecodeError as e:
@@ -495,11 +495,50 @@ async def agent_chat_stream(request):
         full_conversation_id = str(uuid.uuid4())  # Full UUID for database storage
         start_time = time.time()
 
-        # Get or create agent with settings
-        config_kwargs = {"enable_memory": use_memory}
-        if model:
+        # Look up agent profile early to apply all settings
+        logger.debug(f"Stream chat request: agent_profile_id={agent_profile_id}, model={model}")
+        profile_manager = get_profile_manager()
+        agent_profile = None
+        if agent_profile_id:
+            agent_profile = profile_manager.get_profile(agent_profile_id)
+            if agent_profile:
+                logger.debug(f"Found agent profile: {agent_profile.name} (model: {agent_profile.default_model})")
+            else:
+                logger.warning(f"Agent profile not found: {agent_profile_id}")
+        else:
+            logger.debug("No agent_profile_id in request")
+
+        # Build agent config from profile + request overrides
+        # Priority: request params > agent profile > defaults
+        config_kwargs = {}
+
+        # Memory settings: request override > profile > default (True)
+        if agent_profile:
+            config_kwargs["enable_memory"] = agent_profile.enable_memory
+        # Request-level use_memory overrides profile setting
+        config_kwargs["enable_memory"] = use_memory
+
+        # Model: request override > profile > fallback to default
+        if agent_profile and agent_profile.default_model:
+            config_kwargs["default_model"] = agent_profile.default_model
+        if model:  # Request-level model always wins
             config_kwargs["default_model"] = model
+
+        # Prompt profile: request override > agent profile setting
+        if agent_profile and agent_profile.prompt_profile_id:
+            config_kwargs["prompt_profile_id"] = agent_profile.prompt_profile_id
+
+        # Temperature: request override > profile > default (0.7)
+        effective_temperature = temperature
+        if effective_temperature is None:
+            if agent_profile:
+                effective_temperature = agent_profile.temperature
+            else:
+                effective_temperature = 0.7
+
+        logger.debug(f"Agent config_kwargs: {config_kwargs}")
         agent = Agent(AgentConfig(**config_kwargs))
+        logger.debug(f"Agent created with default_model: {agent.config.default_model}")
 
         # Session management
         if agent._session_manager is None:
@@ -522,14 +561,8 @@ async def agent_chat_stream(request):
             # Build messages with system prompt
             prompt_manager = get_prompt_manager()
 
-            # Look up agent profile for name injection
-            agent_name = None
-            if agent_profile_id:
-                profile_manager = get_profile_manager()
-                agent_profile = profile_manager.get_profile(agent_profile_id)
-                if agent_profile:
-                    agent_name = agent_profile.name
-                    logger.debug(f"Using agent profile: {agent_profile.name}")
+            # Get agent name from profile (already loaded above)
+            agent_name = agent_profile.name if agent_profile else None
 
             system_prompt = prompt_manager.get_system_prompt(
                 profile_id=profile_id or agent.config.prompt_profile_id,
@@ -610,7 +643,7 @@ async def agent_chat_stream(request):
 
                 async for chunk in provider.stream(
                     messages, model_id,
-                    temperature=temperature,
+                    temperature=effective_temperature,
                     max_tokens=2000,
                     tools=tools if tool_round < max_tool_rounds else None,
                     tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
@@ -689,6 +722,9 @@ async def agent_chat_stream(request):
                 'tokens_output': None,
             }
             yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
+
+            # Explicit stream close signal for frontend
+            yield f"event: close\ndata: {{}}\n\n"
 
             # Store turns in memory in a background thread so the response closes immediately
             if use_memory and agent.memory:
