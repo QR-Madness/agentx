@@ -15,7 +15,7 @@ from .models import (
 # =============================================================================
 
 DEFAULT_GLOBAL_PROMPT = GlobalPrompt(
-    content="""You are AgentX, an intelligent AI assistant with advanced reasoning capabilities.
+    content="""You are an intelligent AI assistant with advanced reasoning capabilities.
 
 Core Principles:
 - Be helpful, accurate, and thoughtful in your responses

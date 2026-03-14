@@ -1,39 +1,25 @@
 /**
  * ProfileEditorModal — Create or edit agent profiles
+ * Enhanced with model selection, inline system prompt, and organized sections
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  User,
-  Sparkles,
   Brain,
   Zap,
-  Heart,
-  Star,
-  Moon,
-  Sun,
-  Cloud,
-  Flame,
   Save,
   X,
+  Cpu,
+  MessageSquare,
+  Settings2,
+  RefreshCw,
+  Trash2,
+  FolderOpen,
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
-import type { AgentProfile, AgentProfileCreate, ReasoningStrategy } from '../../lib/api';
+import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
+import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type ModelInfo, type PromptProfile } from '../../lib/api';
 import './ProfileEditorModal.css';
-
-// Avatar icon options
-const AVATAR_OPTIONS = [
-  { id: 'sparkles', icon: Sparkles, label: 'Sparkles' },
-  { id: 'brain', icon: Brain, label: 'Brain' },
-  { id: 'zap', icon: Zap, label: 'Zap' },
-  { id: 'heart', icon: Heart, label: 'Heart' },
-  { id: 'star', icon: Star, label: 'Star' },
-  { id: 'moon', icon: Moon, label: 'Moon' },
-  { id: 'sun', icon: Sun, label: 'Sun' },
-  { id: 'cloud', icon: Cloud, label: 'Cloud' },
-  { id: 'flame', icon: Flame, label: 'Flame' },
-  { id: 'user', icon: User, label: 'User' },
-];
 
 const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Automatically select based on task' },
@@ -45,41 +31,139 @@ const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description:
 
 interface ProfileEditorModalProps {
   onClose: () => void;
+  // Support both patterns: passing full profile or just ID
   editProfile?: AgentProfile;
+  profileId?: string;
+  isNew?: boolean;
 }
 
-export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalProps) {
-  const { createProfile, updateProfile } = useAgentProfile();
-  const isEditing = !!editProfile;
+export function ProfileEditorModal({ onClose, editProfile: editProfileProp, profileId, isNew }: ProfileEditorModalProps) {
+  const { profiles, createProfile, updateProfile, deleteProfile } = useAgentProfile();
+
+  // Resolve the profile to edit - either from prop or by finding it via ID
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [resolvedProfile, setResolvedProfile] = useState<AgentProfile | undefined>(editProfileProp);
+
+  // Fetch profile if profileId was passed instead of the full object
+  useEffect(() => {
+    if (profileId && !editProfileProp && !isNew) {
+      // First try to find in local profiles list
+      const localProfile = profiles.find(p => p.id === profileId);
+      if (localProfile) {
+        setResolvedProfile(localProfile);
+      } else {
+        // Fetch from API if not in local cache
+        setLoadingProfile(true);
+        api.getAgentProfile(profileId)
+          .then(({ profile }) => setResolvedProfile(profile))
+          .catch(err => console.error('Failed to fetch profile:', err))
+          .finally(() => setLoadingProfile(false));
+      }
+    }
+  }, [profileId, editProfileProp, isNew, profiles]);
+
+  const editProfile = resolvedProfile;
+  const isEditing = !!editProfile && !isNew;
 
   // Form state
-  const [name, setName] = useState(editProfile?.name ?? '');
-  const [avatar, setAvatar] = useState(editProfile?.avatar ?? 'sparkles');
-  const [description, setDescription] = useState(editProfile?.description ?? '');
-  const [temperature, setTemperature] = useState(editProfile?.temperature ?? 0.7);
-  const [reasoningStrategy, setReasoningStrategy] = useState<ReasoningStrategy>(
-    editProfile?.reasoningStrategy ?? 'auto'
-  );
-  const [enableMemory, setEnableMemory] = useState(editProfile?.enableMemory ?? true);
-  const [memoryChannel, setMemoryChannel] = useState(editProfile?.memoryChannel ?? '_global');
-  const [enableTools, setEnableTools] = useState(editProfile?.enableTools ?? true);
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState('sparkles');
+  const [description, setDescription] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
+  const [temperature, setTemperature] = useState(0.7);
+  const [reasoningStrategy, setReasoningStrategy] = useState<ReasoningStrategy>('auto');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [enableMemory, setEnableMemory] = useState(true);
+  const [memoryChannel, setMemoryChannel] = useState('_global');
+  const [enableTools, setEnableTools] = useState(true);
+
+  const [promptProfileId, setPromptProfileId] = useState('');
 
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [promptProfiles, setPromptProfiles] = useState<PromptProfile[]>([]);
 
-  // Reset form when editProfile changes
+  // Ref for textarea to handle cursor position
+  const systemPromptRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch available models and prompt profiles on mount
+  useEffect(() => {
+    api.listModels()
+      .then(({ models }) => setAvailableModels(models))
+      .catch(err => console.error('Failed to fetch models:', err))
+      .finally(() => setLoadingModels(false));
+
+    api.listPromptProfiles()
+      .then(({ profiles }) => setPromptProfiles(profiles))
+      .catch(err => console.error('Failed to fetch prompt profiles:', err));
+  }, []);
+
+  // Get unique providers from models - prioritize known providers
+  const providers = useMemo(() => {
+    const providerSet = new Set(availableModels.map(m => m.provider));
+    const known = ['anthropic', 'lmstudio', 'openai'];
+    const sorted = Array.from(providerSet).sort((a, b) => {
+      const aIdx = known.indexOf(a);
+      const bIdx = known.indexOf(b);
+      if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+      if (aIdx !== -1) return -1;
+      if (bIdx !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    return sorted;
+  }, [availableModels]);
+
+  // Auto-select first provider when models load
+  useEffect(() => {
+    if (!loadingModels && providers.length > 0 && !selectedProvider) {
+      setSelectedProvider(providers[0]);
+    }
+  }, [loadingModels, providers, selectedProvider]);
+
+  // Filter models by selected provider
+  const filteredModels = useMemo(() => {
+    if (!selectedProvider) return [];
+    return availableModels.filter(m => m.provider === selectedProvider);
+  }, [availableModels, selectedProvider]);
+
+  // Initialize form when editProfile is resolved
   useEffect(() => {
     if (editProfile) {
       setName(editProfile.name);
       setAvatar(editProfile.avatar ?? 'sparkles');
       setDescription(editProfile.description ?? '');
+      setDefaultModel(editProfile.defaultModel ?? '');
       setTemperature(editProfile.temperature);
       setReasoningStrategy(editProfile.reasoningStrategy);
+      setSystemPrompt(editProfile.systemPrompt ?? '');
+      setPromptProfileId(editProfile.promptProfileId ?? '');
       setEnableMemory(editProfile.enableMemory);
       setMemoryChannel(editProfile.memoryChannel);
       setEnableTools(editProfile.enableTools);
+
+      // Set provider based on the model
+      if (editProfile.defaultModel) {
+        const model = availableModels.find(m => m.id === editProfile.defaultModel);
+        if (model) {
+          setSelectedProvider(model.provider);
+        }
+      }
     }
-  }, [editProfile]);
+  }, [editProfile, availableModels]);
+
+  // When provider changes, clear model if it doesn't belong to new provider
+  useEffect(() => {
+    if (selectedProvider && defaultModel) {
+      const model = availableModels.find(m => m.id === defaultModel);
+      if (model && model.provider !== selectedProvider) {
+        setDefaultModel('');
+      }
+    }
+  }, [selectedProvider, defaultModel, availableModels]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,8 +181,11 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
         name: name.trim(),
         avatar,
         description: description.trim() || undefined,
+        default_model: defaultModel || undefined,
         temperature,
         reasoning_strategy: reasoningStrategy,
+        prompt_profile_id: promptProfileId || undefined,
+        system_prompt: systemPrompt.trim() || undefined,
         enable_memory: enableMemory,
         memory_channel: memoryChannel,
         enable_tools: enableTools,
@@ -118,12 +205,100 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
     }
   };
 
-  const getAvatarIcon = (avatarId: string) => {
-    const option = AVATAR_OPTIONS.find(o => o.id === avatarId);
-    return option?.icon ?? Sparkles;
+  const handleDelete = async () => {
+    if (!editProfile) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${editProfile.name}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const success = await deleteProfile(editProfile.id);
+      if (success) {
+        onClose();
+      } else {
+        setError('Failed to delete profile');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete profile');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const AvatarIcon = getAvatarIcon(avatar);
+
+  // Insert text at cursor position in the system prompt textarea
+  const insertAtCursor = (text: string) => {
+    const textarea = systemPromptRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const before = systemPrompt.substring(0, start);
+    const after = systemPrompt.substring(end);
+
+    setSystemPrompt(before + text + after);
+
+    // Restore focus and set cursor position after the inserted text
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + text.length;
+    });
+  };
+
+  // Handle inserting a prompt section from the library
+  const handleInsertFromLibrary = async () => {
+    try {
+      // Fetch all sections from the prompt sections endpoint
+      const { sections } = await api.listPromptSections();
+
+      if (sections.length === 0) {
+        setError('No prompt sections available to insert');
+        return;
+      }
+
+      // Simple picker using prompt - could be enhanced to a modal later
+      const sectionList = sections.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
+      const choice = window.prompt(`Choose a section to insert:\n\n${sectionList}\n\nEnter number:`);
+
+      if (!choice?.trim()) return;
+
+      const index = parseInt(choice, 10) - 1;
+      if (index >= 0 && index < sections.length) {
+        insertAtCursor(sections[index].content);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load sections');
+    }
+  };
+
+  // Show loading state while fetching profile
+  if (loadingProfile) {
+    return (
+      <div className="profile-editor-modal">
+        <div className="modal-header">
+          <div className="modal-title-group">
+            <div className="avatar-preview">
+              <RefreshCw size={24} className="spin" />
+            </div>
+            <h2>Loading Profile...</h2>
+          </div>
+          <button className="button-ghost close-btn" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <RefreshCw size={32} className="spin" style={{ marginBottom: '1rem' }} />
+          <p>Loading profile data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="profile-editor-modal">
@@ -146,8 +321,13 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
           </div>
         )}
 
-        {/* Name & Avatar */}
+        {/* Identity Section */}
         <div className="form-section">
+          <div className="section-header">
+            <Settings2 size={14} />
+            <span>Identity</span>
+          </div>
+
           <div className="form-group">
             <label htmlFor="profile-name">Name</label>
             <input
@@ -189,12 +369,82 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
               placeholder="Describe this profile's purpose..."
               rows={2}
             />
+            <span className="form-hint">Optional description for this agent profile</span>
           </div>
         </div>
 
-        {/* Model Settings */}
+        {/* Model & Generation Section */}
         <div className="form-section">
-          <h3 className="section-label">Model Settings</h3>
+          <div className="section-header">
+            <Cpu size={14} />
+            <span>Model & Generation</span>
+          </div>
+
+          {/* Provider Tabs with Model Selection */}
+          <div className="model-tabs">
+            <div className="model-tab-buttons">
+              {providers.map(provider => (
+                <button
+                  key={provider}
+                  type="button"
+                  className={`model-tab-button ${selectedProvider === provider ? 'active' : ''}`}
+                  onClick={() => setSelectedProvider(provider)}
+                  disabled={loadingModels}
+                >
+                  {provider === 'anthropic' && 'Anthropic'}
+                  {provider === 'lmstudio' && 'LM Studio'}
+                  {provider === 'openai' && 'OpenAI'}
+                  {!['anthropic', 'lmstudio', 'openai'].includes(provider) &&
+                    provider.charAt(0).toUpperCase() + provider.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="model-tab-content">
+              {loadingModels ? (
+                <div className="model-loading">
+                  <RefreshCw size={16} className="spin" />
+                  <span>Loading models...</span>
+                </div>
+              ) : filteredModels.length === 0 ? (
+                <div className="model-empty">
+                  {selectedProvider ? 'No models available for this provider' : 'Select a provider'}
+                </div>
+              ) : (
+                <>
+                  <label className={`model-option ${defaultModel === '' ? 'selected' : ''}`}>
+                    <input
+                      type="radio"
+                      name="model"
+                      value=""
+                      checked={defaultModel === ''}
+                      onChange={() => setDefaultModel('')}
+                    />
+                    <span className="model-option-content">
+                      <span className="model-name">System default</span>
+                      <span className="model-desc">Use the system's default model</span>
+                    </span>
+                  </label>
+                  {filteredModels.map(model => (
+                    <label key={model.id} className={`model-option ${defaultModel === model.id ? 'selected' : ''}`}>
+                      <input
+                        type="radio"
+                        name="model"
+                        value={model.id}
+                        checked={defaultModel === model.id}
+                        onChange={() => setDefaultModel(model.id)}
+                      />
+                      <span className="model-option-content">
+                        <span className="model-name">{model.name}</span>
+                        {model.context_length && (
+                          <span className="model-desc">{(model.context_length / 1000).toFixed(0)}k context</span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
 
           <div className="form-group">
             <label htmlFor="temperature">
@@ -232,9 +482,63 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
           </div>
         </div>
 
-        {/* Behavior Toggles */}
+        {/* System Prompt Section */}
         <div className="form-section">
-          <h3 className="section-label">Behavior</h3>
+          <div className="section-header">
+            <MessageSquare size={14} />
+            <span>System Prompt</span>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="prompt-profile">Base Prompt Profile</label>
+            <select
+              id="prompt-profile"
+              value={promptProfileId}
+              onChange={(e) => setPromptProfileId(e.target.value)}
+            >
+              <option value="">None (use global only)</option>
+              {promptProfiles.map(profile => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                  {profile.is_default && ' (Default)'}
+                </option>
+              ))}
+            </select>
+            <span className="form-hint">Link to a prompt profile for base instructions</span>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="system-prompt">Agent Instructions</label>
+            <div className="prompt-toolbar">
+              <button
+                type="button"
+                className="prompt-toolbar-btn"
+                onClick={handleInsertFromLibrary}
+                title="Insert section from prompt library"
+              >
+                <FolderOpen size={14} />
+                <span>Insert</span>
+              </button>
+            </div>
+            <textarea
+              ref={systemPromptRef}
+              id="system-prompt"
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              placeholder="Custom instructions for this agent... (leave empty to use defaults)"
+              rows={5}
+              className="system-prompt-textarea"
+            />
+            <span className="form-hint">Agent-specific instructions prepended to conversations</span>
+          </div>
+        </div>
+
+        {/* Capabilities Section */}
+        <div className="form-section">
+          <div className="section-header">
+            <Zap size={14} />
+            <span>Capabilities</span>
+          </div>
 
           <div className="toggle-group">
             <label className="toggle-row">
@@ -248,7 +552,7 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
                 onChange={(e) => setEnableMemory(e.target.checked)}
                 className="toggle-input"
               />
-              <span className="toggle-switch" />
+              <span className={`toggle-switch ${enableMemory ? 'active' : ''}`} />
             </label>
 
             {enableMemory && (
@@ -261,6 +565,7 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
                   onChange={(e) => setMemoryChannel(e.target.value)}
                   placeholder="_global"
                 />
+                <span className="form-hint">Isolate memories to a specific channel</span>
               </div>
             )}
 
@@ -275,20 +580,33 @@ export function ProfileEditorModal({ onClose, editProfile }: ProfileEditorModalP
                 onChange={(e) => setEnableTools(e.target.checked)}
                 className="toggle-input"
               />
-              <span className="toggle-switch" />
+              <span className={`toggle-switch ${enableTools ? 'active' : ''}`} />
             </label>
           </div>
         </div>
 
         {/* Actions */}
         <div className="form-actions">
-          <button type="button" className="button-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="button-primary" disabled={saving}>
-            <Save size={16} />
-            {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Profile'}
-          </button>
+          {isEditing && !editProfile?.isDefault && (
+            <button
+              type="button"
+              className="button-danger"
+              onClick={handleDelete}
+              disabled={deleting || saving}
+            >
+              <Trash2 size={16} />
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          )}
+          <div className="form-actions-right">
+            <button type="button" className="button-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="button-primary" disabled={saving || deleting}>
+              <Save size={16} />
+              {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Profile'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

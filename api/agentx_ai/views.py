@@ -279,25 +279,33 @@ def providers_list(request):
     })
 
 
-def providers_models(request):
+async def providers_models(request):
     """List all available models across providers."""
     registry = get_registry()
     provider_filter = request.GET.get('provider')
-    
+
     models = []
-    
+
     for provider_name in registry.list_providers():
         if provider_filter and provider_name != provider_filter:
             continue
-        
+
         try:
             provider = registry.get_provider(provider_name)
+
+            # For providers that need to fetch models dynamically (like LM Studio),
+            # call fetch_models first to populate the available models list
+            if hasattr(provider, 'fetch_models'):
+                await provider.fetch_models()
+
             for model_name in provider.list_models():
                 caps = provider.get_capabilities(model_name)
                 models.append({
+                    "id": model_name,
                     "name": model_name,
                     "provider": provider_name,
-                    "context_window": caps.context_window,
+                    "context_length": caps.context_window,
+                    "context_window": caps.context_window,  # Legacy field
                     "supports_tools": caps.supports_tools,
                     "supports_vision": caps.supports_vision,
                     "supports_streaming": caps.supports_streaming,
@@ -307,7 +315,11 @@ def providers_models(request):
         except ValueError:
             # Provider not configured, skip
             continue
-    
+        except Exception as e:
+            # Log but don't fail - other providers may still work
+            logger.warning(f"Failed to fetch models from {provider_name}: {e}")
+            continue
+
     return JsonResponse({
         "models": models,
         "count": len(models),

@@ -3,7 +3,6 @@ import {
   Settings,
   Server,
   Key,
-  Brain,
   Sparkles,
   Database,
   Plus,
@@ -25,7 +24,7 @@ import { ServerConfig } from '../../lib/storage';
 import { api, PromptProfile, PromptSection, GlobalPrompt, ConfigUpdate } from '../../lib/api';
 import '../../styles/SettingsTab.css';
 
-type SettingsSection = 'servers' | 'providers' | 'prompts' | 'reasoning' | 'memory';
+type SettingsSection = 'servers' | 'providers' | 'prompts' | 'memory';
 
 export const SettingsTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('servers');
@@ -192,7 +191,6 @@ export const SettingsTab: React.FC = () => {
     { id: 'servers' as const, label: 'Servers', icon: <Server size={18} /> },
     { id: 'providers' as const, label: 'Model Providers', icon: <Key size={18} /> },
     { id: 'prompts' as const, label: 'Prompts', icon: <FileText size={18} /> },
-    { id: 'reasoning' as const, label: 'Reasoning', icon: <Brain size={18} /> },
     { id: 'memory' as const, label: 'Memory', icon: <Database size={18} /> },
   ];
 
@@ -612,81 +610,6 @@ export const SettingsTab: React.FC = () => {
                   </div>
                 </>
               )}
-            </div>
-          )}
-
-          {/* Reasoning Section */}
-          {activeSection === 'reasoning' && (
-            <div className="settings-section fade-in">
-              <div className="section-header">
-                <div>
-                  <h2 className="section-title">
-                    <Brain size={20} className="section-title-icon" />
-                    Reasoning Preferences
-                  </h2>
-                  <p className="section-description">
-                    Configure default reasoning strategies and behavior
-                  </p>
-                </div>
-              </div>
-
-              <div className="preferences-card card">
-                <div className="form-group">
-                  <label>Default Reasoning Strategy</label>
-                  <select
-                    value={activeMetadata?.preferences?.defaultReasoningStrategy || 'auto'}
-                    onChange={(e) => updateMetadata({
-                      preferences: {
-                        ...activeMetadata?.preferences,
-                        defaultReasoningStrategy: e.target.value,
-                      },
-                    })}
-                  >
-                    <option value="auto">Auto (Recommended)</option>
-                    <option value="chain_of_thought">Chain of Thought</option>
-                    <option value="tree_of_thought">Tree of Thought</option>
-                    <option value="react">ReAct</option>
-                    <option value="reflection">Reflection</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Default Drafting Strategy</label>
-                  <select
-                    value={activeMetadata?.preferences?.defaultDraftingStrategy || 'none'}
-                    onChange={(e) => updateMetadata({
-                      preferences: {
-                        ...activeMetadata?.preferences,
-                        defaultDraftingStrategy: e.target.value,
-                      },
-                    })}
-                  >
-                    <option value="none">None</option>
-                    <option value="speculative">Speculative Decoding</option>
-                    <option value="pipeline">Multi-Model Pipeline</option>
-                    <option value="candidate">Candidate Generation</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Default Model</label>
-                  <select
-                    value={activeMetadata?.preferences?.defaultModel || 'auto'}
-                    onChange={(e) => updateMetadata({
-                      preferences: {
-                        ...activeMetadata?.preferences,
-                        defaultModel: e.target.value,
-                      },
-                    })}
-                  >
-                    <option value="auto">Auto Select</option>
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                    <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                    <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
-                  </select>
-                </div>
-              </div>
             </div>
           )}
 

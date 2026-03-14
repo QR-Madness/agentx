@@ -9,6 +9,16 @@ AgentX is an AI Agent Platform combining:
 - **Frontend**: Tauri v2 desktop app (`client/`) with React 19, TypeScript, Vite
 - **Data Layer**: Neo4j (graphs), PostgreSQL + pgvector (vectors), Redis (cache) — all via Docker
 
+## Terminology
+
+| Term | Meaning |
+|------|---------|
+| **Agent Profile** / **Profile** | Configuration that defines an agent's identity, behavior, and settings. These are the primary configuration entity — they produce "agents" when used. |
+| **Global Settings** | Settings that apply across all agents (e.g., server connections, API keys, MCP tools) |
+| **Profile Settings** | Per-agent settings (e.g., model, temperature, system prompt, reasoning strategy, memory channel) |
+
+Agent profiles configure: name, avatar, default model, temperature, system prompt, reasoning strategy, memory enable/channel, and tool enable. The global prompt has no agent name — agent names are injected from the profile during prompt composition.
+
 ## Architecture
 
 ```

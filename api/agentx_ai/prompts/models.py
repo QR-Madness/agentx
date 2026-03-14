@@ -98,17 +98,19 @@ class PromptConfig(BaseModel):
 
     # Agent identity
     agent_name: Optional[str] = None  # Name to inject as "Your name is {name}."
-    
+    agent_system_prompt: Optional[str] = None  # Agent-specific custom instructions
+
     def compose_system_prompt(self) -> str:
         """
         Compose the final system prompt from all components.
 
         Order:
         1. Agent name introduction (if provided)
-        2. Global prompt (persona, core behavior)
-        3. MCP tools prompt (if tools are available)
-        4. Profile sections (in defined order)
-        5. Additional context (if provided)
+        2. Agent-specific system prompt (if provided)
+        3. Global prompt (persona, core behavior)
+        4. MCP tools prompt (if tools are available)
+        5. Profile sections (in defined order)
+        6. Additional context (if provided)
         """
         if self.system_override:
             return self.system_override
@@ -119,22 +121,26 @@ class PromptConfig(BaseModel):
         if self.agent_name:
             parts.append(f"Your name is {self.agent_name}.")
 
+        # Agent-specific custom system prompt
+        if self.agent_system_prompt:
+            parts.append(self.agent_system_prompt)
+
         # Global prompt
         if self.global_prompt and self.global_prompt.enabled:
             parts.append(self.global_prompt.content)
-        
+
         # MCP tools prompt
         if self.mcp_tools_prompt:
             parts.append(self.mcp_tools_prompt)
-        
+
         # Profile sections
         if self.profile:
             profile_content = self.profile.compose()
             if profile_content:
                 parts.append(profile_content)
-        
+
         # Additional context
         if self.additional_context:
             parts.append(self.additional_context)
-        
+
         return "\n\n".join(parts) if parts else ""

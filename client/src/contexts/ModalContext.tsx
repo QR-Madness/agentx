@@ -6,7 +6,7 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 
 export type ModalType = 'modal' | 'drawer';
 export type ModalPosition = 'left' | 'right' | 'center';
-export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'full';
 
 export interface ModalConfig {
   id?: string;

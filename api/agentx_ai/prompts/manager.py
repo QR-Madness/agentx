@@ -229,6 +229,7 @@ class PromptManager:
         additional_context: Optional[str] = None,
         structured_output: Optional[StructuredOutputConfig] = None,
         agent_name: Optional[str] = None,
+        agent_system_prompt: Optional[str] = None,
     ) -> PromptConfig:
         """
         Compose a complete prompt configuration.
@@ -239,6 +240,7 @@ class PromptManager:
             additional_context: Additional context to append
             structured_output: Structured output configuration
             agent_name: Agent name to inject as "Your name is {name}."
+            agent_system_prompt: Agent-specific custom system prompt
 
         Returns:
             Complete PromptConfig ready for use
@@ -262,6 +264,7 @@ class PromptManager:
             additional_context=additional_context,
             structured_output=structured_output,
             agent_name=agent_name,
+            agent_system_prompt=agent_system_prompt,
         )
     
     def get_system_prompt(
@@ -270,6 +273,7 @@ class PromptManager:
         mcp_tools: Optional[list[dict]] = None,
         additional_context: Optional[str] = None,
         agent_name: Optional[str] = None,
+        agent_system_prompt: Optional[str] = None,
     ) -> str:
         """
         Get the composed system prompt string.
@@ -281,12 +285,14 @@ class PromptManager:
             mcp_tools: List of available MCP tools
             additional_context: Additional context to append
             agent_name: Agent name to inject as "Your name is {name}."
+            agent_system_prompt: Agent-specific custom system prompt
         """
         config = self.compose_prompt(
             profile_id=profile_id,
             mcp_tools=mcp_tools,
             additional_context=additional_context,
             agent_name=agent_name,
+            agent_system_prompt=agent_system_prompt,
         )
         return config.compose_system_prompt()
 

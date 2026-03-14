@@ -43,6 +43,10 @@ class AgentProfile(BaseModel):
         None,
         description="ID of the PromptProfile to use for system prompt composition"
     )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="Custom system prompt for this agent (prepended to conversations)"
+    )
 
     # Behavior settings
     reasoning_strategy: ReasoningStrategy = Field(

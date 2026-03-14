@@ -146,6 +146,7 @@ export interface AgentProfile {
   defaultModel?: string;
   temperature: number;
   promptProfileId?: string;
+  systemPrompt?: string;
   reasoningStrategy: ReasoningStrategy;
   enableMemory: boolean;
   memoryChannel: string;
@@ -163,6 +164,7 @@ export interface AgentProfileCreate {
   default_model?: string;
   temperature?: number;
   prompt_profile_id?: string;
+  system_prompt?: string;
   reasoning_strategy?: ReasoningStrategy;
   enable_memory?: boolean;
   memory_channel?: string;
@@ -642,6 +644,7 @@ class ApiClient {
       default_model?: string;
       temperature: number;
       prompt_profile_id?: string;
+      system_prompt?: string;
       reasoning_strategy: string;
       enable_memory: boolean;
       memory_channel: string;
@@ -660,6 +663,7 @@ class ApiClient {
         defaultModel: p.default_model,
         temperature: p.temperature,
         promptProfileId: p.prompt_profile_id,
+        systemPrompt: p.system_prompt,
         reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
         enableMemory: p.enable_memory,
         memoryChannel: p.memory_channel,
@@ -680,6 +684,7 @@ class ApiClient {
       default_model?: string;
       temperature: number;
       prompt_profile_id?: string;
+      system_prompt?: string;
       reasoning_strategy: string;
       enable_memory: boolean;
       memory_channel: string;
@@ -698,6 +703,7 @@ class ApiClient {
         defaultModel: p.default_model,
         temperature: p.temperature,
         promptProfileId: p.prompt_profile_id,
+        systemPrompt: p.system_prompt,
         reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
         enableMemory: p.enable_memory,
         memoryChannel: p.memory_channel,
@@ -718,6 +724,7 @@ class ApiClient {
       default_model?: string;
       temperature: number;
       prompt_profile_id?: string;
+      system_prompt?: string;
       reasoning_strategy: string;
       enable_memory: boolean;
       memory_channel: string;
@@ -739,6 +746,7 @@ class ApiClient {
         defaultModel: p.default_model,
         temperature: p.temperature,
         promptProfileId: p.prompt_profile_id,
+        systemPrompt: p.system_prompt,
         reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
         enableMemory: p.enable_memory,
         memoryChannel: p.memory_channel,
@@ -759,6 +767,7 @@ class ApiClient {
       default_model?: string;
       temperature: number;
       prompt_profile_id?: string;
+      system_prompt?: string;
       reasoning_strategy: string;
       enable_memory: boolean;
       memory_channel: string;
@@ -780,6 +789,7 @@ class ApiClient {
         defaultModel: p.default_model,
         temperature: p.temperature,
         promptProfileId: p.prompt_profile_id,
+        systemPrompt: p.system_prompt,
         reasoningStrategy: p.reasoning_strategy as ReasoningStrategy,
         enableMemory: p.enable_memory,
         memoryChannel: p.memory_channel,

@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import { Bot, Settings, Check, Plus, ChevronUp } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useModal } from '../../contexts/ModalContext';
+import { getAvatarIcon } from '../../lib/avatars';
 import './AgentSelectorDropdown.css';
 
 interface AgentSelectorDropdownProps {
@@ -117,16 +118,18 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       </div>
 
       <div className="agent-selector-list">
-        {profiles.map(profile => (
-          <div
-            key={profile.id}
-            className={`agent-selector-item ${profile.id === activeProfile?.id ? 'active' : ''}`}
-            onClick={() => handleSelect(profile.id)}
-          >
-            <div className="agent-item-avatar">
-              {profile.avatar || profile.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="agent-item-info">
+        {profiles.map(profile => {
+          const AvatarIcon = getAvatarIcon(profile.avatar);
+          return (
+            <div
+              key={profile.id}
+              className={`agent-selector-item ${profile.id === activeProfile?.id ? 'active' : ''}`}
+              onClick={() => handleSelect(profile.id)}
+            >
+              <div className="agent-item-avatar">
+                <AvatarIcon size={16} />
+              </div>
+              <div className="agent-item-info">
               <span className="agent-item-name">{profile.name}</span>
               <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
             </div>
@@ -141,7 +144,8 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
               <Settings size={12} />
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="agent-selector-footer">
