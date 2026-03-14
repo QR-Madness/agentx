@@ -314,6 +314,7 @@ tasks:
       - task: db:down
       - task: db:clean
       - task: db:full-init
+      - task: db:down
 
   db:shell:postgres:
     desc: "Open PostgreSQL shell (psql)"
