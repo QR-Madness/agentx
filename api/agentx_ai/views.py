@@ -544,6 +544,7 @@ async def agent_chat_stream(request):
             ]
 
             # Retrieve relevant memories and inject into context
+            memory_bundle = None
             if use_memory and agent.memory:
                 try:
                     memory_bundle = agent.memory.remember(
@@ -570,8 +571,34 @@ async def agent_chat_stream(request):
             tools = agent._get_tools_for_provider()
             logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
 
-            # Send start event
-            yield f"event: start\ndata: {json.dumps({'task_id': task_id, 'model': model_id})}\n\n"
+            # Resolve prompt profile name for metadata
+            prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
+            prompt_profile_name = prompt_profile.name if prompt_profile else None
+
+            # Send start event with enhanced metadata
+            start_data = {
+                'task_id': task_id,
+                'model': model_id,
+                'model_display_name': model_id,
+                'profile_name': prompt_profile_name,
+                'agent_name': agent_name or 'AgentX',
+            }
+            yield f"event: start\ndata: {json.dumps(start_data)}\n\n"
+
+            # Emit memory_context event if memories were retrieved
+            if memory_bundle and (memory_bundle.facts or memory_bundle.entities):
+                memory_event = {
+                    'facts': [
+                        {'claim': f.claim, 'confidence': f.confidence, 'source': getattr(f, 'source_turn_id', None)}
+                        for f in memory_bundle.facts
+                    ],
+                    'entities': [
+                        {'name': e.name, 'type': getattr(e, 'entity_type', 'unknown')}
+                        for e in memory_bundle.entities
+                    ],
+                    'query': message,
+                }
+                yield f"event: memory_context\ndata: {json.dumps(memory_event)}\n\n"
 
             # Stream tokens with tool-use loop
             full_content = ""
@@ -603,7 +630,7 @@ async def agent_chat_stream(request):
                 # Execute tool calls and build follow-up messages
                 for tc in round_tool_calls:
                     tools_used.append(tc.name)
-                    yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'arguments': tc.arguments})}\n\n"
+                    yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'tool_call_id': tc.id, 'arguments': tc.arguments})}\n\n"
 
                 # Add assistant message with tool_calls to conversation
                 messages.append(Message(
@@ -616,10 +643,23 @@ async def agent_chat_stream(request):
                     ],
                 ))
 
-                # Execute tools and append results
+                # Execute tools and append results with timing
+                tool_start_time = time.perf_counter()
                 tool_messages = agent._execute_tool_calls(round_tool_calls)
+                tool_total_time = (time.perf_counter() - tool_start_time) * 1000
+                tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
+
                 for tm in tool_messages:
-                    yield f"event: tool_result\ndata: {json.dumps({'tool': tm.name, 'content': tm.content[:500]})}\n\n"
+                    # Detect success based on content (errors typically contain "error" key)
+                    is_error = tm.content.startswith('{"error"') or tm.content.startswith("Error:")
+                    tool_result_data = {
+                        'tool': tm.name,
+                        'tool_call_id': tm.tool_call_id,
+                        'content': tm.content[:500],
+                        'success': not is_error,
+                        'duration_ms': round(tool_avg_time, 2),
+                    }
+                    yield f"event: tool_result\ndata: {json.dumps(tool_result_data)}\n\n"
                 messages.extend(tool_messages)
 
                 logger.info(
@@ -635,8 +675,20 @@ async def agent_chat_stream(request):
 
             total_time = (time.time() - start_time) * 1000
 
-            # Send completion event
-            yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'thinking': parsed.thinking, 'has_thinking': parsed.has_thinking, 'total_time_ms': total_time, 'session_id': conv_id})}\n\n"
+            # Send completion event with enhanced metadata
+            done_data = {
+                'task_id': task_id,
+                'thinking': parsed.thinking,
+                'has_thinking': parsed.has_thinking,
+                'total_time_ms': total_time,
+                'session_id': conv_id,
+                'profile_name': prompt_profile_name,
+                'agent_name': agent_name or 'AgentX',
+                # Token counts require provider-level tracking (future enhancement)
+                'tokens_input': None,
+                'tokens_output': None,
+            }
+            yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
 
             # Store turns in memory in a background thread so the response closes immediately
             if use_memory and agent.memory:

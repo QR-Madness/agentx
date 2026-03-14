@@ -24,6 +24,9 @@ import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import {
   type UserMessage,
   type AssistantMessage,
+  type ToolCallMessage,
+  type ToolResultMessage,
+  type MemoryInjectionMessage,
   createMessageId,
 } from '../../lib/messages';
 import './ChatPanel.css';
@@ -120,6 +123,47 @@ export function ChatPanel() {
             streamingContentRef.current += content;
             setStreamingContent(streamingContentRef.current);
           },
+          onMemoryContext: (data) => {
+            // Create memory injection message when memories are retrieved
+            if (data.facts.length > 0 || data.entities.length > 0) {
+              const memoryMessage: MemoryInjectionMessage = {
+                id: createMessageId(),
+                type: 'memory_injection',
+                timestamp: new Date().toISOString(),
+                facts: data.facts,
+                entities: data.entities,
+                queryUsed: data.query,
+              };
+              appendMessage(memoryMessage);
+            }
+          },
+          onToolCall: (data) => {
+            // Create tool call message when a tool is invoked
+            const toolCallMessage: ToolCallMessage = {
+              id: createMessageId(),
+              type: 'tool_call',
+              timestamp: new Date().toISOString(),
+              toolName: data.tool,
+              toolCallId: data.tool_call_id,
+              arguments: data.arguments,
+              status: 'pending',
+            };
+            appendMessage(toolCallMessage);
+          },
+          onToolResult: (data) => {
+            // Create tool result message when tool execution completes
+            const toolResultMessage: ToolResultMessage = {
+              id: createMessageId(),
+              type: 'tool_result',
+              timestamp: new Date().toISOString(),
+              toolName: data.tool,
+              toolCallId: data.tool_call_id,
+              content: data.content,
+              success: data.success,
+              durationMs: data.duration_ms,
+            };
+            appendMessage(toolResultMessage);
+          },
           onDone: (data) => {
             const finalContent = streamingContentRef.current;
             streamingContentRef.current = '';
@@ -135,6 +179,10 @@ export function ChatPanel() {
                 content: cleanContent,
                 timestamp: new Date().toISOString(),
                 thinking: data.thinking,
+                latencyMs: data.total_time_ms,
+                agentName: data.agent_name,
+                tokensInput: data.tokens_input ?? undefined,
+                tokensOutput: data.tokens_output ?? undefined,
               };
               appendMessage(assistantMessage);
             }

@@ -968,9 +968,42 @@ class ApiClient {
   streamChat(
     request: ChatRequest,
     callbacks: {
-      onStart?: (data: { task_id: string; model: string }) => void;
+      onStart?: (data: {
+        task_id: string;
+        model: string;
+        model_display_name?: string;
+        profile_name?: string;
+        agent_name?: string;
+      }) => void;
       onChunk?: (content: string) => void;
-      onDone?: (data: { task_id: string; thinking?: string; has_thinking?: boolean; total_time_ms: number; session_id: string }) => void;
+      onMemoryContext?: (data: {
+        facts: Array<{ claim: string; confidence: number; source?: string }>;
+        entities: Array<{ name: string; type: string }>;
+        query: string;
+      }) => void;
+      onToolCall?: (data: {
+        tool: string;
+        tool_call_id: string;
+        arguments: Record<string, unknown>;
+      }) => void;
+      onToolResult?: (data: {
+        tool: string;
+        tool_call_id: string;
+        content: string;
+        success: boolean;
+        duration_ms: number;
+      }) => void;
+      onDone?: (data: {
+        task_id: string;
+        thinking?: string;
+        has_thinking?: boolean;
+        total_time_ms: number;
+        session_id: string;
+        profile_name?: string;
+        agent_name?: string;
+        tokens_input?: number;
+        tokens_output?: number;
+      }) => void;
       onError?: (error: string) => void;
     }
   ): { abort: () => void } {
@@ -1023,6 +1056,15 @@ class ApiClient {
                       break;
                     case 'chunk':
                       callbacks.onChunk?.(data.content);
+                      break;
+                    case 'memory_context':
+                      callbacks.onMemoryContext?.(data);
+                      break;
+                    case 'tool_call':
+                      callbacks.onToolCall?.(data);
+                      break;
+                    case 'tool_result':
+                      callbacks.onToolResult?.(data);
                       break;
                     case 'done':
                       callbacks.onDone?.(data);
