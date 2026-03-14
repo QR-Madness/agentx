@@ -359,16 +359,19 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  position: relative;
 }
 
 .profile-indicator {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 6px;
+  padding: 6px 10px;
   background: var(--bg-elevated);
-  border-radius: 6px;
-  font-size: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -377,10 +380,26 @@
 .profile-indicator:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  border-color: var(--cosmic-violet);
 }
 
-.profile-indicator svg {
+.profile-indicator.active {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: var(--cosmic-violet);
+  color: var(--text-primary);
+}
+
+.profile-indicator svg:first-child {
   color: var(--cosmic-violet);
+}
+
+.profile-indicator svg:last-child {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.profile-indicator svg.rotated {
+  transform: rotate(180deg);
 }
 
 .stop-button {

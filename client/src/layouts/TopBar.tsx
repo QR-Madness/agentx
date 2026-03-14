@@ -40,7 +40,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       type: 'drawer',
       component: 'settings',
       position: 'right',
-      size: 'lg',
+      size: 'xl',
     });
   };
 
@@ -50,7 +50,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       type: 'drawer',
       component: 'memory',
       position: 'right',
-      size: 'lg',
+      size: 'xl',
     });
   };
 

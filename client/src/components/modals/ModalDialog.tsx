@@ -15,6 +15,7 @@ const SIZE_MAX_WIDTHS: Record<ModalSize, string> = {
   sm: '440px',
   md: '600px',
   lg: '800px',
+  xl: '1000px',
   full: '95vw',
 };
 

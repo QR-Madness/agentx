@@ -1,8 +1,10 @@
 /**
  * ConversationHistoryDropdown — Browse and switch between past conversations
+ * Renders via portal to escape overflow constraints
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, Search, Trash2, MessageSquare, X } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import './ConversationHistoryDropdown.css';
@@ -16,8 +18,28 @@ interface ConversationHistoryDropdownProps {
 export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: ConversationHistoryDropdownProps) {
   const { tabs, activeTabId, switchTab, closeTab } = useConversation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [position, setPosition] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Calculate position based on anchor element
+  useEffect(() => {
+    if (!isOpen || !anchorRef.current) return;
+
+    const updatePosition = () => {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (rect) {
+        setPosition({
+          top: rect.bottom + 8,
+          right: window.innerWidth - rect.right,
+        });
+      }
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [isOpen, anchorRef]);
 
   // Close on outside click
   useEffect(() => {
@@ -97,8 +119,12 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     closeTab(tabId);
   };
 
-  return (
-    <div className="history-dropdown" ref={dropdownRef}>
+  const dropdown = (
+    <div
+      className="history-dropdown-portal"
+      ref={dropdownRef}
+      style={{ top: position.top, right: position.right }}
+    >
       <div className="history-header">
         <Clock size={16} />
         <span>Conversation History</span>
@@ -165,4 +191,6 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
       </div>
     </div>
   );
+
+  return createPortal(dropdown, document.body);
 }

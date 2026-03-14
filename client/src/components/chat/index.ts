@@ -9,3 +9,4 @@ export { ToolCallBlock } from './ToolCallBlock';
 export { ToolResultBlock } from './ToolResultBlock';
 export { MemoryInjectionBlock } from './MemoryInjectionBlock';
 export { ConversationHistoryDropdown } from './ConversationHistoryDropdown';
+export { AgentSelectorDropdown } from './AgentSelectorDropdown';

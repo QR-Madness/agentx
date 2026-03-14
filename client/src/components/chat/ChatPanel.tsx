@@ -11,13 +11,14 @@ import {
   Radio,
   Database,
   Square,
-  ChevronDown,
+  ChevronUp,
   Sparkles,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageBubble } from './MessageBubble';
+import { AgentSelectorDropdown } from './AgentSelectorDropdown';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import {
@@ -62,11 +63,13 @@ export function ChatPanel() {
   const [useStreamingMode, setUseStreamingMode] = useState(true);
   const [useMemory, setUseMemory] = useState(true);
   const [streamingContent, setStreamingContent] = useState('');
+  const [showAgentSelector, setShowAgentSelector] = useState(false);
   const agentName = getAgentName();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const streamingContentRef = useRef('');
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -296,13 +299,21 @@ export function ChatPanel() {
       {/* Input */}
       <div className="chat-panel-input">
         <div className="input-controls">
-          {activeProfile && (
-            <div className="profile-indicator">
-              <Sparkles size={12} />
-              <span>{activeProfile.name}</span>
-              <ChevronDown size={10} />
-            </div>
-          )}
+          <button
+            ref={profileButtonRef}
+            className={`profile-indicator ${showAgentSelector ? 'active' : ''}`}
+            onClick={() => setShowAgentSelector(!showAgentSelector)}
+            title="Select agent profile"
+          >
+            <Sparkles size={12} />
+            <span>{activeProfile?.name || 'Select Agent'}</span>
+            <ChevronUp size={10} className={showAgentSelector ? 'rotated' : ''} />
+          </button>
+          <AgentSelectorDropdown
+            isOpen={showAgentSelector}
+            onClose={() => setShowAgentSelector(false)}
+            anchorRef={profileButtonRef}
+          />
         </div>
         <div className="input-container">
           <button className="voice-button" disabled title="Voice input coming soon">
