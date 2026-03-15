@@ -1028,30 +1028,19 @@ class ApiClient {
         const decoder = new TextDecoder();
         let buffer = '';
         
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          buffer += decoder.decode(value, { stream: true });
-          
-          // Process complete SSE events
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';  // Keep incomplete line in buffer
-          
-          let eventType = '';
-          let eventData = '';
-          
+        // Helper to process SSE lines
+        const processLines = (lines: string[], eventState: { type: string; data: string }) => {
           for (const line of lines) {
             if (line.startsWith('event: ')) {
-              eventType = line.slice(7);
+              eventState.type = line.slice(7);
             } else if (line.startsWith('data: ')) {
-              eventData = line.slice(6);
-              
-              if (eventType && eventData) {
+              eventState.data = line.slice(6);
+
+              if (eventState.type && eventState.data) {
                 try {
-                  const data = JSON.parse(eventData);
-                  
-                  switch (eventType) {
+                  const data = JSON.parse(eventState.data);
+
+                  switch (eventState.type) {
                     case 'start':
                       callbacks.onStart?.(data);
                       break;
@@ -1059,6 +1048,7 @@ class ApiClient {
                       callbacks.onChunk?.(data.content);
                       break;
                     case 'memory_context':
+                      console.log('[API] memory_context received:', data.facts?.length, 'facts,', data.entities?.length, 'entities');
                       callbacks.onMemoryContext?.(data);
                       break;
                     case 'tool_call':
@@ -1073,7 +1063,7 @@ class ApiClient {
                     case 'close':
                       // Server signals stream is complete - abort to close connection
                       controller.abort();
-                      return;
+                      return true; // Signal to stop processing
                     case 'error':
                       callbacks.onError?.(data.error);
                       break;
@@ -1081,12 +1071,34 @@ class ApiClient {
                 } catch (e) {
                   console.error('Failed to parse SSE data:', e);
                 }
-                
-                eventType = '';
-                eventData = '';
+
+                eventState.type = '';
+                eventState.data = '';
               }
             }
           }
+          return false; // Continue processing
+        };
+
+        const eventState = { type: '', data: '' };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete SSE events
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';  // Keep incomplete line in buffer
+
+          if (processLines(lines, eventState)) return;
+        }
+
+        // Process any remaining data in buffer after stream ends
+        if (buffer.trim()) {
+          const finalLines = buffer.split('\n');
+          processLines(finalLines, eventState);
         }
       })
       .catch((error) => {

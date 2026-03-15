@@ -620,6 +620,7 @@ async def agent_chat_stream(request):
 
             # Emit memory_context event if memories were retrieved
             if memory_bundle and (memory_bundle.facts or memory_bundle.entities):
+                logger.debug(f"Emitting memory_context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities")
                 memory_event = {
                     'facts': [
                         {'claim': f.claim, 'confidence': f.confidence, 'source': getattr(f, 'source_turn_id', None)}
@@ -632,6 +633,8 @@ async def agent_chat_stream(request):
                     'query': message,
                 }
                 yield f"event: memory_context\ndata: {json.dumps(memory_event)}\n\n"
+            else:
+                logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
             # Stream tokens with tool-use loop
             full_content = ""
@@ -658,6 +661,7 @@ async def agent_chat_stream(request):
 
                 # If no tool calls, we're done
                 if not round_tool_calls:
+                    logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
                     break
 
                 # Execute tool calls and build follow-up messages
@@ -701,12 +705,14 @@ async def agent_chat_stream(request):
                 )
 
             # Parse output for thinking tags
+            logger.debug("Stream complete, parsing output...")
             parsed = parse_output(full_content)
 
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
 
             total_time = (time.time() - start_time) * 1000
+            logger.debug(f"Stream total time: {total_time:.0f}ms, sending done event...")
 
             # Send completion event with enhanced metadata
             done_data = {
@@ -721,10 +727,18 @@ async def agent_chat_stream(request):
                 'tokens_input': None,
                 'tokens_output': None,
             }
-            yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
+            done_json = json.dumps(done_data)
+            logger.debug(f"Done event JSON length: {len(done_json)} chars")
+            yield f"event: done\ndata: {done_json}\n\n"
+            logger.debug("Done event sent")
+
+            # Small delay to ensure done event is flushed before close
+            import asyncio
+            await asyncio.sleep(0.05)
 
             # Explicit stream close signal for frontend
             yield f"event: close\ndata: {{}}\n\n"
+            logger.debug("Close event sent, stream should terminate now")
 
             # Store turns in memory in a background thread so the response closes immediately
             if use_memory and agent.memory:
@@ -774,7 +788,9 @@ async def agent_chat_stream(request):
                         logger.warning(f"Failed to store turns in memory: {mem_err}")
 
                 threading.Thread(target=_store_turns, daemon=True).start()
+                logger.debug("Background thread started for memory storage")
 
+            logger.debug("Generator returning, stream should close")
             return  # Close the stream immediately
 
         except Exception as e:

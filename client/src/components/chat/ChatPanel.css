@@ -451,3 +451,43 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* === Auto-scroll Toggle === */
+.auto-scroll-toggle {
+  position: sticky;
+  bottom: 16px;
+  left: calc(100% - 60px);
+  width: 44px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 10;
+  opacity: 0.7;
+}
+
+.auto-scroll-toggle:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  border-color: var(--cosmic-violet);
+}
+
+.auto-scroll-toggle.active {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: var(--cosmic-violet);
+  color: var(--cosmic-violet);
+  opacity: 1;
+}
+
+.auto-scroll-toggle .auto-indicator {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}

@@ -12,6 +12,7 @@ import {
   Database,
   Square,
   ChevronUp,
+  ChevronDown,
   Sparkles,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
@@ -52,6 +53,27 @@ function stripThinkingTags(content: string, isStreaming = false): string {
   return result.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Extract all thinking content from text, concatenating multiple blocks
+function extractThinking(content: string): string | null {
+  const patterns = [
+    /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi,
+    /\[think(?:ing)?\]([\s\S]*?)\[\/think(?:ing)?\]/gi,
+    /<internal_monologue>([\s\S]*?)<\/internal_monologue>/gi,
+  ];
+
+  const thoughts: string[] = [];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      if (match[1]?.trim()) {
+        thoughts.push(match[1].trim());
+      }
+    }
+  }
+
+  return thoughts.length > 0 ? thoughts.join('\n\n') : null;
+}
+
 export function ChatPanel() {
   const {
     activeTab,
@@ -67,6 +89,7 @@ export function ChatPanel() {
   const [useMemory, setUseMemory] = useState(true);
   const [streamingContent, setStreamingContent] = useState('');
   const [showAgentSelector, setShowAgentSelector] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const agentName = getAgentName();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -79,8 +102,10 @@ export function ChatPanel() {
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [activeTab?.messages, streamingContent, scrollToBottom]);
+    if (autoScroll) {
+      scrollToBottom();
+    }
+  }, [activeTab?.messages, streamingContent, scrollToBottom, autoScroll]);
 
   // Abort stream when switching tabs
   useEffect(() => {
@@ -139,6 +164,31 @@ export function ChatPanel() {
             }
           },
           onToolCall: (data) => {
+            // Flush current streaming content as an intermediate assistant message
+            // This preserves the thinking/reasoning that led to the tool call
+            const currentContent = streamingContentRef.current;
+            if (currentContent.trim()) {
+              const thinking = extractThinking(currentContent);
+              const cleanContent = stripThinkingTags(currentContent, false);
+
+              // Create intermediate message if there's thinking or content
+              if (thinking || cleanContent) {
+                const intermediateMsg: AssistantMessage = {
+                  id: createMessageId(),
+                  type: 'assistant',
+                  timestamp: new Date().toISOString(),
+                  content: cleanContent,
+                  thinking: thinking || undefined,
+                  agentName: agentName,
+                };
+                appendMessage(intermediateMsg);
+              }
+
+              // Clear streaming content for next round
+              streamingContentRef.current = '';
+              setStreamingContent('');
+            }
+
             // Create tool call message when a tool is invoked
             const toolCallMessage: ToolCallMessage = {
               id: createMessageId(),
@@ -321,11 +371,13 @@ export function ChatPanel() {
               {streamingContent ? (
                 <div className="streaming-message">
                   {(() => {
-                    const thinkMatch = streamingContent.match(
-                      /<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/i
-                    );
-                    return thinkMatch ? (
-                      <ThinkingBubble thinking={thinkMatch[1]} isStreaming />
+                    // Find all thinking blocks and show the last one (active during streaming)
+                    const thinkMatches = [
+                      ...streamingContent.matchAll(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi)
+                    ];
+                    const lastMatch = thinkMatches[thinkMatches.length - 1];
+                    return lastMatch ? (
+                      <ThinkingBubble thinking={lastMatch[1]} isStreaming />
                     ) : null;
                   })()}
                   <MessageContent content={stripThinkingTags(streamingContent, true)} />
@@ -343,6 +395,16 @@ export function ChatPanel() {
         )}
 
         <div ref={messagesEndRef} />
+
+        {/* Auto-scroll toggle */}
+        <button
+          className={`auto-scroll-toggle ${autoScroll ? 'active' : ''}`}
+          onClick={() => setAutoScroll(!autoScroll)}
+          title={autoScroll ? 'Auto-scroll enabled (click to disable)' : 'Click to enable auto-scroll'}
+        >
+          <ChevronDown size={16} />
+          {autoScroll && <span className="auto-indicator">AUTO</span>}
+        </button>
       </div>
 
       {/* Input */}

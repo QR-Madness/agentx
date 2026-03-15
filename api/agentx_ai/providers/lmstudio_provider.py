@@ -190,18 +190,26 @@ class LMStudioProvider(ModelProvider):
         client = self._get_client()
         log_llm_request("LM Studio (stream)", request_kwargs)
         try:
+            logger.debug("Creating stream...")
             stream = await client.chat.completions.create(**request_kwargs)
+            logger.debug("Stream created, starting iteration...")
 
             # Accumulate tool call fragments across chunks
             pending_tool_calls: dict[int, dict[str, Any]] = {}
+            chunk_count = 0
 
             async for chunk in stream:
+                chunk_count += 1
                 if not chunk.choices:
                     continue
                 choice = chunk.choices[0]
                 delta = choice.delta
                 if not delta:
                     continue
+
+                # Log finish reason when stream is ending
+                if choice.finish_reason:
+                    logger.debug(f"Stream chunk {chunk_count}: finish_reason={choice.finish_reason}")
 
                 # Accumulate tool call deltas
                 if delta.tool_calls:
@@ -246,8 +254,12 @@ class LMStudioProvider(ModelProvider):
                     pending_tool_calls.clear()
                 elif choice.finish_reason and choice.finish_reason != "tool_calls":
                     yield StreamChunk(content="", finish_reason=choice.finish_reason)
+
+            logger.debug(f"Stream iteration complete, processed {chunk_count} chunks")
         finally:
+            logger.debug("Closing client...")
             await client.close()
+            logger.debug("Client closed")
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for a local model."""
