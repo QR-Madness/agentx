@@ -608,6 +608,17 @@ async def agent_chat_stream(request):
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
             prompt_profile_name = prompt_profile.name if prompt_profile else None
 
+            # Get context limits from config (with provider/model-specific overrides)
+            from .config import get_context_limits
+            context_limits = get_context_limits(model_id, provider.name)
+            context_window = context_limits["context_window"]
+            max_output_tokens = context_limits["max_output_tokens"]
+
+            logger.info(
+                f"Using context limits for {provider.name}/{model_id}: "
+                f"window={context_window:,}, max_output={max_output_tokens:,}"
+            )
+
             # Send start event with enhanced metadata
             start_data = {
                 'task_id': task_id,
@@ -615,6 +626,8 @@ async def agent_chat_stream(request):
                 'model_display_name': model_id,
                 'profile_name': prompt_profile_name,
                 'agent_name': agent_name or 'AgentX',
+                'context_window': context_window,
+                'max_output_tokens': max_output_tokens,
             }
             yield f"event: start\ndata: {json.dumps(start_data)}\n\n"
 
@@ -636,24 +649,90 @@ async def agent_chat_stream(request):
             else:
                 logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
+            # Calculate adaptive max_tokens based on context usage
+            # (context_window and max_output_tokens already fetched from config above)
+
+            # Estimate current input tokens (rough: chars / 4)
+            estimated_input = sum(len(m.content or '') for m in messages) // 4
+
+            # Available space = context_window - input - buffer (for tool overhead)
+            buffer = 2000  # Reserve for tool definitions, system overhead
+            available_for_output = context_window - estimated_input - buffer
+
+            # Use the smaller of: configured max_output or available space (but at least 2048)
+            adaptive_max_tokens = max(
+                min(max_output_tokens, available_for_output),
+                2048  # Minimum to avoid truncation
+            )
+
+            logger.debug(
+                f"Adaptive max_tokens: {adaptive_max_tokens} "
+                f"(context_window={context_window}, estimated_input={estimated_input}, "
+                f"max_output={max_output_tokens}, available={available_for_output})"
+            )
+
             # Stream tokens with tool-use loop
             full_content = ""
             tools_used = []
             max_tool_rounds = 10
+            total_tokens_input = 0
+            total_tokens_output = 0
+
+            # Hard limit for context to prevent corruption (leave room for output)
+            max_context_tokens = min(context_window - adaptive_max_tokens - 1000, 32000)  # Cap at 32k input
 
             for tool_round in range(max_tool_rounds + 1):
                 round_tool_calls = []
 
+                # Log context size before each round
+                total_context_chars = sum(len(m.content or '') for m in messages)
+                estimated_context_tokens = total_context_chars // 4
+                logger.info(
+                    f"Tool round {tool_round + 1}: {len(messages)} messages, "
+                    f"~{estimated_context_tokens:,} tokens ({total_context_chars:,} chars), "
+                    f"max_tokens={adaptive_max_tokens}, limit={max_context_tokens}"
+                )
+
+                # If context is too large, truncate tool results
+                if estimated_context_tokens > max_context_tokens:
+                    logger.warning(
+                        f"Context exceeds limit ({estimated_context_tokens:,} > {max_context_tokens:,}), "
+                        "truncating tool messages"
+                    )
+                    # Truncate tool message contents to fit
+                    excess_chars = (estimated_context_tokens - max_context_tokens) * 4
+                    for msg in reversed(messages):
+                        if msg.role == MessageRole.TOOL and msg.content and len(msg.content) > 500:
+                            old_len = len(msg.content)
+                            trim_amount = min(excess_chars, old_len - 500)
+                            msg.content = msg.content[:old_len - trim_amount] + "\n[TRUNCATED]"
+                            excess_chars -= trim_amount
+                            logger.debug(f"Trimmed tool message by {trim_amount} chars")
+                            if excess_chars <= 0:
+                                break
+
+                # Warn if context is getting large relative to window
+                if estimated_context_tokens > context_window * 0.8:
+                    logger.warning(
+                        f"Context usage high: {estimated_context_tokens:,} / {context_window:,} tokens "
+                        f"({100 * estimated_context_tokens / context_window:.1f}%)"
+                    )
+
                 async for chunk in provider.stream(
                     messages, model_id,
                     temperature=effective_temperature,
-                    max_tokens=2000,
+                    max_tokens=adaptive_max_tokens,
                     tools=tools if tool_round < max_tool_rounds else None,
                     tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
                 ):
                     # Collect tool calls from the stream
                     if chunk.tool_calls:
                         round_tool_calls.extend(chunk.tool_calls)
+
+                    # Accumulate token usage across rounds
+                    if chunk.usage:
+                        total_tokens_input += chunk.usage.get("prompt_tokens", 0)
+                        total_tokens_output += chunk.usage.get("completion_tokens", 0)
 
                     if chunk.content:
                         full_content += chunk.content
@@ -714,6 +793,24 @@ async def agent_chat_stream(request):
             total_time = (time.time() - start_time) * 1000
             logger.debug(f"Stream total time: {total_time:.0f}ms, sending done event...")
 
+            # Calculate final context usage (use actual if available, otherwise estimate)
+            final_context_chars = sum(len(m.content or '') for m in messages)
+            if total_tokens_input > 0:
+                # Use actual token counts from provider
+                final_context_tokens = total_tokens_input + total_tokens_output
+                estimated_input = total_tokens_input
+                estimated_output = total_tokens_output
+            else:
+                # Fallback: estimate tokens from character count
+                final_context_tokens = final_context_chars // 4
+                estimated_input = final_context_tokens
+                estimated_output = len(full_content) // 4
+
+            logger.info(
+                f"Final context: {final_context_tokens:,} tokens "
+                f"(in={estimated_input:,}, out={estimated_output:,}, chars={final_context_chars:,})"
+            )
+
             # Send completion event with enhanced metadata
             done_data = {
                 'task_id': task_id,
@@ -723,9 +820,12 @@ async def agent_chat_stream(request):
                 'session_id': conv_id,
                 'profile_name': prompt_profile_name,
                 'agent_name': agent_name or 'AgentX',
-                # Token counts require provider-level tracking (future enhancement)
-                'tokens_input': None,
-                'tokens_output': None,
+                # Token counts (actual from provider, or estimated)
+                'tokens_input': estimated_input,
+                'tokens_output': estimated_output,
+                # Context window info for UI display
+                'context_window': context_window,
+                'context_used': final_context_tokens,
             }
             done_json = json.dumps(done_data)
             logger.debug(f"Done event JSON length: {len(done_json)} chars")
@@ -2024,6 +2124,15 @@ def config_update(request):
             config.set(f"llm_settings.{key}", value)
             updated_keys.append(f"llm_settings.{key}")
 
+    # Update context limits
+    context_limits = data.get("context_limits", {})
+    for provider_or_model, settings in context_limits.items():
+        if isinstance(settings, dict):
+            for key, value in settings.items():
+                if value is not None:
+                    config.set(f"context_limits.{provider_or_model}.{key}", value)
+                    updated_keys.append(f"context_limits.{provider_or_model}.{key}")
+
     # Persist to disk
     if not config.save():
         return JsonResponse({
@@ -2048,6 +2157,95 @@ def config_update(request):
         'message': 'Config updated and applied',
         'updated': updated_keys,
     })
+
+
+@csrf_exempt
+def context_limits(request):
+    """
+    GET /api/config/context-limits - Get context limit settings.
+    POST /api/config/context-limits - Update context limit settings.
+
+    Returns/accepts:
+    {
+        "lmstudio": {"context_window": 32768, "max_output_tokens": 8192},
+        "anthropic": {"context_window": 200000, "max_output_tokens": 8192},
+        "openai": {"context_window": 128000, "max_output_tokens": 4096},
+        "models": {
+            "model-id": {"context_window": 1000000, "max_output_tokens": 32000}
+        }
+    }
+    """
+    from .config import get_config_manager, DEFAULT_CONFIG
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    config = get_config_manager()
+
+    if request.method == 'GET':
+        # Return current context limits (merged with defaults)
+        limits = config.get("context_limits") or {}
+
+        # Ensure all providers have defaults
+        defaults = DEFAULT_CONFIG.get("context_limits", {})
+        result = {
+            "lmstudio": {
+                "context_window": limits.get("lmstudio", {}).get("context_window")
+                    or defaults.get("lmstudio", {}).get("context_window", 32768),
+                "max_output_tokens": limits.get("lmstudio", {}).get("max_output_tokens")
+                    or defaults.get("lmstudio", {}).get("max_output_tokens", 8192),
+            },
+            "anthropic": {
+                "context_window": limits.get("anthropic", {}).get("context_window")
+                    or defaults.get("anthropic", {}).get("context_window", 200000),
+                "max_output_tokens": limits.get("anthropic", {}).get("max_output_tokens")
+                    or defaults.get("anthropic", {}).get("max_output_tokens", 8192),
+            },
+            "openai": {
+                "context_window": limits.get("openai", {}).get("context_window")
+                    or defaults.get("openai", {}).get("context_window", 128000),
+                "max_output_tokens": limits.get("openai", {}).get("max_output_tokens")
+                    or defaults.get("openai", {}).get("max_output_tokens", 4096),
+            },
+            "models": limits.get("models", {}),
+        }
+        return JsonResponse(result)
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+        updated = []
+
+        # Update provider limits
+        for provider in ("lmstudio", "anthropic", "openai"):
+            if provider in data and isinstance(data[provider], dict):
+                for key in ("context_window", "max_output_tokens"):
+                    if key in data[provider]:
+                        config.set(f"context_limits.{provider}.{key}", data[provider][key])
+                        updated.append(f"context_limits.{provider}.{key}")
+
+        # Update model-specific limits
+        if "models" in data and isinstance(data["models"], dict):
+            for model_id, settings in data["models"].items():
+                if isinstance(settings, dict):
+                    for key in ("context_window", "max_output_tokens"):
+                        if key in settings:
+                            config.set(f"context_limits.models.{model_id}.{key}", settings[key])
+                            updated.append(f"context_limits.models.{model_id}.{key}")
+
+        if not config.save():
+            return JsonResponse({'error': 'Failed to save config'}, status=500)
+
+        logger.info(f"Context limits updated: {updated}")
+        return JsonResponse({
+            'status': 'ok',
+            'updated': updated,
+        })
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 # ============== Agent Profile Endpoints ==============

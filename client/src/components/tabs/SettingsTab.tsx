@@ -17,14 +17,23 @@ import {
   Edit3,
   Save,
   AlertTriangle,
-  Upload
+  Upload,
+  Layers,
+  Cpu,
 } from 'lucide-react';
 import { useServer } from '../../contexts/ServerContext';
 import { ServerConfig } from '../../lib/storage';
 import { api, PromptProfile, PromptSection, GlobalPrompt, ConfigUpdate } from '../../lib/api';
 import '../../styles/SettingsTab.css';
 
-type SettingsSection = 'servers' | 'providers' | 'prompts' | 'memory';
+type SettingsSection = 'servers' | 'providers' | 'models' | 'prompts' | 'memory';
+
+interface ContextLimits {
+  lmstudio: { context_window: number; max_output_tokens: number };
+  anthropic: { context_window: number; max_output_tokens: number };
+  openai: { context_window: number; max_output_tokens: number };
+  models: Record<string, { context_window: number; max_output_tokens: number }>;
+}
 
 export const SettingsTab: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('servers');
@@ -66,6 +75,12 @@ export const SettingsTab: React.FC = () => {
   const [loadingPrompts, setLoadingPrompts] = useState(false);
   const [mcpToolsPrompt, setMcpToolsPrompt] = useState<string>('');
   const [mcpToolsCount, setMcpToolsCount] = useState(0);
+
+  // Context limits state
+  const [contextLimits, setContextLimits] = useState<ContextLimits | null>(null);
+  const [loadingContextLimits, setLoadingContextLimits] = useState(false);
+  const [savingContextLimits, setSavingContextLimits] = useState(false);
+  const [contextLimitsMessage, setContextLimitsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleAddServer = () => {
     if (newServerName.trim() && newServerUrl.trim()) {
@@ -145,6 +160,58 @@ export const SettingsTab: React.FC = () => {
     }
   }, [activeSection]);
 
+  // Fetch context limits when models section is active
+  useEffect(() => {
+    if (activeSection === 'models') {
+      fetchContextLimits();
+    }
+  }, [activeSection]);
+
+  const fetchContextLimits = async () => {
+    setLoadingContextLimits(true);
+    try {
+      const limits = await api.getContextLimits();
+      setContextLimits(limits);
+    } catch (error) {
+      console.error('Failed to fetch context limits:', error);
+    } finally {
+      setLoadingContextLimits(false);
+    }
+  };
+
+  const handleContextLimitChange = (
+    provider: 'lmstudio' | 'anthropic' | 'openai',
+    field: 'context_window' | 'max_output_tokens',
+    value: number
+  ) => {
+    if (!contextLimits) return;
+    setContextLimits({
+      ...contextLimits,
+      [provider]: {
+        ...contextLimits[provider],
+        [field]: value,
+      },
+    });
+  };
+
+  const handleSaveContextLimits = async () => {
+    if (!contextLimits) return;
+
+    setSavingContextLimits(true);
+    setContextLimitsMessage(null);
+
+    try {
+      await api.updateContextLimits(contextLimits);
+      setContextLimitsMessage({ type: 'success', text: 'Context limits saved' });
+      setTimeout(() => setContextLimitsMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to save context limits:', error);
+      setContextLimitsMessage({ type: 'error', text: 'Failed to save context limits' });
+    } finally {
+      setSavingContextLimits(false);
+    }
+  };
+
   const fetchPromptsData = async () => {
     setLoadingPrompts(true);
     try {
@@ -190,6 +257,7 @@ export const SettingsTab: React.FC = () => {
   const settingsSections = [
     { id: 'servers' as const, label: 'Servers', icon: <Server size={18} /> },
     { id: 'providers' as const, label: 'Model Providers', icon: <Key size={18} /> },
+    { id: 'models' as const, label: 'Model Limits', icon: <Layers size={18} /> },
     { id: 'prompts' as const, label: 'Prompts', icon: <FileText size={18} /> },
     { id: 'memory' as const, label: 'Memory', icon: <Database size={18} /> },
   ];
@@ -458,6 +526,211 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Model Limits Section */}
+          {activeSection === 'models' && (
+            <div className="settings-section fade-in">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">
+                    <Layers size={20} className="section-title-icon" />
+                    Model Context Limits
+                  </h2>
+                  <p className="section-description">
+                    Configure context window and output token limits per provider
+                  </p>
+                </div>
+                <button
+                  className="button-primary"
+                  onClick={handleSaveContextLimits}
+                  disabled={savingContextLimits || !contextLimits}
+                >
+                  {savingContextLimits ? (
+                    <RefreshCw size={16} className="spin" />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  Save Limits
+                </button>
+              </div>
+
+              {/* Save Message */}
+              {contextLimitsMessage && (
+                <div className={`config-message ${contextLimitsMessage.type}`}>
+                  {contextLimitsMessage.type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+                  <span>{contextLimitsMessage.text}</span>
+                </div>
+              )}
+
+              {loadingContextLimits ? (
+                <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+                  <RefreshCw size={24} className="spin" style={{ marginBottom: '0.5rem' }} />
+                  <p>Loading context limits...</p>
+                </div>
+              ) : contextLimits ? (
+                <div className="providers-list">
+                  {/* LM Studio Limits */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon local">
+                          <Server size={20} />
+                        </div>
+                        <div>
+                          <h3 className="provider-name">
+                            LM Studio
+                            <span className="provider-badge local">Local</span>
+                          </h3>
+                          <p className="provider-description">
+                            Context limits for local models
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="context-limits-form">
+                      <div className="form-group">
+                        <label>Context Window (tokens)</label>
+                        <input
+                          type="number"
+                          value={contextLimits.lmstudio.context_window}
+                          onChange={(e) => handleContextLimitChange('lmstudio', 'context_window', parseInt(e.target.value) || 0)}
+                          min={1024}
+                          max={1000000}
+                          step={1024}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.lmstudio.context_window / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                      <div className="form-group">
+                        <label>Max Output Tokens</label>
+                        <input
+                          type="number"
+                          value={contextLimits.lmstudio.max_output_tokens}
+                          onChange={(e) => handleContextLimitChange('lmstudio', 'max_output_tokens', parseInt(e.target.value) || 0)}
+                          min={256}
+                          max={131072}
+                          step={256}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.lmstudio.max_output_tokens / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Anthropic Limits */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon cloud">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <h3 className="provider-name">
+                            Anthropic
+                            <span className="provider-badge primary">Claude</span>
+                          </h3>
+                          <p className="provider-description">
+                            Context limits for Claude models (up to 1M for Opus)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="context-limits-form">
+                      <div className="form-group">
+                        <label>Context Window (tokens)</label>
+                        <input
+                          type="number"
+                          value={contextLimits.anthropic.context_window}
+                          onChange={(e) => handleContextLimitChange('anthropic', 'context_window', parseInt(e.target.value) || 0)}
+                          min={1024}
+                          max={1000000}
+                          step={1024}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.anthropic.context_window / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                      <div className="form-group">
+                        <label>Max Output Tokens</label>
+                        <input
+                          type="number"
+                          value={contextLimits.anthropic.max_output_tokens}
+                          onChange={(e) => handleContextLimitChange('anthropic', 'max_output_tokens', parseInt(e.target.value) || 0)}
+                          min={256}
+                          max={131072}
+                          step={256}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.anthropic.max_output_tokens / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OpenAI Limits */}
+                  <div className="provider-card card">
+                    <div className="provider-header">
+                      <div className="provider-info">
+                        <div className="provider-icon experimental">
+                          <Cpu size={20} />
+                        </div>
+                        <div>
+                          <h3 className="provider-name">
+                            OpenAI
+                            <span className="provider-badge experimental">GPT</span>
+                          </h3>
+                          <p className="provider-description">
+                            Context limits for GPT models
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="context-limits-form">
+                      <div className="form-group">
+                        <label>Context Window (tokens)</label>
+                        <input
+                          type="number"
+                          value={contextLimits.openai.context_window}
+                          onChange={(e) => handleContextLimitChange('openai', 'context_window', parseInt(e.target.value) || 0)}
+                          min={1024}
+                          max={128000}
+                          step={1024}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.openai.context_window / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                      <div className="form-group">
+                        <label>Max Output Tokens</label>
+                        <input
+                          type="number"
+                          value={contextLimits.openai.max_output_tokens}
+                          onChange={(e) => handleContextLimitChange('openai', 'max_output_tokens', parseInt(e.target.value) || 0)}
+                          min={256}
+                          max={16384}
+                          step={256}
+                        />
+                        <span className="form-hint">
+                          {(contextLimits.openai.max_output_tokens / 1000).toFixed(0)}k tokens
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-state card">
+                  <AlertTriangle size={32} />
+                  <p>Failed to load context limits</p>
+                  <button className="button-secondary" onClick={fetchContextLimits}>
+                    <RefreshCw size={16} />
+                    Retry
+                  </button>
                 </div>
               )}
             </div>

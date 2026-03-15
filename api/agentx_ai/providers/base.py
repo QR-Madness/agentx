@@ -54,6 +54,7 @@ class StreamChunk(BaseModel):
     content: str = ""
     finish_reason: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
+    usage: Optional[dict[str, int]] = None  # Token usage (available on final chunk)
 
 
 class CompletionResult(BaseModel):

@@ -54,6 +54,7 @@ urlpatterns = [
     path("jobs/<str:job_name>", views.job_detail, name="job-detail"),
     path("jobs/<str:job_name>/run", views.job_run, name="job-run"),
     path("jobs/<str:job_name>/toggle", views.job_toggle, name="job-toggle"),
-    # Config management endpoint
+    # Config management endpoints
     path("config/update", views.config_update, name="config-update"),
+    path("config/context-limits", views.context_limits, name="context-limits"),
 ]

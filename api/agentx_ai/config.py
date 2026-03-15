@@ -47,6 +47,25 @@ DEFAULT_CONFIG = {
         "frequency_penalty": 0.0,
         "presence_penalty": 0.0,
     },
+    "context_limits": {
+        # Provider-level defaults (can be overridden per-model)
+        "lmstudio": {
+            "context_window": 32768,  # Conservative default for local models
+            "max_output_tokens": 8192,
+        },
+        "anthropic": {
+            "context_window": 200000,  # Claude 3.x default
+            "max_output_tokens": 8192,
+        },
+        "openai": {
+            "context_window": 128000,  # GPT-4 Turbo
+            "max_output_tokens": 4096,
+        },
+        # Model-specific overrides (model_id -> settings)
+        "models": {
+            # Example: "claude-3-opus-20240229": {"context_window": 1000000, "max_output_tokens": 32000}
+        },
+    },
     "preferences": {
         "default_model": None,
         "default_reasoning_strategy": "auto",
@@ -213,3 +232,44 @@ def reload_config() -> None:
     """Reload the global config from disk."""
     manager = get_config_manager()
     manager.reload()
+
+
+def get_context_limits(model_id: str, provider_name: str) -> dict[str, int]:
+    """
+    Get context limits for a model.
+
+    Priority:
+    1. Model-specific override in context_limits.models
+    2. Provider default in context_limits.{provider}
+    3. Hardcoded fallback
+
+    Args:
+        model_id: The model identifier
+        provider_name: The provider name (lmstudio, anthropic, openai)
+
+    Returns:
+        Dict with 'context_window' and 'max_output_tokens'
+    """
+    config = get_config_manager()
+
+    # Check for model-specific override first
+    model_override = config.get(f"context_limits.models.{model_id}")
+    if model_override:
+        return {
+            "context_window": model_override.get("context_window", 32768),
+            "max_output_tokens": model_override.get("max_output_tokens", 4096),
+        }
+
+    # Fall back to provider defaults
+    provider_config = config.get(f"context_limits.{provider_name}")
+    if provider_config:
+        return {
+            "context_window": provider_config.get("context_window", 32768),
+            "max_output_tokens": provider_config.get("max_output_tokens", 4096),
+        }
+
+    # Hardcoded fallback
+    return {
+        "context_window": 32768,
+        "max_output_tokens": 4096,
+    }

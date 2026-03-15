@@ -827,6 +827,27 @@ class ApiClient {
     });
   }
 
+  async getContextLimits(): Promise<{
+    lmstudio: { context_window: number; max_output_tokens: number };
+    anthropic: { context_window: number; max_output_tokens: number };
+    openai: { context_window: number; max_output_tokens: number };
+    models: Record<string, { context_window: number; max_output_tokens: number }>;
+  }> {
+    return this.request('/api/config/context-limits');
+  }
+
+  async updateContextLimits(limits: {
+    lmstudio?: { context_window?: number; max_output_tokens?: number };
+    anthropic?: { context_window?: number; max_output_tokens?: number };
+    openai?: { context_window?: number; max_output_tokens?: number };
+    models?: Record<string, { context_window?: number; max_output_tokens?: number }>;
+  }): Promise<{ status: string; updated: string[] }> {
+    return this.request('/api/config/context-limits', {
+      method: 'POST',
+      body: JSON.stringify(limits),
+    });
+  }
+
   // === Memory Explorer ===
 
   async listMemoryChannels(): Promise<{ channels: MemoryChannel[] }> {
@@ -975,6 +996,8 @@ class ApiClient {
         model_display_name?: string;
         profile_name?: string;
         agent_name?: string;
+        context_window?: number;
+        max_output_tokens?: number;
       }) => void;
       onChunk?: (content: string) => void;
       onMemoryContext?: (data: {
@@ -1004,6 +1027,8 @@ class ApiClient {
         agent_name?: string;
         tokens_input?: number;
         tokens_output?: number;
+        context_window?: number;
+        context_used?: number;
       }) => void;
       onError?: (error: string) => void;
     }

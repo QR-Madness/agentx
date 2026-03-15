@@ -14,6 +14,7 @@ import {
   ChevronUp,
   ChevronDown,
   Sparkles,
+  Layers,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
@@ -90,6 +91,10 @@ export function ChatPanel() {
   const [streamingContent, setStreamingContent] = useState('');
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [contextInfo, setContextInfo] = useState<{
+    window: number;
+    used: number;
+  } | null>(null);
   const agentName = getAgentName();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -241,6 +246,14 @@ export function ChatPanel() {
             if (data.session_id) {
               setSessionId(data.session_id);
             }
+
+            // Update context usage info
+            if (data.context_window && data.context_used) {
+              setContextInfo({
+                window: data.context_window,
+                used: data.context_used,
+              });
+            }
           },
           onError: (error) => {
             console.error('Stream error:', error);
@@ -328,6 +341,20 @@ export function ChatPanel() {
             <span className="chat-panel-session">
               Session: {activeTab.sessionId.slice(0, 8)}...
             </span>
+          )}
+          {contextInfo && (
+            <div className="context-usage" title={`${contextInfo.used.toLocaleString()} / ${contextInfo.window.toLocaleString()} tokens`}>
+              <Layers size={12} />
+              <div className="context-bar">
+                <div
+                  className="context-bar-fill"
+                  style={{ width: `${Math.min((contextInfo.used / contextInfo.window) * 100, 100)}%` }}
+                />
+              </div>
+              <span className="context-label">
+                {(contextInfo.used / 1000).toFixed(1)}k / {(contextInfo.window / 1000).toFixed(0)}k
+              </span>
+            </div>
           )}
         </div>
         <div className="chat-panel-actions">

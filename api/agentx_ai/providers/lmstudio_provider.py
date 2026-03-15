@@ -25,13 +25,14 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 # Default capabilities for local models
+# Modern models typically have 128k+ context, so we use generous defaults
 DEFAULT_LOCAL_CAPABILITIES = ModelCapabilities(
-    supports_tools=False,  # Most local models don't support function calling
+    supports_tools=True,  # Most modern local models support function calling
     supports_vision=False,
     supports_streaming=True,
     supports_json_mode=True,
-    context_window=8192,
-    max_output_tokens=4096,
+    context_window=131072,  # 128k - common for modern models (Llama 3.x, Qwen, Nemotron, etc.)
+    max_output_tokens=16384,  # 16k output - generous but reasonable
     cost_per_1k_input=0.0,  # Local = free
     cost_per_1k_output=0.0,
 )
@@ -65,11 +66,19 @@ class LMStudioProvider(ModelProvider):
         This ensures the httpx connection pool is created in the correct event loop,
         avoiding 'Connection error' issues when Django's async view runs in different loops.
         """
+        import httpx
+        # Use a custom transport with no HTTP/2 to avoid potential streaming issues
+        # and no keep-alive to ensure fresh connections
+        transport = httpx.AsyncHTTPTransport(
+            retries=0,
+            http2=False,  # Force HTTP/1.1 for better streaming compatibility
+        )
         return AsyncOpenAI(
             api_key=self._api_key,
             base_url=self.base_url,
             timeout=self._timeout,
             max_retries=0,
+            http_client=httpx.AsyncClient(transport=transport),
         )
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
@@ -168,10 +177,12 @@ class LMStudioProvider(ModelProvider):
         stop: Optional[list[str]] = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
-        """Stream a completion using LM Studio API."""
+        """Stream a completion using LM Studio API with raw httpx for better streaming."""
+        import httpx
+
         logger.debug(f"LM Studio stream: model={model}, messages={len(messages)}")
 
-        request_kwargs: dict[str, Any] = {
+        request_body: dict[str, Any] = {
             "model": model,
             "messages": self._convert_messages(messages),
             "temperature": temperature,
@@ -179,87 +190,164 @@ class LMStudioProvider(ModelProvider):
         }
 
         if max_tokens:
-            request_kwargs["max_tokens"] = max_tokens
+            request_body["max_tokens"] = max_tokens
         if stop:
-            request_kwargs["stop"] = stop
+            request_body["stop"] = stop
         if tools:
-            request_kwargs["tools"] = tools
+            request_body["tools"] = tools
             if tool_choice:
-                request_kwargs["tool_choice"] = tool_choice
+                request_body["tool_choice"] = tool_choice
 
-        client = self._get_client()
-        log_llm_request("LM Studio (stream)", request_kwargs)
-        try:
-            logger.debug("Creating stream...")
-            stream = await client.chat.completions.create(**request_kwargs)
-            logger.debug("Stream created, starting iteration...")
+        log_llm_request("LM Studio (stream)", request_body)
 
-            # Accumulate tool call fragments across chunks
-            pending_tool_calls: dict[int, dict[str, Any]] = {}
-            chunk_count = 0
+        # Use raw httpx for streaming (bypasses OpenAI client async iterator issues)
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
 
-            async for chunk in stream:
-                chunk_count += 1
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
-                delta = choice.delta
-                if not delta:
-                    continue
+        async with httpx.AsyncClient(timeout=self._timeout) as http_client:
+            logger.debug(f"Creating raw httpx stream to {url}...")
+            async with http_client.stream(
+                "POST",
+                url,
+                json=request_body,
+                headers=headers,
+            ) as response:
+                logger.info(f"Raw httpx response: status={response.status_code}")
 
-                # Log finish reason when stream is ending
-                if choice.finish_reason:
-                    logger.debug(f"Stream chunk {chunk_count}: finish_reason={choice.finish_reason}")
+                if response.status_code != 200:
+                    error_body = await response.aread()
+                    logger.error(f"HTTP error: {error_body}")
+                    raise Exception(f"HTTP {response.status_code}: {error_body}")
 
-                # Accumulate tool call deltas
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in pending_tool_calls:
-                            pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                        entry = pending_tool_calls[idx]
-                        if tc_delta.id:
-                            entry["id"] = tc_delta.id
-                        if tc_delta.function:
-                            if tc_delta.function.name:
-                                entry["name"] = tc_delta.function.name
-                            if tc_delta.function.arguments:
-                                entry["arguments"] += tc_delta.function.arguments
+                # Accumulate tool call fragments across chunks
+                pending_tool_calls: dict[int, dict[str, Any]] = {}
+                chunk_count = 0
+                stream_usage: Optional[dict[str, int]] = None
+                buffer = ""
+                in_reasoning = False  # Track if we're in reasoning mode
 
-                # Emit content chunks as they arrive
-                if delta.content:
-                    yield StreamChunk(
-                        content=delta.content,
-                        finish_reason=choice.finish_reason,
-                    )
+                # Use aiter_bytes for unbuffered streaming
+                async for raw_bytes in response.aiter_bytes():
+                    raw_chunk = raw_bytes.decode("utf-8", errors="replace")
+                    buffer += raw_chunk
 
-                # When stream ends with tool_calls, emit accumulated tool calls
-                if choice.finish_reason == "tool_calls" and pending_tool_calls:
-                    completed = []
-                    for tc_data in pending_tool_calls.values():
+                    # Parse SSE events from buffer (events are separated by \n\n)
+                    while "\n\n" in buffer:
+                        event_str, buffer = buffer.split("\n\n", 1)
+                        if not event_str.strip():
+                            continue
+
+                        # Parse SSE data lines
+                        data_content = ""
+                        for line in event_str.split("\n"):
+                            if line.startswith("data: "):
+                                data_content = line[6:]
+                            elif line.startswith("data:"):
+                                data_content = line[5:]
+
+                        if not data_content or data_content == "[DONE]":
+                            continue
+
                         try:
-                            args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                        except json.JSONDecodeError:
-                            args = {"raw": tc_data["arguments"]}
-                        completed.append(ToolCall(
-                            id=tc_data["id"],
-                            name=tc_data["name"],
-                            arguments=args,
-                        ))
-                    yield StreamChunk(
-                        content="",
-                        finish_reason="tool_calls",
-                        tool_calls=completed,
-                    )
-                    pending_tool_calls.clear()
-                elif choice.finish_reason and choice.finish_reason != "tool_calls":
-                    yield StreamChunk(content="", finish_reason=choice.finish_reason)
+                            chunk_data = json.loads(data_content)
+                            chunk_count += 1
 
-            logger.debug(f"Stream iteration complete, processed {chunk_count} chunks")
-        finally:
-            logger.debug("Closing client...")
-            await client.close()
-            logger.debug("Client closed")
+                            # Extract choices
+                            choices = chunk_data.get("choices", [])
+                            if not choices:
+                                continue
+
+                            choice = choices[0]
+                            delta = choice.get("delta", {})
+                            finish_reason = choice.get("finish_reason")
+
+                            # Extract content - check both 'content' and 'reasoning_content'
+                            # Some models (like Nemotron) use 'reasoning_content' for thinking
+                            content = delta.get("content", "")
+                            reasoning_content = delta.get("reasoning_content", "")
+
+                            # Handle reasoning content with proper streaming tags
+                            output = ""
+                            if reasoning_content:
+                                if not in_reasoning:
+                                    # Start reasoning block
+                                    in_reasoning = True
+                                    output = f"<think>{reasoning_content}"
+                                else:
+                                    # Continue reasoning block
+                                    output = reasoning_content
+
+                            if content:
+                                if in_reasoning:
+                                    # End reasoning block, then emit content
+                                    in_reasoning = False
+                                    output += f"</think>{content}"
+                                else:
+                                    output += content
+
+                            # Use output instead of content for yielding
+                            content = output
+
+                            # Accumulate tool call deltas
+                            if "tool_calls" in delta:
+                                for tc_delta in delta["tool_calls"]:
+                                    idx = tc_delta.get("index", 0)
+                                    if idx not in pending_tool_calls:
+                                        pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                                    entry = pending_tool_calls[idx]
+                                    if tc_delta.get("id"):
+                                        entry["id"] = tc_delta["id"]
+                                    if "function" in tc_delta:
+                                        func = tc_delta["function"]
+                                        if func.get("name"):
+                                            entry["name"] = func["name"]
+                                        if func.get("arguments"):
+                                            entry["arguments"] += func["arguments"]
+
+                            # Emit content chunks as they arrive
+                            if content:
+                                yield StreamChunk(
+                                    content=content,
+                                    finish_reason=finish_reason,
+                                )
+
+                            # Close reasoning block if still open when stream ends
+                            if finish_reason and in_reasoning:
+                                yield StreamChunk(content="</think>", finish_reason=None)
+                                in_reasoning = False
+
+                            # When stream ends with tool_calls, emit accumulated tool calls
+                            if finish_reason == "tool_calls" and pending_tool_calls:
+                                completed = []
+                                for tc_data in pending_tool_calls.values():
+                                    try:
+                                        args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                                    except json.JSONDecodeError:
+                                        args = {"raw": tc_data["arguments"]}
+                                    completed.append(ToolCall(
+                                        id=tc_data["id"],
+                                        name=tc_data["name"],
+                                        arguments=args,
+                                    ))
+                                yield StreamChunk(
+                                    content="",
+                                    finish_reason="tool_calls",
+                                    tool_calls=completed,
+                                    usage=stream_usage,
+                                )
+                                pending_tool_calls.clear()
+                            elif finish_reason and finish_reason != "tool_calls":
+                                yield StreamChunk(content="", finish_reason=finish_reason, usage=stream_usage)
+
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Failed to parse SSE chunk: {e}")
+                            continue
+
+                logger.debug(f"Stream iteration complete, processed {chunk_count} chunks")
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for a local model."""

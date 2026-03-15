@@ -96,7 +96,7 @@ class AgentConfig:
     allowed_tools: Optional[list[str]] = None
     blocked_tools: Optional[list[str]] = None
     max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
-    max_tool_result_chars: int = 8000  # Truncate tool results to avoid context overflow
+    max_tool_result_chars: int = 4000  # Truncate tool results to avoid context overflow
     
     # Context settings
     max_context_tokens: int = 8000
@@ -307,10 +307,11 @@ class Agent:
 
             # Truncate large tool results to avoid context overflow
             max_chars = self.config.max_tool_result_chars
-            if len(content) > max_chars:
+            original_len = len(content)
+            if original_len > max_chars:
                 truncated_content = content[:max_chars]
-                content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {len(content):,} chars total, showing first {max_chars:,}]"
-                logger.debug(f"Truncated tool result for '{tc.name}': {len(content)} -> {max_chars} chars")
+                content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
+                logger.info(f"Truncated tool result for '{tc.name}': {original_len:,} -> {max_chars:,} chars")
 
             results.append(Message(
                 role=MessageRole.TOOL,

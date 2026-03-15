@@ -729,3 +729,49 @@
   display: flex;
   align-items: center;
 }
+
+/* Context Limits Form */
+.context-limits-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.context-limits-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.context-limits-form label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.context-limits-form input[type="number"] {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.2s ease;
+}
+
+.context-limits-form input[type="number"]:focus {
+  outline: none;
+  border-color: var(--cosmic-violet);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15);
+}
+
+.context-limits-form .form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
