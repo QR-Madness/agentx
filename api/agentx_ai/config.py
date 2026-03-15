@@ -234,42 +234,45 @@ def reload_config() -> None:
     manager.reload()
 
 
-def get_context_limits(model_id: str, provider_name: str) -> dict[str, int]:
+def get_context_limit_overrides(model_id: str, provider_name: str) -> dict[str, int]:
     """
-    Get context limits for a model.
+    Get context limit overrides from config.
+
+    This returns ONLY user-configured overrides. Provider capabilities
+    should be used as the primary source, with these overrides applied on top.
 
     Priority:
-    1. Model-specific override in context_limits.models
-    2. Provider default in context_limits.{provider}
-    3. Hardcoded fallback
+    1. Model-specific override in context_limits.models.{model_id}
+    2. Provider override in context_limits.{provider_name}
 
     Args:
         model_id: The model identifier
         provider_name: The provider name (lmstudio, anthropic, openai)
 
     Returns:
-        Dict with 'context_window' and 'max_output_tokens'
+        Dict with overrides (may be empty, or have context_window and/or max_output_tokens)
     """
     config = get_config_manager()
 
     # Check for model-specific override first
     model_override = config.get(f"context_limits.models.{model_id}")
     if model_override:
-        return {
-            "context_window": model_override.get("context_window", 32768),
-            "max_output_tokens": model_override.get("max_output_tokens", 4096),
-        }
+        return dict(model_override)
 
-    # Fall back to provider defaults
+    # Fall back to provider override
     provider_config = config.get(f"context_limits.{provider_name}")
     if provider_config:
-        return {
-            "context_window": provider_config.get("context_window", 32768),
-            "max_output_tokens": provider_config.get("max_output_tokens", 4096),
-        }
+        return dict(provider_config)
 
-    # Hardcoded fallback
+    # No overrides configured
+    return {}
+
+
+# Backwards compatibility alias
+def get_context_limits(model_id: str, provider_name: str) -> dict[str, int]:
+    """Deprecated: Use get_context_limit_overrides instead."""
+    overrides = get_context_limit_overrides(model_id, provider_name)
     return {
-        "context_window": 32768,
-        "max_output_tokens": 4096,
+        "context_window": overrides.get("context_window", 32768),
+        "max_output_tokens": overrides.get("max_output_tokens", 4096),
     }

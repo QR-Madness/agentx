@@ -7,15 +7,15 @@ from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
 from .streaming import (
-    CHAR_TO_TOKEN_RATIO,
     CONTEXT_BUFFER_TOKENS,
     CONTEXT_WARNING_THRESHOLD,
     DEFAULT_MAX_TOOL_ROUNDS,
     MAX_INPUT_TOKENS,
     MIN_OUTPUT_TOKENS,
-    MIN_TOOL_CONTENT_SIZE,
     STREAM_CLOSE_DELAY,
-    TRUNCATION_MARKER,
+    estimate_tokens,
+    resolve_with_priority,
+    truncate_tool_messages,
 )
 from .utils.decorators import lazy_singleton
 from .utils.responses import (
@@ -521,31 +521,28 @@ async def agent_chat_stream(request):
 
         # Build agent config from profile + request overrides
         # Priority: request params > agent profile > defaults
-        config_kwargs = {}
+        config_kwargs = {
+            "enable_memory": use_memory,
+        }
 
-        # Memory settings: request override > profile > default (True)
-        if agent_profile:
-            config_kwargs["enable_memory"] = agent_profile.enable_memory
-        # Request-level use_memory overrides profile setting
-        config_kwargs["enable_memory"] = use_memory
+        # Model: request > profile > None (use agent default)
+        resolved_model = resolve_with_priority(
+            model,
+            agent_profile.default_model if agent_profile else None,
+        )
+        if resolved_model:
+            config_kwargs["default_model"] = resolved_model
 
-        # Model: request override > profile > fallback to default
-        if agent_profile and agent_profile.default_model:
-            config_kwargs["default_model"] = agent_profile.default_model
-        if model:  # Request-level model always wins
-            config_kwargs["default_model"] = model
-
-        # Prompt profile: request override > agent profile setting
+        # Prompt profile: agent profile setting (request override via profile_id param)
         if agent_profile and agent_profile.prompt_profile_id:
             config_kwargs["prompt_profile_id"] = agent_profile.prompt_profile_id
 
-        # Temperature: request override > profile > default (0.7)
-        effective_temperature = temperature
-        if effective_temperature is None:
-            if agent_profile:
-                effective_temperature = agent_profile.temperature
-            else:
-                effective_temperature = 0.7
+        # Temperature: request > profile > default
+        effective_temperature = resolve_with_priority(
+            temperature,
+            agent_profile.temperature if agent_profile else None,
+            0.7,
+        )
 
         logger.debug(f"Agent config_kwargs: {config_kwargs}")
         agent = Agent(AgentConfig(**config_kwargs))
@@ -619,11 +616,12 @@ async def agent_chat_stream(request):
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
             prompt_profile_name = prompt_profile.name if prompt_profile else None
 
-            # Get context limits from config (with provider/model-specific overrides)
-            from .config import get_context_limits
-            context_limits = get_context_limits(model_id, provider.name)
-            context_window = context_limits["context_window"]
-            max_output_tokens = context_limits["max_output_tokens"]
+            # Get context limits: provider capabilities as primary, config as override
+            from .config import get_context_limit_overrides
+            caps = provider.get_capabilities(model_id)
+            overrides = get_context_limit_overrides(model_id, provider.name)
+            context_window = overrides.get("context_window") or caps.context_window
+            max_output_tokens = overrides.get("max_output_tokens") or caps.max_output_tokens or 4096
 
             logger.info(
                 f"Using context limits for {provider.name}/{model_id}: "
@@ -661,12 +659,7 @@ async def agent_chat_stream(request):
                 logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
             # Calculate adaptive max_tokens based on context usage
-            # (context_window and max_output_tokens already fetched from config above)
-
-            # Estimate current input tokens
-            estimated_input = sum(len(m.content or '') for m in messages) // CHAR_TO_TOKEN_RATIO
-
-            # Available space = context_window - input - buffer (for tool overhead)
+            estimated_input = estimate_tokens(messages)
             available_for_output = context_window - estimated_input - CONTEXT_BUFFER_TOKENS
 
             # Use the smaller of: configured max_output or available space (but at least minimum)
@@ -694,34 +687,18 @@ async def agent_chat_stream(request):
             for tool_round in range(max_tool_rounds + 1):
                 round_tool_calls = []
 
-                # Log context size before each round
-                total_context_chars = sum(len(m.content or '') for m in messages)
-                estimated_context_tokens = total_context_chars // CHAR_TO_TOKEN_RATIO
+                # Check context size and truncate if needed
+                estimated_context_tokens = estimate_tokens(messages)
                 logger.info(
                     f"Tool round {tool_round + 1}: {len(messages)} messages, "
-                    f"~{estimated_context_tokens:,} tokens ({total_context_chars:,} chars), "
-                    f"max_tokens={adaptive_max_tokens}, limit={max_context_tokens}"
+                    f"~{estimated_context_tokens:,} tokens, limit={max_context_tokens}"
                 )
 
-                # If context is too large, truncate tool results
                 if estimated_context_tokens > max_context_tokens:
-                    logger.warning(
-                        f"Context exceeds limit ({estimated_context_tokens:,} > {max_context_tokens:,}), "
-                        "truncating tool messages"
-                    )
-                    # Truncate tool message contents to fit
-                    excess_chars = (estimated_context_tokens - max_context_tokens) * CHAR_TO_TOKEN_RATIO
-                    for msg in reversed(messages):
-                        if msg.role == MessageRole.TOOL and msg.content and len(msg.content) > MIN_TOOL_CONTENT_SIZE:
-                            old_len = len(msg.content)
-                            trim_amount = min(excess_chars, old_len - MIN_TOOL_CONTENT_SIZE)
-                            msg.content = msg.content[:old_len - trim_amount] + TRUNCATION_MARKER
-                            excess_chars -= trim_amount
-                            logger.debug(f"Trimmed tool message by {trim_amount} chars")
-                            if excess_chars <= 0:
-                                break
+                    logger.warning(f"Context exceeds limit, truncating tool messages")
+                    truncate_tool_messages(messages, estimated_context_tokens, max_context_tokens)
+                    estimated_context_tokens = estimate_tokens(messages)
 
-                # Warn if context is getting large relative to window
                 if estimated_context_tokens > context_window * CONTEXT_WARNING_THRESHOLD:
                     logger.warning(
                         f"Context usage high: {estimated_context_tokens:,} / {context_window:,} tokens "
