@@ -19,6 +19,8 @@ from .base import (
     ProviderConfig,
     StreamChunk,
     ToolCall,
+    accumulate_tool_call_delta,
+    finalize_tool_calls,
     log_llm_request,
 )
 
@@ -95,6 +97,72 @@ class LMStudioProvider(ModelProvider):
                 message_dict["tool_call_id"] = msg.tool_call_id
             result.append(message_dict)
         return result
+
+    @staticmethod
+    def _parse_sse_data(event_str: str) -> Optional[dict[str, Any]]:
+        """
+        Parse SSE event string and return JSON data.
+
+        Handles both "data: " (with space) and "data:" (without) formats.
+        Returns None for empty events or [DONE] marker.
+        """
+        data_content = ""
+        for line in event_str.split("\n"):
+            if line.startswith("data: "):
+                data_content = line[6:]
+                break
+            elif line.startswith("data:"):
+                data_content = line[5:]
+                break
+
+        if not data_content or data_content == "[DONE]":
+            return None
+
+        try:
+            return json.loads(data_content)
+        except json.JSONDecodeError:
+            return None
+
+    @staticmethod
+    def _process_reasoning_content(
+        reasoning: str,
+        content: str,
+        in_reasoning: bool,
+    ) -> tuple[str, bool]:
+        """
+        Process reasoning_content and content fields from delta.
+
+        Some models (like Nemotron) output thinking in 'reasoning_content'
+        field. This method wraps reasoning in <think> tags for UI display.
+
+        Args:
+            reasoning: reasoning_content from delta
+            content: content from delta
+            in_reasoning: whether we're currently in a reasoning block
+
+        Returns:
+            (output_string, new_in_reasoning_state)
+        """
+        output = ""
+
+        if reasoning:
+            if not in_reasoning:
+                # Start reasoning block
+                output = f"<think>{reasoning}"
+                in_reasoning = True
+            else:
+                # Continue reasoning block
+                output = reasoning
+
+        if content:
+            if in_reasoning:
+                # End reasoning block, then emit content
+                output += f"</think>{content}"
+                in_reasoning = False
+            else:
+                output += content
+
+        return output, in_reasoning
     
     async def complete(
         self,
@@ -223,131 +291,71 @@ class LMStudioProvider(ModelProvider):
                     logger.error(f"HTTP error: {error_body}")
                     raise Exception(f"HTTP {response.status_code}: {error_body}")
 
-                # Accumulate tool call fragments across chunks
+                # State for streaming
                 pending_tool_calls: dict[int, dict[str, Any]] = {}
                 chunk_count = 0
-                stream_usage: Optional[dict[str, int]] = None
                 buffer = ""
-                in_reasoning = False  # Track if we're in reasoning mode
+                in_reasoning = False
 
                 # Use aiter_bytes for unbuffered streaming
                 async for raw_bytes in response.aiter_bytes():
-                    raw_chunk = raw_bytes.decode("utf-8", errors="replace")
-                    buffer += raw_chunk
+                    buffer += raw_bytes.decode("utf-8", errors="replace")
 
-                    # Parse SSE events from buffer (events are separated by \n\n)
+                    # Parse SSE events from buffer (events separated by \n\n)
                     while "\n\n" in buffer:
                         event_str, buffer = buffer.split("\n\n", 1)
                         if not event_str.strip():
                             continue
 
-                        # Parse SSE data lines
-                        data_content = ""
-                        for line in event_str.split("\n"):
-                            if line.startswith("data: "):
-                                data_content = line[6:]
-                            elif line.startswith("data:"):
-                                data_content = line[5:]
-
-                        if not data_content or data_content == "[DONE]":
+                        # Parse SSE data
+                        chunk_data = self._parse_sse_data(event_str)
+                        if not chunk_data:
                             continue
 
-                        try:
-                            chunk_data = json.loads(data_content)
-                            chunk_count += 1
+                        chunk_count += 1
+                        choices = chunk_data.get("choices", [])
+                        if not choices:
+                            continue
 
-                            # Extract choices
-                            choices = chunk_data.get("choices", [])
-                            if not choices:
-                                continue
+                        choice = choices[0]
+                        delta = choice.get("delta", {})
+                        finish_reason = choice.get("finish_reason")
 
-                            choice = choices[0]
-                            delta = choice.get("delta", {})
-                            finish_reason = choice.get("finish_reason")
+                        # Process reasoning and content
+                        content, in_reasoning = self._process_reasoning_content(
+                            delta.get("reasoning_content", ""),
+                            delta.get("content", ""),
+                            in_reasoning,
+                        )
 
-                            # Extract content - check both 'content' and 'reasoning_content'
-                            # Some models (like Nemotron) use 'reasoning_content' for thinking
-                            content = delta.get("content", "")
-                            reasoning_content = delta.get("reasoning_content", "")
+                        # Accumulate tool call deltas (using shared helper)
+                        if "tool_calls" in delta:
+                            for tc_delta in delta["tool_calls"]:
+                                accumulate_tool_call_delta(pending_tool_calls, tc_delta)
 
-                            # Handle reasoning content with proper streaming tags
-                            output = ""
-                            if reasoning_content:
-                                if not in_reasoning:
-                                    # Start reasoning block
-                                    in_reasoning = True
-                                    output = f"<think>{reasoning_content}"
-                                else:
-                                    # Continue reasoning block
-                                    output = reasoning_content
+                        # Emit content chunks
+                        if content:
+                            yield StreamChunk(content=content, finish_reason=finish_reason)
 
-                            if content:
-                                if in_reasoning:
-                                    # End reasoning block, then emit content
-                                    in_reasoning = False
-                                    output += f"</think>{content}"
-                                else:
-                                    output += content
-
-                            # Use output instead of content for yielding
-                            content = output
-
-                            # Accumulate tool call deltas
-                            if "tool_calls" in delta:
-                                for tc_delta in delta["tool_calls"]:
-                                    idx = tc_delta.get("index", 0)
-                                    if idx not in pending_tool_calls:
-                                        pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                                    entry = pending_tool_calls[idx]
-                                    if tc_delta.get("id"):
-                                        entry["id"] = tc_delta["id"]
-                                    if "function" in tc_delta:
-                                        func = tc_delta["function"]
-                                        if func.get("name"):
-                                            entry["name"] = func["name"]
-                                        if func.get("arguments"):
-                                            entry["arguments"] += func["arguments"]
-
-                            # Emit content chunks as they arrive
-                            if content:
-                                yield StreamChunk(
-                                    content=content,
-                                    finish_reason=finish_reason,
-                                )
-
-                            # Close reasoning block if still open when stream ends
-                            if finish_reason and in_reasoning:
+                        # Handle stream end
+                        if finish_reason:
+                            # Close reasoning block if still open
+                            if in_reasoning:
                                 yield StreamChunk(content="</think>", finish_reason=None)
                                 in_reasoning = False
 
-                            # When stream ends with tool_calls, emit accumulated tool calls
+                            # Emit tool calls or final chunk
                             if finish_reason == "tool_calls" and pending_tool_calls:
-                                completed = []
-                                for tc_data in pending_tool_calls.values():
-                                    try:
-                                        args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                                    except json.JSONDecodeError:
-                                        args = {"raw": tc_data["arguments"]}
-                                    completed.append(ToolCall(
-                                        id=tc_data["id"],
-                                        name=tc_data["name"],
-                                        arguments=args,
-                                    ))
                                 yield StreamChunk(
                                     content="",
                                     finish_reason="tool_calls",
-                                    tool_calls=completed,
-                                    usage=stream_usage,
+                                    tool_calls=finalize_tool_calls(pending_tool_calls),
                                 )
                                 pending_tool_calls.clear()
-                            elif finish_reason and finish_reason != "tool_calls":
-                                yield StreamChunk(content="", finish_reason=finish_reason, usage=stream_usage)
+                            elif finish_reason != "tool_calls":
+                                yield StreamChunk(content="", finish_reason=finish_reason)
 
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"Failed to parse SSE chunk: {e}")
-                            continue
-
-                logger.debug(f"Stream iteration complete, processed {chunk_count} chunks")
+                logger.debug(f"Stream complete: {chunk_count} chunks")
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for a local model."""

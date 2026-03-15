@@ -6,6 +6,17 @@ from django.views.decorators.csrf import csrf_exempt
 from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
+from .streaming import (
+    CHAR_TO_TOKEN_RATIO,
+    CONTEXT_BUFFER_TOKENS,
+    CONTEXT_WARNING_THRESHOLD,
+    DEFAULT_MAX_TOOL_ROUNDS,
+    MAX_INPUT_TOKENS,
+    MIN_OUTPUT_TOKENS,
+    MIN_TOOL_CONTENT_SIZE,
+    STREAM_CLOSE_DELAY,
+    TRUNCATION_MARKER,
+)
 from .utils.decorators import lazy_singleton
 from .utils.responses import (
     json_error,
@@ -652,17 +663,16 @@ async def agent_chat_stream(request):
             # Calculate adaptive max_tokens based on context usage
             # (context_window and max_output_tokens already fetched from config above)
 
-            # Estimate current input tokens (rough: chars / 4)
-            estimated_input = sum(len(m.content or '') for m in messages) // 4
+            # Estimate current input tokens
+            estimated_input = sum(len(m.content or '') for m in messages) // CHAR_TO_TOKEN_RATIO
 
             # Available space = context_window - input - buffer (for tool overhead)
-            buffer = 2000  # Reserve for tool definitions, system overhead
-            available_for_output = context_window - estimated_input - buffer
+            available_for_output = context_window - estimated_input - CONTEXT_BUFFER_TOKENS
 
-            # Use the smaller of: configured max_output or available space (but at least 2048)
+            # Use the smaller of: configured max_output or available space (but at least minimum)
             adaptive_max_tokens = max(
                 min(max_output_tokens, available_for_output),
-                2048  # Minimum to avoid truncation
+                MIN_OUTPUT_TOKENS
             )
 
             logger.debug(
@@ -674,19 +684,19 @@ async def agent_chat_stream(request):
             # Stream tokens with tool-use loop
             full_content = ""
             tools_used = []
-            max_tool_rounds = 10
+            max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
             total_tokens_input = 0
             total_tokens_output = 0
 
             # Hard limit for context to prevent corruption (leave room for output)
-            max_context_tokens = min(context_window - adaptive_max_tokens - 1000, 32000)  # Cap at 32k input
+            max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
 
             for tool_round in range(max_tool_rounds + 1):
                 round_tool_calls = []
 
                 # Log context size before each round
                 total_context_chars = sum(len(m.content or '') for m in messages)
-                estimated_context_tokens = total_context_chars // 4
+                estimated_context_tokens = total_context_chars // CHAR_TO_TOKEN_RATIO
                 logger.info(
                     f"Tool round {tool_round + 1}: {len(messages)} messages, "
                     f"~{estimated_context_tokens:,} tokens ({total_context_chars:,} chars), "
@@ -700,19 +710,19 @@ async def agent_chat_stream(request):
                         "truncating tool messages"
                     )
                     # Truncate tool message contents to fit
-                    excess_chars = (estimated_context_tokens - max_context_tokens) * 4
+                    excess_chars = (estimated_context_tokens - max_context_tokens) * CHAR_TO_TOKEN_RATIO
                     for msg in reversed(messages):
-                        if msg.role == MessageRole.TOOL and msg.content and len(msg.content) > 500:
+                        if msg.role == MessageRole.TOOL and msg.content and len(msg.content) > MIN_TOOL_CONTENT_SIZE:
                             old_len = len(msg.content)
-                            trim_amount = min(excess_chars, old_len - 500)
-                            msg.content = msg.content[:old_len - trim_amount] + "\n[TRUNCATED]"
+                            trim_amount = min(excess_chars, old_len - MIN_TOOL_CONTENT_SIZE)
+                            msg.content = msg.content[:old_len - trim_amount] + TRUNCATION_MARKER
                             excess_chars -= trim_amount
                             logger.debug(f"Trimmed tool message by {trim_amount} chars")
                             if excess_chars <= 0:
                                 break
 
                 # Warn if context is getting large relative to window
-                if estimated_context_tokens > context_window * 0.8:
+                if estimated_context_tokens > context_window * CONTEXT_WARNING_THRESHOLD:
                     logger.warning(
                         f"Context usage high: {estimated_context_tokens:,} / {context_window:,} tokens "
                         f"({100 * estimated_context_tokens / context_window:.1f}%)"
@@ -834,7 +844,7 @@ async def agent_chat_stream(request):
 
             # Small delay to ensure done event is flushed before close
             import asyncio
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(STREAM_CLOSE_DELAY)
 
             # Explicit stream close signal for frontend
             yield f"event: close\ndata: {{}}\n\n"

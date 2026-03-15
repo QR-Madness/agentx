@@ -49,6 +49,59 @@ class ToolCall(BaseModel):
     arguments: dict[str, Any]
 
 
+def accumulate_tool_call_delta(
+    pending_calls: dict[int, dict[str, Any]],
+    tc_delta: dict[str, Any],
+) -> None:
+    """
+    Accumulate a streaming tool call delta fragment.
+
+    Tool calls arrive incrementally across multiple chunks. This helper
+    accumulates the fragments into complete tool calls.
+
+    Args:
+        pending_calls: Dict mapping tool index to accumulated call data
+        tc_delta: Delta fragment from a streaming chunk
+    """
+    idx = tc_delta.get("index", 0)
+    if idx not in pending_calls:
+        pending_calls[idx] = {"id": "", "name": "", "arguments": ""}
+
+    entry = pending_calls[idx]
+    if tc_delta.get("id"):
+        entry["id"] = tc_delta["id"]
+
+    func = tc_delta.get("function", {})
+    if func.get("name"):
+        entry["name"] = func["name"]
+    if func.get("arguments"):
+        entry["arguments"] += func["arguments"]
+
+
+def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCall]:
+    """
+    Convert accumulated tool call fragments to ToolCall objects.
+
+    Args:
+        pending_calls: Dict of accumulated tool call data
+
+    Returns:
+        List of complete ToolCall objects
+    """
+    completed = []
+    for tc_data in pending_calls.values():
+        try:
+            args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+        except json.JSONDecodeError:
+            args = {"raw": tc_data["arguments"]}
+        completed.append(ToolCall(
+            id=tc_data["id"],
+            name=tc_data["name"],
+            arguments=args,
+        ))
+    return completed
+
+
 class StreamChunk(BaseModel):
     """A chunk of streaming response."""
     content: str = ""

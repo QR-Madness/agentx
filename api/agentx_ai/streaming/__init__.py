@@ -1,0 +1,30 @@
+"""
+Streaming utilities for agent chat.
+
+This module contains helpers for SSE streaming, context management,
+and token estimation extracted from views.py during complexity reduction.
+"""
+
+from .constants import (
+    CHAR_TO_TOKEN_RATIO,
+    CONTEXT_BUFFER_TOKENS,
+    CONTEXT_WARNING_THRESHOLD,
+    DEFAULT_MAX_TOOL_ROUNDS,
+    MAX_INPUT_TOKENS,
+    MIN_OUTPUT_TOKENS,
+    MIN_TOOL_CONTENT_SIZE,
+    STREAM_CLOSE_DELAY,
+    TRUNCATION_MARKER,
+)
+
+__all__ = [
+    "CHAR_TO_TOKEN_RATIO",
+    "CONTEXT_BUFFER_TOKENS",
+    "CONTEXT_WARNING_THRESHOLD",
+    "DEFAULT_MAX_TOOL_ROUNDS",
+    "MAX_INPUT_TOKENS",
+    "MIN_OUTPUT_TOKENS",
+    "MIN_TOOL_CONTENT_SIZE",
+    "STREAM_CLOSE_DELAY",
+    "TRUNCATION_MARKER",
+]

@@ -14,6 +14,8 @@ from .base import (
     ProviderConfig,
     StreamChunk,
     ToolCall,
+    accumulate_tool_call_delta,
+    finalize_tool_calls,
     log_llm_request,
 )
 
@@ -242,8 +244,6 @@ class OpenAIProvider(ModelProvider):
         log_llm_request("OpenAI (stream)", request_params)
 
         stream = await self.client.chat.completions.create(**request_params)
-
-        # Accumulate tool call fragments across chunks
         pending_tool_calls: dict[int, dict[str, Any]] = {}
 
         async for chunk in stream:
@@ -252,45 +252,32 @@ class OpenAIProvider(ModelProvider):
 
             choice = chunk.choices[0]
             delta = choice.delta
-
-            # Accumulate tool call deltas
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in pending_tool_calls:
-                        pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                    entry = pending_tool_calls[idx]
-                    if tc_delta.id:
-                        entry["id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            entry["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            entry["arguments"] += tc_delta.function.arguments
-
-            content = delta.content or ""
             finish_reason = choice.finish_reason
 
+            # Accumulate tool call deltas (using shared helper)
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    # Convert SDK object to dict for shared helper
+                    tc_dict = {
+                        "index": tc_delta.index,
+                        "id": tc_delta.id,
+                        "function": {
+                            "name": tc_delta.function.name if tc_delta.function else None,
+                            "arguments": tc_delta.function.arguments if tc_delta.function else None,
+                        } if tc_delta.function else {},
+                    }
+                    accumulate_tool_call_delta(pending_tool_calls, tc_dict)
+
+            content = delta.content or ""
             if content:
                 yield StreamChunk(content=content, finish_reason=finish_reason)
 
-            # When stream ends with tool_calls, emit accumulated tool calls
+            # Handle stream end
             if finish_reason == "tool_calls" and pending_tool_calls:
-                completed = []
-                for tc_data in pending_tool_calls.values():
-                    try:
-                        args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                    except json.JSONDecodeError:
-                        args = {"raw": tc_data["arguments"]}
-                    completed.append(ToolCall(
-                        id=tc_data["id"],
-                        name=tc_data["name"],
-                        arguments=args,
-                    ))
                 yield StreamChunk(
                     content="",
                     finish_reason="tool_calls",
-                    tool_calls=completed,
+                    tool_calls=finalize_tool_calls(pending_tool_calls),
                 )
                 pending_tool_calls.clear()
             elif finish_reason and finish_reason != "tool_calls":
