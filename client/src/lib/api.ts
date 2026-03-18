@@ -22,6 +22,11 @@ export interface HealthResponse {
     postgres?: { status: string };
     redis?: { status: string };
   };
+  storage?: {
+    postgres_size_mb: number;
+    neo4j_size_mb: number;
+    redis_memory_mb: number;
+  };
 }
 
 export interface ProviderInfo {
@@ -570,8 +575,11 @@ class ApiClient {
 
   // === Health ===
 
-  async health(includeMemory = false): Promise<HealthResponse> {
-    const path = includeMemory ? '/api/health?include_memory=true' : '/api/health';
+  async health(includeMemory = false, includeStorage = false): Promise<HealthResponse> {
+    const params = new URLSearchParams();
+    if (includeMemory) params.set('include_memory', 'true');
+    if (includeStorage) params.set('include_storage', 'true');
+    const path = params.toString() ? `/api/health?${params}` : '/api/health';
     const result = await this.request<HealthResponse>(path);
     
     // Update cache with health status

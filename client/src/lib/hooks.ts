@@ -24,7 +24,7 @@ import {
   RecallSettings,
 } from './api';
 
-export function useHealth(includeMemory = true) {
+export function useHealth(includeMemory = true, includeStorage = true) {
   const [data, setData] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -33,14 +33,14 @@ export function useHealth(includeMemory = true) {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.health(includeMemory);
+      const result = await api.health(includeMemory, includeStorage);
       setData(result);
     } catch (err) {
       setError(err as ApiError);
     } finally {
       setLoading(false);
     }
-  }, [includeMemory]);
+  }, [includeMemory, includeStorage]);
 
   useEffect(() => {
     refresh();

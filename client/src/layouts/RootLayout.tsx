@@ -10,7 +10,7 @@ import { AgentXPage } from '../pages/AgentXPage';
 import './RootLayout.css';
 
 export function RootLayout() {
-  const [activePage, setActivePage] = useState<PageId>('agentx');
+  const [activePage, setActivePage] = useState<PageId>('start');
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const rafRef = useRef<number | null>(null);
 
@@ -49,7 +49,7 @@ export function RootLayout() {
           className="page-wrapper"
           style={{ display: activePage === 'start' ? 'block' : 'none' }}
         >
-          <StartPage />
+          <StartPage onNavigate={setActivePage} />
         </div>
         <div
           className="page-wrapper"

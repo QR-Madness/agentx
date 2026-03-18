@@ -50,6 +50,7 @@ def health(request):
     - API server (always healthy if responding)
     - Translation models (loaded or not)
     - Memory system connections (neo4j, postgres, redis)
+    - Storage metrics (postgres size, neo4j size, redis memory) when include_storage=true
     """
     # Check translation kit (don't initialize just for health check)
     kit = get_translation_kit.get_if_initialized()
@@ -60,26 +61,89 @@ def health(request):
             "translation": kit.level_ii_translation_model_name if kit else None,
         }
     }
-    
+
     # Check memory system (lazy - only if explicitly requested)
     include_memory = request.GET.get('include_memory', 'false').lower() == 'true'
+    include_storage = request.GET.get('include_storage', 'false').lower() == 'true'
     memory_status = None
     if include_memory:
         memory_status = check_memory_health()
-    
+
     response = {
         "status": "healthy",
         "api": {"status": "healthy"},
         "translation": translation_status,
     }
-    
+
     if memory_status:
         response["memory"] = memory_status
         # Overall status is unhealthy if any memory component is unhealthy
         if any(v["status"] == "unhealthy" for v in memory_status.values()):
             response["status"] = "degraded"
-    
+
+    # Get storage metrics if requested
+    if include_storage:
+        response["storage"] = _get_storage_metrics()
+
     return JsonResponse(response)
+
+
+def _get_storage_metrics() -> dict:
+    """Get storage size metrics for all databases."""
+    from .kit.agent_memory.connections import PostgresConnection, Neo4jConnection, RedisConnection
+    from sqlalchemy import text
+
+    storage = {
+        "postgres_size_mb": None,
+        "neo4j_size_mb": None,
+        "redis_memory_mb": None,
+    }
+
+    # PostgreSQL database size
+    try:
+        engine = PostgresConnection.get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT pg_database_size(current_database()) / 1024.0 / 1024.0 AS size_mb"))
+            row = result.fetchone()
+            if row:
+                storage["postgres_size_mb"] = round(row[0], 2)
+    except Exception:
+        pass
+
+    # Neo4j store size (use dbms.queryJmx or estimate from count)
+    try:
+        with Neo4jConnection.session() as session:
+            # Get approximate size by counting nodes/relationships
+            result = session.run("""
+                CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes')
+                YIELD attributes
+                RETURN attributes.TotalStoreSize.value AS total_bytes
+            """)
+            record = result.single()
+            if record and record["total_bytes"]:
+                storage["neo4j_size_mb"] = round(record["total_bytes"] / 1024 / 1024, 2)
+    except Exception:
+        # Fallback: estimate from node/relationship counts
+        try:
+            with Neo4jConnection.session() as session:
+                result = session.run("MATCH (n) RETURN count(n) as nodes")
+                record = result.single()
+                # Rough estimate: ~500 bytes per node
+                if record:
+                    storage["neo4j_size_mb"] = round(record["nodes"] * 500 / 1024 / 1024, 2)
+        except Exception:
+            pass
+
+    # Redis memory usage
+    try:
+        redis_client = RedisConnection.get_client()
+        info = redis_client.info("memory")
+        if "used_memory" in info:
+            storage["redis_memory_mb"] = round(info["used_memory"] / 1024 / 1024, 2)
+    except Exception:
+        pass
+
+    return storage
 
 
 @csrf_exempt

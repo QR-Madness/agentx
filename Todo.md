@@ -329,38 +329,37 @@ Note: AgentXPage extraction deferred — ChatPanel already provides full functio
 - [x] Thinking auto-expand: pass `defaultExpanded={true}` to ThinkingBubble
 - [x] Increase thinking max-height from 200px to 500px
 
-### 13.8 Prompt Library
+### 13.8 Prompt Library ✅
 
 > Profile-agnostic prompt templates with tag-based organization
 
 #### Backend
-- [ ] Create `PromptTemplateManager` (`prompts/templates.py`) — follows `PromptManager` pattern
-- [ ] Storage: `data/prompt_templates.yaml`
-- [ ] Endpoints: `GET/POST/PUT/DELETE /api/prompts/templates`
-- [ ] Fields: `id`, `name`, `content`, `tags[]`, `placeholders[]`, `type` (system/user/snippet)
+- [x] Create `PromptTemplateManager` (`prompts/templates.py`) — follows `PromptManager` pattern
+- [x] Storage: `data/prompt_templates.yaml`
+- [x] Endpoints: `GET/POST/PUT/DELETE /api/prompts/templates`
+- [x] Fields: `id`, `name`, `content`, `tags[]`, `placeholders[]`, `type` (system/user/snippet)
 
 #### Frontend
-- [ ] Create `PromptLibraryModal.tsx` — opened from toolbar or slash command in input
-- [ ] Tag filter sidebar, search bar, template list
-- [ ] Template preview with placeholder highlighting
-- [ ] "Use in conversation" action (inserts into input)
-- [ ] "Attach to profile" action (sets as profile's prompt)
-- [ ] Add template API methods to `lib/api.ts`
+- [x] Create `PromptLibraryModal.tsx` — opened from toolbar or slash command in input
+- [x] Tag filter sidebar, search bar, template list
+- [x] Template preview with placeholder highlighting
+- [x] "Use in conversation" action (inserts into input)
+- [x] "Attach to profile" action (sets as profile's prompt)
+- [x] Add template API methods to `lib/api.ts`
 
-### 13.9 Start Page & Dashboard Refresh
+### 13.9 Start Page & Dashboard Refresh ✅
 
 #### Start Page
-- [ ] Create `StartPage.tsx` (`pages/`) — centered agent avatar + "Hello, I'm {agentName}" greeting
-- [ ] Quick actions: "New Conversation", "Open Dashboard"
-- [ ] Minimal placeholder (future: onboarding, tips, recent activity)
+- [x] Create `StartPage.tsx` (`pages/`) — centered agent avatar + "Hello, I'm {agentName}" greeting
+- [x] Quick actions: "New Conversation", "Open Dashboard"
+- [x] Start page is now the default landing page
 
 #### Dashboard Refresh
-- [ ] Create `DashboardPage.tsx` (`pages/`) — refactored from `DashboardTab`
-- [ ] Keep: health status grid, server banner
-- [ ] Add: token usage metrics, memory stats (from `/api/memory/stats`), active conversation count
-- [ ] Add: running agents indicator
-- [ ] Add: DB disk allocation metrics (PostgreSQL, Neo4j, Redis storage sizes) — important now that tool calls/thinking are persisted per conversation
-- [ ] Remove: quick action buttons (replaced by toolbar/page nav)
+- [x] Create `DashboardPage.tsx` (`pages/`) — refactored from `DashboardTab`
+- [x] Keep: health status grid, server banner
+- [x] Add: memory stats (from `/api/memory/stats`), active conversation count
+- [x] Add: DB storage metrics (PostgreSQL, Neo4j, Redis sizes) via `/api/health?include_storage=true`
+- [x] Remove: hero section and quick action buttons (replaced by toolbar/page nav)
 
 ### 13.10 Polish & Cleanup
 
