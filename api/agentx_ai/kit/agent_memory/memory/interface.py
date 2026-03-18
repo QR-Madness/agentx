@@ -564,6 +564,7 @@ class AgentMemory:
                     include_semantic=include_semantic,
                     include_procedural=include_procedural,
                     strategy_weights=strategy_weights,
+                    conversation_id=self.conversation_id,
                 )
             else:
                 # Use base retriever for basic vector search
@@ -577,7 +578,8 @@ class AgentMemory:
                     time_window_hours=time_window_hours,
                     channel=self.channel,
                     channels=channels,
-                    strategy_weights=strategy_weights
+                    strategy_weights=strategy_weights,
+                    conversation_id=self.conversation_id,
                 )
 
             # Calculate counts for event

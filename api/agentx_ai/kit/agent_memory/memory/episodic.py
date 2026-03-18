@@ -202,6 +202,48 @@ class EpisodicMemory:
 
             return [Turn(**dict(record["t"])) for record in result]
 
+    def get_conversation_turns(
+        self,
+        conversation_id: str,
+        user_id: str,
+        limit: int = 3,
+        order: str = "desc"
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the last N turns from a specific conversation.
+
+        Used for always-include recent context retrieval.
+
+        Args:
+            conversation_id: Conversation ID
+            user_id: User ID (required for security)
+            limit: Maximum number of turns to return
+            order: "desc" for most recent first, "asc" for oldest first
+
+        Returns:
+            List of turn dictionaries with always_include flag
+        """
+        # Validate limit
+        validated_limit = max(1, min(int(limit), 20))  # Cap at 20
+        order_clause = "DESC" if order == "desc" else "ASC"
+
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                cast(LiteralString, f"""
+                MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation {{id: $conv_id}})
+                      -[:HAS_TURN]->(t:Turn)
+                RETURN t
+                ORDER BY t.index {order_clause}
+                LIMIT $limit
+            """), user_id=user_id, conv_id=conversation_id, limit=validated_limit)
+
+            turns = []
+            for record in result:
+                turn_data = dict(record["t"])
+                turn_data["conversation_id"] = conversation_id
+                turns.append(turn_data)
+            return turns
+
     def get_recent_turns(
         self,
         user_id: str,

@@ -279,6 +279,7 @@ class MemoryRetriever:
         channel: Optional[str] = None,
         channels: Optional[List[str]] = None,
         strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
+        conversation_id: Optional[str] = None,
     ) -> MemoryBundle:
         """
         Main retrieval method combining multiple strategies.
@@ -296,6 +297,8 @@ class MemoryRetriever:
             strategy_weights: Optional override for retrieval weights.
                 Can be RetrievalWeights or dict with keys:
                 episodic, semantic_facts, semantic_entities, procedural, recency
+            conversation_id: Current conversation ID. When provided, the last N turns
+                from this conversation are always included regardless of similarity.
 
         Returns:
             MemoryBundle with aggregated results
@@ -353,7 +356,8 @@ class MemoryRetriever:
         if include_episodic:
             t1 = time.perf_counter()
             bundle.relevant_turns = self._retrieve_episodic(
-                query_embedding, user_id, top_k, time_window_hours, active_channel
+                query_embedding, user_id, top_k, time_window_hours, active_channel,
+                conversation_id=conversation_id
             )
             metrics.episodic_latency_ms = int((time.perf_counter() - t1) * 1000)
             metrics.episodic_count = len(bundle.relevant_turns)
@@ -457,7 +461,8 @@ class MemoryRetriever:
         user_id: str,
         top_k: int,
         time_window_hours: Optional[int],
-        channel: Optional[str] = None
+        channel: Optional[str] = None,
+        conversation_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve from episodic memory with recency boost.
@@ -468,10 +473,27 @@ class MemoryRetriever:
             top_k: Number of results
             time_window_hours: Time window filter
             channel: Memory channel to search (also searches _global)
+            conversation_id: Current conversation ID for always-include turns
 
         Returns:
             List of relevant turns
         """
+        # Always-include: fetch last N turns from current conversation
+        # These are marked and will be preserved through reranking
+        always_include_turns: List[Dict[str, Any]] = []
+        always_include_count = settings.always_include_recent_turns
+
+        if conversation_id and always_include_count > 0:
+            always_include_turns = self.memory.episodic.get_conversation_turns(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                limit=always_include_count,
+                order="desc"  # Most recent first
+            )
+            # Mark these turns as always-include so reranking preserves them
+            for turn in always_include_turns:
+                turn["always_include"] = True
+
         # Vector search
         turns = self.memory.episodic.vector_search(
             query_embedding,
@@ -481,7 +503,7 @@ class MemoryRetriever:
             channel=channel
         )
 
-        # Get recent turns regardless of similarity
+        # Get recent turns regardless of similarity (broader than just current conversation)
         recent = self.memory.episodic.get_recent_turns(
             user_id,
             hours=time_window_hours or 24,
@@ -489,10 +511,18 @@ class MemoryRetriever:
             channel=channel
         )
 
-        # Combine and deduplicate
+        # Combine and deduplicate, preserving always_include flag
         seen_ids = set()
         combined = []
 
+        # Always-include turns first (they take priority)
+        for turn in always_include_turns:
+            turn_id = turn.get("id") or f"{turn.get('conversation_id')}:{turn.get('timestamp')}"
+            if turn_id not in seen_ids:
+                seen_ids.add(turn_id)
+                combined.append(turn)
+
+        # Then similarity-based and time-based turns
         for turn in turns + recent:
             turn_id = turn.get("id") or f"{turn.get('conversation_id')}:{turn.get('timestamp')}"
             if turn_id not in seen_ids:
@@ -618,20 +648,27 @@ class MemoryRetriever:
             # Sort by final score
             bundle.relevant_turns.sort(key=lambda x: x.get("final_score", 0), reverse=True)
 
-            # Diversity: limit items from same conversation (configurable)
+            # Separate always-include turns (must be preserved) from regular turns
+            always_include_turns = [t for t in bundle.relevant_turns if t.get("always_include")]
+            regular_turns = [t for t in bundle.relevant_turns if not t.get("always_include")]
+
+            # Diversity: limit items from same conversation (only for regular turns)
             max_per_conv = getattr(settings, 'max_results_per_conversation', 3)
             seen_convs: Dict[str, int] = {}
-            filtered_turns = []
-            for turn in bundle.relevant_turns:
+            filtered_regular = []
+            for turn in regular_turns:
                 conv_id = turn.get("conversation_id")
                 if conv_id:
                     seen_convs[conv_id] = seen_convs.get(conv_id, 0) + 1
                     if seen_convs[conv_id] <= max_per_conv:
-                        filtered_turns.append(turn)
+                        filtered_regular.append(turn)
                 else:
-                    filtered_turns.append(turn)
+                    filtered_regular.append(turn)
 
-            bundle.relevant_turns = filtered_turns[:settings.default_top_k]
+            # Combine: always-include turns first, then diversity-filtered regular turns
+            # Always-include turns are prepended (most important for context)
+            remaining_slots = settings.default_top_k - len(always_include_turns)
+            bundle.relevant_turns = always_include_turns + filtered_regular[:max(0, remaining_slots)]
 
         # Rerank facts
         if bundle.facts:

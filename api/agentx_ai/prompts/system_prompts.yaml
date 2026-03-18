@@ -42,15 +42,23 @@ extraction:
   # Relevance filter prompt
   # Variables: {text}
   relevance: |
-    Does this text contain ANY of the following?
+    Does this text contain ANY extractable information?
+
+    IMPORTANT: People often start with pleasantries then include valuable info.
+    "Thanks! I'm moving to Seattle next month" → YES (contains location + timeline)
+    "Sure, I work at Google" → YES (contains employer)
+    "Ok, my email is john@example.com" → YES (contains contact info)
+
+    Answer YES if there is ANY:
     - Names (people, places, projects, products, companies)
     - Personal info (preferences, opinions, goals, activities)
     - Facts or claims about anything specific
     - Technical details or descriptions
 
-    Text: "{text}"
+    Answer NO ONLY if the ENTIRE message is just a pleasantry with no substance.
+    Examples of NO: "ok", "thanks", "sounds good", "got it", "yes", "no"
 
-    Answer YES if there is ANY extractable information. Answer NO only for greetings, acknowledgments, or filler like "ok", "thanks", "sounds good".
+    Text: "{text}"
 
     Reply YES or NO:
 
@@ -97,13 +105,19 @@ extraction:
     TEXT: "{text}"
 
     STEP 1 - RELEVANCE CHECK:
-    Is this text worth remembering? Think about whether it contains:
+    Is this text worth remembering? Look for ANY of:
     - Names (people, places, projects, products, companies)
     - Personal information (preferences, opinions, goals)
     - Facts or claims about specific things
     - Technical details or descriptions
 
-    Answer NO if it's just: greetings, acknowledgments, filler ("ok", "thanks", "got it", "sounds good")
+    IMPORTANT: People often start with pleasantries then include valuable info!
+    "Thanks! I'm moving to Seattle next month" → RELEVANT (location + timeline)
+    "Sure, I work at Google" → RELEVANT (employer)
+    "Yes, and my email is john@example.com" → RELEVANT (contact info)
+
+    Answer NO ONLY if the ENTIRE message is just a pleasantry with nothing else.
+    Examples of NO: "ok", "thanks", "sounds good", "got it" (by themselves)
 
     STEP 2 - EXTRACTION (only if relevant):
     If relevant, extract entities and facts from what the USER said.
