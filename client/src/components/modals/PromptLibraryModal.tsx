@@ -1,15 +1,16 @@
 /**
- * PromptLibraryModal — Browse, search, and select prompt templates
+ * PromptLibraryModal — Browse, search, select, and edit prompt templates
  *
  * Features:
  * - Tag-based filtering sidebar
  * - Search across name, description, content
  * - Template preview with placeholder highlighting
  * - Insert/Select actions
+ * - Create, edit, and delete templates
  * - Reset modified templates
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X,
   Search,
@@ -22,8 +23,11 @@ import {
   Check,
   AlertCircle,
   Sparkles,
+  Edit3,
+  Save,
+  Trash2,
 } from 'lucide-react';
-import { api, type PromptTemplate, type TemplateTag, type TemplateType } from '../../lib/api';
+import { api, type PromptTemplate, type TemplateTag, type TemplateType, type PromptTemplateCreate } from '../../lib/api';
 import './PromptLibraryModal.css';
 
 interface PromptLibraryModalProps {
@@ -68,30 +72,44 @@ export function PromptLibraryModal({
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
   const [resetting, setResetting] = useState(false);
 
+  // Edit/Create state
+  const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Form fields for edit/create
+  const [formName, setFormName] = useState('');
+  const [formContent, setFormContent] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formTags, setFormTags] = useState('');
+  const [formType, setFormType] = useState<TemplateType>('snippet');
+
   // Fetch templates and tags
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [templatesRes, tagsRes] = await Promise.all([
-          api.listPromptTemplates({
-            tag: selectedTag || undefined,
-            type: selectedType || undefined,
-            search: searchQuery || undefined,
-          }),
-          api.listPromptTemplateTags(),
-        ]);
-        setTemplates(templatesRes.templates);
-        setTags(tagsRes.tags);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load templates');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [templatesRes, tagsRes] = await Promise.all([
+        api.listPromptTemplates({
+          tag: selectedTag || undefined,
+          type: selectedType || undefined,
+          search: searchQuery || undefined,
+        }),
+        api.listPromptTemplateTags(),
+      ]);
+      setTemplates(templatesRes.templates);
+      setTags(tagsRes.tags);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load templates');
+    } finally {
+      setLoading(false);
+    }
   }, [selectedTag, selectedType, searchQuery]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   // Filter templates by search (client-side for responsiveness)
   const filteredTemplates = useMemo(() => {
@@ -144,6 +162,107 @@ export function PromptLibraryModal({
     }
   };
 
+  // Start editing an existing template
+  const startEditing = (template: PromptTemplate) => {
+    setEditingTemplate(template);
+    setIsCreating(false);
+    setFormName(template.name);
+    setFormContent(template.content);
+    setFormDescription(template.description || '');
+    setFormTags(template.tags.join(', '));
+    setFormType(template.type);
+  };
+
+  // Start creating a new template
+  const startCreating = () => {
+    setIsCreating(true);
+    setEditingTemplate(null);
+    setSelectedTemplate(null);
+    setFormName('');
+    setFormContent('');
+    setFormDescription('');
+    setFormTags('');
+    setFormType('snippet');
+  };
+
+  // Cancel edit/create mode
+  const cancelEdit = () => {
+    setEditingTemplate(null);
+    setIsCreating(false);
+  };
+
+  // Save template (create or update)
+  const handleSave = async () => {
+    if (!formName.trim() || !formContent.trim()) {
+      setError('Name and content are required');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const tagsArray = formTags
+        .split(',')
+        .map(t => t.trim())
+        .filter(t => t.length > 0);
+
+      if (isCreating) {
+        const templateData: PromptTemplateCreate = {
+          name: formName.trim(),
+          content: formContent,
+          description: formDescription.trim() || undefined,
+          tags: tagsArray.length > 0 ? tagsArray : undefined,
+          type: formType,
+        };
+        const { template } = await api.createPromptTemplate(templateData);
+        setSelectedTemplate(template);
+      } else if (editingTemplate) {
+        const { template } = await api.updatePromptTemplate(editingTemplate.id, {
+          name: formName.trim(),
+          content: formContent,
+          description: formDescription.trim() || undefined,
+          tags: tagsArray,
+        });
+        setSelectedTemplate(template);
+      }
+
+      await fetchData();
+      cancelEdit();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save template');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Delete a template
+  const handleDelete = async () => {
+    if (!editingTemplate || editingTemplate.isBuiltin) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${editingTemplate.name}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      await api.deletePromptTemplate(editingTemplate.id);
+      await fetchData();
+      cancelEdit();
+      setSelectedTemplate(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete template');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Check if we're in edit mode
+  const isEditing = isCreating || editingTemplate !== null;
+
   // Highlight placeholders in content
   const highlightPlaceholders = (content: string) => {
     const parts = content.split(/(\{[^}]+\})/g);
@@ -169,9 +288,19 @@ export function PromptLibraryModal({
           <FileText size={20} />
           <h2>Prompt Library</h2>
         </div>
-        <button className="button-ghost close-btn" onClick={onClose}>
-          <X size={20} />
-        </button>
+        <div className="modal-header-actions">
+          <button
+            className="button-primary"
+            onClick={startCreating}
+            disabled={isEditing}
+          >
+            <Plus size={16} />
+            New Template
+          </button>
+          <button className="button-ghost close-btn" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Error Banner */}
@@ -314,9 +443,114 @@ export function PromptLibraryModal({
           </div>
         </div>
 
-        {/* Preview Panel */}
+        {/* Preview Panel / Edit Form */}
         <div className="preview-panel">
-          {selectedTemplate ? (
+          {isEditing ? (
+            /* Edit/Create Form */
+            <div className="edit-form">
+              <div className="edit-form-header">
+                <h3>{isCreating ? 'Create New Template' : 'Edit Template'}</h3>
+                {editingTemplate?.isBuiltin && (
+                  <span className="builtin-badge">Built-in (edits create a modified copy)</span>
+                )}
+              </div>
+
+              <div className="edit-form-field">
+                <label htmlFor="template-name">Name</label>
+                <input
+                  id="template-name"
+                  type="text"
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
+                  placeholder="Template name..."
+                  autoFocus
+                />
+              </div>
+
+              {isCreating && (
+                <div className="edit-form-field">
+                  <label htmlFor="template-type">Type</label>
+                  <select
+                    id="template-type"
+                    value={formType}
+                    onChange={e => setFormType(e.target.value as TemplateType)}
+                  >
+                    <option value="snippet">Snippet</option>
+                    <option value="system">System Prompt</option>
+                    <option value="user">User Message</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="edit-form-field">
+                <label htmlFor="template-description">Description</label>
+                <input
+                  id="template-description"
+                  type="text"
+                  value={formDescription}
+                  onChange={e => setFormDescription(e.target.value)}
+                  placeholder="Brief description (optional)..."
+                />
+              </div>
+
+              <div className="edit-form-field">
+                <label htmlFor="template-tags">Tags</label>
+                <input
+                  id="template-tags"
+                  type="text"
+                  value={formTags}
+                  onChange={e => setFormTags(e.target.value)}
+                  placeholder="Comma-separated tags..."
+                />
+                <span className="form-hint">e.g., reasoning, coding, creative</span>
+              </div>
+
+              <div className="edit-form-field edit-form-field-content">
+                <label htmlFor="template-content">Content</label>
+                <textarea
+                  id="template-content"
+                  value={formContent}
+                  onChange={e => setFormContent(e.target.value)}
+                  placeholder="Template content... Use {placeholder} for variables."
+                  rows={10}
+                />
+                <span className="form-hint">
+                  Use {'{'}placeholder{'}'} syntax for dynamic values
+                </span>
+              </div>
+
+              <div className="edit-form-actions">
+                {editingTemplate && !editingTemplate.isBuiltin && (
+                  <button
+                    className="button-danger"
+                    onClick={handleDelete}
+                    disabled={deleting || saving}
+                  >
+                    <Trash2 size={14} />
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                )}
+                <div className="edit-form-actions-right">
+                  <button
+                    className="button-secondary"
+                    onClick={cancelEdit}
+                    disabled={saving || deleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="button-primary"
+                    onClick={handleSave}
+                    disabled={saving || deleting || !formName.trim() || !formContent.trim()}
+                  >
+                    <Save size={14} />
+                    {saving ? 'Saving...' : isCreating ? 'Create' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : selectedTemplate ? (
+            /* Preview Mode */
             <>
               <div className="preview-header">
                 <TypeIcon size={16} />
@@ -342,6 +576,13 @@ export function PromptLibraryModal({
               )}
 
               <div className="preview-actions">
+                <button
+                  className="button-secondary"
+                  onClick={() => startEditing(selectedTemplate)}
+                >
+                  <Edit3 size={14} />
+                  Edit
+                </button>
                 {selectedTemplate.hasModifications && (
                   <button
                     className="button-secondary"

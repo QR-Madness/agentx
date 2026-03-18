@@ -20,9 +20,11 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
   const {
     tabs, activeTabId, switchTab, closeTab,
     serverConversations, isLoadingHistory, restoreConversation, refreshHistory,
+    deleteConversation, deleteServerConversation,
   } = useConversation();
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [position, setPosition] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -130,9 +132,41 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     onClose();
   };
 
-  const handleDelete = (e: React.MouseEvent, tabId: string) => {
+  const handleClose = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
     closeTab(tabId);
+  };
+
+  const handleDeleteTab = async (e: React.MouseEvent, tabId: string, title: string) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(
+      `Permanently delete "${title}"?\n\nThis will remove the conversation from the server and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(tabId);
+    try {
+      await deleteConversation(tabId);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteServerConversation = async (e: React.MouseEvent, conversationId: string, title: string) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(
+      `Permanently delete "${title}"?\n\nThis will remove the conversation from the server and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(conversationId);
+    try {
+      await deleteServerConversation(conversationId);
+    } catch {
+      // Delete failed silently
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleRestore = async (e: React.MouseEvent, conversationId: string) => {
@@ -200,13 +234,30 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
                     {tab.messages.length} messages · {formatDate(tab.lastMessageAt)}
                   </span>
                 </div>
-                <button
-                  className="history-item-delete"
-                  onClick={(e) => handleDelete(e, tab.id)}
-                  title="Close tab"
-                >
-                  <Trash2 size={12} />
-                </button>
+                <div className="history-item-actions">
+                  {deletingId === tab.id ? (
+                    <div className="history-item-loading">
+                      <Loader2 size={12} className="spin" />
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        className="history-item-action"
+                        onClick={(e) => handleClose(e, tab.id)}
+                        title="Close tab (keeps on server)"
+                      >
+                        <X size={12} />
+                      </button>
+                      <button
+                        className="history-item-action history-item-action-danger"
+                        onClick={(e) => handleDeleteTab(e, tab.id, tab.title)}
+                        title="Delete conversation (removes from server)"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </>
@@ -234,11 +285,21 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
                     <span className="history-item-preview">{conv.preview}</span>
                   )}
                 </div>
-                {restoringId === conv.conversation_id ? (
-                  <div className="history-item-loading">
-                    <Loader2 size={12} className="spin" />
-                  </div>
-                ) : null}
+                <div className="history-item-actions">
+                  {restoringId === conv.conversation_id || deletingId === conv.conversation_id ? (
+                    <div className="history-item-loading">
+                      <Loader2 size={12} className="spin" />
+                    </div>
+                  ) : (
+                    <button
+                      className="history-item-action history-item-action-danger"
+                      onClick={(e) => handleDeleteServerConversation(e, conv.conversation_id, conv.title)}
+                      title="Delete conversation"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </>

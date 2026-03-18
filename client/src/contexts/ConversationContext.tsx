@@ -50,6 +50,10 @@ interface ConversationContextValue {
   restoreConversation: (conversationId: string) => Promise<void>;
   refreshHistory: () => Promise<void>;
 
+  // Delete conversations (from server)
+  deleteConversation: (tabId: string) => Promise<void>;
+  deleteServerConversation: (conversationId: string) => Promise<void>;
+
   // Convenience methods for active tab
   appendMessage: (message: ConversationMessage) => void;
   updateMessage: (messageId: string, updates: Partial<ConversationMessage>) => void;
@@ -353,6 +357,39 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setActiveTabId(newTab.id);
   }, [tabs, mapServerMessages]);
 
+  // Delete an open tab and its server conversation
+  const deleteConversation = useCallback(async (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // Delete from server if it has a sessionId
+    if (tab.sessionId) {
+      try {
+        await api.deleteConversation(tab.sessionId);
+      } catch (err) {
+        console.error('Failed to delete conversation from server:', err);
+        // Still close locally even if server delete fails
+      }
+    }
+
+    // Close the local tab
+    closeTab(tabId);
+
+    // Refresh server list to remove it from past conversations
+    refreshHistory();
+  }, [tabs, closeTab, refreshHistory]);
+
+  // Delete a past conversation from server (not currently open as a tab)
+  const deleteServerConversation = useCallback(async (conversationId: string) => {
+    try {
+      await api.deleteConversation(conversationId);
+      refreshHistory();
+    } catch (err) {
+      console.error('Failed to delete conversation from server:', err);
+      throw err;
+    }
+  }, [refreshHistory]);
+
   return (
     <ConversationContext.Provider
       value={{
@@ -368,6 +405,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         isLoadingHistory,
         restoreConversation,
         refreshHistory,
+        deleteConversation,
+        deleteServerConversation,
         appendMessage,
         updateMessage,
         setStreaming,

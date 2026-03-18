@@ -185,6 +185,44 @@
   color: var(--text-tertiary);
 }
 
+/* Action buttons container */
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.history-item:hover .history-item-actions {
+  opacity: 1;
+}
+
+.history-item-action {
+  background: none;
+  border: none;
+  padding: 0.375rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.history-item-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.history-item-action-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Legacy single delete button (kept for backwards compatibility) */
 .history-item-delete {
   opacity: 0;
   background: none;
