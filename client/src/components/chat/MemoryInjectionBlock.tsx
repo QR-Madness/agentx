@@ -1,9 +1,9 @@
 /**
- * MemoryInjectionBlock — Renders memory context injection with facts and entities
+ * MemoryInjectionBlock — Renders memory context injection with facts, entities, and relevant turns
  */
 
 import { useState } from 'react';
-import { Database, ChevronDown, ChevronRight, Lightbulb, Tag } from 'lucide-react';
+import { Database, ChevronDown, ChevronRight, Lightbulb, Tag, MessageSquare } from 'lucide-react';
 import './MemoryInjectionBlock.css';
 
 interface Fact {
@@ -17,9 +17,16 @@ interface Entity {
   type: string;
 }
 
+interface Turn {
+  timestamp: string;
+  role: string;
+  content: string;
+}
+
 export interface MemoryInjectionBlockProps {
   facts: Fact[];
   entities: Entity[];
+  relevantTurns: Turn[];
   queryUsed: string;
 }
 
@@ -67,10 +74,30 @@ function EntityBadge({ entity }: { entity: Entity }) {
   );
 }
 
-export function MemoryInjectionBlock({ facts, entities, queryUsed }: MemoryInjectionBlockProps) {
+function formatTimestamp(timestamp: string): string {
+  try {
+    const date = new Date(timestamp);
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return timestamp;
+  }
+}
+
+export function MemoryInjectionBlock({ facts, entities, relevantTurns, queryUsed }: MemoryInjectionBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const totalItems = facts.length + entities.length;
+  const totalItems = facts.length + entities.length + relevantTurns.length;
+
+  // Build count parts dynamically
+  const countParts: string[] = [];
+  if (facts.length > 0) countParts.push(`${facts.length} facts`);
+  if (entities.length > 0) countParts.push(`${entities.length} entities`);
+  if (relevantTurns.length > 0) countParts.push(`${relevantTurns.length} turns`);
 
   return (
     <div className="memory-injection-block">
@@ -81,7 +108,7 @@ export function MemoryInjectionBlock({ facts, entities, queryUsed }: MemoryInjec
         <div className="memory-info">
           <span className="memory-title">Memory Context</span>
           <span className="memory-count">
-            {facts.length} facts, {entities.length} entities
+            {countParts.join(', ') || 'No items'}
           </span>
         </div>
         <button className="memory-toggle">
@@ -96,6 +123,27 @@ export function MemoryInjectionBlock({ facts, entities, queryUsed }: MemoryInjec
             <span className="section-label">Query:</span>
             <span className="query-text">{queryUsed}</span>
           </div>
+
+          {/* Relevant Turns */}
+          {relevantTurns.length > 0 && (
+            <div className="memory-turns">
+              <div className="section-header">
+                <MessageSquare size={12} />
+                <span>Past Conversations ({relevantTurns.length})</span>
+              </div>
+              <ul className="turns-list">
+                {relevantTurns.map((turn, idx) => (
+                  <li key={idx} className="turn-item">
+                    <div className="turn-header">
+                      <span className={`turn-role ${turn.role}`}>{turn.role}</span>
+                      <span className="turn-timestamp">{formatTimestamp(turn.timestamp)}</span>
+                    </div>
+                    <div className="turn-content">{turn.content}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Facts */}
           {facts.length > 0 && (

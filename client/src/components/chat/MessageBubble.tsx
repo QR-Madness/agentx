@@ -7,15 +7,13 @@ import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageActions } from './MessageActions';
 import { MetadataBar } from './MetadataBar';
-import { ToolCallBlock } from './ToolCallBlock';
-import { ToolResultBlock } from './ToolResultBlock';
+import { ToolExecutionBlock } from './ToolExecutionBlock';
 import { MemoryInjectionBlock } from './MemoryInjectionBlock';
 import {
   type ConversationMessage,
   isUserMessage,
   isAssistantMessage,
   isToolCallMessage,
-  isToolResultMessage,
   isMemoryInjectionMessage,
   isSystemMessage,
   isErrorMessage,
@@ -42,25 +40,12 @@ export function MessageBubble({ message, agentName, onRegenerate, onEdit }: Mess
   if (isToolCallMessage(message)) {
     return (
       <div className="message-bubble tool_call">
-        <ToolCallBlock
+        <ToolExecutionBlock
           toolName={message.toolName}
           toolCallId={message.toolCallId}
           arguments={message.arguments}
           status={message.status}
-        />
-      </div>
-    );
-  }
-
-  if (isToolResultMessage(message)) {
-    return (
-      <div className="message-bubble tool_result">
-        <ToolResultBlock
-          toolName={message.toolName}
-          toolCallId={message.toolCallId}
-          content={message.content}
-          success={message.success}
-          durationMs={message.durationMs}
+          result={message.result}
         />
       </div>
     );
@@ -72,6 +57,7 @@ export function MessageBubble({ message, agentName, onRegenerate, onEdit }: Mess
         <MemoryInjectionBlock
           facts={message.facts}
           entities={message.entities}
+          relevantTurns={message.relevantTurns}
           queryUsed={message.queryUsed}
         />
       </div>
@@ -163,7 +149,7 @@ function AssistantBubble({ message, agentName, onRegenerate }: AssistantBubblePr
 
         {/* Thinking bubble */}
         {message.thinking && (
-          <ThinkingBubble thinking={message.thinking} />
+          <ThinkingBubble thinking={message.thinking} defaultExpanded={true} />
         )}
 
         {/* Message content */}

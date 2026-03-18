@@ -641,8 +641,8 @@ async def agent_chat_stream(request):
             yield f"event: start\ndata: {json.dumps(start_data)}\n\n"
 
             # Emit memory_context event if memories were retrieved
-            if memory_bundle and (memory_bundle.facts or memory_bundle.entities):
-                logger.debug(f"Emitting memory_context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities")
+            if memory_bundle and (memory_bundle.facts or memory_bundle.entities or memory_bundle.relevant_turns):
+                logger.debug(f"Emitting memory_context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities, {len(memory_bundle.relevant_turns)} turns")
                 memory_event = {
                     'facts': [
                         {'claim': f.claim, 'confidence': f.confidence, 'source': getattr(f, 'source_turn_id', None)}
@@ -651,6 +651,14 @@ async def agent_chat_stream(request):
                     'entities': [
                         {'name': e.name, 'type': getattr(e, 'entity_type', 'unknown')}
                         for e in memory_bundle.entities
+                    ],
+                    'relevant_turns': [
+                        {
+                            'timestamp': t.get('timestamp').isoformat() if hasattr(t.get('timestamp'), 'isoformat') else str(t.get('timestamp', '')),
+                            'role': t.get('role', 'unknown'),
+                            'content': (t.get('content') or '')[:200],
+                        }
+                        for t in memory_bundle.relevant_turns[:5]
                     ],
                     'query': message,
                 }

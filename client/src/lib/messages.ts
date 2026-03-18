@@ -42,8 +42,14 @@ export interface ToolCallMessage extends BaseMessage {
   toolName: string;
   toolCallId: string;
   arguments: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  status: 'pending' | 'running' | 'completed' | 'failed';
   parentMessageId?: string;
+  // Result fields (populated when complete)
+  result?: {
+    content: string;
+    success: boolean;
+    durationMs?: number;
+  };
 }
 
 export interface ToolResultMessage extends BaseMessage {
@@ -59,6 +65,7 @@ export interface MemoryInjectionMessage extends BaseMessage {
   type: 'memory_injection';
   facts: Array<{ claim: string; confidence: number; source?: string }>;
   entities: Array<{ name: string; type: string }>;
+  relevantTurns: Array<{ timestamp: string; role: string; content: string }>;
   queryUsed: string;
 }
 

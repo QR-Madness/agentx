@@ -1003,6 +1003,7 @@ class ApiClient {
       onMemoryContext?: (data: {
         facts: Array<{ claim: string; confidence: number; source?: string }>;
         entities: Array<{ name: string; type: string }>;
+        relevant_turns: Array<{ timestamp: string; role: string; content: string }>;
         query: string;
       }) => void;
       onToolCall?: (data: {

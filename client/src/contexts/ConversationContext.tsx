@@ -39,6 +39,7 @@ interface ConversationContextValue {
 
   // Convenience methods for active tab
   appendMessage: (message: ConversationMessage) => void;
+  updateMessage: (messageId: string, updates: Partial<ConversationMessage>) => void;
   setStreaming: (isStreaming: boolean) => void;
   setSessionId: (sessionId: string) => void;
 }
@@ -210,6 +211,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTabId]);
 
+  const updateMessage = useCallback((messageId: string, updates: Partial<ConversationMessage>) => {
+    if (!activeTabId) return;
+
+    setTabs(prev =>
+      prev.map(t => {
+        if (t.id !== activeTabId) return t;
+
+        return {
+          ...t,
+          messages: t.messages.map(m =>
+            m.id === messageId ? ({ ...m, ...updates } as ConversationMessage) : m
+          ),
+        };
+      })
+    );
+  }, [activeTabId]);
+
   const setStreaming = useCallback((isStreaming: boolean) => {
     if (!activeTabId) return;
     updateTab(activeTabId, { isStreaming });
@@ -232,6 +250,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         renameTab,
         updateTab,
         appendMessage,
+        updateMessage,
         setStreaming,
         setSessionId,
       }}

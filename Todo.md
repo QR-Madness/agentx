@@ -304,21 +304,30 @@ Note: Modal wrappers implemented in `stubs.tsx` during Phase 13.1 Foundation.
 
 Note: AgentXPage extraction deferred — ChatPanel already provides full functionality.
 
-### 13.7 SSE & Metadata Enhancements
+### 13.7 SSE & Metadata Enhancements ✓
 
 > Extend streaming backend to emit richer events for new message types
 
 #### Backend (views.py — `agent_chat_stream` / `generate_sse`)
-- [ ] New SSE event `memory_context`: emit after memory retrieval, before first chunk. Data: `{ facts, entities, query }`
-- [ ] Extend `tool_call` event: add `tool_call_id` field for linking to results
-- [ ] Extend `tool_result` event: add `tool_call_id` and `duration_ms`
-- [ ] Extend `start` event: add `profile_name`, `agent_name`, `model_display_name`
-- [ ] Extend `done` event: add `tokens_input`, `tokens_output`, `profile_name`, `agent_name`
+- [x] New SSE event `memory_context`: emit after memory retrieval, before first chunk. Data: `{ facts, entities, relevant_turns, query }`
+- [x] Extend `tool_call` event: add `tool_call_id` field for linking to results
+- [x] Extend `tool_result` event: add `tool_call_id` and `duration_ms`
+- [x] Extend `start` event: add `profile_name`, `agent_name`, `model_display_name`
+- [x] Extend `done` event: add `tokens_input`, `tokens_output`, `profile_name`, `agent_name`
 
 #### Frontend (lib/api.ts)
-- [ ] Update `streamChat()` to handle `memory_context`, `tool_call`, `tool_result` events
-- [ ] Add callbacks: `onToolCall`, `onToolResult`, `onMemoryContext`
-- [ ] AgentXPage converts SSE events into typed `ConversationMessage` objects in the message list
+- [x] Update `streamChat()` to handle `memory_context`, `tool_call`, `tool_result` events
+- [x] Add callbacks: `onToolCall`, `onToolResult`, `onMemoryContext`
+- [x] AgentXPage converts SSE events into typed `ConversationMessage` objects in the message list
+
+#### Tool Call UI Overhaul ✓
+- [x] Create unified `ToolExecutionBlock` component (replaces separate ToolCallBlock + ToolResultBlock)
+- [x] Animated icons: pulse for pending, spin for running, check/x for complete/failed
+- [x] In-place message updates: tool_result updates existing tool_call message
+- [x] Show content size summary instead of dumping full output
+- [x] "View Output" button opens `ToolOutputDrawer` side panel
+- [x] Thinking auto-expand: pass `defaultExpanded={true}` to ThinkingBubble
+- [x] Increase thinking max-height from 200px to 500px
 
 ### 13.8 Prompt Library
 

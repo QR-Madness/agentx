@@ -27,7 +27,6 @@ import {
   type UserMessage,
   type AssistantMessage,
   type ToolCallMessage,
-  type ToolResultMessage,
   type MemoryInjectionMessage,
   createMessageId,
 } from '../../lib/messages';
@@ -79,6 +78,7 @@ export function ChatPanel() {
   const {
     activeTab,
     appendMessage,
+    updateMessage,
     setStreaming,
     setSessionId,
   } = useConversation();
@@ -101,6 +101,8 @@ export function ChatPanel() {
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const streamingContentRef = useRef('');
   const profileButtonRef = useRef<HTMLButtonElement>(null);
+  // Track tool call message IDs for in-place updates
+  const toolCallMessageIds = useRef<Map<string, string>>(new Map());
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -156,13 +158,14 @@ export function ChatPanel() {
           },
           onMemoryContext: (data) => {
             // Create memory injection message when memories are retrieved
-            if (data.facts.length > 0 || data.entities.length > 0) {
+            if (data.facts.length > 0 || data.entities.length > 0 || data.relevant_turns?.length > 0) {
               const memoryMessage: MemoryInjectionMessage = {
                 id: createMessageId(),
                 type: 'memory_injection',
                 timestamp: new Date().toISOString(),
                 facts: data.facts,
                 entities: data.entities,
+                relevantTurns: data.relevant_turns || [],
                 queryUsed: data.query,
               };
               appendMessage(memoryMessage);
@@ -195,30 +198,34 @@ export function ChatPanel() {
             }
 
             // Create tool call message when a tool is invoked
+            const messageId = createMessageId();
             const toolCallMessage: ToolCallMessage = {
-              id: createMessageId(),
+              id: messageId,
               type: 'tool_call',
               timestamp: new Date().toISOString(),
               toolName: data.tool,
               toolCallId: data.tool_call_id,
               arguments: data.arguments,
-              status: 'pending',
+              status: 'running',
             };
+            // Track message ID for in-place updates when result arrives
+            toolCallMessageIds.current.set(data.tool_call_id, messageId);
             appendMessage(toolCallMessage);
           },
           onToolResult: (data) => {
-            // Create tool result message when tool execution completes
-            const toolResultMessage: ToolResultMessage = {
-              id: createMessageId(),
-              type: 'tool_result',
-              timestamp: new Date().toISOString(),
-              toolName: data.tool,
-              toolCallId: data.tool_call_id,
-              content: data.content,
-              success: data.success,
-              durationMs: data.duration_ms,
-            };
-            appendMessage(toolResultMessage);
+            // Update existing tool call message with result (unified card)
+            const messageId = toolCallMessageIds.current.get(data.tool_call_id);
+            if (messageId) {
+              updateMessage(messageId, {
+                status: data.success ? 'completed' : 'failed',
+                result: {
+                  content: data.content,
+                  success: data.success,
+                  durationMs: data.duration_ms,
+                },
+              });
+              toolCallMessageIds.current.delete(data.tool_call_id);
+            }
           },
           onDone: (data) => {
             const finalContent = streamingContentRef.current;
