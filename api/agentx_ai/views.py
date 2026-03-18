@@ -645,11 +645,14 @@ async def agent_chat_stream(request):
                 logger.debug(f"Emitting memory_context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities, {len(memory_bundle.relevant_turns)} turns")
                 memory_event = {
                     'facts': [
-                        {'claim': f.claim, 'confidence': f.confidence, 'source': getattr(f, 'source_turn_id', None)}
+                        {'claim': f.get('claim', '') if isinstance(f, dict) else f.claim,
+                         'confidence': f.get('confidence', 0) if isinstance(f, dict) else f.confidence,
+                         'source': f.get('source_turn_id') if isinstance(f, dict) else getattr(f, 'source_turn_id', None)}
                         for f in memory_bundle.facts
                     ],
                     'entities': [
-                        {'name': e.name, 'type': getattr(e, 'entity_type', 'unknown')}
+                        {'name': e.get('name', '') if isinstance(e, dict) else e.name,
+                         'type': e.get('entity_type', e.get('type', 'unknown')) if isinstance(e, dict) else getattr(e, 'entity_type', 'unknown')}
                         for e in memory_bundle.entities
                     ],
                     'relevant_turns': [
