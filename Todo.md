@@ -359,6 +359,7 @@ Note: AgentXPage extraction deferred — ChatPanel already provides full functio
 - [ ] Keep: health status grid, server banner
 - [ ] Add: token usage metrics, memory stats (from `/api/memory/stats`), active conversation count
 - [ ] Add: running agents indicator
+- [ ] Add: DB disk allocation metrics (PostgreSQL, Neo4j, Redis storage sizes) — important now that tool calls/thinking are persisted per conversation
 - [ ] Remove: quick action buttons (replaced by toolbar/page nav)
 
 ### 13.10 Polish & Cleanup

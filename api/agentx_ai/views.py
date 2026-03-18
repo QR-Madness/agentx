@@ -688,6 +688,7 @@ async def agent_chat_stream(request):
             # Stream tokens with tool-use loop
             full_content = ""
             tools_used = []
+            tool_turns_data = []  # Collect tool call/result data for DB persistence
             max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
             total_tokens_input = 0
             total_tokens_output = 0
@@ -774,6 +775,25 @@ async def agent_chat_stream(request):
                         'duration_ms': round(tool_avg_time, 2),
                     }
                     yield f"event: tool_result\ndata: {json.dumps(tool_result_data)}\n\n"
+
+                    # Capture for DB persistence
+                    tool_turns_data.append({
+                        'type': 'tool_call',
+                        'tool': tm.name,
+                        'tool_call_id': tm.tool_call_id,
+                        'arguments': next(
+                            (tc.arguments for tc in round_tool_calls if tc.id == tm.tool_call_id),
+                            {}
+                        ),
+                    })
+                    tool_turns_data.append({
+                        'type': 'tool_result',
+                        'tool': tm.name,
+                        'tool_call_id': tm.tool_call_id,
+                        'content': tm.content[:2000],
+                        'success': not is_error,
+                        'duration_ms': round(tool_avg_time, 2),
+                    })
                 messages.extend(tool_messages)
 
                 logger.info(
@@ -863,25 +883,65 @@ async def agent_chat_stream(request):
                         except Exception:
                             pass  # Fallback to 0 if DB query fails
 
+                        idx = next_index
+
                         user_turn = Turn(
                             id=user_turn_id,
                             conversation_id=conv_id,
                             role="user",
                             content=message,
-                            index=next_index,
+                            index=idx,
                         )
                         agent.memory.store_turn(user_turn)
+                        idx += 1
+
+                        # Store tool call/result turns
+                        for td in tool_turns_data:
+                            turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-{td['type']}"
+                            if td['type'] == 'tool_call':
+                                turn = Turn(
+                                    id=turn_id,
+                                    conversation_id=conv_id,
+                                    role="tool_call",
+                                    content=json.dumps(td.get('arguments', {})),
+                                    index=idx,
+                                    metadata={
+                                        "tool": td['tool'],
+                                        "tool_call_id": td['tool_call_id'],
+                                    },
+                                )
+                            else:  # tool_result
+                                turn = Turn(
+                                    id=turn_id,
+                                    conversation_id=conv_id,
+                                    role="tool_result",
+                                    content=td.get('content', ''),
+                                    index=idx,
+                                    metadata={
+                                        "tool": td['tool'],
+                                        "tool_call_id": td['tool_call_id'],
+                                        "success": td.get('success', True),
+                                        "duration_ms": td.get('duration_ms'),
+                                    },
+                                )
+                            agent.memory.store_turn(turn)
+                            idx += 1
+
+                        # Store assistant turn with thinking in metadata
+                        asst_metadata = {"model": model_id, "latency_ms": total_time}
+                        if parsed.thinking:
+                            asst_metadata["thinking"] = parsed.thinking
 
                         assistant_turn = Turn(
                             id=asst_turn_id,
                             conversation_id=conv_id,
                             role="assistant",
                             content=parsed.content,
-                            index=next_index + 1,
-                            metadata={"model": model_id, "latency_ms": total_time},
+                            index=idx,
+                            metadata=asst_metadata,
                         )
                         agent.memory.store_turn(assistant_turn)
-                        logger.debug(f"Stored turns in memory for conversation {conv_id}")
+                        logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")
                     except Exception as mem_err:
                         logger.warning(f"Failed to store turns in memory: {mem_err}")
 

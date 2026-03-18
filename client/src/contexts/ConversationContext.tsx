@@ -29,6 +29,10 @@ import { api, type ConversationSummary, type ServerMessage } from '../lib/api';
 // Re-export for convenience
 export type { ConversationTab } from '../lib/storage';
 
+function safeParseJson(str: string): Record<string, unknown> {
+  try { return JSON.parse(str); } catch { return {}; }
+}
+
 interface ConversationContextValue {
   tabs: ConversationTab[];
   activeTabId: string | null;
@@ -272,21 +276,50 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   // Map server messages to frontend ConversationMessage types
   const mapServerMessages = useCallback((messages: ServerMessage[]): ConversationMessage[] => {
     return messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .filter(m => ['user', 'assistant', 'tool_call', 'tool_result'].includes(m.role))
       .map(m => {
         const base = {
           id: createMessageId(),
           timestamp: m.timestamp || new Date().toISOString(),
         };
-        if (m.role === 'user') {
-          return { ...base, type: 'user' as const, content: m.content };
+
+        switch (m.role) {
+          case 'user':
+            return { ...base, type: 'user' as const, content: m.content };
+
+          case 'assistant':
+            return {
+              ...base,
+              type: 'assistant' as const,
+              content: m.content,
+              model: m.metadata?.model as string | undefined,
+              thinking: m.metadata?.thinking as string | undefined,
+            };
+
+          case 'tool_call':
+            return {
+              ...base,
+              type: 'tool_call' as const,
+              toolName: (m.metadata?.tool as string) || 'unknown',
+              toolCallId: (m.metadata?.tool_call_id as string) || base.id,
+              arguments: safeParseJson(m.content),
+              status: 'completed' as const,
+            };
+
+          case 'tool_result':
+            return {
+              ...base,
+              type: 'tool_result' as const,
+              toolName: (m.metadata?.tool as string) || 'unknown',
+              toolCallId: (m.metadata?.tool_call_id as string) || base.id,
+              content: m.content,
+              success: (m.metadata?.success as boolean) ?? true,
+              durationMs: m.metadata?.duration_ms as number | undefined,
+            };
+
+          default:
+            return { ...base, type: 'system' as const, content: m.content };
         }
-        return {
-          ...base,
-          type: 'assistant' as const,
-          content: m.content,
-          model: m.metadata?.model as string | undefined,
-        };
       });
   }, []);
 

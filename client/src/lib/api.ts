@@ -129,7 +129,7 @@ export interface ConversationListResponse {
 }
 
 export interface ServerMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'tool_call' | 'tool_result';
   content: string;
   timestamp: string | null;
   turn_index: number;
