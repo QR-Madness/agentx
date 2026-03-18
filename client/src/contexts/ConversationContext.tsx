@@ -1,5 +1,6 @@
 /**
  * Conversation Context — Manages browser-style conversation tabs
+ * with server-side conversation history
  */
 
 import {
@@ -13,6 +14,7 @@ import {
 } from 'react';
 import { useServer } from './ServerContext';
 import type { ConversationMessage } from '../lib/messages';
+import { createMessageId } from '../lib/messages';
 import {
   type ConversationTab,
   getConversationTabs,
@@ -22,6 +24,7 @@ import {
   createDefaultTab,
   generateTabId,
 } from '../lib/storage';
+import { api, type ConversationSummary, type ServerMessage } from '../lib/api';
 
 // Re-export for convenience
 export type { ConversationTab } from '../lib/storage';
@@ -37,6 +40,12 @@ interface ConversationContextValue {
   renameTab: (id: string, title: string) => void;
   updateTab: (id: string, updates: Partial<Omit<ConversationTab, 'id'>>) => void;
 
+  // Server-side conversation history
+  serverConversations: ConversationSummary[];
+  isLoadingHistory: boolean;
+  restoreConversation: (conversationId: string) => Promise<void>;
+  refreshHistory: () => Promise<void>;
+
   // Convenience methods for active tab
   appendMessage: (message: ConversationMessage) => void;
   updateMessage: (messageId: string, updates: Partial<ConversationMessage>) => void;
@@ -50,6 +59,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const { activeServer } = useServer();
   const [tabs, setTabs] = useState<ConversationTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [serverConversations, setServerConversations] = useState<ConversationSummary[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Track if we've initialized for this server
   const initializedServerId = useRef<string | null>(null);
@@ -238,6 +249,77 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     updateTab(activeTabId, { sessionId });
   }, [activeTabId, updateTab]);
 
+  // Fetch conversation history from server
+  const refreshHistory = useCallback(async () => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await api.listConversations({ limit: 50 });
+      setServerConversations(response.conversations);
+    } catch {
+      // Server might not have memory enabled — silently ignore
+      setServerConversations([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  // Fetch history when server changes
+  useEffect(() => {
+    if (!activeServer || initializedServerId.current !== activeServer.id) return;
+    refreshHistory();
+  }, [activeServer, refreshHistory]);
+
+  // Map server messages to frontend ConversationMessage types
+  const mapServerMessages = useCallback((messages: ServerMessage[]): ConversationMessage[] => {
+    return messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => {
+        const base = {
+          id: createMessageId(),
+          timestamp: m.timestamp || new Date().toISOString(),
+        };
+        if (m.role === 'user') {
+          return { ...base, type: 'user' as const, content: m.content };
+        }
+        return {
+          ...base,
+          type: 'assistant' as const,
+          content: m.content,
+          model: m.metadata?.model as string | undefined,
+        };
+      });
+  }, []);
+
+  // Restore a conversation from the server into a new tab
+  const restoreConversation = useCallback(async (conversationId: string) => {
+    // Check if already open
+    const existing = tabs.find(t => t.sessionId === conversationId);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+
+    const response = await api.getConversationMessages(conversationId);
+    const messages = mapServerMessages(response.messages);
+
+    const title = messages.find(m => m.type === 'user')?.content.slice(0, 40) || 'Restored Conversation';
+    const now = new Date().toISOString();
+
+    const newTab: ConversationTab = {
+      id: generateTabId(),
+      title: title.length >= 40 ? title + '...' : title,
+      sessionId: conversationId,
+      profileId: null,
+      messages,
+      isStreaming: false,
+      createdAt: response.messages[0]?.timestamp || now,
+      lastMessageAt: response.messages[response.messages.length - 1]?.timestamp || now,
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  }, [tabs, mapServerMessages]);
+
   return (
     <ConversationContext.Provider
       value={{
@@ -249,6 +331,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         switchTab,
         renameTab,
         updateTab,
+        serverConversations,
+        isLoadingHistory,
+        restoreConversation,
+        refreshHistory,
         appendMessage,
         updateMessage,
         setStreaming,

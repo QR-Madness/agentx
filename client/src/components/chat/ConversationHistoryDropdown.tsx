@@ -1,11 +1,12 @@
 /**
  * ConversationHistoryDropdown — Browse and switch between past conversations
+ * Shows open tabs and server-side conversation history
  * Renders via portal to escape overflow constraints
  */
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Search, Trash2, MessageSquare, X } from 'lucide-react';
+import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import './ConversationHistoryDropdown.css';
 
@@ -16,8 +17,12 @@ interface ConversationHistoryDropdownProps {
 }
 
 export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: ConversationHistoryDropdownProps) {
-  const { tabs, activeTabId, switchTab, closeTab } = useConversation();
+  const {
+    tabs, activeTabId, switchTab, closeTab,
+    serverConversations, isLoadingHistory, restoreConversation, refreshHistory,
+  } = useConversation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [position, setPosition] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -40,6 +45,13 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     window.addEventListener('resize', updatePosition);
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen, anchorRef]);
+
+  // Refresh history when opened
+  useEffect(() => {
+    if (isOpen) {
+      refreshHistory();
+    }
+  }, [isOpen, refreshHistory]);
 
   // Close on outside click
   useEffect(() => {
@@ -83,19 +95,23 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
 
   if (!isOpen) return null;
 
-  // Filter tabs by search query
-  const filteredTabs = tabs.filter(tab =>
-    tab.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const query = searchQuery.toLowerCase();
 
-  // Sort by last message (most recent first)
-  const sortedTabs = [...filteredTabs].sort((a, b) => {
-    const aTime = new Date(a.lastMessageAt).getTime();
-    const bTime = new Date(b.lastMessageAt).getTime();
-    return bTime - aTime;
-  });
+  // Filter and sort open tabs
+  const filteredTabs = tabs
+    .filter(tab => tab.title.toLowerCase().includes(query))
+    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
-  const formatDate = (dateStr: string): string => {
+  // Get session IDs of open tabs to exclude from server history
+  const openSessionIds = new Set(tabs.map(t => t.sessionId).filter(Boolean));
+
+  // Filter server conversations: exclude those already open as tabs
+  const pastConversations = serverConversations
+    .filter(c => !openSessionIds.has(c.conversation_id))
+    .filter(c => c.title.toLowerCase().includes(query) || c.preview.toLowerCase().includes(query));
+
+  const formatDate = (dateStr: string | null): string => {
+    if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
@@ -118,6 +134,21 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     e.stopPropagation();
     closeTab(tabId);
   };
+
+  const handleRestore = async (e: React.MouseEvent, conversationId: string) => {
+    e.stopPropagation();
+    setRestoringId(conversationId);
+    try {
+      await restoreConversation(conversationId);
+      onClose();
+    } catch {
+      // Restore failed silently
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const totalCount = filteredTabs.length + pastConversations.length;
 
   const dropdown = (
     <div
@@ -150,44 +181,93 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
       </div>
 
       <div className="history-list">
-        {sortedTabs.length === 0 ? (
+        {/* Open Tabs Section */}
+        {filteredTabs.length > 0 && (
+          <>
+            <div className="history-section-label">Open Tabs</div>
+            {filteredTabs.map(tab => (
+              <div
+                key={tab.id}
+                className={`history-item ${tab.id === activeTabId ? 'active' : ''}`}
+                onClick={() => handleSelect(tab.id)}
+              >
+                <div className="history-item-icon">
+                  <MessageSquare size={14} />
+                </div>
+                <div className="history-item-info">
+                  <span className="history-item-title">{tab.title}</span>
+                  <span className="history-item-meta">
+                    {tab.messages.length} messages · {formatDate(tab.lastMessageAt)}
+                  </span>
+                </div>
+                <button
+                  className="history-item-delete"
+                  onClick={(e) => handleDelete(e, tab.id)}
+                  title="Close tab"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Past Conversations Section (from server) */}
+        {pastConversations.length > 0 && (
+          <>
+            <div className="history-section-label">Past Conversations</div>
+            {pastConversations.map(conv => (
+              <div
+                key={conv.conversation_id}
+                className="history-item history-item-server"
+                onClick={(e) => handleRestore(e, conv.conversation_id)}
+              >
+                <div className="history-item-icon">
+                  <Download size={14} />
+                </div>
+                <div className="history-item-info">
+                  <span className="history-item-title">{conv.title}</span>
+                  <span className="history-item-meta">
+                    {conv.message_count} messages · {formatDate(conv.last_message_at)}
+                  </span>
+                  {conv.preview && (
+                    <span className="history-item-preview">{conv.preview}</span>
+                  )}
+                </div>
+                {restoringId === conv.conversation_id ? (
+                  <div className="history-item-loading">
+                    <Loader2 size={12} className="spin" />
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* Loading indicator */}
+        {isLoadingHistory && pastConversations.length === 0 && filteredTabs.length === 0 && (
+          <div className="history-empty">
+            <Loader2 size={16} className="spin" />
+            <span>Loading history...</span>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoadingHistory && totalCount === 0 && (
           <div className="history-empty">
             {searchQuery ? (
-              <>No conversations match "{searchQuery}"</>
+              <>No conversations match &quot;{searchQuery}&quot;</>
             ) : (
               <>No conversations yet</>
             )}
           </div>
-        ) : (
-          sortedTabs.map(tab => (
-            <div
-              key={tab.id}
-              className={`history-item ${tab.id === activeTabId ? 'active' : ''}`}
-              onClick={() => handleSelect(tab.id)}
-            >
-              <div className="history-item-icon">
-                <MessageSquare size={14} />
-              </div>
-              <div className="history-item-info">
-                <span className="history-item-title">{tab.title}</span>
-                <span className="history-item-meta">
-                  {tab.messages.length} messages · {formatDate(tab.lastMessageAt)}
-                </span>
-              </div>
-              <button
-                className="history-item-delete"
-                onClick={(e) => handleDelete(e, tab.id)}
-                title="Delete conversation"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))
         )}
       </div>
 
       <div className="history-footer">
-        <span>{tabs.length} conversation{tabs.length !== 1 ? 's' : ''}</span>
+        <span>
+          {tabs.length} open{pastConversations.length > 0 ? ` · ${pastConversations.length} past` : ''}
+        </span>
       </div>
     </div>
   );

@@ -1455,6 +1455,166 @@ def memory_channels(request):
 
 
 @csrf_exempt
+@require_methods("GET")
+def conversations_list(request):
+    """
+    GET /api/conversations - List past conversations from the database.
+
+    Query params:
+        limit  - Max results (default 50, max 100)
+        offset - Skip N results (default 0)
+        channel - Filter by memory channel (default: all)
+    """
+    from .kit.agent_memory.connections import PostgresConnection
+
+    try:
+        limit = min(100, max(1, int(request.GET.get("limit", "50"))))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        offset = max(0, int(request.GET.get("offset", "0")))
+    except (ValueError, TypeError):
+        offset = 0
+    channel = request.GET.get("channel")
+
+    try:
+        pg_conn = PostgresConnection.get_engine().raw_connection()
+        try:
+            with pg_conn.cursor() as cursor:
+                # Build query: group by conversation_id, get summary fields
+                channel_filter = ""
+                params: list = []
+                if channel:
+                    channel_filter = "WHERE cl.channel = %s"
+                    params.append(channel)
+
+                cursor.execute(f"""
+                    SELECT
+                        cl.conversation_id::text,
+                        MIN(cl.timestamp) AS created_at,
+                        MAX(cl.timestamp) AS last_message_at,
+                        COUNT(*) AS message_count,
+                        MAX(cl.channel) AS channel,
+                        (SELECT content FROM conversation_logs sub
+                         WHERE sub.conversation_id = cl.conversation_id
+                           AND sub.role = 'user'
+                         ORDER BY sub.turn_index ASC LIMIT 1) AS first_user_message,
+                        (SELECT content FROM conversation_logs sub
+                         WHERE sub.conversation_id = cl.conversation_id
+                         ORDER BY sub.turn_index DESC LIMIT 1) AS last_message
+                    FROM conversation_logs cl
+                    {channel_filter}
+                    GROUP BY cl.conversation_id
+                    ORDER BY MAX(cl.timestamp) DESC
+                    LIMIT %s OFFSET %s
+                """, params + [limit, offset])
+
+                rows = cursor.fetchall()
+
+                # Get total count
+                cursor.execute(f"""
+                    SELECT COUNT(DISTINCT conversation_id)
+                    FROM conversation_logs
+                    {"WHERE channel = %s" if channel else ""}
+                """, [channel] if channel else [])
+                total = cursor.fetchone()[0]
+
+                conversations = []
+                for row in rows:
+                    conv_id, created_at, last_message_at, count, ch, first_msg, last_msg = row
+                    # Title from first user message (truncated)
+                    title = "New Conversation"
+                    if first_msg:
+                        title = first_msg[:80].strip()
+                        if len(first_msg) > 80:
+                            title += "…"
+                    # Preview from last message
+                    preview = ""
+                    if last_msg:
+                        preview = last_msg[:120].strip()
+                        if len(last_msg) > 120:
+                            preview += "…"
+
+                    conversations.append({
+                        "conversation_id": conv_id,
+                        "title": title,
+                        "preview": preview,
+                        "message_count": count,
+                        "channel": ch or "_global",
+                        "created_at": created_at.isoformat() if created_at else None,
+                        "last_message_at": last_message_at.isoformat() if last_message_at else None,
+                    })
+
+                return JsonResponse({
+                    "conversations": conversations,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                })
+        finally:
+            pg_conn.close()
+
+    except Exception as e:
+        logger.error(f"Error listing conversations: {e}")
+        return json_error(str(e), status=500)
+
+
+@csrf_exempt
+@require_methods("GET")
+def conversations_messages(request, conversation_id):
+    """
+    GET /api/conversations/<id>/messages - Fetch all messages for a conversation.
+
+    Returns messages ordered by turn_index.
+    """
+    from .kit.agent_memory.connections import PostgresConnection
+
+    try:
+        pg_conn = PostgresConnection.get_engine().raw_connection()
+        try:
+            with pg_conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT role, content, timestamp, turn_index, metadata, model
+                    FROM conversation_logs
+                    WHERE conversation_id = %s
+                    ORDER BY turn_index ASC
+                """, (conversation_id,))
+
+                rows = cursor.fetchall()
+
+                if not rows:
+                    return json_error("Conversation not found", status=404)
+
+                messages = []
+                for row in rows:
+                    role, content, timestamp, turn_index, metadata, model = row
+                    msg = {
+                        "role": role,
+                        "content": content,
+                        "timestamp": timestamp.isoformat() if timestamp else None,
+                        "turn_index": turn_index,
+                    }
+                    if metadata:
+                        msg["metadata"] = metadata if isinstance(metadata, dict) else {}
+                    if model:
+                        msg["metadata"] = msg.get("metadata", {})
+                        msg["metadata"]["model"] = model
+                    messages.append(msg)
+
+                return JsonResponse({
+                    "conversation_id": conversation_id,
+                    "messages": messages,
+                    "message_count": len(messages),
+                })
+        finally:
+            pg_conn.close()
+
+    except Exception as e:
+        logger.error(f"Error fetching conversation messages: {e}")
+        return json_error(str(e), status=500)
+
+
+@csrf_exempt
 def memory_conversation_delete(request, conversation_id):
     """
     Delete a single conversation and its associated data.

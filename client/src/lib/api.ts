@@ -109,6 +109,39 @@ export interface ChatResponse {
   tokens_used?: number;
 }
 
+// === Conversation History Types ===
+
+export interface ConversationSummary {
+  conversation_id: string;
+  title: string;
+  preview: string;
+  message_count: number;
+  channel: string;
+  created_at: string | null;
+  last_message_at: string | null;
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ServerMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: string | null;
+  turn_index: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ConversationMessagesResponse {
+  conversation_id: string;
+  messages: ServerMessage[];
+  message_count: number;
+}
+
 // === Prompt Types ===
 
 export interface PromptSection {
@@ -1213,6 +1246,25 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ delete_memories: deleteMemories }),
     });
+  }
+
+  // === Conversation History ===
+
+  async listConversations(params?: {
+    limit?: number;
+    offset?: number;
+    channel?: string;
+  }): Promise<ConversationListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset) searchParams.set('offset', String(params.offset));
+    if (params?.channel) searchParams.set('channel', params.channel);
+    const qs = searchParams.toString();
+    return this.request(`/api/conversations${qs ? `?${qs}` : ''}`);
+  }
+
+  async getConversationMessages(conversationId: string): Promise<ConversationMessagesResponse> {
+    return this.request(`/api/conversations/${encodeURIComponent(conversationId)}/messages`);
   }
 
   async deleteConversation(conversationId: string): Promise<{ message: string; deleted: Record<string, number> }> {

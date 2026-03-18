@@ -39,6 +39,9 @@ urlpatterns = [
     path("prompts/templates/tags", views.prompts_templates_tags, name="prompts-templates-tags"),
     path("prompts/templates/<str:template_id>", views.prompts_template_detail, name="prompts-template-detail"),
     path("prompts/templates/<str:template_id>/reset", views.prompts_template_reset, name="prompts-template-reset"),
+    # Conversation history endpoints
+    path("conversations", views.conversations_list, name="conversations-list"),
+    path("conversations/<str:conversation_id>/messages", views.conversations_messages, name="conversations-messages"),
     # Memory channel management endpoints
     path("memory/channels", views.memory_channels, name="memory-channels"),
     path("memory/channels/<str:name>", views.memory_channel_delete, name="memory-channel-delete"),
