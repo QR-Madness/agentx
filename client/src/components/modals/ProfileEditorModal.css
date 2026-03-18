@@ -538,3 +538,61 @@
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* Base Template Picker */
+.profile-editor-modal .base-template-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-editor-modal .selected-template {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.profile-editor-modal .selected-template .template-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.profile-editor-modal .selected-template .modified-badge {
+  padding: 0.125rem 0.375rem;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.profile-editor-modal .button-small {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+}
+
+/* Library Modal Overlay */
+.library-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -2,13 +2,14 @@
  * MessageBubble — Unified message renderer for all conversation message types
  */
 
-import { User, Bot, AlertTriangle, Info, Edit3 } from 'lucide-react';
+import { User, AlertTriangle, Info, Edit3 } from 'lucide-react';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageActions } from './MessageActions';
 import { MetadataBar } from './MetadataBar';
 import { ToolExecutionBlock } from './ToolExecutionBlock';
 import { MemoryInjectionBlock } from './MemoryInjectionBlock';
+import { getAvatarIcon } from '../../lib/avatars';
 import {
   type ConversationMessage,
   isUserMessage,
@@ -23,18 +24,19 @@ import './MessageBubble.css';
 interface MessageBubbleProps {
   message: ConversationMessage;
   agentName?: string;
+  avatarId?: string;
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
 }
 
-export function MessageBubble({ message, agentName, onRegenerate, onEdit }: MessageBubbleProps) {
+export function MessageBubble({ message, agentName, avatarId, onRegenerate, onEdit }: MessageBubbleProps) {
   // Route to specific message type renderer
   if (isUserMessage(message)) {
     return <UserBubble message={message} onEdit={onEdit} />;
   }
 
   if (isAssistantMessage(message)) {
-    return <AssistantBubble message={message} agentName={agentName} onRegenerate={onRegenerate} />;
+    return <AssistantBubble message={message} agentName={agentName} avatarId={avatarId} onRegenerate={onRegenerate} />;
   }
 
   if (isToolCallMessage(message)) {
@@ -130,16 +132,18 @@ function UserBubble({ message, onEdit }: UserBubbleProps) {
 interface AssistantBubbleProps {
   message: Extract<ConversationMessage, { type: 'assistant' }>;
   agentName?: string;
+  avatarId?: string;
   onRegenerate?: () => void;
 }
 
-function AssistantBubble({ message, agentName, onRegenerate }: AssistantBubbleProps) {
+function AssistantBubble({ message, agentName, avatarId, onRegenerate }: AssistantBubbleProps) {
   const displayName = message.agentName || agentName || 'Assistant';
+  const AvatarIcon = getAvatarIcon(avatarId);
 
   return (
     <div className="message-bubble assistant">
       <div className="message-avatar assistant-avatar">
-        <Bot size={16} />
+        <AvatarIcon size={16} />
       </div>
       <div className="message-body">
         {/* Agent name header */}

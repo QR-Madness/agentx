@@ -1058,6 +1058,271 @@ def prompts_mcp_tools(request):
     })
 
 
+# ============== Prompt Template Endpoints ==============
+
+
+@csrf_exempt
+def prompts_templates_list(request):
+    """
+    List or create prompt templates.
+
+    GET: List all templates with optional filtering
+        Query params:
+        - type: Filter by template type (system, user, snippet)
+        - tag: Filter by tag
+        - search: Search in name, description, content
+
+    POST: Create a new template
+    """
+    from .prompts import get_template_manager, PromptTemplate, TemplateType
+
+    if request.method == 'GET':
+        manager = get_template_manager()
+
+        # Parse filter params
+        type_filter = request.GET.get('type')
+        tag_filter = request.GET.get('tag')
+        search = request.GET.get('search')
+
+        # Convert type string to enum if provided
+        if type_filter:
+            try:
+                type_filter = TemplateType(type_filter)
+            except ValueError:
+                return JsonResponse({'error': f'Invalid type: {type_filter}'}, status=400)
+
+        templates = manager.list_templates(
+            type_filter=type_filter,
+            tag_filter=tag_filter,
+            search=search,
+        )
+
+        return JsonResponse({
+            "templates": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "content": t.content,
+                    "default_content": t.default_content,
+                    "tags": t.tags,
+                    "placeholders": t.placeholders,
+                    "type": t.type if isinstance(t.type, str) else t.type.value,
+                    "is_builtin": t.is_builtin,
+                    "description": t.description,
+                    "has_modifications": t.has_modifications(),
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                }
+                for t in templates
+            ],
+            "total": len(templates),
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+        # Validate required fields
+        name = data.get('name')
+        content = data.get('content')
+
+        if not name:
+            return JsonResponse({'error': 'Missing required field: name'}, status=400)
+        if not content:
+            return JsonResponse({'error': 'Missing required field: content'}, status=400)
+
+        # Generate ID from name
+        template_id = name.lower().replace(' ', '_').replace('-', '_')
+
+        # Parse optional fields
+        tags = data.get('tags', [])
+        placeholders = data.get('placeholders', [])
+        template_type = data.get('type', 'snippet')
+        description = data.get('description')
+
+        try:
+            template_type_enum = TemplateType(template_type)
+        except ValueError:
+            return JsonResponse({'error': f'Invalid type: {template_type}'}, status=400)
+
+        manager = get_template_manager()
+
+        # Check if template already exists
+        if manager.get_template(template_id):
+            return JsonResponse({'error': f'Template with ID "{template_id}" already exists'}, status=409)
+
+        template = PromptTemplate(
+            id=template_id,
+            name=name,
+            content=content,
+            default_content=content,  # New templates start with content as default
+            tags=tags,
+            placeholders=placeholders,
+            type=template_type_enum,
+            is_builtin=False,
+            description=description,
+        )
+
+        created = manager.create_template(template)
+
+        return JsonResponse({
+            "template": {
+                "id": created.id,
+                "name": created.name,
+                "content": created.content,
+                "default_content": created.default_content,
+                "tags": created.tags,
+                "placeholders": created.placeholders,
+                "type": created.type if isinstance(created.type, str) else created.type.value,
+                "is_builtin": created.is_builtin,
+                "description": created.description,
+                "has_modifications": created.has_modifications(),
+                "created_at": created.created_at.isoformat() if created.created_at else None,
+                "updated_at": created.updated_at.isoformat() if created.updated_at else None,
+            },
+            "message": "Template created successfully",
+        }, status=201)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def prompts_template_detail(request, template_id):
+    """
+    Get, update, or delete a specific prompt template.
+
+    GET: Get template details
+    PUT: Update template content/metadata
+    DELETE: Delete template (fails for builtin)
+    """
+    from .prompts import get_template_manager
+
+    manager = get_template_manager()
+    template = manager.get_template(template_id)
+
+    if not template:
+        return JsonResponse({'error': 'Template not found'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "template": {
+                "id": template.id,
+                "name": template.name,
+                "content": template.content,
+                "default_content": template.default_content,
+                "tags": template.tags,
+                "placeholders": template.placeholders,
+                "type": template.type if isinstance(template.type, str) else template.type.value,
+                "is_builtin": template.is_builtin,
+                "description": template.description,
+                "has_modifications": template.has_modifications(),
+                "created_at": template.created_at.isoformat() if template.created_at else None,
+                "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+            },
+        })
+
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+        # Update allowed fields
+        updates = {}
+        if 'name' in data:
+            updates['name'] = data['name']
+        if 'content' in data:
+            updates['content'] = data['content']
+        if 'tags' in data:
+            updates['tags'] = data['tags']
+        if 'placeholders' in data:
+            updates['placeholders'] = data['placeholders']
+        if 'description' in data:
+            updates['description'] = data['description']
+
+        updated = manager.update_template(template_id, updates)
+
+        return JsonResponse({
+            "template": {
+                "id": updated.id,
+                "name": updated.name,
+                "content": updated.content,
+                "default_content": updated.default_content,
+                "tags": updated.tags,
+                "placeholders": updated.placeholders,
+                "type": updated.type if isinstance(updated.type, str) else updated.type.value,
+                "is_builtin": updated.is_builtin,
+                "description": updated.description,
+                "has_modifications": updated.has_modifications(),
+                "created_at": updated.created_at.isoformat() if updated.created_at else None,
+                "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
+            },
+            "message": "Template updated successfully",
+        })
+
+    elif request.method == 'DELETE':
+        try:
+            deleted = manager.delete_template(template_id)
+            if deleted:
+                return JsonResponse({"deleted": True, "message": "Template deleted successfully"})
+            return JsonResponse({'error': 'Template not found'}, status=404)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def prompts_template_reset(request, template_id):
+    """Reset a template's content to its default_content."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    from .prompts import get_template_manager
+
+    manager = get_template_manager()
+    template = manager.reset_to_default(template_id)
+
+    if not template:
+        return JsonResponse({'error': 'Template not found'}, status=404)
+
+    return JsonResponse({
+        "template": {
+            "id": template.id,
+            "name": template.name,
+            "content": template.content,
+            "default_content": template.default_content,
+            "tags": template.tags,
+            "placeholders": template.placeholders,
+            "type": template.type if isinstance(template.type, str) else template.type.value,
+            "is_builtin": template.is_builtin,
+            "description": template.description,
+            "has_modifications": template.has_modifications(),
+            "created_at": template.created_at.isoformat() if template.created_at else None,
+            "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+        },
+        "message": "Template reset to default",
+    })
+
+
+def prompts_templates_tags(request):
+    """Get all unique tags with counts."""
+    from .prompts import get_template_manager
+
+    manager = get_template_manager()
+    tag_counts = manager.get_tag_counts()
+
+    return JsonResponse({
+        "tags": [
+            {"name": tag, "count": count}
+            for tag, count in tag_counts.items()
+        ],
+        "total": len(tag_counts),
+    })
+
+
 # ============== Memory Channel Endpoints ==============
 
 @csrf_exempt

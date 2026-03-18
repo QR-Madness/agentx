@@ -35,6 +35,26 @@
   50% { opacity: 1; }
 }
 
+/* Cursor-reactive gradient overlay */
+.root-layout::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    600px circle at var(--cursor-x, 50%) var(--cursor-y, 50%),
+    rgba(139, 92, 246, 0.08) 0%,
+    rgba(6, 182, 212, 0.05) 25%,
+    rgba(236, 72, 153, 0.03) 40%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 0;
+  transition: background 0.15s ease-out;
+}
+
 /* === Page Content Area === */
 .page-content {
   flex: 1;

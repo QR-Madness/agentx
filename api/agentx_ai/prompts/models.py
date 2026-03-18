@@ -2,6 +2,7 @@
 Pydantic models for the prompt management system.
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -16,6 +17,55 @@ class SectionType(str, Enum):
     EXAMPLES = "examples"
     CONTEXT = "context"
     CUSTOM = "custom"
+
+
+class TemplateType(str, Enum):
+    """Types of prompt templates."""
+    SYSTEM = "system"      # Full system prompts
+    USER = "user"          # User message templates
+    SNIPPET = "snippet"    # Reusable text snippets
+
+
+class PromptTemplate(BaseModel):
+    """
+    A mutable prompt template with rollback capability.
+
+    Templates provide reusable prompt content that can be edited but always
+    maintain a default_content for rollback. Used by the Prompt Library feature.
+    """
+    id: str = Field(..., description="Unique identifier")
+    name: str = Field(..., description="Display name")
+    content: str = Field(..., description="Current editable content")
+    default_content: str = Field(..., description="Original content for rollback")
+    tags: list[str] = Field(default_factory=list, description="Tags for organization")
+    placeholders: list[str] = Field(
+        default_factory=list,
+        description="Variable placeholders e.g., ['agent_name', 'context']"
+    )
+    type: TemplateType = Field(default=TemplateType.SNIPPET, description="Template type")
+    is_builtin: bool = Field(default=False, description="Protected default template")
+    description: Optional[str] = Field(None, description="Usage description")
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+    def has_modifications(self) -> bool:
+        """Check if content differs from default."""
+        return self.content != self.default_content
+
+    def reset_to_default(self) -> None:
+        """Reset content to default_content."""
+        self.content = self.default_content
+        self.updated_at = datetime.utcnow()
+
+    def render(self, **variables: str) -> str:
+        """Render template content with variable substitution."""
+        result = self.content
+        for key, value in variables.items():
+            result = result.replace(f"{{{key}}}", value)
+        return result
+
+    class Config:
+        use_enum_values = True
 
 
 class PromptSection(BaseModel):

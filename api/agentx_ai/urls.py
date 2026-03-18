@@ -34,6 +34,11 @@ urlpatterns = [
     path("prompts/sections", views.prompts_sections, name="prompts-sections"),
     path("prompts/compose", views.prompts_compose, name="prompts-compose"),
     path("prompts/mcp-tools", views.prompts_mcp_tools, name="prompts-mcp-tools"),
+    # Prompt template endpoints
+    path("prompts/templates", views.prompts_templates_list, name="prompts-templates-list"),
+    path("prompts/templates/tags", views.prompts_templates_tags, name="prompts-templates-tags"),
+    path("prompts/templates/<str:template_id>", views.prompts_template_detail, name="prompts-template-detail"),
+    path("prompts/templates/<str:template_id>/reset", views.prompts_template_reset, name="prompts-template-reset"),
     # Memory channel management endpoints
     path("memory/channels", views.memory_channels, name="memory-channels"),
     path("memory/channels/<str:name>", views.memory_channel_delete, name="memory-channel-delete"),

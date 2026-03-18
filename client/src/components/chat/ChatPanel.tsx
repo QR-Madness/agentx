@@ -23,6 +23,7 @@ import { MessageBubble } from './MessageBubble';
 import { AgentSelectorDropdown } from './AgentSelectorDropdown';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { getAvatarIcon } from '../../lib/avatars';
 import {
   type UserMessage,
   type AssistantMessage,
@@ -384,6 +385,9 @@ export function ChatPanel() {
 
       {/* Messages */}
       <div className="chat-panel-messages">
+        {/* Windows-style progress bar during streaming */}
+        {isTyping && <div className="stream-progress-bar" />}
+
         {messages.length === 0 && (
           <div className="chat-panel-welcome">
             <Bot size={32} />
@@ -392,14 +396,16 @@ export function ChatPanel() {
         )}
 
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} agentName={agentName} />
+          <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={activeProfile?.avatar} />
         ))}
 
         {/* Streaming message or typing indicator */}
-        {isTyping && (
+        {isTyping && (() => {
+          const AvatarIcon = getAvatarIcon(activeProfile?.avatar);
+          return (
           <div className="message-bubble assistant">
             <div className="message-avatar">
-              <Bot size={16} />
+              <AvatarIcon size={16} />
             </div>
             <div className="message-body">
               {streamingContent ? (
@@ -415,18 +421,17 @@ export function ChatPanel() {
                     ) : null;
                   })()}
                   <MessageContent content={stripThinkingTags(streamingContent, true)} />
-                  <span className="streaming-cursor">▊</span>
                 </div>
               ) : (
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
+                <div className="stream-spinner">
+                  <div className="stream-spinner-ring" />
+                  <span className="stream-spinner-text">Thinking...</span>
                 </div>
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         <div ref={messagesEndRef} />
 

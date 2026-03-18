@@ -14,11 +14,12 @@ import {
   Settings2,
   RefreshCw,
   Trash2,
-  FolderOpen,
+  Library,
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
-import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type ModelInfo, type PromptProfile } from '../../lib/api';
+import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type ModelInfo, type PromptTemplate } from '../../lib/api';
+import { PromptLibraryModal } from './PromptLibraryModal';
 import './ProfileEditorModal.css';
 
 const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
@@ -78,29 +79,43 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
   const [memoryChannel, setMemoryChannel] = useState('_global');
   const [enableTools, setEnableTools] = useState(true);
 
-  const [promptProfileId, setPromptProfileId] = useState('');
+  const [baseTemplateId, setBaseTemplateId] = useState('');
+  const [baseTemplate, setBaseTemplate] = useState<PromptTemplate | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [loadingModels, setLoadingModels] = useState(true);
-  const [promptProfiles, setPromptProfiles] = useState<PromptProfile[]>([]);
+
+  // Library modal state
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<'insert' | 'select'>('insert');
 
   // Ref for textarea to handle cursor position
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch available models and prompt profiles on mount
+  // Fetch available models on mount
   useEffect(() => {
     api.listModels()
       .then(({ models }) => setAvailableModels(models))
       .catch(err => console.error('Failed to fetch models:', err))
       .finally(() => setLoadingModels(false));
-
-    api.listPromptProfiles()
-      .then(({ profiles }) => setPromptProfiles(profiles))
-      .catch(err => console.error('Failed to fetch prompt profiles:', err));
   }, []);
+
+  // Fetch base template when baseTemplateId changes
+  useEffect(() => {
+    if (baseTemplateId) {
+      api.getPromptTemplate(baseTemplateId)
+        .then(({ template }) => setBaseTemplate(template))
+        .catch(err => {
+          console.error('Failed to fetch base template:', err);
+          setBaseTemplate(null);
+        });
+    } else {
+      setBaseTemplate(null);
+    }
+  }, [baseTemplateId]);
 
   // Get unique providers from models - prioritize known providers
   const providers = useMemo(() => {
@@ -140,7 +155,8 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
       setTemperature(editProfile.temperature);
       setReasoningStrategy(editProfile.reasoningStrategy);
       setSystemPrompt(editProfile.systemPrompt ?? '');
-      setPromptProfileId(editProfile.promptProfileId ?? '');
+      // Use promptProfileId as baseTemplateId for backward compatibility
+      setBaseTemplateId(editProfile.promptProfileId ?? '');
       setEnableMemory(editProfile.enableMemory);
       setMemoryChannel(editProfile.memoryChannel);
       setEnableTools(editProfile.enableTools);
@@ -184,7 +200,7 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
         default_model: defaultModel || undefined,
         temperature,
         reasoning_strategy: reasoningStrategy,
-        prompt_profile_id: promptProfileId || undefined,
+        prompt_profile_id: baseTemplateId || undefined,
         system_prompt: systemPrompt.trim() || undefined,
         enable_memory: enableMemory,
         memory_channel: memoryChannel,
@@ -251,29 +267,29 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
     });
   };
 
-  // Handle inserting a prompt section from the library
-  const handleInsertFromLibrary = async () => {
-    try {
-      // Fetch all sections from the prompt sections endpoint
-      const { sections } = await api.listPromptSections();
+  // Open library modal to insert a template snippet
+  const handleInsertFromLibrary = () => {
+    setLibraryMode('insert');
+    setShowLibrary(true);
+  };
 
-      if (sections.length === 0) {
-        setError('No prompt sections available to insert');
-        return;
-      }
+  // Open library modal to select base template
+  const handleSelectBaseTemplate = () => {
+    setLibraryMode('select');
+    setShowLibrary(true);
+  };
 
-      // Simple picker using prompt - could be enhanced to a modal later
-      const sectionList = sections.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-      const choice = window.prompt(`Choose a section to insert:\n\n${sectionList}\n\nEnter number:`);
+  // Handle template insertion from library
+  const handleLibraryInsert = (content: string) => {
+    insertAtCursor(content);
+  };
 
-      if (!choice?.trim()) return;
-
-      const index = parseInt(choice, 10) - 1;
-      if (index >= 0 && index < sections.length) {
-        insertAtCursor(sections[index].content);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sections');
+  // Handle base template selection from library
+  const handleLibrarySelect = (templateId: string, content: string) => {
+    setBaseTemplateId(templateId);
+    // Optionally prepend template content to system prompt if empty
+    if (!systemPrompt.trim()) {
+      setSystemPrompt(content);
     }
   };
 
@@ -490,21 +506,42 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
           </div>
 
           <div className="form-group">
-            <label htmlFor="prompt-profile">Base Prompt Profile</label>
-            <select
-              id="prompt-profile"
-              value={promptProfileId}
-              onChange={(e) => setPromptProfileId(e.target.value)}
-            >
-              <option value="">None (use global only)</option>
-              {promptProfiles.map(profile => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                  {profile.is_default && ' (Default)'}
-                </option>
-              ))}
-            </select>
-            <span className="form-hint">Link to a prompt profile for base instructions</span>
+            <label>Base Template</label>
+            <div className="base-template-picker">
+              {baseTemplate ? (
+                <div className="selected-template">
+                  <span className="template-name">{baseTemplate.name}</span>
+                  {baseTemplate.hasModifications && (
+                    <span className="modified-badge">Modified</span>
+                  )}
+                  <button
+                    type="button"
+                    className="button-secondary button-small"
+                    onClick={handleSelectBaseTemplate}
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    className="button-ghost button-small"
+                    onClick={() => setBaseTemplateId('')}
+                    title="Remove base template"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={handleSelectBaseTemplate}
+                >
+                  <Library size={14} />
+                  Select Base Template
+                </button>
+              )}
+            </div>
+            <span className="form-hint">Optional template for base agent instructions</span>
           </div>
 
           <div className="form-group">
@@ -514,10 +551,10 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
                 type="button"
                 className="prompt-toolbar-btn"
                 onClick={handleInsertFromLibrary}
-                title="Insert section from prompt library"
+                title="Insert snippet from prompt library"
               >
-                <FolderOpen size={14} />
-                <span>Insert</span>
+                <Library size={14} />
+                <span>Insert from Library</span>
               </button>
             </div>
             <textarea
@@ -609,6 +646,18 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
           </div>
         </div>
       </form>
+
+      {/* Prompt Library Modal */}
+      {showLibrary && (
+        <div className="library-modal-overlay">
+          <PromptLibraryModal
+            onClose={() => setShowLibrary(false)}
+            onInsert={libraryMode === 'insert' ? handleLibraryInsert : undefined}
+            onSelectTemplate={libraryMode === 'select' ? handleLibrarySelect : undefined}
+            mode={libraryMode}
+          />
+        </div>
+      )}
     </div>
   );
 }
