@@ -22,6 +22,9 @@ urlpatterns = [
     path("agent/chat", views.agent_chat, name="agent-chat"),
     path("agent/chat/stream", views.agent_chat_stream, name="agent-chat-stream"),
     path("agent/status", views.agent_status, name="agent-status"),
+    # Tool output storage endpoints
+    path("tool-outputs", views.tool_outputs_list, name="tool-outputs-list"),
+    path("tool-outputs/<str:storage_key>", views.tool_outputs_detail, name="tool-outputs-detail"),
     # Agent profile endpoints
     path("agent/profiles", views.agent_profiles_list, name="agent-profiles-list"),
     path("agent/profiles/<str:profile_id>", views.agent_profile_detail, name="agent-profile-detail"),

@@ -27,6 +27,7 @@ from ..drafting import DraftingStrategy
 from ..drafting.speculative import SpeculativeDecoder, SpeculativeConfig
 from ..kit.memory_utils import get_agent_memory
 from ..kit.agent_memory.models import Turn
+from .tool_output_storage import store_tool_output
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,9 @@ class AgentConfig:
     allowed_tools: Optional[list[str]] = None
     blocked_tools: Optional[list[str]] = None
     max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
-    max_tool_result_chars: int = 4000  # Truncate tool results to avoid context overflow
+    max_tool_result_chars: int = 4000  # Threshold for storing oversized results in Redis
+    store_oversized_results: bool = True  # Store large results in Redis instead of truncating
+    tool_output_ttl_seconds: int = 3600  # TTL for stored tool outputs (1 hour default)
     
     # Context settings
     max_context_tokens: int = 8000
@@ -305,13 +308,31 @@ class Agent:
                 logger.error(f"Tool execution error for '{tc.name}': {e}")
                 content = json.dumps({"error": str(e)})
 
-            # Truncate large tool results to avoid context overflow
+            # Handle large tool results - store in Redis or truncate
             max_chars = self.config.max_tool_result_chars
             original_len = len(content)
             if original_len > max_chars:
-                truncated_content = content[:max_chars]
-                content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
-                logger.info(f"Truncated tool result for '{tc.name}': {original_len:,} -> {max_chars:,} chars")
+                if self.config.store_oversized_results:
+                    # Store full output in Redis and inject reference
+                    storage_key = store_tool_output(
+                        tool_call_id=tc.id,
+                        tool_name=tc.name,
+                        content=content,
+                        ttl_seconds=self.config.tool_output_ttl_seconds,
+                    )
+                    preview = content[:1000] + "..." if len(content) > 1000 else content
+                    content = (
+                        f"{preview}\n\n"
+                        f"[OUTPUT STORED - {original_len:,} chars total]\n"
+                        f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
+                        f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                    )
+                    logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
+                else:
+                    # Legacy truncation behavior
+                    truncated_content = content[:max_chars]
+                    content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
+                    logger.info(f"Truncated tool result for '{tc.name}': {original_len:,} -> {max_chars:,} chars")
 
             results.append(Message(
                 role=MessageRole.TOOL,

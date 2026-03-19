@@ -1037,6 +1037,106 @@ def agent_status(request):
     return JsonResponse(agent.get_status())
 
 
+# ============== Tool Output Storage Endpoints ==============
+
+def tool_outputs_list(request):
+    """
+    GET /api/tool-outputs - List stored tool outputs.
+
+    Query params:
+        pattern: Filter by tool name pattern (default: "*")
+
+    Returns list of stored outputs with metadata (not full content).
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    from .agent.tool_output_storage import list_tool_outputs
+
+    pattern = request.GET.get('pattern', '*')
+    outputs = list_tool_outputs(pattern)
+
+    return JsonResponse({
+        "outputs": outputs,
+        "count": len(outputs),
+    })
+
+
+@csrf_exempt
+def tool_outputs_detail(request, storage_key: str):
+    """
+    GET /api/tool-outputs/{key} - Retrieve stored tool output.
+    DELETE /api/tool-outputs/{key} - Delete stored tool output.
+
+    Query params (GET):
+        offset: Start position in content (default: 0)
+        limit: Max characters to return (default: all)
+        metadata_only: If "true", return only metadata without content
+
+    Returns full output content or paginated portion.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    from .agent.tool_output_storage import get_tool_output, get_tool_output_content, delete_tool_output
+
+    if request.method == 'GET':
+        metadata_only = request.GET.get('metadata_only', 'false').lower() == 'true'
+
+        if metadata_only:
+            data = get_tool_output(storage_key)
+            if not data:
+                return JsonResponse({'error': 'Output not found or expired'}, status=404)
+            # Return metadata without content
+            return JsonResponse({
+                "key": storage_key,
+                "tool_name": data.get("tool_name"),
+                "tool_call_id": data.get("tool_call_id"),
+                "size_chars": data.get("size_chars"),
+                "stored_at": data.get("stored_at"),
+            })
+
+        # Get content with optional pagination
+        offset = int(request.GET.get('offset', 0))
+        limit_str = request.GET.get('limit')
+        limit = int(limit_str) if limit_str else None
+
+        data = get_tool_output(storage_key)
+        if not data:
+            return JsonResponse({'error': 'Output not found or expired'}, status=404)
+
+        content = data.get("content", "")
+        total_size = len(content)
+
+        # Apply pagination
+        if limit:
+            content = content[offset:offset + limit]
+        elif offset > 0:
+            content = content[offset:]
+
+        return JsonResponse({
+            "key": storage_key,
+            "tool_name": data.get("tool_name"),
+            "tool_call_id": data.get("tool_call_id"),
+            "content": content,
+            "offset": offset,
+            "limit": limit,
+            "total_size": total_size,
+            "stored_at": data.get("stored_at"),
+        })
+
+    if request.method == 'DELETE':
+        success = delete_tool_output(storage_key)
+        if success:
+            return JsonResponse({"deleted": True, "key": storage_key})
+        return JsonResponse({'error': 'Output not found or already deleted'}, status=404)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
 # ============== Prompt Management Endpoints ==============
 
 def prompts_profiles(request):
