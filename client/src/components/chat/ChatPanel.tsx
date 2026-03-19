@@ -13,8 +13,8 @@ import {
   Square,
   ChevronUp,
   ChevronDown,
-  Sparkles,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
@@ -340,10 +340,6 @@ export function ChatPanel() {
       {/* Header */}
       <div className="chat-panel-header">
         <div className="chat-panel-info">
-          <div className="agent-badge">
-            <Sparkles size={16} />
-            <span className="agent-name">{agentName}</span>
-          </div>
           <span className="chat-panel-title">{activeTab.title}</span>
           {activeTab.sessionId && (
             <span className="chat-panel-session">
@@ -385,9 +381,6 @@ export function ChatPanel() {
 
       {/* Messages */}
       <div className="chat-panel-messages">
-        {/* Windows-style progress bar during streaming */}
-        {isTyping && <div className="stream-progress-bar" />}
-
         {messages.length === 0 && (
           <div className="chat-panel-welcome">
             <Bot size={32} />
@@ -480,7 +473,13 @@ export function ChatPanel() {
           {isTyping ? (
             <button
               className="stop-button"
-              onClick={() => streamAbortRef.current?.abort()}
+              onClick={() => {
+                streamAbortRef.current?.abort();
+                streamingContentRef.current = '';
+                setStreamingContent('');
+                setIsTyping(false);
+                setStreaming(false);
+              }}
               title="Stop generating"
             >
               <Square size={16} />

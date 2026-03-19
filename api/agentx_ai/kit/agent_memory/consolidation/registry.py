@@ -281,9 +281,13 @@ class JobRegistry:
         # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
         return [json.loads(entry) for entry in entries]  # type: ignore[arg-type]
 
-    async def run_job(self, name: str) -> Dict[str, Any]:
+    async def run_job(self, name: str, progress: Optional[Any] = None) -> Dict[str, Any]:
         """
         Manually run a job.
+
+        Args:
+            name: Job name to run.
+            progress: Optional ConsolidationProgress for broadcasting.
 
         Returns:
             Dict with success, duration_ms, and result
@@ -307,11 +311,26 @@ class JobRegistry:
         items_processed = 0
 
         try:
+            # Build a progress callback scoped to this job
+            progress_cb = None
+            if progress:
+                def progress_cb(stage: str, details: Optional[Dict[str, Any]] = None) -> None:
+                    progress.emit(name, stage, details)
+
             # Handle both sync and async job functions
             if inspect.iscoroutinefunction(job_def.func):
-                result = await job_def.func() or {}
+                # Inject progress_callback if the function accepts it
+                sig = inspect.signature(job_def.func)
+                if "progress_callback" in sig.parameters:
+                    result = await job_def.func(progress_callback=progress_cb) or {}
+                else:
+                    result = await job_def.func() or {}
             else:
-                result = job_def.func() or {}
+                sig = inspect.signature(job_def.func)
+                if "progress_callback" in sig.parameters:
+                    result = job_def.func(progress_callback=progress_cb) or {}
+                else:
+                    result = job_def.func() or {}
             if isinstance(result, dict):
                 items_processed = result.get("items_processed", 0)
         except Exception as e:
@@ -402,13 +421,16 @@ class JobRegistry:
         return cleared
 
     async def run_consolidation_pipeline(
-        self, jobs: Optional[List[str]] = None
+        self,
+        jobs: Optional[List[str]] = None,
+        progress: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Run the consolidation pipeline (multiple jobs).
 
         Args:
             jobs: List of job names to run. If None, runs consolidate, patterns, promote.
+            progress: Optional ConsolidationProgress instance for pub/sub broadcasting.
 
         Returns:
             Combined results from all jobs
@@ -420,27 +442,44 @@ class JobRegistry:
         errors: List[str] = []
         total_start = time.perf_counter()
 
-        for job_name in jobs:
+        if progress:
+            progress.start()
+
+        for idx, job_name in enumerate(jobs):
             if job_name not in self._jobs:
                 errors.append(f"Unknown job: {job_name}")
                 continue
 
-            result = await self.run_job(job_name)
+            if progress:
+                progress.job_start(job_name, idx + 1, len(jobs))
+
+            result = await self.run_job(job_name, progress=progress)
+
+            job_duration = result.get("duration_ms", 0)
             if result.get("success"):
                 results[job_name] = result.get("result", {})
+                if progress:
+                    progress.job_done(job_name, True, job_duration, result.get("result", {}))
             else:
                 error = result.get("error", "Unknown error")
                 errors.append(f"{job_name}: {error}")
                 results[job_name] = {"error": error}
+                if progress:
+                    progress.job_done(job_name, False, job_duration, {"error": error})
 
         total_duration = int((time.perf_counter() - total_start) * 1000)
 
-        return {
+        final_result = {
             "success": len(errors) == 0,
             "duration_ms": total_duration,
             "results": results,
             "errors": errors,
         }
+
+        if progress:
+            progress.complete(final_result)
+
+        return final_result
 
     def get_worker_status(self) -> Optional[Dict[str, Any]]:
         """Get status of the background worker if running."""

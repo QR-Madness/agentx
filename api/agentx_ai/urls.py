@@ -56,6 +56,7 @@ urlpatterns = [
     path("memory/strategies", views.memory_strategies, name="memory-strategies"),
     path("memory/stats", views.memory_stats, name="memory-stats"),
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),
+    path("memory/consolidate/stream", views.consolidate_stream, name="consolidate-stream"),
     path("memory/reset", views.memory_reset, name="memory-reset"),
     path("memory/settings", views.memory_settings, name="memory-settings"),
     path("memory/recall-settings", views.recall_settings, name="recall-settings"),

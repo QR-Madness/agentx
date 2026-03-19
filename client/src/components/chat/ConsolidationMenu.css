@@ -1,0 +1,188 @@
+/* ConsolidationMenu — Dropdown from lightning icon */
+
+.consolidation-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 280px;
+  max-width: 340px;
+  background: rgba(20, 22, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
+  padding: 14px;
+  animation: consolidationMenuIn 0.15s ease-out;
+}
+
+@keyframes consolidationMenuIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Header */
+.consolidation-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.consolidation-menu-header svg {
+  color: #facc15;
+}
+
+/* Idle state */
+.consolidation-menu-desc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+  margin: 0 0 10px 0;
+}
+
+.consolidation-menu-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.consolidation-menu-check input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: #facc15;
+  cursor: pointer;
+}
+
+.consolidation-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  border-radius: 6px;
+  color: #facc15;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.consolidation-menu-trigger:hover {
+  background: rgba(250, 204, 21, 0.2);
+  border-color: rgba(250, 204, 21, 0.4);
+}
+
+/* Progress state */
+.consolidation-menu-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.consolidation-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.consolidation-progress-header .spinning {
+  animation: spin 1s linear infinite;
+  color: #facc15;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.consolidation-progress-stage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  padding-left: 2px;
+}
+
+.consolidation-progress-stage svg {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.consolidation-progress-detail {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  padding-left: 18px;
+}
+
+/* Progress bar */
+.consolidation-progress-bar-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.consolidation-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #facc15, #f59e0b);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Result state */
+.consolidation-menu-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.consolidation-result-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.consolidation-result-icon.success {
+  color: #4ade80;
+}
+
+.consolidation-result-icon.failure {
+  color: #f87171;
+}
+
+.consolidation-result-time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Error state */
+.consolidation-menu-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #f87171;
+}
+
+.consolidation-menu-error svg {
+  flex-shrink: 0;
+}

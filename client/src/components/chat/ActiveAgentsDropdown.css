@@ -1,0 +1,135 @@
+/* === ActiveAgentsDropdown — Active conversations list === */
+
+.active-agents-dropdown {
+  position: fixed;
+  width: 280px;
+  max-height: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 200;
+  animation: agentsDropdownIn 0.15s ease;
+}
+
+@keyframes agentsDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* === Section Headers === */
+.agents-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.agents-section-header .section-icon {
+  color: var(--text-muted);
+}
+
+.agents-section-header .section-icon.active {
+  color: var(--cosmic-cyan);
+}
+
+/* === Items === */
+.agents-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.agents-item:hover {
+  background: var(--bg-hover);
+}
+
+.agents-item.current {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.agents-item-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.agents-item-avatar.streaming {
+  background: var(--gradient-aurora);
+  color: white;
+}
+
+.agents-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.agents-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-item-status {
+  font-size: 11px;
+  color: var(--cosmic-cyan);
+}
+
+.agents-item-session {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.agents-item-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cosmic-cyan);
+  flex-shrink: 0;
+  animation: agentPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* === Empty State === */
+.agents-empty {
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}

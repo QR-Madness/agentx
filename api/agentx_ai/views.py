@@ -2502,6 +2502,7 @@ def jobs_list(request):
     GET /api/jobs - List all consolidation jobs with status.
 
     Returns list of jobs with their current status, metrics, and configuration.
+    Includes `consolidation_active` flag from Redis for live UI updates.
     """
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
@@ -2510,16 +2511,19 @@ def jobs_list(request):
         return JsonResponse({'error': 'GET only'}, status=405)
 
     try:
-        from .kit.agent_memory.consolidation import JobRegistry
+        from .kit.agent_memory.consolidation import JobRegistry, get_active_consolidation
         from dataclasses import asdict
 
         registry = JobRegistry.get_instance()
         jobs = registry.list_jobs()
         worker = registry.get_worker_status()
 
+        active = get_active_consolidation()
+
         return JsonResponse({
             "jobs": [asdict(job) for job in jobs],
-            "worker": worker
+            "worker": worker,
+            "consolidation_active": active,
         })
 
     except Exception as e:
@@ -2660,6 +2664,127 @@ async def memory_consolidate(request):
     except Exception as e:
         logger.error(f"Error running consolidation: {e}")
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+async def consolidate_stream(request):
+    """
+    SSE streaming endpoint for consolidation with live progress.
+
+    POST /api/memory/consolidate/stream - Trigger consolidation AND stream progress.
+        Body (optional): {"jobs": ["consolidate", "patterns", "promote"]}
+
+    GET /api/memory/consolidate/stream - Watch an ongoing consolidation run (reconnection).
+        Returns idle event if nothing running.
+    """
+    if request.method == 'OPTIONS':
+        response = JsonResponse({}, status=200)
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+
+    if request.method not in ('GET', 'POST'):
+        return JsonResponse({'error': 'GET or POST only'}, status=405)
+
+    trigger = request.method == 'POST'
+    jobs = None
+    if trigger and request.body:
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            jobs = data.get("jobs")
+        except json.JSONDecodeError:
+            pass
+
+    async def generate_sse():
+        import asyncio
+        from .kit.agent_memory.consolidation import (
+            JobRegistry,
+            ConsolidationProgress,
+            get_active_consolidation,
+        )
+        from .kit.agent_memory.connections import RedisConnection
+        from .kit.agent_memory.consolidation.progress import CHANNEL_PROGRESS
+
+        redis = RedisConnection.get_client()
+
+        if not trigger:
+            # GET: check if consolidation is active
+            active = get_active_consolidation()
+            if not active:
+                yield f"event: idle\ndata: {json.dumps({'message': 'No active consolidation'})}\n\n"
+                return
+
+        # Set up Redis pub/sub listener BEFORE triggering
+        pubsub = redis.pubsub()
+        pubsub.subscribe(CHANNEL_PROGRESS)
+
+        try:
+            if trigger:
+                progress = ConsolidationProgress(
+                    jobs=jobs or ["consolidate", "patterns", "promote"],
+                    triggered_by="manual_stream",
+                )
+
+                # Run pipeline in a background thread so SSE generator can yield events
+                pipeline_done = asyncio.Event()
+                pipeline_result = {}
+
+                async def _run_pipeline():
+                    try:
+                        registry = JobRegistry.get_instance()
+                        result = await registry.run_consolidation_pipeline(
+                            jobs=jobs, progress=progress
+                        )
+                        pipeline_result.update(result)
+                    except Exception as e:
+                        logger.error(f"Consolidation pipeline error: {e}")
+                        progress.error(str(e))
+                    finally:
+                        pipeline_done.set()
+
+                asyncio.ensure_future(_run_pipeline())
+
+            # Relay Redis pub/sub messages as SSE events
+            done = False
+            while not done:
+                # Run blocking Redis call in thread to avoid blocking the event loop
+                message = await asyncio.to_thread(pubsub.get_message, timeout=0.5)
+                if message and message['type'] == 'message':
+                    try:
+                        payload = json.loads(message['data'])
+                        event_type = payload.get('event', 'progress')
+                        event_data = payload.get('data', {})
+                        event_data['run_id'] = payload.get('run_id', '')
+                        event_data['timestamp'] = payload.get('timestamp', '')
+
+                        yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+
+                        if event_type in ('done', 'error'):
+                            done = True
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"Malformed consolidation event: {e}")
+                else:
+                    # No message this cycle — yield keepalive comment
+                    yield ": keepalive\n\n"
+                    # For GET requests, also check if consolidation finished
+                    if not trigger:
+                        active = get_active_consolidation()
+                        if not active:
+                            yield f"event: idle\ndata: {json.dumps({'message': 'Consolidation finished'})}\n\n"
+                            done = True
+
+                await asyncio.sleep(0.1)
+
+        finally:
+            pubsub.unsubscribe(CHANNEL_PROGRESS)
+            pubsub.close()
+
+    response = StreamingHttpResponse(
+        generate_sse(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 @csrf_exempt

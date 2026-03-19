@@ -429,6 +429,7 @@ export interface WorkerStatus {
 export interface JobsResponse {
   jobs: JobStatus[];
   worker: WorkerStatus | null;
+  consolidation_active: ConsolidationActiveInfo | null;
 }
 
 export interface JobDetailResponse {
@@ -448,6 +449,63 @@ export interface ConsolidateResult {
   duration_ms: number;
   results: Record<string, Record<string, number>>;
   errors: string[];
+}
+
+/** Data for each SSE event type from /api/memory/consolidate/stream */
+export interface ConsolidationStreamEvent {
+  run_id: string;
+  timestamp: string;
+}
+
+export interface ConsolidationStartEvent extends ConsolidationStreamEvent {
+  jobs: string[];
+  total_jobs: number;
+  triggered_by: string;
+}
+
+export interface ConsolidationJobStartEvent extends ConsolidationStreamEvent {
+  job: string;
+  index: number;
+  total: number;
+}
+
+export interface ConsolidationProgressEvent extends ConsolidationStreamEvent {
+  job: string;
+  stage: string;
+  conversation?: string;
+  conversation_id?: string;
+  turns?: number;
+  entities?: number;
+  facts?: number;
+  relationships?: number;
+  conversations_found?: number;
+  total_in_neo4j?: number;
+  entities_stored?: number;
+  facts_stored?: number;
+  relationships_stored?: number;
+  conversations_processed?: number;
+  duration_ms?: number;
+}
+
+export interface ConsolidationJobDoneEvent extends ConsolidationStreamEvent {
+  job: string;
+  success: boolean;
+  duration_ms: number;
+  result: Record<string, unknown>;
+}
+
+export interface ConsolidationDoneEvent extends ConsolidationStreamEvent {
+  success: boolean;
+  duration_ms: number;
+  results: Record<string, unknown>;
+  errors: string[];
+}
+
+export interface ConsolidationActiveInfo {
+  run_id: string;
+  started_at: string;
+  jobs: string[];
+  triggered_by: string;
 }
 
 export interface ConsolidationSettings {
@@ -1271,6 +1329,123 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(jobs ? { jobs } : {}),
     });
+  }
+
+  /**
+   * Stream consolidation progress via SSE.
+   * POST triggers + watches; GET watches only (reconnection).
+   */
+  streamConsolidate(
+    options: {
+      trigger?: boolean;
+      jobs?: string[];
+    },
+    callbacks: {
+      onStart?: (data: ConsolidationStartEvent) => void;
+      onJobStart?: (data: ConsolidationJobStartEvent) => void;
+      onProgress?: (data: ConsolidationProgressEvent) => void;
+      onJobDone?: (data: ConsolidationJobDoneEvent) => void;
+      onDone?: (data: ConsolidationDoneEvent) => void;
+      onIdle?: () => void;
+      onError?: (error: string) => void;
+    }
+  ): { abort: () => void } {
+    const baseUrl = this.getBaseUrl();
+    const controller = new AbortController();
+    const method = options.trigger ? 'POST' : 'GET';
+    const body = options.trigger && options.jobs
+      ? JSON.stringify({ jobs: options.jobs })
+      : options.trigger ? '{}' : undefined;
+
+    fetch(`${baseUrl}/api/memory/consolidate/stream`, {
+      method,
+      headers: method === 'POST' ? { 'Content-Type': 'application/json' } : {},
+      body,
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const eventState = { type: '', data: '' };
+
+        const processLines = (lines: string[]): boolean => {
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventState.type = line.slice(7);
+            } else if (line.startsWith('data: ')) {
+              eventState.data = line.slice(6);
+
+              if (eventState.type && eventState.data) {
+                try {
+                  const data = JSON.parse(eventState.data);
+
+                  switch (eventState.type) {
+                    case 'start':
+                      callbacks.onStart?.(data);
+                      break;
+                    case 'job_start':
+                      callbacks.onJobStart?.(data);
+                      break;
+                    case 'progress':
+                      callbacks.onProgress?.(data);
+                      break;
+                    case 'job_done':
+                      callbacks.onJobDone?.(data);
+                      break;
+                    case 'done':
+                      callbacks.onDone?.(data);
+                      return true;
+                    case 'idle':
+                      callbacks.onIdle?.();
+                      return true;
+                    case 'error':
+                      callbacks.onError?.(data.error);
+                      return true;
+                  }
+                } catch (e) {
+                  console.error('Failed to parse consolidation SSE data:', e);
+                }
+
+                eventState.type = '';
+                eventState.data = '';
+              }
+            }
+          }
+          return false;
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          if (processLines(lines)) {
+            controller.abort();
+            return;
+          }
+        }
+
+        if (buffer.trim()) {
+          processLines(buffer.split('\n'));
+        }
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          callbacks.onError?.(error.message);
+        }
+      });
+
+    return { abort: () => controller.abort() };
   }
 
   async getConsolidationSettings(): Promise<ConsolidationSettings> {

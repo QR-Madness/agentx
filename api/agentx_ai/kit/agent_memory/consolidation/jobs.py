@@ -1,7 +1,7 @@
 """Background consolidation jobs for memory processing."""
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, TYPE_CHECKING
+from typing import Callable, Dict, Any, List, Optional, TYPE_CHECKING
 from uuid import uuid4
 import logging
 import json
@@ -379,10 +379,15 @@ def _batch_store_relationships(
     return len(valid_rels)
 
 
-async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
+async def consolidate_episodic_to_semantic(
+    progress_callback: Optional[Callable] = None,
+) -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
+
+    Args:
+        progress_callback: Optional callback(stage, details) for progress reporting.
 
     Returns:
         Dictionary with consolidation metrics
@@ -432,7 +437,13 @@ async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
         records = list(result)
         logger.info(f"Consolidation: {len(records)} conversations need processing")
 
-        for record in records:
+        if progress_callback:
+            progress_callback("discovery", {
+                "conversations_found": len(records),
+                "total_in_neo4j": len(conversations_found),
+            })
+
+        for conv_idx, record in enumerate(records):
             conv_id = record["conversation_id"]
             user_id = record["user_id"]
             channel = record["channel"]
@@ -441,6 +452,13 @@ async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
             metrics.conversation_id = conv_id  # Track current conversation
             metrics.user_id = user_id
             metrics.channel = channel
+
+            if progress_callback:
+                progress_callback("processing", {
+                    "conversation": f"{conv_idx + 1} of {len(records)}",
+                    "conversation_id": conv_id,
+                    "turns": len(turns),
+                })
 
             # Get or create memory instance for this user/channel
             cache_key = f"{user_id}:{channel}"
@@ -524,6 +542,15 @@ async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
 
             # Prepare entities for batch storage
             storage_start = time.perf_counter()
+
+            if progress_callback:
+                progress_callback("storing", {
+                    "conversation": f"{conv_idx + 1} of {len(records)}",
+                    "entities": len(extracted_entities),
+                    "facts": len(extracted_facts),
+                    "relationships": len(extracted_relationships),
+                })
+
             entities_to_store: List[Entity] = []
             for entity_dict in extracted_entities:
                 try:
@@ -694,6 +721,15 @@ async def consolidate_episodic_to_semantic() -> Dict[str, Any]:
         metrics.extraction_calls + metrics.contradiction_calls
     )
     metrics.errors = errors
+
+    if progress_callback:
+        progress_callback("complete", {
+            "entities_stored": metrics.entities_stored,
+            "facts_stored": metrics.facts_stored,
+            "relationships_stored": metrics.relationships_stored,
+            "conversations_processed": len(records),
+            "duration_ms": metrics.total_latency_ms,
+        })
 
     # Log summary
     metrics.log_summary()

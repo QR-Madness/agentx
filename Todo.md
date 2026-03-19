@@ -449,6 +449,9 @@ Intent-aware retrieval (SimpleMem-style):
 
 ---
 
+- [ ] Fact Transience (a confidence bias) - which is ranked on extraction for the predicted rate that the fact will be incorrect or irrelevant (maybe weeks, maybe months?)
+   future (e.g. "The user's home PC is slow"; this would be high transcience since they may very well get a new PC soon)
+- [ ] Extraction example sets for LLM to see a large list of example to compare from? 
 - [ ] GPU acceleration for translation models
 - [ ] Lazy model loading with progress indicator
 - [ ] Multiple server support (user can log out of server, and into another one seamlessly)

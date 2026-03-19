@@ -2,7 +2,7 @@
  * React hooks for API data fetching
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   api,
   HealthResponse,
@@ -532,4 +532,153 @@ export function useRecallSettings() {
   }, [fetchSettings]);
 
   return { settings, loading, saving, error, updateSettings, refresh: fetchSettings };
+}
+
+/**
+ * Hook for streaming consolidation progress via SSE.
+ * Provides live progress updates during consolidation runs.
+ */
+export function useConsolidationStream() {
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [currentJob, setCurrentJob] = useState<string | null>(null);
+  const [currentJobIndex, setCurrentJobIndex] = useState(0);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [stage, setStage] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<(() => void) | null>(null);
+
+  const startStream = useCallback((options?: { jobs?: string[]; trigger?: boolean }) => {
+    // Abort any existing stream
+    abortRef.current?.();
+
+    setIsStreaming(true);
+    setCurrentJob(null);
+    setCurrentJobIndex(0);
+    setTotalJobs(0);
+    setStage(null);
+    setProgress(null);
+    setResult(null);
+    setError(null);
+
+    const { abort } = api.streamConsolidate(
+      { trigger: options?.trigger ?? true, jobs: options?.jobs },
+      {
+        onStart: (data) => {
+          setTotalJobs(data.total_jobs);
+        },
+        onJobStart: (data) => {
+          setCurrentJob(data.job);
+          setCurrentJobIndex(data.index);
+          setStage('starting');
+        },
+        onProgress: (data) => {
+          setCurrentJob(data.job);
+          setStage(data.stage);
+          setProgress(data as unknown as Record<string, unknown>);
+        },
+        onJobDone: (data) => {
+          setStage('done');
+          setProgress(data as unknown as Record<string, unknown>);
+        },
+        onDone: (data) => {
+          setIsStreaming(false);
+          setResult(data as unknown as Record<string, unknown>);
+          setStage(null);
+          setCurrentJob(null);
+        },
+        onIdle: () => {
+          setIsStreaming(false);
+        },
+        onError: (err) => {
+          setIsStreaming(false);
+          setError(err);
+        },
+      }
+    );
+
+    abortRef.current = abort;
+    return { abort };
+  }, []);
+
+  const stop = useCallback(() => {
+    abortRef.current?.();
+    abortRef.current = null;
+    setIsStreaming(false);
+  }, []);
+
+  return {
+    startStream,
+    stop,
+    isStreaming,
+    currentJob,
+    currentJobIndex,
+    totalJobs,
+    stage,
+    progress,
+    result,
+    error,
+  };
+}
+
+/**
+ * Hook that provides consolidation activity status.
+ * Checks jobs endpoint on mount, auto-subscribes to SSE if consolidation is active.
+ */
+export function useConsolidationStatus() {
+  const stream = useConsolidationStream();
+  const [isActive, setIsActive] = useState(false);
+  const [checkedOnMount, setCheckedOnMount] = useState(false);
+
+  // Check for active consolidation on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkActive() {
+      try {
+        const jobsData = await api.listJobs();
+        if (cancelled) return;
+
+        if (jobsData.consolidation_active) {
+          setIsActive(true);
+          // Auto-subscribe to watch progress (GET = watch-only)
+          stream.startStream({ trigger: false });
+        }
+      } catch {
+        // Ignore — server may not be available
+      } finally {
+        if (!cancelled) setCheckedOnMount(true);
+      }
+    }
+
+    checkActive();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync isActive with stream state
+  useEffect(() => {
+    setIsActive(stream.isStreaming);
+  }, [stream.isStreaming]);
+
+  const trigger = useCallback((jobs?: string[]) => {
+    setIsActive(true);
+    return stream.startStream({ trigger: true, jobs });
+  }, [stream]);
+
+  return {
+    isActive,
+    isStreaming: stream.isStreaming,
+    currentJob: stream.currentJob,
+    currentJobIndex: stream.currentJobIndex,
+    totalJobs: stream.totalJobs,
+    stage: stream.stage,
+    progress: stream.progress,
+    result: stream.result,
+    error: stream.error,
+    trigger,
+    stop: stream.stop,
+    checkedOnMount,
+  };
 }

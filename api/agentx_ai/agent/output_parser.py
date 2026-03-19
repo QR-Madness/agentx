@@ -44,6 +44,51 @@ FINAL_ANSWER_PATTERNS = [
 ]
 
 
+def _find_trailing_json(text: str) -> Optional[int]:
+    """
+    Find the start index of a trailing JSON object in text using brace-balancing.
+    Handles arbitrary nesting depth. Returns None if no balanced JSON found at end.
+    """
+    # Walk backwards to find the last '}', then balance braces forward
+    last_brace = text.rfind('}')
+    if last_brace < 0:
+        return None
+
+    # Scan backwards from last_brace to find the matching '{'
+    depth = 0
+    in_string = False
+    i = last_brace
+    while i >= 0:
+        ch = text[i]
+        if in_string:
+            # Check for escaped quote (look back for odd number of backslashes)
+            if ch == '"':
+                num_backslashes = 0
+                j = i - 1
+                while j >= 0 and text[j] == '\\':
+                    num_backslashes += 1
+                    j -= 1
+                if num_backslashes % 2 == 0:
+                    in_string = False
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch == '}':
+                depth += 1
+            elif ch == '{':
+                depth -= 1
+                if depth == 0:
+                    # Verify the rest after this point is only whitespace
+                    tail = text[last_brace + 1:].strip()
+                    if tail == '':
+                        return i
+                    # Not a clean trailing JSON
+                    return None
+        i -= 1
+
+    return None
+
+
 def parse_output(raw_output: str) -> ParsedOutput:
     """
     Parse model output to extract thinking and content.
@@ -80,23 +125,29 @@ def parse_output(raw_output: str) -> ParsedOutput:
     if UNCLOSED_THINKING_PATTERN.match(content):
         # Strip the opening tag
         content = UNCLOSED_THINKING_PATTERN.sub('', content)
-        # Everything is thinking content - but keep looking for answer at the end
-        # Split on the last newline to preserve potential final answer
-        lines = content.strip().split('\n')
-        if len(lines) > 1:
-            # Last line might be the answer, rest is thinking
-            last_line = lines[-1].strip()
-            # Check if last line looks like an answer (short, possibly YES/NO or JSON)
-            if len(last_line) < 100 and not last_line.startswith(('I ', 'The ', 'This ', 'We ')):
-                thinking_parts.append('\n'.join(lines[:-1]).strip())
-                content = last_line
-            else:
-                # All thinking, no clear answer
-                thinking_parts.append(content.strip())
-                content = ""
+        stripped = content.strip()
+
+        # Look for a JSON object at the end (common with extraction models)
+        # JSON answers are multi-line, so last-line heuristic doesn't work for them.
+        # Use brace-balancing to find the outermost JSON object from the end.
+        json_start = _find_trailing_json(stripped)
+        if json_start is not None:
+            thinking_parts.append(stripped[:json_start].strip())
+            content = stripped[json_start:]
         else:
-            # Single line - treat as content (might be answer)
-            pass
+            # Fallback: split on last newline for simple answers
+            lines = stripped.split('\n')
+            if len(lines) > 1:
+                last_line = lines[-1].strip()
+                # Check if last line looks like a short answer (YES/NO, single value)
+                if len(last_line) < 100 and not last_line.startswith(('I ', 'The ', 'This ', 'We ')):
+                    thinking_parts.append('\n'.join(lines[:-1]).strip())
+                    content = last_line
+                else:
+                    # All thinking, no clear answer
+                    thinking_parts.append(stripped)
+                    content = ""
+            # Single line — treat as content (might be answer)
 
     # Clean up content
     content = content.strip()

@@ -24,11 +24,12 @@
   opacity: 0.3;
 }
 
-/* === Left Section: Logo === */
+/* === Left Section: Brain Icon + Logo === */
 .top-bar-left {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: 8px;
 }
 
 .top-bar-logo {
@@ -62,15 +63,6 @@
   border-radius: 8px;
   color: white;
   box-shadow: var(--glow-purple);
-}
-
-.logo-text {
-  font-size: 18px;
-  font-weight: 700;
-  background: var(--gradient-nebula);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 /* === Navigation Pills === */
@@ -145,6 +137,7 @@
   background: transparent;
   color: var(--text-secondary);
   transition: all 0.2s ease;
+  position: relative;
 }
 
 .toolbar-icon:hover {
@@ -157,15 +150,83 @@
   transform: scale(0.95);
 }
 
+.toolbar-icon.active {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--cosmic-violet);
+}
+
+/* === Brain Icon (Active Agents) === */
+.toolbar-icon-brain {
+  color: var(--text-secondary);
+}
+
+.toolbar-icon-brain:hover {
+  color: var(--cosmic-violet);
+}
+
+.toolbar-icon-brain.pulsing {
+  animation: brainShiftGlow 3s ease-in-out infinite;
+}
+
+/* === Lightning Icon (Consolidation) === */
+.toolbar-icon-lightning {
+  color: var(--text-secondary);
+}
+
+.toolbar-icon-lightning:hover {
+  color: #facc15;
+}
+
+.toolbar-icon-lightning.pulsing {
+  color: #facc15;
+  animation: iconPulseGlowAmber 1.5s ease-in-out infinite;
+}
+
+/* === Pulse Animations === */
+@keyframes brainShiftGlow {
+  0% {
+    color: #a78bfa;
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.7));
+  }
+  25% {
+    color: #c084fc;
+    filter: drop-shadow(0 0 12px rgba(192, 132, 252, 0.8));
+  }
+  50% {
+    color: #818cf8;
+    filter: drop-shadow(0 0 14px rgba(129, 140, 248, 0.9));
+  }
+  75% {
+    color: #e879f9;
+    filter: drop-shadow(0 0 12px rgba(232, 121, 249, 0.8));
+  }
+  100% {
+    color: #a78bfa;
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.7));
+  }
+}
+
+@keyframes iconPulseGlowAmber {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 transparent);
+    opacity: 1;
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.6));
+    opacity: 0.7;
+  }
+}
+
+/* === Consolidation Trigger Container === */
+.consolidation-trigger-container {
+  position: relative;
+}
+
 /* === Responsive === */
 @media (max-width: 768px) {
   .top-bar {
     padding: 0 12px;
     gap: 8px;
-  }
-
-  .logo-text {
-    display: none;
   }
 
   .nav-pill span {

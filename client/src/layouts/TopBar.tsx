@@ -1,7 +1,12 @@
 /**
  * TopBar — Horizontal navigation bar with logo, page pills, and toolbar icons
+ *
+ * Brain icon (left) opens the active agents dropdown.
+ * Lightning icon (right toolbar) opens the consolidation menu with live SSE progress.
+ * Both pulse when their respective operations are active.
  */
 
+import { useState, useRef } from 'react';
 import {
   Sparkles,
   Home,
@@ -11,9 +16,14 @@ import {
   Database,
   Wrench,
   Languages,
+  Brain,
+  Zap,
 } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
-import { useAgentProfile } from '../contexts/AgentProfileContext';
+import { useConversation } from '../contexts/ConversationContext';
+import { useConsolidationStatus } from '../lib/hooks';
+import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
+import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
 import { ConversationTabBar } from './ConversationTabBar';
 import './TopBar.css';
 
@@ -32,7 +42,16 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 
 export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { openModal } = useModal();
-  const { getAgentName } = useAgentProfile();
+  const { tabs } = useConversation();
+  const consolidation = useConsolidationStatus();
+
+  const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
+  const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
+
+  const brainButtonRef = useRef<HTMLButtonElement>(null);
+  const lightningButtonRef = useRef<HTMLButtonElement>(null);
+
+  const hasStreamingTabs = tabs.some(t => t.isStreaming);
 
   const openSettings = () => {
     openModal({
@@ -84,8 +103,21 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
   return (
     <header className="top-bar">
-      {/* Left: Logo (clickable to edit profile) */}
+      {/* Left: Brain icon (opens active agents) + Logo (edit profile) */}
       <div className="top-bar-left">
+        <button
+          ref={brainButtonRef}
+          className={`toolbar-icon toolbar-icon-brain ${hasStreamingTabs ? 'pulsing' : ''} ${showAgentsDropdown ? 'active' : ''}`}
+          onClick={() => setShowAgentsDropdown(prev => !prev)}
+          title="Active conversations"
+        >
+          <Brain size={20} />
+        </button>
+        <ActiveAgentsDropdown
+          isOpen={showAgentsDropdown}
+          onClose={() => setShowAgentsDropdown(false)}
+          anchorRef={brainButtonRef}
+        />
         <button
           className="top-bar-logo"
           onClick={openProfileEditor}
@@ -94,7 +126,6 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           <div className="logo-icon">
             <Sparkles size={20} />
           </div>
-          <span className="logo-text">{getAgentName()}</span>
         </button>
       </div>
 
@@ -119,6 +150,25 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
       {/* Right: Toolbar icons */}
       <div className="top-bar-right">
+        {/* Consolidation lightning with dropdown menu */}
+        <div className="consolidation-trigger-container">
+          <button
+            ref={lightningButtonRef}
+            className={`toolbar-icon toolbar-icon-lightning ${consolidation.isActive ? 'pulsing' : ''}`}
+            onClick={() => setShowConsolidationMenu(prev => !prev)}
+            title="Memory consolidation"
+          >
+            <Zap size={18} />
+          </button>
+
+          <ConsolidationMenu
+            isOpen={showConsolidationMenu}
+            onClose={() => setShowConsolidationMenu(false)}
+            anchorRef={lightningButtonRef}
+            consolidation={consolidation}
+          />
+        </div>
+
         <button
           className="toolbar-icon"
           onClick={openTranslation}

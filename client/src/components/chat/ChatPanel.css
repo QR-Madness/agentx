@@ -37,26 +37,6 @@
   gap: 10px;
 }
 
-.agent-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: var(--accent-gradient);
-  border-radius: 6px;
-  color: white;
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.agent-badge svg {
-  color: white;
-}
-
-.agent-name {
-  color: white;
-}
-
 .chat-panel-title {
   font-weight: 600;
   color: var(--text-primary);
@@ -262,42 +242,6 @@
 /* === Streaming === */
 .streaming-message {
   position: relative;
-}
-
-/* === Stream Progress Bar (Windows-style) === */
-.stream-progress-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  overflow: hidden;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.stream-progress-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -40%;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(90deg,
-    transparent,
-    var(--cosmic-purple),
-    var(--cosmic-cyan),
-    var(--cosmic-pink),
-    transparent
-  );
-  animation: progress-slide 1.8s ease-in-out infinite;
-}
-
-@keyframes progress-slide {
-  0% { left: -40%; }
-  50% { left: 100%; }
-  50.01% { left: 100%; transform: scaleX(-1); }
-  100% { left: -40%; transform: scaleX(-1); }
 }
 
 /* === Colorful Spinner (replaces boring dots) === */

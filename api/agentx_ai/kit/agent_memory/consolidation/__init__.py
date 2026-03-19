@@ -10,6 +10,7 @@ from .jobs import (
     trigger_reflection,
 )
 from .metrics import ConsolidationMetrics, AggregatedMetrics
+from .progress import ConsolidationProgress, get_active_consolidation
 
 __all__ = [
     "ConsolidationWorker",
@@ -24,4 +25,6 @@ __all__ = [
     "trigger_reflection",
     "ConsolidationMetrics",
     "AggregatedMetrics",
+    "ConsolidationProgress",
+    "get_active_consolidation",
 ]

@@ -621,7 +621,8 @@ class ExtractionService:
         """
         Parse combined relevance+extraction LLM response.
 
-        Handles reasoning model output with thinking tags.
+        Handles reasoning model output with thinking tags — some models
+        embed the JSON answer inside <think> blocks instead of after them.
 
         Args:
             content: Raw LLM response
@@ -648,42 +649,62 @@ class ExtractionService:
                 success=True,
             )
 
-        # Try to parse JSON
-        is_valid, parsed, error = validate_json_output(cleaned_content)
+        def _try_extract_json(text: str) -> Optional[CombinedExtractionResult]:
+            """Try multiple strategies to extract JSON from text."""
+            if not text or not text.strip():
+                return None
 
-        if is_valid and parsed:
-            return _make_result(parsed)
+            # Direct JSON parse
+            is_valid, parsed, _ = validate_json_output(text)
+            if is_valid and parsed:
+                return _make_result(parsed)
 
-        # Try regex patterns for JSON extraction
-        json_patterns = [
-            r'```json\s*([\s\S]*?)```',
-            r'```\s*([\s\S]*?)```',
-            r'(\{[\s\S]*\})',
-        ]
+            # Regex patterns for JSON extraction
+            json_patterns = [
+                r'```json\s*([\s\S]*?)```',
+                r'```\s*([\s\S]*?)```',
+                r'(\{[\s\S]*\})',
+            ]
 
-        for pattern in json_patterns:
-            match = re.search(pattern, cleaned_content)
-            if match:
-                try:
-                    json_str = match.group(1).strip()
-                    parsed = json.loads(json_str)
-                    return _make_result(parsed)
-                except json.JSONDecodeError:
-                    continue
+            for pattern in json_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    try:
+                        json_str = match.group(1).strip()
+                        parsed = json.loads(json_str)
+                        if isinstance(parsed, dict):
+                            return _make_result(parsed)
+                    except json.JSONDecodeError:
+                        continue
 
-        # Try to repair truncated JSON (common with local/small models)
-        json_start = cleaned_content.find('{')
-        if json_start >= 0:
-            repaired = self._repair_truncated_json(cleaned_content[json_start:])
-            if repaired and isinstance(repaired, dict):
-                logger.debug("Repaired truncated JSON from combined response")
-                return _make_result(repaired)
+            # Try to repair truncated JSON
+            json_start = text.find('{')
+            if json_start >= 0:
+                repaired = self._repair_truncated_json(text[json_start:])
+                if repaired and isinstance(repaired, dict):
+                    logger.debug("Repaired truncated JSON from combined response")
+                    return _make_result(repaired)
 
-        logger.warning(f"Failed to parse combined response: {error}")
-        logger.debug(f"Raw combined response: {cleaned_content[:500]}...")
+            return None
+
+        # 1. Try parsing the main content (after thinking stripped)
+        result = _try_extract_json(cleaned_content)
+        if result:
+            return result
+
+        # 2. Fallback: search the raw response directly
+        #    Handles edge cases where thinking tag stripping mangled the output
+        if content != cleaned_content:
+            result = _try_extract_json(content)
+            if result:
+                logger.debug("Found JSON in raw response (tag stripping may have mangled output)")
+                return result
+
+        logger.warning("Failed to parse combined response: no JSON found")
+        logger.debug(f"Raw combined response: {content[:500]}...")
         return CombinedExtractionResult(
             success=False,
-            error=f"JSON parse error: {error}",
+            error="JSON parse error: no JSON found in response",
         )
 
     async def extract_all(
