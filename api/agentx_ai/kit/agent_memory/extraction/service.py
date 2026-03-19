@@ -692,6 +692,12 @@ class ExtractionService:
         if result:
             return result
 
+        logger.info(
+            f"JSON extraction failed on cleaned content ({len(cleaned_content)} chars). "
+            f"Cleaned: {cleaned_content[:300]!r} | "
+            f"Has thinking: {parsed_output.has_thinking}"
+        )
+
         # 2. Fallback: search the raw response directly
         #    Handles edge cases where thinking tag stripping mangled the output
         if content != cleaned_content:
@@ -700,11 +706,30 @@ class ExtractionService:
                 logger.debug("Found JSON in raw response (tag stripping may have mangled output)")
                 return result
 
-        logger.warning("Failed to parse combined response: no JSON found")
-        logger.debug(f"Raw combined response: {content[:500]}...")
+        # 3. No JSON found at all — check if the model just skipped JSON output.
+        #    Relevant responses MUST contain JSON (entities/facts), so a response
+        #    with no JSON-like content is almost certainly a "not relevant" answer
+        #    where the model didn't follow the output format.
+        has_json_content = '{' in content
+        if not has_json_content:
+            logger.info(
+                "No JSON in extraction response — treating as non-relevant. "
+                f"Raw response ({len(content)} chars): {content[:500]}"
+            )
+            return CombinedExtractionResult(
+                is_relevant=False,
+                reason="no_json_inferred_not_relevant",
+                success=True,
+            )
+
+        # JSON-like content exists but couldn't be parsed — real failure
+        logger.warning(
+            f"Malformed JSON in extraction response. "
+            f"Raw ({len(content)} chars): {content[:500]}"
+        )
         return CombinedExtractionResult(
             success=False,
-            error="JSON parse error: no JSON found in response",
+            error="JSON parse error: malformed JSON in response",
         )
 
     async def extract_all(
