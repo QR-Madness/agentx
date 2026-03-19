@@ -48,11 +48,13 @@ export function DashboardPage() {
   };
 
   // Format bytes to human readable
-  const formatBytes = (mb: number | undefined) => {
-    if (mb === undefined) return '—';
-    if (mb < 1) return `${(mb * 1024).toFixed(0)} KB`;
-    if (mb < 1024) return `${mb.toFixed(1)} MB`;
-    return `${(mb / 1024).toFixed(2)} GB`;
+  const formatBytes = (mb: number | string | undefined | null) => {
+    if (mb === undefined || mb === null) return '—';
+    const val = typeof mb === 'string' ? parseFloat(mb) : mb;
+    if (isNaN(val)) return '—';
+    if (val < 1) return `${(val * 1024).toFixed(0)} KB`;
+    if (val < 1024) return `${val.toFixed(1)} MB`;
+    return `${(val / 1024).toFixed(2)} GB`;
   };
 
   return (
@@ -215,6 +217,8 @@ export function DashboardPage() {
               <div className="shimmer detail-placeholder"></div>
             ) : !memoryStats ? (
               <p className="no-data">Unable to load stats</p>
+            ) : memoryStats.unavailable ? (
+              <p className="no-data">Databases offline</p>
             ) : (
               <>
                 <div className="detail-row">

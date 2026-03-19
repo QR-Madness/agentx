@@ -387,6 +387,66 @@ ALL ──→ 13.10 Cleanup
 
 > Items to consider after prototype is complete
 
+### Context Gating for Large Tool Outputs
+
+> **Problem**: Tool calls can return massive outputs (logs, API responses, file contents) that flood context windows. Simply storing in Redis and providing access doesn't solve the problem—it just defers it.
+
+> **Solution**: Hybrid context gating with task-aware compression and intent-based retrieval.
+
+**Research basis**: [ACON](https://arxiv.org/abs/2510.00615), [Focus](https://arxiv.org/abs/2601.07190), [A-MEM](https://arxiv.org/abs/2502.12110), [SimpleMem](https://github.com/aiming-lab/SimpleMem)
+
+#### Architecture
+
+```
+Tool Output → Threshold Check (e.g., >4K tokens)
+    ↓ (over limit)
+┌─────────────────────────────────────────────────────┐
+│ 1. Store raw output in Redis (key: tool:{id})      │
+│ 2. Run ACON-style compression:                     │
+│    - Task-aware: "given user asked about X,        │
+│      extract relevant info from this output"       │
+│    - Generate structure index (sections, keys)     │
+│ 3. Inject into context:                            │
+│    - Compressed summary                            │
+│    - Structure/schema index                        │
+│    - Access API instructions                       │
+└─────────────────────────────────────────────────────┘
+    ↓ (agent needs more detail)
+Intent-aware retrieval (SimpleMem-style):
+  - query_output(key, "what errors occurred?")
+  - get_section(key, "errors", lines=50)
+  - get_json_path(key, "$.results[0:10]")
+```
+
+#### Implementation Phases
+
+- [ ] **Phase 1: Storage + Threshold**
+  - Add `TOOL_OUTPUT_THRESHOLD` config (default: 4096 tokens)
+  - Store oversized outputs in Redis with TTL
+  - Inject placeholder: `[Output stored: {key}, {size} tokens, use tool_output_read()]`
+
+- [ ] **Phase 2: Compression Gate**
+  - Add `ToolOutputCompressor` service (Haiku-class model)
+  - Task-aware prompt: summarize + extract structure
+  - Inject: summary + schema/index + access instructions
+
+- [ ] **Phase 3: Intent-Aware Retrieval**
+  - Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks
+  - Add MCP tool: `tool_output_section(key, section, limit)` — structural access
+  - Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries
+
+- [ ] **Phase 4: Intra-Trajectory Compression (Focus-style)**
+  - Agent can consolidate learnings into Knowledge block
+  - Prune verbose history while preserving insights
+  - Autonomous compression triggers
+
+#### Metrics to Track
+- Compression ratio (raw tokens → injected tokens)
+- Retrieval accuracy (does agent get what it needs?)
+- Task completion rate with/without gating
+
+---
+
 - [ ] GPU acceleration for translation models
 - [ ] Lazy model loading with progress indicator
 - [ ] Multiple server support (user can log out of server, and into another one seamlessly)

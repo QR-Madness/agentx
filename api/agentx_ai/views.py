@@ -633,12 +633,14 @@ async def agent_chat_stream(request):
             # Build messages with system prompt
             prompt_manager = get_prompt_manager()
 
-            # Get agent name from profile (already loaded above)
+            # Get agent name and custom system prompt from profile
             agent_name = agent_profile.name if agent_profile else None
+            agent_system_prompt = agent_profile.system_prompt if agent_profile else None
 
             system_prompt = prompt_manager.get_system_prompt(
                 profile_id=profile_id or agent.config.prompt_profile_id,
                 agent_name=agent_name,
+                agent_system_prompt=agent_system_prompt,
             )
 
             messages = [
@@ -2268,8 +2270,13 @@ def memory_stats(request):
         })
 
     except Exception as e:
-        logger.error(f"Error getting memory stats: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+        logger.warning(f"Memory stats unavailable (databases may be offline): {e}")
+        # Return empty stats with 200 - graceful degradation
+        return JsonResponse({
+            "totals": {"entities": 0, "facts": 0, "strategies": 0, "turns": 0},
+            "by_channel": {},
+            "unavailable": True
+        })
 
 
 @csrf_exempt

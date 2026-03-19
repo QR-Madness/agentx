@@ -23,9 +23,9 @@ export interface HealthResponse {
     redis?: { status: string };
   };
   storage?: {
-    postgres_size_mb: number;
-    neo4j_size_mb: number;
-    redis_memory_mb: number;
+    postgres_size_mb: number | null;
+    neo4j_size_mb: number | null;
+    redis_memory_mb: number | null;
   };
 }
 
@@ -389,6 +389,7 @@ export interface MemoryStats {
     strategies: number;
     turns: number;
   }>;
+  unavailable?: boolean;  // Set when databases are offline
 }
 
 // === Job Types ===
