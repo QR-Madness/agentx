@@ -301,9 +301,12 @@ class Agent:
                     tc.name,
                     tc.arguments,
                 )
-                content = tool_result.text if tool_result.success else (
-                    tool_result.error or "Tool execution failed"
-                )
+                # Always use the text content - even errors from MCP tools are in content
+                content = tool_result.text
+                if not content:
+                    content = tool_result.error or "Tool execution failed (no output)"
+                if not tool_result.success:
+                    logger.warning(f"Tool '{tc.name}' returned error: {content[:200]}")
             except Exception as e:
                 logger.error(f"Tool execution error for '{tc.name}': {e}")
                 content = json.dumps({"error": str(e)})
