@@ -20,6 +20,12 @@ from mcp import ClientSession
 
 from .server_registry import ServerConfig, ServerRegistry, TransportType
 from .tool_executor import ToolExecutor, ToolInfo, ToolResult
+from .internal_tools import (
+    INTERNAL_SERVER_NAME,
+    get_internal_tools,
+    execute_internal_tool,
+    is_internal_tool,
+)
 from .transports.stdio import StdioTransport
 from .transports.sse import SSETransport
 from .transports.streamable_http import StreamableHTTPTransport
@@ -414,7 +420,15 @@ class MCPClientManager:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> ToolResult:
-        """Execute a tool on a connected server (sync-safe)."""
+        """
+        Execute a tool on a connected server (sync-safe).
+
+        Internal tools (server_name="_internal") are executed directly without MCP.
+        """
+        # Handle internal tools directly (no MCP protocol needed)
+        if server_name == INTERNAL_SERVER_NAME or is_internal_tool(tool_name):
+            return execute_internal_tool(tool_name, arguments)
+
         return self._run_async(self.call_tool(server_name, tool_name, arguments))
     
     async def read_resource(
@@ -445,14 +459,28 @@ class MCPClientManager:
     # ──────────────────────────────────────────────
     
     def list_tools(self, server_name: str | None = None) -> list[ToolInfo]:
-        """List available tools from connected servers."""
+        """
+        List available tools from connected servers and internal tools.
+
+        Args:
+            server_name: Filter to specific server. Use "_internal" for internal tools only.
+        """
+        # Handle internal tools request
+        if server_name == INTERNAL_SERVER_NAME:
+            return get_internal_tools()
+
         if server_name:
             connection = self._active_connections.get(server_name)
             return connection.tools if connection else []
-        
+
+        # Return all tools: external + internal
         all_tools = []
         for connection in self._active_connections.values():
             all_tools.extend(connection.tools)
+
+        # Always include internal tools
+        all_tools.extend(get_internal_tools())
+
         return all_tools
     
     def list_resources(self, server_name: str | None = None) -> list[ResourceInfo]:

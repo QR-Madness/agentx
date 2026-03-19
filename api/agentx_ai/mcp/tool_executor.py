@@ -233,7 +233,14 @@ class ToolExecutor:
             self._tool_cache.clear()
     
     def find_tool(self, tool_name: str) -> ToolInfo | None:
-        """Find a tool by name across all cached servers."""
+        """Find a tool by name across all cached servers and internal tools."""
+        # Check internal tools first
+        from .internal_tools import find_internal_tool
+        internal = find_internal_tool(tool_name)
+        if internal:
+            return internal
+
+        # Check external server tools
         for tools in self._tool_cache.values():
             for tool in tools:
                 if tool.name == tool_name:

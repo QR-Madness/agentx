@@ -420,10 +420,12 @@ Intent-aware retrieval (SimpleMem-style):
 
 #### Implementation Phases
 
-- [ ] **Phase 1: Storage + Threshold**
-  - Add `TOOL_OUTPUT_THRESHOLD` config (default: 4096 tokens)
-  - Store oversized outputs in Redis with TTL
-  - Inject placeholder: `[Output stored: {key}, {size} tokens, use tool_output_read()]`
+- [x] **Phase 1: Storage + Threshold** ✓
+  - Added `max_tool_result_chars` config (default: 4000 chars)
+  - Store oversized outputs in Redis with TTL via `tool_output_storage.py`
+  - Inject preview + storage key + access instructions
+  - Internal MCP tools: `read_stored_output`, `list_stored_outputs`
+  - API endpoints: GET/DELETE `/api/tool-outputs/{key}`
 
 - [ ] **Phase 2: Compression Gate**
   - Add `ToolOutputCompressor` service (Haiku-class model)
