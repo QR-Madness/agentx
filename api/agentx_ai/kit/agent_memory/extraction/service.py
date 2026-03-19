@@ -11,6 +11,7 @@ using configured model providers. Supports multiple consolidation stages:
 
 import json
 import logging
+import os
 import re
 from typing import Any, Optional, Tuple
 
@@ -692,11 +693,14 @@ class ExtractionService:
         if result:
             return result
 
-        logger.info(
-            f"JSON extraction failed on cleaned content ({len(cleaned_content)} chars). "
-            f"Cleaned: {cleaned_content[:300]!r} | "
-            f"Has thinking: {parsed_output.has_thinking}"
-        )
+        _debug_llm = os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() not in ("", "0", "false")
+
+        if _debug_llm:
+            logger.info(
+                f"JSON extraction failed on cleaned content ({len(cleaned_content)} chars). "
+                f"Cleaned: {cleaned_content[:300]!r} | "
+                f"Has thinking: {parsed_output.has_thinking}"
+            )
 
         # 2. Fallback: search the raw response directly
         #    Handles edge cases where thinking tag stripping mangled the output
@@ -712,10 +716,11 @@ class ExtractionService:
         #    where the model didn't follow the output format.
         has_json_content = '{' in content
         if not has_json_content:
-            logger.info(
-                "No JSON in extraction response — treating as non-relevant. "
-                f"Raw response ({len(content)} chars): {content[:500]}"
-            )
+            if _debug_llm:
+                logger.info(
+                    "No JSON in extraction response — treating as non-relevant. "
+                    f"Raw response ({len(content)} chars): {content[:500]}"
+                )
             return CombinedExtractionResult(
                 is_relevant=False,
                 reason="no_json_inferred_not_relevant",
@@ -723,10 +728,10 @@ class ExtractionService:
             )
 
         # JSON-like content exists but couldn't be parsed — real failure
-        logger.warning(
-            f"Malformed JSON in extraction response. "
-            f"Raw ({len(content)} chars): {content[:500]}"
-        )
+        msg = "Malformed JSON in extraction response"
+        if _debug_llm:
+            msg += f". Raw ({len(content)} chars): {content[:500]}"
+        logger.warning(msg)
         return CombinedExtractionResult(
             success=False,
             error="JSON parse error: malformed JSON in response",
