@@ -28,7 +28,7 @@ def store_tool_output(
     tool_name: str,
     content: str,
     ttl_seconds: int = 3600,
-) -> str:
+) -> Optional[str]:
     """
     Store a large tool output in Redis.
 
@@ -58,14 +58,15 @@ def store_tool_output(
     }
 
     try:
+        logger.debug(f"Attempting to store tool output: {storage_key} ({len(content):,} chars)")
         client = _get_redis_client()
         client.setex(redis_key, ttl_seconds, json.dumps(data))
         logger.info(f"Stored tool output: {storage_key} ({len(content):,} chars, TTL={ttl_seconds}s)")
         return storage_key
     except Exception as e:
-        logger.error(f"Failed to store tool output in Redis: {e}")
-        # Return a fallback key so the system doesn't crash
-        return f"error_{content_hash}"
+        logger.warning(f"Failed to store tool output in Redis (falling back to truncation): {e}")
+        # Return None to signal storage failure - caller should fall back to truncation
+        return None
 
 
 def get_tool_output(storage_key: str) -> Optional[dict]:

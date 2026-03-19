@@ -312,24 +312,28 @@ class Agent:
             max_chars = self.config.max_tool_result_chars
             original_len = len(content)
             if original_len > max_chars:
+                stored = False
                 if self.config.store_oversized_results:
-                    # Store full output in Redis and inject reference
+                    # Try to store full output in Redis
                     storage_key = store_tool_output(
                         tool_call_id=tc.id,
                         tool_name=tc.name,
                         content=content,
                         ttl_seconds=self.config.tool_output_ttl_seconds,
                     )
-                    preview = content[:1000] + "..." if len(content) > 1000 else content
-                    content = (
-                        f"{preview}\n\n"
-                        f"[OUTPUT STORED - {original_len:,} chars total]\n"
-                        f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
-                        f"Or use tool: read_stored_output(key=\"{storage_key}\")"
-                    )
-                    logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
-                else:
-                    # Legacy truncation behavior
+                    if storage_key:
+                        preview = content[:1000] + "..." if len(content) > 1000 else content
+                        content = (
+                            f"{preview}\n\n"
+                            f"[OUTPUT STORED - {original_len:,} chars total]\n"
+                            f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
+                            f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                        )
+                        logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
+                        stored = True
+
+                if not stored:
+                    # Fall back to truncation (Redis unavailable or storage disabled)
                     truncated_content = content[:max_chars]
                     content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
                     logger.info(f"Truncated tool result for '{tc.name}': {original_len:,} -> {max_chars:,} chars")
