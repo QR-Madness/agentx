@@ -162,6 +162,162 @@ def list_stored_outputs(pattern: str = "*") -> dict[str, Any]:
     }
 
 
+@register_tool(
+    name="tool_output_query",
+    description=(
+        "Semantic search over a stored tool output. Use this when you need to find "
+        "specific information within a large stored output but don't know the exact "
+        "section or location. Returns the most relevant chunks matching your query."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "The storage key from the STORED/COMPRESSED SUMMARY message",
+            },
+            "query": {
+                "type": "string",
+                "description": "Natural language query describing what you're looking for",
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Number of matching chunks to return (default: 5)",
+                "default": 5,
+            },
+        },
+        "required": ["key", "query"],
+    },
+)
+def tool_output_query(key: str, query: str, top_k: int = 5) -> dict[str, Any]:
+    """Semantic search over chunks of a stored tool output."""
+    from ..agent.tool_output_storage import get_tool_output
+    from ..agent.tool_output_chunker import chunk_text, semantic_search_chunks
+
+    data = get_tool_output(key)
+    if not data:
+        return {"error": f"Output not found or expired: {key}", "success": False}
+
+    content = data.get("content", "")
+    chunks = chunk_text(content)
+    results = semantic_search_chunks(chunks, query, top_k)
+
+    return {
+        "results": results,
+        "total_chunks": len(chunks),
+        "query": query,
+        "tool_name": data.get("tool_name"),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="tool_output_section",
+    description=(
+        "Access a specific section of a stored tool output by name or heading. "
+        "Use this when you know which section you need (from the Structure Index "
+        "in the compressed summary). Omit section name to list available sections."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "The storage key from the STORED/COMPRESSED SUMMARY message",
+            },
+            "section": {
+                "type": "string",
+                "description": "Section name/heading to retrieve. Omit to list available sections.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum characters to return from the section (default: 5000)",
+                "default": 5000,
+            },
+        },
+        "required": ["key"],
+    },
+)
+def tool_output_section(key: str, section: str = "", limit: int = 5000) -> dict[str, Any]:
+    """Access sections of a stored tool output."""
+    from ..agent.tool_output_storage import get_tool_output
+    from ..agent.tool_output_chunker import detect_sections, get_section_content
+
+    data = get_tool_output(key)
+    if not data:
+        return {"error": f"Output not found or expired: {key}", "success": False}
+
+    content = data.get("content", "")
+    sections = detect_sections(content)
+
+    if not section:
+        # List available sections
+        section_list = [
+            {"name": s["name"], "size": s.get("size", s["end"] - s["start"])}
+            for s in sections
+        ]
+        return {
+            "sections": section_list,
+            "count": len(section_list),
+            "tool_name": data.get("tool_name"),
+            "success": True,
+        }
+
+    # Retrieve specific section
+    result = get_section_content(content, section, limit)
+    if not result:
+        section_names = [s["name"] for s in sections]
+        return {
+            "error": f"Section '{section}' not found",
+            "available_sections": section_names,
+            "success": False,
+        }
+
+    return {
+        "section_name": result["name"],
+        "content": result["content"],
+        "size": len(result["content"]),
+        "tool_name": data.get("tool_name"),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="tool_output_path",
+    description=(
+        "Query a stored tool output using a JSON path expression. Use this when "
+        "the stored output is JSON and you need a specific field or nested value. "
+        "Supports dot notation (data.items), array indexing (items[0]), and "
+        "wildcards (items[*])."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "The storage key from the STORED/COMPRESSED SUMMARY message",
+            },
+            "jsonpath": {
+                "type": "string",
+                "description": "JSON path expression (e.g., 'data.results[0].name', 'items[*]')",
+            },
+        },
+        "required": ["key", "jsonpath"],
+    },
+)
+def tool_output_path(key: str, jsonpath: str) -> dict[str, Any]:
+    """Query a stored tool output using a JSON path expression."""
+    from ..agent.tool_output_storage import get_tool_output
+    from ..agent.tool_output_chunker import resolve_json_path
+
+    data = get_tool_output(key)
+    if not data:
+        return {"error": f"Output not found or expired: {key}", "success": False}
+
+    content = data.get("content", "")
+    return resolve_json_path(content, jsonpath)
+
+
 # =============================================================================
 # Public API
 # =============================================================================

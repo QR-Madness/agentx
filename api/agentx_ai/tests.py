@@ -1,3 +1,4 @@
+import json
 import socket
 from unittest import skipUnless
 
@@ -1928,6 +1929,296 @@ class ToolOutputCompressorTest(TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(result.compressed_text, "Compressed output")
+
+
+class ToolOutputChunkerTest(TestCase):
+    """Tests for tool output chunking utilities (Phase 14.3)."""
+
+    def test_chunk_text_fixed_size(self):
+        """Plain text should produce fixed-size chunks with overlap."""
+        from agentx_ai.agent.tool_output_chunker import chunk_text
+
+        content = "word " * 500  # ~2500 chars
+        chunks = chunk_text(content, chunk_size=500, overlap=100)
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertIn("text", chunk)
+            self.assertIn("start", chunk)
+            self.assertIn("end", chunk)
+            self.assertIn("index", chunk)
+
+    def test_chunk_text_structural(self):
+        """Markdown with headings should split at heading boundaries."""
+        from agentx_ai.agent.tool_output_chunker import chunk_text
+
+        content = "# Section One\nContent for section one.\n\n# Section Two\nContent for section two.\n\n# Section Three\nMore content."
+        chunks = chunk_text(content)
+
+        self.assertEqual(len(chunks), 3)
+        self.assertIn("Section One", chunks[0]["text"])
+        self.assertIn("Section Two", chunks[1]["text"])
+        self.assertIn("Section Three", chunks[2]["text"])
+
+    def test_chunk_text_empty(self):
+        """Empty content returns empty list."""
+        from agentx_ai.agent.tool_output_chunker import chunk_text
+        self.assertEqual(chunk_text(""), [])
+
+    def test_detect_sections_markdown(self):
+        """Markdown headings should be detected with correct names."""
+        from agentx_ai.agent.tool_output_chunker import detect_sections
+
+        content = "# Introduction\nSome intro.\n\n## Methods\nSome methods.\n\n## Results\nSome results."
+        sections = detect_sections(content)
+
+        names = [s["name"] for s in sections]
+        self.assertIn("Introduction", names)
+        self.assertIn("Methods", names)
+        self.assertIn("Results", names)
+        self.assertEqual(sections[0]["level"], 1)
+        self.assertEqual(sections[1]["level"], 2)
+
+    def test_detect_sections_json(self):
+        """JSON top-level keys should be detected as sections."""
+        from agentx_ai.agent.tool_output_chunker import detect_sections
+
+        content = json.dumps({"config": {"a": 1}, "data": [1, 2, 3], "meta": "info"})
+        sections = detect_sections(content)
+
+        names = [s["name"] for s in sections]
+        self.assertIn("config", names)
+        self.assertIn("data", names)
+        self.assertIn("meta", names)
+
+    def test_detect_sections_plain_text(self):
+        """Blank-line separated paragraphs should be detected."""
+        from agentx_ai.agent.tool_output_chunker import detect_sections
+
+        content = "First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here."
+        sections = detect_sections(content)
+
+        self.assertEqual(len(sections), 3)
+
+    def test_get_section_content_match(self):
+        """Case-insensitive section matching should work."""
+        from agentx_ai.agent.tool_output_chunker import get_section_content
+
+        content = "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here."
+        result = get_section_content(content, "setup")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["name"], "Setup")
+        self.assertIn("Setup instructions", result["content"])
+
+    def test_get_section_content_not_found(self):
+        """Missing section returns None."""
+        from agentx_ai.agent.tool_output_chunker import get_section_content
+
+        content = "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here."
+        result = get_section_content(content, "nonexistent")
+        self.assertIsNone(result)
+
+    def test_resolve_json_path_simple(self):
+        """Simple key access should resolve."""
+        from agentx_ai.agent.tool_output_chunker import resolve_json_path
+
+        content = json.dumps({"name": "Alice", "age": 30})
+        result = resolve_json_path(content, "name")
+
+        self.assertTrue(result["success"])
+        self.assertIn("Alice", result["value"])
+
+    def test_resolve_json_path_nested(self):
+        """Nested dot-notation path should resolve."""
+        from agentx_ai.agent.tool_output_chunker import resolve_json_path
+
+        content = json.dumps({"data": {"items": [{"name": "first"}, {"name": "second"}]}})
+        result = resolve_json_path(content, "data.items[0].name")
+
+        self.assertTrue(result["success"])
+        self.assertIn("first", result["value"])
+
+    def test_resolve_json_path_wildcard(self):
+        """Wildcard [*] should return array."""
+        from agentx_ai.agent.tool_output_chunker import resolve_json_path
+
+        content = json.dumps({"items": [{"id": 1}, {"id": 2}, {"id": 3}]})
+        result = resolve_json_path(content, "items[*]")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["type"], "list")
+
+    def test_resolve_json_path_invalid(self):
+        """Bad path returns error."""
+        from agentx_ai.agent.tool_output_chunker import resolve_json_path
+
+        content = json.dumps({"name": "Alice"})
+        result = resolve_json_path(content, "nonexistent.field")
+
+        self.assertFalse(result["success"])
+        self.assertIn("error", result)
+
+    def test_resolve_json_path_non_json(self):
+        """Non-JSON content returns error."""
+        from agentx_ai.agent.tool_output_chunker import resolve_json_path
+
+        result = resolve_json_path("This is plain text, not JSON.", "key")
+        self.assertFalse(result["success"])
+        self.assertIn("not valid JSON", result["error"])
+
+    def test_keyword_search_fallback(self):
+        """Keyword search should rank chunks by word overlap."""
+        from agentx_ai.agent.tool_output_chunker import _keyword_search
+
+        chunks = [
+            {"text": "The error log shows a timeout failure", "start": 0, "end": 37, "index": 0},
+            {"text": "Configuration file loaded successfully", "start": 38, "end": 75, "index": 1},
+            {"text": "Error connecting to database timeout", "start": 76, "end": 112, "index": 2},
+        ]
+        results = _keyword_search(chunks, "error timeout", top_k=2)
+
+        self.assertEqual(len(results), 2)
+        # Both chunks mentioning error/timeout should rank higher
+        texts = [r["text"] for r in results]
+        self.assertTrue(any("error" in t.lower() for t in texts))
+
+    def test_cosine_similarity(self):
+        """Cosine similarity should compute correctly."""
+        from agentx_ai.agent.tool_output_chunker import _cosine_similarity
+
+        self.assertAlmostEqual(_cosine_similarity([1, 0], [1, 0]), 1.0)
+        self.assertAlmostEqual(_cosine_similarity([1, 0], [0, 1]), 0.0)
+        self.assertAlmostEqual(_cosine_similarity([0, 0], [1, 0]), 0.0)
+
+
+class IntentAwareRetrievalTest(TestCase):
+    """Tests for Phase 14.3 intent-aware retrieval internal tools."""
+
+    def test_new_tools_registered(self):
+        """The three new tools should appear in get_internal_tools()."""
+        from agentx_ai.mcp.internal_tools import get_internal_tools
+
+        tools = get_internal_tools()
+        tool_names = [t.name for t in tools]
+
+        self.assertIn("tool_output_query", tool_names)
+        self.assertIn("tool_output_section", tool_names)
+        self.assertIn("tool_output_path", tool_names)
+
+    def test_tool_schemas_valid(self):
+        """Each new tool schema should have required fields."""
+        from agentx_ai.mcp.internal_tools import get_internal_tools
+
+        tools = get_internal_tools()
+        new_tools = {t.name: t for t in tools if t.name.startswith("tool_output_")}
+
+        for name in ["tool_output_query", "tool_output_section", "tool_output_path"]:
+            tool = new_tools[name]
+            schema = tool.input_schema
+            self.assertEqual(schema["type"], "object")
+            self.assertIn("properties", schema)
+            self.assertIn("key", schema["properties"])
+
+    def test_query_not_found(self):
+        """Querying an expired/missing key should return error."""
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        import json
+
+        result = execute_internal_tool("tool_output_query", {
+            "key": "nonexistent_key_12345",
+            "query": "find errors",
+        })
+
+        self.assertFalse(result.success)
+
+    def test_section_list_with_mock(self):
+        """Section listing should return section names from stored output."""
+        from unittest.mock import patch
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+
+        mock_data = {
+            "content": "# Setup\nSetup info.\n\n# Usage\nUsage info.\n\n# Troubleshooting\nHelp.",
+            "tool_name": "read_file",
+            "tool_call_id": "test-123",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("tool_output_section", {"key": "test_key"})
+
+        self.assertTrue(result.success)
+        parsed = json.loads(result.content[0]["text"])
+        self.assertIn("sections", parsed)
+        names = [s["name"] for s in parsed["sections"]]
+        self.assertIn("Setup", names)
+        self.assertIn("Usage", names)
+
+    def test_section_retrieve_with_mock(self):
+        """Section retrieval should return section content."""
+        from unittest.mock import patch
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        import json
+
+        mock_data = {
+            "content": "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here.",
+            "tool_name": "read_file",
+            "tool_call_id": "test-123",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("tool_output_section", {
+                "key": "test_key",
+                "section": "Setup",
+            })
+
+        self.assertTrue(result.success)
+        parsed = json.loads(result.content[0]["text"])
+        self.assertIn("Setup instructions", parsed["content"])
+
+    def test_path_resolve_with_mock(self):
+        """JSON path resolution should return the value."""
+        from unittest.mock import patch
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        import json
+
+        mock_data = {
+            "content": json.dumps({"data": {"name": "test", "count": 42}}),
+            "tool_name": "api_call",
+            "tool_call_id": "test-456",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("tool_output_path", {
+                "key": "test_key",
+                "jsonpath": "data.name",
+            })
+
+        self.assertTrue(result.success)
+        parsed = json.loads(result.content[0]["text"])
+        self.assertIn("test", parsed["value"])
+
+    def test_path_non_json_with_mock(self):
+        """JSON path on non-JSON content should return error."""
+        from unittest.mock import patch
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        import json
+
+        mock_data = {
+            "content": "This is plain text, not JSON at all.",
+            "tool_name": "read_file",
+            "tool_call_id": "test-789",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("tool_output_path", {
+                "key": "test_key",
+                "jsonpath": "some.path",
+            })
+
+        # The tool itself returns success=True (execution succeeded)
+        # but the result dict contains success=False
+        parsed = json.loads(result.content[0]["text"])
+        self.assertFalse(parsed["success"])
 
 
 # Phase 11.8+ tests moved to tests_memory.py

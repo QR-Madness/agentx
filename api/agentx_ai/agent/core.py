@@ -347,20 +347,25 @@ class Agent:
                             except Exception as e:
                                 logger.warning(f"Compression failed for '{tc.name}', using preview: {e}")
 
+                        tool_hint = (
+                            f"Retrieval tools available for key=\"{storage_key}\":\n"
+                            f"- read_stored_output(key) — raw content with pagination\n"
+                            f"- tool_output_query(key, query) — semantic search\n"
+                            f"- tool_output_section(key) — list/access sections\n"
+                            f"- tool_output_path(key, jsonpath) — JSON path query"
+                        )
                         if compressed_preview:
                             content = (
                                 f"{compressed_preview}\n\n"
                                 f"[COMPRESSED SUMMARY - {original_len:,} chars total]\n"
-                                f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
-                                f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                                f"{tool_hint}"
                             )
                         else:
                             preview = content[:1000] + "..." if len(content) > 1000 else content
                             content = (
                                 f"{preview}\n\n"
                                 f"[OUTPUT STORED - {original_len:,} chars total]\n"
-                                f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
-                                f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                                f"{tool_hint}"
                             )
                         logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
                         stored = True

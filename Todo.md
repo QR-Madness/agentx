@@ -17,7 +17,7 @@
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 60% |
-| Phase 14: Context Gating for Large Tool Outputs | **In Progress** | 50% |
+| Phase 14: Context Gating for Large Tool Outputs | **In Progress** | 75% |
 
 ---
 
@@ -433,11 +433,14 @@ Intent-aware retrieval (SimpleMem-style):
 - [x] Graceful fallback to preview on failure (no provider, LLM error, disabled)
 - [x] 8 unit tests (disabled config, no provider, mock provider, truncation, sync wrapper, error fallback)
 
-### 14.3 Intent-Aware Retrieval
+### 14.3 Intent-Aware Retrieval ✓
 
-- [ ] Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks
-- [ ] Add MCP tool: `tool_output_section(key, section, limit)` — structural access
-- [ ] Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries
+- [x] Add `tool_output_chunker.py` (chunking, section detection, JSON path, semantic search)
+- [x] Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks with embedding fallback to keyword matching
+- [x] Add MCP tool: `tool_output_section(key, section, limit)` — structural access (markdown headings, JSON keys, separators, paragraphs)
+- [x] Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries (dot notation, `[N]` indexing, `[*]` wildcard)
+- [x] Updated context injection to advertise all retrieval tools
+- [x] 22 unit tests (chunking, sections, JSON path, cosine similarity, keyword fallback, tool integration)
 
 ### 14.4 Intra-Trajectory Compression (Focus-style)
 
