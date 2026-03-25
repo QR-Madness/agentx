@@ -1730,4 +1730,204 @@ class ChannelScopingUnitTest(TestCase):
         self.assertEqual(metrics.results_per_channel["_global"], 3)
 
 
+class ToolOutputCompressorTest(TestCase):
+    """Tests for the tool output compression service (Phase 14.2)."""
+
+    def test_compression_result_defaults(self):
+        """CompressionResult should have sensible defaults."""
+        from agentx_ai.agent.tool_output_compressor import CompressionResult
+
+        result = CompressionResult()
+        self.assertTrue(result.success)
+        self.assertEqual(result.compressed_text, "")
+        self.assertIsNone(result.error)
+        self.assertEqual(result.tokens_used, 0)
+
+    def test_compressor_singleton(self):
+        """get_compressor() should return a singleton."""
+        from agentx_ai.agent.tool_output_compressor import (
+            get_compressor,
+            _compressor,
+        )
+        import agentx_ai.agent.tool_output_compressor as mod
+
+        # Reset singleton
+        mod._compressor = None
+
+        c1 = get_compressor()
+        c2 = get_compressor()
+        self.assertIs(c1, c2)
+
+        # Clean up
+        mod._compressor = None
+
+    def test_compress_disabled_config(self):
+        """Compression should return success=False when disabled."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from unittest.mock import patch
+        import asyncio
+
+        compressor = ToolOutputCompressor()
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": False,
+            "model": "test-model",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }):
+            result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "compression_disabled")
+        self.assertEqual(result.original_chars, 5000)
+
+    def test_compress_no_provider(self):
+        """Compression should return success=False when provider unavailable."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from unittest.mock import patch
+        import asyncio
+
+        compressor = ToolOutputCompressor()
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": True,
+            "model": "nonexistent-model-xyz",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }), patch.object(compressor, '_get_provider', side_effect=ValueError("No provider")):
+            result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
+
+        self.assertFalse(result.success)
+        self.assertIn("provider_unavailable", result.error)
+
+    def test_compress_success_with_mock_provider(self):
+        """Compression should produce structured output with a mocked provider."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from agentx_ai.providers.base import CompletionResult
+        from unittest.mock import patch, AsyncMock, MagicMock
+        import asyncio
+
+        compressor = ToolOutputCompressor()
+
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=CompletionResult(
+            content="## Summary\nKey info here\n\n## Structure Index\n- 3 sections",
+            finish_reason="stop",
+            model="test-model",
+            usage={"total_tokens": 150},
+        ))
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": True,
+            "model": "test-model",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+            result = asyncio.run(compressor.compress(
+                "read_file",
+                "x" * 10000,
+                task_context="Find the database config",
+            ))
+
+        self.assertTrue(result.success)
+        self.assertIn("Summary", result.compressed_text)
+        self.assertIn("Structure Index", result.compressed_text)
+        self.assertEqual(result.tokens_used, 150)
+        self.assertEqual(result.original_chars, 10000)
+
+    def test_compress_truncates_large_input(self):
+        """Input exceeding max_input_chars should be truncated before LLM call."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from agentx_ai.providers.base import CompletionResult
+        from unittest.mock import patch, AsyncMock, MagicMock
+        import asyncio
+
+        compressor = ToolOutputCompressor()
+
+        captured_messages = []
+        async def capture_complete(messages, model, **kwargs):
+            captured_messages.extend(messages)
+            return CompletionResult(
+                content="Compressed",
+                finish_reason="stop",
+                model="test-model",
+                usage={"total_tokens": 50},
+            )
+
+        mock_provider = MagicMock()
+        mock_provider.complete = capture_complete
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": True,
+            "model": "test-model",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+            asyncio.run(compressor.compress(
+                "big_tool",
+                "x" * 20000,
+                task_context="test",
+                max_input_chars=5000,
+            ))
+
+        # The prompt should contain the truncation notice, not all 20000 chars
+        prompt_content = captured_messages[0].content
+        self.assertIn("15,000 more chars", prompt_content)
+
+    def test_compress_error_fallback(self):
+        """Provider error should return success=False with error detail."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from unittest.mock import patch, AsyncMock, MagicMock
+        import asyncio
+
+        compressor = ToolOutputCompressor()
+
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(side_effect=RuntimeError("API timeout"))
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": True,
+            "model": "test-model",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+            result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
+
+        self.assertFalse(result.success)
+        self.assertIn("API timeout", result.error)
+
+    def test_compress_sync_wrapper(self):
+        """compress_sync should delegate to compress and return result."""
+        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
+        from agentx_ai.providers.base import CompletionResult
+        from unittest.mock import patch, AsyncMock, MagicMock
+
+        compressor = ToolOutputCompressor()
+
+        mock_provider = MagicMock()
+        mock_provider.complete = AsyncMock(return_value=CompletionResult(
+            content="Compressed output",
+            finish_reason="stop",
+            model="test-model",
+            usage={"total_tokens": 100},
+        ))
+
+        with patch.object(compressor, '_get_config', return_value={
+            "enabled": True,
+            "model": "test-model",
+            "temperature": 0.2,
+            "max_tokens": 1000,
+            "max_summary_chars": 2000,
+        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+            result = compressor.compress_sync("test_tool", "x" * 5000, task_context="test query")
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.compressed_text, "Compressed output")
+
+
 # Phase 11.8+ tests moved to tests_memory.py

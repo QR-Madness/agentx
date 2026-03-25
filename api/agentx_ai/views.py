@@ -826,7 +826,7 @@ async def agent_chat_stream(request):
 
                 # Execute tools and append results with timing
                 tool_start_time = time.perf_counter()
-                tool_messages = agent._execute_tool_calls(round_tool_calls)
+                tool_messages = agent._execute_tool_calls(round_tool_calls, task_context=message)
                 tool_total_time = (time.perf_counter() - tool_start_time) * 1000
                 tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
 

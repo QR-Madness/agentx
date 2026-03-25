@@ -17,6 +17,7 @@
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 60% |
+| Phase 14: Context Gating for Large Tool Outputs | **In Progress** | 50% |
 
 ---
 
@@ -383,19 +384,15 @@ ALL ──→ 13.10 Cleanup
 
 ---
 
-## Backlog (Future Enhancements)
+## Phase 14: Context Gating for Large Tool Outputs
 
-> Items to consider after prototype is complete
-
-### Context Gating for Large Tool Outputs
-
-> **Problem**: Tool calls can return massive outputs (logs, API responses, file contents) that flood context windows. Simply storing in Redis and providing access doesn't solve the problem—it just defers it.
-
-> **Solution**: Hybrid context gating with task-aware compression and intent-based retrieval.
+> **Priority**: HIGH
+> **Goal**: Hybrid context gating with task-aware compression and intent-based retrieval to prevent large tool outputs from flooding context windows
+> **Depends on**: Redis (for raw output storage), LLM provider (for compression)
 
 **Research basis**: [ACON](https://arxiv.org/abs/2510.00615), [Focus](https://arxiv.org/abs/2601.07190), [A-MEM](https://arxiv.org/abs/2502.12110), [SimpleMem](https://github.com/aiming-lab/SimpleMem)
 
-#### Architecture
+### Architecture
 
 ```
 Tool Output → Threshold Check (e.g., >4K tokens)
@@ -418,36 +415,46 @@ Intent-aware retrieval (SimpleMem-style):
   - get_json_path(key, "$.results[0:10]")
 ```
 
-#### Implementation Phases
+### 14.1 Storage + Threshold ✓
 
-- [x] **Phase 1: Storage + Threshold** ✓
-  - Added `max_tool_result_chars` config (default: 4000 chars)
-  - Store oversized outputs in Redis with TTL via `tool_output_storage.py`
-  - Inject preview + storage key + access instructions
-  - Internal MCP tools: `read_stored_output`, `list_stored_outputs`
-  - API endpoints: GET/DELETE `/api/tool-outputs/{key}`
+- [x] Added `max_tool_result_chars` config (default: 4000 chars)
+- [x] Store oversized outputs in Redis with TTL via `tool_output_storage.py`
+- [x] Inject preview + storage key + access instructions
+- [x] Internal MCP tools: `read_stored_output`, `list_stored_outputs`
+- [x] API endpoints: GET/DELETE `/api/tool-outputs/{key}`
 
-- [ ] **Phase 2: Compression Gate**
-  - Add `ToolOutputCompressor` service (Haiku-class model)
-  - Task-aware prompt: summarize + extract structure
-  - Inject: summary + schema/index + access instructions
+### 14.2 Compression Gate ✓
 
-- [ ] **Phase 3: Intent-Aware Retrieval**
-  - Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks
-  - Add MCP tool: `tool_output_section(key, section, limit)` — structural access
-  - Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries
+- [x] Add `ToolOutputCompressor` service (`agent/tool_output_compressor.py`)
+- [x] Task-aware compression prompt in `system_prompts.yaml` (Summary + Structure Index)
+- [x] Configurable via `compression.*` in `config.py` (model, temperature, max_tokens, enable)
+- [x] Integrated into `_execute_tool_calls()` with `task_context` parameter
+- [x] Streaming path passes user message as task context
+- [x] Graceful fallback to preview on failure (no provider, LLM error, disabled)
+- [x] 8 unit tests (disabled config, no provider, mock provider, truncation, sync wrapper, error fallback)
 
-- [ ] **Phase 4: Intra-Trajectory Compression (Focus-style)**
-  - Agent can consolidate learnings into Knowledge block
-  - Prune verbose history while preserving insights
-  - Autonomous compression triggers
+### 14.3 Intent-Aware Retrieval
 
-#### Metrics to Track
+- [ ] Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks
+- [ ] Add MCP tool: `tool_output_section(key, section, limit)` — structural access
+- [ ] Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries
+
+### 14.4 Intra-Trajectory Compression (Focus-style)
+
+- [ ] Agent can consolidate learnings into Knowledge block
+- [ ] Prune verbose history while preserving insights
+- [ ] Autonomous compression triggers
+
+### Metrics to Track
 - Compression ratio (raw tokens → injected tokens)
 - Retrieval accuracy (does agent get what it needs?)
 - Task completion rate with/without gating
 
 ---
+
+## Backlog (Future Enhancements)
+
+> Items to consider after prototype is complete
 
 - [ ] Fact Transience (a confidence bias) - which is ranked on extraction for the predicted rate that the fact will be incorrect or irrelevant (maybe weeks, maybe months?)
    future (e.g. "The user's home PC is slow"; this would be high transcience since they may very well get a new PC soon)

@@ -371,3 +371,38 @@ constants:
     - part_of
     - created_by
     - located_in
+
+# =============================================================================
+# COMPRESSION PROMPTS
+# =============================================================================
+compression:
+  # Task-aware compression of large tool outputs
+  # Variables: {task_context}, {tool_name}, {tool_output}, {max_chars}
+  summarize: |
+    You are compressing a large tool output for an AI agent's context window.
+    The agent is working on a task and needs the most relevant information from this tool output.
+
+    AGENT'S CURRENT TASK:
+    {task_context}
+
+    TOOL THAT PRODUCED THIS OUTPUT: {tool_name}
+
+    TOOL OUTPUT (may be truncated):
+    ---
+    {tool_output}
+    ---
+
+    Produce a compressed summary with TWO sections:
+
+    ## Summary
+    A concise summary of the tool output focused on what is relevant to the agent's task.
+    Include key findings, important values, and actionable information.
+    Omit irrelevant details.
+
+    ## Structure Index
+    A brief map of what the full output contains, for example:
+    - Sections, headings, or logical divisions found
+    - Key names, paths, or identifiers mentioned
+    - Data types and counts (e.g., "47 JSON objects", "3 config sections")
+
+    Keep the total response under {max_chars} characters.

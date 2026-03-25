@@ -66,6 +66,13 @@ DEFAULT_CONFIG = {
             # Example: "claude-3-opus-20240229": {"context_window": 1000000, "max_output_tokens": 32000}
         },
     },
+    "compression": {
+        "enabled": True,
+        "model": "claude-3-5-haiku-latest",
+        "temperature": 0.2,
+        "max_tokens": 1000,
+        "max_summary_chars": 2000,
+    },
     "preferences": {
         "default_model": None,
         "default_reasoning_strategy": "auto",

@@ -27,6 +27,7 @@ from ..drafting import DraftingStrategy
 from ..drafting.speculative import SpeculativeDecoder, SpeculativeConfig
 from ..kit.memory_utils import get_agent_memory
 from ..kit.agent_memory.models import Turn
+from .tool_output_compressor import get_compressor
 from .tool_output_storage import store_tool_output
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ class AgentConfig:
     max_tool_result_chars: int = 4000  # Threshold for storing oversized results in Redis
     store_oversized_results: bool = True  # Store large results in Redis instead of truncating
     tool_output_ttl_seconds: int = 3600  # TTL for stored tool outputs (1 hour default)
+    compress_tool_outputs: bool = True  # Use LLM compression for oversized tool outputs
     
     # Context settings
     max_context_tokens: int = 8000
@@ -274,7 +276,7 @@ class Agent:
         
         return tools if tools else None
     
-    def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[Message]:
+    def _execute_tool_calls(self, tool_calls: list[ToolCall], task_context: str = "") -> list[Message]:
         """
         Execute tool calls via MCP and return tool-result messages.
         
@@ -325,13 +327,41 @@ class Agent:
                         ttl_seconds=self.config.tool_output_ttl_seconds,
                     )
                     if storage_key:
-                        preview = content[:1000] + "..." if len(content) > 1000 else content
-                        content = (
-                            f"{preview}\n\n"
-                            f"[OUTPUT STORED - {original_len:,} chars total]\n"
-                            f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
-                            f"Or use tool: read_stored_output(key=\"{storage_key}\")"
-                        )
+                        # Try LLM compression, fall back to dumb preview
+                        compressed_preview = None
+                        if self.config.compress_tool_outputs:
+                            try:
+                                compressor = get_compressor()
+                                cr = compressor.compress_sync(
+                                    tool_name=tc.name,
+                                    tool_output=content,
+                                    task_context=task_context,
+                                )
+                                if cr.success and cr.compressed_text:
+                                    compressed_preview = cr.compressed_text
+                                    logger.info(
+                                        f"Compressed tool output for '{tc.name}': "
+                                        f"{original_len:,} -> {cr.compressed_chars:,} chars "
+                                        f"({cr.tokens_used} tokens)"
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Compression failed for '{tc.name}', using preview: {e}")
+
+                        if compressed_preview:
+                            content = (
+                                f"{compressed_preview}\n\n"
+                                f"[COMPRESSED SUMMARY - {original_len:,} chars total]\n"
+                                f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
+                                f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                            )
+                        else:
+                            preview = content[:1000] + "..." if len(content) > 1000 else content
+                            content = (
+                                f"{preview}\n\n"
+                                f"[OUTPUT STORED - {original_len:,} chars total]\n"
+                                f"Full output available at: GET /api/tool-outputs/{storage_key}\n"
+                                f"Or use tool: read_stored_output(key=\"{storage_key}\")"
+                            )
                         logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
                         stored = True
 
@@ -395,10 +425,17 @@ class Agent:
                 ],
             ))
             
+            # Extract task context from last user message for compression
+            task_context = ""
+            for msg in reversed(messages):
+                if msg.role == MessageRole.USER:
+                    task_context = msg.content[:500]
+                    break
+
             # Execute and append results
-            tool_messages = self._execute_tool_calls(result.tool_calls)
+            tool_messages = self._execute_tool_calls(result.tool_calls, task_context=task_context)
             messages.extend(tool_messages)
-            
+
             logger.info(
                 f"Tool round: executed {len(result.tool_calls)} tools "
                 f"({', '.join(tc.name for tc in result.tool_calls)})"
