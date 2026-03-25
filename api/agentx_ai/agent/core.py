@@ -98,7 +98,7 @@ class AgentConfig:
     allowed_tools: Optional[list[str]] = None
     blocked_tools: Optional[list[str]] = None
     max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
-    max_tool_result_chars: int = 4000  # Threshold for storing oversized results in Redis
+    max_tool_result_chars: int = 12000  # Threshold for storing oversized results in Redis
     store_oversized_results: bool = True  # Store large results in Redis instead of truncating
     tool_output_ttl_seconds: int = 3600  # TTL for stored tool outputs (1 hour default)
     compress_tool_outputs: bool = True  # Use LLM compression for oversized tool outputs
@@ -314,9 +314,11 @@ class Agent:
                 content = json.dumps({"error": str(e)})
 
             # Handle large tool results - store in Redis or truncate
+            # Skip for retrieval tools (they access already-stored content, re-storing causes loops)
+            from ..mcp.internal_tools import is_retrieval_tool
             max_chars = self.config.max_tool_result_chars
             original_len = len(content)
-            if original_len > max_chars:
+            if original_len > max_chars and not is_retrieval_tool(tc.name):
                 stored = False
                 if self.config.store_oversized_results:
                     # Try to store full output in Redis
@@ -348,11 +350,12 @@ class Agent:
                                 logger.warning(f"Compression failed for '{tc.name}', using preview: {e}")
 
                         tool_hint = (
-                            f"Retrieval tools available for key=\"{storage_key}\":\n"
-                            f"- read_stored_output(key) — raw content with pagination\n"
-                            f"- tool_output_query(key, query) — semantic search\n"
-                            f"- tool_output_section(key) — list/access sections\n"
-                            f"- tool_output_path(key, jsonpath) — JSON path query"
+                            f"Retrieval tools for key=\"{storage_key}\":\n"
+                            f"- read_stored_output(key, offset=0, limit=10000) — paginated raw content\n"
+                            f"- tool_output_query(key, query) — semantic search (best for finding specific info)\n"
+                            f"- tool_output_section(key) — list/access named sections\n"
+                            f"- tool_output_path(key, jsonpath) — JSON path query\n"
+                            f"TIP: Prefer query/section/path over reading raw content."
                         )
                         if compressed_preview:
                             content = (

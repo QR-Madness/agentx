@@ -56,7 +56,7 @@ from agentx_ai.kit.agent_memory.memory.retrieval import (
 from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 from agentx_ai.kit.translation import LanguageLexicon
 from agentx_ai.mcp import ServerConfig, ServerRegistry
-from agentx_ai.mcp.internal_tools import execute_internal_tool, get_internal_tools
+from agentx_ai.mcp.internal_tools import execute_internal_tool, get_internal_tools, is_retrieval_tool
 from agentx_ai.mcp.server_registry import TransportType
 from agentx_ai.providers.base import CompletionResult, Message, MessageRole
 from agentx_ai.providers.registry import get_registry
@@ -2103,6 +2103,92 @@ class TrajectoryCompressionTest(TestCase):
         self.assertIn("tool_0", text)
         self.assertIn("tool_1", text)
         self.assertIn("val_0", text)
+
+
+class ContextGateTest(TestCase):
+    """Tests for context gate loop prevention and iterative chunking."""
+
+    def test_threshold_updated(self):
+        """AgentConfig threshold should be 12000 chars."""
+        from agentx_ai.agent.core import AgentConfig
+        config = AgentConfig()
+        self.assertEqual(config.max_tool_result_chars, 12000)
+
+    def test_retrieval_tool_detected(self):
+        """All retrieval tools should be recognized by is_retrieval_tool."""
+        for name in ["read_stored_output", "list_stored_outputs",
+                      "tool_output_query", "tool_output_section", "tool_output_path"]:
+            self.assertTrue(is_retrieval_tool(name), f"{name} should be a retrieval tool")
+
+    def test_non_retrieval_tool_not_detected(self):
+        """Non-retrieval tools should not be flagged."""
+        for name in ["web_search", "read_file", "some_mcp_tool"]:
+            self.assertFalse(is_retrieval_tool(name), f"{name} should NOT be a retrieval tool")
+
+    def test_read_stored_output_default_pagination(self):
+        """read_stored_output without explicit limit returns <=10000 chars with has_more."""
+        content = "A" * 25000
+        mock_data = {
+            "content": content,
+            "tool_name": "big_tool",
+            "tool_call_id": "tc-1",
+            "stored_at": "2026-01-01T00:00:00",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("read_stored_output", {"key": "test_key"})
+
+        parsed = json.loads(result.content[0]["text"])
+        self.assertTrue(parsed["success"])
+        self.assertEqual(parsed["returned_size"], 10000)
+        self.assertEqual(parsed["total_size"], 25000)
+        self.assertTrue(parsed["has_more"])
+        self.assertEqual(parsed["next_offset"], 10000)
+
+    def test_read_stored_output_pagination_walk(self):
+        """Can page through full content with offset increments."""
+        content = "B" * 25000
+        mock_data = {
+            "content": content,
+            "tool_name": "big_tool",
+            "tool_call_id": "tc-2",
+            "stored_at": "2026-01-01T00:00:00",
+        }
+
+        collected = ""
+        offset = 0
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            while True:
+                result = execute_internal_tool("read_stored_output", {
+                    "key": "test_key", "offset": offset,
+                })
+                parsed = json.loads(result.content[0]["text"])
+                collected += parsed["content"]
+                if not parsed["has_more"]:
+                    break
+                offset = parsed["next_offset"]
+
+        self.assertEqual(len(collected), 25000)
+        self.assertEqual(collected, content)
+
+    def test_read_stored_output_last_page(self):
+        """Final page has has_more=False and next_offset=None."""
+        content = "C" * 5000  # Under default limit
+        mock_data = {
+            "content": content,
+            "tool_name": "small_tool",
+            "tool_call_id": "tc-3",
+            "stored_at": "2026-01-01T00:00:00",
+        }
+
+        with patch("agentx_ai.agent.tool_output_storage.get_tool_output", return_value=mock_data):
+            result = execute_internal_tool("read_stored_output", {"key": "test_key"})
+
+        parsed = json.loads(result.content[0]["text"])
+        self.assertTrue(parsed["success"])
+        self.assertEqual(parsed["returned_size"], 5000)
+        self.assertFalse(parsed["has_more"])
+        self.assertIsNone(parsed["next_offset"])
 
 
 # Phase 11.8+ tests moved to tests_memory.py

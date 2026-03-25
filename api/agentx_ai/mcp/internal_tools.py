@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from .tool_executor import ToolInfo, ToolResult
 
@@ -33,6 +33,20 @@ class InternalTool:
 
 # Registry of internal tools
 _INTERNAL_TOOLS: dict[str, InternalTool] = {}
+
+# Tools that retrieve already-stored content — their results must never be re-stored
+RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
+    "read_stored_output",
+    "list_stored_outputs",
+    "tool_output_query",
+    "tool_output_section",
+    "tool_output_path",
+})
+
+
+def is_retrieval_tool(name: str) -> bool:
+    """Check if a tool retrieves stored content (should bypass size gating)."""
+    return name in RETRIEVAL_TOOL_NAMES
 
 
 def register_tool(
@@ -89,7 +103,8 @@ def register_tool(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum characters to return. Omit for full content.",
+                "description": "Maximum characters to return per page (default: 10000). Use offset to paginate.",
+                "default": 10000,
             },
         },
         "required": ["key"],
@@ -98,9 +113,9 @@ def register_tool(
 def read_stored_output(
     key: str,
     offset: int = 0,
-    limit: Optional[int] = None,
+    limit: int = 10000,
 ) -> dict[str, Any]:
-    """Retrieve a stored tool output from Redis."""
+    """Retrieve a stored tool output from Redis with automatic pagination."""
     from ..agent.tool_output_storage import get_tool_output
 
     data = get_tool_output(key)
@@ -110,14 +125,12 @@ def read_stored_output(
             "success": False,
         }
 
-    content = data.get("content", "")
-    total_size = len(content)
+    full_content = data.get("content", "")
+    total_size = len(full_content)
 
     # Apply pagination
-    if limit:
-        content = content[offset:offset + limit]
-    elif offset > 0:
-        content = content[offset:]
+    content = full_content[offset:offset + limit]
+    has_more = (offset + len(content)) < total_size
 
     return {
         "content": content,
@@ -127,6 +140,8 @@ def read_stored_output(
         "limit": limit,
         "total_size": total_size,
         "returned_size": len(content),
+        "has_more": has_more,
+        "next_offset": offset + len(content) if has_more else None,
         "stored_at": data.get("stored_at"),
         "success": True,
     }
@@ -231,14 +246,14 @@ def tool_output_query(key: str, query: str, top_k: int = 5) -> dict[str, Any]:
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum characters to return from the section (default: 5000)",
-                "default": 5000,
+                "description": "Maximum characters to return from the section (default: 10000)",
+                "default": 10000,
             },
         },
         "required": ["key"],
     },
 )
-def tool_output_section(key: str, section: str = "", limit: int = 5000) -> dict[str, Any]:
+def tool_output_section(key: str, section: str = "", limit: int = 10000) -> dict[str, Any]:
     """Access sections of a stored tool output."""
     from ..agent.tool_output_storage import get_tool_output
     from ..agent.tool_output_chunker import detect_sections, get_section_content
