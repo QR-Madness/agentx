@@ -445,7 +445,12 @@ class Agent:
                 f"Tool round: executed {len(result.tool_calls)} tools "
                 f"({', '.join(tc.name for tc in result.tool_calls)})"
             )
-        
+
+            # Trajectory compression: consolidate older rounds if context is growing large
+            from ..streaming.trajectory_compression import compress_trajectory
+            if compress_trajectory(messages, self.config.max_context_tokens, task_context):
+                logger.info("Trajectory compressed, continuing with reduced context")
+
         # Exhausted rounds — do one final call without tools
         logger.warning(f"Reached max tool rounds ({self.config.max_tool_rounds})")
         result = provider.complete(messages, model_id, **kwargs)

@@ -2221,4 +2221,246 @@ class IntentAwareRetrievalTest(TestCase):
         self.assertFalse(parsed["success"])
 
 
+class TrajectoryCompressionTest(TestCase):
+    """Tests for intra-trajectory compression (Phase 14.4)."""
+
+    def _make_messages(self, num_rounds: int, content_size: int = 100) -> list:
+        """Helper: build a message list with system, user, and N tool rounds."""
+        from agentx_ai.providers.base import Message, MessageRole
+
+        messages = [
+            Message(role=MessageRole.SYSTEM, content="You are a helpful agent."),
+            Message(role=MessageRole.USER, content="Do something useful."),
+        ]
+        for i in range(num_rounds):
+            messages.append(Message(
+                role=MessageRole.ASSISTANT,
+                content="",
+                tool_calls=[{
+                    "id": f"call_{i}",
+                    "type": "function",
+                    "function": {"name": f"tool_{i}", "arguments": json.dumps({"arg": f"val_{i}"})},
+                }],
+            ))
+            messages.append(Message(
+                role=MessageRole.TOOL,
+                content="x" * content_size,
+                tool_call_id=f"call_{i}",
+                name=f"tool_{i}",
+            ))
+        return messages
+
+    def test_identify_tool_rounds(self):
+        """Should identify correct number of rounds with proper indices."""
+        from agentx_ai.streaming.trajectory_compression import identify_tool_rounds
+
+        messages = self._make_messages(3)
+        rounds = identify_tool_rounds(messages)
+
+        self.assertEqual(len(rounds), 3)
+        # First round starts at index 2 (after system + user)
+        self.assertEqual(rounds[0].start_idx, 2)
+        self.assertEqual(rounds[0].end_idx, 3)
+        self.assertEqual(rounds[1].start_idx, 4)
+        self.assertEqual(rounds[1].end_idx, 5)
+        self.assertEqual(rounds[2].start_idx, 6)
+        self.assertEqual(rounds[2].end_idx, 7)
+        # Each round has one tool message
+        for rnd in rounds:
+            self.assertEqual(len(rnd.tool_msgs), 1)
+
+    def test_no_compression_below_threshold(self):
+        """Should return False and leave messages intact when below threshold."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from unittest.mock import patch, MagicMock
+
+        messages = self._make_messages(3, content_size=50)
+        original_count = len(messages)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.75,
+            "trajectory_compression.preserve_recent_rounds": 2,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg):
+            # Very high limit so we stay below threshold
+            result = compress_trajectory(messages, context_limit_tokens=100000)
+
+        self.assertFalse(result)
+        self.assertEqual(len(messages), original_count)
+
+    def test_compression_triggers(self):
+        """Should compress older rounds and insert Knowledge block."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from agentx_ai.providers.base import MessageRole
+        from unittest.mock import patch, MagicMock
+
+        # Large content to exceed threshold
+        messages = self._make_messages(4, content_size=2000)
+        original_count = len(messages)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.1,  # Very low to trigger
+            "trajectory_compression.preserve_recent_rounds": 2,
+            "trajectory_compression.model": "test-model",
+            "trajectory_compression.temperature": 0.2,
+            "trajectory_compression.max_tokens": 1500,
+            "trajectory_compression.max_knowledge_chars": 3000,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg), \
+             patch("agentx_ai.streaming.trajectory_compression._generate_knowledge_block",
+                   return_value="Key finding: tool_0 returned data X. tool_1 returned data Y."):
+            result = compress_trajectory(messages, context_limit_tokens=100)
+
+        self.assertTrue(result)
+        # Should have fewer messages (removed 2 rounds = 4 messages, added 1 Knowledge)
+        self.assertEqual(len(messages), original_count - 4 + 1)
+        # Knowledge block should exist
+        knowledge_msgs = [m for m in messages if "[KNOWLEDGE -" in (m.content or "")]
+        self.assertEqual(len(knowledge_msgs), 1)
+        self.assertEqual(knowledge_msgs[0].role, MessageRole.SYSTEM)
+        self.assertIn("2 tool-call round(s)", knowledge_msgs[0].content)
+
+    def test_preserve_recent_rounds(self):
+        """With preserve=2 and 4 rounds, last 2 should remain intact."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from agentx_ai.providers.base import MessageRole
+        from unittest.mock import patch, MagicMock
+
+        messages = self._make_messages(4, content_size=2000)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.1,
+            "trajectory_compression.preserve_recent_rounds": 2,
+            "trajectory_compression.model": "test-model",
+            "trajectory_compression.temperature": 0.2,
+            "trajectory_compression.max_tokens": 1500,
+            "trajectory_compression.max_knowledge_chars": 3000,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg), \
+             patch("agentx_ai.streaming.trajectory_compression._generate_knowledge_block",
+                   return_value="Consolidated knowledge."):
+            compress_trajectory(messages, context_limit_tokens=100)
+
+        # The last 2 rounds should still have their tool_calls assistant messages
+        assistant_with_tools = [
+            m for m in messages
+            if m.role == MessageRole.ASSISTANT and m.tool_calls
+        ]
+        self.assertEqual(len(assistant_with_tools), 2)
+        # And their tool results
+        tool_msgs = [m for m in messages if m.role == MessageRole.TOOL]
+        self.assertEqual(len(tool_msgs), 2)
+
+    def test_fallback_on_llm_failure(self):
+        """Should return False and leave messages intact when LLM fails."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from unittest.mock import patch, MagicMock
+
+        messages = self._make_messages(4, content_size=2000)
+        original_count = len(messages)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.1,
+            "trajectory_compression.preserve_recent_rounds": 2,
+            "trajectory_compression.model": "test-model",
+            "trajectory_compression.temperature": 0.2,
+            "trajectory_compression.max_tokens": 1500,
+            "trajectory_compression.max_knowledge_chars": 3000,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg), \
+             patch("agentx_ai.streaming.trajectory_compression._generate_knowledge_block",
+                   return_value=None):
+            result = compress_trajectory(messages, context_limit_tokens=100)
+
+        self.assertFalse(result)
+        self.assertEqual(len(messages), original_count)
+
+    def test_knowledge_block_placement(self):
+        """Knowledge block should be placed after system messages."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from agentx_ai.providers.base import Message, MessageRole
+        from unittest.mock import patch, MagicMock
+
+        messages = self._make_messages(4, content_size=2000)
+        # Add a second system message
+        messages.insert(1, Message(role=MessageRole.SYSTEM, content="Additional system context."))
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.1,
+            "trajectory_compression.preserve_recent_rounds": 2,
+            "trajectory_compression.model": "test-model",
+            "trajectory_compression.temperature": 0.2,
+            "trajectory_compression.max_tokens": 1500,
+            "trajectory_compression.max_knowledge_chars": 3000,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg), \
+             patch("agentx_ai.streaming.trajectory_compression._generate_knowledge_block",
+                   return_value="Knowledge content."):
+            compress_trajectory(messages, context_limit_tokens=100)
+
+        # Find the Knowledge message
+        knowledge_idx = None
+        for i, m in enumerate(messages):
+            if "[KNOWLEDGE -" in (m.content or ""):
+                knowledge_idx = i
+                break
+        self.assertIsNotNone(knowledge_idx)
+        # It should come after both system messages
+        # System messages are at 0 and 1, so Knowledge should be at index 2
+        self.assertEqual(knowledge_idx, 2)
+        # And before the USER message
+        self.assertEqual(messages[knowledge_idx + 1].role, MessageRole.USER)
+
+    def test_disabled_via_config(self):
+        """Should return False when trajectory_compression.enabled is False."""
+        from agentx_ai.streaming.trajectory_compression import compress_trajectory
+        from unittest.mock import patch, MagicMock
+
+        messages = self._make_messages(4, content_size=2000)
+        original_count = len(messages)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": False,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg):
+            result = compress_trajectory(messages, context_limit_tokens=100)
+
+        self.assertFalse(result)
+        self.assertEqual(len(messages), original_count)
+
+    def test_rounds_to_text_format(self):
+        """Serialisation should include tool names, arguments, and capped results."""
+        from agentx_ai.streaming.trajectory_compression import (
+            identify_tool_rounds,
+            rounds_to_text,
+        )
+
+        messages = self._make_messages(2, content_size=50)
+        rounds = identify_tool_rounds(messages)
+        text = rounds_to_text(rounds)
+
+        self.assertIn("Round 1:", text)
+        self.assertIn("Round 2:", text)
+        self.assertIn("tool_0", text)
+        self.assertIn("tool_1", text)
+        self.assertIn("val_0", text)
+
+
 # Phase 11.8+ tests moved to tests_memory.py

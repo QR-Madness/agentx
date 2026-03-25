@@ -21,6 +21,7 @@ from .helpers import (
     resolve_with_priority,
     truncate_tool_messages,
 )
+from .trajectory_compression import compress_trajectory
 
 __all__ = [
     # Constants
@@ -37,4 +38,6 @@ __all__ = [
     "estimate_tokens",
     "resolve_with_priority",
     "truncate_tool_messages",
+    # Trajectory compression
+    "compress_trajectory",
 ]

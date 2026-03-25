@@ -406,3 +406,31 @@ compression:
     - Data types and counts (e.g., "47 JSON objects", "3 config sections")
 
     Keep the total response under {max_chars} characters.
+
+  # Trajectory compression: consolidate multiple tool-call rounds into a knowledge block
+  # Variables: {task_context}, {rounds_text}, {max_chars}
+  trajectory: |
+    You are consolidating the intermediate results of an AI agent's multi-step tool-calling trajectory.
+    The agent has completed several tool-call rounds and needs a concise knowledge summary to continue working.
+
+    AGENT'S CURRENT TASK:
+    {task_context}
+
+    TOOL-CALL ROUNDS TO CONSOLIDATE:
+    ---
+    {rounds_text}
+    ---
+
+    Produce a KNOWLEDGE SUMMARY capturing:
+    1. Key findings and data discovered across these tool calls
+    2. Decisions made or conclusions reached
+    3. Important identifiers, paths, values, or names encountered
+    4. Errors or dead ends (so the agent does not retry them)
+
+    Rules:
+    - Focus on WHAT WAS LEARNED, not tool-call mechanics
+    - Preserve specific values (numbers, paths, names) — do not generalize them away
+    - Be concise but complete — this replaces the full round history
+    - No instructions or next-step suggestions
+
+    Keep total response under {max_chars} characters.

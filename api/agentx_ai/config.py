@@ -73,6 +73,15 @@ DEFAULT_CONFIG = {
         "max_tokens": 1000,
         "max_summary_chars": 2000,
     },
+    "trajectory_compression": {
+        "enabled": True,
+        "threshold_ratio": 0.75,       # Compress when context > 75% of limit
+        "preserve_recent_rounds": 2,   # Keep last N tool-call rounds intact
+        "model": "claude-3-5-haiku-latest",
+        "temperature": 0.2,
+        "max_tokens": 1500,
+        "max_knowledge_chars": 3000,
+    },
     "preferences": {
         "default_model": None,
         "default_reasoning_strategy": "auto",

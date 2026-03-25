@@ -765,13 +765,21 @@ async def agent_chat_stream(request):
             for tool_round in range(max_tool_rounds + 1):
                 round_tool_calls = []
 
-                # Check context size and truncate if needed
+                # Check context size — try smart compression first, fall back to truncation
                 estimated_context_tokens = estimate_tokens(messages)
                 logger.info(
                     f"Tool round {tool_round + 1}: {len(messages)} messages, "
                     f"~{estimated_context_tokens:,} tokens, limit={max_context_tokens}"
                 )
 
+                # Trajectory compression: consolidate older tool rounds (fires at 75%)
+                from agentx_ai.streaming.trajectory_compression import compress_trajectory
+                if compress_trajectory(messages, max_context_tokens, task_context=message):
+                    estimated_context_tokens = estimate_tokens(messages)
+                    logger.info(f"Trajectory compressed, new estimate: ~{estimated_context_tokens:,} tokens")
+                    yield f"event: info\ndata: {json.dumps({'type': 'trajectory_compressed'})}\n\n"
+
+                # Hard-limit truncation fallback
                 if estimated_context_tokens > max_context_tokens:
                     logger.warning(f"Context exceeds limit, truncating tool messages")
                     truncate_tool_messages(messages, estimated_context_tokens, max_context_tokens)

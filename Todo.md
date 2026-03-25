@@ -17,7 +17,7 @@
 | Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
 | Phase 12: Documentation | Not Started | 0% |
 | Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 60% |
-| Phase 14: Context Gating for Large Tool Outputs | **In Progress** | 75% |
+| Phase 14: Context Gating for Large Tool Outputs | **Complete** | 100% |
 
 ---
 
@@ -442,11 +442,17 @@ Intent-aware retrieval (SimpleMem-style):
 - [x] Updated context injection to advertise all retrieval tools
 - [x] 22 unit tests (chunking, sections, JSON path, cosine similarity, keyword fallback, tool integration)
 
-### 14.4 Intra-Trajectory Compression (Focus-style)
+### 14.4 Intra-Trajectory Compression (Focus-style) ✓
 
-- [ ] Agent can consolidate learnings into Knowledge block
-- [ ] Prune verbose history while preserving insights
-- [ ] Autonomous compression triggers
+- [x] `streaming/trajectory_compression.py` — round identification, LLM-based knowledge block generation, in-place message mutation
+- [x] Configurable via `trajectory_compression.*` in `config.py` (threshold_ratio, preserve_recent_rounds, model, etc.)
+- [x] Compression prompt template in `system_prompts.yaml` (`compression.trajectory`)
+- [x] Two-layer defense: trajectory compression at 75% threshold, existing truncation as hard-limit fallback
+- [x] Knowledge block as SYSTEM message — consolidates older rounds, preserves recent N rounds intact
+- [x] Integrated into non-streaming path (`core.py` `_complete_with_tools()`)
+- [x] Integrated into streaming path (`views.py` `agent_chat_stream()`) with SSE info event
+- [x] Graceful fallback: LLM failure → skip compression, existing truncation catches overflow
+- [x] 8 unit tests (round identification, threshold, compression, preserve rounds, fallback, placement, disabled, serialisation)
 
 ### Metrics to Track
 - Compression ratio (raw tokens → injected tokens)
