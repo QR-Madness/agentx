@@ -1,102 +1,153 @@
+import asyncio
 import json
-import socket
+import os
+import re
+from datetime import datetime, timedelta, timezone
 from unittest import skipUnless
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from django.test import TestCase, Client
+from django.test import TestCase
 
+from agentx_ai.agent.tool_output_chunker import (
+    _cosine_similarity,
+    _keyword_search,
+    chunk_text,
+    detect_sections,
+    get_section_content,
+    resolve_json_path,
+)
+from agentx_ai.agent.tool_output_compressor import (
+    CompressionResult,
+    ToolOutputCompressor,
+    get_compressor,
+)
+from agentx_ai.drafting.base import DraftingConfig, DraftResult, DraftStatus
+from agentx_ai.drafting.candidate import Candidate, CandidateConfig, ScoringMethod
+from agentx_ai.drafting.pipeline import PipelineConfig, PipelineStage, StageRole
+from agentx_ai.drafting.speculative import SpeculativeConfig
+from agentx_ai.kit.agent_memory.audit import (
+    AuditLogLevel,
+    MemoryAuditLogger,
+    MemoryType,
+    OperationType,
+)
+from agentx_ai.kit.agent_memory.config import Settings, get_settings
+from agentx_ai.kit.agent_memory.events import (
+    EventPayload,
+    FactLearnedPayload,
+    MemoryEventEmitter,
+    TurnStoredPayload,
+)
+from agentx_ai.kit.agent_memory.extraction import (
+    extract_entities,
+    extract_facts,
+    extract_relationships,
+)
+from agentx_ai.kit.agent_memory.extraction.service import (
+    ExtractionResult,
+    get_extraction_service,
+    reset_extraction_service,
+)
+from agentx_ai.kit.agent_memory.memory.retrieval import (
+    MemoryRetriever,
+    RetrievalMetrics,
+    RetrievalWeights,
+)
+from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 from agentx_ai.kit.translation import LanguageLexicon
+from agentx_ai.mcp import ServerConfig, ServerRegistry
+from agentx_ai.mcp.internal_tools import execute_internal_tool, get_internal_tools
+from agentx_ai.mcp.server_registry import TransportType
+from agentx_ai.providers.base import CompletionResult, Message, MessageRole
+from agentx_ai.providers.registry import get_registry
+from agentx_ai.reasoning.base import (
+    ReasoningConfig,
+    ReasoningResult,
+    ReasoningStatus,
+    ThoughtStep,
+    ThoughtType,
+)
+from agentx_ai.reasoning.chain_of_thought import CoTConfig
+from agentx_ai.reasoning.react import ReActConfig, Tool
+from agentx_ai.reasoning.reflection import ReflectionConfig, Revision
+from agentx_ai.reasoning.tree_of_thought import ToTConfig, TreeNode
+from agentx_ai.streaming.trajectory_compression import (
+    compress_trajectory,
+    identify_tool_rounds,
+    rounds_to_text,
+)
+from agentx_ai.test_utils import (
+    APITestBase,
+    COMPRESSOR_CONFIG,
+    COMPRESSOR_CONFIG_DISABLED,
+    MockRedisTestBase,
+    docker_services_running,
+    has_configured_provider,
+)
+
+import agentx_ai.agent.tool_output_compressor as _compressor_mod
 
 
-def _docker_services_running():
-    """Check if Docker services (Neo4j, PostgreSQL, Redis) are reachable."""
-    services = [("localhost", 7687), ("localhost", 5432), ("localhost", 6379)]
-    for host, port in services:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                pass
-        except (socket.error, socket.timeout):
-            return False
-    return True
+class TranslationKitTest(APITestBase):
 
-
-def _translation_models_loaded():
-    """Check if translation models are available (slow to load)."""
-    try:
-        from agentx_ai.kit.translation import TranslationKit  # noqa: F401
-        # Just check if class is importable, actual loading happens in tests
-        return True
-    except ImportError:
-        return False
-
-
-# Create your tests here.
-class TranslationKitTest(TestCase):
-    def setUp(self):
-        self.client = Client()
-
-    def test_language_detect_post(self):
+    def test_language_detect_post(self) -> None:
         """Test that the language detection API works with POST."""
         response = self.client.post(
             "/api/tools/language-detect-20",
             data={"text": "Bonjour, comment allez-vous?"},
             content_type="application/json"
         )
-        data = response.json()
-        print(data)
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('detected_language', data)
         self.assertIn('confidence', data)
         self.assertEqual(data['detected_language'], 'fr')
 
-    def test_language_detect_get(self):
+    def test_language_detect_get(self) -> None:
         """Test backwards compatibility with GET request."""
         response = self.client.get("/api/tools/language-detect-20")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('detected_language', data)
         # Default text is English
         self.assertEqual(data['detected_language'], 'en')
 
-    def test_lexicon_convert_level_i_to_level_ii(self):
+    def test_lexicon_convert_level_i_to_level_ii(self) -> None:
         """Test that the lexicon converts level I language codes to level II language codes."""
         lexicon = LanguageLexicon(verbose=True)
         level_i_language = "en"
         level_ii_language = lexicon.convert_level_i_detection_to_level_ii(level_i_language)
         self.assertEqual(level_ii_language, "eng_Latn")
         self.assertTrue(level_ii_language in lexicon.level_ii_languages)
-        print(f'Got correct level II language: {level_ii_language}')
 
-    def test_translate_to_french(self):
+    def test_translate_to_french(self) -> None:
         """Test that the translation API works."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Hello, AgentX AI!", "targetLanguage": "fra_Latn"},
             content_type="application/json"
         )
-        print(response.json())
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
 
 
-class HealthCheckTest(TestCase):
-    def setUp(self):
-        self.client = Client()
+class HealthCheckTest(APITestBase):
 
-    def test_health_endpoint(self):
+    def test_health_endpoint(self) -> None:
         """Test that the health check endpoint returns expected structure."""
         response = self.client.get("/api/health")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('status', data)
         self.assertIn('api', data)
         self.assertIn('translation', data)
         self.assertEqual(data['api']['status'], 'healthy')
 
-    @skipUnless(_docker_services_running(), "Docker services not running")
-    def test_health_with_memory_check(self):
+    @skipUnless(docker_services_running(), "Docker services not running")
+    def test_health_with_memory_check(self) -> None:
         """Test health check with memory system - requires Docker services running."""
         response = self.client.get("/api/health?include_memory=true")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('memory', data)
         self.assertIn('neo4j', data['memory'])
         self.assertIn('postgres', data['memory'])
@@ -110,15 +161,13 @@ class HealthCheckTest(TestCase):
                          f"Redis unhealthy: {data['memory']['redis'].get('error')}")
 
 
-class MCPClientTest(TestCase):
-    def setUp(self):
-        self.client = Client()
+class MCPClientTest(APITestBase):
 
-    def test_mcp_servers_endpoint(self):
+    def test_mcp_servers_endpoint(self) -> None:
         """Test that the MCP servers endpoint returns expected structure."""
         response = self.client.get("/api/mcp/servers")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('servers', data)
         self.assertIsInstance(data['servers'], list)
         # Each server should have name, status, transport
@@ -127,59 +176,56 @@ class MCPClientTest(TestCase):
             self.assertIn('status', server)
             self.assertIn('transport', server)
 
-    def test_mcp_tools_endpoint(self):
+    def test_mcp_tools_endpoint(self) -> None:
         """Test that the MCP tools endpoint returns expected structure."""
         response = self.client.get("/api/mcp/tools")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('tools', data)
         self.assertIn('count', data)
         self.assertIsInstance(data['tools'], list)
 
-    def test_mcp_resources_endpoint(self):
+    def test_mcp_resources_endpoint(self) -> None:
         """Test that the MCP resources endpoint returns expected structure."""
         response = self.client.get("/api/mcp/resources")
-        data = response.json()
-        self.assertEqual(response.status_code, 200)
+        data = response.json()  # type: ignore[union-attr]
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
         self.assertIn('resources', data)
         self.assertIn('count', data)
         self.assertIsInstance(data['resources'], list)
 
-    def test_mcp_connect_requires_post(self):
+    def test_mcp_connect_requires_post(self) -> None:
         """Test that connect endpoint rejects GET requests."""
         response = self.client.get("/api/mcp/connect")
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 405)  # type: ignore[union-attr]
 
-    def test_mcp_connect_requires_server_name(self):
+    def test_mcp_connect_requires_server_name(self) -> None:
         """Test that connect endpoint requires server name or all flag."""
         response = self.client.post(
             "/api/mcp/connect",
             data="{}",
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
 
-    def test_mcp_disconnect_requires_post(self):
+    def test_mcp_disconnect_requires_post(self) -> None:
         """Test that disconnect endpoint rejects GET requests."""
         response = self.client.get("/api/mcp/disconnect")
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 405)  # type: ignore[union-attr]
 
-    def test_mcp_disconnect_unknown_server(self):
+    def test_mcp_disconnect_unknown_server(self) -> None:
         """Test disconnecting a server that isn't connected."""
         response = self.client.post(
             "/api/mcp/disconnect",
             data='{"server": "nonexistent"}',
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
 
 
 class MCPServerRegistryTest(TestCase):
-    def test_server_config_creation(self):
+    def test_server_config_creation(self) -> None:
         """Test creating a server configuration."""
-        from agentx_ai.mcp import ServerConfig
-        from agentx_ai.mcp.server_registry import TransportType
-        
         config = ServerConfig(
             name="test-server",
             transport=TransportType.STDIO,
@@ -192,11 +238,8 @@ class MCPServerRegistryTest(TestCase):
         self.assertEqual(config.command, "npx")
         self.assertTrue(config.validate())
 
-    def test_server_registry_operations(self):
+    def test_server_registry_operations(self) -> None:
         """Test server registry register/get/list operations."""
-        from agentx_ai.mcp import ServerRegistry, ServerConfig
-        from agentx_ai.mcp.server_registry import TransportType
-        
         registry = ServerRegistry()
         
         config = ServerConfig(
@@ -211,6 +254,7 @@ class MCPServerRegistryTest(TestCase):
         # Test get
         retrieved = registry.get("test-server")
         self.assertIsNotNone(retrieved)
+        assert retrieved is not None
         self.assertEqual(retrieved.name, "test-server")
         
         # Test list
@@ -222,12 +266,8 @@ class MCPServerRegistryTest(TestCase):
         self.assertTrue(result)
         self.assertIsNone(registry.get("test-server"))
 
-    def test_env_resolution(self):
+    def test_env_resolution(self) -> None:
         """Test environment variable resolution in server config."""
-        import os
-        from agentx_ai.mcp import ServerConfig
-        from agentx_ai.mcp.server_registry import TransportType
-        
         os.environ["TEST_TOKEN"] = "my-secret-token"
         
         config = ServerConfig(
@@ -247,101 +287,88 @@ class MCPServerRegistryTest(TestCase):
 # Phase 10: Translation Tests
 # =============================================================================
 
-class TranslationLanguagePairsTest(TestCase):
+class TranslationLanguagePairsTest(APITestBase):
     """Test translation across multiple language pairs."""
-    
-    def setUp(self):
-        self.client = Client()
-    
-    def test_translate_english_to_spanish(self):
+
+    def test_translate_english_to_spanish(self) -> None:
         """Test English to Spanish translation."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Hello, how are you?", "targetLanguage": "spa_Latn"},
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        data = response.json()  # type: ignore[union-attr]
         self.assertIn('translatedText', data)
-        # Should contain Spanish words
         self.assertTrue(len(data['translatedText']) > 0)
-    
-    def test_translate_english_to_german(self):
+
+    def test_translate_english_to_german(self) -> None:
         """Test English to German translation."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Good morning", "targetLanguage": "deu_Latn"},
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        data = response.json()  # type: ignore[union-attr]
         self.assertIn('translatedText', data)
-    
-    def test_translate_english_to_japanese(self):
+
+    def test_translate_english_to_japanese(self) -> None:
         """Test English to Japanese translation."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Thank you", "targetLanguage": "jpn_Jpan"},
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        data = response.json()  # type: ignore[union-attr]
         self.assertIn('translatedText', data)
 
 
-class TranslationErrorHandlingTest(TestCase):
+class TranslationErrorHandlingTest(APITestBase):
     """Test translation error handling."""
-    
-    def setUp(self):
-        self.client = Client()
-    
-    def test_translate_invalid_language_code(self):
+
+    def test_translate_invalid_language_code(self) -> None:
         """Test translation with invalid language code."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Hello", "targetLanguage": "invalid_code"},
             content_type="application/json"
         )
-        # Should return error response
-        self.assertIn(response.status_code, [400, 500])
-    
-    def test_translate_empty_text(self):
+        self.assertIn(response.status_code, [400, 500])  # type: ignore[union-attr]
+
+    def test_translate_empty_text(self) -> None:
         """Test translation with empty text."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "", "targetLanguage": "fra_Latn"},
             content_type="application/json"
         )
-        # API should handle empty text gracefully
-        self.assertIn(response.status_code, [200, 400])
-    
-    def test_translate_missing_target_language(self):
+        self.assertIn(response.status_code, [200, 400])  # type: ignore[union-attr]
+
+    def test_translate_missing_target_language(self) -> None:
         """Test translation with missing target language."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Hello"},
             content_type="application/json"
         )
-        # Should return error for missing required field
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
 
 
-class TranslationLongTextTest(TestCase):
+class TranslationLongTextTest(APITestBase):
     """Test translation with various text lengths."""
-    
-    def setUp(self):
-        self.client = Client()
-    
-    def test_translate_short_text(self):
+
+    def test_translate_short_text(self) -> None:
         """Test translation of short text."""
         response = self.client.post(
             "/api/tools/translate",
             data={"text": "Hi", "targetLanguage": "fra_Latn"},
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 200)
-    
-    def test_translate_paragraph(self):
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+
+    def test_translate_paragraph(self) -> None:
         """Test translation of a paragraph."""
         text = (
             "The quick brown fox jumps over the lazy dog. "
@@ -353,10 +380,9 @@ class TranslationLongTextTest(TestCase):
             data={"text": text, "targetLanguage": "fra_Latn"},
             content_type="application/json"
         )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        data = response.json()  # type: ignore[union-attr]
         self.assertIn('translatedText', data)
-        # Translation should be roughly similar length
         self.assertTrue(len(data['translatedText']) > 20)
 
 
@@ -366,29 +392,23 @@ class TranslationLongTextTest(TestCase):
 
 class ReasoningBaseTest(TestCase):
     """Test reasoning framework base classes."""
-    
-    def test_reasoning_status_enum(self):
+
+    def test_reasoning_status_enum(self) -> None:
         """Test ReasoningStatus enum values."""
-        from agentx_ai.reasoning.base import ReasoningStatus
-        
         self.assertEqual(ReasoningStatus.PENDING, "pending")
         self.assertEqual(ReasoningStatus.THINKING, "thinking")
         self.assertEqual(ReasoningStatus.COMPLETE, "complete")
         self.assertEqual(ReasoningStatus.FAILED, "failed")
-    
-    def test_thought_type_enum(self):
+
+    def test_thought_type_enum(self) -> None:
         """Test ThoughtType enum values."""
-        from agentx_ai.reasoning.base import ThoughtType
-        
         self.assertEqual(ThoughtType.OBSERVATION, "observation")
         self.assertEqual(ThoughtType.REASONING, "reasoning")
         self.assertEqual(ThoughtType.ACTION, "action")
         self.assertEqual(ThoughtType.CONCLUSION, "conclusion")
-    
-    def test_thought_step_creation(self):
+
+    def test_thought_step_creation(self) -> None:
         """Test ThoughtStep model creation."""
-        from agentx_ai.reasoning.base import ThoughtStep, ThoughtType
-        
         step = ThoughtStep(
             step_number=1,
             thought_type=ThoughtType.REASONING,
@@ -401,10 +421,8 @@ class ReasoningBaseTest(TestCase):
         self.assertEqual(step.content, "First, let's analyze the problem.")
         self.assertEqual(step.confidence, 0.9)
     
-    def test_reasoning_result_creation(self):
+    def test_reasoning_result_creation(self) -> None:
         """Test ReasoningResult model creation."""
-        from agentx_ai.reasoning.base import ReasoningResult, ReasoningStatus
-        
         result = ReasoningResult(
             answer="The answer is 42.",
             strategy="cot",
@@ -417,10 +435,8 @@ class ReasoningBaseTest(TestCase):
         self.assertEqual(result.strategy, "cot")
         self.assertEqual(result.status, ReasoningStatus.COMPLETE)
     
-    def test_reasoning_config_creation(self):
+    def test_reasoning_config_creation(self) -> None:
         """Test ReasoningConfig creation."""
-        from agentx_ai.reasoning.base import ReasoningConfig
-        
         config = ReasoningConfig(
             name="test-cot",
             strategy_type="cot",
@@ -437,10 +453,8 @@ class ReasoningBaseTest(TestCase):
 class ChainOfThoughtTest(TestCase):
     """Test Chain-of-Thought reasoning components."""
     
-    def test_cot_config_creation(self):
+    def test_cot_config_creation(self) -> None:
         """Test CoTConfig creation with defaults."""
-        from agentx_ai.reasoning.chain_of_thought import CoTConfig
-        
         config = CoTConfig(model="llama3.2")
         
         self.assertEqual(config.model, "llama3.2")
@@ -448,10 +462,8 @@ class ChainOfThoughtTest(TestCase):
         self.assertEqual(config.thinking_prompt, "Let's think step by step.")
         self.assertTrue(config.extract_steps)
     
-    def test_cot_config_few_shot_mode(self):
+    def test_cot_config_few_shot_mode(self) -> None:
         """Test CoTConfig with few-shot mode."""
-        from agentx_ai.reasoning.chain_of_thought import CoTConfig
-        
         examples = [
             {"question": "2+2?", "reasoning": "Add 2 and 2", "answer": "4"}
         ]
@@ -462,12 +474,10 @@ class ChainOfThoughtTest(TestCase):
         )
         
         self.assertEqual(config.mode, "few_shot")
-        self.assertEqual(len(config.examples), 1)
+        self.assertEqual(len(config.examples), 1)  # type: ignore[arg-type]
     
-    def test_step_extraction_pattern(self):
+    def test_step_extraction_pattern(self) -> None:
         """Test that step extraction regex works correctly."""
-        import re
-        
         # Simulate the step extraction pattern
         step_prefix = "Step"
         response = """Step 1: First, identify the numbers.
@@ -486,10 +496,8 @@ Answer: The answer is 4."""
 class TreeOfThoughtTest(TestCase):
     """Test Tree-of-Thought reasoning components."""
     
-    def test_tree_node_creation(self):
+    def test_tree_node_creation(self) -> None:
         """Test TreeNode creation."""
-        from agentx_ai.reasoning.tree_of_thought import TreeNode
-        
         root = TreeNode(
             id="root",
             content="Initial problem state",
@@ -502,10 +510,8 @@ class TreeOfThoughtTest(TestCase):
         self.assertEqual(root.score, 1.0)
         self.assertEqual(len(root.children), 0)
     
-    def test_tot_config_defaults(self):
+    def test_tot_config_defaults(self) -> None:
         """Test ToT configuration defaults."""
-        from agentx_ai.reasoning.tree_of_thought import ToTConfig
-        
         config = ToTConfig(model="llama3.2")
         
         self.assertEqual(config.model, "llama3.2")
@@ -517,10 +523,8 @@ class TreeOfThoughtTest(TestCase):
 class ReActTest(TestCase):
     """Test ReAct reasoning components."""
     
-    def test_tool_creation(self):
+    def test_tool_creation(self) -> None:
         """Test Tool creation."""
-        from agentx_ai.reasoning.react import Tool
-        
         tool = Tool(
             name="search",
             description="Search for information",
@@ -531,10 +535,8 @@ class ReActTest(TestCase):
         self.assertEqual(tool.name, "search")
         self.assertEqual(tool.description, "Search for information")
     
-    def test_react_config_defaults(self):
+    def test_react_config_defaults(self) -> None:
         """Test ReAct configuration defaults."""
-        from agentx_ai.reasoning.react import ReActConfig
-        
         config = ReActConfig(model="llama3.2")
         
         self.assertEqual(config.model, "llama3.2")
@@ -546,10 +548,8 @@ class ReActTest(TestCase):
 class ReflectionTest(TestCase):
     """Test Reflection reasoning components."""
     
-    def test_revision_creation(self):
+    def test_revision_creation(self) -> None:
         """Test Revision model creation."""
-        from agentx_ai.reasoning.reflection import Revision
-        
         revision = Revision(
             version=1,
             content="Improved response",
@@ -562,10 +562,8 @@ class ReflectionTest(TestCase):
         self.assertEqual(revision.score, 0.85)
         self.assertIn("Added examples", revision.improvements)
     
-    def test_reflection_config_defaults(self):
+    def test_reflection_config_defaults(self) -> None:
         """Test ReflectionConfig defaults."""
-        from agentx_ai.reasoning.reflection import ReflectionConfig
-        
         config = ReflectionConfig(model="llama3.2")
         
         self.assertEqual(config.model, "llama3.2")
@@ -579,19 +577,15 @@ class ReflectionTest(TestCase):
 class DraftingBaseTest(TestCase):
     """Test drafting framework base classes."""
     
-    def test_draft_status_enum(self):
+    def test_draft_status_enum(self) -> None:
         """Test DraftStatus enum values."""
-        from agentx_ai.drafting.base import DraftStatus
-        
         self.assertEqual(DraftStatus.PENDING, "pending")
         self.assertEqual(DraftStatus.DRAFTING, "drafting")
         self.assertEqual(DraftStatus.COMPLETE, "complete")
         self.assertEqual(DraftStatus.FAILED, "failed")
     
-    def test_draft_result_creation(self):
+    def test_draft_result_creation(self) -> None:
         """Test DraftResult model creation."""
-        from agentx_ai.drafting.base import DraftResult
-        
         result = DraftResult(
             content="Generated draft content",
             strategy="speculative",
@@ -602,10 +596,8 @@ class DraftingBaseTest(TestCase):
         self.assertEqual(result.strategy, "speculative")
         self.assertEqual(result.total_tokens, 50)
     
-    def test_drafting_config_creation(self):
+    def test_drafting_config_creation(self) -> None:
         """Test DraftingConfig creation."""
-        from agentx_ai.drafting.base import DraftingConfig
-        
         config = DraftingConfig(
             name="test-speculative",
             strategy_type="speculative",
@@ -619,10 +611,8 @@ class DraftingBaseTest(TestCase):
 class SpeculativeDecodingTest(TestCase):
     """Test speculative decoding components."""
     
-    def test_speculative_config_defaults(self):
+    def test_speculative_config_defaults(self) -> None:
         """Test SpeculativeConfig defaults."""
-        from agentx_ai.drafting.speculative import SpeculativeConfig
-        
         config = SpeculativeConfig(
             draft_model="llama3.2:1b",
             target_model="llama3.2"
@@ -637,19 +627,15 @@ class SpeculativeDecodingTest(TestCase):
 class PipelineTest(TestCase):
     """Test multi-model pipeline components."""
     
-    def test_stage_role_enum(self):
+    def test_stage_role_enum(self) -> None:
         """Test StageRole enum values."""
-        from agentx_ai.drafting.pipeline import StageRole
-        
         self.assertEqual(StageRole.ANALYZE, "analyze")
         self.assertEqual(StageRole.DRAFT, "draft")
         self.assertEqual(StageRole.REVIEW, "review")
         self.assertEqual(StageRole.REFINE, "refine")
     
-    def test_pipeline_stage_creation(self):
+    def test_pipeline_stage_creation(self) -> None:
         """Test PipelineStage creation."""
-        from agentx_ai.drafting.pipeline import PipelineStage, StageRole
-        
         stage = PipelineStage(
             name="draft-stage",
             model="llama3.2",
@@ -660,10 +646,8 @@ class PipelineTest(TestCase):
         self.assertEqual(stage.model, "llama3.2")
         self.assertEqual(stage.role, StageRole.DRAFT)
     
-    def test_pipeline_config_creation(self):
+    def test_pipeline_config_creation(self) -> None:
         """Test PipelineConfig creation."""
-        from agentx_ai.drafting.pipeline import PipelineConfig, PipelineStage, StageRole
-        
         stages = [
             PipelineStage(name="analyze", model="llama3.2", role=StageRole.ANALYZE),
             PipelineStage(name="draft", model="llama3.2", role=StageRole.DRAFT),
@@ -677,18 +661,14 @@ class PipelineTest(TestCase):
 class CandidateGenerationTest(TestCase):
     """Test candidate generation components."""
     
-    def test_scoring_method_enum(self):
+    def test_scoring_method_enum(self) -> None:
         """Test ScoringMethod enum values."""
-        from agentx_ai.drafting.candidate import ScoringMethod
-        
         self.assertEqual(ScoringMethod.MAJORITY_VOTE, "majority_vote")
         self.assertEqual(ScoringMethod.VERIFIER, "verifier")
         self.assertEqual(ScoringMethod.LENGTH_PREFERENCE, "length_preference")
     
-    def test_candidate_creation(self):
+    def test_candidate_creation(self) -> None:
         """Test Candidate model creation."""
-        from agentx_ai.drafting.candidate import Candidate
-        
         candidate = Candidate(
             content="This is a candidate response.",
             score=0.85,
@@ -700,10 +680,8 @@ class CandidateGenerationTest(TestCase):
         self.assertEqual(candidate.score, 0.85)
         self.assertEqual(candidate.index, 0)
     
-    def test_candidate_config_defaults(self):
+    def test_candidate_config_defaults(self) -> None:
         """Test CandidateConfig defaults."""
-        from agentx_ai.drafting.candidate import CandidateConfig, ScoringMethod
-        
         config = CandidateConfig(name="test-gen", models=["llama3.2"])
         
         self.assertEqual(config.candidates_per_model, 1)
@@ -717,20 +695,14 @@ class CandidateGenerationTest(TestCase):
 class ProviderRegistryTest(TestCase):
     """Test provider registry functionality."""
     
-    def test_registry_singleton(self):
+    def test_registry_singleton(self) -> None:
         """Test that get_registry returns same instance."""
-        from agentx_ai.providers.registry import get_registry
-        
         reg1 = get_registry()
         reg2 = get_registry()
-        
         self.assertIs(reg1, reg2)
-    
-    def test_provider_detection_local_prefix(self):
-        """Test provider detection for local models by prefix."""
-        from agentx_ai.providers.registry import get_registry
 
-        # Ensure registry is available (singleton test)
+    def test_provider_detection_local_prefix(self) -> None:
+        """Test provider detection for local models by prefix."""
         _ = get_registry()
 
         # Models with local prefixes should be detected
@@ -741,10 +713,8 @@ class ProviderRegistryTest(TestCase):
             # Just verify the model name starts with a known local prefix
             self.assertTrue(model.startswith(prefix))
     
-    def test_model_config_retrieval(self):
+    def test_model_config_retrieval(self) -> None:
         """Test model config retrieval."""
-        from agentx_ai.providers.registry import get_registry
-        
         registry = get_registry()
         
         # Should return None for unknown models
@@ -755,27 +725,20 @@ class ProviderRegistryTest(TestCase):
 class ProviderBaseTest(TestCase):
     """Test provider base classes."""
     
-    def test_message_creation(self):
+    def test_message_creation(self) -> None:
         """Test Message model creation."""
-        from agentx_ai.providers.base import Message, MessageRole
-        
         msg = Message(role=MessageRole.USER, content="Hello")
-        
         self.assertEqual(msg.role, MessageRole.USER)
         self.assertEqual(msg.content, "Hello")
-    
-    def test_message_role_enum(self):
+
+    def test_message_role_enum(self) -> None:
         """Test MessageRole enum values."""
-        from agentx_ai.providers.base import MessageRole
-        
         self.assertEqual(MessageRole.SYSTEM, "system")
         self.assertEqual(MessageRole.USER, "user")
         self.assertEqual(MessageRole.ASSISTANT, "assistant")
     
-    def test_completion_result_creation(self):
+    def test_completion_result_creation(self) -> None:
         """Test CompletionResult model creation."""
-        from agentx_ai.providers.base import CompletionResult
-        
         result = CompletionResult(
             content="Hello, how can I help?",
             model="llama3.2",
@@ -791,76 +754,36 @@ class ProviderBaseTest(TestCase):
 # Phase 11.3: Extraction Pipeline Tests
 # =============================================================================
 
-def _extraction_model_available():
-    """Check if extraction model provider is configured."""
-    import os
-    return bool(
-        os.environ.get("ANTHROPIC_API_KEY") or
-        os.environ.get("OPENAI_API_KEY") or
-        os.environ.get("OLLAMA_BASE_URL") or
-        os.environ.get("LMSTUDIO_BASE_URL")
-    )
-
-
-def _has_configured_provider():
-    """Check if any model provider is configured for agent tests."""
-    import os
-    return bool(
-        os.environ.get("ANTHROPIC_API_KEY") or
-        os.environ.get("OPENAI_API_KEY") or
-        os.environ.get("OLLAMA_BASE_URL") or
-        os.environ.get("LMSTUDIO_BASE_URL")
-    )
-
-
 class ExtractionPipelineTest(TestCase):
     """Tests for the extraction pipeline."""
 
-    def test_extract_entities_empty_text(self):
+    def test_extract_entities_empty_text(self) -> None:
         """Empty text should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_entities
-        result = extract_entities("")
-        self.assertEqual(result, [])
+        self.assertEqual(extract_entities(""), [])
 
-    def test_extract_entities_short_text(self):
+    def test_extract_entities_short_text(self) -> None:
         """Very short text should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_entities
-        result = extract_entities("Hi there")
-        self.assertEqual(result, [])
+        self.assertEqual(extract_entities("Hi there"), [])
 
-    def test_extract_facts_empty_text(self):
+    def test_extract_facts_empty_text(self) -> None:
         """Empty text should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_facts
-        result = extract_facts("")
-        self.assertEqual(result, [])
+        self.assertEqual(extract_facts(""), [])
 
-    def test_extract_facts_short_text(self):
+    def test_extract_facts_short_text(self) -> None:
         """Very short text should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_facts
-        result = extract_facts("OK")
-        self.assertEqual(result, [])
+        self.assertEqual(extract_facts("OK"), [])
 
-    def test_extract_relationships_no_entities(self):
+    def test_extract_relationships_no_entities(self) -> None:
         """Relationships extraction with no entities should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_relationships
-        result = extract_relationships("Some text here", [])
-        self.assertEqual(result, [])
+        self.assertEqual(extract_relationships("Some text here", []), [])
 
-    def test_extract_relationships_empty_text(self):
+    def test_extract_relationships_empty_text(self) -> None:
         """Relationships extraction with empty text should return empty list."""
-        from agentx_ai.kit.agent_memory.extraction import extract_relationships
         entities = [{"name": "Test", "type": "Person"}]
-        result = extract_relationships("", entities)
-        self.assertEqual(result, [])
+        self.assertEqual(extract_relationships("", entities), [])
 
-    def test_extraction_service_singleton(self):
+    def test_extraction_service_singleton(self) -> None:
         """Extraction service should be a singleton."""
-        from agentx_ai.kit.agent_memory.extraction.service import (
-            get_extraction_service,
-            reset_extraction_service
-        )
-
-        # Reset to ensure clean state
         reset_extraction_service()
 
         service1 = get_extraction_service()
@@ -870,10 +793,8 @@ class ExtractionPipelineTest(TestCase):
         # Clean up
         reset_extraction_service()
 
-    def test_extraction_result_model(self):
+    def test_extraction_result_model(self) -> None:
         """Test ExtractionResult model structure."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionResult
-
         result = ExtractionResult(
             entities=[{"name": "Test", "type": "Person"}],
             facts=[{"claim": "Test is a person"}],
@@ -887,12 +808,9 @@ class ExtractionPipelineTest(TestCase):
         self.assertEqual(result.success, True)
         self.assertEqual(result.tokens_used, 100)
 
-    def test_extraction_config_settings(self):
+    def test_extraction_config_settings(self) -> None:
         """Test extraction configuration is loaded."""
-        from agentx_ai.kit.agent_memory.config import get_settings
-
         settings = get_settings()
-
         self.assertTrue(hasattr(settings, 'extraction_enabled'))
         self.assertTrue(hasattr(settings, 'extraction_model'))
         self.assertTrue(hasattr(settings, 'extraction_provider'))
@@ -900,11 +818,9 @@ class ExtractionPipelineTest(TestCase):
         self.assertTrue(hasattr(settings, 'entity_types'))
         self.assertTrue(hasattr(settings, 'relationship_types'))
 
-    @skipUnless(_extraction_model_available(), "Extraction model provider not configured")
-    def test_extract_entities_real(self):
+    @skipUnless(has_configured_provider(), "Extraction model provider not configured")
+    def test_extract_entities_real(self) -> None:
         """Test real entity extraction with configured provider."""
-        from agentx_ai.kit.agent_memory.extraction import extract_entities
-
         text = """
         User: I work at Anthropic in San Francisco as a software engineer.
         Assistant: That's great! Anthropic is doing interesting AI safety research.
@@ -919,11 +835,9 @@ class ExtractionPipelineTest(TestCase):
             self.assertIn("type", entity)
             self.assertIn("confidence", entity)
 
-    @skipUnless(_extraction_model_available(), "Extraction model provider not configured")
-    def test_extract_facts_real(self):
+    @skipUnless(has_configured_provider(), "Extraction model provider not configured")
+    def test_extract_facts_real(self) -> None:
         """Test real fact extraction with configured provider."""
-        from agentx_ai.kit.agent_memory.extraction import extract_facts
-
         text = """
         User: I prefer Python over JavaScript for backend development.
         Assistant: Python is indeed very popular for backend work with Django and FastAPI.
@@ -947,8 +861,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_on_registers_callback(self):
         """on() adds callback to handlers list."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -960,8 +872,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_on_returns_unsubscribe_function(self):
         """on() returns callable that removes handler."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -975,8 +885,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_off_removes_callback(self):
         """off() removes specified callback."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -990,8 +898,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_off_returns_false_for_nonexistent(self):
         """off() returns False for nonexistent handler."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -1003,8 +909,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_emit_calls_all_handlers(self):
         """emit() calls all registered handlers for event."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
-
         emitter = MemoryEventEmitter()
         call_count = {"value": 0}
 
@@ -1025,8 +929,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_emit_catches_handler_errors(self):
         """emit() logs but doesn't propagate handler exceptions."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
-
         emitter = MemoryEventEmitter()
         working_called = {"value": False}
 
@@ -1050,8 +952,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_disable_prevents_emission(self):
         """disable() prevents handlers from being called."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
-
         emitter = MemoryEventEmitter()
         called = {"value": False}
 
@@ -1069,8 +969,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_clear_removes_all_handlers(self):
         """clear() removes all handlers for event or all events."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -1090,8 +988,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_emit_returns_handler_count(self):
         """emit() returns number of handlers called."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter, EventPayload
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -1107,8 +1003,6 @@ class MemoryEventEmitterUnitTest(TestCase):
 
     def test_handler_count_total(self):
         """handler_count() returns total when no event specified."""
-        from agentx_ai.kit.agent_memory.events import MemoryEventEmitter
-
         emitter = MemoryEventEmitter()
 
         def handler(payload):
@@ -1126,8 +1020,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_default_values(self):
         """RetrievalWeights has correct defaults."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights()
 
         self.assertEqual(weights.episodic, 0.3)
@@ -1138,8 +1030,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_from_dict_uses_defaults(self):
         """from_dict() uses defaults for missing keys."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights.from_dict({"episodic": 0.5})
 
         self.assertEqual(weights.episodic, 0.5)
@@ -1149,8 +1039,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_from_dict_all_values(self):
         """from_dict() creates weights from complete dict."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights.from_dict({
             "episodic": 0.4,
             "semantic_facts": 0.3,
@@ -1167,8 +1055,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_merge_with_none(self):
         """merge(None) returns self."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights()
         merged = weights.merge(None)
 
@@ -1177,8 +1063,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_merge_with_dict_overrides(self):
         """merge() applies dict overrides correctly."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights()
         merged = weights.merge({"episodic": 0.5, "recency": 0.2})
 
@@ -1188,8 +1072,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_merge_with_weights_object(self):
         """merge() works with RetrievalWeights object."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         base = RetrievalWeights()
         override = RetrievalWeights(episodic=0.5, semantic_facts=0.3)
         merged = base.merge(override)
@@ -1199,8 +1081,6 @@ class RetrievalWeightsUnitTest(TestCase):
 
     def test_from_config(self):
         """from_config() loads weights from settings."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights.from_config()
 
         # Should have valid weights
@@ -1214,9 +1094,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_off_skips_all(self):
         """No logging when audit_log_level is 'off'."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="off")
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1226,9 +1103,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_writes_logs_write_operations(self):
         """'writes' level logs store/update/delete operations."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="writes")
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1239,9 +1113,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_writes_skips_read_operations(self):
         """'writes' level skips retrieve/search operations."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="writes")
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1250,9 +1121,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_reads_logs_non_working(self):
         """'reads' level logs reads and writes, not working memory."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         # Use sample rate of 1.0 to ensure reads are logged
         settings = Settings(audit_log_level="reads", audit_sample_rate=1.0)
         logger = MemoryAuditLogger(settings=settings)
@@ -1265,9 +1133,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_level_verbose_logs_everything(self):
         """'verbose' level logs all operations including working memory."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="verbose")
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1277,9 +1142,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_log_property(self):
         """log_level property returns current level."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="writes")
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1287,9 +1149,6 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_timed_operation_context_manager(self):
         """timed_operation context manager provides context dict."""
-        from agentx_ai.kit.agent_memory.audit import MemoryAuditLogger
-        from agentx_ai.kit.agent_memory.config import Settings
-
         settings = Settings(audit_log_level="off")  # off to avoid actual logging
         logger = MemoryAuditLogger(settings=settings)
 
@@ -1303,51 +1162,29 @@ class MemoryAuditLoggerUnitTest(TestCase):
 
     def test_operation_type_enum(self):
         """OperationType enum has expected values."""
-        from agentx_ai.kit.agent_memory.audit import OperationType
-
         self.assertEqual(OperationType.STORE.value, "store")
         self.assertEqual(OperationType.RETRIEVE.value, "retrieve")
         self.assertEqual(OperationType.PROMOTE.value, "promote")
 
     def test_memory_type_enum(self):
         """MemoryType enum has expected values."""
-        from agentx_ai.kit.agent_memory.audit import MemoryType
-
         self.assertEqual(MemoryType.EPISODIC.value, "episodic")
         self.assertEqual(MemoryType.SEMANTIC.value, "semantic")
         self.assertEqual(MemoryType.WORKING.value, "working")
 
     def test_audit_log_level_enum(self):
         """AuditLogLevel enum has expected values."""
-        from agentx_ai.kit.agent_memory.audit import AuditLogLevel
-
         self.assertEqual(AuditLogLevel.OFF.value, "off")
         self.assertEqual(AuditLogLevel.WRITES.value, "writes")
         self.assertEqual(AuditLogLevel.READS.value, "reads")
         self.assertEqual(AuditLogLevel.VERBOSE.value, "verbose")
 
 
-class WorkingMemoryUnitTest(TestCase):
+class WorkingMemoryUnitTest(MockRedisTestBase):
     """Unit tests for WorkingMemory with mocked Redis."""
-
-    def setUp(self):
-        """Set up mocked Redis for tests."""
-        from unittest.mock import patch, MagicMock
-
-        self.mock_redis = MagicMock()
-        self.redis_patcher = patch(
-            'agentx_ai.kit.agent_memory.connections.RedisConnection.get_client'
-        )
-        self.mock_get_client = self.redis_patcher.start()
-        self.mock_get_client.return_value = self.mock_redis
-
-    def tearDown(self):
-        self.redis_patcher.stop()
 
     def test_key_includes_channel_for_isolation(self):
         """Working memory keys include channel for isolation."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", channel="project-a", conversation_id="conv1")
 
         self.assertIn("project-a", wm.session_key)
@@ -1355,18 +1192,12 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_key_uses_global_channel_by_default(self):
         """Working memory keys use _global channel by default."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", conversation_id="conv1")
 
         self.assertIn("_global", wm.session_key)
 
     def test_add_turn_pushes_to_list(self):
         """add_turn LPUSHes turn data to Redis list."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from datetime import datetime
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
 
         # Create mock turn
@@ -1386,11 +1217,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_add_turn_trims_to_max_items(self):
         """add_turn LTRIMs list to max_working_memory_items."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from agentx_ai.kit.agent_memory.config import get_settings
-        from datetime import datetime
-
         settings = get_settings()
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
 
@@ -1410,10 +1236,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_add_turn_sets_ttl(self):
         """add_turn sets 1-hour TTL on turns key."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from datetime import datetime
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
 
         turn = MagicMock()
@@ -1428,11 +1250,8 @@ class WorkingMemoryUnitTest(TestCase):
         # Verify expire was called with 3600 seconds
         self.mock_redis.expire.assert_called_once_with(wm.turns_key, 3600)
 
-    def test_get_recent_turns_returns_json_decoded(self):
+    def test_get_recent_turns_returns_json_decoded(self) -> None:
         """get_recent_turns returns decoded turn dictionaries."""
-        import json
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
 
         # Mock Redis to return encoded turns
@@ -1447,8 +1266,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_set_stores_with_ttl(self):
         """set() stores JSON-encoded value with TTL."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
 
         wm.set("test_key", {"value": 42}, ttl_seconds=300)
@@ -1461,8 +1278,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_get_returns_none_for_missing(self):
         """get() returns None for nonexistent key."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
         self.mock_redis.get.return_value = None
 
@@ -1472,8 +1287,6 @@ class WorkingMemoryUnitTest(TestCase):
 
     def test_clear_session_deletes_pattern(self):
         """clear_session deletes all keys matching session pattern using SCAN."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-
         wm = WorkingMemory(user_id="user1", channel="_global", conversation_id="conv1")
         # SCAN returns (cursor, keys) tuple - cursor 0 means end of iteration
         self.mock_redis.scan.return_value = (0, [b"key1", b"key2"])
@@ -1489,8 +1302,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_retrieval_weights_default_sum(self):
         """Default weights sum to 1.0."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
-
         weights = RetrievalWeights()
         total = (
             weights.episodic +
@@ -1504,8 +1315,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_retrieval_metrics_structure(self):
         """RetrievalMetrics has correct fields."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalMetrics
-
         metrics = RetrievalMetrics()
 
         self.assertEqual(metrics.episodic_count, 0)
@@ -1514,11 +1323,8 @@ class MemoryRetrieverUnitTest(TestCase):
         self.assertIsInstance(metrics.channels_searched, list)
         self.assertIsInstance(metrics.results_per_channel, dict)
 
-    def test_normalize_scores_min_max(self):
+    def test_normalize_scores_min_max(self) -> None:
         """_normalize_scores uses min-max normalization."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-
         # Create a minimal mock memory
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
@@ -1538,9 +1344,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_normalize_scores_equal_returns_half(self):
         """_normalize_scores returns 0.5 when all scores equal."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
@@ -1557,10 +1360,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_calculate_recency_score_recent_is_high(self):
         """Recent timestamps get higher recency scores."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-        from datetime import datetime, timezone, timedelta
-
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
@@ -1575,10 +1374,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_calculate_recency_score_decays_exponentially(self):
         """Recency score decays with 24-hour half-life."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-        from datetime import datetime, timezone, timedelta
-
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
@@ -1592,9 +1387,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_get_cache_key_includes_user_and_channels(self):
         """Cache key includes user_id, channels, and query hash."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
@@ -1613,9 +1405,6 @@ class MemoryRetrieverUnitTest(TestCase):
 
     def test_normalize_scores_empty_list(self):
         """_normalize_scores handles empty list."""
-        from unittest.mock import MagicMock
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
-
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
@@ -1629,9 +1418,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_default_channel_is_global(self):
         """Default channel is _global."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from unittest.mock import patch, MagicMock
-
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
             mock.return_value = MagicMock()
             wm = WorkingMemory(user_id="user1")
@@ -1641,9 +1427,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_channel_included_in_key_patterns(self):
         """Channel is included in key patterns for isolation."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from unittest.mock import patch, MagicMock
-
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
             mock.return_value = MagicMock()
             wm = WorkingMemory(user_id="user1", channel="my-project")
@@ -1654,9 +1437,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_user_id_required_in_working_memory(self):
         """WorkingMemory requires user_id."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from unittest.mock import patch, MagicMock
-
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
             mock.return_value = MagicMock()
             # user_id is a required parameter
@@ -1665,9 +1445,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_different_channels_have_different_keys(self):
         """Different channels create different key patterns."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
-        from unittest.mock import patch, MagicMock
-
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock:
             mock.return_value = MagicMock()
 
@@ -1680,8 +1457,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_retrieval_weights_channel_boost(self):
         """RetrievalWeights from config includes channel boost."""
-        from agentx_ai.kit.agent_memory.config import get_settings
-
         settings = get_settings()
 
         # Channel boost should be configured
@@ -1690,11 +1465,6 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_event_payload_includes_channel(self):
         """Event payloads include channel field."""
-        from agentx_ai.kit.agent_memory.events import (
-            TurnStoredPayload,
-            FactLearnedPayload,
-        )
-
         turn_payload = TurnStoredPayload(
             event_name="turn_stored",
             turn_id="t1",
@@ -1711,16 +1481,12 @@ class ChannelScopingUnitTest(TestCase):
 
     def test_event_payload_default_channel(self):
         """Event payloads default to _global channel."""
-        from agentx_ai.kit.agent_memory.events import TurnStoredPayload
-
         payload = TurnStoredPayload(event_name="turn_stored")
 
         self.assertEqual(payload.channel, "_global")
 
     def test_retrieval_metrics_tracks_channels(self):
         """RetrievalMetrics tracks channels searched."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalMetrics
-
         metrics = RetrievalMetrics(
             channels_searched=["project-a", "_global"],
             results_per_channel={"project-a": 5, "_global": 3}
@@ -1734,82 +1500,50 @@ class ChannelScopingUnitTest(TestCase):
 class ToolOutputCompressorTest(TestCase):
     """Tests for the tool output compression service (Phase 14.2)."""
 
-    def test_compression_result_defaults(self):
+    def test_compression_result_defaults(self) -> None:
         """CompressionResult should have sensible defaults."""
-        from agentx_ai.agent.tool_output_compressor import CompressionResult
-
         result = CompressionResult()
         self.assertTrue(result.success)
         self.assertEqual(result.compressed_text, "")
         self.assertIsNone(result.error)
         self.assertEqual(result.tokens_used, 0)
 
-    def test_compressor_singleton(self):
+    def test_compressor_singleton(self) -> None:
         """get_compressor() should return a singleton."""
-        from agentx_ai.agent.tool_output_compressor import (
-            get_compressor,
-            _compressor,
-        )
-        import agentx_ai.agent.tool_output_compressor as mod
-
         # Reset singleton
-        mod._compressor = None
+        _compressor_mod._compressor = None
 
         c1 = get_compressor()
         c2 = get_compressor()
         self.assertIs(c1, c2)
 
         # Clean up
-        mod._compressor = None
+        _compressor_mod._compressor = None
 
-    def test_compress_disabled_config(self):
+    def test_compress_disabled_config(self) -> None:
         """Compression should return success=False when disabled."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from unittest.mock import patch
-        import asyncio
-
         compressor = ToolOutputCompressor()
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": False,
-            "model": "test-model",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG_DISABLED):
             result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "compression_disabled")
         self.assertEqual(result.original_chars, 5000)
 
-    def test_compress_no_provider(self):
+    def test_compress_no_provider(self) -> None:
         """Compression should return success=False when provider unavailable."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from unittest.mock import patch
-        import asyncio
-
         compressor = ToolOutputCompressor()
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": True,
-            "model": "nonexistent-model-xyz",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }), patch.object(compressor, '_get_provider', side_effect=ValueError("No provider")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
+             patch.object(compressor, '_get_provider', side_effect=ValueError("No provider")):
             result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
 
         self.assertFalse(result.success)
-        self.assertIn("provider_unavailable", result.error)
+        self.assertIn("provider_unavailable", result.error)  # type: ignore[operator]
 
-    def test_compress_success_with_mock_provider(self):
+    def test_compress_success_with_mock_provider(self) -> None:
         """Compression should produce structured output with a mocked provider."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from agentx_ai.providers.base import CompletionResult
-        from unittest.mock import patch, AsyncMock, MagicMock
-        import asyncio
-
         compressor = ToolOutputCompressor()
 
         mock_provider = MagicMock()
@@ -1820,13 +1554,8 @@ class ToolOutputCompressorTest(TestCase):
             usage={"total_tokens": 150},
         ))
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": True,
-            "model": "test-model",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
+             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
             result = asyncio.run(compressor.compress(
                 "read_file",
                 "x" * 10000,
@@ -1839,17 +1568,12 @@ class ToolOutputCompressorTest(TestCase):
         self.assertEqual(result.tokens_used, 150)
         self.assertEqual(result.original_chars, 10000)
 
-    def test_compress_truncates_large_input(self):
+    def test_compress_truncates_large_input(self) -> None:
         """Input exceeding max_input_chars should be truncated before LLM call."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from agentx_ai.providers.base import CompletionResult
-        from unittest.mock import patch, AsyncMock, MagicMock
-        import asyncio
-
         compressor = ToolOutputCompressor()
 
-        captured_messages = []
-        async def capture_complete(messages, model, **kwargs):
+        captured_messages: list[Message] = []
+        async def capture_complete(messages: list[Message], model: str, **kwargs: object) -> CompletionResult:
             captured_messages.extend(messages)
             return CompletionResult(
                 content="Compressed",
@@ -1861,13 +1585,8 @@ class ToolOutputCompressorTest(TestCase):
         mock_provider = MagicMock()
         mock_provider.complete = capture_complete
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": True,
-            "model": "test-model",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
+             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
             asyncio.run(compressor.compress(
                 "big_tool",
                 "x" * 20000,
@@ -1879,35 +1598,22 @@ class ToolOutputCompressorTest(TestCase):
         prompt_content = captured_messages[0].content
         self.assertIn("15,000 more chars", prompt_content)
 
-    def test_compress_error_fallback(self):
+    def test_compress_error_fallback(self) -> None:
         """Provider error should return success=False with error detail."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from unittest.mock import patch, AsyncMock, MagicMock
-        import asyncio
-
         compressor = ToolOutputCompressor()
 
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(side_effect=RuntimeError("API timeout"))
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": True,
-            "model": "test-model",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
+             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
             result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
 
         self.assertFalse(result.success)
-        self.assertIn("API timeout", result.error)
+        self.assertIn("API timeout", result.error)  # type: ignore[operator]
 
-    def test_compress_sync_wrapper(self):
+    def test_compress_sync_wrapper(self) -> None:
         """compress_sync should delegate to compress and return result."""
-        from agentx_ai.agent.tool_output_compressor import ToolOutputCompressor
-        from agentx_ai.providers.base import CompletionResult
-        from unittest.mock import patch, AsyncMock, MagicMock
-
         compressor = ToolOutputCompressor()
 
         mock_provider = MagicMock()
@@ -1918,13 +1624,8 @@ class ToolOutputCompressorTest(TestCase):
             usage={"total_tokens": 100},
         ))
 
-        with patch.object(compressor, '_get_config', return_value={
-            "enabled": True,
-            "model": "test-model",
-            "temperature": 0.2,
-            "max_tokens": 1000,
-            "max_summary_chars": 2000,
-        }), patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
+             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
             result = compressor.compress_sync("test_tool", "x" * 5000, task_context="test query")
 
         self.assertTrue(result.success)
@@ -1936,7 +1637,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_chunk_text_fixed_size(self):
         """Plain text should produce fixed-size chunks with overlap."""
-        from agentx_ai.agent.tool_output_chunker import chunk_text
 
         content = "word " * 500  # ~2500 chars
         chunks = chunk_text(content, chunk_size=500, overlap=100)
@@ -1950,7 +1650,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_chunk_text_structural(self):
         """Markdown with headings should split at heading boundaries."""
-        from agentx_ai.agent.tool_output_chunker import chunk_text
 
         content = "# Section One\nContent for section one.\n\n# Section Two\nContent for section two.\n\n# Section Three\nMore content."
         chunks = chunk_text(content)
@@ -1960,14 +1659,12 @@ class ToolOutputChunkerTest(TestCase):
         self.assertIn("Section Two", chunks[1]["text"])
         self.assertIn("Section Three", chunks[2]["text"])
 
-    def test_chunk_text_empty(self):
+    def test_chunk_text_empty(self) -> None:
         """Empty content returns empty list."""
-        from agentx_ai.agent.tool_output_chunker import chunk_text
         self.assertEqual(chunk_text(""), [])
 
     def test_detect_sections_markdown(self):
         """Markdown headings should be detected with correct names."""
-        from agentx_ai.agent.tool_output_chunker import detect_sections
 
         content = "# Introduction\nSome intro.\n\n## Methods\nSome methods.\n\n## Results\nSome results."
         sections = detect_sections(content)
@@ -1981,7 +1678,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_detect_sections_json(self):
         """JSON top-level keys should be detected as sections."""
-        from agentx_ai.agent.tool_output_chunker import detect_sections
 
         content = json.dumps({"config": {"a": 1}, "data": [1, 2, 3], "meta": "info"})
         sections = detect_sections(content)
@@ -1993,7 +1689,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_detect_sections_plain_text(self):
         """Blank-line separated paragraphs should be detected."""
-        from agentx_ai.agent.tool_output_chunker import detect_sections
 
         content = "First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here."
         sections = detect_sections(content)
@@ -2002,18 +1697,17 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_get_section_content_match(self):
         """Case-insensitive section matching should work."""
-        from agentx_ai.agent.tool_output_chunker import get_section_content
 
         content = "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here."
         result = get_section_content(content, "setup")
 
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["name"], "Setup")
         self.assertIn("Setup instructions", result["content"])
 
     def test_get_section_content_not_found(self):
         """Missing section returns None."""
-        from agentx_ai.agent.tool_output_chunker import get_section_content
 
         content = "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here."
         result = get_section_content(content, "nonexistent")
@@ -2021,7 +1715,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_resolve_json_path_simple(self):
         """Simple key access should resolve."""
-        from agentx_ai.agent.tool_output_chunker import resolve_json_path
 
         content = json.dumps({"name": "Alice", "age": 30})
         result = resolve_json_path(content, "name")
@@ -2031,7 +1724,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_resolve_json_path_nested(self):
         """Nested dot-notation path should resolve."""
-        from agentx_ai.agent.tool_output_chunker import resolve_json_path
 
         content = json.dumps({"data": {"items": [{"name": "first"}, {"name": "second"}]}})
         result = resolve_json_path(content, "data.items[0].name")
@@ -2041,7 +1733,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_resolve_json_path_wildcard(self):
         """Wildcard [*] should return array."""
-        from agentx_ai.agent.tool_output_chunker import resolve_json_path
 
         content = json.dumps({"items": [{"id": 1}, {"id": 2}, {"id": 3}]})
         result = resolve_json_path(content, "items[*]")
@@ -2051,7 +1742,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_resolve_json_path_invalid(self):
         """Bad path returns error."""
-        from agentx_ai.agent.tool_output_chunker import resolve_json_path
 
         content = json.dumps({"name": "Alice"})
         result = resolve_json_path(content, "nonexistent.field")
@@ -2061,7 +1751,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_resolve_json_path_non_json(self):
         """Non-JSON content returns error."""
-        from agentx_ai.agent.tool_output_chunker import resolve_json_path
 
         result = resolve_json_path("This is plain text, not JSON.", "key")
         self.assertFalse(result["success"])
@@ -2069,7 +1758,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_keyword_search_fallback(self):
         """Keyword search should rank chunks by word overlap."""
-        from agentx_ai.agent.tool_output_chunker import _keyword_search
 
         chunks = [
             {"text": "The error log shows a timeout failure", "start": 0, "end": 37, "index": 0},
@@ -2085,7 +1773,6 @@ class ToolOutputChunkerTest(TestCase):
 
     def test_cosine_similarity(self):
         """Cosine similarity should compute correctly."""
-        from agentx_ai.agent.tool_output_chunker import _cosine_similarity
 
         self.assertAlmostEqual(_cosine_similarity([1, 0], [1, 0]), 1.0)
         self.assertAlmostEqual(_cosine_similarity([1, 0], [0, 1]), 0.0)
@@ -2097,8 +1784,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_new_tools_registered(self):
         """The three new tools should appear in get_internal_tools()."""
-        from agentx_ai.mcp.internal_tools import get_internal_tools
-
         tools = get_internal_tools()
         tool_names = [t.name for t in tools]
 
@@ -2108,8 +1793,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_tool_schemas_valid(self):
         """Each new tool schema should have required fields."""
-        from agentx_ai.mcp.internal_tools import get_internal_tools
-
         tools = get_internal_tools()
         new_tools = {t.name: t for t in tools if t.name.startswith("tool_output_")}
 
@@ -2122,9 +1805,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_query_not_found(self):
         """Querying an expired/missing key should return error."""
-        from agentx_ai.mcp.internal_tools import execute_internal_tool
-        import json
-
         result = execute_internal_tool("tool_output_query", {
             "key": "nonexistent_key_12345",
             "query": "find errors",
@@ -2134,8 +1814,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_section_list_with_mock(self):
         """Section listing should return section names from stored output."""
-        from unittest.mock import patch
-        from agentx_ai.mcp.internal_tools import execute_internal_tool
 
         mock_data = {
             "content": "# Setup\nSetup info.\n\n# Usage\nUsage info.\n\n# Troubleshooting\nHelp.",
@@ -2155,9 +1833,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_section_retrieve_with_mock(self):
         """Section retrieval should return section content."""
-        from unittest.mock import patch
-        from agentx_ai.mcp.internal_tools import execute_internal_tool
-        import json
 
         mock_data = {
             "content": "# Setup\nSetup instructions here.\n\n# Usage\nUsage guide here.",
@@ -2177,9 +1852,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_path_resolve_with_mock(self):
         """JSON path resolution should return the value."""
-        from unittest.mock import patch
-        from agentx_ai.mcp.internal_tools import execute_internal_tool
-        import json
 
         mock_data = {
             "content": json.dumps({"data": {"name": "test", "count": 42}}),
@@ -2199,9 +1871,6 @@ class IntentAwareRetrievalTest(TestCase):
 
     def test_path_non_json_with_mock(self):
         """JSON path on non-JSON content should return error."""
-        from unittest.mock import patch
-        from agentx_ai.mcp.internal_tools import execute_internal_tool
-        import json
 
         mock_data = {
             "content": "This is plain text, not JSON at all.",
@@ -2224,10 +1893,8 @@ class IntentAwareRetrievalTest(TestCase):
 class TrajectoryCompressionTest(TestCase):
     """Tests for intra-trajectory compression (Phase 14.4)."""
 
-    def _make_messages(self, num_rounds: int, content_size: int = 100) -> list:
+    def _make_messages(self, num_rounds: int, content_size: int = 100) -> list[Message]:
         """Helper: build a message list with system, user, and N tool rounds."""
-        from agentx_ai.providers.base import Message, MessageRole
-
         messages = [
             Message(role=MessageRole.SYSTEM, content="You are a helpful agent."),
             Message(role=MessageRole.USER, content="Do something useful."),
@@ -2252,8 +1919,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_identify_tool_rounds(self):
         """Should identify correct number of rounds with proper indices."""
-        from agentx_ai.streaming.trajectory_compression import identify_tool_rounds
-
         messages = self._make_messages(3)
         rounds = identify_tool_rounds(messages)
 
@@ -2271,9 +1936,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_no_compression_below_threshold(self):
         """Should return False and leave messages intact when below threshold."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from unittest.mock import patch, MagicMock
-
         messages = self._make_messages(3, content_size=50)
         original_count = len(messages)
 
@@ -2293,9 +1955,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_compression_triggers(self):
         """Should compress older rounds and insert Knowledge block."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from agentx_ai.providers.base import MessageRole
-        from unittest.mock import patch, MagicMock
 
         # Large content to exceed threshold
         messages = self._make_messages(4, content_size=2000)
@@ -2328,9 +1987,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_preserve_recent_rounds(self):
         """With preserve=2 and 4 rounds, last 2 should remain intact."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from agentx_ai.providers.base import MessageRole
-        from unittest.mock import patch, MagicMock
 
         messages = self._make_messages(4, content_size=2000)
 
@@ -2362,9 +2018,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_fallback_on_llm_failure(self):
         """Should return False and leave messages intact when LLM fails."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from unittest.mock import patch, MagicMock
-
         messages = self._make_messages(4, content_size=2000)
         original_count = len(messages)
 
@@ -2389,10 +2042,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_knowledge_block_placement(self):
         """Knowledge block should be placed after system messages."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from agentx_ai.providers.base import Message, MessageRole
-        from unittest.mock import patch, MagicMock
-
         messages = self._make_messages(4, content_size=2000)
         # Add a second system message
         messages.insert(1, Message(role=MessageRole.SYSTEM, content="Additional system context."))
@@ -2420,6 +2069,7 @@ class TrajectoryCompressionTest(TestCase):
                 knowledge_idx = i
                 break
         self.assertIsNotNone(knowledge_idx)
+        assert knowledge_idx is not None
         # It should come after both system messages
         # System messages are at 0 and 1, so Knowledge should be at index 2
         self.assertEqual(knowledge_idx, 2)
@@ -2428,9 +2078,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_disabled_via_config(self):
         """Should return False when trajectory_compression.enabled is False."""
-        from agentx_ai.streaming.trajectory_compression import compress_trajectory
-        from unittest.mock import patch, MagicMock
-
         messages = self._make_messages(4, content_size=2000)
         original_count = len(messages)
 
@@ -2447,11 +2094,6 @@ class TrajectoryCompressionTest(TestCase):
 
     def test_rounds_to_text_format(self):
         """Serialisation should include tool names, arguments, and capped results."""
-        from agentx_ai.streaming.trajectory_compression import (
-            identify_tool_rounds,
-            rounds_to_text,
-        )
-
         messages = self._make_messages(2, content_size=50)
         rounds = identify_tool_rounds(messages)
         text = rounds_to_text(rounds)

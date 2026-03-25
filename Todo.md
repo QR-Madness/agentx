@@ -1,4 +1,4 @@
-# AgentX Development Todo
+# AgentX Development To-do
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype

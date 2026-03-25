@@ -210,7 +210,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test agentx_ai.tests -v2
+      - uv run python api/manage.py test agentx_ai.tests agentx_ai.tests_memory -v2
 
   test:quick:
     desc: "Run tests without model loading (faster)"

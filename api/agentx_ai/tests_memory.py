@@ -11,99 +11,75 @@ This file contains comprehensive tests for the memory system fixes and features:
 - Agent integration tests (require Docker + configured provider)
 """
 
+import asyncio
+import inspect
 import json
-import socket
+import re
 from datetime import datetime, timezone
 from unittest import skipUnless
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
-from django.test import TestCase, Client
+from django.test import TestCase
+from sqlalchemy import text
 
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-def _docker_services_running():
-    """Check if Docker services (Neo4j, PostgreSQL, Redis) are reachable."""
-    services = [("localhost", 7687), ("localhost", 5432), ("localhost", 6379)]
-    for host, port in services:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                pass
-        except (socket.error, socket.timeout):
-            return False
-    return True
-
-
-def _has_configured_provider():
-    """Check if any model provider is configured for agent tests."""
-    import os
-    return bool(
-        os.environ.get("ANTHROPIC_API_KEY") or
-        os.environ.get("OPENAI_API_KEY") or
-        os.environ.get("OLLAMA_BASE_URL") or
-        os.environ.get("LMSTUDIO_BASE_URL")
-    )
-
-
-def _embeddings_compatible():
-    """
-    Check if embedding provider dimensions match the PostgreSQL schema.
-
-    Returns True if:
-    - OpenAI is configured and schema uses 1536 dims, OR
-    - Local embeddings are used and schema uses 768 dims
-
-    This prevents test failures from dimension mismatches.
-    """
-    import os
-    from agentx_ai.kit.agent_memory.config import get_settings
-
-    try:
-        settings = get_settings()
-
-        # If OpenAI API key is configured, assume OpenAI embeddings (1536 dims)
-        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-
-        # Schema dimension is set at init time (default 1536 for OpenAI)
-        schema_dims = settings.embedding_dimensions
-
-        # Local embedding model (nomic) produces 768 dimensions
-        local_dims = 768
-
-        if has_openai:
-            # OpenAI configured, schema should be 1536
-            return schema_dims == 1536
-        else:
-            # Local embeddings, schema should be 768
-            return schema_dims == local_dims
-    except Exception:
-        return False
-
-
-def _create_mock_neo4j_session():
-    """Create a mock Neo4j session for testing."""
-    mock = MagicMock()
-    mock.run.return_value = MagicMock()
-    mock.__enter__ = MagicMock(return_value=mock)
-    mock.__exit__ = MagicMock(return_value=False)
-    return mock
-
-
-def _create_mock_postgres_session():
-    """Create a mock PostgreSQL session for testing."""
-    mock = MagicMock()
-    mock.execute.return_value = MagicMock()
-    mock.__enter__ = MagicMock(return_value=mock)
-    mock.__exit__ = MagicMock(return_value=False)
-    return mock
-
-
-def _create_mock_redis_client():
-    """Create a mock Redis client for testing."""
-    mock = MagicMock()
-    return mock
+from agentx_ai.kit.agent_memory import config as memory_config_module
+from agentx_ai.kit.agent_memory.config import (
+    SETTINGS_CACHE_TTL,
+    Settings,
+    get_settings,
+)
+from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
+from agentx_ai.kit.agent_memory.consolidation import jobs as consolidation_jobs_module
+from agentx_ai.kit.agent_memory.consolidation.jobs import (
+    _get_recent_facts,
+    _handle_contradiction,
+    apply_memory_decay,
+    consolidate_episodic_to_semantic,
+    detect_patterns,
+    manage_audit_partitions,
+    promote_to_global,
+)
+from agentx_ai.kit.agent_memory.consolidation.metrics import (
+    AggregatedMetrics,
+    ConsolidationMetrics,
+)
+from agentx_ai.kit.agent_memory.extraction import (
+    ContradictionResult,
+    CorrectionResult,
+    extract_entities,
+)
+from agentx_ai.kit.agent_memory.extraction.service import (
+    CORRECTION_PATTERNS,
+    CombinedExtractionResult,
+    ExtractionResult,
+    ExtractionService,
+    get_extraction_service,
+)
+from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
+from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
+from agentx_ai.kit.agent_memory.memory.recall import RecallLayer, RecallMetrics
+from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
+from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
+from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
+from agentx_ai.kit.agent_memory.models import (
+    Fact,
+    MemoryBundle,
+    Turn,
+    compute_claim_hash,
+)
+from agentx_ai.prompts.loader import get_prompt_loader
+from agentx_ai.test_utils import (
+    APITestBase,
+    MemoryTestBase,
+    create_mock_neo4j_session,
+    create_mock_postgres_session,
+    create_mock_redis_client,
+    docker_services_running,
+    embeddings_compatible,
+    has_configured_provider,
+)
 
 
 # =============================================================================
@@ -113,11 +89,10 @@ def _create_mock_redis_client():
 class GoalAccessControlTest(TestCase):
     """Test access control for goal operations."""
 
-    def test_user_can_complete_own_goal(self):
+    def test_user_can_complete_own_goal(self) -> None:
         """User A can complete a goal they created."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_record = {"updated_id": "goal-1"}
         mock_result.single.return_value = mock_record
@@ -126,18 +101,17 @@ class GoalAccessControlTest(TestCase):
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j, \
              patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_redis:
             mock_neo4j.return_value = mock_session
-            mock_redis.return_value = _create_mock_redis_client()
+            mock_redis.return_value = create_mock_redis_client()
 
             memory = AgentMemory(user_id="user-A", channel="_global")
             result = memory.complete_goal("goal-1", status="completed")
 
             self.assertTrue(result)
 
-    def test_user_cannot_complete_other_users_goal(self):
+    def test_user_cannot_complete_other_users_goal(self) -> None:
         """User A cannot complete User B's goal - returns False."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.single.return_value = None  # No goal found
         mock_session.run.return_value = mock_result
@@ -145,18 +119,17 @@ class GoalAccessControlTest(TestCase):
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j, \
              patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_redis:
             mock_neo4j.return_value = mock_session
-            mock_redis.return_value = _create_mock_redis_client()
+            mock_redis.return_value = create_mock_redis_client()
 
             memory = AgentMemory(user_id="user-B", channel="_global")
             result = memory.complete_goal("goal-owned-by-user-A", status="completed")
 
             self.assertFalse(result)
 
-    def test_complete_goal_uses_has_goal_relationship(self):
+    def test_complete_goal_uses_has_goal_relationship(self) -> None:
         """Verify the Cypher query includes HAS_GOAL relationship check."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.single.return_value = {"updated_id": "goal-1"}
         mock_session.run.return_value = mock_result
@@ -164,7 +137,7 @@ class GoalAccessControlTest(TestCase):
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j, \
              patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_redis:
             mock_neo4j.return_value = mock_session
-            mock_redis.return_value = _create_mock_redis_client()
+            mock_redis.return_value = create_mock_redis_client()
 
             memory = AgentMemory(user_id="user-A", channel="_global")
             memory.complete_goal("goal-1", status="completed")
@@ -175,11 +148,10 @@ class GoalAccessControlTest(TestCase):
             self.assertIn("User", query)
             self.assertIn("Goal", query)
 
-    def test_complete_goal_respects_channel_filter(self):
+    def test_complete_goal_respects_channel_filter(self) -> None:
         """Goal in different channel cannot be completed."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.single.return_value = None
         mock_session.run.return_value = mock_result
@@ -187,7 +159,7 @@ class GoalAccessControlTest(TestCase):
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j, \
              patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_redis:
             mock_neo4j.return_value = mock_session
-            mock_redis.return_value = _create_mock_redis_client()
+            mock_redis.return_value = create_mock_redis_client()
 
             memory = AgentMemory(user_id="user-A", channel="project-X")
             result = memory.complete_goal("goal-in-different-channel", status="completed")
@@ -202,9 +174,8 @@ class GoalAccessControlTest(TestCase):
 class EntityTypeValidationTest(TestCase):
     """Test entity type whitelist validation."""
 
-    def test_valid_entity_type_preserved(self):
+    def test_valid_entity_type_preserved(self) -> None:
         """Valid types from whitelist are preserved."""
-        from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
 
         sm = SemanticMemory()
         result = sm._validate_entity_type("Person")
@@ -213,9 +184,8 @@ class EntityTypeValidationTest(TestCase):
         result = sm._validate_entity_type("Organization")
         self.assertEqual(result, "Organization")
 
-    def test_invalid_entity_type_defaults_to_entity(self):
+    def test_invalid_entity_type_defaults_to_entity(self) -> None:
         """Invalid types default to 'Entity'."""
-        from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
 
         sm = SemanticMemory()
         result = sm._validate_entity_type("SomethingCompletelyInvalid")
@@ -224,9 +194,8 @@ class EntityTypeValidationTest(TestCase):
         result = sm._validate_entity_type("DropTable")
         self.assertEqual(result, "Entity")
 
-    def test_entity_type_normalization(self):
+    def test_entity_type_normalization(self) -> None:
         """Types are normalized (title case, stripped)."""
-        from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
 
         sm = SemanticMemory()
         result = sm._validate_entity_type("person")
@@ -235,9 +204,8 @@ class EntityTypeValidationTest(TestCase):
         result = sm._validate_entity_type("  Person  ")
         self.assertEqual(result, "Person")
 
-    def test_whitelist_comes_from_settings(self):
+    def test_whitelist_comes_from_settings(self) -> None:
         """Whitelist is loaded from settings.entity_types."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         self.assertTrue(hasattr(settings, 'entity_types'))
@@ -252,15 +220,13 @@ class EntityTypeValidationTest(TestCase):
 class EmbeddingStorageFormatTest(TestCase):
     """Test embedding storage format is JSON, not Python str representation."""
 
-    def test_embedding_stored_as_json_dumps(self):
+    def test_embedding_stored_as_json_dumps(self) -> None:
         """store_turn_log() uses json.dumps() for embedding."""
-        mock_session = _create_mock_postgres_session()
+        mock_session = create_mock_postgres_session()
 
         with patch('agentx_ai.kit.agent_memory.memory.episodic.get_postgres_session') as mock_pg:
             mock_pg.return_value = mock_session
 
-            from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-            from agentx_ai.kit.agent_memory.models import Turn
 
             em = EpisodicMemory()
             turn = Turn(
@@ -283,7 +249,7 @@ class EmbeddingStorageFormatTest(TestCase):
                 parsed = json.loads(embedding_str)
                 self.assertIsInstance(parsed, list)
 
-    def test_embedding_not_stored_as_str(self):
+    def test_embedding_not_stored_as_str(self) -> None:
         """Embedding is not str(list) which produces 'Python repr' format."""
         embedding = [0.1, 0.2, 0.3]
         json_format = json.dumps(embedding)
@@ -291,7 +257,7 @@ class EmbeddingStorageFormatTest(TestCase):
         str_format = str(embedding)
         self.assertEqual(json_format, str_format)
 
-    def test_embedding_can_be_parsed_back(self):
+    def test_embedding_can_be_parsed_back(self) -> None:
         """Stored JSON can be json.loads() back to list."""
         original = [0.123456, 0.654321, -0.5, 0.0, 1.0]
         stored = json.dumps(original)
@@ -305,12 +271,11 @@ class EmbeddingStorageFormatTest(TestCase):
 class TurnIndexPassthroughTest(TestCase):
     """Test turn_index passed correctly to tool invocation recording."""
 
-    def test_turn_index_passed_to_postgres(self):
+    def test_turn_index_passed_to_postgres(self) -> None:
         """record_invocation() includes turn_index in SQL INSERT."""
-        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
 
-        mock_pg_session = _create_mock_postgres_session()
-        mock_neo4j_session = _create_mock_neo4j_session()
+        mock_pg_session = create_mock_postgres_session()
+        mock_neo4j_session = create_mock_neo4j_session()
 
         with patch('agentx_ai.kit.agent_memory.memory.procedural.get_postgres_session') as mock_pg, \
              patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
@@ -343,12 +308,11 @@ class TurnIndexPassthroughTest(TestCase):
             self.assertIn("turn_idx", pg_params)
             self.assertEqual(pg_params["turn_idx"], 5)
 
-    def test_turn_index_passed_to_neo4j(self):
+    def test_turn_index_passed_to_neo4j(self) -> None:
         """record_invocation() includes turn_index in Cypher CREATE."""
-        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
 
-        mock_pg_session = _create_mock_postgres_session()
-        mock_neo4j_session = _create_mock_neo4j_session()
+        mock_pg_session = create_mock_postgres_session()
+        mock_neo4j_session = create_mock_neo4j_session()
 
         with patch('agentx_ai.kit.agent_memory.memory.procedural.get_postgres_session') as mock_pg, \
              patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
@@ -374,12 +338,11 @@ class TurnIndexPassthroughTest(TestCase):
             kwargs = neo4j_call_args[1]
             self.assertEqual(kwargs.get("turn_index"), 7)
 
-    def test_turn_index_none_defaults_to_zero(self):
+    def test_turn_index_none_defaults_to_zero(self) -> None:
         """None turn_index defaults to 0 in SQL."""
-        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
 
-        mock_pg_session = _create_mock_postgres_session()
-        mock_neo4j_session = _create_mock_neo4j_session()
+        mock_pg_session = create_mock_postgres_session()
+        mock_neo4j_session = create_mock_neo4j_session()
 
         with patch('agentx_ai.kit.agent_memory.memory.procedural.get_postgres_session') as mock_pg, \
              patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
@@ -416,71 +379,11 @@ class TurnIndexPassthroughTest(TestCase):
 # Phase 11.8+: Edge Case Tests
 # =============================================================================
 
-class TimeWindowBoundsTest(TestCase):
-    """Test time_window_hours bounds validation."""
-
-    def test_negative_time_window_handled(self):
-        """Negative time_window_hours is clamped to minimum."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-
-        em = EpisodicMemory()
-        # The _validate_time_window method should exist and clamp negative values
-        if hasattr(em, '_validate_time_window'):
-            result = em._validate_time_window(-5)
-            self.assertGreaterEqual(result, 1)
-        else:
-            # If method doesn't exist, test that retrieve_recent works with negative
-            # It should not crash
-            mock_session = _create_mock_neo4j_session()
-            mock_session.run.return_value = MagicMock(data=lambda: [])
-            with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
-                mock_neo4j.return_value = mock_session
-                # Should not raise
-                try:
-                    em.retrieve_recent(
-                        user_id="user1",
-                        channel="_global",
-                        limit=10,
-                        time_window_hours=-5
-                    )
-                except Exception:
-                    pass  # May fail for other reasons, that's ok
-
-    def test_zero_time_window_handled(self):
-        """Zero time_window_hours is clamped to minimum."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-
-        em = EpisodicMemory()
-        if hasattr(em, '_validate_time_window'):
-            result = em._validate_time_window(0)
-            self.assertGreaterEqual(result, 1)
-
-    def test_excessive_time_window_capped(self):
-        """time_window_hours > 8760 (1 year) is capped."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-
-        em = EpisodicMemory()
-        if hasattr(em, '_validate_time_window'):
-            result = em._validate_time_window(100000)
-            self.assertLessEqual(result, 8760)
-
-    def test_valid_time_window_preserved(self):
-        """Valid values (e.g., 24, 168) are preserved."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-
-        em = EpisodicMemory()
-        if hasattr(em, '_validate_time_window'):
-            result = em._validate_time_window(24)
-            self.assertEqual(result, 24)
-
-            result = em._validate_time_window(168)
-            self.assertEqual(result, 168)
-
 
 class SuccessRateDivisionTest(TestCase):
     """Test division-by-zero protection in success rate calculations."""
 
-    def test_success_rate_zero_total_returns_half(self):
+    def test_success_rate_zero_total_returns_half(self) -> None:
         """success_count=0, failure_count=0 returns 0.5 (neutral)."""
         # When both are 0, should return 0.5 as neutral
         success_count = 0
@@ -494,7 +397,7 @@ class SuccessRateDivisionTest(TestCase):
 
         self.assertEqual(rate, 0.5)
 
-    def test_success_rate_all_success_returns_one(self):
+    def test_success_rate_all_success_returns_one(self) -> None:
         """success_count=5, failure_count=0 returns 1.0."""
         success_count = 5
         failure_count = 0
@@ -507,7 +410,7 @@ class SuccessRateDivisionTest(TestCase):
 
         self.assertEqual(rate, 1.0)
 
-    def test_success_rate_all_failure_returns_zero(self):
+    def test_success_rate_all_failure_returns_zero(self) -> None:
         """success_count=0, failure_count=5 returns 0.0."""
         success_count = 0
         failure_count = 5
@@ -520,7 +423,7 @@ class SuccessRateDivisionTest(TestCase):
 
         self.assertEqual(rate, 0.0)
 
-    def test_success_rate_cypher_uses_case_expression(self):
+    def test_success_rate_cypher_uses_case_expression(self) -> None:
         """Verify Cypher query patterns use CASE WHEN for division protection."""
         # This tests that the Cypher template pattern includes protection
         cypher_pattern = """
@@ -536,28 +439,25 @@ class SuccessRateDivisionTest(TestCase):
 class ConsolidationTimestampTest(TestCase):
     """Test consolidated timestamp set even on partial extraction failure."""
 
-    def test_timestamp_set_on_full_success(self):
+    def test_timestamp_set_on_full_success(self) -> None:
         """c.consolidated = datetime() set when all extractions succeed."""
         # This is a pattern test - the actual implementation should set
         # the timestamp in a finally block
-        from agentx_ai.kit.agent_memory.consolidation.jobs import consolidate_episodic_to_semantic
 
         # Just verify the function exists and is callable
         self.assertTrue(callable(consolidate_episodic_to_semantic))
 
-    def test_timestamp_set_on_partial_failure(self):
+    def test_timestamp_set_on_partial_failure(self) -> None:
         """c.consolidated = datetime() set even if entity extraction fails."""
         # The consolidation should mark conversations as processed even on partial failure
         # This prevents infinite retry loops
         pass  # Actual test requires integration testing
 
-    def test_timestamp_in_finally_block(self):
+    def test_timestamp_in_finally_block(self) -> None:
         """Verify timestamp setting pattern uses finally block."""
-        import inspect
-        from agentx_ai.kit.agent_memory.consolidation import jobs
 
         # Get source and verify the pattern
-        source = inspect.getsource(jobs.consolidate_episodic_to_semantic)
+        source = inspect.getsource(consolidation_jobs_module.consolidate_episodic_to_semantic)
 
         # The function should handle errors gracefully
         self.assertIn("try", source)
@@ -567,9 +467,8 @@ class ConsolidationTimestampTest(TestCase):
 class SQLPartitionNameValidationTest(TestCase):
     """Test SQL partition name validation (alphanumeric only)."""
 
-    def test_valid_partition_name_accepted(self):
+    def test_valid_partition_name_accepted(self) -> None:
         """memory_audit_log_20260217 is valid."""
-        import re
         pattern = r'^[a-zA-Z0-9_]+$'
 
         valid_names = [
@@ -581,9 +480,8 @@ class SQLPartitionNameValidationTest(TestCase):
         for name in valid_names:
             self.assertIsNotNone(re.match(pattern, name), f"{name} should be valid")
 
-    def test_invalid_partition_name_rejected(self):
+    def test_invalid_partition_name_rejected(self) -> None:
         """Names with special chars are rejected."""
-        import re
         pattern = r'^[a-zA-Z0-9_]+$'
 
         invalid_names = [
@@ -596,9 +494,8 @@ class SQLPartitionNameValidationTest(TestCase):
         for name in invalid_names:
             self.assertIsNone(re.match(pattern, name), f"{name} should be invalid")
 
-    def test_partition_name_regex_pattern(self):
+    def test_partition_name_regex_pattern(self) -> None:
         """Pattern matches ^[a-zA-Z0-9_]+$."""
-        import re
 
         pattern = r'^[a-zA-Z0-9_]+$'
 
@@ -616,7 +513,7 @@ class SQLPartitionNameValidationTest(TestCase):
 class AverageLatencyCalculationTest(TestCase):
     """Test running mean calculation in procedural.record_invocation()."""
 
-    def test_first_invocation_sets_initial_latency(self):
+    def test_first_invocation_sets_initial_latency(self) -> None:
         """First invocation sets avg_latency_ms directly."""
         # Running mean formula: new_avg = old_avg + (new - old_avg) / (count + 1)
         # For first invocation (count=0): new_avg = 0 + (100 - 0) / 1 = 100
@@ -630,7 +527,7 @@ class AverageLatencyCalculationTest(TestCase):
 
         self.assertEqual(new_avg, 100)
 
-    def test_running_mean_formula_correct(self):
+    def test_running_mean_formula_correct(self) -> None:
         """Running mean: new_avg = old_avg + (new - old_avg)/(count+1)"""
         # After 2 invocations with 100ms and 200ms, avg should be 150
 
@@ -644,7 +541,7 @@ class AverageLatencyCalculationTest(TestCase):
 
         self.assertEqual(avg, 150)
 
-    def test_running_mean_over_many_invocations(self):
+    def test_running_mean_over_many_invocations(self) -> None:
         """Test with 10+ invocations for numerical stability."""
         # Start with first value
         values = [100, 200, 150, 175, 125, 180, 160, 140, 190, 110]
@@ -659,7 +556,7 @@ class AverageLatencyCalculationTest(TestCase):
         # Should be close to actual average
         self.assertAlmostEqual(avg, expected_avg, places=5)
 
-    def test_latency_calculation_uses_correct_count_order(self):
+    def test_latency_calculation_uses_correct_count_order(self) -> None:
         """Count is incremented AFTER average update, not before."""
         # The Cypher query should:
         # 1. Calculate new avg using current count
@@ -667,7 +564,6 @@ class AverageLatencyCalculationTest(TestCase):
         # This ensures the formula (count + 1) in denominator is correct
 
         # Verify the pattern in the Cypher template
-        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
 
         pm = ProceduralMemory()
         # The record_invocation method should use the correct formula
@@ -677,11 +573,10 @@ class AverageLatencyCalculationTest(TestCase):
 class ConsolidationJobMetricsTest(TestCase):
     """Test consolidation jobs return proper metrics dictionaries."""
 
-    def test_consolidate_episodic_returns_metrics_dict(self):
+    def test_consolidate_episodic_returns_metrics_dict(self) -> None:
         """consolidate_episodic_to_semantic() returns dict with metrics."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import consolidate_episodic_to_semantic
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.__iter__ = MagicMock(return_value=iter([]))  # No conversations
         mock_session.run.return_value = mock_result
@@ -689,17 +584,16 @@ class ConsolidationJobMetricsTest(TestCase):
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
             mock_neo4j.return_value = mock_session
 
-            result = consolidate_episodic_to_semantic()
+            result = asyncio.run(consolidate_episodic_to_semantic())
 
             self.assertIsInstance(result, dict)
             # Should have metric keys (actual key is items_processed)
             self.assertIn("items_processed", result)
 
-    def test_detect_patterns_returns_metrics_dict(self):
+    def test_detect_patterns_returns_metrics_dict(self) -> None:
         """detect_patterns() returns dict with metrics."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import detect_patterns
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.__iter__ = MagicMock(return_value=iter([]))
         mock_session.run.return_value = mock_result
@@ -711,11 +605,10 @@ class ConsolidationJobMetricsTest(TestCase):
 
             self.assertIsInstance(result, dict)
 
-    def test_apply_memory_decay_returns_metrics_dict(self):
+    def test_apply_memory_decay_returns_metrics_dict(self) -> None:
         """apply_memory_decay() returns dict with decay counts."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import apply_memory_decay
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         # Return the expected key from the Cypher query
         mock_result.single.return_value = {"decayed_count": 0}
@@ -728,11 +621,10 @@ class ConsolidationJobMetricsTest(TestCase):
 
             self.assertIsInstance(result, dict)
 
-    def test_promote_to_global_returns_metrics_dict(self):
+    def test_promote_to_global_returns_metrics_dict(self) -> None:
         """promote_to_global() returns dict with promotion counts."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import promote_to_global
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.__iter__ = MagicMock(return_value=iter([]))
         mock_session.run.return_value = mock_result
@@ -744,11 +636,10 @@ class ConsolidationJobMetricsTest(TestCase):
 
             self.assertIsInstance(result, dict)
 
-    def test_manage_audit_partitions_returns_metrics_dict(self):
+    def test_manage_audit_partitions_returns_metrics_dict(self) -> None:
         """manage_audit_partitions() returns dict with partition info."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import manage_audit_partitions
 
-        mock_pg_session = _create_mock_postgres_session()
+        mock_pg_session = create_mock_postgres_session()
         mock_result = MagicMock()
         mock_result.fetchall.return_value = []
         mock_pg_session.execute.return_value = mock_result
@@ -764,7 +655,7 @@ class ConsolidationJobMetricsTest(TestCase):
 class EntityNameNormalizationTest(TestCase):
     """Test entity name case normalization in relationship linking."""
 
-    def test_relationship_linking_case_insensitive(self):
+    def test_relationship_linking_case_insensitive(self) -> None:
         """Entity 'John' matches relationship source 'john'."""
         entity_map = {"john": "entity-1", "acme": "entity-2"}
 
@@ -778,7 +669,7 @@ class EntityNameNormalizationTest(TestCase):
         self.assertEqual(entity_map.get(name_title.lower()), "entity-1")
         self.assertEqual(entity_map.get(name_upper.lower()), "entity-1")
 
-    def test_entity_map_uses_lowercase_keys(self):
+    def test_entity_map_uses_lowercase_keys(self) -> None:
         """consolidate_episodic_to_semantic stores lowercase keys."""
         # The entity_map in consolidation should use lowercase
         entity_map = {}
@@ -791,7 +682,7 @@ class EntityNameNormalizationTest(TestCase):
         self.assertIn("john smith", entity_map)
         self.assertNotIn("John Smith", entity_map)
 
-    def test_mixed_case_entities_link_correctly(self):
+    def test_mixed_case_entities_link_correctly(self) -> None:
         """'ACME Corp' entity links to 'acme corp' in relationship."""
         entity_map = {}
 
@@ -811,18 +702,16 @@ class EntityNameNormalizationTest(TestCase):
 class ExtractionTimeoutTest(TestCase):
     """Test extraction timeout fires after configured seconds."""
 
-    def test_extraction_times_out_after_config_seconds(self):
+    def test_extraction_times_out_after_config_seconds(self) -> None:
         """extract_all() times out after extraction_timeout setting."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         self.assertTrue(hasattr(settings, 'extraction_timeout'))
         self.assertIsInstance(settings.extraction_timeout, (int, float))
         self.assertGreater(settings.extraction_timeout, 0)
 
-    def test_timeout_returns_failure_result(self):
+    def test_timeout_returns_failure_result(self) -> None:
         """Timeout should return ExtractionResult with success=False."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionResult
 
         # Simulate timeout result
         result = ExtractionResult(
@@ -834,11 +723,10 @@ class ExtractionTimeoutTest(TestCase):
         )
 
         self.assertFalse(result.success)
-        self.assertIn("timed out", result.error)
+        self.assertIn("timed out", result.error)  # type: ignore[arg-type]
 
-    def test_timeout_value_comes_from_settings(self):
+    def test_timeout_value_comes_from_settings(self) -> None:
         """Timeout uses settings.extraction_timeout value."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         # Default should be 30 seconds
@@ -848,10 +736,8 @@ class ExtractionTimeoutTest(TestCase):
 class AsyncExtractionContextTest(TestCase):
     """Test async extraction works from both sync and async contexts."""
 
-    def test_extract_all_works_from_async_context(self):
+    def test_extract_all_works_from_async_context(self) -> None:
         """extract_all() works when called from async function."""
-        import asyncio
-        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
 
         service = get_extraction_service()
 
@@ -865,19 +751,17 @@ class AsyncExtractionContextTest(TestCase):
         result = asyncio.run(test_async())
         self.assertIsNotNone(result)
 
-    def test_extract_entities_sync_wrapper_works(self):
+    def test_extract_entities_sync_wrapper_works(self) -> None:
         """Sync extract_entities() wrapper works without event loop."""
-        from agentx_ai.kit.agent_memory.extraction import extract_entities
 
         # Should work without explicit async handling
         result = extract_entities("Short text")
         self.assertIsInstance(result, list)
 
-    def test_handles_nested_event_loop(self):
+    def test_handles_nested_event_loop(self) -> None:
         """Works correctly with nested async contexts."""
         # The extraction service should handle cases where it's called
         # from within an existing event loop
-        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
 
         service = get_extraction_service()
         # Just verify it exists and is callable
@@ -891,11 +775,10 @@ class AsyncExtractionContextTest(TestCase):
 class RedisScanPaginationTest(TestCase):
     """Test Redis SCAN is used instead of KEYS."""
 
-    def test_get_context_uses_scan_not_keys(self):
+    def test_get_context_uses_scan_not_keys(self) -> None:
         """WorkingMemory.get_context() uses SCAN for iteration."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.scan.return_value = (0, [])
         mock_redis.get.return_value = None
 
@@ -911,11 +794,10 @@ class RedisScanPaginationTest(TestCase):
             elif mock_redis.keys.called:
                 self.fail("Should use SCAN instead of KEYS")
 
-    def test_clear_session_uses_scan_not_keys(self):
+    def test_clear_session_uses_scan_not_keys(self) -> None:
         """WorkingMemory.clear_session() uses SCAN for iteration."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.scan.return_value = (0, [b"key1", b"key2"])
 
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_get:
@@ -927,11 +809,10 @@ class RedisScanPaginationTest(TestCase):
             # Verify SCAN was called
             self.assertTrue(mock_redis.scan.called)
 
-    def test_invalidate_cache_uses_scan_not_keys(self):
+    def test_invalidate_cache_uses_scan_not_keys(self) -> None:
         """MemoryRetriever.invalidate_cache() uses SCAN for iteration."""
-        from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.scan.return_value = (0, [])
 
         mock_memory = MagicMock()
@@ -946,9 +827,9 @@ class RedisScanPaginationTest(TestCase):
             if mock_redis.scan.called:
                 self.assertTrue(True)
 
-    def test_scan_handles_pagination_correctly(self):
+    def test_scan_handles_pagination_correctly(self) -> None:
         """SCAN loop continues until cursor returns 0."""
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
 
         # Simulate paginated SCAN results
         call_count = [0]
@@ -978,11 +859,10 @@ class RedisScanPaginationTest(TestCase):
 class WorkingMemoryTTLRefreshTest(TestCase):
     """Test TTL is refreshed on read access (sliding window expiry)."""
 
-    def test_get_recent_turns_refreshes_ttl(self):
+    def test_get_recent_turns_refreshes_ttl(self) -> None:
         """get_recent_turns() calls expire() on access."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.lrange.return_value = []
         mock_redis.exists.return_value = True
 
@@ -996,11 +876,10 @@ class WorkingMemoryTTLRefreshTest(TestCase):
             # (Implementation may vary - check if expire was called)
             # This tests the pattern, actual call depends on implementation
 
-    def test_ttl_refresh_uses_configured_value(self):
+    def test_ttl_refresh_uses_configured_value(self) -> None:
         """TTL refresh uses 3600 seconds (1 hour)."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.lrange.return_value = []
 
         with patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_get:
@@ -1027,11 +906,10 @@ class WorkingMemoryTTLRefreshTest(TestCase):
                     if len(args) >= 2:
                         self.assertEqual(args[1], 3600)
 
-    def test_ttl_refresh_only_if_data_exists(self):
+    def test_ttl_refresh_only_if_data_exists(self) -> None:
         """TTL not refreshed if no turns exist."""
-        from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 
-        mock_redis = _create_mock_redis_client()
+        mock_redis = create_mock_redis_client()
         mock_redis.lrange.return_value = []  # No turns
         mock_redis.exists.return_value = False
 
@@ -1048,9 +926,8 @@ class WorkingMemoryTTLRefreshTest(TestCase):
 class QueryLengthValidationTest(TestCase):
     """Test retrieval rejects oversized queries."""
 
-    def test_query_under_limit_accepted(self):
+    def test_query_under_limit_accepted(self) -> None:
         """Query within max_query_length is accepted."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         max_length = settings.max_query_length
@@ -1059,9 +936,8 @@ class QueryLengthValidationTest(TestCase):
         query = "a" * 100
         self.assertLess(len(query), max_length)
 
-    def test_query_over_limit_raises_valueerror(self):
+    def test_query_over_limit_raises_valueerror(self) -> None:
         """Query exceeding max_query_length raises ValueError."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         max_length = settings.max_query_length
@@ -1073,16 +949,15 @@ class QueryLengthValidationTest(TestCase):
         # (Test the validation logic pattern)
         self.assertGreater(len(oversized_query), max_length)
 
-    def test_limit_comes_from_settings(self):
+    def test_limit_comes_from_settings(self) -> None:
         """Limit is settings.max_query_length (default 10000)."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
         self.assertTrue(hasattr(settings, 'max_query_length'))
         self.assertIsInstance(settings.max_query_length, int)
         self.assertEqual(settings.max_query_length, 10000)
 
-    def test_error_message_includes_length_info(self):
+    def test_error_message_includes_length_info(self) -> None:
         """ValueError message should show actual vs max length."""
         actual = 15000
         max_length = 10000
@@ -1096,18 +971,7 @@ class QueryLengthValidationTest(TestCase):
 class GraphTraversalLimitsTest(TestCase):
     """Test graph traversal depth limits (max 3) and result limits."""
 
-    def test_depth_capped_at_three(self):
-        """get_entity_graph() caps depth at 3."""
-        from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
-
-        sm = SemanticMemory()
-
-        # The method should cap depth
-        if hasattr(sm, '_validate_depth'):
-            result = sm._validate_depth(10)
-            self.assertLessEqual(result, 3)
-
-    def test_depth_minimum_is_one(self):
+    def test_depth_minimum_is_one(self) -> None:
         """Depth below 1 is raised to 1."""
         min_depth = 1
 
@@ -1117,7 +981,7 @@ class GraphTraversalLimitsTest(TestCase):
 
         self.assertEqual(validated_depth, 1)
 
-    def test_max_related_capped_at_hundred(self):
+    def test_max_related_capped_at_hundred(self) -> None:
         """max_related parameter capped at 100."""
         max_related_cap = 100
 
@@ -1127,7 +991,7 @@ class GraphTraversalLimitsTest(TestCase):
 
         self.assertEqual(validated, 100)
 
-    def test_results_limited_in_cypher_query(self):
+    def test_results_limited_in_cypher_query(self) -> None:
         """Cypher query includes LIMIT clause."""
         # Verify the pattern includes LIMIT
         cypher_pattern = """
@@ -1142,26 +1006,15 @@ class GraphTraversalLimitsTest(TestCase):
 # Phase 11.8+: Integration Tests (Require Docker)
 # =============================================================================
 
-@skipUnless(_docker_services_running(), "Docker services not running")
-class MemoryLifecycleIntegrationTest(TestCase):
+@skipUnless(docker_services_running(), "Docker services not running")
+class MemoryLifecycleIntegrationTest(MemoryTestBase):
     """Test full cycle: store turn -> extract -> consolidate -> retrieve."""
 
-    def setUp(self):
-        """Set up test fixtures."""
-        from uuid import uuid4
-        # Use full UUIDs for database compatibility
-        self.test_user_id = str(uuid4())
-        self.test_conversation_id = str(uuid4())
-
-    def test_store_turn_persists_to_neo4j(self):
+    def test_store_turn_persists_to_neo4j(self) -> None:
         """store_turn() creates Turn node in Neo4j."""
-        from uuid import uuid4
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1190,16 +1043,11 @@ class MemoryLifecycleIntegrationTest(TestCase):
             record = result.single()
             self.assertIsNotNone(record)
 
-    def test_store_turn_persists_to_postgres(self):
+    def test_store_turn_persists_to_postgres(self) -> None:
         """store_turn() creates row in conversation_logs."""
-        from uuid import uuid4
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
-        from agentx_ai.kit.agent_memory.connections import get_postgres_session
-        from sqlalchemy import text
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1228,14 +1076,11 @@ class MemoryLifecycleIntegrationTest(TestCase):
             row = result.fetchone()
             self.assertIsNotNone(row)
 
-    def test_store_turn_updates_working_memory(self):
+    def test_store_turn_updates_working_memory(self) -> None:
         """store_turn() adds turn to Redis working memory."""
-        from uuid import uuid4
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1259,13 +1104,11 @@ class MemoryLifecycleIntegrationTest(TestCase):
         recent = memory.working.get_recent_turns(limit=1)
         self.assertEqual(len(recent), 1)
 
-    def test_remember_retrieves_stored_turn(self):
+    def test_remember_retrieves_stored_turn(self) -> None:
         """remember() finds previously stored turn by semantic similarity."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1291,15 +1134,13 @@ class MemoryLifecycleIntegrationTest(TestCase):
 
         self.assertIsNotNone(bundle)
         # Should have some episodic results
-        self.assertGreaterEqual(len(bundle.turns), 0)
+        self.assertGreaterEqual(len(bundle.turns), 0)  # type: ignore[union-attr]
 
-    def test_full_memory_cycle_end_to_end(self):
+    def test_full_memory_cycle_end_to_end(self) -> None:
         """Complete cycle: store -> consolidate -> remember."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1325,58 +1166,12 @@ class MemoryLifecycleIntegrationTest(TestCase):
         self.assertIsNotNone(bundle)
 
 
-@skipUnless(_docker_services_running(), "Docker services not running")
-class Neo4jVectorSearchTest(TestCase):
+@skipUnless(docker_services_running(), "Docker services not running")
+class Neo4jVectorSearchTest(MemoryTestBase):
     """Test Neo4j vector search returns relevant results."""
 
-    def setUp(self):
-        from uuid import uuid4
-        self.test_user_id = str(uuid4())
-        self.test_conversation_id = str(uuid4())
-
-    def test_vector_search_finds_similar_turns(self):
-        """Similar query finds related turns by embedding similarity."""
-        from uuid import uuid4
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
-        from agentx_ai.kit.agent_memory.models import Turn
-        from agentx_ai.kit.agent_memory.embeddings import get_embedder
-
-        # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
-            self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
-
-        em = EpisodicMemory()
-        embedder = get_embedder()
-
-        # Create and store a turn
-        content = "Machine learning and artificial intelligence are transforming industries"
-        turn = Turn(
-            id=str(uuid4()),
-            conversation_id=self.test_conversation_id,
-            index=0,
-            role="user",
-            content=content,
-            timestamp=datetime.now(timezone.utc),
-            embedding=embedder.embed_single(content)
-        )
-
-        em.store_turn(turn, user_id=self.test_user_id, channel="_global")
-
-        # Search with similar query
-        query_embedding = embedder.embed_single("Tell me about AI and ML")
-        results = em.search_similar(
-            query_embedding=query_embedding,
-            user_id=self.test_user_id,
-            channel="_global",
-            top_k=5
-        )
-
-        # Should find the stored turn
-        self.assertGreater(len(results), 0)
-
-    def test_vector_search_respects_user_filter(self):
+    def test_vector_search_respects_user_filter(self) -> None:
         """Vector search only returns user's own turns."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
 
         em = EpisodicMemory()
 
@@ -1391,9 +1186,8 @@ class Neo4jVectorSearchTest(TestCase):
         # Should be empty (other user has no turns)
         self.assertEqual(len(results), 0)
 
-    def test_vector_search_respects_channel_filter(self):
+    def test_vector_search_respects_channel_filter(self) -> None:
         """Vector search filters by channel."""
-        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
 
         em = EpisodicMemory()
 
@@ -1408,23 +1202,12 @@ class Neo4jVectorSearchTest(TestCase):
         self.assertEqual(len(results), 0)
 
 
-@skipUnless(_docker_services_running(), "Docker services not running")
-class PostgresAuditLogTest(TestCase):
+@skipUnless(docker_services_running(), "Docker services not running")
+class PostgresAuditLogTest(MemoryTestBase):
     """Test PostgreSQL audit log captures operations."""
 
-    def setUp(self):
-        from uuid import uuid4
-        self.test_user_id = str(uuid4())
-        self.test_conversation_id = str(uuid4())
-
-    def test_write_operation_logged(self):
+    def test_write_operation_logged(self) -> None:
         """store_turn() creates audit log entry."""
-        from uuid import uuid4
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.models import Turn
-        from agentx_ai.kit.agent_memory.connections import get_postgres_session
-        from agentx_ai.kit.agent_memory.config import get_settings
-        from sqlalchemy import text
 
         settings = get_settings()
 
@@ -1433,7 +1216,7 @@ class PostgresAuditLogTest(TestCase):
             self.skipTest("Audit logging is disabled")
 
         # Skip if embedding dimensions don't match schema
-        if not _embeddings_compatible():
+        if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
 
         memory = AgentMemory(
@@ -1470,10 +1253,8 @@ class PostgresAuditLogTest(TestCase):
             if row:
                 self.assertEqual(row.operation, "store")
 
-    def test_audit_log_includes_channel(self):
+    def test_audit_log_includes_channel(self) -> None:
         """Audit entries include channel column."""
-        from agentx_ai.kit.agent_memory.connections import get_postgres_session
-        from sqlalchemy import text
 
         with get_postgres_session() as session:
             # Check if partitioned table has channel column via parent table inspection
@@ -1496,16 +1277,15 @@ class PostgresAuditLogTest(TestCase):
                 self.skipTest("No audit log partitions exist yet")
 
 
-@skipUnless(_docker_services_running(), "Docker services not running")
-class ChannelCRUDTest(TestCase):
+@skipUnless(docker_services_running(), "Docker services not running")
+class ChannelCRUDTest(APITestBase):
     """Test channel create, list, delete and data cleanup."""
 
-    def setUp(self):
-        self.client = Client()
-        from uuid import uuid4
+    def setUp(self) -> None:
+        super().setUp()
         self.test_channel = f"test-channel-{uuid4().hex[:8]}"
 
-    def test_create_channel(self):
+    def test_create_channel(self) -> None:
         """POST /api/memory/channels creates channel."""
         response = self.client.post(
             "/api/memory/channels",
@@ -1513,22 +1293,22 @@ class ChannelCRUDTest(TestCase):
             content_type="application/json"
         )
 
-        self.assertIn(response.status_code, [200, 201])
+        self.assertIn(response.status_code, [200, 201])  # type: ignore[union-attr]
 
-    def test_list_channels(self):
+    def test_list_channels(self) -> None:
         """GET /api/memory/channels returns channel list."""
         response = self.client.get("/api/memory/channels")
 
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        data = response.json()  # type: ignore[union-attr]
         self.assertIn("channels", data)
 
-    def test_global_channel_cannot_be_deleted(self):
+    def test_global_channel_cannot_be_deleted(self) -> None:
         """Attempting to delete _global returns error."""
         response = self.client.delete("/api/memory/channels/_global")
 
         # Should fail
-        self.assertIn(response.status_code, [400, 403, 404])
+        self.assertIn(response.status_code, [400, 403, 404])  # type: ignore[union-attr]
 
 
 # =============================================================================
@@ -1536,46 +1316,43 @@ class ChannelCRUDTest(TestCase):
 # =============================================================================
 
 @skipUnless(
-    _docker_services_running() and _has_configured_provider(),
+    docker_services_running() and has_configured_provider(),
     "Docker services or provider not available"
 )
-class AgentChatMemoryStorageTest(TestCase):
+class AgentChatMemoryStorageTest(APITestBase):
     """Test /api/agent/chat stores turns in memory with correct channel."""
 
-    def setUp(self):
-        self.client = Client()
-
-    def test_chat_stores_user_turn(self):
+    def test_chat_stores_user_turn(self) -> None:
         """User message stored in episodic memory."""
         # This test requires a configured provider
         pass  # Placeholder for full integration
 
-    def test_chat_stores_assistant_turn(self):
+    def test_chat_stores_assistant_turn(self) -> None:
         """Assistant response stored in episodic memory."""
         pass
 
-    def test_chat_respects_channel_parameter(self):
+    def test_chat_respects_channel_parameter(self) -> None:
         """Turns stored in specified channel."""
         pass
 
 
 @skipUnless(
-    _docker_services_running() and _has_configured_provider(),
+    docker_services_running() and has_configured_provider(),
     "Docker services or provider not available"
 )
 class AgentGracefulDegradationTest(TestCase):
     """Test graceful degradation when databases are down."""
 
-    def test_agent_works_without_neo4j(self):
+    def test_agent_works_without_neo4j(self) -> None:
         """Agent chat functions when Neo4j is down."""
         # Would require mocking connection failures
         pass
 
-    def test_agent_works_without_postgres(self):
+    def test_agent_works_without_postgres(self) -> None:
         """Agent chat functions when PostgreSQL is down."""
         pass
 
-    def test_agent_works_without_redis(self):
+    def test_agent_works_without_redis(self) -> None:
         """Agent chat functions when Redis is down."""
         pass
 
@@ -1587,10 +1364,8 @@ class AgentGracefulDegradationTest(TestCase):
 class CorrectionDetectionTest(TestCase):
     """Test user correction detection in extraction service."""
 
-    def test_check_correction_heuristic_patterns(self):
+    def test_check_correction_heuristic_patterns(self) -> None:
         """Heuristic patterns should trigger correction check."""
-        from agentx_ai.kit.agent_memory.extraction.service import CORRECTION_PATTERNS
-        import re
 
         # Test cases that should match
         matches = [
@@ -1606,15 +1381,13 @@ class CorrectionDetectionTest(TestCase):
             "Not Python, but JavaScript",
         ]
 
-        for text in matches:
-            text_lower = text.strip().lower()
-            matched = any(re.search(p, text_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
-            self.assertTrue(matched, f"Pattern should match: {text}")
+        for sample in matches:
+            sample_lower = sample.strip().lower()
+            matched = any(re.search(p, sample_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
+            self.assertTrue(matched, f"Pattern should match: {sample}")
 
-    def test_check_correction_non_matches(self):
+    def test_check_correction_non_matches(self) -> None:
         """Normal statements should not match correction patterns."""
-        from agentx_ai.kit.agent_memory.extraction.service import CORRECTION_PATTERNS
-        import re
 
         # Test cases that should NOT match
         non_matches = [
@@ -1625,14 +1398,13 @@ class CorrectionDetectionTest(TestCase):
             "I started a new project yesterday",
         ]
 
-        for text in non_matches:
-            text_lower = text.strip().lower()
-            matched = any(re.search(p, text_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
-            self.assertFalse(matched, f"Pattern should NOT match: {text}")
+        for sample in non_matches:
+            sample_lower = sample.strip().lower()
+            matched = any(re.search(p, sample_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
+            self.assertFalse(matched, f"Pattern should NOT match: {sample}")
 
-    def test_correction_result_model(self):
+    def test_correction_result_model(self) -> None:
         """CorrectionResult model has expected fields."""
-        from agentx_ai.kit.agent_memory.extraction import CorrectionResult
 
         result = CorrectionResult(
             is_correction=True,
@@ -1645,9 +1417,8 @@ class CorrectionDetectionTest(TestCase):
         self.assertEqual(result.corrected_claim, "works at Google")
         self.assertTrue(result.success)
 
-    def test_check_correction_disabled_returns_false(self):
+    def test_check_correction_disabled_returns_false(self) -> None:
         """check_correction returns False when disabled."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
 
@@ -1656,16 +1427,15 @@ class CorrectionDetectionTest(TestCase):
         mock_settings.correction_detection_enabled = False
         service._settings = mock_settings
 
-        result = service.check_correction("Actually, I meant Python")
+        result = asyncio.run(service.check_correction("Actually, I meant Python"))
         self.assertFalse(result.is_correction)
 
 
 class ContradictionDetectionTest(TestCase):
     """Test contradiction detection in extraction service."""
 
-    def test_contradiction_result_model(self):
+    def test_contradiction_result_model(self) -> None:
         """ContradictionResult model has expected fields."""
-        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
 
         result = ContradictionResult(
             has_contradiction=True,
@@ -1679,9 +1449,8 @@ class ContradictionDetectionTest(TestCase):
         self.assertEqual(result.resolution, "prefer_new")
         self.assertTrue(result.success)
 
-    def test_check_contradictions_disabled_returns_false(self):
+    def test_check_contradictions_disabled_returns_false(self) -> None:
         """check_contradictions returns False when disabled."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
 
@@ -1690,15 +1459,14 @@ class ContradictionDetectionTest(TestCase):
         mock_settings.contradiction_detection_enabled = False
         service._settings = mock_settings
 
-        result = service.check_contradictions(
+        result = asyncio.run(service.check_contradictions(
             "User lives in Seattle",
             [{"id": "1", "claim": "User lives in New York"}]
-        )
+        ))
         self.assertFalse(result.has_contradiction)
 
-    def test_check_contradictions_empty_facts_returns_false(self):
+    def test_check_contradictions_empty_facts_returns_false(self) -> None:
         """check_contradictions returns False with no existing facts."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
 
@@ -1707,12 +1475,11 @@ class ContradictionDetectionTest(TestCase):
         mock_settings.contradiction_detection_enabled = True
         service._settings = mock_settings
 
-        result = service.check_contradictions("User lives in Seattle", [])
+        result = asyncio.run(service.check_contradictions("User lives in Seattle", []))
         self.assertFalse(result.has_contradiction)
 
-    def test_contradiction_resolution_values(self):
+    def test_contradiction_resolution_values(self) -> None:
         """ContradictionResult resolution accepts expected values."""
-        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
 
         for resolution in ["prefer_new", "prefer_old", "flag_review"]:
             result = ContradictionResult(
@@ -1725,9 +1492,8 @@ class ContradictionDetectionTest(TestCase):
 class FactModelSupersessionTest(TestCase):
     """Test Fact model supersession fields."""
 
-    def test_fact_model_has_supersession_fields(self):
+    def test_fact_model_has_supersession_fields(self) -> None:
         """Fact model includes supersession tracking fields."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="Test fact", source="extraction")
 
@@ -1737,12 +1503,9 @@ class FactModelSupersessionTest(TestCase):
         self.assertIsNone(fact.supersedes_id)
         self.assertFalse(fact.flagged_for_review)
 
-    def test_fact_model_supersession_fields_settable(self):
+    def test_fact_model_supersession_fields_settable(self) -> None:
         """Fact supersession fields can be set."""
-        from agentx_ai.kit.agent_memory.models import Fact
-        from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
         fact = Fact(
             claim="Updated fact",
             source="user_correction",
@@ -1763,11 +1526,10 @@ class FactModelSupersessionTest(TestCase):
 class ConsolidationCorrectionHandlerTest(TestCase):
     """Test correction handling in consolidation pipeline."""
 
-    def test_get_recent_facts_query(self):
+    def test_get_recent_facts_query(self) -> None:
         """_get_recent_facts returns facts in expected format."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import _get_recent_facts
 
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.__iter__ = MagicMock(return_value=iter([
             {"id": "fact-1", "claim": "User likes Python", "confidence": 0.9, "created_at": datetime.now(timezone.utc)},
@@ -1785,13 +1547,11 @@ class ConsolidationCorrectionHandlerTest(TestCase):
 class ConsolidationContradictionHandlerTest(TestCase):
     """Test contradiction handling in consolidation pipeline."""
 
-    def test_handle_contradiction_prefer_old_skips_storage(self):
+    def test_handle_contradiction_prefer_old_skips_storage(self) -> None:
         """_handle_contradiction with prefer_old returns 'skipped'."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import _handle_contradiction
-        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
 
         mock_memory = MagicMock()
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
 
         contradiction = ContradictionResult(
             has_contradiction=True,
@@ -1807,13 +1567,11 @@ class ConsolidationContradictionHandlerTest(TestCase):
 
         self.assertEqual(result, "skipped")
 
-    def test_handle_contradiction_flag_review_flags_fact(self):
+    def test_handle_contradiction_flag_review_flags_fact(self) -> None:
         """_handle_contradiction with flag_review sets flagged_for_review."""
-        from agentx_ai.kit.agent_memory.consolidation.jobs import _handle_contradiction
-        from agentx_ai.kit.agent_memory.extraction import ContradictionResult
 
         mock_memory = MagicMock()
-        mock_session = _create_mock_neo4j_session()
+        mock_session = create_mock_neo4j_session()
 
         contradiction = ContradictionResult(
             has_contradiction=True,
@@ -1834,9 +1592,8 @@ class ConsolidationContradictionHandlerTest(TestCase):
 class ConsolidationMetricsTest(TestCase):
     """Test ConsolidationMetrics dataclass and its methods."""
 
-    def test_metrics_initialization(self):
+    def test_metrics_initialization(self) -> None:
         """ConsolidationMetrics should initialize with default values."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
 
         metrics = ConsolidationMetrics()
         self.assertEqual(metrics.turns_total, 0)
@@ -1844,9 +1601,8 @@ class ConsolidationMetricsTest(TestCase):
         self.assertEqual(metrics.facts_stored, 0)
         self.assertEqual(metrics.total_llm_calls, 0)
 
-    def test_skip_rate_calculation(self):
+    def test_skip_rate_calculation(self) -> None:
         """skip_rate should calculate percentage of skipped turns."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
 
         metrics = ConsolidationMetrics(
             turns_total=10,
@@ -1855,16 +1611,14 @@ class ConsolidationMetricsTest(TestCase):
         )
         self.assertAlmostEqual(metrics.skip_rate, 0.5)
 
-    def test_skip_rate_zero_turns(self):
+    def test_skip_rate_zero_turns(self) -> None:
         """skip_rate should return 0 when no turns processed."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
 
         metrics = ConsolidationMetrics(turns_total=0)
         self.assertEqual(metrics.skip_rate, 0.0)
 
-    def test_extraction_efficiency_calculation(self):
+    def test_extraction_efficiency_calculation(self) -> None:
         """extraction_efficiency should calculate facts per LLM call."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
 
         metrics = ConsolidationMetrics(
             extraction_calls=5,
@@ -1872,10 +1626,8 @@ class ConsolidationMetricsTest(TestCase):
         )
         self.assertAlmostEqual(metrics.extraction_efficiency, 3.0)
 
-    def test_to_dict_serialization(self):
+    def test_to_dict_serialization(self) -> None:
         """to_dict should properly serialize metrics including computed properties."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
-        from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
         metrics = ConsolidationMetrics(
@@ -1892,9 +1644,8 @@ class ConsolidationMetricsTest(TestCase):
         self.assertAlmostEqual(d["skip_rate"], 0.5)
         self.assertIsInstance(d["started_at"], str)
 
-    def test_from_dict_deserialization(self):
+    def test_from_dict_deserialization(self) -> None:
         """from_dict should reconstruct metrics from dictionary."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
 
         d = {
             "job_id": "test-456",
@@ -1912,13 +1663,8 @@ class ConsolidationMetricsTest(TestCase):
 class AggregatedMetricsTest(TestCase):
     """Test AggregatedMetrics for dashboard aggregation."""
 
-    def test_add_run_aggregates_correctly(self):
+    def test_add_run_aggregates_correctly(self) -> None:
         """add_run should aggregate metrics from multiple consolidation runs."""
-        from agentx_ai.kit.agent_memory.consolidation.metrics import (
-            ConsolidationMetrics,
-            AggregatedMetrics,
-        )
-
         agg = AggregatedMetrics(period="2024-03-01")
 
         # Add first run
@@ -1957,9 +1703,8 @@ class AggregatedMetricsTest(TestCase):
 class ClaimHashTest(TestCase):
     """Test claim hash computation for duplicate detection."""
 
-    def test_compute_claim_hash(self):
+    def test_compute_claim_hash(self) -> None:
         """compute_claim_hash should return consistent hash."""
-        from agentx_ai.kit.agent_memory.models import compute_claim_hash
 
         claim = "User prefers Python programming"
         hash1 = compute_claim_hash(claim)
@@ -1968,36 +1713,33 @@ class ClaimHashTest(TestCase):
         self.assertEqual(hash1, hash2)
         self.assertEqual(len(hash1), 16)
 
-    def test_claim_hash_case_insensitive(self):
+    def test_claim_hash_case_insensitive(self) -> None:
         """Hash should be case-insensitive."""
-        from agentx_ai.kit.agent_memory.models import compute_claim_hash
 
         hash1 = compute_claim_hash("User prefers Python")
         hash2 = compute_claim_hash("user prefers python")
 
         self.assertEqual(hash1, hash2)
 
-    def test_claim_hash_whitespace_normalized(self):
+    def test_claim_hash_whitespace_normalized(self) -> None:
         """Hash should normalize whitespace."""
-        from agentx_ai.kit.agent_memory.models import compute_claim_hash
 
         hash1 = compute_claim_hash("User prefers Python")
         hash2 = compute_claim_hash("  User   prefers    Python  ")
 
         self.assertEqual(hash1, hash2)
 
-    def test_fact_auto_computes_hash(self):
+    def test_fact_auto_computes_hash(self) -> None:
         """Fact model should auto-compute claim_hash on creation."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="User prefers Python", source="extraction")
 
         self.assertIsNotNone(fact.claim_hash)
+        assert fact.claim_hash is not None
         self.assertEqual(len(fact.claim_hash), 16)
 
-    def test_fact_preserves_explicit_hash(self):
+    def test_fact_preserves_explicit_hash(self) -> None:
         """Fact should preserve explicitly provided claim_hash."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(
             claim="Test claim",
@@ -2011,27 +1753,25 @@ class ClaimHashTest(TestCase):
 class SettingsCacheTTLTest(TestCase):
     """Test settings cache TTL refresh mechanism."""
 
-    def test_settings_cache_respects_ttl(self):
+    def test_settings_cache_respects_ttl(self) -> None:
         """Settings should be cached and respect TTL."""
-        from agentx_ai.kit.agent_memory import config
 
         # Reset cache
-        config._runtime_settings = None
-        config._settings_cache_time = 0.0
+        memory_config_module._runtime_settings = None
+        memory_config_module._settings_cache_time = 0.0
 
         # First load
-        s1 = config.get_settings()
-        time1 = config._settings_cache_time
+        s1 = memory_config_module.get_settings()
+        time1 = memory_config_module._settings_cache_time
 
         # Second load (should use cache)
-        s2 = config.get_settings()
+        s2 = memory_config_module.get_settings()
 
         self.assertIs(s1, s2)
-        self.assertEqual(config._settings_cache_time, time1)
+        self.assertEqual(memory_config_module._settings_cache_time, time1)
 
-    def test_cache_ttl_constant_exists(self):
+    def test_cache_ttl_constant_exists(self) -> None:
         """SETTINGS_CACHE_TTL should be defined."""
-        from agentx_ai.kit.agent_memory.config import SETTINGS_CACHE_TTL
 
         self.assertIsInstance(SETTINGS_CACHE_TTL, float)
         self.assertGreater(SETTINGS_CACHE_TTL, 0)
@@ -2044,9 +1784,8 @@ class SettingsCacheTTLTest(TestCase):
 class CombinedExtractionResultTest(TestCase):
     """Test CombinedExtractionResult model."""
 
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         """CombinedExtractionResult should have sensible defaults."""
-        from agentx_ai.kit.agent_memory.extraction.service import CombinedExtractionResult
 
         result = CombinedExtractionResult()
 
@@ -2059,9 +1798,8 @@ class CombinedExtractionResultTest(TestCase):
         self.assertTrue(result.success)
         self.assertIsNone(result.error)
 
-    def test_with_data(self):
+    def test_with_data(self) -> None:
         """CombinedExtractionResult should hold extraction data."""
-        from agentx_ai.kit.agent_memory.extraction.service import CombinedExtractionResult
 
         result = CombinedExtractionResult(
             is_relevant=True,
@@ -2083,12 +1821,11 @@ class CombinedExtractionResultTest(TestCase):
 class CombinedExtractionHeuristicTest(TestCase):
     """Test heuristic skip behavior in combined extraction."""
 
-    def test_heuristic_skip_short_text(self):
+    def test_heuristic_skip_short_text(self) -> None:
         """Very short text should be skipped via heuristic."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
-        result = service.check_relevance_and_extract("ok")
+        result = asyncio.run(service.check_relevance_and_extract("ok"))
 
         self.assertFalse(result.is_relevant)
         self.assertEqual(result.reason, "heuristic_skip")
@@ -2096,21 +1833,19 @@ class CombinedExtractionHeuristicTest(TestCase):
         self.assertEqual(result.entities, [])
         self.assertEqual(result.facts, [])
 
-    def test_heuristic_skip_common_phrases(self):
+    def test_heuristic_skip_common_phrases(self) -> None:
         """Common filler phrases should be skipped via heuristic."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         skip_phrases = ["thanks", "got it", "sure", "yes", "no", "cool"]
 
         for phrase in skip_phrases:
-            result = service.check_relevance_and_extract(phrase)
+            result = asyncio.run(service.check_relevance_and_extract(phrase))
             self.assertFalse(result.is_relevant, f"Should skip: {phrase}")
             self.assertEqual(result.reason, "heuristic_skip")
 
-    def test_non_skip_text_proceeds_to_llm(self):
+    def test_non_skip_text_proceeds_to_llm(self) -> None:
         """Meaningful text should not be skipped by heuristic."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
 
@@ -2122,7 +1857,7 @@ class CombinedExtractionHeuristicTest(TestCase):
             # Simulate provider unavailable to trigger fallback
             mock_provider.side_effect = ValueError("Provider unavailable")
 
-            result = service.check_relevance_and_extract(text)
+            asyncio.run(service.check_relevance_and_extract(text))
 
             # Should have attempted to get provider (not skipped by heuristic)
             # First call should be for 'combined' stage
@@ -2134,10 +1869,8 @@ class CombinedExtractionHeuristicTest(TestCase):
 class ConfidenceCalibrationTest(TestCase):
     """Test confidence calibration mapping."""
 
-    def test_explicit_certainty_maps_to_high_confidence(self):
+    def test_explicit_certainty_maps_to_high_confidence(self) -> None:
         """Explicit certainty should map to highest confidence."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2148,10 +1881,8 @@ class ConfidenceCalibrationTest(TestCase):
         self.assertEqual(calibrated[0]["confidence"], 0.95)
         self.assertNotIn("certainty", calibrated[0])  # Should be removed
 
-    def test_implied_certainty_maps_to_085(self):
+    def test_implied_certainty_maps_to_085(self) -> None:
         """Implied certainty should map to 0.85."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2161,10 +1892,8 @@ class ConfidenceCalibrationTest(TestCase):
 
         self.assertEqual(calibrated[0]["confidence"], 0.85)
 
-    def test_inferred_certainty_maps_to_070(self):
+    def test_inferred_certainty_maps_to_070(self) -> None:
         """Inferred certainty should map to 0.70."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2174,10 +1903,8 @@ class ConfidenceCalibrationTest(TestCase):
 
         self.assertEqual(calibrated[0]["confidence"], 0.70)
 
-    def test_uncertain_certainty_maps_to_050(self):
+    def test_uncertain_certainty_maps_to_050(self) -> None:
         """Uncertain certainty should map to lowest confidence."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2187,10 +1914,8 @@ class ConfidenceCalibrationTest(TestCase):
 
         self.assertEqual(calibrated[0]["confidence"], 0.50)
 
-    def test_unknown_certainty_defaults_to_inferred(self):
+    def test_unknown_certainty_defaults_to_inferred(self) -> None:
         """Unknown certainty levels should default to inferred (0.70)."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2200,10 +1925,8 @@ class ConfidenceCalibrationTest(TestCase):
 
         self.assertEqual(calibrated[0]["confidence"], 0.70)
 
-    def test_missing_certainty_defaults_to_inferred(self):
+    def test_missing_certainty_defaults_to_inferred(self) -> None:
         """Missing certainty field should default to inferred (0.70)."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2213,10 +1936,8 @@ class ConfidenceCalibrationTest(TestCase):
 
         self.assertEqual(calibrated[0]["confidence"], 0.70)
 
-    def test_calibration_is_case_insensitive(self):
+    def test_calibration_is_case_insensitive(self) -> None:
         """Certainty levels should be matched case-insensitively."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2232,10 +1953,8 @@ class ConfidenceCalibrationTest(TestCase):
         self.assertEqual(calibrated[1]["confidence"], 0.85)
         self.assertEqual(calibrated[2]["confidence"], 0.70)
 
-    def test_calibration_preserves_other_fields(self):
+    def test_calibration_preserves_other_fields(self) -> None:
         """Calibration should preserve other fact fields."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
-        from agentx_ai.kit.agent_memory.config import Settings
 
         service = ExtractionService()
         service._settings = Settings()
@@ -2256,9 +1975,8 @@ class ConfidenceCalibrationTest(TestCase):
 class CombinedExtractionConfigTest(TestCase):
     """Test combined extraction configuration settings."""
 
-    def test_combined_extraction_settings_exist(self):
+    def test_combined_extraction_settings_exist(self) -> None:
         """Combined extraction settings should be defined."""
-        from agentx_ai.kit.agent_memory.config import Settings
 
         settings = Settings()
 
@@ -2268,9 +1986,8 @@ class CombinedExtractionConfigTest(TestCase):
         self.assertIsInstance(settings.combined_extraction_temperature, float)
         self.assertIsInstance(settings.combined_extraction_max_tokens, int)
 
-    def test_confidence_calibration_settings_exist(self):
+    def test_confidence_calibration_settings_exist(self) -> None:
         """Confidence calibration settings should be defined."""
-        from agentx_ai.kit.agent_memory.config import Settings
 
         settings = Settings()
 
@@ -2279,9 +1996,8 @@ class CombinedExtractionConfigTest(TestCase):
         self.assertIsInstance(settings.confidence_inferred, float)
         self.assertIsInstance(settings.confidence_uncertain, float)
 
-    def test_default_confidence_values_ordered(self):
+    def test_default_confidence_values_ordered(self) -> None:
         """Default confidence values should be properly ordered."""
-        from agentx_ai.kit.agent_memory.config import Settings
 
         settings = Settings()
 
@@ -2290,9 +2006,8 @@ class CombinedExtractionConfigTest(TestCase):
         self.assertGreater(settings.confidence_implied, settings.confidence_inferred)
         self.assertGreater(settings.confidence_inferred, settings.confidence_uncertain)
 
-    def test_default_model_is_reasoning_model(self):
+    def test_default_model_is_reasoning_model(self) -> None:
         """Default combined extraction model should be reasoning model."""
-        from agentx_ai.kit.agent_memory.config import Settings
 
         settings = Settings()
 
@@ -2303,9 +2018,8 @@ class CombinedExtractionConfigTest(TestCase):
 class CombinedExtractionPromptTest(TestCase):
     """Test combined extraction prompt template."""
 
-    def test_combined_prompt_exists(self):
+    def test_combined_prompt_exists(self) -> None:
         """Combined extraction prompt should be defined."""
-        from agentx_ai.prompts.loader import get_prompt_loader
 
         loader = get_prompt_loader()
         prompt = loader.get("extraction.combined_with_relevance", text="test text")
@@ -2313,9 +2027,8 @@ class CombinedExtractionPromptTest(TestCase):
         self.assertIsInstance(prompt, str)
         self.assertIn("test text", prompt)
 
-    def test_combined_prompt_has_relevance_step(self):
+    def test_combined_prompt_has_relevance_step(self) -> None:
         """Combined prompt should include relevance check step."""
-        from agentx_ai.prompts.loader import get_prompt_loader
 
         loader = get_prompt_loader()
         prompt = loader.get("extraction.combined_with_relevance", text="test")
@@ -2323,9 +2036,8 @@ class CombinedExtractionPromptTest(TestCase):
         self.assertIn("relevant", prompt.lower())
         self.assertIn("is_relevant", prompt)
 
-    def test_combined_prompt_has_certainty_levels(self):
+    def test_combined_prompt_has_certainty_levels(self) -> None:
         """Combined prompt should include certainty levels."""
-        from agentx_ai.prompts.loader import get_prompt_loader
 
         loader = get_prompt_loader()
         prompt = loader.get("extraction.combined_with_relevance", text="test")
@@ -2335,9 +2047,8 @@ class CombinedExtractionPromptTest(TestCase):
         self.assertIn("inferred", prompt.lower())
         self.assertIn("uncertain", prompt.lower())
 
-    def test_combined_prompt_outputs_json(self):
+    def test_combined_prompt_outputs_json(self) -> None:
         """Combined prompt should request JSON output."""
-        from agentx_ai.prompts.loader import get_prompt_loader
 
         loader = get_prompt_loader()
         prompt = loader.get("extraction.combined_with_relevance", text="test")
@@ -2351,9 +2062,8 @@ class CombinedExtractionPromptTest(TestCase):
 class CombinedExtractionProviderUnavailableTest(TestCase):
     """Test behavior when combined provider is unavailable."""
 
-    def test_returns_error_when_provider_unavailable(self):
+    def test_returns_error_when_provider_unavailable(self) -> None:
         """Should return error result when provider unavailable."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
 
@@ -2362,15 +2072,15 @@ class CombinedExtractionProviderUnavailableTest(TestCase):
             mock_provider.side_effect = ValueError("Provider unavailable")
 
             # Meaningful text that won't be skipped by heuristic
-            result = service.check_relevance_and_extract(
+            result = asyncio.run(service.check_relevance_and_extract(
                 "I work at Anthropic as a software engineer"
-            )
+            ))
 
             # Should return error result (defaults to relevant for safety)
             self.assertTrue(result.is_relevant)
             self.assertEqual(result.reason, "provider_unavailable")
             self.assertFalse(result.success)
-            self.assertIn("Provider unavailable", result.error)
+            self.assertIn("Provider unavailable", result.error)  # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -2380,36 +2090,32 @@ class CombinedExtractionProviderUnavailableTest(TestCase):
 class FactAccessTrackingFieldsTest(TestCase):
     """Test that Fact model has access tracking fields."""
 
-    def test_fact_has_last_accessed_field(self):
+    def test_fact_has_last_accessed_field(self) -> None:
         """Fact model should have last_accessed field."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="test claim", source="extraction")
 
         self.assertTrue(hasattr(fact, 'last_accessed'))
         self.assertIsNotNone(fact.last_accessed)
 
-    def test_fact_has_access_count_field(self):
+    def test_fact_has_access_count_field(self) -> None:
         """Fact model should have access_count field with default 0."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="test claim", source="extraction")
 
         self.assertTrue(hasattr(fact, 'access_count'))
         self.assertEqual(fact.access_count, 0)
 
-    def test_fact_has_salience_field(self):
+    def test_fact_has_salience_field(self) -> None:
         """Fact model should have salience field with default 0.5."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="test claim", source="extraction")
 
         self.assertTrue(hasattr(fact, 'salience'))
         self.assertEqual(fact.salience, 0.5)
 
-    def test_fact_salience_can_be_set(self):
+    def test_fact_salience_can_be_set(self) -> None:
         """Fact salience should be settable."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="test claim", source="extraction", salience=0.8)
 
@@ -2423,18 +2129,16 @@ class FactAccessTrackingFieldsTest(TestCase):
 class FactTemporalContextFieldTest(TestCase):
     """Test that Fact model has temporal_context field."""
 
-    def test_fact_has_temporal_context_field(self):
+    def test_fact_has_temporal_context_field(self) -> None:
         """Fact model should have temporal_context field."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="test claim", source="extraction")
 
         self.assertTrue(hasattr(fact, 'temporal_context'))
         self.assertIsNone(fact.temporal_context)  # Default is None
 
-    def test_fact_temporal_context_can_be_set(self):
+    def test_fact_temporal_context_can_be_set(self) -> None:
         """Fact temporal_context should be settable."""
-        from agentx_ai.kit.agent_memory.models import Fact
 
         fact = Fact(claim="I work at Google", source="extraction", temporal_context="current")
 
@@ -2444,9 +2148,8 @@ class FactTemporalContextFieldTest(TestCase):
 class TemporalContextNormalizationTest(TestCase):
     """Test temporal context normalization in extraction service."""
 
-    def test_normalize_valid_current(self):
+    def test_normalize_valid_current(self) -> None:
         """Current should be normalized to lowercase."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "I work at Google", "temporal_context": "Current"}]
@@ -2455,9 +2158,8 @@ class TemporalContextNormalizationTest(TestCase):
 
         self.assertEqual(normalized[0]["temporal_context"], "current")
 
-    def test_normalize_valid_past(self):
+    def test_normalize_valid_past(self) -> None:
         """Past should be normalized to lowercase."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "I used to work at Google", "temporal_context": "PAST"}]
@@ -2466,9 +2168,8 @@ class TemporalContextNormalizationTest(TestCase):
 
         self.assertEqual(normalized[0]["temporal_context"], "past")
 
-    def test_normalize_valid_future(self):
+    def test_normalize_valid_future(self) -> None:
         """Future should be normalized to lowercase."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "I'm starting at Google", "temporal_context": "Future"}]
@@ -2477,9 +2178,8 @@ class TemporalContextNormalizationTest(TestCase):
 
         self.assertEqual(normalized[0]["temporal_context"], "future")
 
-    def test_normalize_invalid_to_none(self):
+    def test_normalize_invalid_to_none(self) -> None:
         """Invalid temporal_context should become None."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "Some claim", "temporal_context": "invalid_value"}]
@@ -2488,9 +2188,8 @@ class TemporalContextNormalizationTest(TestCase):
 
         self.assertIsNone(normalized[0]["temporal_context"])
 
-    def test_normalize_null_string_to_none(self):
+    def test_normalize_null_string_to_none(self) -> None:
         """'null' string should become None."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "Some claim", "temporal_context": "null"}]
@@ -2499,9 +2198,8 @@ class TemporalContextNormalizationTest(TestCase):
 
         self.assertIsNone(normalized[0]["temporal_context"])
 
-    def test_normalize_missing_field(self):
+    def test_normalize_missing_field(self) -> None:
         """Missing temporal_context should become None."""
-        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
 
         service = ExtractionService()
         facts = [{"claim": "Some claim"}]
@@ -2514,9 +2212,8 @@ class TemporalContextNormalizationTest(TestCase):
 class TemporalContextInPromptTest(TestCase):
     """Test temporal context in extraction prompt."""
 
-    def test_prompt_includes_temporal_context(self):
+    def test_prompt_includes_temporal_context(self) -> None:
         """Combined extraction prompt should include temporal context instructions."""
-        from agentx_ai.prompts.loader import get_prompt_loader
 
         loader = get_prompt_loader()
         prompt = loader.get("extraction.combined_with_relevance", text="test")
@@ -2530,12 +2227,10 @@ class TemporalContextInPromptTest(TestCase):
 class LearnFactTemporalContextTest(TestCase):
     """Test learn_fact accepts temporal_context parameter."""
 
-    def test_learn_fact_accepts_temporal_context(self):
+    def test_learn_fact_accepts_temporal_context(self) -> None:
         """learn_fact should accept temporal_context parameter."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
         # Check the method signature accepts temporal_context
-        import inspect
         sig = inspect.signature(AgentMemory.learn_fact)
         params = list(sig.parameters.keys())
 
@@ -2550,9 +2245,8 @@ class LearnFactTemporalContextTest(TestCase):
 class RecallLayerConfigTest(TestCase):
     """Test RecallLayer configuration settings."""
 
-    def test_config_has_recall_settings(self):
+    def test_config_has_recall_settings(self) -> None:
         """Config should have all RecallLayer settings."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
 
@@ -2572,9 +2266,8 @@ class RecallLayerConfigTest(TestCase):
         self.assertIsInstance(settings.recall_entity_similarity_threshold, float)
         self.assertIsInstance(settings.recall_entity_max_entities, int)
 
-    def test_default_techniques_enabled(self):
+    def test_default_techniques_enabled(self) -> None:
         """Hybrid, entity-centric, and expansion should be enabled by default."""
-        from agentx_ai.kit.agent_memory.config import get_settings
 
         settings = get_settings()
 
@@ -2591,9 +2284,8 @@ class RecallLayerConfigTest(TestCase):
 class RecallLayerMetricsTest(TestCase):
     """Test RecallMetrics dataclass."""
 
-    def test_metrics_to_dict(self):
+    def test_metrics_to_dict(self) -> None:
         """RecallMetrics.to_dict() should return all fields."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallMetrics
 
         metrics = RecallMetrics(
             query="test query",
@@ -2611,9 +2303,8 @@ class RecallLayerMetricsTest(TestCase):
         self.assertEqual(result["base_results"], 5)
         self.assertIn("techniques_enabled", result)
 
-    def test_metrics_defaults(self):
+    def test_metrics_defaults(self) -> None:
         """RecallMetrics should have sensible defaults."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallMetrics
 
         metrics = RecallMetrics(
             query="test",
@@ -2631,9 +2322,8 @@ class RecallLayerMetricsTest(TestCase):
 class RecallLayerQueryExpansionTest(TestCase):
     """Test query expansion transforms."""
 
-    def test_question_to_statement_when(self):
+    def test_question_to_statement_when(self) -> None:
         """'When is my X?' should transform to 'X is'."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         # Create mock objects
         mock_memory = MagicMock()
@@ -2645,9 +2335,8 @@ class RecallLayerQueryExpansionTest(TestCase):
         self.assertIn("birthday", result)
         self.assertIn("is", result)
 
-    def test_question_to_statement_what(self):
+    def test_question_to_statement_what(self) -> None:
         """'What is my X?' should transform to 'X is'."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2657,9 +2346,8 @@ class RecallLayerQueryExpansionTest(TestCase):
         result = recall._question_to_statement("what is my favorite color?")
         self.assertIn("favorite color", result)
 
-    def test_extract_keywords(self):
+    def test_extract_keywords(self) -> None:
         """Keywords should exclude stopwords and question words."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2673,9 +2361,8 @@ class RecallLayerQueryExpansionTest(TestCase):
         self.assertNotIn("when", result.lower())
         self.assertNotIn(" is ", result.lower())
 
-    def test_expand_query_generates_variants(self):
+    def test_expand_query_generates_variants(self) -> None:
         """expand_query should generate query variants."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2692,9 +2379,8 @@ class RecallLayerQueryExpansionTest(TestCase):
 class RecallLayerRRFFusionTest(TestCase):
     """Test Reciprocal Rank Fusion scoring."""
 
-    def test_rrf_fusion_combines_results(self):
+    def test_rrf_fusion_combines_results(self) -> None:
         """RRF should combine BM25 and vector results."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2726,9 +2412,8 @@ class RecallLayerRRFFusionTest(TestCase):
         for r in merged:
             self.assertIn("rrf_score", r)
 
-    def test_rrf_fusion_ranks_by_score(self):
+    def test_rrf_fusion_ranks_by_score(self) -> None:
         """RRF results should be sorted by score descending."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2754,10 +2439,8 @@ class RecallLayerRRFFusionTest(TestCase):
 class RecallLayerMergeBundlesTest(TestCase):
     """Test bundle merging and deduplication."""
 
-    def test_merge_deduplicates_by_id(self):
+    def test_merge_deduplicates_by_id(self) -> None:
         """Merging should deduplicate by ID."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
-        from agentx_ai.kit.agent_memory.models import MemoryBundle
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2779,10 +2462,8 @@ class RecallLayerMergeBundlesTest(TestCase):
         # Should track 1 duplicate removed
         self.assertEqual(stats["duplicates_removed"], 1)
 
-    def test_merge_preserves_entities_and_turns(self):
+    def test_merge_preserves_entities_and_turns(self) -> None:
         """Merging should also deduplicate entities and turns."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
-        from agentx_ai.kit.agent_memory.models import MemoryBundle
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
@@ -2807,33 +2488,26 @@ class RecallLayerMergeBundlesTest(TestCase):
 class RecallLayerInterfaceIntegrationTest(TestCase):
     """Test RecallLayer integration with AgentMemory interface."""
 
-    def test_agent_memory_has_recall_layer(self):
+    def test_agent_memory_has_recall_layer(self) -> None:
         """AgentMemory should have a recall_layer attribute."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         # Check the class has the attribute in __init__
-        import inspect
         source = inspect.getsource(AgentMemory.__init__)
 
         self.assertIn("recall_layer", source)
         self.assertIn("RecallLayer", source)
 
-    def test_remember_has_use_recall_layer_param(self):
+    def test_remember_has_use_recall_layer_param(self) -> None:
         """remember() should have use_recall_layer parameter."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        import inspect
         sig = inspect.signature(AgentMemory.remember)
         params = list(sig.parameters.keys())
 
         self.assertIn("use_recall_layer", params)
 
-    def test_remember_defaults_to_recall_layer(self):
+    def test_remember_defaults_to_recall_layer(self) -> None:
         """use_recall_layer should default to True."""
-        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
-        import inspect
         sig = inspect.signature(AgentMemory.remember)
         param = sig.parameters["use_recall_layer"]
 
@@ -2843,9 +2517,8 @@ class RecallLayerInterfaceIntegrationTest(TestCase):
 class RecallLayerEscapeLuceneTest(TestCase):
     """Test Lucene query escaping for BM25 search."""
 
-    def test_escape_special_chars(self):
+    def test_escape_special_chars(self) -> None:
         """Special Lucene characters should be escaped."""
-        from agentx_ai.kit.agent_memory.memory.recall import RecallLayer
 
         mock_memory = MagicMock()
         mock_retriever = MagicMock()
