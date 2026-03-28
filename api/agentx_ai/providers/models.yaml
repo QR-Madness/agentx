@@ -109,6 +109,56 @@ models:
     cost_per_1k_input: 0.001
     cost_per_1k_output: 0.005
 
+  claude-3-5-sonnet-latest:
+    provider: anthropic
+    model_id: claude-3-5-sonnet-latest
+    context_window: 200000
+    supports_tools: true
+    supports_vision: true
+    supports_streaming: true
+    cost_per_1k_input: 0.003
+    cost_per_1k_output: 0.015
+
+  claude-3-5-haiku-latest:
+    provider: anthropic
+    model_id: claude-3-5-haiku-latest
+    context_window: 200000
+    supports_tools: true
+    supports_vision: true
+    supports_streaming: true
+    cost_per_1k_input: 0.001
+    cost_per_1k_output: 0.005
+
+  claude-opus-4-6:
+    provider: anthropic
+    model_id: claude-opus-4-6
+    context_window: 1000000
+    supports_tools: true
+    supports_vision: true
+    supports_streaming: true
+    cost_per_1k_input: 0.015
+    cost_per_1k_output: 0.075
+
+  claude-sonnet-4-6:
+    provider: anthropic
+    model_id: claude-sonnet-4-6
+    context_window: 1000000
+    supports_tools: true
+    supports_vision: true
+    supports_streaming: true
+    cost_per_1k_input: 0.003
+    cost_per_1k_output: 0.015
+
+  claude-haiku-4-5:
+    provider: anthropic
+    model_id: claude-haiku-4-5-20251001
+    context_window: 1000000
+    supports_tools: true
+    supports_vision: true
+    supports_streaming: true
+    cost_per_1k_input: 0.001
+    cost_per_1k_output: 0.005
+
   # LM Studio (Local) Models
   # These models are served locally via LM Studio's OpenAI-compatible API
   llama3.2:
@@ -183,8 +233,8 @@ models:
 
 # Default models for different use cases
 defaults:
-  chat: gpt-4o-mini
-  reasoning: claude-3.5-sonnet
-  code: deepseek-coder-v2
-  fast: gpt-3.5-turbo
+  chat: claude-sonnet-4-6
+  reasoning: claude-opus-4-6
+  code: claude-sonnet-4-6
+  fast: claude-haiku-4-5
   local: llama3.2

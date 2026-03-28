@@ -210,10 +210,16 @@ class LMStudioProvider(ModelProvider):
         if message.tool_calls:
             tool_calls = []
             for tc in message.tool_calls:
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"raw": args}
                 tool_calls.append(ToolCall(
                     id=tc.id,
                     name=tc.function.name,
-                    arguments=tc.function.arguments,
+                    arguments=args,
                 ))
 
         usage = None
