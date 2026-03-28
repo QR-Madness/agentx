@@ -315,13 +315,18 @@ class ExtractionService:
         self,
         new_claim: str,
         existing_facts: list[dict[str, Any]],
+        new_temporal: str | None = None,
+        new_confidence: float | None = None,
     ) -> ContradictionResult:
         """
         Check if a new fact contradicts any existing facts.
 
         Args:
             new_claim: The new fact claim to check
-            existing_facts: List of existing facts with 'id' and 'claim' keys
+            existing_facts: List of existing facts with 'id', 'claim', and optionally
+                'confidence', 'temporal_context', 'similarity_score' keys
+            new_temporal: Temporal context of the new fact (current/past/future/null)
+            new_confidence: Confidence score of the new fact
 
         Returns:
             ContradictionResult indicating if contradiction was found
@@ -338,17 +343,22 @@ class ExtractionService:
             logger.warning(f"Contradiction model not available: {e}")
             return ContradictionResult(success=False, error=str(e))
 
-        # Format existing facts as numbered list
-        facts_text = "\n".join(
-            f"[{f['id']}] {f['claim']}"
-            for f in existing_facts
-            if f.get('claim')
-        )
+        # Format existing facts with temporal context and confidence
+        facts_lines = []
+        for f in existing_facts:
+            if not f.get('claim'):
+                continue
+            temporal = f.get('temporal_context') or 'null'
+            confidence = f.get('confidence', 'unknown')
+            facts_lines.append(f"[{f['id']}] {f['claim']} (temporal: {temporal}, confidence: {confidence})")
+        facts_text = "\n".join(facts_lines)
 
         loader = get_prompt_loader()
         prompt = loader.get(
             "extraction.contradiction",
             new_claim=new_claim,
+            new_temporal=new_temporal or "null",
+            new_confidence=new_confidence if new_confidence is not None else "unknown",
             existing_facts=facts_text,
         )
 

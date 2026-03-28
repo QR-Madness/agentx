@@ -68,6 +68,161 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     return result.single() is not None
 
 
+def _is_semantic_duplicate(
+    session,
+    claim_embedding: List[float],
+    user_id: str,
+    channel: str,
+    threshold: float = 0.92,
+) -> bool:
+    """
+    Check if a semantically identical fact already exists via vector search.
+
+    Uses the Neo4j fact_embeddings index for fast cosine similarity lookup.
+    A threshold of 0.92 catches paraphrases like "User likes Python" vs
+    "The user enjoys Python" while avoiding false positives.
+
+    Args:
+        session: Neo4j session
+        claim_embedding: Embedding vector for the new claim
+        user_id: User ID
+        channel: Memory channel
+        threshold: Minimum cosine similarity to consider duplicate
+
+    Returns:
+        True if a semantically identical fact exists
+    """
+    try:
+        result = session.run("""
+            CALL db.index.vector.queryNodes('fact_embeddings', 3, $embedding)
+            YIELD node, score
+            WHERE score > $threshold
+              AND node.user_id = $user_id
+              AND (node.channel = $channel OR node.channel = '_global')
+              AND node.superseded_at IS NULL
+            RETURN node.id AS id, score
+            LIMIT 1
+        """, embedding=claim_embedding, threshold=threshold, user_id=user_id, channel=channel)
+        return result.single() is not None
+    except Exception as e:
+        logger.debug(f"Semantic duplicate check failed (index may not exist): {e}")
+        return False
+
+
+def _get_contradiction_candidates(
+    session,
+    claim: str,
+    claim_embedding: List[float],
+    entity_names: List[str],
+    user_id: str,
+    channel: str,
+    similarity_threshold: float = 0.5,
+    max_candidates: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Find facts that might contradict a new claim using entity-scoped
+    retrieval + embedding similarity (Layer 2 of the verification pipeline).
+
+    Strategy:
+    1. Entity-scoped: Find all active facts about the same entities
+    2. Embedding similarity: Vector search for semantically similar facts
+    3. Merge + deduplicate, order by similarity descending
+
+    Args:
+        session: Neo4j session
+        claim: The new fact claim text
+        claim_embedding: Embedding vector for the new claim
+        entity_names: Entity names mentioned in the new fact
+        user_id: User ID
+        channel: Memory channel
+        similarity_threshold: Min cosine similarity for vector search
+        max_candidates: Max candidates to return
+
+    Returns:
+        List of candidate facts with id, claim, confidence, temporal_context, similarity_score
+    """
+    seen_ids: set = set()
+    candidates: List[Dict[str, Any]] = []
+
+    # Strategy 1: Entity-scoped retrieval
+    if entity_names:
+        entity_names_lower = [n.lower() for n in entity_names]
+        try:
+            entity_result = session.run("""
+                MATCH (e:Entity)
+                WHERE toLower(e.name) IN $entity_names
+                MATCH (f:Fact)-[:ABOUT]->(e)
+                WHERE f.user_id = $user_id
+                  AND (f.channel = $channel OR f.channel = '_global')
+                  AND f.superseded_at IS NULL
+                RETURN DISTINCT f.id AS id, f.claim AS claim,
+                       f.confidence AS confidence,
+                       f.temporal_context AS temporal_context,
+                       1.0 AS similarity_score
+                LIMIT $limit
+            """, entity_names=entity_names_lower, user_id=user_id,
+                channel=channel, limit=max_candidates)
+            for record in entity_result:
+                fid = record["id"]
+                if fid not in seen_ids:
+                    seen_ids.add(fid)
+                    candidates.append(dict(record))
+        except Exception as e:
+            logger.debug(f"Entity-scoped contradiction search failed: {e}")
+
+    # Strategy 2: Embedding similarity search
+    try:
+        vector_result = session.run("""
+            CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
+            YIELD node, score
+            WHERE score > $threshold
+              AND node.user_id = $user_id
+              AND (node.channel = $channel OR node.channel = '_global')
+              AND node.superseded_at IS NULL
+            RETURN node.id AS id, node.claim AS claim,
+                   node.confidence AS confidence,
+                   node.temporal_context AS temporal_context,
+                   score AS similarity_score
+            LIMIT $limit
+        """, k=max_candidates, embedding=claim_embedding,
+            threshold=similarity_threshold, user_id=user_id,
+            channel=channel, limit=max_candidates)
+        for record in vector_result:
+            fid = record["id"]
+            if fid not in seen_ids:
+                seen_ids.add(fid)
+                candidates.append(dict(record))
+    except Exception as e:
+        logger.debug(f"Vector contradiction search failed (index may not exist): {e}")
+
+    # Sort by similarity descending, cap at max_candidates
+    candidates.sort(key=lambda c: c.get("similarity_score", 0), reverse=True)
+    return candidates[:max_candidates]
+
+
+def _is_temporal_progression(new_fact: Dict[str, Any], old_fact: Dict[str, Any]) -> bool:
+    """
+    Detect natural temporal progressions that don't need LLM adjudication.
+
+    A temporal progression is when a new 'current' fact naturally supersedes
+    an old 'current' or unspecified fact about the same entity (e.g., job changes,
+    tool switches, location moves).
+
+    Args:
+        new_fact: The newly extracted fact dict
+        old_fact: The existing fact dict from contradiction candidates
+
+    Returns:
+        True if this is a natural temporal progression
+    """
+    new_temporal = new_fact.get("temporal_context")
+    old_temporal = old_fact.get("temporal_context")
+    # New "current" supersedes old "current" or unspecified about same entity
+    if new_temporal == "current" and old_temporal in ("current", None):
+        return True
+    return False
+
+
 def _get_memory_for_user(user_id: str, channel: str = "_default") -> "AgentMemory":
     """
     Get or create an AgentMemory instance for a user.
@@ -591,14 +746,11 @@ async def consolidate_episodic_to_semantic(
             contradictions_found = 0
             skipped_contradictions = 0
 
-            # Get existing facts for contradiction detection (once per conversation)
-            existing_facts = []
-            if settings.contradiction_detection_enabled:
-                existing_facts = _get_recent_facts(session, user_id, channel)
-
             # Store facts via AgentMemory interface
+            # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
             # Collect fact IDs for batch DERIVED_FROM relationship creation
             stored_fact_ids: List[str] = []
+            embedder = get_embedder()
 
             for fact_dict in extracted_facts:
                 try:
@@ -608,33 +760,91 @@ async def consolidate_episodic_to_semantic(
                         logger.warning(f"Skipping fact with missing claim: {fact_dict}")
                         continue
 
-                    # Check for duplicate facts before storing
+                    # === Layer 1: Fast Gate (no LLM) ===
+
+                    # 1a. Exact hash duplicate check
                     if _is_duplicate_fact(session, claim, user_id, channel):
                         skipped_duplicates += 1
                         metrics.duplicates_skipped += 1
-                        logger.debug(f"Skipping duplicate fact: {claim[:50]}...")
+                        logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
                         continue
 
-                    # Check for contradictions with existing facts
-                    if settings.contradiction_detection_enabled and existing_facts:
-                        contradiction = await extraction_service.check_contradictions(claim, existing_facts)
-                        metrics.contradiction_calls += 1
-                        if contradiction.has_contradiction:
-                            contradictions_found += 1
-                            metrics.contradictions_found += 1
-                            action = _handle_contradiction(
-                                memory, session, fact_dict, contradiction, user_id, channel
+                    # Generate embedding early (needed for layers 1b + 2)
+                    claim_embedding = embedder.embed(claim)
+
+                    # 1b. Semantic duplicate check (cosine > threshold)
+                    if _is_semantic_duplicate(
+                        session, claim_embedding, user_id, channel,
+                        threshold=settings.semantic_duplicate_threshold,
+                    ):
+                        skipped_duplicates += 1
+                        metrics.duplicates_skipped += 1
+                        metrics.semantic_duplicates_skipped += 1
+                        logger.debug(f"Skipping semantic duplicate: {claim[:50]}...")
+                        continue
+
+                    # === Layer 2: Semantic Search for Contradiction Candidates (no LLM) ===
+                    if settings.contradiction_detection_enabled:
+                        entity_names = fact_dict.get("entity_names", [])
+                        candidates = _get_contradiction_candidates(
+                            session, claim, claim_embedding, entity_names,
+                            user_id, channel,
+                            similarity_threshold=settings.contradiction_similarity_threshold,
+                            max_candidates=settings.contradiction_max_candidates,
+                        )
+                        metrics.contradiction_candidates_found += len(candidates)
+
+                        # === Layer 3: LLM Adjudication (only if candidates found) ===
+                        if candidates:
+                            # Check for temporal progressions first (no LLM needed)
+                            temporal_resolved = False
+                            for candidate in candidates:
+                                if _is_temporal_progression(fact_dict, candidate):
+                                    # Auto-supersede without LLM call
+                                    _handle_contradiction(
+                                        memory, session, fact_dict,
+                                        type('Result', (), {
+                                            'has_contradiction': True,
+                                            'contradicting_fact_id': candidate['id'],
+                                            'resolution': 'prefer_new',
+                                            'reason': 'temporal_progression',
+                                        })(),
+                                        user_id, channel,
+                                    )
+                                    contradictions_found += 1
+                                    metrics.contradictions_found += 1
+                                    metrics.contradictions_resolved += 1
+                                    metrics.temporal_progressions_resolved += 1
+                                    fact_count += 1
+                                    metrics.facts_stored += 1
+                                    temporal_resolved = True
+                                    logger.info(f"Auto-resolved temporal progression: {claim[:50]}...")
+                                    break
+
+                            if temporal_resolved:
+                                continue
+
+                            # LLM contradiction check against candidates
+                            contradiction = await extraction_service.check_contradictions(
+                                claim, candidates,
+                                new_temporal=fact_dict.get("temporal_context"),
+                                new_confidence=fact_dict.get("confidence"),
                             )
-                            if action == "skipped":
-                                skipped_contradictions += 1
-                                continue
-                            elif action == "superseded":
-                                # Fact was already stored via supersession
-                                fact_count += 1
-                                metrics.facts_stored += 1
-                                metrics.contradictions_resolved += 1
-                                continue
-                            # Otherwise continue to store (flagged or normal)
+                            metrics.contradiction_calls += 1
+                            if contradiction.has_contradiction:
+                                contradictions_found += 1
+                                metrics.contradictions_found += 1
+                                action = _handle_contradiction(
+                                    memory, session, fact_dict, contradiction, user_id, channel
+                                )
+                                if action == "skipped":
+                                    skipped_contradictions += 1
+                                    continue
+                                elif action == "superseded":
+                                    fact_count += 1
+                                    metrics.facts_stored += 1
+                                    metrics.contradictions_resolved += 1
+                                    continue
 
                     # Link fact to mentioned entities (case-insensitive lookup)
                     entity_ids = [

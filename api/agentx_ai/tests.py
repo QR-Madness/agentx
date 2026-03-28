@@ -2276,4 +2276,104 @@ class AgentSelfMemoryTest(TestCase):
         self.assertEqual(len(RETRIEVAL_TOOL_NAMES), 5)
 
 
+class FactVerificationPipelineTest(TestCase):
+    """Tests for the three-layer fact verification pipeline."""
+
+    def test_is_temporal_progression_current_supersedes_current(self):
+        """New 'current' fact should supersede old 'current' fact."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _is_temporal_progression
+        new_fact = {"claim": "User works at Meta", "temporal_context": "current"}
+        old_fact = {"claim": "User works at Google", "temporal_context": "current"}
+        self.assertTrue(_is_temporal_progression(new_fact, old_fact))
+
+    def test_is_temporal_progression_current_supersedes_null(self):
+        """New 'current' fact should supersede old fact with no temporal context."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _is_temporal_progression
+        new_fact = {"claim": "User lives in Seattle", "temporal_context": "current"}
+        old_fact = {"claim": "User lives in NYC", "temporal_context": None}
+        self.assertTrue(_is_temporal_progression(new_fact, old_fact))
+
+    def test_is_temporal_progression_past_does_not_supersede(self):
+        """New 'past' fact should not be treated as temporal progression."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _is_temporal_progression
+        new_fact = {"claim": "User worked at Google", "temporal_context": "past"}
+        old_fact = {"claim": "User works at Meta", "temporal_context": "current"}
+        self.assertFalse(_is_temporal_progression(new_fact, old_fact))
+
+    def test_is_temporal_progression_null_does_not_supersede(self):
+        """Fact without temporal context should not trigger auto-resolution."""
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _is_temporal_progression
+        new_fact = {"claim": "User likes Python", "temporal_context": None}
+        old_fact = {"claim": "User likes Java", "temporal_context": "current"}
+        self.assertFalse(_is_temporal_progression(new_fact, old_fact))
+
+    def test_semantic_duplicate_threshold_in_config(self):
+        """Config should have semantic_duplicate_threshold."""
+        from agentx_ai.kit.agent_memory.config import Settings
+        s = Settings()
+        self.assertEqual(s.semantic_duplicate_threshold, 0.92)
+
+    def test_contradiction_similarity_threshold_in_config(self):
+        """Config should have contradiction_similarity_threshold."""
+        from agentx_ai.kit.agent_memory.config import Settings
+        s = Settings()
+        self.assertEqual(s.contradiction_similarity_threshold, 0.5)
+
+    def test_contradiction_max_candidates_in_config(self):
+        """Config should have contradiction_max_candidates."""
+        from agentx_ai.kit.agent_memory.config import Settings
+        s = Settings()
+        self.assertEqual(s.contradiction_max_candidates, 10)
+
+    def test_contradiction_enabled_by_default(self):
+        """Contradiction detection should be enabled by default."""
+        from agentx_ai.kit.agent_memory.config import Settings
+        s = Settings()
+        self.assertTrue(s.contradiction_detection_enabled)
+
+    def test_correction_enabled_by_default(self):
+        """Correction detection should be enabled by default."""
+        from agentx_ai.kit.agent_memory.config import Settings
+        s = Settings()
+        self.assertTrue(s.correction_detection_enabled)
+
+    def test_metrics_has_pipeline_fields(self):
+        """ConsolidationMetrics should have the new pipeline tracking fields."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        m = ConsolidationMetrics()
+        self.assertEqual(m.semantic_duplicates_skipped, 0)
+        self.assertEqual(m.contradiction_candidates_found, 0)
+        self.assertEqual(m.temporal_progressions_resolved, 0)
+
+    def test_metrics_serialization_includes_pipeline_fields(self):
+        """Pipeline fields should appear in serialized metrics."""
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        m = ConsolidationMetrics(
+            semantic_duplicates_skipped=3,
+            contradiction_candidates_found=5,
+            temporal_progressions_resolved=2,
+        )
+        d = m.to_dict()
+        self.assertEqual(d["semantic_duplicates_skipped"], 3)
+        self.assertEqual(d["contradiction_candidates_found"], 5)
+        self.assertEqual(d["temporal_progressions_resolved"], 2)
+
+    def test_check_contradictions_accepts_temporal_args(self):
+        """check_contradictions should accept new_temporal and new_confidence kwargs."""
+        import inspect
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        sig = inspect.signature(ExtractionService.check_contradictions)
+        params = list(sig.parameters.keys())
+        self.assertIn("new_temporal", params)
+        self.assertIn("new_confidence", params)
+
+    def test_consolidation_settings_includes_pipeline_config(self):
+        """get_consolidation_settings should include pipeline thresholds."""
+        from agentx_ai.kit.agent_memory.config import get_consolidation_settings
+        settings = get_consolidation_settings()
+        self.assertIn("semantic_duplicate_threshold", settings)
+        self.assertIn("contradiction_similarity_threshold", settings)
+        self.assertIn("contradiction_max_candidates", settings)
+
+
 # Phase 11.8+ tests moved to tests_memory.py

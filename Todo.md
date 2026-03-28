@@ -474,6 +474,24 @@ Intent-aware retrieval (SimpleMem-style):
 - [x] `ConsolidationMetrics` extended with assistant turn tracking fields
 - [x] 10 unit tests (ID format/uniqueness, self-channel, config plumbing, confidence calibration, recall channels)
 
+### 14.7 Bulletproof Fact Correction Pipeline ✓
+
+Three-layer fact verification replacing the naive "check 30 recent facts via LLM" approach:
+
+- [x] **Layer 1 — Fast Gate** (no LLM, <10ms): exact hash duplicate + semantic duplicate (cosine > 0.92 via Neo4j vector index)
+- [x] **Layer 2 — Semantic Search** (no LLM, <50ms): entity-scoped fact retrieval + embedding similarity search → max 10 candidates
+- [x] **Layer 3 — LLM Adjudication** (only for candidates): temporal-aware contradiction prompt with confidence guidance
+- [x] `_is_semantic_duplicate()` — vector search against `fact_embeddings` index
+- [x] `_get_contradiction_candidates()` — entity-scoped + embedding similarity merge + dedup
+- [x] `_is_temporal_progression()` — auto-resolve "current supersedes current" without LLM
+- [x] Temporal-aware contradiction prompt with per-fact temporal context and confidence
+- [x] Implicit correction detection in extraction prompt ("I switched from X to Y" → dual past/current facts)
+- [x] `check_contradictions()` updated for richer candidate format (temporal_context, confidence, similarity_score)
+- [x] Contradiction + correction detection enabled by default
+- [x] Config: `semantic_duplicate_threshold`, `contradiction_similarity_threshold`, `contradiction_max_candidates`
+- [x] Metrics: `semantic_duplicates_skipped`, `contradiction_candidates_found`, `temporal_progressions_resolved`
+- [x] 13 unit tests (temporal progression, config defaults, metrics serialization, signature checks)
+
 ### Metrics to Track
 - Compression ratio (raw tokens → injected tokens)
 - Retrieval accuracy (does agent get what it needs?)

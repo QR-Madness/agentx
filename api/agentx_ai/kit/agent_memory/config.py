@@ -137,14 +137,19 @@ class Settings(BaseSettings):
     relevance_filter_prompt: str = ""
 
     # --- Contradiction Detection (check new facts vs existing) ---
-    contradiction_detection_enabled: bool = False  # Off by default until stable
+    contradiction_detection_enabled: bool = True  # Three-layer pipeline: fast gate → semantic search → LLM
     contradiction_provider: str = "lmstudio"
     contradiction_model: str = "google/gemma-3-4b"
     contradiction_temperature: float = 0.2
     contradiction_max_tokens: int = 500
+    # Layer 1: Semantic duplicate threshold (cosine similarity)
+    semantic_duplicate_threshold: float = 0.92
+    # Layer 2: Contradiction candidate search
+    contradiction_similarity_threshold: float = 0.5
+    contradiction_max_candidates: int = 10
 
     # --- User Correction Handling (detect "actually...", "no I meant...") ---
-    correction_detection_enabled: bool = False  # Off by default until stable
+    correction_detection_enabled: bool = True  # Implicit corrections caught at extraction time
     correction_provider: str = "lmstudio"
     correction_model: str = "google/gemma-3-4b"
     correction_temperature: float = 0.2
@@ -335,9 +340,12 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "job_promote_interval": settings.job_promote_interval,
         "job_entity_linking_interval": settings.job_entity_linking_interval,
 
-        # Experimental
+        # Fact verification pipeline
         "contradiction_detection_enabled": settings.contradiction_detection_enabled,
         "correction_detection_enabled": settings.correction_detection_enabled,
+        "semantic_duplicate_threshold": settings.semantic_duplicate_threshold,
+        "contradiction_similarity_threshold": settings.contradiction_similarity_threshold,
+        "contradiction_max_candidates": settings.contradiction_max_candidates,
 
         # Entity/relationship types (read-only display)
         "entity_types": settings.entity_types,

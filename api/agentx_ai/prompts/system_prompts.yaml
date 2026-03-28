@@ -134,6 +134,21 @@ extraction:
     - "future": Will apply later ("I'm starting at...", "I plan to...")
     - null: No clear temporal indicator (default - most facts)
 
+    IMPLICIT CORRECTIONS:
+    If the user's statement implies a change from a previous state, extract BOTH:
+    - The OLD state as a fact with temporal_context="past"
+    - The NEW state as a fact with temporal_context="current"
+    Examples:
+    - "I switched from React to Vue" →
+      fact1: claim="User uses React", temporal_context="past"
+      fact2: claim="User uses Vue", temporal_context="current"
+    - "I left Google for Meta" →
+      fact1: claim="User works at Google", temporal_context="past"
+      fact2: claim="User works at Meta", temporal_context="current"
+    - "I moved to Seattle" →
+      fact1: claim="User lives in Seattle", temporal_context="current"
+      (only extract the old location if explicitly mentioned)
+
     Respond with JSON ONLY:
     {{
       "is_relevant": true|false,
@@ -176,22 +191,33 @@ extraction:
 
     If not a correction, respond: CORRECTION: NO
 
-  # Contradiction detection prompt
-  # Variables: {new_claim}, {existing_facts}
+  # Contradiction detection prompt (temporal-aware)
+  # Variables: {new_claim}, {new_temporal}, {new_confidence}, {existing_facts}
   contradiction: |
     Check if the NEW FACT contradicts any EXISTING FACT.
 
-    A contradiction exists when two facts CANNOT both be true:
-    - "User lives in Seattle" vs "User lives in New York" (can't live in both)
+    A contradiction exists when two facts CANNOT both be true AT THE SAME TIME:
+    - "User lives in Seattle" vs "User lives in New York" (can't live in both now)
     - "User prefers Python" vs "User hates Python" (opposite sentiments)
     - "User is 25 years old" vs "User is 30 years old" (can't be both)
 
     NOT contradictions (both can be true):
     - "User likes Python" + "User likes JavaScript" (can like multiple)
-    - "User works at Google" + "User worked at Microsoft" (past vs present)
     - "User has a cat" + "User has a dog" (can have both)
+    - Facts with compatible temporal contexts (see TEMPORAL RULES below)
 
-    NEW FACT: "{new_claim}"
+    TEMPORAL RULES:
+    - current + current about same topic with incompatible claims → CONTRADICTION
+    - current + past about same topic → NOT a contradiction (natural progression)
+    - current + null about same topic with incompatible claims → CONTRADICTION (treat null as current)
+    - past + past about same topic → NOT a contradiction (both historical)
+
+    CONFIDENCE GUIDANCE:
+    - If new fact is "explicit" (high confidence) and old is "inferred" (low) → lean PREFER_NEW
+    - If old fact is "explicit" (high confidence) and new is "uncertain" (low) → lean PREFER_OLD
+    - Similar confidence → use recency (PREFER_NEW) unless old fact is more specific
+
+    NEW FACT: "{new_claim}" (temporal: {new_temporal}, confidence: {new_confidence})
 
     EXISTING FACTS:
     {existing_facts}
@@ -201,11 +227,6 @@ extraction:
     FACT_ID: [id of the contradicting existing fact]
     REASON: [brief explanation of why they contradict]
     RESOLUTION: PREFER_NEW | PREFER_OLD | FLAG_REVIEW
-
-    Guidelines for RESOLUTION:
-    - PREFER_NEW: New fact is more specific or recent
-    - PREFER_OLD: Existing fact is more reliable or specific
-    - FLAG_REVIEW: Ambiguous, needs human review
 
     If no contradiction: CONTRADICTION: NO
 

@@ -70,6 +70,11 @@ class ConsolidationMetrics:
     storage_latency_ms: int = 0
     total_latency_ms: int = 0
 
+    # Fact verification pipeline
+    semantic_duplicates_skipped: int = 0
+    contradiction_candidates_found: int = 0
+    temporal_progressions_resolved: int = 0
+
     # Error tracking
     errors: List[str] = field(default_factory=list)
 
