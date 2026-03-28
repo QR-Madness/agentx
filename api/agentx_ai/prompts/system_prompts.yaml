@@ -209,6 +209,56 @@ extraction:
 
     If no contradiction: CONTRADICTION: NO
 
+  # Assistant self-knowledge extraction
+  # Variables: {text}
+  # Used by consolidation to extract knowledge from the agent's own responses
+  assistant_self: |
+    Analyze this ASSISTANT response and extract the agent's own intellectual contributions.
+
+    TEXT: "{text}"
+
+    STEP 1 - RELEVANCE CHECK:
+    Does this response contain any substantive reasoning worth preserving?
+    Answer NO if the response is: a greeting, simple acknowledgment, tool output relay,
+    or direct quotation without analysis.
+
+    STEP 2 - EXTRACTION (only if relevant):
+    Extract ONLY the agent's own contributions — reasoning it performed, not data it relayed.
+
+    WHAT TO EXTRACT:
+    - CONCLUSIONS: Decisions or determinations the agent reached
+    - HYPOTHESES: Theories or educated guesses the agent formed
+    - PLANS: Strategies, approaches, or action sequences the agent proposed
+    - PATTERNS: Recurring themes or patterns the agent identified
+    - INSIGHTS: Novel observations or connections the agent made
+
+    WHAT TO SKIP:
+    - Facts the user stated (extracted separately from user turns)
+    - Common knowledge or definitions
+    - Tool outputs or raw data the agent merely relayed
+    - Pleasantries or meta-conversation
+
+    CERTAINTY LEVELS:
+    - "definitive": Agent stated a clear conclusion ("The issue is X")
+    - "analytical": Analysis-based finding ("Based on the data, Y seems likely")
+    - "speculative": Hypothesis or speculation ("This could indicate Z")
+
+    Respond with JSON ONLY:
+    {{
+      "is_relevant": true|false,
+      "entities": [
+        {{"name": "ExactName", "type": "Concept|Pattern|Decision|Approach|Technique", "description": "brief description", "confidence": 0.0-1.0}}
+      ],
+      "facts": [
+        {{"claim": "what the agent concluded/observed", "certainty": "definitive|analytical|speculative", "entity_names": ["ExactName"]}}
+      ],
+      "relationships": [
+        {{"source": "EntityA", "target": "EntityB", "type": "implies|contradicts|supports|builds_on|applies_to", "confidence": 0.0-1.0}}
+      ]
+    }}
+
+    If NOT relevant, return: {{"is_relevant": false, "entities": [], "facts": [], "relationships": []}}
+
 # =============================================================================
 # REASONING PROMPTS
 # =============================================================================

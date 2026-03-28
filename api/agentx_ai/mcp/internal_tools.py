@@ -103,8 +103,8 @@ def register_tool(
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum characters to return per page (default: 10000). Use offset to paginate.",
-                "default": 10000,
+                "description": "Maximum characters to return per page (default: 12000). Use offset to paginate.",
+                "default": 12000,
             },
         },
         "required": ["key"],
@@ -113,7 +113,7 @@ def register_tool(
 def read_stored_output(
     key: str,
     offset: int = 0,
-    limit: int = 10000,
+    limit: int = 12000,
 ) -> dict[str, Any]:
     """Retrieve a stored tool output from Redis with automatic pagination."""
     from ..agent.tool_output_storage import get_tool_output

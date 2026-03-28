@@ -49,7 +49,8 @@ class AgentMemory:
         conversation_id: Optional[str] = None,
         channel: str = "_global",
         session_id: Optional[str] = None,
-        events: Optional[MemoryEventEmitter] = None
+        events: Optional[MemoryEventEmitter] = None,
+        agent_id: Optional[str] = None,
     ):
         # Validate user_id
         if not user_id or not user_id.strip():
@@ -59,6 +60,8 @@ class AgentMemory:
         self.conversation_id = conversation_id
         self.channel = channel
         self.session_id = session_id
+        self.agent_id = agent_id
+        self.self_channel = f"_self_{agent_id}" if agent_id else None
         self.embedder = get_embedder()
 
         # Event emitter (create default if not provided)
@@ -91,6 +94,14 @@ class AgentMemory:
         """Invalidate retrieval cache for current user/channel scope."""
         self.retriever.invalidate_cache(self.user_id, self.channel)
 
+    def _default_recall_channels(self) -> List[str]:
+        """Build the default channel list for recall: [active, self, _global]."""
+        channels = [self.channel] if self.channel != "_global" else []
+        if self.self_channel:
+            channels.append(self.self_channel)
+        channels.append("_global")
+        return channels
+
     def store_turn(self, turn: Turn) -> None:
         """
         Store a conversation turn in episodic memory.
@@ -108,7 +119,7 @@ class AgentMemory:
                 turn.embedding = self.embedder.embed_single(turn.content)
 
             # Store in Neo4j (graph)
-            self.episodic.store_turn(turn, user_id=self.user_id, channel=self.channel)
+            self.episodic.store_turn(turn, user_id=self.user_id, channel=self.channel, agent_id=self.agent_id)
 
             # Store in PostgreSQL (logs)
             self.episodic.store_turn_log(turn, channel=self.channel)
@@ -558,7 +569,7 @@ class AgentMemory:
                     query=query,
                     user_id=self.user_id,
                     top_k=top_k,
-                    channels=channels or ([self.channel, "_global"] if self.channel != "_global" else ["_global"]),
+                    channels=channels or self._default_recall_channels(),
                     time_window_hours=time_window_hours,
                     include_episodic=include_episodic,
                     include_semantic=include_semantic,
@@ -577,7 +588,7 @@ class AgentMemory:
                     include_procedural=include_procedural,
                     time_window_hours=time_window_hours,
                     channel=self.channel,
-                    channels=channels,
+                    channels=channels or self._default_recall_channels(),
                     strategy_weights=strategy_weights,
                     conversation_id=self.conversation_id,
                 )

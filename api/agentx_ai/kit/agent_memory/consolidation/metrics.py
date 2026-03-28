@@ -57,6 +57,13 @@ class ConsolidationMetrics:
     relationships_stored: int = 0
     storage_errors: int = 0
 
+    # Assistant self-extraction
+    assistant_turns_total: int = 0
+    assistant_turns_relevant: int = 0
+    assistant_entities_extracted: int = 0
+    assistant_facts_extracted: int = 0
+    assistant_facts_stored: int = 0
+
     # Timing (milliseconds)
     relevance_latency_ms: int = 0
     extraction_latency_ms: int = 0

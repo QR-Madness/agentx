@@ -28,7 +28,7 @@ class EpisodicMemory:
         """
         self._audit_logger = audit_logger
 
-    def store_turn(self, turn: Turn, user_id: Optional[str] = None, channel: str = "_global") -> None:
+    def store_turn(self, turn: Turn, user_id: Optional[str] = None, channel: str = "_global", agent_id: Optional[str] = None) -> None:
         """
         Store turn in Neo4j graph.
 
@@ -36,6 +36,7 @@ class EpisodicMemory:
             turn: Turn object to store
             user_id: User ID for linking
             channel: Memory channel
+            agent_id: Agent identifier for self-memory channel tracking
         """
         with Neo4jConnection.session() as session:
             session.run("""
@@ -43,6 +44,10 @@ class EpisodicMemory:
                 ON CREATE SET c.started_at = datetime(),
                               c.user_id = $user_id,
                               c.channel = $channel
+                // Set agent_id if provided (first turn wins)
+                FOREACH (_ IN CASE WHEN $agent_id IS NOT NULL AND c.agent_id IS NULL THEN [1] ELSE [] END |
+                    SET c.agent_id = $agent_id
+                )
 
                 CREATE (t:Turn {
                     id: $turn_id,
@@ -80,7 +85,8 @@ class EpisodicMemory:
                 embedding=turn.embedding,
                 token_count=turn.token_count,
                 user_id=user_id,
-                channel=channel
+                channel=channel,
+                agent_id=agent_id,
             )
 
     def store_turn_log(self, turn: Turn, channel: str = "_global") -> None:

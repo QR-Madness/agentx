@@ -111,6 +111,7 @@ class ProfileManager:
                 {
                     "id": p.id,
                     "name": p.name,
+                    "agent_id": p.agent_id,
                     "avatar": p.avatar,
                     "description": p.description,
                     "default_model": p.default_model,
@@ -174,9 +175,11 @@ class ProfileManager:
             return None
 
         current = self._profiles[profile_id]
+        updates.pop("agent_id", None)  # agent_id is immutable once generated
         updated_data = {
             "id": current.id,
             "name": current.name,
+            "agent_id": current.agent_id,
             "avatar": current.avatar,
             "description": current.description,
             "default_model": current.default_model,

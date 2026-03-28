@@ -713,6 +713,158 @@ async def consolidate_episodic_to_semantic(
     # Clean up memory cache to release resources
     memory_cache.clear()
 
+    # =========================================================================
+    # Phase 2: Assistant self-knowledge extraction
+    # Extract knowledge from assistant turns into per-agent _self_ channels
+    # =========================================================================
+    self_memory_cache: Dict[str, "AgentMemory"] = {}
+
+    with Neo4jConnection.session() as session:
+        assistant_result = session.run("""
+            MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
+            WHERE (c.self_consolidated IS NULL OR c.self_consolidated < datetime() - duration('PT15M'))
+              AND t.role = 'assistant'
+              AND c.agent_id IS NOT NULL
+            OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+            WITH c, u, collect(t) AS turns
+            ORDER BY c.started_at DESC
+            LIMIT 10
+            RETURN c.id AS conversation_id,
+                   coalesce(u.id, 'default') AS user_id,
+                   c.agent_id AS agent_id,
+                   [t IN turns | {content: t.content, id: t.id}] AS turns
+        """)
+
+        assistant_records = list(assistant_result)
+        logger.info(f"Self-extraction: {len(assistant_records)} conversations with assistant turns")
+
+        extraction_service = get_extraction_service()
+
+        for record in assistant_records:
+            conv_id = record["conversation_id"]
+            user_id = record["user_id"]
+            agent_id = record["agent_id"]
+            self_channel = f"_self_{agent_id}"
+            a_turns = record["turns"]
+
+            # Get or create memory for this agent's self-channel
+            cache_key = f"{user_id}:{self_channel}"
+            if cache_key not in self_memory_cache:
+                from ..memory.interface import AgentMemory as _AM
+                self_memory_cache[cache_key] = _AM(
+                    user_id=user_id, channel=self_channel, agent_id=agent_id,
+                )
+            memory = self_memory_cache[cache_key]
+
+            self_extraction_failed = False
+
+            for turn in a_turns:
+                content = turn["content"]
+                turn_id = turn.get("id")
+                metrics.assistant_turns_total += 1
+
+                # Skip short responses (greetings, acknowledgments)
+                if len(content.strip()) < 100:
+                    continue
+
+                try:
+                    result = await extraction_service.check_relevance_and_extract_assistant(
+                        content, source_turn_id=turn_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
+                    self_extraction_failed = True
+                    errors.append(f"assistant_extraction:{conv_id}:{e}")
+                    continue
+
+                if not result.success:
+                    self_extraction_failed = True
+                    continue
+
+                if not result.is_relevant:
+                    continue
+
+                metrics.assistant_turns_relevant += 1
+                metrics.assistant_entities_extracted += len(result.entities)
+                metrics.assistant_facts_extracted += len(result.facts)
+
+                # Store entities
+                entity_map: Dict[str, str] = {}
+                entities_to_store: List[Entity] = []
+                for ent in result.entities:
+                    if not ent.get("name") or not ent.get("type"):
+                        continue
+                    entity = Entity(
+                        id=str(uuid4()),
+                        name=ent["name"],
+                        type=ent["type"],
+                        description=ent.get("description"),
+                        salience=ent.get("confidence", 0.5),
+                    )
+                    entities_to_store.append(entity)
+                    entity_map[ent["name"].lower()] = entity.id
+
+                if entities_to_store:
+                    try:
+                        _batch_store_entities(
+                            session, entities_to_store, conv_id, user_id, self_channel,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Self-extraction entity storage failed: {e}")
+                        errors.append(f"self_entity:{conv_id}:{e}")
+
+                # Store facts with self_extraction source
+                for fact_dict in result.facts:
+                    claim = fact_dict.get("claim")
+                    if not claim:
+                        continue
+                    if _is_duplicate_fact(session, claim, user_id, self_channel):
+                        continue
+
+                    entity_ids = [
+                        entity_map[n.lower()]
+                        for n in fact_dict.get("entity_names", [])
+                        if n.lower() in entity_map
+                    ]
+
+                    try:
+                        memory.learn_fact(
+                            claim=claim,
+                            source="self_extraction",
+                            confidence=fact_dict.get("confidence", 0.7),
+                            source_turn_id=fact_dict.get("source_turn_id"),
+                            entity_ids=entity_ids if entity_ids else None,
+                        )
+                        metrics.assistant_facts_stored += 1
+                    except Exception as e:
+                        logger.warning(f"Self-extraction fact storage failed: {e}")
+                        errors.append(f"self_fact:{conv_id}:{e}")
+
+                # Store relationships
+                if result.relationships:
+                    try:
+                        _batch_store_relationships(
+                            session, result.relationships, entity_map,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Self-extraction relationship storage failed: {e}")
+
+            # Mark conversation as self-consolidated
+            if not self_extraction_failed:
+                session.run("""
+                    MATCH (c:Conversation {id: $conv_id})
+                    SET c.self_consolidated = datetime()
+                """, conv_id=conv_id)
+
+        if assistant_records:
+            logger.info(
+                f"Self-extraction complete: {metrics.assistant_turns_relevant} relevant "
+                f"of {metrics.assistant_turns_total} turns, "
+                f"{metrics.assistant_facts_stored} facts stored"
+            )
+
+    self_memory_cache.clear()
+
     # Finalize metrics
     metrics.completed_at = datetime.now(timezone.utc)
     metrics.total_latency_ms = int((time.perf_counter() - job_start) * 1000)

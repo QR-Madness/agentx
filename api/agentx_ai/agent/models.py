@@ -7,9 +7,38 @@ model settings, and behavior configuration.
 
 from datetime import datetime
 from enum import Enum
+import random
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Docker-style agent ID generation
+# ---------------------------------------------------------------------------
+
+_ADJECTIVES = [
+    "bold", "brave", "bright", "calm", "clever", "cool", "cosmic", "crisp",
+    "daring", "eager", "fast", "fierce", "gentle", "giddy", "gleaming",
+    "golden", "grand", "happy", "hidden", "humble", "keen", "kind", "lively",
+    "lucky", "merry", "mighty", "nimble", "noble", "patient", "plucky",
+    "proud", "quiet", "radiant", "rising", "sharp", "silent", "smooth",
+    "steady", "swift", "vivid", "warm", "wild", "witty", "zen",
+]
+
+_NOUNS = [
+    "aurora", "beacon", "breeze", "cedar", "comet", "coral", "crane",
+    "crystal", "dawn", "dune", "echo", "ember", "falcon", "fern", "flare",
+    "frost", "gale", "grove", "hawk", "iris", "jade", "lark", "lotus",
+    "maple", "meadow", "nebula", "oak", "olive", "osprey", "pearl",
+    "phoenix", "pine", "quartz", "reef", "ridge", "sage", "spark",
+    "spruce", "summit", "thistle", "tide", "vale", "wren",
+]
+
+
+def generate_agent_id() -> str:
+    """Generate a Docker-style human-friendly agent ID (e.g., 'bold-cosmic-falcon')."""
+    return f"{random.choice(_ADJECTIVES)}-{random.choice(_ADJECTIVES)}-{random.choice(_NOUNS)}"
 
 
 class ReasoningStrategy(str, Enum):
@@ -31,6 +60,7 @@ class AgentProfile(BaseModel):
     # Identity
     id: str = Field(..., description="Unique identifier for the profile")
     name: str = Field(..., description="Display name for the agent (used in prompts and UI)")
+    agent_id: str = Field(default_factory=generate_agent_id, description="Unique human-friendly agent identifier (Docker-style)")
     avatar: Optional[str] = Field(None, description="Avatar icon name (e.g., 'sparkles', 'brain')")
     description: Optional[str] = Field(None, description="Description of this profile's purpose")
 
@@ -61,6 +91,11 @@ class AgentProfile(BaseModel):
     is_default: bool = Field(False, description="Whether this is the default profile")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+    @property
+    def self_channel(self) -> str:
+        """Memory channel for this agent's self-knowledge."""
+        return f"_self_{self.agent_id}"
 
     class Config:
         use_enum_values = True

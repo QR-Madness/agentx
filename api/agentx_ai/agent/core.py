@@ -109,7 +109,8 @@ class AgentConfig:
     
     # Prompt settings
     prompt_profile_id: Optional[str] = None  # Use default if None
-    
+    agent_id: Optional[str] = None  # Human-friendly agent identifier for self-memory channel
+
     # Memory settings
     memory_channel: str = "_default"  # Channel for memory scoping (use _default, not _global)
     memory_top_k: int = 10  # Number of memories to retrieve
@@ -198,6 +199,7 @@ class Agent:
             self._memory = get_agent_memory(
                 user_id=user_id,
                 channel=self.config.memory_channel,
+                agent_id=self.config.agent_id,
             )
             if self._memory is None:
                 logger.warning("Memory system unavailable, agent will operate without persistent memory")
@@ -351,7 +353,7 @@ class Agent:
 
                         tool_hint = (
                             f"Retrieval tools for key=\"{storage_key}\":\n"
-                            f"- read_stored_output(key, offset=0, limit=10000) — paginated raw content\n"
+                            f"- read_stored_output(key, offset=0, limit=12000) — paginated raw content\n"
                             f"- tool_output_query(key, query) — semantic search (best for finding specific info)\n"
                             f"- tool_output_section(key) — list/access named sections\n"
                             f"- tool_output_path(key, jsonpath) — JSON path query\n"

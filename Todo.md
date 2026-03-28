@@ -395,7 +395,7 @@ ALL ──→ 13.10 Cleanup
 ### Architecture
 
 ```
-Tool Output → Threshold Check (e.g., >4K tokens)
+Tool Output → Threshold Check (>12K chars)
     ↓ (over limit)
 ┌─────────────────────────────────────────────────────┐
 │ 1. Store raw output in Redis (key: tool:{id})      │
@@ -417,7 +417,7 @@ Intent-aware retrieval (SimpleMem-style):
 
 ### 14.1 Storage + Threshold ✓
 
-- [x] Added `max_tool_result_chars` config (default: 4000 chars)
+- [x] Added `max_tool_result_chars` config (default: 12000 chars)
 - [x] Store oversized outputs in Redis with TTL via `tool_output_storage.py`
 - [x] Inject preview + storage key + access instructions
 - [x] Internal MCP tools: `read_stored_output`, `list_stored_outputs`
@@ -453,6 +453,26 @@ Intent-aware retrieval (SimpleMem-style):
 - [x] Integrated into streaming path (`views.py` `agent_chat_stream()`) with SSE info event
 - [x] Graceful fallback: LLM failure → skip compression, existing truncation catches overflow
 - [x] 8 unit tests (round identification, threshold, compression, preserve rounds, fallback, placement, disabled, serialisation)
+
+### 14.5 Read Loop Prevention + Iterative Chunking ✓
+
+- [x] Retrieval tool bypass: `is_retrieval_tool()` check in `_execute_tool_calls()` — prevents re-storage loop
+- [x] Default pagination: `read_stored_output` limit bumped to 12000 chars with `has_more`/`next_offset` metadata
+- [x] Updated tool hints with pagination syntax and preference for smart retrieval tools
+- [x] 6 unit tests (bypass detection, pagination walk, last page, threshold)
+
+### 14.6 Agent Self-Memory ✓
+
+- [x] Docker-style agent ID generation (`generate_agent_id()` → e.g., "bold-cosmic-falcon")
+- [x] `agent_id` field on `AgentProfile` (auto-generated, immutable, persisted to YAML)
+- [x] `self_channel` property on profile: `_self_<agent_id>`
+- [x] `agent_id` propagated: `AgentConfig` → `AgentMemory` → `EpisodicMemory.store_turn()` → Conversation node
+- [x] Assistant self-extraction prompt (`extraction.assistant_self` in `system_prompts.yaml`)
+- [x] `ExtractionService.check_relevance_and_extract_assistant()` with certainty calibration (definitive/analytical/speculative)
+- [x] Consolidation job Phase 2: assistant turn pass with `_self_<agent_id>` channel, `source="self_extraction"`, separate `self_consolidated` timestamp
+- [x] Self-channel included in recall: `_default_recall_channels()` → `[channel, _self_xxx, _global]`
+- [x] `ConsolidationMetrics` extended with assistant turn tracking fields
+- [x] 10 unit tests (ID format/uniqueness, self-channel, config plumbing, confidence calibration, recall channels)
 
 ### Metrics to Track
 - Compression ratio (raw tokens → injected tokens)

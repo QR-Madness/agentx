@@ -558,6 +558,109 @@ class ExtractionService:
                 error=str(e),
             )
 
+    # Confidence mapping for assistant self-extraction certainty levels
+    _ASSISTANT_CONFIDENCE_MAP = {
+        "definitive": 0.90,
+        "analytical": 0.75,
+        "speculative": 0.55,
+    }
+
+    def _apply_assistant_confidence_calibration(self, facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Map assistant certainty levels (definitive/analytical/speculative) to confidence scores."""
+        for fact in facts:
+            certainty = fact.pop("certainty", "analytical")
+            fact["confidence"] = self._ASSISTANT_CONFIDENCE_MAP.get(certainty.lower(), 0.65)
+        return facts
+
+    async def check_relevance_and_extract_assistant(
+        self,
+        text: str,
+        source_turn_id: Optional[str] = None,
+    ) -> CombinedExtractionResult:
+        """
+        Extract self-knowledge from an assistant response.
+
+        Uses the assistant_self prompt template which focuses on the agent's
+        own reasoning: conclusions, hypotheses, plans, patterns, insights.
+
+        Args:
+            text: The assistant response text
+            source_turn_id: Optional source turn ID for attribution
+
+        Returns:
+            CombinedExtractionResult with extracted self-knowledge
+        """
+        loader = get_prompt_loader()
+
+        # Skip short/trivial responses
+        if len(text.strip()) < 100:
+            return CombinedExtractionResult(
+                is_relevant=False,
+                reason="assistant_too_short",
+                success=True,
+            )
+
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('combined')
+        except ValueError as e:
+            logger.warning(f"Assistant extraction provider unavailable: {e}")
+            return CombinedExtractionResult(
+                is_relevant=False,
+                reason="provider_unavailable",
+                success=False,
+                error=str(e),
+            )
+
+        prompt = loader.get("extraction.assistant_self", text=text)
+        messages = [Message(role=MessageRole.USER, content=prompt)]
+
+        try:
+            result = await provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            tokens_used = result.usage.get("total_tokens", 0) if result.usage else 0
+            parsed = self._parse_combined_response(result.content)
+
+            if not parsed.success:
+                logger.warning(f"Failed to parse assistant extraction response: {parsed.error}")
+                return CombinedExtractionResult(
+                    is_relevant=False,
+                    reason="parse_error",
+                    tokens_used=tokens_used,
+                    success=False,
+                    error=parsed.error,
+                )
+
+            if parsed.facts:
+                parsed.facts = self._apply_assistant_confidence_calibration(parsed.facts)
+
+            if source_turn_id:
+                for fact in parsed.facts:
+                    fact["source_turn_id"] = source_turn_id
+
+            parsed.tokens_used = tokens_used
+            parsed.reason = "assistant_extracted" if parsed.is_relevant else "assistant_not_relevant"
+
+            logger.debug(
+                f"Assistant extraction: relevant={parsed.is_relevant}, "
+                f"{len(parsed.entities)} entities, {len(parsed.facts)} facts"
+            )
+
+            return parsed
+
+        except Exception as e:
+            logger.exception(f"Assistant extraction failed: {e}")
+            return CombinedExtractionResult(
+                is_relevant=False,
+                reason="error",
+                success=False,
+                error=str(e),
+            )
+
     @staticmethod
     def _repair_truncated_json(text: str) -> Optional[dict]:
         """

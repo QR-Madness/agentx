@@ -2126,7 +2126,7 @@ class ContextGateTest(TestCase):
             self.assertFalse(is_retrieval_tool(name), f"{name} should NOT be a retrieval tool")
 
     def test_read_stored_output_default_pagination(self):
-        """read_stored_output without explicit limit returns <=10000 chars with has_more."""
+        """read_stored_output without explicit limit returns <=12000 chars with has_more."""
         content = "A" * 25000
         mock_data = {
             "content": content,
@@ -2140,10 +2140,10 @@ class ContextGateTest(TestCase):
 
         parsed = json.loads(result.content[0]["text"])
         self.assertTrue(parsed["success"])
-        self.assertEqual(parsed["returned_size"], 10000)
+        self.assertEqual(parsed["returned_size"], 12000)
         self.assertEqual(parsed["total_size"], 25000)
         self.assertTrue(parsed["has_more"])
-        self.assertEqual(parsed["next_offset"], 10000)
+        self.assertEqual(parsed["next_offset"], 12000)
 
     def test_read_stored_output_pagination_walk(self):
         """Can page through full content with offset increments."""
@@ -2189,6 +2189,91 @@ class ContextGateTest(TestCase):
         self.assertEqual(parsed["returned_size"], 5000)
         self.assertFalse(parsed["has_more"])
         self.assertIsNone(parsed["next_offset"])
+
+
+class AgentSelfMemoryTest(TestCase):
+    """Tests for agent self-memory: ID generation, self-channel, recall integration."""
+
+    def test_generate_agent_id_format(self):
+        """Agent ID should be three hyphenated words."""
+        from agentx_ai.agent.models import generate_agent_id
+        aid = generate_agent_id()
+        parts = aid.split("-")
+        self.assertEqual(len(parts), 3, f"Expected 3 parts, got {len(parts)}: {aid}")
+        for part in parts:
+            self.assertTrue(part.isalpha(), f"Part '{part}' should be alphabetic")
+
+    def test_generate_agent_id_uniqueness(self):
+        """100 generated IDs should all be unique."""
+        from agentx_ai.agent.models import generate_agent_id
+        ids = {generate_agent_id() for _ in range(100)}
+        self.assertGreater(len(ids), 90, "Expected >90 unique IDs out of 100")
+
+    def test_agent_profile_has_agent_id(self):
+        """AgentProfile should auto-generate an agent_id."""
+        from agentx_ai.agent.models import AgentProfile
+        profile = AgentProfile(id="test", name="Test Agent")
+        self.assertIsNotNone(profile.agent_id)
+        self.assertIn("-", profile.agent_id)
+
+    def test_agent_profile_self_channel(self):
+        """self_channel property should be _self_<agent_id>."""
+        from agentx_ai.agent.models import AgentProfile
+        profile = AgentProfile(id="test", name="Test Agent", agent_id="bold-cosmic-falcon")
+        self.assertEqual(profile.self_channel, "_self_bold-cosmic-falcon")
+
+    def test_agent_config_agent_id(self):
+        """AgentConfig should accept agent_id."""
+        from agentx_ai.agent.core import AgentConfig
+        config = AgentConfig(agent_id="brave-hidden-dawn")
+        self.assertEqual(config.agent_id, "brave-hidden-dawn")
+
+    def test_self_channel_in_default_recall(self):
+        """AgentMemory._default_recall_channels should include self-channel when agent_id set."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+        with patch.object(AgentMemory, "__init__", lambda self, **kw: None):
+            mem = AgentMemory.__new__(AgentMemory)
+            mem.channel = "_default"
+            mem.self_channel = "_self_bold-cosmic-falcon"
+            channels = mem._default_recall_channels()
+            self.assertEqual(channels, ["_default", "_self_bold-cosmic-falcon", "_global"])
+
+    def test_self_channel_none_without_agent_id(self):
+        """Without agent_id, self_channel should be None and not in recall channels."""
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+        with patch.object(AgentMemory, "__init__", lambda self, **kw: None):
+            mem = AgentMemory.__new__(AgentMemory)
+            mem.channel = "_default"
+            mem.self_channel = None
+            channels = mem._default_recall_channels()
+            self.assertEqual(channels, ["_default", "_global"])
+
+    def test_extraction_service_has_assistant_method(self):
+        """ExtractionService should have check_relevance_and_extract_assistant method."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        self.assertTrue(hasattr(ExtractionService, "check_relevance_and_extract_assistant"))
+
+    def test_assistant_confidence_calibration(self):
+        """Assistant certainty levels should map to expected confidence scores."""
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        service = ExtractionService.__new__(ExtractionService)
+        facts = [
+            {"claim": "A", "certainty": "definitive"},
+            {"claim": "B", "certainty": "analytical"},
+            {"claim": "C", "certainty": "speculative"},
+        ]
+        calibrated = service._apply_assistant_confidence_calibration(facts)
+        self.assertAlmostEqual(calibrated[0]["confidence"], 0.90)
+        self.assertAlmostEqual(calibrated[1]["confidence"], 0.75)
+        self.assertAlmostEqual(calibrated[2]["confidence"], 0.55)
+        # Certainty should be replaced by confidence
+        for f in calibrated:
+            self.assertNotIn("certainty", f)
+
+    def test_retrieval_tool_bypass_in_is_retrieval_tool(self):
+        """is_retrieval_tool should detect all 5 retrieval tools."""
+        from agentx_ai.mcp.internal_tools import RETRIEVAL_TOOL_NAMES
+        self.assertEqual(len(RETRIEVAL_TOOL_NAMES), 5)
 
 
 # Phase 11.8+ tests moved to tests_memory.py

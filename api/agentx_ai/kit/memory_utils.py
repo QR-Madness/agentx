@@ -23,7 +23,7 @@ _memory_error: Optional[Exception] = None
 HEALTH_CHECK_TIMEOUT = 5
 
 
-def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_default"):
+def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_default", agent_id: Optional[str] = None):
     """
     Get or create an AgentMemory instance.
 
@@ -34,26 +34,27 @@ def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = 
         user_id: User identifier for memory isolation
         conversation_id: Optional conversation context
         channel: Memory channel for scoping (default "_default")
-        
+        agent_id: Optional agent identifier for self-memory channel
+
     Returns:
         AgentMemory instance or None if initialization fails
     """
     global _memory_instance, _memory_error
-    
+
     if _memory_error is not None:
         logger.warning(f"Memory system unavailable: {_memory_error}")
         return None
-    
+
     if _memory_instance is None:
         try:
             from .agent_memory.memory.interface import AgentMemory
-            _memory_instance = AgentMemory(user_id=user_id, conversation_id=conversation_id, channel=channel)
+            _memory_instance = AgentMemory(user_id=user_id, conversation_id=conversation_id, channel=channel, agent_id=agent_id)
             logger.info("Agent memory system initialized successfully")
         except Exception as e:
             _memory_error = e
             logger.error(f"Failed to initialize agent memory: {e}")
             return None
-    
+
     return _memory_instance
 
 
