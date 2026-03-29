@@ -97,7 +97,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       id: 'profile-editor',
       type: 'modal',
       component: 'profileEditor',
-      size: 'md',
+      size: 'full',
     });
   };
 

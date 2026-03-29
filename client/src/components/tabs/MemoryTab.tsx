@@ -32,6 +32,7 @@ import {
 } from '../../lib/hooks';
 import { MemoryEntity, MemoryFact, MemoryStrategy, ConsolidationSettings, RecallSettings, api } from '../../lib/api';
 import { JobsPanel } from '../JobsPanel';
+import { ModelSelector } from '../common/ModelSelector';
 import '../../styles/MemoryTab.css';
 
 type MemorySection = 'entities' | 'facts' | 'strategies' | 'jobs' | 'settings';
@@ -659,23 +660,13 @@ function ConsolidationSettingsPanel({
         <h3 className="settings-section-title">Extraction</h3>
         <div className="settings-grid">
           <div className="setting-row">
-            <label>Provider</label>
-            <select
-              value={localSettings.extraction_provider || 'lmstudio'}
-              onChange={e => handleChange('extraction_provider', e.target.value)}
-            >
-              <option value="lmstudio">LM Studio</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </div>
-          <div className="setting-row">
-            <label>Model</label>
-            <input
-              type="text"
+            <ModelSelector
+              label="Model"
               value={localSettings.extraction_model || ''}
-              onChange={e => handleChange('extraction_model', e.target.value)}
-              placeholder="e.g., google/gemma-3-4b"
+              onChange={v => handleChange('extraction_model', v)}
+              onProviderChange={v => handleChange('extraction_provider', v)}
+              showDefault={false}
+              compact
             />
           </div>
           <div className="setting-row">
@@ -748,12 +739,12 @@ function ConsolidationSettingsPanel({
             </label>
           </div>
           <div className="setting-row">
-            <label>Model</label>
-            <input
-              type="text"
+            <ModelSelector
+              label="Model"
               value={localSettings.relevance_filter_model || ''}
-              onChange={e => handleChange('relevance_filter_model', e.target.value)}
-              placeholder="e.g., google/gemma-3-4b"
+              onChange={v => handleChange('relevance_filter_model', v)}
+              showDefault={false}
+              compact
             />
           </div>
           <div className="setting-row">
@@ -1172,22 +1163,13 @@ function RecallSettingsPanel() {
           <h3 className="settings-section-title">HyDE Settings</h3>
           <div className="settings-grid">
             <div className="setting-row">
-              <label>Provider</label>
-              <select
-                value={localSettings.recall_hyde_provider ?? 'lmstudio'}
-                onChange={e => handleChange('recall_hyde_provider', e.target.value)}
-              >
-                <option value="lmstudio">LM Studio</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
-            <div className="setting-row">
-              <label>Model</label>
-              <input
-                type="text"
-                value={localSettings.recall_hyde_model ?? 'google/gemma-3-4b'}
-                onChange={e => handleChange('recall_hyde_model', e.target.value)}
+              <ModelSelector
+                label="Model"
+                value={localSettings.recall_hyde_model ?? ''}
+                onChange={v => handleChange('recall_hyde_model', v)}
+                onProviderChange={v => handleChange('recall_hyde_provider', v)}
+                showDefault={false}
+                compact
               />
             </div>
             <div className="setting-row">
@@ -1214,22 +1196,13 @@ function RecallSettingsPanel() {
           <h3 className="settings-section-title">Self-Query Settings</h3>
           <div className="settings-grid">
             <div className="setting-row">
-              <label>Provider</label>
-              <select
-                value={localSettings.recall_self_query_provider ?? 'lmstudio'}
-                onChange={e => handleChange('recall_self_query_provider', e.target.value)}
-              >
-                <option value="lmstudio">LM Studio</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
-            <div className="setting-row">
-              <label>Model</label>
-              <input
-                type="text"
-                value={localSettings.recall_self_query_model ?? 'google/gemma-3-4b'}
-                onChange={e => handleChange('recall_self_query_model', e.target.value)}
+              <ModelSelector
+                label="Model"
+                value={localSettings.recall_self_query_model ?? ''}
+                onChange={v => handleChange('recall_self_query_model', v)}
+                onProviderChange={v => handleChange('recall_self_query_provider', v)}
+                showDefault={false}
+                compact
               />
             </div>
           </div>

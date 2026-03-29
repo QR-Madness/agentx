@@ -3,7 +3,7 @@
  * Enhanced with model selection, inline system prompt, and organized sections
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Brain,
   Zap,
@@ -18,8 +18,9 @@ import {
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
-import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type ModelInfo, type PromptTemplate } from '../../lib/api';
+import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
 import { PromptLibraryModal } from './PromptLibraryModal';
+import { ModelSelector } from '../common/ModelSelector';
 import './ProfileEditorModal.css';
 
 const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
@@ -70,7 +71,6 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('sparkles');
   const [description, setDescription] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState('');
   const [defaultModel, setDefaultModel] = useState('');
   const [temperature, setTemperature] = useState(0.7);
   const [reasoningStrategy, setReasoningStrategy] = useState<ReasoningStrategy>('auto');
@@ -85,8 +85,6 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [loadingModels, setLoadingModels] = useState(true);
 
   // Library modal state
   const [showLibrary, setShowLibrary] = useState(false);
@@ -94,14 +92,6 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
 
   // Ref for textarea to handle cursor position
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
-
-  // Fetch available models on mount
-  useEffect(() => {
-    api.listModels()
-      .then(({ models }) => setAvailableModels(models))
-      .catch(err => console.error('Failed to fetch models:', err))
-      .finally(() => setLoadingModels(false));
-  }, []);
 
   // Fetch base template when baseTemplateId changes
   useEffect(() => {
@@ -116,34 +106,6 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
       setBaseTemplate(null);
     }
   }, [baseTemplateId]);
-
-  // Get unique providers from models - prioritize known providers
-  const providers = useMemo(() => {
-    const providerSet = new Set(availableModels.map(m => m.provider));
-    const known = ['anthropic', 'lmstudio', 'openai'];
-    const sorted = Array.from(providerSet).sort((a, b) => {
-      const aIdx = known.indexOf(a);
-      const bIdx = known.indexOf(b);
-      if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
-      if (aIdx !== -1) return -1;
-      if (bIdx !== -1) return 1;
-      return a.localeCompare(b);
-    });
-    return sorted;
-  }, [availableModels]);
-
-  // Auto-select first provider when models load
-  useEffect(() => {
-    if (!loadingModels && providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [loadingModels, providers, selectedProvider]);
-
-  // Filter models by selected provider
-  const filteredModels = useMemo(() => {
-    if (!selectedProvider) return [];
-    return availableModels.filter(m => m.provider === selectedProvider);
-  }, [availableModels, selectedProvider]);
 
   // Initialize form when editProfile is resolved
   useEffect(() => {
@@ -160,26 +122,8 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
       setEnableMemory(editProfile.enableMemory);
       setMemoryChannel(editProfile.memoryChannel);
       setEnableTools(editProfile.enableTools);
-
-      // Set provider based on the model
-      if (editProfile.defaultModel) {
-        const model = availableModels.find(m => m.id === editProfile.defaultModel);
-        if (model) {
-          setSelectedProvider(model.provider);
-        }
-      }
     }
-  }, [editProfile, availableModels]);
-
-  // When provider changes, clear model if it doesn't belong to new provider
-  useEffect(() => {
-    if (selectedProvider && defaultModel) {
-      const model = availableModels.find(m => m.id === defaultModel);
-      if (model && model.provider !== selectedProvider) {
-        setDefaultModel('');
-      }
-    }
-  }, [selectedProvider, defaultModel, availableModels]);
+  }, [editProfile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -396,71 +340,12 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
             <span>Model & Generation</span>
           </div>
 
-          {/* Provider Tabs with Model Selection */}
-          <div className="model-tabs">
-            <div className="model-tab-buttons">
-              {providers.map(provider => (
-                <button
-                  key={provider}
-                  type="button"
-                  className={`model-tab-button ${selectedProvider === provider ? 'active' : ''}`}
-                  onClick={() => setSelectedProvider(provider)}
-                  disabled={loadingModels}
-                >
-                  {provider === 'anthropic' && 'Anthropic'}
-                  {provider === 'lmstudio' && 'LM Studio'}
-                  {provider === 'openai' && 'OpenAI'}
-                  {!['anthropic', 'lmstudio', 'openai'].includes(provider) &&
-                    provider.charAt(0).toUpperCase() + provider.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="model-tab-content">
-              {loadingModels ? (
-                <div className="model-loading">
-                  <RefreshCw size={16} className="spin" />
-                  <span>Loading models...</span>
-                </div>
-              ) : filteredModels.length === 0 ? (
-                <div className="model-empty">
-                  {selectedProvider ? 'No models available for this provider' : 'Select a provider'}
-                </div>
-              ) : (
-                <>
-                  <label className={`model-option ${defaultModel === '' ? 'selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name="model"
-                      value=""
-                      checked={defaultModel === ''}
-                      onChange={() => setDefaultModel('')}
-                    />
-                    <span className="model-option-content">
-                      <span className="model-name">System default</span>
-                      <span className="model-desc">Use the system's default model</span>
-                    </span>
-                  </label>
-                  {filteredModels.map(model => (
-                    <label key={model.id} className={`model-option ${defaultModel === model.id ? 'selected' : ''}`}>
-                      <input
-                        type="radio"
-                        name="model"
-                        value={model.id}
-                        checked={defaultModel === model.id}
-                        onChange={() => setDefaultModel(model.id)}
-                      />
-                      <span className="model-option-content">
-                        <span className="model-name">{model.name}</span>
-                        {model.context_length && (
-                          <span className="model-desc">{(model.context_length / 1000).toFixed(0)}k context</span>
-                        )}
-                      </span>
-                    </label>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
+          {/* Model Selection */}
+          <ModelSelector
+            value={defaultModel}
+            onChange={setDefaultModel}
+            showDefault
+          />
 
           <div className="form-group">
             <label htmlFor="temperature">

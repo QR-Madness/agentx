@@ -5,8 +5,7 @@
 
 .profile-editor-modal {
   padding: 0;
-  min-width: 580px;
-  max-width: 680px;
+  width: 100%;
 }
 
 .profile-editor-modal .modal-header {
@@ -425,118 +424,6 @@
 .profile-editor-modal select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-/* Model Tabs */
-.profile-editor-modal .model-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.profile-editor-modal .model-tab-buttons {
-  display: flex;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.profile-editor-modal .model-tab-button {
-  flex: 1;
-  padding: 0.625rem 1rem;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  border-right: 1px solid var(--border-subtle);
-}
-
-.profile-editor-modal .model-tab-button:last-child {
-  border-right: none;
-}
-
-.profile-editor-modal .model-tab-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.profile-editor-modal .model-tab-button.active {
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
-  font-weight: 600;
-}
-
-.profile-editor-modal .model-tab-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.profile-editor-modal .model-tab-content {
-  max-height: 200px;
-  overflow-y: auto;
-  background: var(--bg-secondary);
-}
-
-.profile-editor-modal .model-loading,
-.profile-editor-modal .model-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 1.5rem;
-  color: var(--text-muted);
-  font-size: 0.875rem;
-}
-
-.profile-editor-modal .model-option {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 1rem;
-  cursor: pointer;
-  transition: background 0.15s;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.profile-editor-modal .model-option:last-child {
-  border-bottom: none;
-}
-
-.profile-editor-modal .model-option:hover {
-  background: var(--bg-hover);
-}
-
-.profile-editor-modal .model-option.selected {
-  background: rgba(139, 92, 246, 0.1);
-}
-
-.profile-editor-modal .model-option input[type="radio"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent-primary);
-  cursor: pointer;
-}
-
-.profile-editor-modal .model-option-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.profile-editor-modal .model-name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.profile-editor-modal .model-desc {
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 
 /* Base Template Picker */

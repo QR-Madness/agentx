@@ -88,7 +88,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       id: 'profile-editor',
       type: 'modal',
       component: 'profileEditor',
-      size: 'md',
+      size: 'full',
       props: { profileId },
     });
     onClose();
@@ -99,7 +99,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       id: 'profile-editor',
       type: 'modal',
       component: 'profileEditor',
-      size: 'md',
+      size: 'full',
       props: { isNew: true },
     });
     onClose();

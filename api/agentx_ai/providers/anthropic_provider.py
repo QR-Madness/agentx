@@ -131,8 +131,6 @@ MODEL_ALIASES = {
     "claude-3-haiku": "claude-3-haiku-20240307",
     "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
     "claude-3.5-haiku": "claude-3-5-haiku-20241022",
-    "claude-3-5-sonnet-latest": "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-latest": "claude-3-5-haiku-latest",
     "claude-opus-4": "claude-opus-4-6",
     "claude-sonnet-4": "claude-sonnet-4-6",
     "claude-haiku-4": "claude-haiku-4-5-20251001",
@@ -409,8 +407,8 @@ class AnthropicProvider(ModelProvider):
         )
     
     def list_models(self) -> list[str]:
-        """List available Anthropic models."""
-        return list(ANTHROPIC_MODELS.keys()) + list(MODEL_ALIASES.keys())
+        """List available Anthropic models (canonical names only, no aliases)."""
+        return list(ANTHROPIC_MODELS.keys())
     
     async def health_check(self) -> dict[str, Any]:
         """Check if Anthropic API is reachable."""
