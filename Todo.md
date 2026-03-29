@@ -15,7 +15,7 @@
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
 | Phase 11: Memory System | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 12: Documentation | Partial | ~60% |
-| Phase 13: UX Overhaul | **In Progress** | ~90% |
+| Phase 13: UX Overhaul | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 15: Plan Execution + Memory Tuning | Not Started | 0% |
 | Phase 16: Multi-Agent Conversations | Not Started | 0% |
@@ -46,31 +46,12 @@
 
 ---
 
-## Phase 13: UX Overhaul — Immersive AgentX
+## Phase 13: UX Overhaul — Immersive AgentX (Complete)
 
-> **Priority**: HIGH
-> **Goal**: Immersive 3-page app with browser-style conversation tabs, portal-based modals, theme system, customizable agent profiles, and rich inline feedback
-
-### 13.6 Merged AgentX Page
-
-- [ ] Create `AgentXPage.tsx` (`pages/`) — reads active conversation tab from `ConversationContext`
-- [ ] Full-width message area + input bar (maximally immersive)
-
-### 13.10 Polish & Cleanup
-
-- [ ] Remove `components/tabs/` directory (all old tab components)
-- [ ] Remove `components/TabBar.tsx`
-- [ ] Remove old `styles/*Tab.css` files
-- [ ] Clean up dead `TabId` type and related code
-- [ ] Final CSS consistency pass
-- [ ] Keyboard shortcuts: Cmd+T (new tab), Cmd+W (close tab), Cmd+K (command palette placeholder)
-
-### 13.11 Consolidation Settings UI
-
-- [ ] Create Consolidation Settings section in Settings tab
-- [ ] Extraction, Relevance Filter, Contradiction Detection settings
-- [ ] Provider presets (Local, Quality, Full Cloud)
-- [ ] API endpoints: `GET/PUT /api/memory/config`
+> Moved to [roadmap.md](docs/roadmap.md). All items complete:
+> - 13.6 AgentXPage with ConversationContext + ChatPanel
+> - 13.10 Removed old tabs dir, renamed to panels, keyboard shortcuts (Ctrl+T/W/K), CSS pass
+> - 13.11 Consolidation settings UI + TopBar integration
 
 ---
 

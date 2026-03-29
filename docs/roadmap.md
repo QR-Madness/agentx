@@ -452,7 +452,7 @@ Implemented `Session` and `SessionManager`:
 
 ---
 
-### Phase 13: UX Overhaul — Immersive AgentX (Partial)
+### Phase 13: UX Overhaul — Immersive AgentX
 
 > **Goal**: Immersive 3-page app with browser-style conversation tabs, portal-based modals, customizable agent profiles
 
@@ -478,6 +478,10 @@ Implemented `Session` and `SessionManager`:
 - Settings, Memory, Tools → right-side drawer panels from toolbar icons
 - Translation → centered modal dialog
 
+#### 13.6 AgentX Page
+- `AgentXPage` with `ConversationContext` integration and `ChatPanel`
+- Full-width message area with immersive input bar
+
 #### 13.7 SSE & Metadata Enhancements
 - Rich SSE events: `memory_context`, extended `tool_call`/`tool_result`/`start`/`done`
 - Frontend handles all new event types with typed callbacks
@@ -491,7 +495,15 @@ Implemented `Session` and `SessionManager`:
 - `StartPage` with agent greeting and quick actions
 - `DashboardPage` with health status, memory stats, DB storage metrics
 
-*Remaining: 13.6 AgentXPage extraction, 13.10 cleanup — see Todo.md*
+#### 13.10 Cleanup
+- Removed old `components/tabs/` directory, renamed to panels
+- Keyboard shortcuts: Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+K (command palette)
+- Final CSS consistency pass
+
+#### 13.11 Consolidation Settings UI
+- Consolidation settings section in Settings drawer
+- Extraction, Relevance Filter, Contradiction Detection provider settings
+- TopBar integration
 
 ---
 

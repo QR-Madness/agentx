@@ -69,9 +69,9 @@ graph TB
 
 ## Project Status
 
-**Completed (Phases 1-11):**
+**Completed (Phases 1-14):**
 - Django API with 54 endpoints across 8 subsystems
-- Tauri desktop application with cosmic theme
+- Tauri desktop app: 3-page layout, browser-style conversation tabs, drawer panels, agent profiles
 - Two-level translation system (200+ languages)
 - Database stack (Neo4j, PostgreSQL + pgvector, Redis)
 - MCP client with stdio/SSE/HTTP transports
@@ -80,11 +80,14 @@ graph TB
 - Reasoning framework (CoT, ToT, ReAct, Reflection)
 - Agent core with task planning and goal tracking
 - Memory system: 4 types, recall layer (5 techniques), extraction pipeline, consolidation
-- 130+ backend tests
+- Context gating: task-aware compression, intent-based retrieval, trajectory compression
+- Agent identity: Docker-style IDs, self-memory channels, assistant self-extraction
+- Three-layer fact verification pipeline (hash → semantic → LLM adjudication)
+- 190+ backend tests
 
-**In Progress:**
-- Phase 12: Documentation refresh
-- Phase 13: UI implementation (15%)
+**Up Next:**
+- Phase 15: Plan execution + memory tuning
+- Phase 16: Multi-agent conversations
 
 See the [Roadmap](roadmap.md) for detailed phase history.
 

@@ -23,11 +23,12 @@ Agent profiles configure: name, avatar, default model, temperature, system promp
 
 ```
 Tauri Client (React 19 + Vite)          Django API (port 12319)
-  TabBar → Dashboard, Agent,              Agent Core (planner, session, context)
-           Translation, Chat,             ├── MCP Client (consume external tool servers)
-           Tools, Settings                ├── Reasoning (CoT, ToT, ReAct, Reflection)
-                                          ├── Drafting (speculative, pipeline, candidate)
+  TopBar → Start, Dashboard, AgentX       Agent Core (planner, session, context)
+  ConversationTabs (browser-style)        ├── MCP Client (consume external tool servers)
+  Drawers: Settings, Memory, Tools        ├── Reasoning (CoT, ToT, ReAct, Reflection)
+  Modals: Translation, Prompt Library     ├── Drafting (speculative, pipeline, candidate)
      ↕ HTTP                               ├── Model Providers (LM Studio, Anthropic, OpenAI)
+                                          ├── Context Gating (compression, chunking, retrieval)
                                           ├── Translation Kit (NLLB-200, 200+ languages)
                                           └── Agent Memory (episodic, semantic, procedural, working)
                                                 ↕
@@ -45,12 +46,19 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
 - `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
 - `agent/` — `Agent` class orchestrating reasoning + drafting + tools. `TaskPlanner` for decomposition (with goal tracking), `SessionManager` for conversations
+- `agent/profiles.py` — `ProfileManager` for agent profile CRUD. Profiles stored in `data/agent_profiles.yaml`. Each profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon") for identity and a `self_channel` (`_self_{agent_id}`) for self-knowledge
+- `agent/tool_output_compressor.py` — LLM-based task-aware compression for oversized tool outputs
+- `agent/tool_output_chunker.py` — Section detection, JSON path queries, semantic search over stored tool outputs
+- `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 
 ### Key Client Patterns (`client/src/`)
 
-- All tabs are always mounted in DOM; visibility toggled via CSS `display` property to preserve state
+- 3-page layout: Start, Dashboard, AgentX — routed via `RootLayout` + `TopBar`
+- Browser-style conversation tabs via `ConversationContext` (add, close, switch, rename, reorder)
+- Former tabs (Settings, Memory, Tools) → right-side drawer panels from toolbar icons
 - Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`)
 - `ServerContext` provides app-wide server state; `lib/api.ts` is the typed API client; `lib/hooks.ts` has React data hooks
+- `AgentProfileContext` manages agent profiles (name, model, temperature, reasoning strategy, memory channel)
 - Cosmic dark theme with glassmorphism effects and Lucide-react icons
 
 ## Development Commands
@@ -103,6 +111,10 @@ Test categories:
 - `HealthCheckTest` — API structure tests; auto-skips if Docker not running
 - `MCPClientTest`, `MCPServerRegistryTest` — MCP infrastructure (no external dependencies)
 - `ExtractionPipelineTest` — Memory extraction; skips without API keys
+- `ToolOutputCompressorTest`, `ToolOutputChunkerTest` — Context gating (no external dependencies)
+- `IntentAwareRetrievalTest`, `TrajectoryCompressionTest`, `ContextGateTest` — Compression pipeline
+- `AgentSelfMemoryTest` — Agent identity, self-channel, confidence calibration
+- `FactVerificationPipelineTest` — Three-layer fact verification (temporal progression, config, metrics)
 - Memory integration tests — Skip gracefully when Docker not running or embedding dimensions mismatch
 
 The `DJANGO_SETTINGS_MODULE` env var is set automatically by the Taskfile (`agentx_api.settings`).
@@ -246,11 +258,28 @@ The `AgentMemory` class (`kit/agent_memory/memory/interface.py`) provides a unif
 
 ### Extraction Pipeline
 The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-based extraction:
-- `extract_all(text)` — Combined extraction of entities, facts, and relationships in one LLM call
-- Uses `claude-3-5-haiku-latest` by default (configurable via `extraction_model` setting)
+- `check_relevance_and_extract(text)` — Combined relevance check + extraction in single LLM call (~75% fewer calls)
+- `check_relevance_and_extract_assistant(text)` — Self-knowledge extraction from agent's own responses (certainty: definitive/analytical/speculative)
+- `check_contradictions(claim, facts)` — Three-layer fact verification: hash gate → semantic duplicate → entity-scoped candidates → LLM adjudication
+- Uses `nvidia/nemotron-3-nano` by default for extraction (configurable via `combined_extraction_model` setting)
 - Consolidation jobs (`consolidation/jobs.py`) call extractors every 15 minutes
 - Gracefully degrades to empty results when no provider is configured
 
+### Context Gating
+Large tool outputs (>12K chars) are compressed and stored for retrieval:
+- `ToolOutputCompressor` — task-aware LLM compression with structure indexing
+- `tool_output_chunker.py` — section detection, JSON path queries, semantic search
+- Internal MCP tools: `read_stored_output`, `tool_output_query`, `tool_output_section`, `tool_output_path`
+- Trajectory compression — Focus-style intra-trajectory compression at 75% context threshold
+- Retrieval tool bypass prevents re-storage loops
+
+### Agent Identity
+Each agent profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon"):
+- Auto-generated, immutable, adjective-adjective-noun format (~83K combinations)
+- `self_channel` property: `_self_{agent_id}` for agent's self-knowledge
+- Recall searches: `[active_channel, _self_{agent_id}, _global]`
+- Agent self-extraction during consolidation stores knowledge to self-channel
+
 ## Project Status
 
-Phases 1-10 complete. Phase 11 (Memory System) at 94% — 11.1-11.9, 11.11-11.12 complete, 11.10 (Memory Explorer UI) pending. Phase 12 (Documentation) in progress. See `Todo.md` for detailed tracking.
+Phases 1-14 complete. Phase 15 (Plan Execution + Memory Tuning) and Phase 16 (Multi-Agent Conversations) not started. See `Todo.md` for detailed tracking.
