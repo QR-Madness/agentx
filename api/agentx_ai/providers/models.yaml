@@ -233,8 +233,8 @@ models:
 
 # Default models for different use cases
 defaults:
-  chat: claude-sonnet-4-6
-  reasoning: claude-opus-4-6
-  code: claude-sonnet-4-6
-  fast: claude-haiku-4-5
+  chat: claude-3.5-sonnet
+  reasoning: claude-3.5-sonnet
+  code: deepseek-coder-v2
+  fast: claude-3-5-haiku-latest
   local: llama3.2
