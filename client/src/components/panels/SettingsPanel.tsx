@@ -22,7 +22,7 @@ import {
 import { useServer } from '../../contexts/ServerContext';
 import { ServerConfig } from '../../lib/storage';
 import { api, ConfigUpdate } from '../../lib/api';
-import '../../styles/SettingsTab.css';
+import '../../styles/SettingsPanel.css';
 
 type SettingsSection = 'servers' | 'providers' | 'models' | 'memory';
 
@@ -33,7 +33,7 @@ interface ContextLimits {
   models: Record<string, { context_window: number; max_output_tokens: number }>;
 }
 
-export const SettingsTab: React.FC = () => {
+export const SettingsPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('servers');
   const { 
     servers, 

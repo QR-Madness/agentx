@@ -4,10 +4,10 @@
 
 import { useState } from 'react';
 import { CheckCircle, XCircle, Copy, Check } from 'lucide-react';
-import { SettingsTab } from '../tabs/SettingsTab';
-import { MemoryTab } from '../tabs/MemoryTab';
-import { ToolsTab } from '../tabs/ToolsTab';
-import { TranslationTab } from '../tabs/TranslationTab';
+import { SettingsPanel } from '../panels/SettingsPanel';
+import { MemoryPanel } from '../panels/MemoryPanel';
+import { ToolsPanel } from '../panels/ToolsPanel';
+import { TranslationPanel } from '../panels/TranslationPanel';
 
 // Re-export ProfileEditorModal for the modal registry
 export { ProfileEditorModal } from './ProfileEditorModal';
@@ -19,7 +19,7 @@ interface ModalContentProps {
 export function SettingsModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
-      <SettingsTab />
+      <SettingsPanel />
     </div>
   );
 }
@@ -27,7 +27,7 @@ export function SettingsModalContent({ onClose: _onClose }: ModalContentProps) {
 export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
-      <MemoryTab />
+      <MemoryPanel />
     </div>
   );
 }
@@ -35,7 +35,7 @@ export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
 export function ToolsModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
-      <ToolsTab />
+      <ToolsPanel />
     </div>
   );
 }
@@ -43,7 +43,7 @@ export function ToolsModalContent({ onClose: _onClose }: ModalContentProps) {
 export function TranslationModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
-      <TranslationTab />
+      <TranslationPanel />
     </div>
   );
 }

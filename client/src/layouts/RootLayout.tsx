@@ -7,12 +7,37 @@ import { TopBar, PageId } from './TopBar';
 import { StartPage } from '../pages/StartPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { AgentXPage } from '../pages/AgentXPage';
+import { useConversation } from '../contexts/ConversationContext';
 import './RootLayout.css';
 
 export function RootLayout() {
   const [activePage, setActivePage] = useState<PageId>('start');
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const rafRef = useRef<number | null>(null);
+  const { addTab, closeTab, activeTabId } = useConversation();
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      if (e.key === 't') {
+        e.preventDefault();
+        addTab();
+        setActivePage('agentx');
+      } else if (e.key === 'w') {
+        e.preventDefault();
+        if (activeTabId) closeTab(activeTabId);
+      } else if (e.key === 'k') {
+        e.preventDefault();
+        // Command palette — placeholder for future implementation
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [addTab, closeTab, activeTabId]);
 
   // Track cursor position for reactive gradient
   useEffect(() => {

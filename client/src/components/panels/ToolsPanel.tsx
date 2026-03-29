@@ -16,9 +16,9 @@ import {
   Loader2
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
-import '../../styles/ToolsTab.css';
+import '../../styles/ToolsPanel.css';
 
-export const ToolsTab: React.FC = () => {
+export const ToolsPanel: React.FC = () => {
   const { servers, loading: serversLoading, refresh: refreshServers, connectServer, connectAll, disconnectServer } = useMCPServers();
   const { tools, loading: toolsLoading, refresh: refreshTools } = useMCPTools();
   const [searchQuery, setSearchQuery] = useState('');

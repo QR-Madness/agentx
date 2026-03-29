@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 import {postTranslation} from '../../models/translation';
 import {nllb200Languages} from '../../data/nllb200Languages';
-import '../../styles/TranslationTab.css';
+import '../../styles/TranslationPanel.css';
 
-export const TranslationTab: React.FC = () => {
+export const TranslationPanel: React.FC = () => {
     const [sourceText, setSourceText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
     const [targetLanguage, setTargetLanguage] = useState('spa_Latn');

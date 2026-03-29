@@ -33,7 +33,7 @@ import {
 import { MemoryEntity, MemoryFact, MemoryStrategy, ConsolidationSettings, RecallSettings, api } from '../../lib/api';
 import { JobsPanel } from '../JobsPanel';
 import { ModelSelector } from '../common/ModelSelector';
-import '../../styles/MemoryTab.css';
+import '../../styles/MemoryPanel.css';
 
 type MemorySection = 'entities' | 'facts' | 'strategies' | 'jobs' | 'settings';
 
@@ -1230,8 +1230,8 @@ function RecallSettingsPanel() {
   );
 }
 
-// Main Memory Tab Component
-export const MemoryTab: React.FC = () => {
+// Main Memory Panel Component
+export const MemoryPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState<MemorySection>('entities');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -1487,4 +1487,4 @@ export const MemoryTab: React.FC = () => {
   );
 };
 
-export default MemoryTab;
+export default MemoryPanel;
