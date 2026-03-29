@@ -2,9 +2,9 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype
-**Last Updated**: 2026-03-13
+**Last Updated**: 2026-03-29
 
-> For completed phases (1-10), decision log, and project history, see [docs/roadmap.md](docs/roadmap.md)
+> For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
 ---
 
@@ -13,158 +13,33 @@
 | Phase | Status | Completion |
 |-------|--------|------------|
 | Phases 1-10 | Complete | See [roadmap.md](docs/roadmap.md) |
-| Phase 11: Memory System | **In Progress** | 94% |
-| Phase 11.12: LLM-Enhanced Consolidation | **In Progress** | 95% |
-| Phase 12: Documentation | Not Started | 0% |
-| Phase 13: UX Overhaul — Immersive AgentX | **In Progress** | 60% |
-| Phase 14: Context Gating for Large Tool Outputs | **Complete** | 100% |
+| Phase 11: Memory System | **Complete** | See [roadmap.md](docs/roadmap.md) |
+| Phase 12: Documentation | Partial | ~60% |
+| Phase 13: UX Overhaul | **In Progress** | ~90% |
+| Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
+| Phase 15: Plan Execution + Memory Tuning | Not Started | 0% |
+| Phase 16: Multi-Agent Conversations | Not Started | 0% |
 
 ---
 
-## Phase 11: Memory System Activation
+## Phase 11: Deferred Items
 
-> **Priority**: HIGH
-> **Goal**: Make the memory system functional, auditable, and extensible
-> **Depends on**: Docker services (Neo4j, PostgreSQL, Redis) running
+> Remaining items from the memory system that didn't make the cut
 
-### Completed Sections (11.1-11.10)
-- [x] 11.1 Database Schema Initialization
-- [x] 11.2 Agent Core Integration
-- [x] 11.3 Extraction Pipeline
-- [x] 11.4 Auditability & Query Tracing
-- [x] 11.5 Channel Scoping & Data Safety
-- [x] 11.6 Extensibility Infrastructure
-- [x] 11.7 Retrieval Quality
-- [x] 11.8 Memory System Tests (80 tests)
-- [x] 11.9 Consolidation & Background Worker
-- [x] 11.10 Memory Explorer (Client)
-
-### 11.11 Background Job Scheduler & Monitoring
-
-> Job scheduler for running consolidation and other background tasks
-
-#### Scheduler (Deferred)
-- [ ] Implement background job scheduler (Django Q, Celery, or custom)
-- [ ] Job registration system (cron-like or interval-based)
-- [ ] Job persistence (survive API restarts)
-- [ ] Graceful shutdown handling
-
-#### Job Monitoring API (Complete)
-- [x] `GET /api/jobs` — list all registered jobs with status
-- [x] `GET /api/jobs/{job_id}` — job details
-- [x] `GET /api/jobs/{job_id}/history` — recent execution history
-- [x] `POST /api/jobs/{job_id}/run` — manually trigger a job
-- [x] `POST /api/jobs/{job_id}/toggle` — enable/disable a scheduled job
-
-#### Job Monitoring UI (Complete)
-- [x] JobsPanel component in Memory tab
-- [x] Job list with status badges
-- [x] Job detail view with metrics
-- [x] Manual controls (Run Now, Enable/Disable)
-
-#### Deferred
-- [ ] `GET /api/jobs/{job_id}/logs` — logs from recent runs
-- [ ] Real-time updates (polling while job running)
-- [ ] Consolidation preview (`POST /api/memory/consolidate/preview`)
-
----
-
-## Phase 11.12: LLM-Enhanced Consolidation
-
-> **Priority**: HIGH
-> **Goal**: Use LLM providers for intelligent consolidation stages
-
-### 11.12.1 Pre-Extraction Relevance Filter (Complete)
-- [x] Add `check_relevance()` to consolidation pipeline
-- [x] LLM prompt: "Does this text contain memorable information? YES/NO"
-- [x] Heuristic pre-filter (skip turns < 10 chars, "ok", "thanks", etc.)
-- [x] Metrics: track skip rate, extraction savings (via ConsolidationMetrics)
-
-### 11.12.2 Enhanced Fact Extraction + Condensation (Complete)
-- [x] Combined relevance + extraction in single LLM call (~75% fewer calls)
-- [x] Reasoning model support (nvidia/nemotron-3-nano by default)
-- [x] Confidence calibration mapping (explicit/implied/inferred/uncertain)
-- [x] Per-turn extraction with accumulated results
-- [x] 22 unit tests for combined extraction and confidence
-
-### 11.12.3 Entity Matching via Embedding Search
-- [x] Add `link_facts_to_entities()` consolidation job
-- [x] Embedding-based entity resolution (handle aliases)
-- [ ] Optional LLM disambiguation for ambiguous matches
-
-### 11.12.4 Contradiction Detection (Complete)
-- [x] Add `check_contradictions()` to extraction pipeline
-- [x] LLM prompt comparing new facts against recent existing facts
-- [x] Contradiction resolution strategies (prefer_new, prefer_old, flag_review)
-- [x] `_get_recent_facts()` helper queries Neo4j for existing facts
-- [x] `_handle_contradiction()` applies resolution (supersede, skip, or flag)
-- [x] Integrated into consolidation pipeline (disabled by default)
-
-### 11.12.5 User Correction Handling (Complete)
-- [x] Heuristic patterns: "actually...", "no, I meant...", "that's wrong...", etc.
-- [x] `check_correction()` method with LLM extraction of original/corrected claims
-- [x] `supersede_fact()` marks old facts deprecated (confidence → 0.1)
-- [x] `[:SUPERSEDES]` relationship for audit trail
-- [x] Integrated into consolidation pipeline (disabled by default)
-
-### 11.12.X Infrastructure Improvements (Complete)
-- [x] `ConsolidationMetrics` dataclass for pipeline observability
-- [x] Batch entity/relationship storage with UNWIND (fixes N+1 queries)
-- [x] `claim_hash` field on Fact model for indexed duplicate detection
-- [x] Settings cache with 60s TTL refresh (UI changes take effect without restart)
-- [x] 14 unit tests for metrics, claim hash, and settings cache
-- [ ] LLM timeout enforcement (deferred - requires async/sync architecture fix)
-
-### 11.12.6 Confidence Calibration (Complete)
-- [x] Confidence scale: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
-- [x] Configurable thresholds via settings
-- [x] Certainty-to-confidence mapping in extraction pipeline
-- [ ] Calibration factors: source, recency, corroboration, contradiction (deferred)
-
-### 11.12.7 Reinforcement Signal (Complete)
-- [x] Add `last_accessed`, `access_count`, `salience` fields to Fact model (parity with Entity)
-- [x] Track access on retrieval (`vector_search_facts` increments access_count)
-- [x] Use salience in retrieval scoring (`_rerank()` includes salience factor)
-- [x] Fixes broken promotion system that referenced non-existent Fact.access_count
-- [ ] Negative reinforcement for corrected facts (deferred)
-
-### 11.12.8 Source Attribution (Partial)
-- [x] Store `source_turn_id` on all extracted facts
-- [ ] UI: "Where did I learn this?" → show original conversation
-
-### 11.12.9 Temporal Reasoning (Complete)
-- [x] Add `temporal_context` field to Fact model (current/past/future)
-- [x] Extract temporal context in combined extraction prompt
-- [x] Normalize temporal fields (`_normalize_temporal_fields()`)
-- [x] Temporal boost in retrieval: current=1.2x, past=0.7x, future/null=1.0x
-- [x] Pass temporal_context through consolidation pipeline
-- [x] 14 unit tests for access tracking and temporal context
-
-### 11.12.10 Consolidation Settings UI (Client)
-- [ ] Create Consolidation Settings section in Settings tab
-- [ ] Extraction, Relevance Filter, Contradiction Detection settings
-- [ ] Provider presets (Local, Quality, Full Cloud)
-- [ ] API endpoints: `GET/PUT /api/memory/config`
+- [ ] Optional LLM disambiguation for ambiguous entity matches (11.12.3)
+- [ ] LLM timeout enforcement (requires async/sync architecture fix)
+- [ ] Calibration factors: source, recency, corroboration, contradiction
+- [ ] Negative reinforcement for corrected facts
+- [ ] UI: "Where did I learn this?" — show original conversation from `source_turn_id`
 
 ---
 
 ## Phase 12: Documentation
 
 > **Priority**: LOW
-> **Goal**: Comprehensive documentation for users and developers
 
-### 12.1 User Documentation
-- [X] Update README.md with quick start guide, feature overview, screenshots
-- [X] Add installation guide for each platform
-- [X] Document MCP setup for AI assistants
-
-### 12.2 Developer Documentation
-- [ ] Add API documentation (auto-generate from OpenAPI)
-- [X] Add architecture diagrams
+- [ ] Auto-generate API docs from OpenAPI
 - [ ] Document contribution guidelines
-- [X] Document memory system extension patterns (from 11.6)
-
-### 12.3 Inline Documentation
 - [ ] Add docstrings to all public functions
 - [ ] Add type hints throughout Python code
 - [ ] Document complex algorithms/flows
@@ -175,192 +50,11 @@
 
 > **Priority**: HIGH
 > **Goal**: Immersive 3-page app with browser-style conversation tabs, portal-based modals, theme system, customizable agent profiles, and rich inline feedback
-> **Replaces**: Old 7-tab sidebar layout. Chat + Agent merged into single workspace.
 
-**Design Decisions:**
-- Tool call approval: visual-only for now (message types support future blocking approval)
-- Former tabs (Settings, Memory, Tools) → right-side slide-out drawers from toolbar icons
-- Translation → centered modal from toolbar
-- Conversation history → dropdown near tab bar "+" button (not a persistent sidebar)
-- Data is server-first, client caches only (prep for future multi-server auth)
+### 13.6 Merged AgentX Page
 
-### 13.1 Foundation (No Visible UI Changes)
-
-> Infrastructure that all subsequent sub-phases depend on
-
-#### Theme System
-- [x] Create `ThemeProvider` context (`contexts/ThemeContext.tsx`)
-- [x] Extract CSS variables from `App.css` `:root` into `ThemeDefinition` object (`lib/theme.ts`)
-- [x] `ThemeProvider` applies variables to `document.documentElement.style` on mount/change
-- [x] Ship `cosmic` theme as default; architecture supports adding themes later
-- [x] Move non-variable CSS (resets, animations, component base styles) into `styles/base.css`
-- [x] `App.css` becomes thin wrapper importing `base.css`
-
-#### Modal/Portal System
-- [x] Add `<div id="modal-root" />` to `index.html`
-- [x] Create `ModalContext` (`contexts/ModalContext.tsx`) — `openModal(config)`, `closeModal(id)`, stack-based
-- [x] Create `ModalPortal.tsx` — renders children into `#modal-root` via `ReactDOM.createPortal`
-- [x] Create `DrawerPanel.tsx` — slide-in panel (left/right), backdrop overlay, sizes (sm/md/lg)
-- [x] Create `ModalDialog.tsx` — centered overlay modal
-- [x] Lazy-loaded component registry to avoid circular imports
-
-#### Message Type System
-- [x] Create `lib/messages.ts` — discriminated union: `UserMessage | AssistantMessage | ToolCallMessage | ToolResultMessage | MemoryInjectionMessage | SystemMessage | ErrorMessage`
-- [x] Each type carries specific metadata (tool names, confidence scores, model info, etc.)
-- [x] Type guards for each message type
-- [x] `ToolCallMessage.status` field: `pending | approved | rejected | completed` (prep for future blocking)
-
-### 13.2 Root Layout Shell
-
-> Replace sidebar TabBar with horizontal top bar + page routing
-
-#### RootLayout & TopBar
-- [x] Create `RootLayout.tsx` (`layouts/`) — top bar + full-height page content area
-- [x] Create `TopBar.tsx` (`layouts/`) with sections:
-  - Left: Logo + active agent name (dynamic from profile)
-  - Center-left: Page nav pills (Start, Dashboard, AgentX)
-  - Center: ConversationTabBar placeholder (wired in 13.3)
-  - Right: Toolbar icons (Settings, Memory, Tools, Translation) → open modals
-- [x] Page switching via `useState<'start' | 'dashboard' | 'agentx'>`
-- [x] Migrate `App.tsx` from `TabBar` + 7 display-toggled divs to `RootLayout` + page routing
-- [x] Initially, "AgentX" page renders existing `ChatTab` as-is (incremental migration)
-
-### 13.3 Conversation Tabs
-
-> Browser-style tabs in top bar, each representing a conversation
-
-#### ConversationContext
-- [x] Create `ConversationContext` (`contexts/ConversationContext.tsx`)
-- [x] `ConversationTab` model: `id`, `title`, `sessionId`, `profileId`, `messages: ConversationMessage[]`, `isStreaming`, timestamps
-- [x] Actions: `addTab()`, `closeTab(id)`, `switchTab(id)`, `renameTab()`, `reorderTabs()`
-- [x] Persistence: `agentx:server:{id}:convTabs` (tab list), `agentx:server:{id}:conv:{tabId}:msgs` (messages)
-- [x] Max ~20 tabs, messages capped at ~200 per tab in localStorage (backend has full history)
-
-#### ConversationTabBar
-- [x] Create `ConversationTabBar.tsx` (`layouts/`) — horizontal scrollable tabs with close buttons
-- [x] "+" button to add new tab (inherits active profile)
-- [x] History button (clock icon) opens dropdown of past conversations
-- [x] Active tab highlighted; only visible on AgentX page
-- [x] Wire into `TopBar` center area
-
-### 13.4 Agent Profiles (Frontend + Backend) ✓
-
-> Customizable agent profiles with names that carry across UI and prompts
-
-#### Backend
-- [x] Create `ProfileManager` class (`agent/profiles.py`) — pattern follows `prompts/manager.py`
-- [x] Storage: `data/agent_profiles.yaml` with default profiles (auto-created from code defaults)
-- [x] API endpoints: `GET/POST /api/agent/profiles`, `GET/PUT/DELETE /api/agent/profiles/<id>`
-- [x] Views in `views.py` for profile CRUD
-- [x] Agent name injection: prepend `"Your name is {profile.name}."` to system prompt via `PromptConfig`
-
-#### Frontend
-- [x] Create `AgentProfileContext` (`contexts/AgentProfileContext.tsx`)
-- [x] `AgentProfile` model: `id`, `name`, `avatar`, `defaultModel`, `temperature`, `promptProfileId`, `reasoningStrategy`, `enableMemory`, `memoryChannel`, `enableTools`, `isDefault`, timestamps
-- [x] Fetch from server, cache in localStorage per-server
-- [x] `activeProfile`, `setActiveProfile(id)`, `createProfile()`, `updateProfile()`
-- [x] `getAgentName()` used by TopBar logo and StartPage greeting
-- [x] Create `ProfileEditorModal.tsx` — form: name, avatar picker, temperature slider, reasoning dropdown, memory/tools toggles
-- [x] Add profile API methods to `lib/api.ts`
-
-### 13.5 Modals Migration ✓
-
-> Convert former tabs into modal/drawer panels opened from toolbar
-
-- [x] `SettingsModalContent` — wraps `SettingsTab` in DrawerPanel (right, lg). Trigger: gear icon
-- [x] `MemoryModalContent` — wraps `MemoryTab` in DrawerPanel (right, lg). Trigger: database icon
-- [x] `ToolsModalContent` — wraps `ToolsTab` in DrawerPanel (right, md). Trigger: wrench icon
-- [x] `TranslationModalContent` — wraps `TranslationTab` in ModalDialog (center). Trigger: globe icon
-- [x] Wire toolbar icons in `TopBar` to open each modal via `useModal().openModal()`
-- [x] Remove old tab entries from `App.tsx` page routing
-- [x] Delete dead code: `TabBar.tsx`, `TabBar.css`
-
-Note: Modal wrappers implemented in `stubs.tsx` during Phase 13.1 Foundation.
-
-### 13.6 Merged AgentX Page (Partial)
-
-> Core of the overhaul — combines Chat + Agent into one rich workspace
-
-#### AgentXPage (Deferred)
 - [ ] Create `AgentXPage.tsx` (`pages/`) — reads active conversation tab from `ConversationContext`
 - [ ] Full-width message area + input bar (maximally immersive)
-- [x] Profile badge in header shows agent name + model (in ChatPanel)
-
-#### Message Components ✓
-- [x] `MessageBubble.tsx` — renders any `ConversationMessage` via switch on type:
-  - `user`: avatar + content + edit action
-  - `assistant`: agent avatar/name + markdown + expandable thinking + metadata bar + actions (copy, regenerate, pin)
-  - `tool_call`: compact inline block with tool name, arguments preview, status badge
-  - `tool_result`: compact block with tool name, result preview, success/fail, duration
-  - `memory_injection`: collapsible facts with confidence bars, entities with type badges
-  - `system`: subtle centered text
-  - `error`: red-tinted block
-- [x] `MessageInput.tsx` — auto-grow textarea, Enter/Shift+Enter, model badge, temperature, profile selector, send/stop (enhanced in ChatPanel)
-- [x] `ToolCallBlock.tsx` — tool name + collapsible arguments JSON + status badge (visual-only, no blocking yet)
-- [x] `MemoryInjectionBlock.tsx` — facts list with confidence, entities with type badges, collapsible (default collapsed)
-- [x] `ThinkingBlock.tsx` — collapsible reasoning content, step count, streaming indicator (exists as ThinkingBubble)
-- [x] `MetadataBar.tsx` — per-message footer: model name, token count (in/out), latency
-- [x] `ConversationHistoryDropdown.tsx` — dropdown near tab bar "+" for browsing past conversations
-- [x] Reuse existing `chat/MessageContent.tsx` (markdown renderer) inside `MessageBubble`
-
-Note: AgentXPage extraction deferred — ChatPanel already provides full functionality.
-
-### 13.7 SSE & Metadata Enhancements ✓
-
-> Extend streaming backend to emit richer events for new message types
-
-#### Backend (views.py — `agent_chat_stream` / `generate_sse`)
-- [x] New SSE event `memory_context`: emit after memory retrieval, before first chunk. Data: `{ facts, entities, relevant_turns, query }`
-- [x] Extend `tool_call` event: add `tool_call_id` field for linking to results
-- [x] Extend `tool_result` event: add `tool_call_id` and `duration_ms`
-- [x] Extend `start` event: add `profile_name`, `agent_name`, `model_display_name`
-- [x] Extend `done` event: add `tokens_input`, `tokens_output`, `profile_name`, `agent_name`
-
-#### Frontend (lib/api.ts)
-- [x] Update `streamChat()` to handle `memory_context`, `tool_call`, `tool_result` events
-- [x] Add callbacks: `onToolCall`, `onToolResult`, `onMemoryContext`
-- [x] AgentXPage converts SSE events into typed `ConversationMessage` objects in the message list
-
-#### Tool Call UI Overhaul ✓
-- [x] Create unified `ToolExecutionBlock` component (replaces separate ToolCallBlock + ToolResultBlock)
-- [x] Animated icons: pulse for pending, spin for running, check/x for complete/failed
-- [x] In-place message updates: tool_result updates existing tool_call message
-- [x] Show content size summary instead of dumping full output
-- [x] "View Output" button opens `ToolOutputDrawer` side panel
-- [x] Thinking auto-expand: pass `defaultExpanded={true}` to ThinkingBubble
-- [x] Increase thinking max-height from 200px to 500px
-
-### 13.8 Prompt Library ✅
-
-> Profile-agnostic prompt templates with tag-based organization
-
-#### Backend
-- [x] Create `PromptTemplateManager` (`prompts/templates.py`) — follows `PromptManager` pattern
-- [x] Storage: `data/prompt_templates.yaml`
-- [x] Endpoints: `GET/POST/PUT/DELETE /api/prompts/templates`
-- [x] Fields: `id`, `name`, `content`, `tags[]`, `placeholders[]`, `type` (system/user/snippet)
-
-#### Frontend
-- [x] Create `PromptLibraryModal.tsx` — opened from toolbar or slash command in input
-- [x] Tag filter sidebar, search bar, template list
-- [x] Template preview with placeholder highlighting
-- [x] "Use in conversation" action (inserts into input)
-- [x] "Attach to profile" action (sets as profile's prompt)
-- [x] Add template API methods to `lib/api.ts`
-
-### 13.9 Start Page & Dashboard Refresh ✅
-
-#### Start Page
-- [x] Create `StartPage.tsx` (`pages/`) — centered agent avatar + "Hello, I'm {agentName}" greeting
-- [x] Quick actions: "New Conversation", "Open Dashboard"
-- [x] Start page is now the default landing page
-
-#### Dashboard Refresh
-- [x] Create `DashboardPage.tsx` (`pages/`) — refactored from `DashboardTab`
-- [x] Keep: health status grid, server banner
-- [x] Add: memory stats (from `/api/memory/stats`), active conversation count
-- [x] Add: DB storage metrics (PostgreSQL, Neo4j, Redis sizes) via `/api/health?include_storage=true`
-- [x] Remove: hero section and quick action buttons (replaced by toolbar/page nav)
 
 ### 13.10 Polish & Cleanup
 
@@ -371,131 +65,78 @@ Note: AgentXPage extraction deferred — ChatPanel already provides full functio
 - [ ] Final CSS consistency pass
 - [ ] Keyboard shortcuts: Cmd+T (new tab), Cmd+W (close tab), Cmd+K (command palette placeholder)
 
-### Dependency Graph
+### 13.11 Consolidation Settings UI
 
-```
-13.1 Foundation ──────┬──→ 13.2 Root Layout ──→ 13.3 Conv Tabs ──→ 13.6 AgentX Page ──→ 13.7 SSE
-                      ├──→ 13.5 Modals ────────┘                                            │
-                      └──→ 13.4 Profiles (backend can start early) ──────────────────────────┘
-                                     └──→ 13.8 Prompt Library
-13.2 ──→ 13.9 Start/Dashboard (can parallel with 13.6)
-ALL ──→ 13.10 Cleanup
-```
+- [ ] Create Consolidation Settings section in Settings tab
+- [ ] Extraction, Relevance Filter, Contradiction Detection settings
+- [ ] Provider presets (Local, Quality, Full Cloud)
+- [ ] API endpoints: `GET/PUT /api/memory/config`
 
 ---
 
-## Phase 14: Context Gating for Large Tool Outputs
+## Phase 14: Context Gating (Complete)
+
+> All 14.1-14.7 complete. See [roadmap.md](docs/roadmap.md) for details.
+
+---
+
+## Phase 15: Plan Execution + Memory Tuning
 
 > **Priority**: HIGH
-> **Goal**: Hybrid context gating with task-aware compression and intent-based retrieval to prevent large tool outputs from flooding context windows
-> **Depends on**: Redis (for raw output storage), LLM provider (for compression)
+> **Goal**: Solid plan execution pipeline and second round of memory system refinements
+> **Depends on**: Memory system (Phase 11), Context gating (Phase 14)
 
-**Research basis**: [ACON](https://arxiv.org/abs/2510.00615), [Focus](https://arxiv.org/abs/2601.07190), [A-MEM](https://arxiv.org/abs/2502.12110), [SimpleMem](https://github.com/aiming-lab/SimpleMem)
+*Details TBD*
 
-### Architecture
+---
 
-```
-Tool Output → Threshold Check (>12K chars)
-    ↓ (over limit)
-┌─────────────────────────────────────────────────────┐
-│ 1. Store raw output in Redis (key: tool:{id})      │
-│ 2. Run ACON-style compression:                     │
-│    - Task-aware: "given user asked about X,        │
-│      extract relevant info from this output"       │
-│    - Generate structure index (sections, keys)     │
-│ 3. Inject into context:                            │
-│    - Compressed summary                            │
-│    - Structure/schema index                        │
-│    - Access API instructions                       │
-└─────────────────────────────────────────────────────┘
-    ↓ (agent needs more detail)
-Intent-aware retrieval (SimpleMem-style):
-  - query_output(key, "what errors occurred?")
-  - get_section(key, "errors", lines=50)
-  - get_json_path(key, "$.results[0:10]")
-```
+## Phase 16: Multi-Agent Conversations
 
-### 14.1 Storage + Threshold ✓
+> **Priority**: MEDIUM
+> **Goal**: Enable multiple agents to collaborate in shared conversation threads
+> **Depends on**: Plan execution (Phase 15)
 
-- [x] Added `max_tool_result_chars` config (default: 12000 chars)
-- [x] Store oversized outputs in Redis with TTL via `tool_output_storage.py`
-- [x] Inject preview + storage key + access instructions
-- [x] Internal MCP tools: `read_stored_output`, `list_stored_outputs`
-- [x] API endpoints: GET/DELETE `/api/tool-outputs/{key}`
+### 16.1 Message Attribution
 
-### 14.2 Compression Gate ✓
+- [ ] Add `agent_id` field to `Turn` model (agent_memory/models.py)
+- [ ] Add `agent_id` column to `conversation_logs` PostgreSQL table
+- [ ] Set `Message.name = agent_profile.agent_id` on assistant messages in views.py
+- [ ] Include `agent_id` in SSE `start` and `done` events
+- [ ] Store `agent_id` on turns in background turn storage
 
-- [x] Add `ToolOutputCompressor` service (`agent/tool_output_compressor.py`)
-- [x] Task-aware compression prompt in `system_prompts.yaml` (Summary + Structure Index)
-- [x] Configurable via `compression.*` in `config.py` (model, temperature, max_tokens, enable)
-- [x] Integrated into `_execute_tool_calls()` with `task_context` parameter
-- [x] Streaming path passes user message as task context
-- [x] Graceful fallback to preview on failure (no provider, LLM error, disabled)
-- [x] 8 unit tests (disabled config, no provider, mock provider, truncation, sync wrapper, error fallback)
+### 16.2 Explicit Agent Routing
 
-### 14.3 Intent-Aware Retrieval ✓
+- [ ] Add `target_agent_id` to chat stream request parsing
+- [ ] Resolve `AgentProfile` by `agent_id` (scan profiles for matching ID)
+- [ ] Add `participants: dict[agent_id, AgentProfile]` to `Session`
+- [ ] Build per-agent system prompt with multi-agent awareness when `len(participants) > 1`
 
-- [x] Add `tool_output_chunker.py` (chunking, section detection, JSON path, semantic search)
-- [x] Add MCP tool: `tool_output_query(key, query)` — semantic search over chunks with embedding fallback to keyword matching
-- [x] Add MCP tool: `tool_output_section(key, section, limit)` — structural access (markdown headings, JSON keys, separators, paragraphs)
-- [x] Add MCP tool: `tool_output_path(key, jsonpath)` — JSON path queries (dot notation, `[N]` indexing, `[*]` wildcard)
-- [x] Updated context injection to advertise all retrieval tools
-- [x] 22 unit tests (chunking, sections, JSON path, cosine similarity, keyword fallback, tool integration)
+### 16.3 Tool Isolation per Agent
 
-### 14.4 Intra-Trajectory Compression (Focus-style) ✓
+- [ ] Add tool group / MCP server config to `AgentProfile`
+- [ ] Use existing `allowed_tools`/`blocked_tools` on `AgentConfig` for per-agent filtering
+- [ ] Each agent only sees its configured tools in `_get_tools_for_provider()`
 
-- [x] `streaming/trajectory_compression.py` — round identification, LLM-based knowledge block generation, in-place message mutation
-- [x] Configurable via `trajectory_compression.*` in `config.py` (threshold_ratio, preserve_recent_rounds, model, etc.)
-- [x] Compression prompt template in `system_prompts.yaml` (`compression.trajectory`)
-- [x] Two-layer defense: trajectory compression at 75% threshold, existing truncation as hard-limit fallback
-- [x] Knowledge block as SYSTEM message — consolidates older rounds, preserves recent N rounds intact
-- [x] Integrated into non-streaming path (`core.py` `_complete_with_tools()`)
-- [x] Integrated into streaming path (`views.py` `agent_chat_stream()`) with SSE info event
-- [x] Graceful fallback: LLM failure → skip compression, existing truncation catches overflow
-- [x] 8 unit tests (round identification, threshold, compression, preserve rounds, fallback, placement, disabled, serialisation)
+### 16.4 Agent-to-Agent Delegation
 
-### 14.5 Read Loop Prevention + Iterative Chunking ✓
+- [ ] Define delegation protocol (structured JSON in assistant output)
+- [ ] Detect delegation in streaming handler, emit `delegation` SSE event
+- [ ] Chain into target agent's response flow
+- [ ] Safeguards: max delegation depth, no self-delegation
 
-- [x] Retrieval tool bypass: `is_retrieval_tool()` check in `_execute_tool_calls()` — prevents re-storage loop
-- [x] Default pagination: `read_stored_output` limit bumped to 12000 chars with `has_more`/`next_offset` metadata
-- [x] Updated tool hints with pagination syntax and preference for smart retrieval tools
-- [x] 6 unit tests (bypass detection, pagination walk, last page, threshold)
+### 16.5 @-Mention Routing + Graph Updates
 
-### 14.6 Agent Self-Memory ✓
+- [ ] Parse `@agent-id` from message text for implicit routing
+- [ ] Add `AgentParticipant` Neo4j node and `PARTICIPATED_IN` relationship
+- [ ] Migration job: backfill from existing `Conversation.agent_id` properties
 
-- [x] Docker-style agent ID generation (`generate_agent_id()` → e.g., "bold-cosmic-falcon")
-- [x] `agent_id` field on `AgentProfile` (auto-generated, immutable, persisted to YAML)
-- [x] `self_channel` property on profile: `_self_<agent_id>`
-- [x] `agent_id` propagated: `AgentConfig` → `AgentMemory` → `EpisodicMemory.store_turn()` → Conversation node
-- [x] Assistant self-extraction prompt (`extraction.assistant_self` in `system_prompts.yaml`)
-- [x] `ExtractionService.check_relevance_and_extract_assistant()` with certainty calibration (definitive/analytical/speculative)
-- [x] Consolidation job Phase 2: assistant turn pass with `_self_<agent_id>` channel, `source="self_extraction"`, separate `self_consolidated` timestamp
-- [x] Self-channel included in recall: `_default_recall_channels()` → `[channel, _self_xxx, _global]`
-- [x] `ConsolidationMetrics` extended with assistant turn tracking fields
-- [x] 10 unit tests (ID format/uniqueness, self-channel, config plumbing, confidence calibration, recall channels)
+### Design Notes
 
-### 14.7 Bulletproof Fact Correction Pipeline ✓
-
-Three-layer fact verification replacing the naive "check 30 recent facts via LLM" approach:
-
-- [x] **Layer 1 — Fast Gate** (no LLM, <10ms): exact hash duplicate + semantic duplicate (cosine > 0.92 via Neo4j vector index)
-- [x] **Layer 2 — Semantic Search** (no LLM, <50ms): entity-scoped fact retrieval + embedding similarity search → max 10 candidates
-- [x] **Layer 3 — LLM Adjudication** (only for candidates): temporal-aware contradiction prompt with confidence guidance
-- [x] `_is_semantic_duplicate()` — vector search against `fact_embeddings` index
-- [x] `_get_contradiction_candidates()` — entity-scoped + embedding similarity merge + dedup
-- [x] `_is_temporal_progression()` — auto-resolve "current supersedes current" without LLM
-- [x] Temporal-aware contradiction prompt with per-fact temporal context and confidence
-- [x] Implicit correction detection in extraction prompt ("I switched from X to Y" → dual past/current facts)
-- [x] `check_contradictions()` updated for richer candidate format (temporal_context, confidence, similarity_score)
-- [x] Contradiction + correction detection enabled by default
-- [x] Config: `semantic_duplicate_threshold`, `contradiction_similarity_threshold`, `contradiction_max_candidates`
-- [x] Metrics: `semantic_duplicates_skipped`, `contradiction_candidates_found`, `temporal_progressions_resolved`
-- [x] 13 unit tests (temporal progression, config defaults, metrics serialization, signature checks)
-
-### Metrics to Track
-- Compression ratio (raw tokens → injected tokens)
-- Retrieval accuracy (does agent get what it needs?)
-- Task completion rate with/without gating
+- `agent_id` (Docker-style, e.g., "bold-cosmic-falcon") = formal routing identifier
+- `name` (e.g., "Claude", "NodeManager") = flexible display name
+- `Message.name` field carries `agent_id` on assistant messages — no provider schema changes
+- Extend existing `agent/chat/stream` with optional `target_agent_id` — no new endpoints
+- Memory already supports this: each agent recalls from `[channel, _self_{agent_id}, _global]`
 
 ---
 
@@ -503,9 +144,12 @@ Three-layer fact verification replacing the naive "check 30 recent facts via LLM
 
 > Items to consider after prototype is complete
 
-- [ ] Fact Transience (a confidence bias) - which is ranked on extraction for the predicted rate that the fact will be incorrect or irrelevant (maybe weeks, maybe months?)
-   future (e.g. "The user's home PC is slow"; this would be high transcience since they may very well get a new PC soon)
-- [ ] Extraction example sets for LLM to see a large list of example to compare from? 
+- [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
+- [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
+- [ ] Real-time job progress (polling while running)
+- [ ] Consolidation preview (`POST /api/memory/consolidate/preview`)
+- [ ] Fact Transience (a confidence bias) — ranked on extraction for the predicted rate that the fact will be incorrect or irrelevant (e.g., "The user's home PC is slow" = high transience)
+- [ ] Extraction example sets for LLM to see a large list of examples to compare from
 - [ ] GPU acceleration for translation models
 - [ ] Lazy model loading with progress indicator
 - [ ] Multiple server support (user can log out of server, and into another one seamlessly)
@@ -521,7 +165,6 @@ Three-layer fact verification replacing the naive "check 30 recent facts via LLM
 - [ ] Conversation sharing (read-only shareable links)
 - [ ] Blocking tool call approval (pause stream, user approves/rejects before execution)
 - [ ] Server authentication (single access key per server, session resume on reconnect)
-- [ ] Multi-agent collaboration modes (multiple agents/models working together on a task)
 - [ ] Mobile-responsive breakpoints and touch-friendly gestures
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 
@@ -550,10 +193,6 @@ Three-layer fact verification replacing the naive "check 30 recent facts via LLM
 **Encryption at Rest**
 - Conversation history and facts stored unencrypted
 - Fix: Enable database-level or app-level encryption
-
-**Settings Cached at Import Time**
-- `get_settings()` uses `@lru_cache`, loaded at module import
-- Mitigation: Settings require restart; consider cache invalidation
 
 **Query Embedding Caching**
 - Every `remember()` call generates embedding even for identical queries

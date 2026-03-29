@@ -16,9 +16,10 @@ This document tracks the development history and future direction of AgentX.
 | Phase 8: Client Updates | Complete | Tauri UI with cosmic theme |
 | Phase 9: Security | Complete | Foundation security measures |
 | Phase 10: Testing (Core) | Complete | 50 tests covering core functionality |
-| Phase 11: Memory System | **94%** | Persistent knowledge graphs |
-| Phase 12: Documentation | **In Progress** | Comprehensive docs refresh |
-| Phase 13: UI Implementation | **In Progress** | Chat and Agent interfaces |
+| Phase 11: Memory System | **Complete** | Persistent knowledge graphs |
+| Phase 12: Documentation | **Partial** | Comprehensive docs refresh |
+| Phase 13: UX Overhaul | **Partial** | Immersive 3-page app with conversation tabs |
+| Phase 14: Context Gating | Complete | Large tool output compression + retrieval |
 
 ---
 
@@ -386,7 +387,7 @@ Implemented `Session` and `SessionManager`:
 
 ---
 
-### Phase 11: Memory System (94%)
+### Phase 11: Memory System
 
 > **Goal**: Persistent knowledge graphs with extraction, consolidation, and intelligent recall
 
@@ -407,16 +408,33 @@ Implemented `Session` and `SessionManager`:
 - Consolidation pipeline: scheduled jobs for extraction, entity linking, contradiction detection
 - `JobRegistry` with worker threads and configurable intervals
 
-#### 11.10: Memory Explorer UI — *Pending*
+#### 11.10: Memory Explorer UI
+- Client-side memory browser with entity graph, facts list, strategy viewer
 
-#### 11.11–11.12: Advanced Recall & Intelligence
+#### 11.11: Background Job Monitoring
+- Job monitoring API: list, detail, history, manual trigger, enable/disable
+- JobsPanel component in Memory tab with status badges and manual controls
+
+#### 11.12: LLM-Enhanced Consolidation
+- Pre-extraction relevance filter (heuristic + LLM, ~75% fewer extraction calls)
+- Combined relevance + extraction in single LLM call with reasoning model support
+- Confidence calibration: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
+- Entity linking via embedding search with configurable similarity threshold
+- Contradiction detection with resolution strategies (prefer_new, prefer_old, flag_review)
+- User correction handling: heuristic patterns + LLM extraction + fact supersession
+- `ConsolidationMetrics` dataclass for pipeline observability
+- Batch entity/relationship storage with UNWIND (fixes N+1 queries)
+- `claim_hash` field on Fact model for indexed duplicate detection
+- Settings cache with 60s TTL refresh
+- Temporal reasoning: `temporal_context` field (current/past/future) with temporal boost in retrieval
+- Reinforcement signals: `last_accessed`, `access_count`, `salience` on Fact model
+- Source attribution: `source_turn_id` on all extracted facts
 - `RecallLayer`: 5 retrieval techniques (hybrid search, entity-centric, query expansion, HyDE, self-query)
-- Confidence calibration, temporal reasoning, reinforcement signals
-- Source attribution, user correction handling, contradiction detection
+- 50+ unit tests across extraction, metrics, confidence, temporal, and recall
 
 ---
 
-### Phase 12: Documentation (In Progress)
+### Phase 12: Documentation (Partial)
 
 > **Goal**: Comprehensive backend documentation refresh
 
@@ -429,6 +447,92 @@ Implemented `Session` and `SessionManager`:
 - Updated configuration reference with all config layers
 - Updated quickstart with examples for streaming, MCP, memory, prompts
 - Mermaid diagrams throughout for architecture and data flow visualization
+
+*Remaining: auto-generated API docs, contribution guidelines, full docstrings — see Todo.md*
+
+---
+
+### Phase 13: UX Overhaul — Immersive AgentX (Partial)
+
+> **Goal**: Immersive 3-page app with browser-style conversation tabs, portal-based modals, customizable agent profiles
+
+#### 13.1 Foundation
+- `ThemeProvider` context with CSS variable system, `cosmic` default theme
+- `ModalContext` with stack-based modal management, `ModalPortal`, `DrawerPanel`, `ModalDialog`
+- `ConversationMessage` discriminated union type system with type guards
+
+#### 13.2 Root Layout Shell
+- `RootLayout` + `TopBar` replacing sidebar TabBar with horizontal navigation
+- Page routing: Start, Dashboard, AgentX
+
+#### 13.3 Conversation Tabs
+- `ConversationContext` with browser-style tab model (add, close, switch, rename, reorder)
+- `ConversationTabBar` with scrollable tabs, history dropdown, localStorage persistence
+
+#### 13.4 Agent Profiles
+- `ProfileManager` backend with YAML storage, CRUD API endpoints
+- Agent name injection into system prompts via `PromptConfig`
+- `AgentProfileContext` frontend with profile editor modal, avatar picker, settings
+
+#### 13.5 Modals Migration
+- Settings, Memory, Tools → right-side drawer panels from toolbar icons
+- Translation → centered modal dialog
+
+#### 13.7 SSE & Metadata Enhancements
+- Rich SSE events: `memory_context`, extended `tool_call`/`tool_result`/`start`/`done`
+- Frontend handles all new event types with typed callbacks
+- Unified `ToolExecutionBlock` with animated status icons and output drawer
+
+#### 13.8 Prompt Library
+- `PromptTemplateManager` backend with YAML storage and CRUD endpoints
+- Frontend modal with tag filtering, search, template preview, profile attachment
+
+#### 13.9 Start Page & Dashboard Refresh
+- `StartPage` with agent greeting and quick actions
+- `DashboardPage` with health status, memory stats, DB storage metrics
+
+*Remaining: 13.6 AgentXPage extraction, 13.10 cleanup — see Todo.md*
+
+---
+
+### Phase 14: Context Gating for Large Tool Outputs
+
+> **Goal**: Hybrid context gating with task-aware compression and intent-based retrieval
+> **Research basis**: ACON, Focus, A-MEM, SimpleMem
+
+#### 14.1 Storage + Threshold
+- `max_tool_result_chars` config (12K default), Redis storage with TTL
+- Internal MCP tools: `read_stored_output`, `list_stored_outputs`
+
+#### 14.2 Compression Gate
+- `ToolOutputCompressor` with task-aware LLM compression prompts
+- Configurable via `compression.*` settings, graceful fallback on failure
+
+#### 14.3 Intent-Aware Retrieval
+- `tool_output_chunker.py` with section detection, JSON path, semantic search
+- MCP tools: `tool_output_query`, `tool_output_section`, `tool_output_path`
+
+#### 14.4 Intra-Trajectory Compression (Focus-style)
+- Round identification + LLM knowledge block generation + in-place message mutation
+- Two-layer defense: trajectory compression at 75% threshold, truncation as hard fallback
+
+#### 14.5 Read Loop Prevention
+- Retrieval tool bypass in `_execute_tool_calls()`, default pagination on `read_stored_output`
+
+#### 14.6 Agent Self-Memory
+- Docker-style `agent_id` generation (adjective-adjective-noun, ~83K combinations)
+- `_self_<agent_id>` memory channel with assistant self-extraction prompt
+- Consolidation job Phase 2: assistant turn pass with certainty calibration
+- Self-channel included in recall: `[channel, _self_{agent_id}, _global]`
+
+#### 14.7 Bulletproof Fact Correction Pipeline
+- Three-layer verification: hash gate → semantic duplicate (cosine > 0.92) → entity-scoped candidate search → temporal-aware LLM adjudication
+- Temporal progression auto-resolution (new "current" supersedes old without LLM)
+- Implicit correction detection at extraction time ("I switched from X to Y" → dual facts)
+- Contradiction + correction detection enabled by default
+
+#### Test Coverage
+- 8 compression tests, 22 retrieval tests, 8 trajectory tests, 6 read-loop tests, 10 self-memory tests, 13 fact-correction tests
 
 ---
 
@@ -460,6 +564,12 @@ Implemented `Session` and `SessionManager`:
 | 2026-02-23 | LLM providers for consolidation stages | Route through existing provider system |
 | 2026-02-23 | Filter consolidation to user turns only | Extract facts from user messages only |
 | 2026-02-23 | Default memory channel is _default, not _global | `_global` populated via promotion |
+| 2026-03-13 | Docker-style agent IDs over UUIDs | Human-readable, memorable for multi-agent routing |
+| 2026-03-13 | Self-memory channel per agent | `_self_{agent_id}` isolates agent's own knowledge |
+| 2026-03-28 | Three-layer fact verification pipeline | Funnel eliminates work before LLM calls: hash → semantic → LLM |
+| 2026-03-28 | Temporal progression auto-resolution | "Current supersedes current" doesn't need LLM adjudication |
+| 2026-03-29 | agent_id as routing identifier, name as display | Decouples formal identity from flexible display name |
+| 2026-03-29 | Plan execution prerequisite for multi-agent | Delegation is "execute another agent's plan" |
 
 ---
 
