@@ -9,6 +9,7 @@ export type MessageType =
   | 'tool_call'
   | 'tool_result'
   | 'memory_injection'
+  | 'plan_execution'
   | 'error';
 
 interface BaseMessage {
@@ -69,6 +70,27 @@ export interface MemoryInjectionMessage extends BaseMessage {
   queryUsed: string;
 }
 
+export interface PlanSubtask {
+  subtaskId: number;
+  description: string;
+  subtaskType: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  resultPreview?: string;
+  error?: string;
+}
+
+export interface PlanExecutionMessage extends BaseMessage {
+  type: 'plan_execution';
+  planId: string;
+  task: string;
+  complexity: string;
+  subtaskCount: number;
+  status: 'running' | 'completed' | 'failed';
+  subtasks: PlanSubtask[];
+  totalTimeMs?: number;
+  completedCount?: number;
+}
+
 export interface SystemMessage extends BaseMessage {
   type: 'system';
   content: string;
@@ -87,6 +109,7 @@ export type ConversationMessage =
   | ToolCallMessage
   | ToolResultMessage
   | MemoryInjectionMessage
+  | PlanExecutionMessage
   | SystemMessage
   | ErrorMessage;
 
@@ -114,6 +137,10 @@ export function isToolResultMessage(msg: ConversationMessage): msg is ToolResult
 
 export function isMemoryInjectionMessage(msg: ConversationMessage): msg is MemoryInjectionMessage {
   return msg.type === 'memory_injection';
+}
+
+export function isPlanExecutionMessage(msg: ConversationMessage): msg is PlanExecutionMessage {
+  return msg.type === 'plan_execution';
 }
 
 export function isSystemMessage(msg: ConversationMessage): msg is SystemMessage {

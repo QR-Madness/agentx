@@ -9,6 +9,7 @@ import { MessageActions } from './MessageActions';
 import { MetadataBar } from './MetadataBar';
 import { ToolExecutionBlock } from './ToolExecutionBlock';
 import { MemoryInjectionBlock } from './MemoryInjectionBlock';
+import { PlanExecutionBlock } from './PlanExecutionBlock';
 import { getAvatarIcon } from '../../lib/avatars';
 import {
   type ConversationMessage,
@@ -16,6 +17,7 @@ import {
   isAssistantMessage,
   isToolCallMessage,
   isMemoryInjectionMessage,
+  isPlanExecutionMessage,
   isSystemMessage,
   isErrorMessage,
 } from '../../lib/messages';
@@ -61,6 +63,23 @@ export function MessageBubble({ message, agentName, avatarId, onRegenerate, onEd
           entities={message.entities}
           relevantTurns={message.relevantTurns}
           queryUsed={message.queryUsed}
+        />
+      </div>
+    );
+  }
+
+  if (isPlanExecutionMessage(message)) {
+    return (
+      <div className="message-bubble plan_execution">
+        <PlanExecutionBlock
+          planId={message.planId}
+          task={message.task}
+          complexity={message.complexity}
+          subtaskCount={message.subtaskCount}
+          status={message.status}
+          subtasks={message.subtasks}
+          totalTimeMs={message.totalTimeMs}
+          completedCount={message.completedCount}
         />
       </div>
     );

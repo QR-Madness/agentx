@@ -29,6 +29,8 @@ import {
   type AssistantMessage,
   type ToolCallMessage,
   type MemoryInjectionMessage,
+  type PlanExecutionMessage,
+  type PlanSubtask,
   createMessageId,
 } from '../../lib/messages';
 import './ChatPanel.css';
@@ -104,6 +106,9 @@ export function ChatPanel() {
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   // Track tool call message IDs for in-place updates
   const toolCallMessageIds = useRef<Map<string, string>>(new Map());
+  // Track active plan execution for in-place updates
+  const planMessageIdRef = useRef<string | null>(null);
+  const planSubtasksRef = useRef<PlanSubtask[]>([]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -227,6 +232,77 @@ export function ChatPanel() {
               });
               toolCallMessageIds.current.delete(data.tool_call_id);
             }
+          },
+          onPlanStart: (data) => {
+            const messageId = createMessageId();
+            planMessageIdRef.current = messageId;
+            // Initialize subtasks from the count with pending status
+            const subtasks: PlanSubtask[] = [];
+            planSubtasksRef.current = subtasks;
+
+            const planMessage: PlanExecutionMessage = {
+              id: messageId,
+              type: 'plan_execution',
+              timestamp: new Date().toISOString(),
+              planId: data.plan_id,
+              task: data.task,
+              complexity: data.complexity,
+              subtaskCount: data.subtask_count,
+              status: 'running',
+              subtasks,
+            };
+            appendMessage(planMessage);
+          },
+          onSubtaskStart: (data) => {
+            if (!planMessageIdRef.current) return;
+            // Add or update subtask in the tracked list
+            const existing = planSubtasksRef.current.find(s => s.subtaskId === data.subtask_id);
+            if (existing) {
+              existing.status = 'running';
+            } else {
+              planSubtasksRef.current.push({
+                subtaskId: data.subtask_id,
+                description: data.description,
+                subtaskType: data.type,
+                status: 'running',
+              });
+            }
+            updateMessage(planMessageIdRef.current, {
+              subtasks: [...planSubtasksRef.current],
+            });
+          },
+          onSubtaskComplete: (data) => {
+            if (!planMessageIdRef.current) return;
+            const subtask = planSubtasksRef.current.find(s => s.subtaskId === data.subtask_id);
+            if (subtask) {
+              subtask.status = 'completed';
+              subtask.resultPreview = data.result_preview;
+            }
+            updateMessage(planMessageIdRef.current, {
+              subtasks: [...planSubtasksRef.current],
+              completedCount: planSubtasksRef.current.filter(s => s.status === 'completed').length,
+            });
+          },
+          onSubtaskFailed: (data) => {
+            if (!planMessageIdRef.current) return;
+            const subtask = planSubtasksRef.current.find(s => s.subtaskId === data.subtask_id);
+            if (subtask) {
+              subtask.status = 'failed';
+              subtask.error = data.error;
+            }
+            updateMessage(planMessageIdRef.current, {
+              subtasks: [...planSubtasksRef.current],
+            });
+          },
+          onPlanComplete: (data) => {
+            if (!planMessageIdRef.current) return;
+            updateMessage(planMessageIdRef.current, {
+              status: data.completed_count === data.subtask_count ? 'completed' : 'failed',
+              completedCount: data.completed_count,
+              totalTimeMs: data.total_time_ms,
+            });
+            planMessageIdRef.current = null;
+            planSubtasksRef.current = [];
           },
           onDone: (data) => {
             const finalContent = streamingContentRef.current;

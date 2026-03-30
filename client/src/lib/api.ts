@@ -1558,12 +1558,43 @@ class ApiClient {
         context_window?: number;
         context_used?: number;
       }) => void;
+      onPlanStart?: (data: {
+        plan_id: string;
+        task: string;
+        subtask_count: number;
+        complexity: string;
+      }) => void;
+      onSubtaskStart?: (data: {
+        plan_id: string;
+        subtask_id: number;
+        description: string;
+        type: string;
+        progress: number;
+      }) => void;
+      onSubtaskComplete?: (data: {
+        plan_id: string;
+        subtask_id: number;
+        result_preview: string;
+        progress: number;
+      }) => void;
+      onSubtaskFailed?: (data: {
+        plan_id: string;
+        subtask_id: number;
+        error: string;
+        progress: number;
+      }) => void;
+      onPlanComplete?: (data: {
+        plan_id: string;
+        subtask_count: number;
+        completed_count: number;
+        total_time_ms: number;
+      }) => void;
       onError?: (error: string) => void;
     }
   ): { abort: () => void } {
     const baseUrl = this.getBaseUrl();
     const controller = new AbortController();
-    
+
     fetch(`${baseUrl}/api/agent/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1609,6 +1640,21 @@ class ApiClient {
                       break;
                     case 'tool_result':
                       callbacks.onToolResult?.(data);
+                      break;
+                    case 'plan_start':
+                      callbacks.onPlanStart?.(data);
+                      break;
+                    case 'subtask_start':
+                      callbacks.onSubtaskStart?.(data);
+                      break;
+                    case 'subtask_complete':
+                      callbacks.onSubtaskComplete?.(data);
+                      break;
+                    case 'subtask_failed':
+                      callbacks.onSubtaskFailed?.(data);
+                      break;
+                    case 'plan_complete':
+                      callbacks.onPlanComplete?.(data);
                       break;
                     case 'done':
                       callbacks.onDone?.(data);
