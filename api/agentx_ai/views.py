@@ -15,7 +15,6 @@ from .streaming import (
     STREAM_CLOSE_DELAY,
     estimate_tokens,
     resolve_with_priority,
-    truncate_tool_messages,
 )
 from .utils.decorators import lazy_singleton
 from .utils.responses import (
@@ -753,7 +752,6 @@ async def agent_chat_stream(request):
 
             # Stream tokens with tool-use loop
             full_content = ""
-            tools_used = []
             tool_turns_data = []  # Collect tool call/result data for DB persistence
             max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
             total_tokens_input = 0
@@ -762,118 +760,53 @@ async def agent_chat_stream(request):
             # Hard limit for context to prevent corruption (leave room for output)
             max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
 
-            for tool_round in range(max_tool_rounds + 1):
-                round_tool_calls = []
+            # Plan execution: assess complexity and branch
+            from .agent.planner import TaskPlanner, TaskComplexity
+            planner = TaskPlanner(agent.config.default_model)
+            plan = planner.plan(message, memory=agent.memory if use_memory else None)
 
-                # Check context size — try smart compression first, fall back to truncation
-                estimated_context_tokens = estimate_tokens(messages)
-                logger.info(
-                    f"Tool round {tool_round + 1}: {len(messages)} messages, "
-                    f"~{estimated_context_tokens:,} tokens, limit={max_context_tokens}"
-                )
+            if plan.complexity != TaskComplexity.SIMPLE and len(plan.steps) > 1:
+                # Plan execution path — delegate to PlanExecutor
+                from .agent.plan_state import PlanStateStore
+                from .agent.plan_executor import PlanExecutor
 
-                # Trajectory compression: consolidate older tool rounds (fires at 75%)
-                from agentx_ai.streaming.trajectory_compression import compress_trajectory
-                if compress_trajectory(messages, max_context_tokens, task_context=message):
-                    estimated_context_tokens = estimate_tokens(messages)
-                    logger.info(f"Trajectory compressed, new estimate: ~{estimated_context_tokens:,} tokens")
-                    yield f"event: info\ndata: {json.dumps({'type': 'trajectory_compressed'})}\n\n"
+                state_store = PlanStateStore(conv_id)
+                executor = PlanExecutor(agent, state_store)
 
-                # Hard-limit truncation fallback
-                if estimated_context_tokens > max_context_tokens:
-                    logger.warning(f"Context exceeds limit, truncating tool messages")
-                    truncate_tool_messages(messages, estimated_context_tokens, max_context_tokens)
-                    estimated_context_tokens = estimate_tokens(messages)
-
-                if estimated_context_tokens > context_window * CONTEXT_WARNING_THRESHOLD:
-                    logger.warning(
-                        f"Context usage high: {estimated_context_tokens:,} / {context_window:,} tokens "
-                        f"({100 * estimated_context_tokens / context_window:.1f}%)"
-                    )
-
-                async for chunk in provider.stream(
-                    messages, model_id,
+                async for event_str in executor.execute_streaming(
+                    plan, provider, model_id, tools,
                     temperature=effective_temperature,
                     max_tokens=adaptive_max_tokens,
-                    tools=tools if tool_round < max_tool_rounds else None,
-                    tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
+                    max_context_tokens=max_context_tokens,
                 ):
-                    # Collect tool calls from the stream
-                    if chunk.tool_calls:
-                        round_tool_calls.extend(chunk.tool_calls)
+                    yield event_str
 
-                    # Accumulate token usage across rounds
-                    if chunk.usage:
-                        total_tokens_input += chunk.usage.get("prompt_tokens", 0)
-                        total_tokens_output += chunk.usage.get("completion_tokens", 0)
+                # Collect metadata from executor for done event
+                full_content = executor.full_content
+                total_tokens_input = executor.total_tokens_in
+                total_tokens_output = executor.total_tokens_out
 
-                    if chunk.content:
-                        full_content += chunk.content
-                        yield f"event: chunk\ndata: {json.dumps({'content': chunk.content})}\n\n"
+            else:
+                # Standard single-pass path (simple tasks)
+                from .streaming.tool_loop import streaming_tool_loop
 
-                # If no tool calls, we're done
-                if not round_tool_calls:
-                    logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
-                    break
+                async for event_str, loop_result in streaming_tool_loop(
+                    provider, model_id, messages, tools, agent,
+                    temperature=effective_temperature,
+                    max_tokens=adaptive_max_tokens,
+                    max_tool_rounds=max_tool_rounds,
+                    max_context_tokens=max_context_tokens,
+                    context_window=context_window,
+                    context_warning_threshold=CONTEXT_WARNING_THRESHOLD,
+                    task_context=message,
+                    capture_tool_turns=True,
+                ):
+                    yield event_str
 
-                # Execute tool calls and build follow-up messages
-                for tc in round_tool_calls:
-                    tools_used.append(tc.name)
-                    yield f"event: tool_call\ndata: {json.dumps({'tool': tc.name, 'tool_call_id': tc.id, 'arguments': tc.arguments})}\n\n"
-
-                # Add assistant message with tool_calls to conversation
-                messages.append(Message(
-                    role=MessageRole.ASSISTANT,
-                    content="",
-                    tool_calls=[
-                        {"id": tc.id, "type": "function",
-                         "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
-                        for tc in round_tool_calls
-                    ],
-                ))
-
-                # Execute tools and append results with timing
-                tool_start_time = time.perf_counter()
-                tool_messages = agent._execute_tool_calls(round_tool_calls, task_context=message)
-                tool_total_time = (time.perf_counter() - tool_start_time) * 1000
-                tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
-
-                for tm in tool_messages:
-                    # Detect success based on content (errors typically contain "error" key)
-                    is_error = tm.content.startswith('{"error"') or tm.content.startswith("Error:")
-                    tool_result_data = {
-                        'tool': tm.name,
-                        'tool_call_id': tm.tool_call_id,
-                        'content': tm.content[:500],
-                        'success': not is_error,
-                        'duration_ms': round(tool_avg_time, 2),
-                    }
-                    yield f"event: tool_result\ndata: {json.dumps(tool_result_data)}\n\n"
-
-                    # Capture for DB persistence
-                    tool_turns_data.append({
-                        'type': 'tool_call',
-                        'tool': tm.name,
-                        'tool_call_id': tm.tool_call_id,
-                        'arguments': next(
-                            (tc.arguments for tc in round_tool_calls if tc.id == tm.tool_call_id),
-                            {}
-                        ),
-                    })
-                    tool_turns_data.append({
-                        'type': 'tool_result',
-                        'tool': tm.name,
-                        'tool_call_id': tm.tool_call_id,
-                        'content': tm.content[:2000],
-                        'success': not is_error,
-                        'duration_ms': round(tool_avg_time, 2),
-                    })
-                messages.extend(tool_messages)
-
-                logger.info(
-                    f"Stream tool round {tool_round + 1}: executed "
-                    f"{', '.join(tc.name for tc in round_tool_calls)}"
-                )
+                full_content = loop_result.content
+                tool_turns_data = loop_result.tool_turns_data
+                total_tokens_input = loop_result.tokens_in
+                total_tokens_output = loop_result.tokens_out
 
             # Parse output for thinking tags
             logger.debug("Stream complete, parsing output...")

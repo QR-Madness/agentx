@@ -52,6 +52,17 @@ class Subtask:
     result: Optional[str] = None
     goal_id: Optional[str] = None  # For future subtask-level goal tracking
 
+    def to_dict(self) -> dict:
+        """Serialize for Redis storage."""
+        return {
+            "id": self.id,
+            "description": self.description,
+            "type": self.type.value,
+            "dependencies": self.dependencies,
+            "completed": self.completed,
+            "result": self.result,
+        }
+
 
 @dataclass
 class TaskPlan:
@@ -62,7 +73,16 @@ class TaskPlan:
     reasoning_strategy: str = "auto"
     estimated_tokens: int = 0
     goal_id: Optional[str] = None  # Linked goal in memory system
-    
+
+    def to_dict(self) -> dict:
+        """Serialize for Redis storage."""
+        return {
+            "task": self.task,
+            "complexity": self.complexity.value,
+            "steps": [s.to_dict() for s in self.steps],
+            "reasoning_strategy": self.reasoning_strategy,
+        }
+
     def get_next_subtask(self) -> Optional[Subtask]:
         """Get the next subtask that can be executed."""
         for subtask in self.steps:

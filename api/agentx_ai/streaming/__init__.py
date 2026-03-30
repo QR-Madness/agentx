@@ -21,6 +21,7 @@ from .helpers import (
     resolve_with_priority,
     truncate_tool_messages,
 )
+from .tool_loop import ToolLoopResult, streaming_tool_loop
 from .trajectory_compression import compress_trajectory
 
 __all__ = [
@@ -38,6 +39,9 @@ __all__ = [
     "estimate_tokens",
     "resolve_with_priority",
     "truncate_tool_messages",
+    # Tool loop
+    "ToolLoopResult",
+    "streaming_tool_loop",
     # Trajectory compression
     "compress_trajectory",
 ]

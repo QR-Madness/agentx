@@ -522,7 +522,61 @@ class Agent:
             if self._cancel_requested:
                 return self._cancelled_result(task_id, start_time)
 
-            # Step 2: Reasoning
+            # Step 1b: Plan execution for non-trivial plans
+            if plan and plan.complexity.value != "simple" and len(plan.steps) > 1:
+                from .plan_state import PlanStateStore
+                from .plan_executor import PlanExecutor
+
+                self.status = AgentStatus.EXECUTING
+                state_store = PlanStateStore(kwargs.get("session_id", "default"))
+                executor = PlanExecutor(self, state_store)
+                answer = executor.execute(plan, context)
+                tools_used = []
+                total_tokens = 0
+                models_used = [self.config.default_model]
+                total_time = (time.time() - start_time) * 1000
+                self.status = AgentStatus.COMPLETE
+
+                trace.append({"phase": "plan_execution", "steps": len(plan.steps)})
+
+                if self.memory:
+                    try:
+                        self.memory.reflect({
+                            "task_id": task_id,
+                            "task": task[:200],
+                            "status": "complete",
+                            "total_tokens": total_tokens,
+                            "total_time_ms": total_time,
+                            "reasoning_steps": 0,
+                            "tools_used": tools_used,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to trigger memory reflection: {e}")
+
+                if self.memory and plan.goal_id:
+                    try:
+                        self.memory.complete_goal(
+                            plan.goal_id,
+                            status="completed",
+                            result=answer[:500] if answer else None,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to complete goal: {e}")
+
+                return AgentResult(
+                    task_id=task_id,
+                    status=AgentStatus.COMPLETE,
+                    answer=answer,
+                    plan_steps=len(plan.steps),
+                    reasoning_steps=0,
+                    tools_used=list(set(tools_used)),
+                    models_used=list(set(models_used)),
+                    total_tokens=total_tokens,
+                    total_time_ms=total_time,
+                    trace=trace,
+                )
+
+            # Step 2: Reasoning (simple tasks / planning disabled)
             self.status = AgentStatus.REASONING
 
             reasoning_result = None

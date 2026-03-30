@@ -17,7 +17,7 @@
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 13: UX Overhaul | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
-| Phase 15: Plan Execution + Memory Tuning | Not Started | 0% |
+| Phase 15: Plan Execution | **In Progress** | ~80% |
 | Phase 16: Multi-Agent Conversations | Not Started | 0% |
 
 ---
@@ -61,13 +61,62 @@
 
 ---
 
-## Phase 15: Plan Execution + Memory Tuning
+## Phase 15: Plan Execution
 
 > **Priority**: HIGH
-> **Goal**: Solid plan execution pipeline and second round of memory system refinements
+> **Goal**: Execute decomposed task plans instead of discarding them — subtask iteration, Redis state tracking, streaming progress events
 > **Depends on**: Memory system (Phase 11), Context gating (Phase 14)
 
-*Details TBD*
+### 15.1 Redis Plan State Store (`plan_state.py`)
+
+- [x] `PlanStateStore` class with Redis Hash per active plan
+- [x] Key pattern: `plan:{session_id}:{plan_id}`, TTL 1 hour
+- [x] Per-subtask status tracking (pending/running/complete/failed/skipped)
+- [x] Best-effort Redis ops — execution continues if Redis is down
+
+### 15.2 Plan Executor (`plan_executor.py`)
+
+- [x] `PlanExecutor` class with sync `execute()` and async `execute_streaming()`
+- [x] Subtask iteration via `TaskPlan.get_next_subtask()` respecting dependencies
+- [x] Per-subtask message building (system prompt + dependency results + description)
+- [x] Streaming tool-use loop per subtask (reuses provider.stream + agent._execute_tool_calls)
+- [x] Trajectory compression within subtask execution
+- [x] Failure handling: mark failed, skip dependents whose deps all failed
+- [x] Synthesis step: final LLM call composing subtask results into coherent answer
+
+### 15.3 Planner Serialization
+
+- [x] `Subtask.to_dict()` and `TaskPlan.to_dict()` for Redis storage
+
+### 15.4 Agent.run() Integration (`core.py`)
+
+- [x] Plan execution branch for MODERATE/COMPLEX plans with >1 subtask
+- [x] SIMPLE tasks use existing reasoning + direct completion path unchanged
+- [x] Memory reflection and goal completion after plan execution
+
+### 15.5 Streaming Endpoint Integration (`views.py`)
+
+- [x] Plan assessment via `TaskPlanner.plan()` before tool loop
+- [x] Async delegation to `PlanExecutor.execute_streaming()` for complex tasks
+- [x] Full content tracking from chunk events for memory storage
+- [x] Shared done/close/memory-storage code for both paths
+
+### 15.6 SSE Events
+
+- [x] `plan_start` — plan_id, subtask_count, complexity
+- [x] `subtask_start` — subtask_id, description, type, progress
+- [x] `subtask_complete` — subtask_id, result_preview, progress
+- [x] `subtask_failed` — subtask_id, error, progress
+- [x] `plan_complete` — completed_count, total_time_ms
+- [x] Existing `chunk`, `tool_call`, `tool_result` events reused within subtasks
+
+### 15.7 Deferred Items
+
+- [ ] Parallel subtask execution (independent subtasks could run concurrently)
+- [ ] Per-subtask reasoning strategy selection (use `_select_strategy` per subtask type)
+- [ ] Subtask-level goal tracking (create subgoals via `parent_goal_id`)
+- [ ] Plan cancellation mid-execution (check `_cancel_requested` between subtasks)
+- [ ] Plan resumption from Redis state after disconnect
 
 ---
 
