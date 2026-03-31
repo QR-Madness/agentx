@@ -1,10 +1,12 @@
 """Embedding generation for vector similarity search."""
 
-from typing import List, Union
+import logging
+from typing import List, Tuple, Union
 from functools import lru_cache
 
 from .config import get_settings
 
+logger = logging.getLogger("agentx")
 settings = get_settings()
 
 
@@ -15,6 +17,7 @@ class EmbeddingProvider:
         self.provider = settings.embedding_provider
         self._client = None
         self._model = None
+        self._dimensions_validated = False
 
     def _init_openai(self):
         """Initialize OpenAI client for embeddings."""
@@ -24,10 +27,45 @@ class EmbeddingProvider:
     def _init_local(self):
         """Initialize local embedding model."""
         from sentence_transformers import SentenceTransformer
-        self._model = SentenceTransformer(
-            settings.local_embedding_model,
-            trust_remote_code=True
-        )
+        self._model = SentenceTransformer(settings.local_embedding_model)
+
+    @property
+    def output_dimensions(self) -> int:
+        """Auto-detect actual output dimensions from the loaded model."""
+        if self.provider == "openai":
+            return settings.embedding_dimensions
+
+        if self._model is None:
+            self._init_local()
+            assert self._model is not None
+
+        dims = self._model.get_sentence_embedding_dimension()
+        assert dims is not None, "Model did not report embedding dimensions"
+        return dims
+
+    def validate_dimensions(self) -> Tuple[int, int, bool]:
+        """
+        Compare actual model output dimensions against configured dimensions.
+
+        Returns:
+            (actual, configured, match) tuple
+        """
+        actual = self.output_dimensions
+        configured = settings.embedding_dimensions
+        return actual, configured, actual == configured
+
+    def _check_dimensions(self):
+        """Log a warning once if actual dimensions don't match config."""
+        if self._dimensions_validated:
+            return
+        self._dimensions_validated = True
+        actual, configured, match = self.validate_dimensions()
+        if not match:
+            logger.warning(
+                f"Embedding dimension mismatch: model produces {actual}-dim vectors "
+                f"but config says {configured}. Vector index queries will fail. "
+                f"Update EMBEDDING_DIMENSIONS={actual} or re-initialize schemas."
+            )
 
     def embed(self, texts: Union[str, List[str]]) -> List[List[float]]:
         """
@@ -65,6 +103,7 @@ class EmbeddingProvider:
             self._init_local()
             assert self._model is not None
 
+        self._check_dimensions()
         embeddings = self._model.encode(texts, convert_to_numpy=True)
         return embeddings.tolist()
 

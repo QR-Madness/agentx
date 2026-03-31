@@ -39,7 +39,7 @@ class EpisodicMemory:
 - PostgreSQL: Audit log and time-series backup (with channel column)
 
 **Indexing:**
-- Vector index on turn embeddings (1536 dimensions)
+- Vector index on turn embeddings (1024 dimensions)
 - BRIN index on timestamps for efficient time-range queries
 - B-tree index on conversation_id and channel
 
@@ -275,7 +275,7 @@ Channels organize memory into traceable scopes:
     timestamp: datetime,
     role: string,
     content: text,
-    embedding: vector(1536),
+    embedding: vector(1024),
     token_count: integer,
     archived: boolean
 })
@@ -291,7 +291,7 @@ Channels organize memory into traceable scopes:
     type: string,
     aliases: list<string>,
     description: text,
-    embedding: vector(1536),
+    embedding: vector(1024),
     salience: float,
     first_seen: datetime,
     last_accessed: datetime,
@@ -310,7 +310,7 @@ Channels organize memory into traceable scopes:
     confidence: float,
     source: string,
     source_turn_id: string,
-    embedding: vector(1536),
+    embedding: vector(1024),
     created_at: datetime
 })
 ```
@@ -328,7 +328,7 @@ Channels organize memory into traceable scopes:
     completed_at: datetime,  -- Set by complete_goal()
     result: text,            -- Completion result/summary
     deadline: datetime,
-    embedding: vector(1536)
+    embedding: vector(1024)
 })
 ```
 
@@ -348,7 +348,7 @@ Channels organize memory into traceable scopes:
     description: text,
     context_pattern: string,
     tool_sequence: list<string>,
-    embedding: vector(1536),
+    embedding: vector(1024),
     success_count: integer,
     failure_count: integer,
     created_at: datetime,
@@ -404,22 +404,22 @@ CREATE INDEX fact_user_channel IF NOT EXISTS FOR (f:Fact) ON (f.user_id, f.chann
 // Turn embeddings (episodic memory)
 CREATE VECTOR INDEX turn_embeddings IF NOT EXISTS
 FOR (t:Turn) ON (t.embedding)
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}};
+OPTIONS {indexConfig: {`vector.dimensions`: 1024, `vector.similarity_function`: 'cosine'}};
 
 // Entity embeddings (semantic memory)
 CREATE VECTOR INDEX entity_embeddings IF NOT EXISTS
 FOR (e:Entity) ON (e.embedding)
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}};
+OPTIONS {indexConfig: {`vector.dimensions`: 1024, `vector.similarity_function`: 'cosine'}};
 
 // Fact embeddings
 CREATE VECTOR INDEX fact_embeddings IF NOT EXISTS
 FOR (f:Fact) ON (f.embedding)
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}};
+OPTIONS {indexConfig: {`vector.dimensions`: 1024, `vector.similarity_function`: 'cosine'}};
 
 // Strategy embeddings (procedural memory)
 CREATE VECTOR INDEX strategy_embeddings IF NOT EXISTS
 FOR (s:Strategy) ON (s.embedding)
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}};
+OPTIONS {indexConfig: {`vector.dimensions`: 1024, `vector.similarity_function`: 'cosine'}};
 ```
 
 ### PostgreSQL Schema
@@ -438,7 +438,7 @@ CREATE TABLE conversation_logs (
     model VARCHAR(100),
     channel VARCHAR(100) NOT NULL DEFAULT '_global',
     metadata JSONB DEFAULT '{}',
-    embedding vector(1536),
+    embedding vector(1024),
     UNIQUE(conversation_id, turn_index)
 );
 
@@ -456,7 +456,7 @@ CREATE TABLE memory_timeline (
     neo4j_node_id VARCHAR(100),
     event_time TIMESTAMPTZ NOT NULL,
     summary TEXT,
-    embedding vector(1536),
+    embedding vector(1024),
     importance_score FLOAT DEFAULT 0.5,
     access_count INTEGER DEFAULT 0,
     last_accessed TIMESTAMPTZ,

@@ -10,10 +10,21 @@ Usage:
     python manage.py init_memory_schema --postgres-only
     python manage.py init_memory_schema --redis-only
     python manage.py init_memory_schema --verify
+    python manage.py init_memory_schema --force-recreate-indexes
 """
 
+import re
 from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
+
+
+# Neo4j vector index names used by the memory system
+VECTOR_INDEXES = [
+    "turn_embeddings",
+    "entity_embeddings",
+    "fact_embeddings",
+    "strategy_embeddings",
+]
 
 
 class Command(BaseCommand):
@@ -45,6 +56,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Show detailed output",
         )
+        parser.add_argument(
+            "--force-recreate-indexes",
+            action="store_true",
+            help="Drop and recreate all vector indexes (use after changing embedding model/dimensions)",
+        )
 
     def handle(self, *args, **options):
         neo4j_only = options["neo4j_only"]
@@ -52,6 +68,7 @@ class Command(BaseCommand):
         redis_only = options["redis_only"]
         verify_only = options["verify"]
         verbose = options["verbose"]
+        force_recreate = options["force_recreate_indexes"]
 
         # If no specific flag, do all
         do_all = not (neo4j_only or postgres_only or redis_only)
@@ -59,10 +76,16 @@ class Command(BaseCommand):
         results: dict[str, dict | None] = {"neo4j": None, "postgres": None, "redis": None}
 
         if do_all or neo4j_only:
-            results["neo4j"] = self._handle_neo4j(verify_only, verbose)
+            if force_recreate:
+                results["neo4j"] = self._force_recreate_neo4j_indexes(verbose)
+            else:
+                results["neo4j"] = self._handle_neo4j(verify_only, verbose)
 
         if do_all or postgres_only:
-            results["postgres"] = self._handle_postgres(verify_only, verbose)
+            if force_recreate:
+                results["postgres"] = self._force_recreate_postgres_indexes(verbose)
+            else:
+                results["postgres"] = self._handle_postgres(verify_only, verbose)
 
         if do_all or redis_only:
             results["redis"] = self._handle_redis(verify_only, verbose)
@@ -89,6 +112,50 @@ class Command(BaseCommand):
         else:
             raise CommandError("Some schema initializations failed")
 
+    def _get_configured_dims(self) -> int:
+        """Get configured embedding dimensions from settings."""
+        from agentx_ai.kit.agent_memory.config import get_settings
+        return get_settings().embedding_dimensions
+
+    def _substitute_neo4j_dims(self, schema_content: str, dims: int) -> str:
+        """Replace any vector.dimensions value in Cypher schema with configured dims."""
+        return re.sub(
+            r"(`vector\.dimensions`:\s*)\d+",
+            rf"\g<1>{dims}",
+            schema_content,
+        )
+
+    def _substitute_postgres_dims(self, schema_content: str, dims: int) -> str:
+        """Replace vector(N) column types in SQL schema with configured dims."""
+        return re.sub(
+            r"vector\(\d+\)",
+            f"vector({dims})",
+            schema_content,
+        )
+
+    def _validate_embedder_dimensions(self, verbose: bool) -> bool:
+        """Validate that the embedding model produces the configured dimensions."""
+        try:
+            from agentx_ai.kit.agent_memory.embeddings import get_embedder
+            embedder = get_embedder()
+            actual, configured, match = embedder.validate_dimensions()
+            if match:
+                if verbose:
+                    self.stdout.write(f"  ✓ Embedding model output dimensions: {actual} (matches config)")
+            else:
+                self.stdout.write(
+                    self.style.WARNING(  # type: ignore[attr-defined]
+                        f"  ⚠ Dimension mismatch: model produces {actual}-dim vectors "
+                        f"but EMBEDDING_DIMENSIONS={configured}. "
+                        f"Update config or use --force-recreate-indexes after fixing."
+                    )
+                )
+            return match
+        except Exception as e:
+            if verbose:
+                self.stdout.write(f"  ⚠ Could not validate embedder dimensions: {e}")
+            return True  # Don't block schema init if model can't be loaded
+
     def _handle_neo4j(self, verify_only: bool, verbose: bool) -> dict:
         """Initialize or verify Neo4j schemas."""
         self.stdout.write("\n📊 Neo4j Schema Initialization")
@@ -111,14 +178,12 @@ class Command(BaseCommand):
         schema_content = schema_file.read_text()
 
         # Substitute vector dimensions from config
-        from agentx_ai.kit.agent_memory.config import get_settings
-        settings = get_settings()
-        dims = settings.embedding_dimensions
-        schema_content = schema_content.replace(
-            "`vector.dimensions`: 768",
-            f"`vector.dimensions`: {dims}",
-        )
+        dims = self._get_configured_dims()
+        schema_content = self._substitute_neo4j_dims(schema_content, dims)
         self.stdout.write(f"  Vector dimensions: {dims}")
+
+        # Validate embedder dimensions match config
+        self._validate_embedder_dimensions(verbose)
 
         # Parse individual statements (split on semicolons, filter empty/comments)
         statements = []
@@ -198,6 +263,83 @@ class Command(BaseCommand):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def _force_recreate_neo4j_indexes(self, verbose: bool) -> dict:
+        """Drop and recreate all Neo4j vector indexes with correct dimensions."""
+        self.stdout.write("\n📊 Neo4j Vector Index Recreation")
+        self.stdout.write("-" * 40)
+
+        try:
+            from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+        except ImportError as e:
+            return {"success": False, "message": f"Import error: {e}"}
+
+        dims = self._get_configured_dims()
+        self.stdout.write(f"  Target dimensions: {dims}")
+        self._validate_embedder_dimensions(verbose)
+
+        # Load schema to extract CREATE VECTOR INDEX statements
+        project_root = Path(__file__).parent.parent.parent.parent.parent
+        schema_file = project_root / "queries" / "neo4j_schemas.cypher"
+        if not schema_file.exists():
+            return {"success": False, "message": f"Schema file not found: {schema_file}"}
+
+        schema_content = self._substitute_neo4j_dims(schema_file.read_text(), dims)
+
+        # Extract CREATE VECTOR INDEX statements from schema
+        create_stmts = {}
+        for stmt in schema_content.split(";"):
+            cleaned = "\n".join(
+                line for line in stmt.strip().splitlines()
+                if line.strip() and not line.strip().startswith("//")
+            ).strip()
+            if "CREATE VECTOR INDEX" in cleaned:
+                for idx_name in VECTOR_INDEXES:
+                    if idx_name in cleaned:
+                        create_stmts[idx_name] = cleaned
+                        break
+
+        try:
+            driver = Neo4jConnection.get_driver()
+
+            with driver.session() as session:
+                # Drop existing vector indexes
+                for idx_name in VECTOR_INDEXES:
+                    try:
+                        session.run(f"DROP INDEX {idx_name} IF EXISTS")  # type: ignore[arg-type]
+                        self.stdout.write(f"  ✓ Dropped index: {idx_name}")
+                    except Exception as e:
+                        if verbose:
+                            self.stdout.write(f"  ⚠ Drop {idx_name}: {e}")
+
+                # NULL out stale embeddings so consolidation re-embeds them
+                for label in ["Turn", "Entity", "Fact", "Strategy"]:
+                    query = (
+                        f"MATCH (n:{label}) WHERE n.embedding IS NOT NULL "
+                        f"SET n.embedding = NULL RETURN count(n) AS cleared"
+                    )
+                    result = session.run(query)  # type: ignore[arg-type]
+                    record = result.single()
+                    count = record["cleared"] if record else 0
+                    if count > 0:
+                        self.stdout.write(f"  ✓ Cleared {count} stale {label} embeddings")
+
+                # Recreate vector indexes with correct dimensions
+                for idx_name in VECTOR_INDEXES:
+                    if idx_name in create_stmts:
+                        # Remove IF NOT EXISTS since we just dropped them
+                        stmt = create_stmts[idx_name].replace(" IF NOT EXISTS", "")
+                        session.run(stmt)
+                        self.stdout.write(f"  ✓ Created index: {idx_name} ({dims} dims)")
+                    else:
+                        self.stdout.write(
+                            self.style.WARNING(f"  ⚠ No CREATE statement found for {idx_name}")  # type: ignore[attr-defined]
+                        )
+
+            return {"success": True, "message": f"Recreated {len(create_stmts)} vector indexes at {dims} dims"}
+
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     def _handle_postgres(self, verify_only: bool, verbose: bool) -> dict:
         """Initialize or verify PostgreSQL schemas."""
         self.stdout.write("\n🐘 PostgreSQL Schema Initialization")
@@ -218,6 +360,10 @@ class Command(BaseCommand):
             return {"success": False, "message": f"Schema file not found: {schema_file}"}
 
         schema_content = schema_file.read_text()
+
+        # Substitute vector dimensions from config
+        dims = self._get_configured_dims()
+        schema_content = self._substitute_postgres_dims(schema_content, dims)
 
         if verify_only:
             try:
@@ -290,6 +436,70 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ✓ Created/verified {partition_count} audit log partitions")
 
             return {"success": True, "message": f"{len(tables)} tables, {partition_count} partitions"}
+
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def _force_recreate_postgres_indexes(self, verbose: bool) -> dict:
+        """Recreate PostgreSQL vector columns and indexes with correct dimensions."""
+        self.stdout.write("\n🐘 PostgreSQL Vector Index Recreation")
+        self.stdout.write("-" * 40)
+
+        try:
+            from agentx_ai.kit.agent_memory.connections import get_postgres_session
+            from sqlalchemy import text
+        except ImportError as e:
+            return {"success": False, "message": f"Import error: {e}"}
+
+        dims = self._get_configured_dims()
+        self.stdout.write(f"  Target dimensions: {dims}")
+
+        # Tables with embedding columns and their ivfflat indexes
+        tables = [
+            ("conversation_logs", "idx_logs_embedding"),
+            ("memory_timeline", "idx_timeline_embedding"),
+        ]
+
+        try:
+            with get_postgres_session() as session:
+                for table, idx_name in tables:
+                    # Check if table exists
+                    result = session.execute(text(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = :table"
+                    ), {"table": table})
+                    if not result.fetchone():
+                        self.stdout.write(f"  ⚠ Table {table} does not exist, skipping")
+                        continue
+
+                    # Drop the ivfflat index
+                    session.execute(text(f"DROP INDEX IF EXISTS {idx_name}"))
+                    self.stdout.write(f"  ✓ Dropped index: {idx_name}")
+
+                    # Alter the column type to new dimensions
+                    session.execute(text(
+                        f"ALTER TABLE {table} ALTER COLUMN embedding TYPE vector({dims})"
+                    ))
+                    self.stdout.write(f"  ✓ Altered {table}.embedding to vector({dims})")
+
+                    # NULL out stale embeddings
+                    result = session.execute(text(
+                        f"UPDATE {table} SET embedding = NULL WHERE embedding IS NOT NULL"
+                    ))
+                    count = getattr(result, "rowcount", 0) or 0
+                    if count > 0:
+                        self.stdout.write(f"  ✓ Cleared {count} stale embeddings from {table}")
+
+                    # Recreate ivfflat index
+                    session.execute(text(
+                        f"CREATE INDEX {idx_name} ON {table} "
+                        f"USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+                    ))
+                    self.stdout.write(f"  ✓ Created index: {idx_name}")
+
+                session.commit()
+
+            return {"success": True, "message": f"Recreated vector indexes at {dims} dims for {len(tables)} tables"}
 
         except Exception as e:
             return {"success": False, "message": str(e)}

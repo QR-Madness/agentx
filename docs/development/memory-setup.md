@@ -83,7 +83,7 @@ CREATE VECTOR INDEX turn_embeddings IF NOT EXISTS
 FOR (t:Turn) ON (t.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 1024,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -93,7 +93,7 @@ CREATE VECTOR INDEX entity_embeddings IF NOT EXISTS
 FOR (e:Entity) ON (e.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 1024,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -103,7 +103,7 @@ CREATE VECTOR INDEX fact_embeddings IF NOT EXISTS
 FOR (f:Fact) ON (f.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 1024,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -113,7 +113,7 @@ CREATE VECTOR INDEX strategy_embeddings IF NOT EXISTS
 FOR (s:Strategy) ON (s.embedding)
 OPTIONS {
     indexConfig: {
-        `vector.dimensions`: 1536,
+        `vector.dimensions`: 1024,
         `vector.similarity_function`: 'cosine'
     }
 };
@@ -150,7 +150,7 @@ CREATE TABLE conversation_logs (
     token_count INTEGER,
     model VARCHAR(100),
     metadata JSONB DEFAULT '{}',
-    embedding vector(1536),
+    embedding vector(1024),
 
     UNIQUE(conversation_id, turn_index)
 );
@@ -168,7 +168,7 @@ CREATE TABLE memory_timeline (
     neo4j_node_id VARCHAR(100),
     event_time TIMESTAMPTZ NOT NULL,
     summary TEXT,
-    embedding vector(1536),
+    embedding vector(1024),
     importance_score FLOAT DEFAULT 0.5,
     access_count INTEGER DEFAULT 0,
     last_accessed TIMESTAMPTZ,
@@ -245,11 +245,11 @@ REDIS_URI=redis://localhost:6379
 # Embedding Provider
 EMBEDDING_PROVIDER=openai  # or "local"
 EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536
+EMBEDDING_DIMENSIONS=1024
 OPENAI_API_KEY=sk-your-api-key-here
 
 # Local Embedding Model (if using local)
-LOCAL_EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
+LOCAL_EMBEDDING_MODEL=BAAI/bge-m3
 
 # Memory Settings
 EPISODIC_RETENTION_DAYS=90
@@ -523,7 +523,7 @@ SHOW INDEXES YIELD name, type, state WHERE type = "VECTOR";
 // Rebuild vector index if needed
 DROP INDEX turn_embeddings;
 CREATE VECTOR INDEX turn_embeddings FOR (t:Turn) ON (t.embedding)
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}};
+OPTIONS {indexConfig: {`vector.dimensions`: 1024, `vector.similarity_function`: 'cosine'}};
 ```
 
 ## Production Deployment

@@ -75,7 +75,7 @@ CREATE (p)-[:INTERESTED_IN]->(c)
 CREATE TABLE embeddings (
     id SERIAL PRIMARY KEY,
     content TEXT,
-    embedding vector(768),
+    embedding vector(1024),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

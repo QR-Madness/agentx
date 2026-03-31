@@ -33,11 +33,11 @@ class Settings(BaseSettings):
     # Embeddings
     embedding_provider: str = "local"  # "openai" or "local"
     embedding_model: str = "text-embedding-3-small"  # for OpenAI
-    embedding_dimensions: int = 768  # 768 for local (nomic), 1536 for OpenAI
+    embedding_dimensions: int = 1024  # 1024 for local (bge-m3), 1536 for OpenAI
     openai_api_key: str = ""
 
     # Local embedding model (if using local)
-    local_embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    local_embedding_model: str = "BAAI/bge-m3"
 
     # Memory settings
     episodic_retention_days: int = 90

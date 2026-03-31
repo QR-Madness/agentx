@@ -55,24 +55,16 @@ def translation_models_loaded() -> bool:
 
 def embeddings_compatible() -> bool:
     """
-    Check if embedding provider dimensions match the PostgreSQL schema.
+    Check if embedding model output dimensions match configured dimensions.
 
-    Returns True if:
-    - OpenAI is configured and schema uses 1536 dims, OR
-    - Local embeddings are used and schema uses 768 dims
+    Loads the embedding provider and compares its actual output dimensions
+    against the configured embedding_dimensions setting.
     """
-    from agentx_ai.kit.agent_memory.config import get_settings
-
     try:
-        settings = get_settings()
-        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-        schema_dims = settings.embedding_dimensions
-        local_dims = 768
-
-        if has_openai:
-            return schema_dims == 1536
-        else:
-            return schema_dims == local_dims
+        from agentx_ai.kit.agent_memory.embeddings import get_embedder
+        embedder = get_embedder()
+        _, _, match = embedder.validate_dimensions()
+        return match
     except Exception:
         return False
 

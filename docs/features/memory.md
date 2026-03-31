@@ -107,7 +107,7 @@ context = memory.remember("What error handling pattern should I use?")
 | Relational DB | PostgreSQL 16+ | Logs, audit, time-series, backup vectors |
 | Vector Extension | pgvector 0.7+ | ANN search in PostgreSQL |
 | Cache | Redis 7+ | Working memory, session state |
-| Embeddings | OpenAI / Local | text-embedding-3-small or nomic-embed-text |
+| Embeddings | OpenAI / Local | text-embedding-3-small or bge-m3 |
 
 ## Usage
 

@@ -55,7 +55,7 @@ These must match the values in `docker-compose.yml`.
 ```bash
 EMBEDDING_PROVIDER=local                          # "local" or "openai"
 EMBEDDING_MODEL=text-embedding-3-small            # OpenAI model (if provider=openai)
-LOCAL_EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5  # Local model (if provider=local)
+LOCAL_EMBEDDING_MODEL=BAAI/bge-m3                    # Local model (if provider=local)
 ```
 
 Switching providers changes vector dimensions. If you switch after data exists, reset memory schemas (`task db:init:schemas`) or use `POST /api/memory/reset`.
