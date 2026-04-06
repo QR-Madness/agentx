@@ -98,14 +98,13 @@ class Settings(BaseSettings):
     recall_expansion_max_variants: int = 3  # Max query variants to generate
 
     # --- HyDE Settings (only used if recall_enable_hyde=True) ---
-    recall_hyde_provider: str = "lmstudio"
-    recall_hyde_model: str = "google/gemma-3-4b"
+    # Models use provider:model format (e.g., "lmstudio:google/gemma-3-4b")
+    recall_hyde_model: str = "lmstudio:google/gemma-3-4b"
     recall_hyde_temperature: float = 0.7
     recall_hyde_max_tokens: int = 150
 
     # --- Self-Query Settings (only used if recall_enable_self_query=True) ---
-    recall_self_query_provider: str = "lmstudio"
-    recall_self_query_model: str = "google/gemma-3-4b"
+    recall_self_query_model: str = "lmstudio:google/gemma-3-4b"
     recall_self_query_temperature: float = 0.2
     recall_self_query_max_tokens: int = 200
 
@@ -113,13 +112,11 @@ class Settings(BaseSettings):
     # Consolidation LLM Settings
     # ===========================================
     # All consolidation stages can be configured independently.
-    # Use "lmstudio" for local/free, "anthropic" for quality.
-    # Model IDs should match your provider's model names.
+    # Models use provider:model format (e.g., "lmstudio:model", "anthropic:claude-3-5-haiku-latest")
 
     # --- Extraction (main fact/entity extraction) ---
     extraction_enabled: bool = True
-    extraction_provider: str = "lmstudio"  # "lmstudio", "anthropic", "openai"
-    extraction_model: str = "google/gemma-3-4b"  # Gemma 3 4B - good at structured output
+    extraction_model: str = "lmstudio:google/gemma-3-4b"  # Gemma 3 4B - good at structured output
     extraction_temperature: float = 0.2  # Lower for more consistent extraction
     extraction_max_tokens: int = 2000
     extraction_timeout: float = 30.0
@@ -129,8 +126,7 @@ class Settings(BaseSettings):
 
     # --- Relevance Filter (skip "thanks", "ok" turns) ---
     relevance_filter_enabled: bool = True
-    relevance_filter_provider: str = "lmstudio"
-    relevance_filter_model: str = "google/gemma-3-4b"
+    relevance_filter_model: str = "lmstudio:google/gemma-3-4b"
     relevance_filter_temperature: float = 0.1  # Low temp for consistent YES/NO
     relevance_filter_max_tokens: int = 500  # Reasoning models need more tokens
     # Custom relevance prompt (empty = use default hardcoded prompt)
@@ -138,8 +134,7 @@ class Settings(BaseSettings):
 
     # --- Contradiction Detection (check new facts vs existing) ---
     contradiction_detection_enabled: bool = True  # Three-layer pipeline: fast gate → semantic search → LLM
-    contradiction_provider: str = "lmstudio"
-    contradiction_model: str = "google/gemma-3-4b"
+    contradiction_model: str = "lmstudio:google/gemma-3-4b"
     contradiction_temperature: float = 0.2
     contradiction_max_tokens: int = 500
     # Layer 1: Semantic duplicate threshold (cosine similarity)
@@ -150,14 +145,12 @@ class Settings(BaseSettings):
 
     # --- User Correction Handling (detect "actually...", "no I meant...") ---
     correction_detection_enabled: bool = True  # Implicit corrections caught at extraction time
-    correction_provider: str = "lmstudio"
-    correction_model: str = "google/gemma-3-4b"
+    correction_model: str = "lmstudio:google/gemma-3-4b"
     correction_temperature: float = 0.2
     correction_max_tokens: int = 500
 
     # --- Combined Relevance + Extraction (reduces LLM calls by ~75%) ---
-    combined_extraction_provider: str = "lmstudio"
-    combined_extraction_model: str = "nvidia/nemotron-3-nano"  # Reasoning model for better quality
+    combined_extraction_model: str = "lmstudio:nvidia/nemotron-3-nano"  # Reasoning model for better quality
     combined_extraction_temperature: float = 0.3  # Slightly higher for reasoning
     combined_extraction_max_tokens: int = 2000
 
@@ -171,8 +164,7 @@ class Settings(BaseSettings):
     entity_linking_enabled: bool = True
     entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity
     entity_linking_use_llm_disambiguation: bool = False  # Use LLM when ambiguous
-    entity_linking_provider: str = "lmstudio"
-    entity_linking_model: str = "google/gemma-3-4b"
+    entity_linking_model: str = "lmstudio:google/gemma-3-4b"
 
     # Entity types to recognize
     entity_types: list = [
@@ -312,9 +304,8 @@ def get_consolidation_settings() -> Dict[str, Any]:
     settings = get_settings()
 
     return {
-        # Extraction
+        # Extraction (model uses provider:model format, e.g., "lmstudio:google/gemma-3-4b")
         "extraction_enabled": settings.extraction_enabled,
-        "extraction_provider": settings.extraction_provider,
         "extraction_model": settings.extraction_model,
         "extraction_temperature": settings.extraction_temperature,
         "extraction_max_tokens": settings.extraction_max_tokens,
@@ -323,7 +314,6 @@ def get_consolidation_settings() -> Dict[str, Any]:
 
         # Relevance filter
         "relevance_filter_enabled": settings.relevance_filter_enabled,
-        "relevance_filter_provider": settings.relevance_filter_provider,
         "relevance_filter_model": settings.relevance_filter_model,
         "relevance_filter_prompt": settings.relevance_filter_prompt,
 
@@ -382,14 +372,12 @@ def get_recall_settings() -> Dict[str, Any]:
         # Query expansion settings
         "recall_expansion_max_variants": settings.recall_expansion_max_variants,
 
-        # HyDE settings
-        "recall_hyde_provider": settings.recall_hyde_provider,
+        # HyDE settings (model uses provider:model format)
         "recall_hyde_model": settings.recall_hyde_model,
         "recall_hyde_temperature": settings.recall_hyde_temperature,
         "recall_hyde_max_tokens": settings.recall_hyde_max_tokens,
 
-        # Self-query settings
-        "recall_self_query_provider": settings.recall_self_query_provider,
+        # Self-query settings (model uses provider:model format)
         "recall_self_query_model": settings.recall_self_query_model,
         "recall_self_query_temperature": settings.recall_self_query_temperature,
         "recall_self_query_max_tokens": settings.recall_self_query_max_tokens,

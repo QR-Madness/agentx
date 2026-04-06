@@ -90,9 +90,9 @@ class ModelPipeline(DraftingStrategy):
         pipeline = ModelPipeline(PipelineConfig(
             name="code-review",
             stages=[
-                PipelineStage(name="generate", model="gpt-4-turbo", role=StageRole.CODE),
-                PipelineStage(name="review", model="claude-3-opus", role=StageRole.REVIEW),
-                PipelineStage(name="refine", model="gpt-4-turbo", role=StageRole.REFINE),
+                PipelineStage(name="generate", model="openai:gpt-4-turbo", role=StageRole.CODE),
+                PipelineStage(name="review", model="anthropic:claude-opus-4-6", role=StageRole.REVIEW),
+                PipelineStage(name="refine", model="openai:gpt-4-turbo", role=StageRole.REFINE),
             ],
         ))
         result = await pipeline.generate(messages)

@@ -39,8 +39,8 @@ class SpeculativeDecoder(DraftingStrategy):
     
     Example usage:
         decoder = SpeculativeDecoder(SpeculativeConfig(
-            draft_model="gpt-3.5-turbo",
-            target_model="gpt-4-turbo",
+            draft_model="openai:gpt-3.5-turbo",
+            target_model="openai:gpt-4-turbo",
             draft_tokens=20,
         ))
         result = await decoder.generate(messages)

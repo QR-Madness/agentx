@@ -41,6 +41,7 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "tool_output_query",
     "tool_output_section",
     "tool_output_path",
+    "read_user_message",
 })
 
 
@@ -331,6 +332,71 @@ def tool_output_path(key: str, jsonpath: str) -> dict[str, Any]:
 
     content = data.get("content", "")
     return resolve_json_path(content, jsonpath)
+
+
+@register_tool(
+    name="read_user_message",
+    description=(
+        "Retrieve the full content of a cached user message. Use this when you see "
+        "'[USER MESSAGE CACHED - key: xxx]' in the conversation. The cached message "
+        "contains the full user input that was too large to include directly in context."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "The storage key from the USER MESSAGE CACHED notice (e.g., 'msg_143022_a7b3c8d1')",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Start position in content for pagination (default: 0)",
+                "default": 0,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum characters to return per page (default: 12000). Use offset to paginate.",
+                "default": 12000,
+            },
+        },
+        "required": ["key"],
+    },
+)
+def read_user_message(
+    key: str,
+    offset: int = 0,
+    limit: int = 12000,
+) -> dict[str, Any]:
+    """Retrieve a cached user message from Redis with automatic pagination."""
+    from ..agent.user_message_storage import get_user_message
+
+    data = get_user_message(key)
+    if not data:
+        return {
+            "error": f"User message not found or expired: {key}",
+            "success": False,
+        }
+
+    full_content = data.get("content", "")
+    total_size = len(full_content)
+
+    # Apply pagination
+    content = full_content[offset:offset + limit]
+    has_more = (offset + len(content)) < total_size
+
+    return {
+        "content": content,
+        "message_id": data.get("message_id"),
+        "session_id": data.get("session_id"),
+        "offset": offset,
+        "limit": limit,
+        "total_size": total_size,
+        "returned_size": len(content),
+        "has_more": has_more,
+        "next_offset": offset + len(content) if has_more else None,
+        "stored_at": data.get("stored_at"),
+        "success": True,
+    }
 
 
 # =============================================================================

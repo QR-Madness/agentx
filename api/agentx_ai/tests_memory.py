@@ -1980,8 +1980,7 @@ class CombinedExtractionConfigTest(TestCase):
 
         settings = Settings()
 
-        # Provider settings
-        self.assertIsInstance(settings.combined_extraction_provider, str)
+        # Model settings (uses provider:model format, e.g., "lmstudio:nvidia/nemotron-3-nano")
         self.assertIsInstance(settings.combined_extraction_model, str)
         self.assertIsInstance(settings.combined_extraction_temperature, float)
         self.assertIsInstance(settings.combined_extraction_max_tokens, int)
@@ -2011,7 +2010,7 @@ class CombinedExtractionConfigTest(TestCase):
 
         settings = Settings()
 
-        # Should default to nvidia/nemotron-3-nano or similar reasoning model
+        # Should default to lmstudio:nvidia/nemotron-3-nano or similar reasoning model
         self.assertIn("nemotron", settings.combined_extraction_model.lower())
 
 

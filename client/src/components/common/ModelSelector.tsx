@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { api, type ModelInfo } from '../../lib/api';
 import './ModelSelector.css';
 
@@ -42,9 +42,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   lmstudio: 'LM Studio',
   openai: 'OpenAI',
+  openrouter: 'OpenRouter',
 };
 
-const KNOWN_PROVIDER_ORDER = ['anthropic', 'lmstudio', 'openai'];
+const KNOWN_PROVIDER_ORDER = ['anthropic', 'openrouter', 'lmstudio', 'openai'];
 
 interface ModelSelectorProps {
   /** Currently selected model id (empty string = system default) */
@@ -75,6 +76,7 @@ export function ModelSelector({
   const [models, setModels] = useState<ModelInfo[]>(modelCache ?? []);
   const [loading, setLoading] = useState(!modelCache);
   const [selectedProvider, setSelectedProvider] = useState(lockedProvider ?? '');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch models (uses shared cache)
   useEffect(() => {
@@ -129,10 +131,14 @@ export function ModelSelector({
     }
   }, [selectedProvider, onProviderChange]);
 
-  const filtered = useMemo(
-    () => (selectedProvider ? models.filter((m) => m.provider === selectedProvider) : []),
-    [models, selectedProvider],
-  );
+  const filtered = useMemo(() => {
+    let result = selectedProvider ? models.filter((m) => m.provider === selectedProvider) : [];
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter((m) => m.name.toLowerCase().includes(query));
+    }
+    return result;
+  }, [models, selectedProvider, searchQuery]);
 
   const formatContext = (n?: number) => (n ? `${(n / 1000).toFixed(0)}k context` : '');
 
@@ -213,6 +219,29 @@ export function ModelSelector({
             >
               <RefreshCw size={13} className={loading ? 'spin' : ''} />
             </button>
+          </div>
+        )}
+
+        {/* Search input - show for providers with many models */}
+        {!loading && models.filter((m) => m.provider === selectedProvider).length > 10 && (
+          <div className="model-selector-search">
+            <Search size={14} className="model-selector-search-icon" />
+            <input
+              type="text"
+              className="model-selector-search-input"
+              placeholder="Search models..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="model-selector-search-clear"
+                onClick={() => setSearchQuery('')}
+              >
+                ×
+              </button>
+            )}
           </div>
         )}
 

@@ -73,7 +73,7 @@ class TreeOfThought(ReasoningStrategy):
     
     Example usage:
         tot = TreeOfThought(ToTConfig(
-            model="gpt-4-turbo",
+            model="anthropic:claude-3-5-sonnet-latest",
             branching_factor=3,
             max_depth=4,
             search_method="beam",

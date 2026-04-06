@@ -75,8 +75,8 @@ class AgentConfig:
     name: str = "agentx"
     user_id: Optional[str] = None
     
-    # Model settings - default to local LM Studio
-    default_model: str = "llama3.2"
+    # Model settings - default to local LM Studio (use provider:model format)
+    default_model: str = "lmstudio:llama3.2"
     reasoning_model: Optional[str] = None
     drafting_model: Optional[str] = None
     
@@ -102,7 +102,12 @@ class AgentConfig:
     store_oversized_results: bool = True  # Store large results in Redis instead of truncating
     tool_output_ttl_seconds: int = 3600  # TTL for stored tool outputs (1 hour default)
     compress_tool_outputs: bool = True  # Use LLM compression for oversized tool outputs
-    
+
+    # User message caching settings
+    user_message_cache_threshold: int = 5000  # Chars threshold for caching user messages
+    user_message_cache_ttl: int = 3600  # TTL for cached user messages (1 hour default)
+    user_message_preview_chars: int = 2000  # Chars to keep in context after caching
+
     # Context settings
     max_context_tokens: int = 8000
     summarize_threshold: int = 6000
@@ -126,7 +131,7 @@ class Agent:
     
     Example usage:
         agent = Agent(AgentConfig(
-            default_model="gpt-4-turbo",
+            default_model="anthropic:claude-3-5-sonnet-latest",
             enable_tools=True,
         ))
         
@@ -775,11 +780,35 @@ class Agent:
         if self.memory:
             self.memory.conversation_id = conversation_id
 
-        # Add user message to session
+        # Cache large user messages in Redis to save context
+        message_for_context = message  # Version sent to LLM (may be truncated)
+        if len(message) > self.config.user_message_cache_threshold:
+            from .user_message_storage import store_user_message
+
+            message_id = str(uuid.uuid4())[:8]
+            cached_message_key = store_user_message(
+                message_id=message_id,
+                content=message,
+                session_id=session_id,
+                ttl_seconds=self.config.user_message_cache_ttl,
+            )
+
+            if cached_message_key:
+                # Create truncated version with cache hint for context
+                preview_chars = self.config.user_message_preview_chars
+                message_for_context = (
+                    f"{message[:preview_chars]}\n\n"
+                    f"[USER MESSAGE CACHED - key: {cached_message_key}]\n"
+                    f"Full message ({len(message):,} chars) stored in cache. "
+                    f"Use read_user_message(key=\"{cached_message_key}\") to retrieve full content."
+                )
+                logger.info(f"Cached large user message: {cached_message_key} ({len(message):,} chars)")
+
+        # Add user message to session (full message for history)
         user_message = Message(role=MessageRole.USER, content=message)
         session.add_message(user_message)
 
-        # Store user turn in memory
+        # Store user turn in memory (full message)
         if self.memory:
             user_turn = Turn(
                 conversation_id=conversation_id,
@@ -830,7 +859,8 @@ class Agent:
                 ]
                 if context:
                     messages.extend(context)
-                messages.append(Message(role=MessageRole.USER, content=message))
+                # Use truncated/cached version for LLM context
+                messages.append(Message(role=MessageRole.USER, content=message_for_context))
 
                 # Inject memories into context
                 if memory_bundle:

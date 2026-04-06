@@ -68,7 +68,7 @@ class CombinedExtractionResult(BaseModel):
     Result of combined relevance check + extraction in a single LLM call.
 
     This reduces LLM calls by ~75% compared to separate relevance + extraction.
-    Uses a reasoning model (nvidia/nemotron-3-nano by default) for better quality.
+    Uses a reasoning model (lmstudio:nvidia/nemotron-3-nano by default) for better quality.
     """
     is_relevant: bool = False
     reason: str = ""  # "heuristic_skip", "llm_not_relevant", "llm_extracted"
@@ -475,7 +475,7 @@ class ExtractionService:
         Combined relevance check and extraction in a single LLM call.
 
         This reduces LLM calls by ~75% compared to separate relevance + extraction.
-        Uses a reasoning model (nvidia/nemotron-3-nano by default) for better quality
+        Uses a reasoning model (lmstudio:nvidia/nemotron-3-nano by default) for better quality
         on the two-step analysis task.
 
         Args:

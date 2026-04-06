@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Layers,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
@@ -89,6 +90,7 @@ export function ChatPanel() {
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [useStreamingMode, setUseStreamingMode] = useState(true);
   const [useMemory, setUseMemory] = useState(true);
   const [streamingContent, setStreamingContent] = useState('');
@@ -406,6 +408,27 @@ export function ChatPanel() {
     autoResize();
   }, [input, autoResize]);
 
+  // Handle prompt enhancement
+  const handleEnhancePrompt = async () => {
+    if (!input.trim() || isEnhancing) return;
+
+    setIsEnhancing(true);
+    try {
+      // Build context from recent messages
+      const context = messages.slice(-5).map(msg => ({
+        role: msg.type === 'user' ? 'user' : 'assistant',
+        content: msg.type === 'user' || msg.type === 'assistant' ? msg.content : '',
+      })).filter(msg => msg.content);
+
+      const result = await api.enhancePrompt(input, context);
+      setInput(result.enhanced_prompt);
+    } catch (error) {
+      console.error('Failed to enhance prompt:', error);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -550,6 +573,14 @@ export function ChatPanel() {
         <div className="input-container">
           <button className="voice-button" disabled title="Voice input coming soon">
             <Mic size={18} />
+          </button>
+          <button
+            className={`enhance-button ${isEnhancing ? 'enhancing' : ''}`}
+            onClick={handleEnhancePrompt}
+            disabled={!input.trim() || isEnhancing || isTyping}
+            title="Enhance prompt"
+          >
+            {isEnhancing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
           </button>
           <textarea
             ref={textareaRef}

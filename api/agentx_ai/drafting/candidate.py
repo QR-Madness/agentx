@@ -76,7 +76,7 @@ class CandidateGenerator(DraftingStrategy):
     Example usage:
         generator = CandidateGenerator(CandidateConfig(
             name="consensus",
-            models=["gpt-4", "claude-3-sonnet", "llama3"],
+            models=["openai:gpt-4", "anthropic:claude-3-5-sonnet-latest", "lmstudio:llama3.2"],
             candidates_per_model=2,
             scoring_method=ScoringMethod.MAJORITY_VOTE,
         ))

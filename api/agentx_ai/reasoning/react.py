@@ -139,7 +139,7 @@ class ReActAgent(ReasoningStrategy):
     
     Example usage:
         agent = ReActAgent(ReActConfig(
-            model="gpt-4-turbo",
+            model="anthropic:claude-3-5-sonnet-latest",
             tools=[
                 Tool(name="search", description="...", execute=search_fn),
             ],

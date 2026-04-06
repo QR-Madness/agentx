@@ -1,9 +1,13 @@
 """
 OpenAI model provider implementation.
+
+Model capabilities are fetched dynamically from the OpenAI API
+and cached for efficiency.
 """
 
 import json
 import logging
+import time
 from typing import Any, AsyncIterator, Optional
 
 from .base import (
@@ -21,77 +25,28 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-# Model capabilities registry
-OPENAI_MODELS = {
-    "gpt-4-turbo": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=True,
-        context_window=128000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.01,
-        cost_per_1k_output=0.03,
-    ),
-    "gpt-4-turbo-preview": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=True,
-        context_window=128000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.01,
-        cost_per_1k_output=0.03,
-    ),
-    "gpt-4": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=False,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=8192,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.03,
-        cost_per_1k_output=0.06,
-    ),
-    "gpt-4o": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=True,
-        context_window=128000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.005,
-        cost_per_1k_output=0.015,
-    ),
-    "gpt-4o-mini": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=True,
-        context_window=128000,
-        max_output_tokens=16384,
-        cost_per_1k_input=0.00015,
-        cost_per_1k_output=0.0006,
-    ),
-    "gpt-3.5-turbo": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=False,
-        supports_streaming=True,
-        supports_json_mode=True,
-        context_window=16385,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.0005,
-        cost_per_1k_output=0.0015,
-    ),
-}
+# Cache TTL for model list (5 minutes)
+MODEL_CACHE_TTL = 300
+
+# Default capabilities for models (OpenAI doesn't expose full capabilities via API)
+DEFAULT_CAPABILITIES = ModelCapabilities(
+    supports_tools=True,
+    supports_vision=True,
+    supports_streaming=True,
+    supports_json_mode=True,
+    context_window=128000,
+    max_output_tokens=4096,
+)
 
 
 class OpenAIProvider(ModelProvider):
     """OpenAI API provider for GPT models."""
-    
+
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self._client: Optional[Any] = None
+        self._model_cache: list[str] = []
+        self._cache_timestamp: float = 0
     
     @property
     def name(self) -> str:
@@ -284,21 +239,38 @@ class OpenAIProvider(ModelProvider):
                 yield StreamChunk(content="", finish_reason=finish_reason)
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
-        """Get capabilities for an OpenAI model."""
-        if model in OPENAI_MODELS:
-            return OPENAI_MODELS[model]
-        
-        # Default capabilities for unknown models
-        logger.warning(f"Unknown OpenAI model: {model}, using default capabilities")
-        return ModelCapabilities(
-            supports_tools=True,
-            supports_streaming=True,
-            context_window=8192,
-        )
-    
+        """Get capabilities for an OpenAI model.
+
+        Note: OpenAI API doesn't expose detailed capabilities per model,
+        so we return sensible defaults for all models.
+        """
+        return DEFAULT_CAPABILITIES
+
     def list_models(self) -> list[str]:
-        """List available OpenAI models."""
-        return list(OPENAI_MODELS.keys())
+        """List available OpenAI models from cache."""
+        return self._model_cache.copy()
+
+    async def fetch_models(self) -> list[str]:
+        """Fetch available models from OpenAI API and update cache."""
+        now = time.time()
+        if self._model_cache and (now - self._cache_timestamp) < MODEL_CACHE_TTL:
+            return self._model_cache
+
+        try:
+            models = await self.client.models.list()
+            # Filter to chat models only (gpt-*, o1-*)
+            chat_models = [
+                m.id async for m in models
+                if m.id.startswith(("gpt-", "o1-", "o3-"))
+            ]
+            self._model_cache = sorted(chat_models)
+            self._cache_timestamp = now
+            logger.info(f"Fetched {len(self._model_cache)} OpenAI models")
+        except Exception as e:
+            logger.error(f"Failed to fetch OpenAI models: {e}")
+            # Keep stale cache if available
+
+        return self._model_cache
     
     async def health_check(self) -> dict[str, Any]:
         """Check if OpenAI API is reachable."""
@@ -309,13 +281,11 @@ class OpenAIProvider(ModelProvider):
             }
 
         try:
-            # Make a minimal API call to check connectivity
-            models = await self.client.models.list()
-            model_list = [m async for m in models]
+            models = await self.fetch_models()
             return {
                 "status": "healthy",
-                "models_available": len(model_list),
-                "models": [m.id for m in model_list[:10]],  # First 10
+                "models_available": len(models),
+                "models": models[:20],  # First 20
             }
         except Exception as e:
             logger.error(f"OpenAI health check failed: {e}")

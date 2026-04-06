@@ -72,7 +72,7 @@ class ReflectiveReasoner(ReasoningStrategy):
     
     Example usage:
         reasoner = ReflectiveReasoner(ReflectionConfig(
-            model="gpt-4-turbo",
+            model="anthropic:claude-3-5-sonnet-latest",
             max_revisions=3,
         ))
         result = await reasoner.reason("Write a compelling introduction for an essay about climate change")

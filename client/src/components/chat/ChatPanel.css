@@ -344,6 +344,45 @@
   opacity: 0.5;
 }
 
+.enhance-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cosmic-violet);
+  transition: all 0.15s ease;
+}
+
+.enhance-button:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--cosmic-purple);
+}
+
+.enhance-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.enhance-button.enhancing {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.enhance-button .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .send-button {
   display: flex;
   align-items: center;

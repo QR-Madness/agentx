@@ -93,6 +93,20 @@ class ProviderRegistry:
                 api_key=openai_key,
                 base_url=openai_url,
             )
+
+        # OpenRouter (cloud aggregator - 100+ models)
+        openrouter_key = config.get_provider_value(
+            "openrouter", "api_key", env_var="OPENROUTER_API_KEY"
+        )
+        if openrouter_key:
+            self._provider_configs["openrouter"] = ProviderConfig(
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
+                extra={
+                    "site_url": os.environ.get("OPENROUTER_SITE_URL", ""),
+                    "app_name": os.environ.get("OPENROUTER_APP_NAME", "AgentX"),
+                },
+            )
     
     def load_config(self, config_path: Path) -> None:
         """Load configuration from a YAML file."""
@@ -119,7 +133,7 @@ class ProviderRegistry:
         Get or create a provider instance.
 
         Args:
-            name: Provider name ("lmstudio", "anthropic", "openai")
+            name: Provider name ("lmstudio", "anthropic", "openai", "openrouter")
 
         Returns:
             Configured ModelProvider instance
@@ -147,6 +161,9 @@ class ProviderRegistry:
         elif name == "openai":
             from .openai_provider import OpenAIProvider
             provider = OpenAIProvider(config)
+        elif name == "openrouter":
+            from .openrouter_provider import OpenRouterProvider
+            provider = OpenRouterProvider(config)
         else:
             raise ValueError(f"Unknown provider: {name}")
 
@@ -160,61 +177,34 @@ class ProviderRegistry:
     def get_provider_for_model(self, model: str) -> tuple[ModelProvider, str]:
         """
         Get the appropriate provider for a model.
-        
+
+        Models must use provider:model format (e.g., "anthropic:claude-3-opus").
+
         Args:
-            model: Model name (e.g., "gpt-4", "claude-3-opus", "llama3.2")
-            
+            model: Model in provider:model_id format
+
         Returns:
-            Tuple of (provider, model_id) where model_id may differ from model name
-            
+            Tuple of (provider, model_id)
+
         Raises:
-            ValueError: If provider cannot be determined
+            ValueError: If format is invalid or provider not configured
         """
-        # Check if model is in our config
-        if model in self._model_configs:
-            config = self._model_configs[model]
-            provider = self.get_provider(config.provider)
-            model_id = config.model_id or model
-            return provider, model_id
-        
-        # Local model prefixes - check these FIRST 
-        # because some local models have names like "gpt-oss" or "openai/..."
-        local_prefixes = (
-            "llama", "mistral", "mixtral", "codellama", "llava", 
-            "qwen", "deepseek", "phi", "gemma", "vicuna", "orca",
-            "neural", "dolphin", "openchat", "starling", "yi",
-            "command-r", "dbrx", "nous", "wizardlm", "zephyr",
-            "gpt-oss", "ibm/", "google/", "meta/", "mistralai/",
-            "openai-gpt-oss", "openai/gpt-oss",  # LM Studio naming
-        )
-        
-        # Check if this looks like a local model
-        is_local = (
-            ":" in model or  # Ollama tags like "llama3.2:latest"
-            "/" in model or  # LM Studio paths like "google/gemma-3-12b"
-            model.startswith(local_prefixes)
-        )
-        
-        if is_local:
-            # Use LM Studio for local models
-            if "lmstudio" in self._provider_configs:
-                return self.get_provider("lmstudio"), model
-            else:
-                raise ValueError(
-                    f"Local model '{model}' detected but LM Studio not configured. "
-                    "Set the LM Studio URL in Settings or LMSTUDIO_BASE_URL environment variable."
-                )
-        
-        # Infer provider from model name (cloud providers)
-        if model.startswith("gpt-") or model.startswith("o1"):
-            return self.get_provider("openai"), model
-        elif model.startswith("claude"):
-            return self.get_provider("anthropic"), model
-        
-        raise ValueError(
-            f"Cannot determine provider for model '{model}'. "
-            "Add it to models.yaml or use a recognized model name prefix."
-        )
+        if ":" not in model:
+            raise ValueError(
+                f"Invalid model format '{model}'. "
+                "Use provider:model format (e.g., 'anthropic:claude-3-5-sonnet-latest', 'lmstudio:llama3.2')."
+            )
+
+        provider_name, model_id = model.split(":", 1)
+
+        if provider_name not in self._provider_configs:
+            available = ", ".join(self._provider_configs.keys()) if self._provider_configs else "none"
+            raise ValueError(
+                f"Provider '{provider_name}' not configured. "
+                f"Available providers: {available}"
+            )
+
+        return self.get_provider(provider_name), model_id
     
     def list_providers(self) -> list[str]:
         """List configured providers."""

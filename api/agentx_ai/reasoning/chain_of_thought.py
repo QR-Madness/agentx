@@ -80,7 +80,7 @@ class ChainOfThought(ReasoningStrategy):
     
     Example usage:
         cot = ChainOfThought(CoTConfig(
-            model="gpt-4-turbo",
+            model="anthropic:claude-3-5-sonnet-latest",
             mode="zero_shot",
         ))
         result = await cot.reason("What is 15% of 80?")

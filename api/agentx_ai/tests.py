@@ -812,8 +812,7 @@ class ExtractionPipelineTest(TestCase):
         """Test extraction configuration is loaded."""
         settings = get_settings()
         self.assertTrue(hasattr(settings, 'extraction_enabled'))
-        self.assertTrue(hasattr(settings, 'extraction_model'))
-        self.assertTrue(hasattr(settings, 'extraction_provider'))
+        self.assertTrue(hasattr(settings, 'extraction_model'))  # provider:model format
         self.assertTrue(hasattr(settings, 'extraction_temperature'))
         self.assertTrue(hasattr(settings, 'entity_types'))
         self.assertTrue(hasattr(settings, 'relationship_types'))

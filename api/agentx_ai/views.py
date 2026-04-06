@@ -374,8 +374,10 @@ async def providers_models(request):
 
             for model_name in provider.list_models():
                 caps = provider.get_capabilities(model_name)
+                # Use provider:model format for the ID so it matches the routing format
+                full_model_id = f"{provider_name}:{model_name}"
                 models.append({
-                    "id": model_name,
+                    "id": full_model_id,
                     "name": model_name,
                     "provider": provider_name,
                     "context_length": caps.context_window,
@@ -425,8 +427,8 @@ def get_agent():
     import os
     from .agent import Agent, AgentConfig
 
-    # Offline-first: default to local Ollama model
-    default_model = os.environ.get("DEFAULT_MODEL", "llama3.2")
+    # Offline-first: default to local model via LM Studio
+    default_model = os.environ.get("DEFAULT_MODEL", "lmstudio:llama3.2")
 
     agent = Agent(AgentConfig(
         default_model=default_model,
@@ -615,6 +617,34 @@ async def agent_chat_stream(request):
         if agent._session_manager is None:
             agent._session_manager = SessionManager()
         session = agent._session_manager.get_or_create(session_id)
+
+        # Cache large user messages in Redis to save context
+        message_for_context = message  # Version sent to LLM (may be truncated)
+        cached_message_key = None
+        if len(message) > agent.config.user_message_cache_threshold:
+            from .agent.user_message_storage import store_user_message
+            import uuid
+
+            message_id = str(uuid.uuid4())[:8]
+            cached_message_key = store_user_message(
+                message_id=message_id,
+                content=message,
+                session_id=session_id,
+                ttl_seconds=agent.config.user_message_cache_ttl,
+            )
+
+            if cached_message_key:
+                # Create truncated version with cache hint for context
+                preview_chars = agent.config.user_message_preview_chars
+                message_for_context = (
+                    f"{message[:preview_chars]}\n\n"
+                    f"[USER MESSAGE CACHED - key: {cached_message_key}]\n"
+                    f"Full message ({len(message):,} chars) stored in cache. "
+                    f"Use read_user_message(key=\"{cached_message_key}\") to retrieve full content."
+                )
+                logger.info(f"Cached large user message: {cached_message_key} ({len(message):,} chars)")
+
+        # Store full message in session for memory/history purposes
         session.add_message(Message(role=MessageRole.USER, content=message))
         context = session.get_messages()[:-1]
 
@@ -654,7 +684,7 @@ async def agent_chat_stream(request):
             if use_memory and agent.memory:
                 try:
                     memory_bundle = agent.memory.remember(
-                        query=message,
+                        query=message,  # Use full message for memory retrieval
                         top_k=agent.config.memory_top_k,
                         time_window_hours=agent.config.memory_time_window_hours,
                     )
@@ -671,7 +701,8 @@ async def agent_chat_stream(request):
 
             if context:
                 messages.extend(context)
-            messages.append(Message(role=MessageRole.USER, content=message))
+            # Use truncated/cached version for the LLM context
+            messages.append(Message(role=MessageRole.USER, content=message_for_context))
 
             # Get MCP tools for function calling
             tools = agent._get_tools_for_provider()
@@ -1491,6 +1522,117 @@ def prompts_templates_tags(request):
         ],
         "total": len(tag_counts),
     })
+
+
+@csrf_exempt
+async def prompts_enhance(request):
+    """
+    Enhance a user prompt using an LLM.
+
+    POST: Enhance the given prompt with optional conversation context
+        Body: {
+            "prompt": "user's original prompt",
+            "context": [{"role": "user/assistant", "content": "..."}]  // Optional: last N messages
+        }
+    Returns: {"enhanced_prompt": "improved version of the prompt"}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        prompt = data.get("prompt", "").strip()
+        context = data.get("context", [])  # Recent conversation messages
+
+        if not prompt:
+            return JsonResponse({'error': 'Missing required field: prompt'}, status=400)
+
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+    # Get enhancement settings from config
+    from .config import get_config_manager
+    config = get_config_manager()
+
+    enabled = config.get("prompt_enhancement.enabled", True)
+    if not enabled:
+        return JsonResponse({'error': 'Prompt enhancement is disabled'}, status=400)
+
+    model = config.get("prompt_enhancement.model", "claude-3-5-haiku-latest")
+    temperature = config.get("prompt_enhancement.temperature", 0.7)
+    max_tokens = config.get("prompt_enhancement.max_tokens", 1000)
+    system_prompt = config.get("prompt_enhancement.system_prompt", "")
+
+    # Default system prompt if not configured
+    if not system_prompt:
+        system_prompt = """You are a prompt enhancement assistant. Your task is to improve the user's prompt to be clearer, more specific, and more effective for an AI assistant to understand and respond to.
+
+Guidelines:
+- Preserve the user's original intent
+- Add relevant context or clarification where helpful
+- Make the prompt more specific and actionable
+- Fix any grammatical issues
+- Keep the enhanced prompt concise but complete
+- Do NOT add unnecessary verbosity or filler phrases
+- Output ONLY the enhanced prompt, nothing else (no explanations, no "Here's the enhanced prompt:", etc.)"""
+
+    try:
+        from .providers.registry import get_registry
+        from .providers.base import Message, MessageRole
+
+        registry = get_registry()
+        provider, model_id = registry.get_provider_for_model(model)
+
+        # Build messages
+        messages = [
+            Message(role=MessageRole.SYSTEM, content=system_prompt)
+        ]
+
+        # Add conversation context if provided
+        if context:
+            context_text = "\n".join([
+                f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
+                for msg in context[-5:]  # Last 5 messages max
+            ])
+            messages.append(Message(
+                role=MessageRole.USER,
+                content=f"Recent conversation context:\n{context_text}\n\nPrompt to enhance:\n{prompt}"
+            ))
+        else:
+            messages.append(Message(
+                role=MessageRole.USER,
+                content=f"Enhance this prompt:\n{prompt}"
+            ))
+
+        # Call the LLM
+        result = await provider.complete(
+            messages,
+            model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        enhanced_prompt = result.content.strip()
+
+        # Log usage for debugging
+        logger.info(f"Prompt enhancement: {len(prompt)} chars → {len(enhanced_prompt)} chars using {model_id}")
+
+        return JsonResponse({
+            "enhanced_prompt": enhanced_prompt,
+            "original_length": len(prompt),
+            "enhanced_length": len(enhanced_prompt),
+            "model": model_id,
+        })
+
+    except ValueError as e:
+        logger.warning(f"Prompt enhancement provider error: {e}")
+        return JsonResponse({'error': f'Provider error: {str(e)}'}, status=500)
+    except Exception as e:
+        logger.error(f"Prompt enhancement failed: {e}")
+        return JsonResponse({'error': f'Enhancement failed: {str(e)}'}, status=500)
 
 
 # ============== Memory Channel Endpoints ==============
@@ -2794,6 +2936,42 @@ def jobs_clear_stuck(request):
 
 # ============== Config Management Endpoint ==============
 
+def config_get(request):
+    """
+    GET /api/config - Get runtime configuration.
+
+    Returns the current runtime configuration excluding sensitive keys.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    from .config import get_config_manager
+    config = get_config_manager()
+
+    # Get all config but exclude sensitive keys
+    all_config = config.get_all()
+
+    # Redact sensitive values
+    safe_config = {}
+    for key, value in all_config.items():
+        if key in ('providers',):
+            # Redact API keys in providers
+            safe_value = {}
+            for provider, settings in (value or {}).items():
+                safe_settings = {}
+                for k, v in (settings or {}).items():
+                    if 'key' in k.lower() and v:
+                        safe_settings[k] = '***' + str(v)[-4:] if len(str(v)) > 4 else '***'
+                    else:
+                        safe_settings[k] = v
+                safe_value[provider] = safe_settings
+            safe_config[key] = safe_value
+        else:
+            safe_config[key] = value
+
+    return JsonResponse(safe_config)
+
+
 @csrf_exempt
 def config_update(request):
     """
@@ -2852,6 +3030,13 @@ def config_update(request):
                 if value is not None:
                     config.set(f"context_limits.{provider_or_model}.{key}", value)
                     updated_keys.append(f"context_limits.{provider_or_model}.{key}")
+
+    # Update prompt enhancement settings
+    prompt_enhancement = data.get("prompt_enhancement", {})
+    for key, value in prompt_enhancement.items():
+        if value is not None:
+            config.set(f"prompt_enhancement.{key}", value)
+            updated_keys.append(f"prompt_enhancement.{key}")
 
     # Persist to disk
     if not config.save():

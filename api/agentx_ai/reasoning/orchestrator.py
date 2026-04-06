@@ -36,8 +36,8 @@ class TaskType(str, Enum):
 @dataclass
 class OrchestratorConfig:
     """Configuration for the reasoning orchestrator."""
-    # Default to local LM Studio model
-    default_model: str = "llama3.2"
+    # Default to local LM Studio model (use provider:model format)
+    default_model: str = "lmstudio:llama3.2"
     
     # Strategy preferences
     strategy_map: dict[TaskType, str] = field(default_factory=lambda: {
@@ -74,7 +74,7 @@ class ReasoningOrchestrator:
     
     Example usage:
         orchestrator = ReasoningOrchestrator(OrchestratorConfig(
-            default_model="gpt-4-turbo",
+            default_model="anthropic:claude-3-5-sonnet-latest",
         ))
         result = await orchestrator.reason("Plan a week-long vacation to Japan")
     """

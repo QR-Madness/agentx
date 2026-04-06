@@ -129,11 +129,11 @@ class TaskPlanner:
     4. Suggests reasoning strategies
     
     Example usage:
-        planner = TaskPlanner("gpt-4-turbo")
+        planner = TaskPlanner("anthropic:claude-3-5-sonnet-latest")
         plan = await planner.plan("Build a web scraper for news articles")
     """
-    
-    def __init__(self, model: str = "gpt-4-turbo"):
+
+    def __init__(self, model: str = "anthropic:claude-3-5-sonnet-latest"):
         self.model = model
         self._registry = None
     

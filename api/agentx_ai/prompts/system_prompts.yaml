@@ -98,7 +98,7 @@ extraction:
 
   # Combined relevance check + extraction in a single call (~75% fewer LLM calls)
   # Variables: {text}
-  # Uses reasoning model (nvidia/nemotron-3-nano) for better two-step analysis
+  # Uses reasoning model (lmstudio:nvidia/nemotron-3-nano) for better two-step analysis
   combined_with_relevance: |
     Analyze this text and extract information if relevant.
 

@@ -42,6 +42,7 @@ urlpatterns = [
     path("prompts/templates/tags", views.prompts_templates_tags, name="prompts-templates-tags"),
     path("prompts/templates/<str:template_id>", views.prompts_template_detail, name="prompts-template-detail"),
     path("prompts/templates/<str:template_id>/reset", views.prompts_template_reset, name="prompts-template-reset"),
+    path("prompts/enhance", views.prompts_enhance, name="prompts-enhance"),
     # Conversation history endpoints
     path("conversations", views.conversations_list, name="conversations-list"),
     path("conversations/<str:conversation_id>/messages", views.conversations_messages, name="conversations-messages"),
@@ -67,6 +68,7 @@ urlpatterns = [
     path("jobs/<str:job_name>/run", views.job_run, name="job-run"),
     path("jobs/<str:job_name>/toggle", views.job_toggle, name="job-toggle"),
     # Config management endpoints
+    path("config", views.config_get, name="config-get"),
     path("config/update", views.config_update, name="config-update"),
     path("config/context-limits", views.context_limits, name="context-limits"),
 ]

@@ -1,5 +1,8 @@
 """
 Anthropic model provider implementation.
+
+Model capabilities use sensible defaults since Anthropic doesn't expose
+a public models API. Users should use full model IDs directly.
 """
 
 import json
@@ -20,121 +23,24 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-# Model capabilities registry
-ANTHROPIC_MODELS = {
-    "claude-3-opus-20240229": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.015,
-        cost_per_1k_output=0.075,
-    ),
-    "claude-3-sonnet-20240229": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-    ),
-    "claude-3-haiku-20240307": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=4096,
-        cost_per_1k_input=0.00025,
-        cost_per_1k_output=0.00125,
-    ),
-    "claude-3-5-sonnet-20241022": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=8192,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-    ),
-    "claude-3-5-haiku-20241022": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=8192,
-        cost_per_1k_input=0.001,
-        cost_per_1k_output=0.005,
-    ),
-    "claude-3-5-sonnet-latest": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=8192,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-    ),
-    "claude-3-5-haiku-latest": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=200000,
-        max_output_tokens=8192,
-        cost_per_1k_input=0.001,
-        cost_per_1k_output=0.005,
-    ),
-    "claude-opus-4-6": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=1000000,
-        max_output_tokens=16384,
-        cost_per_1k_input=0.015,
-        cost_per_1k_output=0.075,
-    ),
-    "claude-sonnet-4-6": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=1000000,
-        max_output_tokens=16384,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-    ),
-    "claude-haiku-4-5-20251001": ModelCapabilities(
-        supports_tools=True,
-        supports_vision=True,
-        supports_streaming=True,
-        supports_json_mode=False,
-        context_window=1000000,
-        max_output_tokens=16384,
-        cost_per_1k_input=0.001,
-        cost_per_1k_output=0.005,
-    ),
-}
+# Default capabilities for Claude models
+DEFAULT_CAPABILITIES = ModelCapabilities(
+    supports_tools=True,
+    supports_vision=True,
+    supports_streaming=True,
+    supports_json_mode=False,
+    context_window=200000,
+    max_output_tokens=8192,
+)
 
-# Aliases for easier reference
-MODEL_ALIASES = {
-    "claude-3-opus": "claude-3-opus-20240229",
-    "claude-3-sonnet": "claude-3-sonnet-20240229",
-    "claude-3-haiku": "claude-3-haiku-20240307",
-    "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
-    "claude-3.5-haiku": "claude-3-5-haiku-20241022",
-    "claude-opus-4": "claude-opus-4-6",
-    "claude-sonnet-4": "claude-sonnet-4-6",
-    "claude-haiku-4": "claude-haiku-4-5-20251001",
-}
+# Known model families for list_models()
+# Users should use full model IDs like "claude-3-5-sonnet-latest"
+KNOWN_MODELS = [
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-latest",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+]
 
 
 class AnthropicProvider(ModelProvider):
@@ -170,11 +76,7 @@ class AnthropicProvider(ModelProvider):
 
             self._client = AsyncAnthropic(**client_kwargs)
         return self._client
-    
-    def _resolve_model(self, model: str) -> str:
-        """Resolve model aliases to full model names."""
-        return MODEL_ALIASES.get(model, model)
-    
+
     def _convert_messages(
         self, messages: list[Message]
     ) -> tuple[Optional[str], list[dict[str, Any]]]:
@@ -286,7 +188,6 @@ class AnthropicProvider(ModelProvider):
         **kwargs: Any,
     ) -> CompletionResult:
         """Generate a completion using Anthropic API."""
-        model = self._resolve_model(model)
         system_prompt, converted_messages = self._convert_messages(messages)
 
         request_params: dict[str, Any] = {
@@ -347,7 +248,6 @@ class AnthropicProvider(ModelProvider):
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using Anthropic API."""
-        model = self._resolve_model(model)
         system_prompt, converted_messages = self._convert_messages(messages)
 
         request_params: dict[str, Any] = {
@@ -394,22 +294,17 @@ class AnthropicProvider(ModelProvider):
             )
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
-        """Get capabilities for an Anthropic model."""
-        model = self._resolve_model(model)
-        if model in ANTHROPIC_MODELS:
-            return ANTHROPIC_MODELS[model]
-        
-        logger.warning(f"Unknown Anthropic model: {model}, using default capabilities")
-        return ModelCapabilities(
-            supports_tools=True,
-            supports_streaming=True,
-            context_window=200000,
-        )
-    
+        """Get capabilities for an Anthropic model.
+
+        Note: Anthropic doesn't expose a public models API, so we return
+        sensible defaults. All Claude 3+ models support tools, vision, streaming.
+        """
+        return DEFAULT_CAPABILITIES
+
     def list_models(self) -> list[str]:
-        """List available Anthropic models (canonical names only, no aliases)."""
-        return list(ANTHROPIC_MODELS.keys())
-    
+        """List known Anthropic models."""
+        return KNOWN_MODELS.copy()
+
     async def health_check(self) -> dict[str, Any]:
         """Check if Anthropic API is reachable."""
         if not self.config.api_key:
@@ -428,7 +323,7 @@ class AnthropicProvider(ModelProvider):
             return {
                 "status": "healthy",
                 "model": response.model,
-                "models": list(ANTHROPIC_MODELS.keys()),
+                "models": KNOWN_MODELS,
             }
         except Exception as e:
             logger.error(f"Anthropic health check failed: {e}")

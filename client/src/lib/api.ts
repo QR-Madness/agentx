@@ -278,6 +278,7 @@ export interface ConfigUpdate {
     lmstudio?: { base_url?: string; timeout?: number };
     anthropic?: { api_key?: string; base_url?: string };
     openai?: { api_key?: string; base_url?: string };
+    openrouter?: { api_key?: string; site_url?: string; app_name?: string };
   };
   preferences?: {
     default_model?: string;
@@ -290,6 +291,13 @@ export interface ConfigUpdate {
     top_p?: number;
     frequency_penalty?: number;
     presence_penalty?: number;
+  };
+  prompt_enhancement?: {
+    enabled?: boolean;
+    model?: string;
+    temperature?: number;
+    max_tokens?: number;
+    system_prompt?: string;
   };
 }
 
@@ -1025,6 +1033,18 @@ class ApiClient {
     return this.request('/api/prompts/templates/tags');
   }
 
+  async enhancePrompt(prompt: string, context?: Array<{ role: string; content: string }>): Promise<{
+    enhanced_prompt: string;
+    original_length: number;
+    enhanced_length: number;
+    model: string;
+  }> {
+    return this.request('/api/prompts/enhance', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, context }),
+    });
+  }
+
   // === Agent Profiles ===
 
   async listAgentProfiles(): Promise<{ profiles: AgentProfile[] }> {
@@ -1206,6 +1226,14 @@ class ApiClient {
   }
 
   // === Config ===
+
+  /**
+   * Get backend configuration.
+   * Returns current runtime config with sensitive values redacted.
+   */
+  async getConfig(): Promise<Record<string, unknown>> {
+    return this.request('/api/config');
+  }
 
   /**
    * Update backend configuration (POST-only for security).

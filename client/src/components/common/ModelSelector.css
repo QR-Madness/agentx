@@ -85,6 +85,54 @@
   color: var(--cosmic-violet);
 }
 
+/* Search input (for providers with many models) */
+.model-selector-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.model-selector-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.model-selector-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  outline: none;
+}
+
+.model-selector-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.model-selector-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--bg-hover);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.model-selector-search-clear:hover {
+  background: var(--bg-void);
+  color: var(--text-primary);
+}
+
 .model-selector-list {
   max-height: 220px;
   overflow-y: auto;
