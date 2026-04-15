@@ -1248,8 +1248,6 @@ class ApiClient {
 
   async getContextLimits(): Promise<{
     lmstudio: { context_window: number; max_output_tokens: number };
-    anthropic: { context_window: number; max_output_tokens: number };
-    openai: { context_window: number; max_output_tokens: number };
     models: Record<string, { context_window: number; max_output_tokens: number }>;
   }> {
     return this.request('/api/config/context-limits');
@@ -1257,8 +1255,6 @@ class ApiClient {
 
   async updateContextLimits(limits: {
     lmstudio?: { context_window?: number; max_output_tokens?: number };
-    anthropic?: { context_window?: number; max_output_tokens?: number };
-    openai?: { context_window?: number; max_output_tokens?: number };
     models?: Record<string, { context_window?: number; max_output_tokens?: number }>;
   }): Promise<{ status: string; updated: string[] }> {
     return this.request('/api/config/context-limits', {

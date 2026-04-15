@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   Upload,
   Layers,
-  Cpu,
   Save,
 } from 'lucide-react';
 import { useServer } from '../../contexts/ServerContext';
@@ -28,8 +27,6 @@ type SettingsSection = 'servers' | 'providers' | 'models' | 'memory' | 'prompt';
 
 interface ContextLimits {
   lmstudio: { context_window: number; max_output_tokens: number };
-  anthropic: { context_window: number; max_output_tokens: number };
-  openai: { context_window: number; max_output_tokens: number };
   models: Record<string, { context_window: number; max_output_tokens: number }>;
 }
 
@@ -177,15 +174,14 @@ export const SettingsPanel: React.FC = () => {
   };
 
   const handleContextLimitChange = (
-    provider: 'lmstudio' | 'anthropic' | 'openai',
     field: 'context_window' | 'max_output_tokens',
     value: number
   ) => {
     if (!contextLimits) return;
     setContextLimits({
       ...contextLimits,
-      [provider]: {
-        ...contextLimits[provider],
+      lmstudio: {
+        ...contextLimits.lmstudio,
         [field]: value,
       },
     });
@@ -554,7 +550,7 @@ export const SettingsPanel: React.FC = () => {
                     Model Context Limits
                   </h2>
                   <p className="section-description">
-                    Configure context window and output token limits per provider
+                    Configure context window and output token limits for local models (LM Studio)
                   </p>
                 </div>
                 <button
@@ -586,7 +582,7 @@ export const SettingsPanel: React.FC = () => {
                 </div>
               ) : contextLimits ? (
                 <div className="providers-list">
-                  {/* LM Studio Limits */}
+                  {/* LM Studio Limits — hardware constraints for local models */}
                   <div className="provider-card card">
                     <div className="provider-header">
                       <div className="provider-info">
@@ -599,7 +595,7 @@ export const SettingsPanel: React.FC = () => {
                             <span className="provider-badge local">Local</span>
                           </h3>
                           <p className="provider-description">
-                            Context limits for local models
+                            Hardware limits for local models (API providers use their own per-model capabilities)
                           </p>
                         </div>
                       </div>
@@ -610,7 +606,7 @@ export const SettingsPanel: React.FC = () => {
                         <input
                           type="number"
                           value={contextLimits.lmstudio.context_window}
-                          onChange={(e) => handleContextLimitChange('lmstudio', 'context_window', parseInt(e.target.value) || 0)}
+                          onChange={(e) => handleContextLimitChange('context_window', parseInt(e.target.value) || 0)}
                           min={1024}
                           max={1000000}
                           step={1024}
@@ -624,113 +620,13 @@ export const SettingsPanel: React.FC = () => {
                         <input
                           type="number"
                           value={contextLimits.lmstudio.max_output_tokens}
-                          onChange={(e) => handleContextLimitChange('lmstudio', 'max_output_tokens', parseInt(e.target.value) || 0)}
+                          onChange={(e) => handleContextLimitChange('max_output_tokens', parseInt(e.target.value) || 0)}
                           min={256}
                           max={131072}
                           step={256}
                         />
                         <span className="form-hint">
                           {(contextLimits.lmstudio.max_output_tokens / 1000).toFixed(0)}k tokens
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Anthropic Limits */}
-                  <div className="provider-card card">
-                    <div className="provider-header">
-                      <div className="provider-info">
-                        <div className="provider-icon cloud">
-                          <Sparkles size={20} />
-                        </div>
-                        <div>
-                          <h3 className="provider-name">
-                            Anthropic
-                            <span className="provider-badge primary">Claude</span>
-                          </h3>
-                          <p className="provider-description">
-                            Context limits for Claude models (up to 1M for Opus)
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="context-limits-form">
-                      <div className="form-group">
-                        <label>Context Window (tokens)</label>
-                        <input
-                          type="number"
-                          value={contextLimits.anthropic.context_window}
-                          onChange={(e) => handleContextLimitChange('anthropic', 'context_window', parseInt(e.target.value) || 0)}
-                          min={1024}
-                          max={1000000}
-                          step={1024}
-                        />
-                        <span className="form-hint">
-                          {(contextLimits.anthropic.context_window / 1000).toFixed(0)}k tokens
-                        </span>
-                      </div>
-                      <div className="form-group">
-                        <label>Max Output Tokens</label>
-                        <input
-                          type="number"
-                          value={contextLimits.anthropic.max_output_tokens}
-                          onChange={(e) => handleContextLimitChange('anthropic', 'max_output_tokens', parseInt(e.target.value) || 0)}
-                          min={256}
-                          max={131072}
-                          step={256}
-                        />
-                        <span className="form-hint">
-                          {(contextLimits.anthropic.max_output_tokens / 1000).toFixed(0)}k tokens
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* OpenAI Limits */}
-                  <div className="provider-card card">
-                    <div className="provider-header">
-                      <div className="provider-info">
-                        <div className="provider-icon experimental">
-                          <Cpu size={20} />
-                        </div>
-                        <div>
-                          <h3 className="provider-name">
-                            OpenAI
-                            <span className="provider-badge experimental">GPT</span>
-                          </h3>
-                          <p className="provider-description">
-                            Context limits for GPT models
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="context-limits-form">
-                      <div className="form-group">
-                        <label>Context Window (tokens)</label>
-                        <input
-                          type="number"
-                          value={contextLimits.openai.context_window}
-                          onChange={(e) => handleContextLimitChange('openai', 'context_window', parseInt(e.target.value) || 0)}
-                          min={1024}
-                          max={128000}
-                          step={1024}
-                        />
-                        <span className="form-hint">
-                          {(contextLimits.openai.context_window / 1000).toFixed(0)}k tokens
-                        </span>
-                      </div>
-                      <div className="form-group">
-                        <label>Max Output Tokens</label>
-                        <input
-                          type="number"
-                          value={contextLimits.openai.max_output_tokens}
-                          onChange={(e) => handleContextLimitChange('openai', 'max_output_tokens', parseInt(e.target.value) || 0)}
-                          min={256}
-                          max={16384}
-                          step={256}
-                        />
-                        <span className="form-hint">
-                          {(contextLimits.openai.max_output_tokens / 1000).toFixed(0)}k tokens
                         </span>
                       </div>
                     </div>

@@ -48,27 +48,20 @@ DEFAULT_CONFIG = {
         "presence_penalty": 0.0,
     },
     "context_limits": {
-        # Provider-level defaults (can be overridden per-model)
+        # Provider-level defaults — only for local providers (LM Studio)
+        # API providers (Anthropic, OpenAI, OpenRouter) use their own per-model capabilities
         "lmstudio": {
             "context_window": 32768,  # Conservative default for local models
             "max_output_tokens": 8192,
         },
-        "anthropic": {
-            "context_window": 200000,  # Claude 3.x default
-            "max_output_tokens": 8192,
-        },
-        "openai": {
-            "context_window": 128000,  # GPT-4 Turbo
-            "max_output_tokens": 4096,
-        },
-        # Model-specific overrides (model_id -> settings)
+        # Model-specific overrides (escape hatch for any provider)
         "models": {
             # Example: "claude-3-opus-20240229": {"context_window": 1000000, "max_output_tokens": 32000}
         },
     },
     "compression": {
         "enabled": True,
-        "model": "anthropic:claude-3-5-haiku-latest",
+        "model": "anthropic:claude-haiku-4-5-20251001",
         "temperature": 0.2,
         "max_tokens": 1000,
         "max_summary_chars": 2000,
@@ -77,14 +70,14 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "threshold_ratio": 0.75,       # Compress when context > 75% of limit
         "preserve_recent_rounds": 2,   # Keep last N tool-call rounds intact
-        "model": "anthropic:claude-3-5-haiku-latest",
+        "model": "anthropic:claude-haiku-4-5-20251001",
         "temperature": 0.2,
         "max_tokens": 1500,
         "max_knowledge_chars": 3000,
     },
     "prompt_enhancement": {
         "enabled": True,
-        "model": "anthropic:claude-3-5-haiku-latest",
+        "model": "anthropic:claude-haiku-4-5-20251001",
         "temperature": 0.7,
         "max_tokens": 1000,
         "system_prompt": "",  # Empty = use default hardcoded prompt
@@ -264,30 +257,36 @@ def get_context_limit_overrides(model_id: str, provider_name: str) -> dict[str, 
     This returns ONLY user-configured overrides. Provider capabilities
     should be used as the primary source, with these overrides applied on top.
 
+    Provider-level overrides only apply to local providers (lmstudio) where
+    hardware constraints may limit context. API providers (anthropic, openai,
+    openrouter) already know their per-model capabilities.
+
     Priority:
     1. Model-specific override in context_limits.models.{model_id}
-    2. Provider override in context_limits.{provider_name}
+    2. Provider override in context_limits.{provider_name} (local providers only)
 
     Args:
         model_id: The model identifier
-        provider_name: The provider name (lmstudio, anthropic, openai)
+        provider_name: The provider name (lmstudio, anthropic, openai, etc.)
 
     Returns:
         Dict with overrides (may be empty, or have context_window and/or max_output_tokens)
     """
     config = get_config_manager()
 
-    # Check for model-specific override first
+    # Check for model-specific override first (works for all providers)
     model_override = config.get(f"context_limits.models.{model_id}")
     if model_override:
         return dict(model_override)
 
-    # Fall back to provider override
-    provider_config = config.get(f"context_limits.{provider_name}")
-    if provider_config:
-        return dict(provider_config)
+    # Provider-level overrides only apply to local providers
+    LOCAL_PROVIDERS = {"lmstudio"}
+    if provider_name in LOCAL_PROVIDERS:
+        provider_config = config.get(f"context_limits.{provider_name}")
+        if provider_config:
+            return dict(provider_config)
 
-    # No overrides configured
+    # No overrides — use provider's own per-model capabilities
     return {}
 
 

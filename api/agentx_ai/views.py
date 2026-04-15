@@ -3031,14 +3031,16 @@ def config_update(request):
             config.set(f"llm_settings.{key}", value)
             updated_keys.append(f"llm_settings.{key}")
 
-    # Update context limits
-    context_limits = data.get("context_limits", {})
-    for provider_or_model, settings in context_limits.items():
+    # Update context limits (only lmstudio provider-level + per-model overrides)
+    context_limits_data = data.get("context_limits", {})
+    for key_or_provider, settings in context_limits_data.items():
         if isinstance(settings, dict):
-            for key, value in settings.items():
-                if value is not None:
-                    config.set(f"context_limits.{provider_or_model}.{key}", value)
-                    updated_keys.append(f"context_limits.{provider_or_model}.{key}")
+            # Only allow lmstudio provider-level; "models" goes through as sub-dict
+            if key_or_provider in ("lmstudio", "models"):
+                for key, value in settings.items():
+                    if value is not None:
+                        config.set(f"context_limits.{key_or_provider}.{key}", value)
+                        updated_keys.append(f"context_limits.{key_or_provider}.{key}")
 
     # Update prompt enhancement settings
     prompt_enhancement = data.get("prompt_enhancement", {})
@@ -3079,11 +3081,13 @@ def context_limits(request):
     GET /api/config/context-limits - Get context limit settings.
     POST /api/config/context-limits - Update context limit settings.
 
+    Provider-level overrides only apply to LM Studio (hardware constraints).
+    API providers use their own per-model capabilities.
+    Per-model overrides are available as an escape hatch for any provider.
+
     Returns/accepts:
     {
         "lmstudio": {"context_window": 32768, "max_output_tokens": 8192},
-        "anthropic": {"context_window": 200000, "max_output_tokens": 8192},
-        "openai": {"context_window": 128000, "max_output_tokens": 4096},
         "models": {
             "model-id": {"context_window": 1000000, "max_output_tokens": 32000}
         }
@@ -3097,10 +3101,7 @@ def context_limits(request):
     config = get_config_manager()
 
     if request.method == 'GET':
-        # Return current context limits (merged with defaults)
         limits = config.get("context_limits") or {}
-
-        # Ensure all providers have defaults
         defaults = DEFAULT_CONFIG.get("context_limits", {})
         result = {
             "lmstudio": {
@@ -3108,18 +3109,6 @@ def context_limits(request):
                     or defaults.get("lmstudio", {}).get("context_window", 32768),
                 "max_output_tokens": limits.get("lmstudio", {}).get("max_output_tokens")
                     or defaults.get("lmstudio", {}).get("max_output_tokens", 8192),
-            },
-            "anthropic": {
-                "context_window": limits.get("anthropic", {}).get("context_window")
-                    or defaults.get("anthropic", {}).get("context_window", 200000),
-                "max_output_tokens": limits.get("anthropic", {}).get("max_output_tokens")
-                    or defaults.get("anthropic", {}).get("max_output_tokens", 8192),
-            },
-            "openai": {
-                "context_window": limits.get("openai", {}).get("context_window")
-                    or defaults.get("openai", {}).get("context_window", 128000),
-                "max_output_tokens": limits.get("openai", {}).get("max_output_tokens")
-                    or defaults.get("openai", {}).get("max_output_tokens", 4096),
             },
             "models": limits.get("models", {}),
         }
@@ -3133,15 +3122,14 @@ def context_limits(request):
 
         updated = []
 
-        # Update provider limits
-        for provider in ("lmstudio", "anthropic", "openai"):
-            if provider in data and isinstance(data[provider], dict):
-                for key in ("context_window", "max_output_tokens"):
-                    if key in data[provider]:
-                        config.set(f"context_limits.{provider}.{key}", data[provider][key])
-                        updated.append(f"context_limits.{provider}.{key}")
+        # Only LM Studio supports provider-level overrides
+        if "lmstudio" in data and isinstance(data["lmstudio"], dict):
+            for key in ("context_window", "max_output_tokens"):
+                if key in data["lmstudio"]:
+                    config.set(f"context_limits.lmstudio.{key}", data["lmstudio"][key])
+                    updated.append(f"context_limits.lmstudio.{key}")
 
-        # Update model-specific limits
+        # Update model-specific limits (escape hatch for any provider)
         if "models" in data and isinstance(data["models"], dict):
             for model_id, settings in data["models"].items():
                 if isinstance(settings, dict):
