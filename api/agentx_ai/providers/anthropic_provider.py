@@ -35,7 +35,7 @@ DEFAULT_CAPABILITIES = ModelCapabilities(
 
 # Per-model capability overrides (prefix-matched, most specific first)
 _MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
-    # Claude 3.0 family — 4096 max output
+    # Claude 3.0 family — 4096 max output (deprecated, but kept for backwards compat)
     ("claude-3-haiku", ModelCapabilities(
         supports_tools=True, supports_vision=True, supports_streaming=True,
         supports_json_mode=False, context_window=200000, max_output_tokens=4096,
@@ -48,7 +48,7 @@ _MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
         supports_tools=True, supports_vision=True, supports_streaming=True,
         supports_json_mode=False, context_window=200000, max_output_tokens=4096,
     )),
-    # Claude 3.5 family — 8192 max output
+    # Claude 3.5 family — 8192 max output (deprecated)
     ("claude-3-5-sonnet", ModelCapabilities(
         supports_tools=True, supports_vision=True, supports_streaming=True,
         supports_json_mode=False, context_window=200000, max_output_tokens=8192,
@@ -57,7 +57,11 @@ _MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
         supports_tools=True, supports_vision=True, supports_streaming=True,
         supports_json_mode=False, context_window=200000, max_output_tokens=8192,
     )),
-    # Claude 4 family — 8192 max output (conservative default)
+    # Claude 4+ family
+    ("claude-haiku-4", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=8192,
+    )),
     ("claude-sonnet-4", ModelCapabilities(
         supports_tools=True, supports_vision=True, supports_streaming=True,
         supports_json_mode=False, context_window=200000, max_output_tokens=8192,
@@ -68,12 +72,13 @@ _MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
     )),
 ]
 
-# Known model families for list_models()
-# Users should use full model IDs like "claude-3-5-sonnet-latest"
+# Known model IDs for list_models()
+# These are the current Anthropic model identifiers as of April 2026
 KNOWN_MODELS = [
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-latest",
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-5-20250514",
     "claude-sonnet-4-6",
+    "claude-opus-4-5-20250514",
     "claude-opus-4-6",
 ]
 
