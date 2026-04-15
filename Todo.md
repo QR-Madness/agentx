@@ -233,17 +233,3 @@
 ## Blockers
 
 None currently.
-
-### ERRORS TO FIX (DELETE ME AFTER)
-
-1.) Plans fail to init: [API] INFO 2026-03-31 17:24:29,283 views Using context limits for lmstudio/nvidia/nemotron-3-nano: window=128,000, max_output=8,192
-[API] DEBUG 2026-03-31 17:24:29,283 views No memory context to emit (bundle: False)
-[API] DEBUG 2026-03-31 17:24:29,283 views Adaptive max_tokens: 8192 (context_window=128000, estimated_input=531, max_output=8192, available=125469)
-[API] ERROR 2026-03-31 17:24:29,283 planner Planning failed: 'coroutine' object has no attribute 'content'
-
-2.) Adaptive Tokens will cause an error on Anthropic saying it's Exceeding Max output tokens for haiku (8192>4096), also some more issues in this log: (context window and max tokens should be scoped to the model): [API] DEBUG 2026-03-31 17:47:20,867 views Adaptive max_tokens: 8192 (context_window=1000000, estimated_input=422, max_output=8192, available=997578)
-Batches: 100%|██████████| 1/1 [00:00<00:00,  7.27it/s]
-[API] DEBUG 2026-03-31 17:47:21,115 planner Created goal 9e1cb937-c2f5-4b88-a36f-59a9408e5a77 for task plan
-[API] INFO 2026-03-31 17:47:21,115 tool_loop Tool round 1: 2 messages, ~422 tokens, limit=32000
-[API] DEBUG 2026-03-31 17:47:21,115 anthropic_provider Anthropic stream: model=claude-3-haiku-20240307, messages=2
-[API] INFO 2026-03-31 17:47:21,115 base [DEBUG LLM REQUEST] Anthropic (stream):

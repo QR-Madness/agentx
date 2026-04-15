@@ -8,6 +8,8 @@ The Agent class orchestrates all AgentX capabilities:
 - Context and memory management
 """
 
+import asyncio
+import concurrent.futures
 import json
 import logging
 import time
@@ -517,7 +519,18 @@ class Agent:
             if self.config.enable_planning:
                 from .planner import TaskPlanner
                 planner = TaskPlanner(self.config.default_model)
-                plan = planner.plan(task, context, memory=self.memory)
+                # plan() is async — bridge to sync context
+                coro = planner.plan(task, context, memory=self.memory)
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                if loop and loop.is_running():
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        future = pool.submit(asyncio.run, coro)
+                        plan = future.result(timeout=30)
+                else:
+                    plan = asyncio.run(coro)
                 trace.append({
                     "phase": "planning",
                     "steps": len(plan.steps) if plan else 0,

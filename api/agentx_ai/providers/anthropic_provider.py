@@ -23,15 +23,50 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-# Default capabilities for Claude models
+# Default capabilities for Claude models (fallback for unknown models)
 DEFAULT_CAPABILITIES = ModelCapabilities(
     supports_tools=True,
     supports_vision=True,
     supports_streaming=True,
     supports_json_mode=False,
     context_window=200000,
-    max_output_tokens=8192,
+    max_output_tokens=4096,
 )
+
+# Per-model capability overrides (prefix-matched, most specific first)
+_MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
+    # Claude 3.0 family — 4096 max output
+    ("claude-3-haiku", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=4096,
+    )),
+    ("claude-3-sonnet", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=4096,
+    )),
+    ("claude-3-opus", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=4096,
+    )),
+    # Claude 3.5 family — 8192 max output
+    ("claude-3-5-sonnet", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=8192,
+    )),
+    ("claude-3-5-haiku", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=8192,
+    )),
+    # Claude 4 family — 8192 max output (conservative default)
+    ("claude-sonnet-4", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=8192,
+    )),
+    ("claude-opus-4", ModelCapabilities(
+        supports_tools=True, supports_vision=True, supports_streaming=True,
+        supports_json_mode=False, context_window=200000, max_output_tokens=8192,
+    )),
+]
 
 # Known model families for list_models()
 # Users should use full model IDs like "claude-3-5-sonnet-latest"
@@ -296,9 +331,13 @@ class AnthropicProvider(ModelProvider):
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for an Anthropic model.
 
-        Note: Anthropic doesn't expose a public models API, so we return
-        sensible defaults. All Claude 3+ models support tools, vision, streaming.
+        Uses prefix matching against known model families to return
+        accurate context_window and max_output_tokens per model.
+        Falls back to conservative defaults for unknown models.
         """
+        for prefix, caps in _MODEL_CAPABILITIES:
+            if model.startswith(prefix):
+                return caps
         return DEFAULT_CAPABILITIES
 
     def list_models(self) -> list[str]:

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from django.http import JsonResponse, StreamingHttpResponse
@@ -358,43 +359,51 @@ async def providers_models(request):
     registry = get_registry()
     provider_filter = request.GET.get('provider')
 
-    models = []
+    # Collect providers to query
+    provider_names = [
+        name for name in registry.list_providers()
+        if not provider_filter or name == provider_filter
+    ]
 
-    for provider_name in registry.list_providers():
-        if provider_filter and provider_name != provider_filter:
-            continue
+    # Fetch models from all providers in parallel with a 5s timeout per provider
+    FETCH_TIMEOUT = 5.0
 
+    async def _fetch_for_provider(provider_name: str) -> list[dict]:
+        """Fetch and format models for a single provider."""
         try:
             provider = registry.get_provider(provider_name)
 
-            # For providers that need to fetch models dynamically (like LM Studio),
-            # call fetch_models first to populate the available models list
             if hasattr(provider, 'fetch_models'):
-                await provider.fetch_models()
+                await asyncio.wait_for(provider.fetch_models(), timeout=FETCH_TIMEOUT)
 
+            result = []
             for model_name in provider.list_models():
                 caps = provider.get_capabilities(model_name)
-                # Use provider:model format for the ID so it matches the routing format
-                full_model_id = f"{provider_name}:{model_name}"
-                models.append({
-                    "id": full_model_id,
+                result.append({
+                    "id": f"{provider_name}:{model_name}",
                     "name": model_name,
                     "provider": provider_name,
                     "context_length": caps.context_window,
-                    "context_window": caps.context_window,  # Legacy field
+                    "context_window": caps.context_window,
+                    "max_output_tokens": caps.max_output_tokens,
                     "supports_tools": caps.supports_tools,
                     "supports_vision": caps.supports_vision,
                     "supports_streaming": caps.supports_streaming,
                     "cost_per_1k_input": caps.cost_per_1k_input,
                     "cost_per_1k_output": caps.cost_per_1k_output,
                 })
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching models from {provider_name} (>{FETCH_TIMEOUT}s)")
+            return []
         except ValueError:
-            # Provider not configured, skip
-            continue
+            return []
         except Exception as e:
-            # Log but don't fail - other providers may still work
             logger.warning(f"Failed to fetch models from {provider_name}: {e}")
-            continue
+            return []
+
+    results = await asyncio.gather(*[_fetch_for_provider(name) for name in provider_names])
+    models = [model for provider_models in results for model in provider_models]
 
     return JsonResponse({
         "models": models,
@@ -794,7 +803,7 @@ async def agent_chat_stream(request):
             # Plan execution: assess complexity and branch
             from .agent.planner import TaskPlanner, TaskComplexity
             planner = TaskPlanner(agent.config.default_model)
-            plan = planner.plan(message, memory=agent.memory if use_memory else None)
+            plan = await planner.plan(message, memory=agent.memory if use_memory else None)
 
             if plan.complexity != TaskComplexity.SIMPLE and len(plan.steps) > 1:
                 # Plan execution path — delegate to PlanExecutor

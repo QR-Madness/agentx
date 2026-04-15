@@ -144,7 +144,7 @@ class TaskPlanner:
             self._registry = get_registry()
         return self._registry
     
-    def plan(
+    async def plan(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -201,7 +201,7 @@ class TaskPlanner:
         ))
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=0.3,

@@ -671,7 +671,7 @@ class ApiClient {
   }
 
   async listModels(): Promise<{ models: ModelInfo[] }> {
-    return this.request('/api/providers/models');
+    return this.request('/api/providers/models', { signal: AbortSignal.timeout(10_000) });
   }
 
   async checkProvidersHealth(): Promise<Record<string, { status: string }>> {
