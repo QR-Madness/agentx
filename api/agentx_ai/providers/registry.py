@@ -107,6 +107,19 @@ class ProviderRegistry:
                     "app_name": os.environ.get("OPENROUTER_APP_NAME", "AgentX"),
                 },
             )
+
+        # Vercel AI Gateway (cloud aggregator - 100+ models, high availability)
+        vercel_key = config.get_provider_value(
+            "vercel", "api_key", env_var="AI_GATEWAY_API_KEY"
+        )
+        if vercel_key:
+            vercel_url = config.get_provider_value(
+                "vercel", "base_url", env_var="AI_GATEWAY_BASE_URL"
+            )
+            self._provider_configs["vercel"] = ProviderConfig(
+                api_key=vercel_key,
+                base_url=vercel_url or "https://ai-gateway.vercel.sh/v1",
+            )
     
     def load_config(self, config_path: Path) -> None:
         """Load configuration from a YAML file."""
@@ -164,6 +177,9 @@ class ProviderRegistry:
         elif name == "openrouter":
             from .openrouter_provider import OpenRouterProvider
             provider = OpenRouterProvider(config)
+        elif name == "vercel":
+            from .vercel_provider import VercelProvider
+            provider = VercelProvider(config)
         else:
             raise ValueError(f"Unknown provider: {name}")
 

@@ -8,6 +8,7 @@
 #   openai:gpt-4-turbo
 #   lmstudio:llama3.2
 #   openrouter:anthropic/claude-3-opus
+#   vercel:anthropic/claude-opus-4.6
 
 providers:
   lmstudio:
@@ -27,6 +28,11 @@ providers:
 
   openrouter:
     api_key_env: OPENROUTER_API_KEY
+    timeout: 60.0
+    max_retries: 3
+
+  vercel:
+    api_key_env: AI_GATEWAY_API_KEY
     timeout: 60.0
     max_retries: 3
 

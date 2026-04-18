@@ -31,6 +31,10 @@ DEFAULT_CONFIG = {
             "api_key": None,
             "base_url": None,
         },
+        "vercel": {
+            "api_key": None,
+            "base_url": None,
+        },
     },
     "models": {
         "defaults": {
