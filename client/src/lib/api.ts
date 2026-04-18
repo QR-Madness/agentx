@@ -5,6 +5,31 @@
 
 import { getActiveServer, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
 
+// === Version Constants ===
+
+/** Client version from package.json (injected by Vite) */
+export const CLIENT_VERSION = __APP_VERSION__;
+
+/** Protocol version - must match server exactly */
+export const CLIENT_PROTOCOL_VERSION = 1;
+
+/**
+ * Compare two semver versions.
+ * Returns: -1 if a < b, 0 if a === b, 1 if a > b
+ */
+export function compareSemver(a: string, b: string): number {
+  const partsA = a.split('.').map(Number);
+  const partsB = b.split('.').map(Number);
+
+  for (let i = 0; i < 3; i++) {
+    const numA = partsA[i] || 0;
+    const numB = partsB[i] || 0;
+    if (numA < numB) return -1;
+    if (numA > numB) return 1;
+  }
+  return 0;
+}
+
 // === Types ===
 
 export interface ApiError {
@@ -49,8 +74,20 @@ export interface AuthChangePasswordRequest {
   new_password: string;
 }
 
+// === Version Types ===
+
+export interface VersionInfo {
+  version: string;
+  protocol_version: number;
+  min_client_version: string;
+}
+
 export interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
+  version?: string;
+  protocol_version?: number;
+  min_client_version?: string;
+  cluster?: string;
   api: { status: string };
   translation?: { status: string; models?: Record<string, unknown> };
   memory?: {
@@ -713,6 +750,12 @@ class ApiClient {
     }
 
     return result;
+  }
+
+  // === Version ===
+
+  async version(): Promise<VersionInfo> {
+    return this.request<VersionInfo>('/api/version', {}, true); // Skip auth for version
   }
 
   // === Authentication ===

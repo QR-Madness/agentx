@@ -27,6 +27,7 @@ class AgentXAuthMiddleware:
     # Routes that don't require authentication
     PUBLIC_ROUTES = [
         "/api/health",
+        "/api/version",
         "/api/auth/login",
         "/api/auth/status",
         "/api/auth/setup",  # Only works when setup is required

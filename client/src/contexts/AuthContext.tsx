@@ -1,9 +1,18 @@
 /**
  * Auth Context - provides authentication state and methods to all components
+ * Also handles API version compatibility checking
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { api, AuthStatusResponse, AuthSessionResponse } from '../lib/api';
+import {
+  api,
+  AuthStatusResponse,
+  AuthSessionResponse,
+  VersionInfo,
+  CLIENT_VERSION,
+  CLIENT_PROTOCOL_VERSION,
+  compareSemver,
+} from '../lib/api';
 import { getAuthToken, saveAuthToken, clearAuthToken } from '../lib/storage';
 
 interface AuthContextValue {
@@ -13,6 +22,11 @@ interface AuthContextValue {
   authRequired: boolean;
   setupRequired: boolean;
   sessionInfo: AuthSessionResponse | null;
+
+  // Version state
+  versionMismatch: boolean;
+  versionInfo: VersionInfo | null;
+  clientVersion: string;
 
   // Auth methods
   login: (username: string, password: string) => Promise<boolean>;
@@ -31,10 +45,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [setupRequired, setSetupRequired] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<AuthSessionResponse | null>(null);
 
+  // Version state
+  const [versionMismatch, setVersionMismatch] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+
   // Check auth status on mount and when server changes
   const checkAuthStatus = useCallback(async () => {
     setIsLoading(true);
     try {
+      // First, check version compatibility
+      try {
+        const verInfo = await api.version();
+        setVersionInfo(verInfo);
+
+        // Check protocol version (must match exactly)
+        if (verInfo.protocol_version !== CLIENT_PROTOCOL_VERSION) {
+          console.error(
+            `Protocol mismatch: client=${CLIENT_PROTOCOL_VERSION}, server=${verInfo.protocol_version}`
+          );
+          setVersionMismatch(true);
+          setIsLoading(false);
+          return;
+        }
+
+        // Check minimum client version
+        if (compareSemver(CLIENT_VERSION, verInfo.min_client_version) < 0) {
+          console.error(
+            `Client outdated: client=${CLIENT_VERSION}, min=${verInfo.min_client_version}`
+          );
+          setVersionMismatch(true);
+          setIsLoading(false);
+          return;
+        }
+
+        setVersionMismatch(false);
+      } catch (error) {
+        // Version endpoint not available (older server) - allow connection
+        console.warn('Version check failed, server may be outdated:', error);
+        setVersionInfo(null);
+        setVersionMismatch(false);
+      }
+
       // Check server's auth requirements
       const status: AuthStatusResponse = await api.authStatus();
       setAuthRequired(status.auth_required);
@@ -172,6 +223,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authRequired,
     setupRequired,
     sessionInfo,
+    versionMismatch,
+    versionInfo,
+    clientVersion: CLIENT_VERSION,
     login,
     logout,
     setupPassword,

@@ -239,3 +239,9 @@ AGENTX_AUTH_ENABLED = os.environ.get('AGENTX_AUTH_ENABLED', 'false').lower() in 
 
 # Session TTL in seconds (default 24 hours)
 AGENTX_SESSION_TTL = int(os.environ.get('AGENTX_SESSION_TTL', 86400))
+
+# =============================================================================
+# Multi-Cluster Deployment (Phase 17.4)
+# =============================================================================
+# Cluster identity - used in logs and health endpoint
+AGENTX_CLUSTER_NAME = os.environ.get('AGENTX_CLUSTER_NAME', 'default')

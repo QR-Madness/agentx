@@ -19,7 +19,7 @@
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 15: Plan Execution | **In Progress** | ~80% |
 | Phase 16: Multi-Agent Conversations | Not Started | 0% |
-| Phase 17: Server Management | **In Progress** | ~70% |
+| Phase 17: Server Management | **Complete** | 100% |
 
 ---
 
@@ -203,32 +203,26 @@
 - [x] `.env.production.example` template for Cloudflare Tunnel deployment
 - [x] Taskfile commands: `auth:setup`, `prod:build`, `prod:up`, `prod:down`, `prod:logs`, etc.
 
-### 17.4 Multi-Cluster Deployment (Experimental)
+### 17.4 Multi-Cluster Deployment
 
 > Goal: Run multiple isolated AgentX clusters on the same host with shared source code
 
-- [ ] Parameterized ports in `docker-compose.yml` via env vars:
-  - `API_PORT` (default: 12319)
-  - `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT` (default: 7474, 7687)
-  - `POSTGRES_PORT` (default: 5432)
-  - `REDIS_PORT` (default: 6379)
-- [ ] Parameterized data directory (`DATA_DIR`) for isolated database volumes
-- [ ] Cluster identity: `AGENTX_CLUSTER_NAME` env var, included in logs and health response
-- [ ] Cross-platform launcher script (`agentx-cluster`) for managing multiple clusters
-- [ ] Deployment documentation for linked config pattern
+- [x] Parameterized ports in `docker-compose.yml` via env vars (`API_PORT`, `NEO4J_*_PORT`, `POSTGRES_PORT`, `REDIS_PORT`)
+- [x] Parameterized data directory (`AGENTX_DATA_DIR`) for isolated database volumes
+- [x] Cluster identity: `AGENTX_CLUSTER_NAME` env var, included in health response
+- [x] Cross-platform launcher scripts (`scripts/agentx-cluster`, `scripts/agentx-cluster.ps1`)
+- [x] Taskfile commands: `cluster:new`, `cluster:up`, `cluster:down`, `cluster:logs`, `cluster:status`, `cluster:auth:setup`
 
 ### 17.5 API Version Matching
 
 > Goal: Ensure client and API are compatible — no compatibility layers, strict version matching
 
-- [ ] `GET /api/version` endpoint returning:
-  - `version`: semver (e.g., "0.17.0")
-  - `protocol_version`: integer (e.g., 1) — bumped on breaking API changes
-  - `min_client_version`: minimum compatible client semver
-- [ ] Include version info in `/api/health` response
-- [ ] Client checks `protocol_version` on connect, shows error if mismatched
-- [ ] Client shows upgrade prompt when `version < min_client_version`
-- [ ] Version constants in `api/agentx_ai/__init__.py` and `client/package.json`
+- [x] Version constants in `api/agentx_ai/__init__.py` (VERSION, PROTOCOL_VERSION, MIN_CLIENT_VERSION)
+- [x] `GET /api/version` endpoint returning version info
+- [x] Version info included in `/api/health` response (version, protocol_version, cluster)
+- [x] Client version injection via Vite (`__APP_VERSION__` from package.json)
+- [x] Client checks `protocol_version` on connect, shows `VersionMismatchPage` if incompatible
+- [x] Client package.json version bumped to 0.17.0
 
 ### 17.6 Deferred Items
 

@@ -3,7 +3,9 @@ import json
 import logging
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 
+from . import VERSION, PROTOCOL_VERSION, MIN_CLIENT_VERSION, get_version_info
 from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
@@ -71,6 +73,10 @@ def health(request):
 
     response = {
         "status": "healthy",
+        "version": VERSION,
+        "protocol_version": PROTOCOL_VERSION,
+        "min_client_version": MIN_CLIENT_VERSION,
+        "cluster": getattr(settings, 'AGENTX_CLUSTER_NAME', 'default'),
         "api": {"status": "healthy"},
         "translation": translation_status,
     }
@@ -86,6 +92,16 @@ def health(request):
         response["storage"] = _get_storage_metrics()
 
     return JsonResponse(response)
+
+
+def version(request):
+    """
+    Version information endpoint.
+
+    Returns API version, protocol version, and minimum client requirements.
+    This endpoint does not require authentication.
+    """
+    return JsonResponse(get_version_info())
 
 
 def _get_storage_metrics() -> dict:

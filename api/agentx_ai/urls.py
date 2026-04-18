@@ -6,6 +6,7 @@ from .auth import views as auth_views
 urlpatterns = [
     path("index", views.index, name="index"),
     path("health", views.health, name="health"),
+    path("version", views.version, name="version"),
     # Authentication endpoints (Phase 17)
     path("auth/status", auth_views.auth_status, name="auth-status"),
     path("auth/login", auth_views.auth_login, name="auth-login"),

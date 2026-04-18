@@ -945,3 +945,68 @@ tasks:
     desc: "Open shell in production API container"
     cmds:
       - docker compose --profile production exec api /bin/bash
+
+# ============================================================================
+# MULTI-CLUSTER DEPLOYMENT (Phase 17.4)
+# ============================================================================
+
+  cluster:new:
+    desc: "Initialize a new cluster directory"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - |
+        if [ -z "{{.CLUSTER_DIR}}" ]; then
+          echo "Usage: task cluster:new CLUSTER_DIR=/path/to/cluster"
+          echo ""
+          echo "Creates a new cluster directory with:"
+          echo "  - .env.production (copy of template)"
+          echo "  - data/ directory structure"
+          exit 1
+        fi
+        mkdir -p "{{.CLUSTER_DIR}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
+        cp .env.production.example "{{.CLUSTER_DIR}}/.env.production"
+        echo "✅ Cluster directory created: {{.CLUSTER_DIR}}"
+        echo ""
+        echo "📋 Next steps:"
+        echo "   1. Edit {{.CLUSTER_DIR}}/.env.production"
+        echo "      - Set unique AGENTX_CLUSTER_NAME"
+        echo "      - Set unique ports (API_PORT, etc.)"
+        echo "      - Generate DJANGO_SECRET_KEY"
+        echo "      - Set database passwords"
+        echo "   2. Start cluster: task cluster:up CLUSTER_DIR={{.CLUSTER_DIR}}"
+
+  cluster:up:
+    desc: "Start a cluster (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" up -d
+
+  cluster:down:
+    desc: "Stop a cluster (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" down
+
+  cluster:logs:
+    desc: "View cluster logs (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" logs -f
+
+  cluster:status:
+    desc: "Show cluster status (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" ps
+
+  cluster:auth:setup:
+    desc: "Set up root password for cluster (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run manage.py setup_auth
