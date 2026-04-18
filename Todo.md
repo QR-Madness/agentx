@@ -19,7 +19,7 @@
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 15: Plan Execution | **In Progress** | ~80% |
 | Phase 16: Multi-Agent Conversations | Not Started | 0% |
-| Phase 17: Server Management | **Complete** | ~95% |
+| Phase 17: Server Management | **In Progress** | ~70% |
 
 ---
 
@@ -190,10 +190,11 @@
 - [x] `AgentXAuthMiddleware` gates all `/api/*` routes (`api/agentx_ai/auth/middleware.py`)
 - [x] Auth endpoints: `/api/auth/status`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, `/api/auth/change-password`, `/api/auth/setup`
 - [x] `setup_auth` management command for CLI password setup (`task auth:setup`)
-- [x] Settings: `AGENTX_AUTH_ENABLED`, `AGENTX_SESSION_TTL`, `AGENTX_AUTH_BYPASS_LOCALHOST`
+- [x] Settings: `AGENTX_AUTH_ENABLED`, `AGENTX_SESSION_TTL`
 - [x] Client `AuthContext` + `AuthPage` for login/setup UI
 - [x] Client API client injects `X-Auth-Token` header, handles 401 responses
 - [x] Auth token stored in localStorage per server
+- [x] Client IP tracking (`request.agentx_client_ip`) for rate-limiting and auditing
 
 ### 17.3 Docker Deployment
 
@@ -202,11 +203,39 @@
 - [x] `.env.production.example` template for Cloudflare Tunnel deployment
 - [x] Taskfile commands: `auth:setup`, `prod:build`, `prod:up`, `prod:down`, `prod:logs`, etc.
 
-### 17.4 Deferred Items
+### 17.4 Multi-Cluster Deployment (Experimental)
+
+> Goal: Run multiple isolated AgentX clusters on the same host with shared source code
+
+- [ ] Parameterized ports in `docker-compose.yml` via env vars:
+  - `API_PORT` (default: 12319)
+  - `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT` (default: 7474, 7687)
+  - `POSTGRES_PORT` (default: 5432)
+  - `REDIS_PORT` (default: 6379)
+- [ ] Parameterized data directory (`DATA_DIR`) for isolated database volumes
+- [ ] Cluster identity: `AGENTX_CLUSTER_NAME` env var, included in logs and health response
+- [ ] Cross-platform launcher script (`agentx-cluster`) for managing multiple clusters
+- [ ] Deployment documentation for linked config pattern
+
+### 17.5 API Version Matching
+
+> Goal: Ensure client and API are compatible — no compatibility layers, strict version matching
+
+- [ ] `GET /api/version` endpoint returning:
+  - `version`: semver (e.g., "0.17.0")
+  - `protocol_version`: integer (e.g., 1) — bumped on breaking API changes
+  - `min_client_version`: minimum compatible client semver
+- [ ] Include version info in `/api/health` response
+- [ ] Client checks `protocol_version` on connect, shows error if mismatched
+- [ ] Client shows upgrade prompt when `version < min_client_version`
+- [ ] Version constants in `api/agentx_ai/__init__.py` and `client/package.json`
+
+### 17.6 Deferred Items
 
 - [ ] iOS/Android builds with Tauri v2 mobile support
 - [ ] Cloudflare Tunnel deployment documentation
-- [ ] Rate limiting on login endpoint
+- [ ] Rate limiting on auth endpoints (login, setup)
+- [ ] Request auditing log (store auth attempts, API calls with client IP)
 
 ---
 
@@ -227,7 +256,6 @@
 - [ ] Cloud sync for memories
 - [ ] Plugin system for additional tools
 - [ ] Voice input/output
-- [ ] Mobile companion app
 - [ ] Offline mode with cached models
 - [ ] Cross-encoder reranking model for retrieval quality
 - [ ] Memory export/import (JSON/SQLite backup)
