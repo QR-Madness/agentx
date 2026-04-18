@@ -231,11 +231,6 @@ AGENTX_MAX_CHAT_LENGTH = int(os.environ.get('AGENTX_MAX_CHAT_LENGTH', 10000))   
 AGENTX_RATE_LIMIT_ENABLED = os.environ.get('AGENTX_RATE_LIMIT_ENABLED', 'false').lower() in ('true', '1', 'yes')
 AGENTX_RATE_LIMIT_DEFAULT = os.environ.get('AGENTX_RATE_LIMIT_DEFAULT', '100/m')  # 100 requests per minute
 
-# API Key authentication (placeholder - not enforced yet)
-# When enabled, non-localhost requests require X-API-Key header
-AGENTX_API_KEY_REQUIRED = os.environ.get('AGENTX_API_KEY_REQUIRED', 'false').lower() in ('true', '1', 'yes')
-AGENTX_API_KEY = os.environ.get('AGENTX_API_KEY', '')
-
 # =============================================================================
 # Session-Based Authentication (Phase 17)
 # =============================================================================

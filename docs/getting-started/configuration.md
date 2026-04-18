@@ -76,9 +76,20 @@ AGENTX_MAX_TEXT_LENGTH=100000        # Max input length (translation)
 AGENTX_MAX_CHAT_LENGTH=10000         # Max input length (chat)
 AGENTX_RATE_LIMIT_ENABLED=false      # Enable rate limiting
 AGENTX_RATE_LIMIT_DEFAULT=100/m      # Default rate limit
-AGENTX_API_KEY_REQUIRED=false        # Require X-API-Key header
-AGENTX_API_KEY=                      # API key value
 ```
+
+### Authentication (Phase 17)
+
+```bash
+AGENTX_AUTH_ENABLED=false            # Enable session-based authentication
+AGENTX_SESSION_TTL=86400             # Session TTL in seconds (default: 24h)
+AGENTX_AUTH_BYPASS_LOCALHOST=true    # Bypass auth for localhost in DEBUG mode
+```
+
+To set up authentication:
+1. Set `AGENTX_AUTH_ENABLED=true`
+2. Run `task auth:setup` to create the root password
+3. Login via the client UI or POST to `/api/auth/login`
 
 ### Client
 
