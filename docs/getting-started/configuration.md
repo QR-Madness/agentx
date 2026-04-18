@@ -83,13 +83,14 @@ AGENTX_RATE_LIMIT_DEFAULT=100/m      # Default rate limit
 ```bash
 AGENTX_AUTH_ENABLED=false            # Enable session-based authentication
 AGENTX_SESSION_TTL=86400             # Session TTL in seconds (default: 24h)
-AGENTX_AUTH_BYPASS_LOCALHOST=true    # Bypass auth for localhost in DEBUG mode
 ```
 
 To set up authentication:
 1. Set `AGENTX_AUTH_ENABLED=true`
 2. Run `task auth:setup` to create the root password
 3. Login via the client UI or POST to `/api/auth/login`
+
+Client IP is tracked on all requests via `request.agentx_client_ip` for rate-limiting and auditing.
 
 ### Client
 

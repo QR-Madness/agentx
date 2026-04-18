@@ -3,7 +3,8 @@
 Gates all /api/* routes behind authentication unless:
 - Auth is disabled via settings
 - Route is in PUBLIC_ROUTES list
-- Request is from localhost and bypass is enabled
+
+Tracks client IP for rate-limiting and request auditing.
 """
 
 import logging
@@ -20,7 +21,7 @@ class AgentXAuthMiddleware:
     Middleware that enforces authentication on API routes.
 
     Checks for X-Auth-Token header and validates session.
-    Attaches user info to request on successful auth.
+    Attaches user info and client IP to request on successful auth.
     """
 
     # Routes that don't require authentication
@@ -52,8 +53,11 @@ class AgentXAuthMiddleware:
 
     def __call__(self, request):
         """Process request through authentication check."""
-        # Check if auth should be bypassed
-        if self._should_bypass(request):
+        # Always track client IP for rate-limiting and auditing
+        request.agentx_client_ip = self._get_client_ip(request)
+
+        # Check if auth is disabled globally
+        if not self._is_auth_enabled():
             return self.get_response(request)
 
         # Check if route is public
@@ -67,11 +71,13 @@ class AgentXAuthMiddleware:
         # Extract token from header
         token = request.headers.get("X-Auth-Token")
         if not token:
+            logger.debug(f"Auth required - no token from {request.agentx_client_ip}")
             return self._unauthorized("Authentication required")
 
         # Validate session
         session_data = self.auth_service.validate_session(token, extend_ttl=True)
         if not session_data:
+            logger.debug(f"Invalid session from {request.agentx_client_ip}")
             return self._unauthorized("Invalid or expired session")
 
         # Attach user info to request
@@ -84,38 +90,25 @@ class AgentXAuthMiddleware:
 
         return self.get_response(request)
 
-    def _should_bypass(self, request) -> bool:
+    def _is_auth_enabled(self) -> bool:
+        """Check if authentication is enabled."""
+        return getattr(settings, 'AGENTX_AUTH_ENABLED', False)
+
+    def _get_client_ip(self, request) -> str:
         """
-        Check if authentication should be bypassed.
+        Extract client IP address from request.
 
-        Bypass conditions:
-        1. AGENTX_AUTH_ENABLED is False
-        2. DEBUG is True AND request is from localhost AND bypass_localhost is enabled
+        Handles X-Forwarded-For header for proxied requests (e.g., Cloudflare).
+        Used for rate-limiting and request auditing.
         """
-        # Check if auth is disabled globally
-        auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', False)
-        if not auth_enabled:
-            return True
-
-        # Check localhost bypass in debug mode
-        bypass_localhost = getattr(settings, 'AGENTX_AUTH_BYPASS_LOCALHOST', True)
-        if settings.DEBUG and bypass_localhost and self._is_localhost(request):
-            return True
-
-        return False
-
-    def _is_localhost(self, request) -> bool:
-        """Check if request is from localhost."""
-        # Check various ways the client IP might be identified
+        # Check X-Forwarded-For for proxied requests
         forwarded_for = request.headers.get("X-Forwarded-For", "")
         if forwarded_for:
-            # Take the first IP in the chain
-            client_ip = forwarded_for.split(",")[0].strip()
-        else:
-            client_ip = request.META.get("REMOTE_ADDR", "")
+            # Take the first IP in the chain (original client)
+            return forwarded_for.split(",")[0].strip()
 
-        localhost_ips = {"127.0.0.1", "::1", "localhost"}
-        return client_ip in localhost_ips
+        # Fall back to REMOTE_ADDR
+        return request.META.get("REMOTE_ADDR", "unknown")
 
     def _is_public_route(self, path: str) -> bool:
         """Check if the path is a public route."""

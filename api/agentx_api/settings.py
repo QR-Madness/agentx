@@ -239,7 +239,3 @@ AGENTX_AUTH_ENABLED = os.environ.get('AGENTX_AUTH_ENABLED', 'false').lower() in 
 
 # Session TTL in seconds (default 24 hours)
 AGENTX_SESSION_TTL = int(os.environ.get('AGENTX_SESSION_TTL', 86400))
-
-# Bypass authentication for localhost requests in DEBUG mode
-# Set to 'false' in production to enforce auth even for local requests
-AGENTX_AUTH_BYPASS_LOCALHOST = os.environ.get('AGENTX_AUTH_BYPASS_LOCALHOST', 'true').lower() in ('true', '1', 'yes')
