@@ -3,14 +3,18 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import { TopBar, PageId } from './TopBar';
 import { StartPage } from '../pages/StartPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { AgentXPage } from '../pages/AgentXPage';
+import { AuthPage } from '../pages/AuthPage';
 import { useConversation } from '../contexts/ConversationContext';
+import { useAuth } from '../contexts/AuthContext';
 import './RootLayout.css';
 
 export function RootLayout() {
+  const { isAuthenticated, authRequired, isLoading } = useAuth();
   const [activePage, setActivePage] = useState<PageId>('start');
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const rafRef = useRef<number | null>(null);
@@ -18,6 +22,9 @@ export function RootLayout() {
 
   // Global keyboard shortcuts
   useEffect(() => {
+    // Skip if not authenticated
+    if (isLoading || (authRequired && !isAuthenticated)) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
@@ -37,7 +44,7 @@ export function RootLayout() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [addTab, closeTab, activeTabId]);
+  }, [addTab, closeTab, activeTabId, isLoading, authRequired, isAuthenticated]);
 
   // Track cursor position for reactive gradient
   useEffect(() => {
@@ -57,6 +64,33 @@ export function RootLayout() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
+
+  // Show loading screen while checking auth
+  if (isLoading) {
+    return (
+      <div className="root-layout root-layout--loading">
+        <div className="loading-spinner">
+          <Loader2 size={32} className="animate-spin" />
+          <span>Connecting...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth page if auth is required and not authenticated
+  if (authRequired && !isAuthenticated) {
+    return (
+      <div
+        className="root-layout"
+        style={{
+          '--cursor-x': `${cursorPos.x}%`,
+          '--cursor-y': `${cursorPos.y}%`,
+        } as React.CSSProperties}
+      >
+        <AuthPage />
+      </div>
+    );
+  }
 
   return (
     <div

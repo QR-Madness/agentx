@@ -1,10 +1,19 @@
 from django.urls import path
 
 from . import views
+from .auth import views as auth_views
 
 urlpatterns = [
     path("index", views.index, name="index"),
     path("health", views.health, name="health"),
+    # Authentication endpoints (Phase 17)
+    path("auth/status", auth_views.auth_status, name="auth-status"),
+    path("auth/login", auth_views.auth_login, name="auth-login"),
+    path("auth/logout", auth_views.auth_logout, name="auth-logout"),
+    path("auth/session", auth_views.auth_session, name="auth-session"),
+    path("auth/change-password", auth_views.auth_change_password, name="auth-change-password"),
+    path("auth/setup", auth_views.auth_setup, name="auth-setup"),
+    # Tool endpoints
     path("tools/language-detect-20", views.language_detect, name="language-detect"),
     path("tools/translate", views.translate, name="translate"),
     # MCP endpoints

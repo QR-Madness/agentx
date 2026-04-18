@@ -19,6 +19,7 @@
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 15: Plan Execution | **In Progress** | ~80% |
 | Phase 16: Multi-Agent Conversations | Not Started | 0% |
+| Phase 17: Server Management | **Complete** | ~95% |
 
 ---
 
@@ -170,10 +171,50 @@
 
 ---
 
+## Phase 17: Seamless Server Management
+
+> **Priority**: HIGH
+> **Goal**: Establish solid server self-hosted deployment and client connection tools.
+> **Depends on**: None
+
+### 17.1 Configuration
+
+- [x] Server holds authoritative config via `ConfigManager` + `/api/config` endpoints
+- [x] Client fetches config on connect, API keys remain client-editable
+
+### 17.2 Authentication
+
+- [x] PostgreSQL `agentx_auth` table for root user with bcrypt password hash
+- [x] Redis session storage with 24h TTL (`agentx:session:{token}`)
+- [x] `AuthService` class (`api/agentx_ai/auth/service.py`)
+- [x] `AgentXAuthMiddleware` gates all `/api/*` routes (`api/agentx_ai/auth/middleware.py`)
+- [x] Auth endpoints: `/api/auth/status`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, `/api/auth/change-password`, `/api/auth/setup`
+- [x] `setup_auth` management command for CLI password setup (`task auth:setup`)
+- [x] Settings: `AGENTX_AUTH_ENABLED`, `AGENTX_SESSION_TTL`, `AGENTX_AUTH_BYPASS_LOCALHOST`
+- [x] Client `AuthContext` + `AuthPage` for login/setup UI
+- [x] Client API client injects `X-Auth-Token` header, handles 401 responses
+- [x] Auth token stored in localStorage per server
+
+### 17.3 Docker Deployment
+
+- [x] `Dockerfile` for API (Python 3.12, uv, uvicorn ASGI)
+- [x] `docker-compose.yml` updated with `api` service (production profile)
+- [x] `.env.production.example` template for Cloudflare Tunnel deployment
+- [x] Taskfile commands: `auth:setup`, `prod:build`, `prod:up`, `prod:down`, `prod:logs`, etc.
+
+### 17.4 Deferred Items
+
+- [ ] iOS/Android builds with Tauri v2 mobile support
+- [ ] Cloudflare Tunnel deployment documentation
+- [ ] Rate limiting on login endpoint
+
+---
+
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete
 
+- [ ] iOS/Android mobile builds with Tauri v2 mobile support
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
 - [ ] Real-time job progress (polling while running)

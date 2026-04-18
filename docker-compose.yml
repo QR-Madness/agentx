@@ -59,6 +59,57 @@ services:
       timeout: 5s
       retries: 5
 
+  # AgentX API Server (Phase 17)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-api
+    ports:
+      - "12319:12319"
+    environment:
+      # Django settings
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-false}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      # Database connections (internal Docker network)
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme}
+      - POSTGRES_URI=postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-agent_memory}
+      - REDIS_URI=redis://redis:6379
+      # Authentication settings
+      - AGENTX_AUTH_ENABLED=${AGENTX_AUTH_ENABLED:-true}
+      - AGENTX_AUTH_BYPASS_LOCALHOST=false
+      - AGENTX_SESSION_TTL=${AGENTX_SESSION_TTL:-86400}
+      # CORS/CSRF for production (Cloudflare Tunnel)
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
+      # Provider API keys
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Embedding configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+    volumes:
+      - ./data:/app/data
+      - ./mcp_servers.json:/app/mcp_servers.json:ro
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12319/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - production
+
   # Optional: Redis GUI
   redis-commander:
     image: rediscommander/redis-commander:latest

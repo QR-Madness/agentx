@@ -724,13 +724,13 @@ tasks:
       - 'echo "Docker:   $(docker --version 2>&1)"'
       - 'echo "Task:     $(task --version 2>&1)"'
       - echo ""
-      - echo "📁 Key Paths:"
+      - 'echo "📁 Key Paths:"'
       - 'echo "  Project root: $(pwd)"'
       - 'echo "  Python venv:  $(which python)"'
       - 'echo "  uv cache:     ${UV_CACHE_DIR:-~/.cache/uv}"'
       - 'echo "  HF cache:     ${HF_HOME:-~/.cache/huggingface}"'
       - echo ""
-      - echo "🔑 API Keys Configured:"
+      - 'echo "🔑 API Keys Configured:"'
       - |
         [ -n "$OPENAI_API_KEY" ] && echo "  ✓ OPENAI_API_KEY" || echo "  ✗ OPENAI_API_KEY"
         [ -n "$ANTHROPIC_API_KEY" ] && echo "  ✓ ANTHROPIC_API_KEY" || echo "  ✗ ANTHROPIC_API_KEY"
@@ -865,3 +865,83 @@ tasks:
     desc: "Shortcut: task check"
     cmds:
       - task: check
+
+# ============================================================================
+# AUTHENTICATION (Phase 17)
+# ============================================================================
+
+  auth:setup:
+    desc: "Set up root user password (interactive)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py setup_auth
+
+  auth:setup:force:
+    desc: "Reset root user password (requires confirmation)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py setup_auth --force
+
+  auth:check:
+    desc: "Check if authentication setup is required"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py setup_auth --check
+
+# ============================================================================
+# PRODUCTION DEPLOYMENT (Phase 17)
+# ============================================================================
+
+  prod:build:
+    desc: "Build production Docker image"
+    cmds:
+      - echo "🔨 Building production Docker image..."
+      - docker compose --profile production build
+      - echo "✅ Build complete!"
+
+  prod:up:
+    desc: "Start full production stack (API + databases)"
+    cmds:
+      - echo "🚀 Starting production stack..."
+      - docker compose --profile production up -d
+      - echo "\n"
+      - echo "✅ Production stack is running!"
+      - 'echo "API: http://localhost:12319"'
+      - echo "\n"
+      - 'echo "📋 Next steps:"'
+      - 'echo "   1. Set root password: task prod:auth:setup"'
+      - 'echo "   2. Configure Cloudflare Tunnel"'
+      - 'echo "   3. Add tunnel domain to CORS/CSRF settings"'
+
+  prod:down:
+    desc: "Stop production stack"
+    cmds:
+      - docker compose --profile production down
+
+  prod:restart:
+    desc: "Restart production API"
+    cmds:
+      - docker compose --profile production restart api
+
+  prod:logs:
+    desc: "Tail production logs"
+    cmds:
+      - docker compose --profile production logs -f api
+
+  prod:status:
+    desc: "Show production stack status"
+    cmds:
+      - docker compose --profile production ps
+
+  prod:auth:setup:
+    desc: "Set up root password in production container"
+    cmds:
+      - docker compose --profile production exec api uv run manage.py setup_auth
+
+  prod:shell:
+    desc: "Open shell in production API container"
+    cmds:
+      - docker compose --profile production exec api /bin/bash

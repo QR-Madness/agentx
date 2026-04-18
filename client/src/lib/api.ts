@@ -3,7 +3,7 @@
  * All calls are routed through the active server configuration
  */
 
-import { getActiveServer, markServerConnected, updateActiveServerMetadata } from './storage';
+import { getActiveServer, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
 
 // === Types ===
 
@@ -11,6 +11,42 @@ export interface ApiError {
   message: string;
   status: number;
   details?: unknown;
+}
+
+// === Auth Types ===
+
+export interface AuthStatusResponse {
+  auth_required: boolean;
+  setup_required: boolean;
+  auth_bypass_active: boolean;
+}
+
+export interface AuthLoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface AuthLoginResponse {
+  token: string;
+  expires_at: string;
+  username: string;
+}
+
+export interface AuthSessionResponse {
+  user_id: number;
+  username: string;
+  session_created: string;
+  last_active: string;
+}
+
+export interface AuthSetupRequest {
+  password: string;
+  confirm_password: string;
+}
+
+export interface AuthChangePasswordRequest {
+  old_password: string;
+  new_password: string;
 }
 
 export interface HealthResponse {
@@ -605,7 +641,8 @@ class ApiClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    skipAuth = false
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     const url = `${baseUrl}${path}`;
@@ -613,6 +650,14 @@ class ApiClient {
     const defaultHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+
+    // Add auth token if available (unless skipped for auth endpoints)
+    if (!skipAuth) {
+      const token = getAuthToken();
+      if (token) {
+        defaultHeaders['X-Auth-Token'] = token;
+      }
+    }
 
     const response = await fetch(url, {
       ...options,
@@ -623,6 +668,12 @@ class ApiClient {
     });
 
     if (!response.ok) {
+      // Handle 401 Unauthorized - clear token and notify app
+      if (response.status === 401) {
+        clearAuthToken();
+        window.dispatchEvent(new CustomEvent('agentx:auth-required'));
+      }
+
       let details: unknown;
       try {
         details = await response.json();
@@ -647,8 +698,8 @@ class ApiClient {
     if (includeMemory) params.set('include_memory', 'true');
     if (includeStorage) params.set('include_storage', 'true');
     const path = params.toString() ? `/api/health?${params}` : '/api/health';
-    const result = await this.request<HealthResponse>(path);
-    
+    const result = await this.request<HealthResponse>(path, {}, true); // Skip auth for health
+
     // Update cache with health status
     const server = getActiveServer();
     if (server) {
@@ -660,8 +711,45 @@ class ApiClient {
         },
       });
     }
-    
+
     return result;
+  }
+
+  // === Authentication ===
+
+  async authStatus(): Promise<AuthStatusResponse> {
+    return this.request<AuthStatusResponse>('/api/auth/status', {}, true);
+  }
+
+  async login(credentials: AuthLoginRequest): Promise<AuthLoginResponse> {
+    return this.request<AuthLoginResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    }, true);
+  }
+
+  async logout(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+    });
+  }
+
+  async authSession(): Promise<AuthSessionResponse> {
+    return this.request<AuthSessionResponse>('/api/auth/session');
+  }
+
+  async authSetup(data: AuthSetupRequest): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, true);
+  }
+
+  async changePassword(data: AuthChangePasswordRequest): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // === Providers ===

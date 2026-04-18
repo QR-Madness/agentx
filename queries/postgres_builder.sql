@@ -258,3 +258,30 @@ BEGIN
     RETURN dropped_count;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================
+-- AGENTX AUTHENTICATION
+-- ============================================
+-- Root user authentication table (single user per server)
+CREATE TABLE IF NOT EXISTS agentx_auth (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL DEFAULT 'root',
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Apply update trigger for agentx_auth
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'agentx_auth_updated'
+    ) THEN
+        CREATE TRIGGER agentx_auth_updated
+            BEFORE UPDATE ON agentx_auth
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at();
+    END IF;
+END $$;

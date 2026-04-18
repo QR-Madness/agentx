@@ -73,6 +73,7 @@ const STORAGE_KEYS = {
   recentChats: (serverId: string) => `agentx:server:${serverId}:recentChats`,
   conversationTabs: (serverId: string) => `agentx:server:${serverId}:tabs`,
   activeTabId: (serverId: string) => `agentx:server:${serverId}:activeTab`,
+  authToken: (serverId: string) => `agentx:server:${serverId}:authToken`,
 } as const;
 
 const MAX_RECENT_CHATS = 10;
@@ -423,4 +424,27 @@ export function saveActiveTabId(tabId: string | null, serverId?: string): void {
   } else {
     localStorage.removeItem(STORAGE_KEYS.activeTabId(id));
   }
+}
+
+// === Authentication Token ===
+
+export function getAuthToken(serverId?: string): string | null {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return null;
+
+  return localStorage.getItem(STORAGE_KEYS.authToken(id));
+}
+
+export function saveAuthToken(token: string, serverId?: string): void {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return;
+
+  localStorage.setItem(STORAGE_KEYS.authToken(id), token);
+}
+
+export function clearAuthToken(serverId?: string): void {
+  const id = serverId ?? getActiveServerId();
+  if (!id) return;
+
+  localStorage.removeItem(STORAGE_KEYS.authToken(id));
 }

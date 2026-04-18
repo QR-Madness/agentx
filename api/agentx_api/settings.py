@@ -68,6 +68,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'agentx_ai.auth.middleware.AgentXAuthMiddleware',  # Phase 17: Session auth
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -234,3 +235,16 @@ AGENTX_RATE_LIMIT_DEFAULT = os.environ.get('AGENTX_RATE_LIMIT_DEFAULT', '100/m')
 # When enabled, non-localhost requests require X-API-Key header
 AGENTX_API_KEY_REQUIRED = os.environ.get('AGENTX_API_KEY_REQUIRED', 'false').lower() in ('true', '1', 'yes')
 AGENTX_API_KEY = os.environ.get('AGENTX_API_KEY', '')
+
+# =============================================================================
+# Session-Based Authentication (Phase 17)
+# =============================================================================
+# Master switch for authentication - when True, all /api/* routes require auth
+AGENTX_AUTH_ENABLED = os.environ.get('AGENTX_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
+
+# Session TTL in seconds (default 24 hours)
+AGENTX_SESSION_TTL = int(os.environ.get('AGENTX_SESSION_TTL', 86400))
+
+# Bypass authentication for localhost requests in DEBUG mode
+# Set to 'false' in production to enforce auth even for local requests
+AGENTX_AUTH_BYPASS_LOCALHOST = os.environ.get('AGENTX_AUTH_BYPASS_LOCALHOST', 'true').lower() in ('true', '1', 'yes')

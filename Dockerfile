@@ -1,0 +1,44 @@
+# AgentX API Server Dockerfile
+# Build: docker build -t agentx-api .
+# Run: docker run -p 12319:12319 --env-file .env agentx-api
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for Python package management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock ./
+
+# Install Python dependencies (production only)
+RUN uv sync --frozen --no-dev
+
+# Copy application code
+COPY api/ ./api/
+COPY queries/ ./queries/
+
+# Create data directory for runtime config
+RUN mkdir -p ./data
+
+# Environment variables
+ENV DJANGO_SETTINGS_MODULE=agentx_api.settings
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Expose API port
+EXPOSE 12319
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:12319/api/health || exit 1
+
+# Run with uvicorn for production (ASGI)
+CMD ["uv", "run", "uvicorn", "agentx_api.asgi:application", "--host", "0.0.0.0", "--port", "12319"]
