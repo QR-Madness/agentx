@@ -179,6 +179,11 @@ export function AuthPage() {
 
   return (
     <div className="auth-page">
+      <span className="auth-particle auth-particle--1" aria-hidden="true" />
+      <span className="auth-particle auth-particle--2" aria-hidden="true" />
+      <span className="auth-particle auth-particle--3" aria-hidden="true" />
+      <span className="auth-particle auth-particle--4" aria-hidden="true" />
+      <span className="auth-particle auth-particle--5" aria-hidden="true" />
       <div className="auth-container">
         <div className="auth-header">
           <div className="auth-logo">

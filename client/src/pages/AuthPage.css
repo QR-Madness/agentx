@@ -7,6 +7,106 @@
   justify-content: center;
   padding: 32px;
   background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Large background orbs — GPU composited, no layout cost */
+.auth-page::before,
+.auth-page::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.auth-page::before {
+  width: 480px;
+  height: 480px;
+  top: -120px;
+  left: -100px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.18) 0%, transparent 70%);
+  animation: auth-orb-drift-a 22s ease-in-out infinite;
+}
+
+.auth-page::after {
+  width: 360px;
+  height: 360px;
+  bottom: -80px;
+  right: -60px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.14) 0%, transparent 70%);
+  animation: auth-orb-drift-b 26s ease-in-out infinite;
+}
+
+@keyframes auth-orb-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(40px, 30px) scale(1.05); }
+  66%       { transform: translate(-20px, 50px) scale(0.97); }
+}
+
+@keyframes auth-orb-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%       { transform: translate(-35px, -25px) scale(1.06); }
+  70%       { transform: translate(25px, -40px) scale(0.95); }
+}
+
+/* Floating particles */
+.auth-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+  animation: auth-particle-float linear infinite;
+}
+
+.auth-particle--1 {
+  width: 4px; height: 4px;
+  top: 20%; left: 15%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.7), transparent);
+  opacity: 0.35;
+  animation-duration: 14s;
+  animation-delay: 0s;
+}
+.auth-particle--2 {
+  width: 3px; height: 3px;
+  top: 65%; left: 80%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.8), transparent);
+  opacity: 0.28;
+  animation-duration: 18s;
+  animation-delay: -4s;
+}
+.auth-particle--3 {
+  width: 5px; height: 5px;
+  top: 40%; left: 88%;
+  background: radial-gradient(circle, rgba(232, 121, 249, 0.7), transparent);
+  opacity: 0.25;
+  animation-duration: 20s;
+  animation-delay: -8s;
+}
+.auth-particle--4 {
+  width: 3px; height: 3px;
+  top: 80%; left: 25%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.6), transparent);
+  opacity: 0.2;
+  animation-duration: 16s;
+  animation-delay: -2s;
+}
+.auth-particle--5 {
+  width: 4px; height: 4px;
+  top: 12%; left: 70%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.6), transparent);
+  opacity: 0.3;
+  animation-duration: 24s;
+  animation-delay: -12s;
+}
+
+@keyframes auth-particle-float {
+  0%   { transform: translateY(0px) translateX(0px); }
+  25%  { transform: translateY(-18px) translateX(8px); }
+  50%  { transform: translateY(-32px) translateX(-6px); }
+  75%  { transform: translateY(-18px) translateX(10px); }
+  100% { transform: translateY(0px) translateX(0px); }
 }
 
 .auth-container {
@@ -18,6 +118,20 @@
   border-radius: 16px;
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-lg);
+  position: relative;
+  z-index: 1;
+  animation: auth-card-in 0.4s ease-out both;
+}
+
+@keyframes auth-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .auth-header {

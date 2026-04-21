@@ -18,9 +18,11 @@ import {
   Languages,
   Brain,
   Zap,
+  LogOut,
 } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useConsolidationStatus } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
 import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
@@ -44,6 +46,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { openModal } = useModal();
   const { tabs } = useConversation();
   const consolidation = useConsolidationStatus();
+  const { authRequired, isAuthenticated, logout } = useAuth();
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
@@ -99,6 +102,11 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       component: 'profileEditor',
       size: 'full',
     });
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    onPageChange('start');
   };
 
   return (
@@ -197,6 +205,19 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         >
           <Settings size={18} />
         </button>
+
+        {authRequired && isAuthenticated && (
+          <>
+            <span className="topbar-divider" />
+            <button
+              className="toolbar-icon toolbar-icon--danger"
+              onClick={handleLogout}
+              title="Sign out"
+            >
+              <LogOut size={18} />
+            </button>
+          </>
+        )}
       </div>
     </header>
   );

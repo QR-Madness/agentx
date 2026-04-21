@@ -222,6 +222,22 @@
   position: relative;
 }
 
+/* === Logout (Danger) Button === */
+.toolbar-icon--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
+}
+
+.topbar-divider {
+  display: block;
+  width: 1px;
+  height: 20px;
+  background: var(--border-subtle, rgba(255,255,255,0.08));
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 /* === Responsive === */
 @media (max-width: 768px) {
   .top-bar {
