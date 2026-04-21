@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Squircle clip (Apple-style superellipse approximation) -->
+    <clipPath id="squircle">
+      <path d="M512,0
+               C 880,0 1024,144 1024,512
+               C 1024,880 880,1024 512,1024
+               C 144,1024 0,880 0,512
+               C 0,144 144,0 512,0 Z"/>
+    </clipPath>
+
+    <!-- Background gradient: deep cosmic violet → indigo → magenta hint -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#1B0B3A"/>
+      <stop offset="45%" stop-color="#3A157B"/>
+      <stop offset="100%" stop-color="#7A1E8A"/>
+    </linearGradient>
+
+    <!-- Soft top-light highlight overlay -->
+    <radialGradient id="topGlow" cx="0.3" cy="0" r="0.9">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Bottom shadow vignette -->
+    <radialGradient id="botShade" cx="0.5" cy="1" r="0.9">
+      <stop offset="0%"  stop-color="#000000" stop-opacity="0.45"/>
+      <stop offset="70%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Center aura behind the mark -->
+    <radialGradient id="aura" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"  stop-color="#7CC9FF" stop-opacity="0.55"/>
+      <stop offset="40%" stop-color="#5B6BFF" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#5B6BFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Primary ribbon gradient (cyan → electric blue) -->
+    <linearGradient id="ribbonA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#9EE7FF"/>
+      <stop offset="45%"  stop-color="#3FB5FF"/>
+      <stop offset="100%" stop-color="#1F4BFF"/>
+    </linearGradient>
+
+    <!-- Secondary ribbon gradient (magenta → violet) -->
+    <linearGradient id="ribbonB" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#FFB1F2"/>
+      <stop offset="45%"  stop-color="#E84BD3"/>
+      <stop offset="100%" stop-color="#6A1FE0"/>
+    </linearGradient>
+
+    <!-- Edge highlight on ribbons -->
+    <linearGradient id="edgeHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Glow for core -->
+    <radialGradient id="coreGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"  stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#BFE9FF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#3FB5FF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="18" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="innerSoft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <!-- Base -->
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#topGlow)"/>
+    <rect width="1024" height="1024" fill="url(#botShade)"/>
+
+    <!-- Subtle orbital rings (abstract, geometric) -->
+    <g fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="1.2">
+      <circle cx="512" cy="512" r="430"/>
+      <circle cx="512" cy="512" r="350"/>
+      <circle cx="512" cy="512" r="270"/>
+    </g>
+    <g fill="none" stroke="#9EE7FF" stroke-opacity="0.10" stroke-width="1.2"
+       transform="rotate(-22 512 512)">
+      <ellipse cx="512" cy="512" rx="420" ry="170"/>
+      <ellipse cx="512" cy="512" rx="340" ry="120"/>
+    </g>
+
+    <!-- Center aura -->
+    <circle cx="512" cy="512" r="360" fill="url(#aura)"/>
+
+    <!-- The X — two interlocking ribbons -->
+    <g filter="url(#softShadow)">
+      <!-- Ribbon A: top-left → bottom-right (cyan/blue) -->
+      <g>
+        <path d="M232,238
+                 C 268,202 332,202 368,238
+                 L 792,662
+                 C 828,698 828,762 792,798
+                 C 756,834 692,834 656,798
+                 L 232,374
+                 C 196,338 196,274 232,238 Z"
+              fill="url(#ribbonA)"/>
+        <!-- glossy edge highlight -->
+        <path d="M250,256
+                 C 280,226 332,226 360,254
+                 L 470,364
+                 L 422,412
+                 L 312,302
+                 C 296,286 282,286 270,298 Z"
+              fill="url(#edgeHi)" opacity="0.55"/>
+      </g>
+
+      <!-- Ribbon B: top-right → bottom-left (magenta/violet) — drawn on top -->
+      <g>
+        <path d="M792,238
+                 C 756,202 692,202 656,238
+                 L 232,662
+                 C 196,698 196,762 232,798
+                 C 268,834 332,834 368,798
+                 L 792,374
+                 C 828,338 828,274 792,238 Z"
+              fill="url(#ribbonB)"/>
+        <!-- glossy edge highlight -->
+        <path d="M774,256
+                 C 744,226 692,226 664,254
+                 L 554,364
+                 L 602,412
+                 L 712,302
+                 C 728,286 742,286 754,298 Z"
+              fill="url(#edgeHi)" opacity="0.55"/>
+      </g>
+    </g>
+
+    <!-- Luminous core where ribbons cross -->
+    <circle cx="512" cy="518" r="120" fill="url(#coreGlow)" opacity="0.95"/>
+    <circle cx="512" cy="518" r="34" fill="#FFFFFF" filter="url(#innerSoft)"/>
+
+    <!-- Tiny accent particles (abstract intelligence motif) -->
+    <g fill="#FFFFFF">
+      <circle cx="312" cy="208" r="3" opacity="0.85"/>
+      <circle cx="752" cy="212" r="2.4" opacity="0.7"/>
+      <circle cx="208" cy="540" r="2.2" opacity="0.55"/>
+      <circle cx="828" cy="612" r="3" opacity="0.8"/>
+      <circle cx="372" cy="852" r="2.4" opacity="0.7"/>
+      <circle cx="660" cy="858" r="2.2" opacity="0.55"/>
+    </g>
+
+    <!-- Top gloss sheen across the squircle -->
+    <path d="M0,0 H1024 V300
+             C 820,420 200,420 0,300 Z"
+          fill="#FFFFFF" opacity="0.06"/>
+  </g>
+
+  <!-- Outer subtle stroke for definition on light backgrounds -->
+  <path d="M512,2
+           C 879,2 1022,145 1022,512
+           C 1022,879 879,1022 512,1022
+           C 145,1022 2,879 2,512
+           C 2,145 145,2 512,2 Z"
+        fill="none" stroke="#000000" stroke-opacity="0.18" stroke-width="2"/>
+</svg>

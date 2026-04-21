@@ -5,13 +5,13 @@
 
 import { getActiveServer, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
 
-// === Version Constants ===
+// === Version Constants (injected from versions.yaml via Vite) ===
 
-/** Client version from package.json (injected by Vite) */
+/** Client version from versions.yaml */
 export const CLIENT_VERSION = __APP_VERSION__;
 
-/** Protocol version - must match server exactly */
-export const CLIENT_PROTOCOL_VERSION = 1;
+/** Protocol version from versions.yaml - must match server exactly */
+export const CLIENT_PROTOCOL_VERSION = __PROTOCOL_VERSION__;
 
 /**
  * Compare two semver versions.

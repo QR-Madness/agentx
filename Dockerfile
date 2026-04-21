@@ -22,8 +22,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # Copy application code
+# Preserve api/ structure so versions.yaml path calculation works
 COPY api/ ./api/
 COPY queries/ ./queries/
+COPY versions.yaml ./versions.yaml
 
 # Create data directory for runtime config
 RUN mkdir -p ./data
@@ -32,6 +34,7 @@ RUN mkdir -p ./data
 ENV DJANGO_SETTINGS_MODULE=agentx_api.settings
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app/api
 
 # Expose API port
 EXPOSE 12319

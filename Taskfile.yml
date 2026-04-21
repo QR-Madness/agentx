@@ -690,6 +690,13 @@ tasks:
         rm -rf "$CACHE_DIR/hub"
         echo "✅ Model cache cleared!"
 
+  warmup:embeddings:
+    desc: "Warm up embedding model (downloads if needed)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py warmup_embeddings --validate
+
 # ============================================================================
 # LOGS & DEBUGGING
 # ============================================================================
@@ -939,7 +946,12 @@ tasks:
   prod:auth:setup:
     desc: "Set up root password in production container"
     cmds:
-      - docker compose --profile production exec api uv run manage.py setup_auth
+      - docker compose --profile production exec api uv run python api/manage.py setup_auth
+
+  prod:warmup:
+    desc: "Warm up embedding model in production container"
+    cmds:
+      - docker compose --profile production exec api uv run python api/manage.py warmup_embeddings --validate
 
   prod:shell:
     desc: "Open shell in production API container"
@@ -1009,4 +1021,11 @@ tasks:
     vars:
       CLUSTER_DIR: '{{.CLUSTER_DIR}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run manage.py setup_auth
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run python api/manage.py setup_auth
+
+  cluster:warmup:
+    desc: "Warm up embedding model for cluster (CLUSTER_DIR=/path/to/cluster)"
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run python api/manage.py warmup_embeddings --validate

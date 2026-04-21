@@ -27,7 +27,7 @@ services:
       - ${AGENTX_DATA_DIR:-./data}/neo4j/logs:/logs
       - ${AGENTX_DATA_DIR:-./data}/neo4j/plugins:/plugins
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7474"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,6 +72,9 @@ services:
     container_name: ${AGENTX_CLUSTER_NAME:-agent}-api
     ports:
       - "${API_PORT:-12319}:12319"
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Allows access to localhost services
+      - "lmstudio:192.168.8.181" # Bypass for LAN LMS host
     environment:
       # Cluster identity
       - AGENTX_CLUSTER_NAME=${AGENTX_CLUSTER_NAME:-default}

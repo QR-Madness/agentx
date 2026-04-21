@@ -167,6 +167,20 @@ else:
 
 CORS_ALLOW_CREDENTIALS = True
 
+# Allow custom headers (X-Auth-Token for authentication)
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-auth-token",  # AgentX authentication header
+]
+
 # Exempt API endpoints from CSRF since we're using CORS
 _csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 if _csrf_origins_env:

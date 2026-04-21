@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import ClassVar, Optional, TypedDict
 
 import bcrypt
+from sqlalchemy import text
 
 from ..kit.agent_memory.connections import RedisConnection, get_postgres_session
 
@@ -81,7 +82,7 @@ class AuthService:
         try:
             with get_postgres_session() as session:
                 result = session.execute(
-                    "SELECT COUNT(*) FROM agentx_auth WHERE password_hash IS NOT NULL"
+                    text("SELECT COUNT(*) FROM agentx_auth WHERE password_hash IS NOT NULL")
                 )
                 count = result.scalar()
                 return count == 0
@@ -115,21 +116,21 @@ class AuthService:
             with get_postgres_session() as session:
                 # Check if root user exists
                 result = session.execute(
-                    "SELECT id FROM agentx_auth WHERE username = 'root'"
+                    text("SELECT id FROM agentx_auth WHERE username = 'root'")
                 )
                 row = result.fetchone()
 
                 if row:
                     # Update existing root user
                     session.execute(
-                        "UPDATE agentx_auth SET password_hash = %s, updated_at = NOW() WHERE username = 'root'",
-                        (password_hash.decode('utf-8'),)
+                        text("UPDATE agentx_auth SET password_hash = :hash, updated_at = NOW() WHERE username = 'root'"),
+                        {"hash": password_hash.decode('utf-8')}
                     )
                 else:
                     # Insert new root user
                     session.execute(
-                        "INSERT INTO agentx_auth (username, password_hash) VALUES ('root', %s)",
-                        (password_hash.decode('utf-8'),)
+                        text("INSERT INTO agentx_auth (username, password_hash) VALUES ('root', :hash)"),
+                        {"hash": password_hash.decode('utf-8')}
                     )
 
                 logger.info("Root password configured successfully")
@@ -160,8 +161,8 @@ class AuthService:
         try:
             with get_postgres_session() as session:
                 result = session.execute(
-                    "SELECT id, password_hash FROM agentx_auth WHERE username = %s AND is_active = TRUE",
-                    (username,)
+                    text("SELECT id, password_hash FROM agentx_auth WHERE username = :username AND is_active = TRUE"),
+                    {"username": username}
                 )
                 row = result.fetchone()
 
@@ -178,8 +179,8 @@ class AuthService:
 
                 # Update last login
                 session.execute(
-                    "UPDATE agentx_auth SET last_login = NOW() WHERE id = %s",
-                    (user_id,)
+                    text("UPDATE agentx_auth SET last_login = NOW() WHERE id = :user_id"),
+                    {"user_id": user_id}
                 )
 
             # Create session token
@@ -280,8 +281,8 @@ class AuthService:
             with get_postgres_session() as session:
                 # Get current password hash
                 result = session.execute(
-                    "SELECT password_hash FROM agentx_auth WHERE id = %s",
-                    (user_id,)
+                    text("SELECT password_hash FROM agentx_auth WHERE id = :user_id"),
+                    {"user_id": user_id}
                 )
                 row = result.fetchone()
 
@@ -300,8 +301,8 @@ class AuthService:
 
                 # Update password
                 session.execute(
-                    "UPDATE agentx_auth SET password_hash = %s, updated_at = NOW() WHERE id = %s",
-                    (new_hash.decode('utf-8'), user_id)
+                    text("UPDATE agentx_auth SET password_hash = :hash, updated_at = NOW() WHERE id = :user_id"),
+                    {"hash": new_hash.decode('utf-8'), "user_id": user_id}
                 )
 
                 logger.info(f"Password changed for user_id: {user_id}")

@@ -237,7 +237,6 @@
 
 > Items to consider after prototype is complete
 
-- [ ] iOS/Android mobile builds with Tauri v2 mobile support
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
 - [ ] Real-time job progress (polling while running)
@@ -260,6 +259,7 @@
 - [ ] Server authentication (single access key per server, session resume on reconnect)
 - [ ] Mobile-responsive breakpoints and touch-friendly gestures
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
+- [ ] Message injection into delegated tasks (agent interdiction tools)
 
 ---
 

@@ -1,0 +1,25 @@
+# AgentX Version Configuration
+# Single source of truth for all version information
+#
+# Both Python (api) and TypeScript (client) read from this file:
+# - Python: api/agentx_ai/__init__.py loads at import time
+# - Vite: client/vite.config.ts loads at build time
+#
+# Note: client/package.json version should be kept in sync for Tauri builds.
+# Run `task version:sync` after updating versions here.
+
+api:
+  # Semantic version of the API
+  version: "0.17.0"
+
+  # Protocol version - integer that increments on breaking API changes
+  # Clients must match this exactly to connect
+  protocol_version: 1
+
+  # Minimum compatible client version (semver)
+  # Clients below this version will be prompted to upgrade
+  min_client_version: "0.17.0"
+
+client:
+  # Client version (should match api.version for releases)
+  version: "0.17.0"

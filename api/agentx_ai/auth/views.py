@@ -85,9 +85,9 @@ def auth_login(request):
             "username": "root"
         }
     """
-    data = parse_json_body(request)
-    if data is None:
-        return json_error("Invalid JSON body", status=400)
+    data, error = parse_json_body(request)
+    if error:
+        return error
 
     username = data.get("username", "").strip()
     password = data.get("password", "")
@@ -209,9 +209,9 @@ def auth_change_password(request):
     if not user:
         return json_error("Not authenticated", status=401)
 
-    data = parse_json_body(request)
-    if data is None:
-        return json_error("Invalid JSON body", status=400)
+    data, error = parse_json_body(request)
+    if error:
+        return error
 
     old_password = data.get("old_password", "")
     new_password = data.get("new_password", "")
@@ -265,9 +265,9 @@ def auth_setup(request):
     if not auth_service.is_setup_required():
         return json_error("Setup already completed", status=403)
 
-    data = parse_json_body(request)
-    if data is None:
-        return json_error("Invalid JSON body", status=400)
+    data, error = parse_json_body(request)
+    if error:
+        return error
 
     password = data.get("password", "")
     confirm_password = data.get("confirm_password", "")

@@ -1,19 +1,29 @@
 """
 AgentX AI - Core API module
 
-Version constants for API compatibility checking.
+Version constants loaded from versions.yaml (single source of truth).
 """
 
-# Semantic version of the API (follows semver)
-VERSION = "0.17.0"
+from pathlib import Path
+import yaml
 
-# Protocol version - integer that increments on breaking API changes
-# Clients must match this exactly to connect
-PROTOCOL_VERSION = 1
+# Load version info from versions.yaml
+_versions_path = Path(__file__).parent.parent.parent / "versions.yaml"
 
-# Minimum compatible client version (semver)
-# Clients below this version will be prompted to upgrade
-MIN_CLIENT_VERSION = "0.17.0"
+try:
+    with open(_versions_path) as f:
+        _versions = yaml.safe_load(f)
+
+    VERSION = _versions["api"]["version"]
+    PROTOCOL_VERSION = _versions["api"]["protocol_version"]
+    MIN_CLIENT_VERSION = _versions["api"]["min_client_version"]
+except (FileNotFoundError, KeyError, TypeError) as e:
+    # Fallback for edge cases (e.g., running from unusual locations)
+    import warnings
+    warnings.warn(f"Could not load versions.yaml: {e}. Using fallback values.")
+    VERSION = "0.0.0"
+    PROTOCOL_VERSION = 0
+    MIN_CLIENT_VERSION = "0.0.0"
 
 # Version tuple for programmatic comparison
 VERSION_INFO = tuple(int(x) for x in VERSION.split('.'))
