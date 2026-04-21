@@ -3,15 +3,132 @@
  */
 
 import { useState, FormEvent } from 'react';
-import { Lock, KeyRound, Eye, EyeOff, Shield, AlertCircle } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, AlertCircle, Server, ChevronDown, ChevronUp, KeyRound, Plus, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useServer } from '../contexts/ServerContext';
 import './AuthPage.css';
+
+const LOGIN_USERNAME = 'root';
+
+function ServerSelector({ disabled }: { disabled: boolean }) {
+  const { servers, activeServer, switchServer, addNewServer } = useServer();
+  const [open, setOpen] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+
+  const handleSelect = (id: string) => {
+    switchServer(id);
+    setOpen(false);
+  };
+
+  const handleAdd = () => {
+    if (!newName.trim() || !newUrl.trim()) return;
+    const server = addNewServer(newName.trim(), newUrl.trim());
+    switchServer(server.id);
+    setNewName('');
+    setNewUrl('');
+    setShowAddForm(false);
+    setOpen(false);
+  };
+
+  return (
+    <div className={`auth-server-selector${disabled ? ' auth-server-selector--disabled' : ''}`}>
+      <label className="auth-server-label">
+        <Server size={13} />
+        Server
+      </label>
+
+      <button
+        type="button"
+        className="auth-server-current"
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <Server size={16} className="auth-server-icon" />
+        <span className="auth-server-current-info">
+          <span className="auth-server-current-name">{activeServer?.name ?? 'No server'}</span>
+          <span className="auth-server-current-url">{activeServer?.url ?? ''}</span>
+        </span>
+        {open ? <ChevronUp size={15} className="auth-server-chevron" /> : <ChevronDown size={15} className="auth-server-chevron" />}
+      </button>
+
+      {open && (
+        <div className="auth-server-dropdown" role="listbox">
+          {servers.map(s => (
+            <button
+              key={s.id}
+              type="button"
+              role="option"
+              aria-selected={s.id === activeServer?.id}
+              className={`auth-server-option${s.id === activeServer?.id ? ' auth-server-option--active' : ''}`}
+              onClick={() => handleSelect(s.id)}
+            >
+              <Server size={14} />
+              <span className="auth-server-option-info">
+                <span className="auth-server-option-name">{s.name}</span>
+                <span className="auth-server-option-url">{s.url}</span>
+              </span>
+            </button>
+          ))}
+
+          {showAddForm ? (
+            <div className="auth-server-add-form">
+              <input
+                type="text"
+                className="auth-server-add-input"
+                placeholder="Server name"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                autoFocus
+              />
+              <input
+                type="text"
+                className="auth-server-add-input"
+                placeholder="URL (e.g. http://localhost:12319)"
+                value={newUrl}
+                onChange={e => setNewUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              />
+              <div className="auth-server-add-actions">
+                <button
+                  type="button"
+                  className="auth-server-add-cancel"
+                  onClick={() => { setShowAddForm(false); setNewName(''); setNewUrl(''); }}
+                >
+                  <X size={13} /> Cancel
+                </button>
+                <button
+                  type="button"
+                  className="auth-server-add-confirm"
+                  onClick={handleAdd}
+                  disabled={!newName.trim() || !newUrl.trim()}
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="auth-server-add-btn"
+              onClick={() => setShowAddForm(true)}
+            >
+              <Plus size={14} /> Add Server
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AuthPage() {
   const { setupRequired, login, setupPassword } = useAuth();
 
   // Form state
-  const [username, setUsername] = useState('root');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -50,7 +167,7 @@ export function AuthPage() {
         // Auth context will update setupRequired
       } else {
         // Login
-        const success = await login(username, password);
+        const success = await login(LOGIN_USERNAME, password);
         if (!success) {
           setError('Invalid username or password');
         }
@@ -77,6 +194,8 @@ export function AuthPage() {
           </p>
         </div>
 
+        <ServerSelector disabled={isSubmitting} />
+
         <form className="auth-form" onSubmit={handleSubmit}>
           {error && (
             <div className="auth-error">
@@ -87,18 +206,10 @@ export function AuthPage() {
 
           {!setupRequired && (
             <div className="auth-field">
-              <label htmlFor="username">Username</label>
-              <div className="auth-input-wrapper">
-                <KeyRound size={18} className="auth-input-icon" />
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="root"
-                  autoComplete="username"
-                  disabled={isSubmitting}
-                />
+              <label>Username</label>
+              <div className="auth-username-static">
+                <KeyRound size={16} className="auth-username-icon" />
+                <span>{LOGIN_USERNAME}</span>
               </div>
             </div>
           )}

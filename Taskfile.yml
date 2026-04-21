@@ -788,6 +788,34 @@ tasks:
 # RELEASE & BUILD
 # ============================================================================
 
+  versions:sync:
+    desc: "Sync version from versions.yaml to all manifests (package.json, Cargo.toml, tauri.conf.json, pyproject.toml)"
+    silent: true
+    platforms: [linux]
+    cmds:
+      - |
+        API_VERSION=$(python3 -c "import yaml; d=yaml.safe_load(open('versions.yaml')); print(d['api']['version'])")
+        CLIENT_VERSION=$(python3 -c "import yaml; d=yaml.safe_load(open('versions.yaml')); print(d['client']['version'])")
+        echo "Syncing versions — api: $API_VERSION  client: $CLIENT_VERSION"
+
+        # pyproject.toml
+        sed -i "s/^version = \".*\"/version = \"$API_VERSION\"/" pyproject.toml
+        echo "  ✓ pyproject.toml"
+
+        # client/package.json
+        sed -i "s/\"version\": \".*\"/\"version\": \"$CLIENT_VERSION\"/" client/package.json
+        echo "  ✓ client/package.json"
+
+        # client/src-tauri/Cargo.toml  (first occurrence = package version)
+        sed -i "0,/^version = \".*\"/s/^version = \".*\"/version = \"$CLIENT_VERSION\"/" client/src-tauri/Cargo.toml
+        echo "  ✓ client/src-tauri/Cargo.toml"
+
+        # client/src-tauri/tauri.conf.json
+        sed -i "s/\"version\": \".*\"/\"version\": \"$CLIENT_VERSION\"/" client/src-tauri/tauri.conf.json
+        echo "  ✓ client/src-tauri/tauri.conf.json"
+
+        echo "Done."
+
   release:build:
     desc: "Build release binaries for current platform"
     cmds:
