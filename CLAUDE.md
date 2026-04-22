@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Notices
+
+- The client is cross-platform, thus UI should be highly responsive and use comfortable hit-regions.
+- Following API & Client v.0.18 (see versions.yaml for version), all changes should be migratable for existing platforms.
+
+
 ## Project Overview
 
 AgentX is an AI Agent Platform combining:

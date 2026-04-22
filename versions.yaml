@@ -7,6 +7,10 @@
 #
 # Note: client/package.json version should be kept in sync for Tauri builds.
 # Run `task version:sync` after updating versions here.
+# ----------------------------------------------
+# Milestone Versions:
+# v.0.18.0 - Alpha Release Version (following versions need to be able to be migrated to later versions; ensure compatibility)
+# ----------------------------------------------
 
 api:
   # Semantic version of the API

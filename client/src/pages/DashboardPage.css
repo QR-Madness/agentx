@@ -163,6 +163,11 @@
   padding: 12px;
 }
 
+.maintenance-banner {
+  padding: 16px 20px;
+  border-radius: 12px;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .status-grid {

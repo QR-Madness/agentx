@@ -74,6 +74,16 @@ export function DashboardPage() {
         </button>
       </div>
 
+      {/* Server Maintenance Schedules  */}
+      <div className="maintenance-banner card glass">
+        <div className="banner-content">
+          <Wrench size={20} className="banner-icon" />
+          <div className="banner-info">
+            <p>Uptime is not guaranteed at 14:00 ±30mins on Tuesdays.</p>
+          </div>
+        </div>
+      </div>
+
       {/* System Status Grid - Row 1 */}
       <div className="status-grid">
         {/* System Health */}
@@ -101,13 +111,13 @@ export function DashboardPage() {
             <div className="detail-row">
               <span className="detail-label">API</span>
               <span className={`detail-status ${health?.api?.status === 'healthy' ? 'online' : 'offline'}`}>
-                {health?.api?.status || 'Unknown'}
+                {health?.api?.status || 'Offline'}
               </span>
             </div>
             <div className="detail-row">
               <span className="detail-label">Translation</span>
               <span className={`detail-status ${health?.translation?.status === 'healthy' ? 'online' : 'offline'}`}>
-                {health?.translation?.status || 'Unknown'}
+                {health?.translation?.status || 'Offline'}
               </span>
             </div>
           </div>
@@ -125,19 +135,19 @@ export function DashboardPage() {
             <div className="detail-row">
               <span className="detail-label">Neo4j</span>
               <span className={`detail-status ${health?.memory?.neo4j?.status === 'healthy' ? 'online' : 'offline'}`}>
-                {health?.memory?.neo4j?.status || 'Unknown'}
+                {health?.memory?.neo4j?.status || 'Offline'}
               </span>
             </div>
             <div className="detail-row">
               <span className="detail-label">PostgreSQL</span>
               <span className={`detail-status ${health?.memory?.postgres?.status === 'healthy' ? 'online' : 'offline'}`}>
-                {health?.memory?.postgres?.status || 'Unknown'}
+                {health?.memory?.postgres?.status || 'Offline'}
               </span>
             </div>
             <div className="detail-row">
               <span className="detail-label">Redis</span>
               <span className={`detail-status ${health?.memory?.redis?.status === 'healthy' ? 'online' : 'offline'}`}>
-                {health?.memory?.redis?.status || 'Unknown'}
+                {health?.memory?.redis?.status || 'Offline'}
               </span>
             </div>
           </div>
@@ -193,7 +203,7 @@ export function DashboardPage() {
                 <div key={server.name} className="detail-row">
                   <span className="detail-label">{server.name}</span>
                   <span className={`detail-status ${server.status === 'connected' ? 'online' : 'offline'}`}>
-                    {server.status}
+                    {server.status || 'Offline'}
                   </span>
                 </div>
               ))
