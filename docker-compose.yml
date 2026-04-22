@@ -27,7 +27,7 @@ services:
       - ${AGENTX_DATA_DIR:-./data}/neo4j/logs:/logs
       - ${AGENTX_DATA_DIR:-./data}/neo4j/plugins:/plugins
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${NEO4J_HTTP_PORT:-7474}/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -74,7 +74,7 @@ services:
       - "${API_PORT:-12319}:12319"
     extra_hosts:
       - "host.docker.internal:host-gateway" # Allows access to localhost services
-      - "lmstudio:192.168.8.181" # Bypass for LAN LMS host
+      # - "lmstudio:<LAN_IP_ADDRESS>" # Bypass for LAN LMS host
     environment:
       # Cluster identity
       - AGENTX_CLUSTER_NAME=${AGENTX_CLUSTER_NAME:-default}
@@ -112,7 +112,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:12319/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT:-12319}/api/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s

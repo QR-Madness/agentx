@@ -1017,11 +1017,20 @@ tasks:
         echo "   2. Start cluster: task cluster:up CLUSTER_DIR={{.CLUSTER_DIR}}"
 
   cluster:up:
+    platforms: [linux]
     desc: "Start a cluster (CLUSTER_DIR=/path/to/cluster)"
     vars:
       CLUSTER_DIR: '{{.CLUSTER_DIR}}'
     cmds:
       - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" up -d
+  
+  cluster:up:windows:
+    desc: "Start a cluster on Windows (CLUSTER_DIR=C:\\path\\to\\cluster)"
+    platforms: [windows]
+    vars:
+      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+    cmds:
+      - '.\\scripts\\agentx-cluster.ps1" "{{.CLUSTER_DIR}}" up -d'
 
   cluster:down:
     desc: "Stop a cluster (CLUSTER_DIR=/path/to/cluster)"
