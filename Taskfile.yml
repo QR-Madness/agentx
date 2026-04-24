@@ -989,80 +989,97 @@ tasks:
 # ============================================================================
 # MULTI-CLUSTER DEPLOYMENT (Phase 17.4)
 # ============================================================================
+# Clusters are stored in clusters/<name>/ with .env and data/ subdirectories.
+# Usage: task cluster:<command> CLUSTER=<name>
 
   cluster:new:
-    desc: "Initialize a new cluster directory"
+    desc: "Create a new cluster (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
       - |
-        if [ -z "{{.CLUSTER_DIR}}" ]; then
-          echo "Usage: task cluster:new CLUSTER_DIR=/path/to/cluster"
+        if [ -z "{{.CLUSTER}}" ]; then
+          echo "Usage: task cluster:new CLUSTER=<name>"
           echo ""
-          echo "Creates a new cluster directory with:"
-          echo "  - .env.production (copy of template)"
+          echo "Creates clusters/<name>/ with:"
+          echo "  - .env (copy of .env.production.example)"
           echo "  - data/ directory structure"
           exit 1
         fi
-        mkdir -p "{{.CLUSTER_DIR}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
-        cp .env.production.example "{{.CLUSTER_DIR}}/.env.production"
-        echo "✅ Cluster directory created: {{.CLUSTER_DIR}}"
+        mkdir -p "clusters/{{.CLUSTER}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
+        cp .env.production.example "clusters/{{.CLUSTER}}/.env"
+        echo "Cluster created: clusters/{{.CLUSTER}}/"
         echo ""
-        echo "📋 Next steps:"
-        echo "   1. Edit {{.CLUSTER_DIR}}/.env.production"
-        echo "      - Set unique AGENTX_CLUSTER_NAME"
-        echo "      - Set unique ports (API_PORT, etc.)"
-        echo "      - Generate DJANGO_SECRET_KEY"
-        echo "      - Set database passwords"
-        echo "   2. Start cluster: task cluster:up CLUSTER_DIR={{.CLUSTER_DIR}}"
+        echo "Next steps:"
+        echo "  1. Edit clusters/{{.CLUSTER}}/.env"
+        echo "     - Set AGENTX_CLUSTER_NAME={{.CLUSTER}}"
+        echo "     - Set AGENTX_DATA_DIR=./clusters/{{.CLUSTER}}/data"
+        echo "     - Set unique ports (API_PORT, etc.)"
+        echo "     - Generate DJANGO_SECRET_KEY"
+        echo "     - Set database passwords"
+        echo "  2. Start: task cluster:up CLUSTER={{.CLUSTER}}"
 
   cluster:up:
-    platforms: [linux]
-    desc: "Start a cluster (CLUSTER_DIR=/path/to/cluster)"
+    desc: "Start a cluster (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" up -d
-  
-  cluster:up:windows:
-    desc: "Start a cluster on Windows (CLUSTER_DIR=C:\\path\\to\\cluster)"
-    platforms: [windows]
-    vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
-    cmds:
-      - '.\\scripts\\agentx-cluster.ps1" "{{.CLUSTER_DIR}}" up -d'
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env up -d
 
   cluster:down:
-    desc: "Stop a cluster (CLUSTER_DIR=/path/to/cluster)"
+    desc: "Stop a cluster (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" down
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env down
 
   cluster:logs:
-    desc: "View cluster logs (CLUSTER_DIR=/path/to/cluster)"
+    desc: "View cluster logs (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" logs -f
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env logs -f
 
   cluster:status:
-    desc: "Show cluster status (CLUSTER_DIR=/path/to/cluster)"
+    desc: "Show cluster status (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" ps
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env ps
+
+  cluster:restart:
+    desc: "Restart a cluster (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env restart
 
   cluster:auth:setup:
-    desc: "Set up root password for cluster (CLUSTER_DIR=/path/to/cluster)"
+    desc: "Set up root password for cluster (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run python api/manage.py setup_auth
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env exec api uv run python api/manage.py setup_auth
 
   cluster:warmup:
-    desc: "Warm up embedding model for cluster (CLUSTER_DIR=/path/to/cluster)"
+    desc: "Warm up embedding model for cluster (CLUSTER=name)"
     vars:
-      CLUSTER_DIR: '{{.CLUSTER_DIR}}'
+      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - ./scripts/agentx-cluster "{{.CLUSTER_DIR}}" exec api uv run python api/manage.py warmup_embeddings --validate
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env exec api uv run python api/manage.py warmup_embeddings --validate
+
+  cluster:list:
+    desc: "List all clusters"
+    cmds:
+      - |
+        echo "Clusters:"
+        for dir in clusters/*/; do
+          if [ -d "$dir" ]; then
+            name=$(basename "$dir")
+            if [ -f "$dir/.env" ]; then
+              echo "  $name (configured)"
+            else
+              echo "  $name (missing .env)"
+            fi
+          fi
+        done 2>/dev/null || echo "  (none)"

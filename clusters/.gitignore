@@ -1,0 +1,14 @@
+# Cluster Management Directory
+# Each subdirectory is a cluster with its own .env and data/
+
+# Ignore all cluster data directories
+*/data/
+
+# But track the .env files (they're templates, not secrets)
+# Users should ensure they don't commit actual secrets
+!*/.env
+
+# Ignore any backup or temp files
+*.bak
+*.tmp
+*~
