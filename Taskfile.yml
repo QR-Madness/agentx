@@ -1024,49 +1024,49 @@ tasks:
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env up -d
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production up -d
 
   cluster:down:
     desc: "Stop a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env down
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production down
 
   cluster:logs:
     desc: "View cluster logs (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env logs -f
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production logs -f
 
   cluster:status:
     desc: "Show cluster status (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env ps
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production ps
 
   cluster:restart:
     desc: "Restart a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env restart
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production restart
 
   cluster:auth:setup:
     desc: "Set up root password for cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env exec api uv run python api/manage.py setup_auth
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py setup_auth
 
   cluster:warmup:
     desc: "Warm up embedding model for cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env exec api uv run python api/manage.py warmup_embeddings --validate
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py warmup_embeddings --validate
 
   cluster:list:
     desc: "List all clusters"
