@@ -17,13 +17,18 @@ import {
   Upload,
   Layers,
   Save,
+  Palette,
+  Moon,
+  Sun,
+  Monitor,
 } from 'lucide-react';
 import { useServer } from '../../contexts/ServerContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { ServerConfig } from '../../lib/storage';
 import { api, ConfigUpdate } from '../../lib/api';
 import '../../styles/SettingsPanel.css';
 
-type SettingsSection = 'servers' | 'providers' | 'models' | 'memory' | 'prompt';
+type SettingsSection = 'servers' | 'providers' | 'models' | 'memory' | 'prompt' | 'appearance';
 
 interface ContextLimits {
   lmstudio: { context_window: number; max_output_tokens: number };
@@ -32,15 +37,16 @@ interface ContextLimits {
 
 export const SettingsPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('servers');
-  const { 
-    servers, 
-    activeServer, 
+  const {
+    servers,
+    activeServer,
     activeMetadata,
-    switchServer, 
-    addNewServer, 
+    switchServer,
+    addNewServer,
     deleteServer,
-    updateMetadata 
+    updateMetadata
   } = useServer();
+  const { preference, setTheme, isDark } = useTheme();
 
   // New server form state
   const [showNewServer, setShowNewServer] = useState(false);
@@ -269,6 +275,7 @@ export const SettingsPanel: React.FC = () => {
     { id: 'models' as const, label: 'Model Limits', icon: <Layers size={18} /> },
     { id: 'prompt' as const, label: 'Prompt Enhancement', icon: <Sparkles size={18} /> },
     { id: 'memory' as const, label: 'Memory', icon: <Database size={18} /> },
+    { id: 'appearance' as const, label: 'Appearance', icon: <Palette size={18} /> },
   ];
 
   return (
@@ -836,6 +843,80 @@ export const SettingsPanel: React.FC = () => {
                   <Trash2 size={16} />
                   Clear Local Data
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Appearance Section */}
+          {activeSection === 'appearance' && (
+            <div className="settings-section fade-in">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">
+                    <Palette size={20} className="section-title-icon" />
+                    Appearance
+                  </h2>
+                  <p className="section-description">
+                    Customize the look and feel of AgentX
+                  </p>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3 className="subsection-title">Theme</h3>
+                <p className="subsection-description">
+                  Choose your preferred color scheme
+                </p>
+
+                <div className="theme-options">
+                  <button
+                    className={`theme-option ${preference === 'cosmic' ? 'active' : ''}`}
+                    onClick={() => setTheme('cosmic')}
+                  >
+                    <div className="theme-option-icon cosmic">
+                      <Moon size={24} />
+                    </div>
+                    <div className="theme-option-info">
+                      <span className="theme-option-name">Cosmic Dark</span>
+                      <span className="theme-option-desc">Deep space aesthetic with purple accents</span>
+                    </div>
+                    {preference === 'cosmic' && <Check size={18} className="theme-check" />}
+                  </button>
+
+                  <button
+                    className={`theme-option ${preference === 'light' ? 'active' : ''}`}
+                    onClick={() => setTheme('light')}
+                  >
+                    <div className="theme-option-icon light">
+                      <Sun size={24} />
+                    </div>
+                    <div className="theme-option-info">
+                      <span className="theme-option-name">Light</span>
+                      <span className="theme-option-desc">Clean, bright interface for daytime use</span>
+                    </div>
+                    {preference === 'light' && <Check size={18} className="theme-check" />}
+                  </button>
+
+                  <button
+                    className={`theme-option ${preference === 'system' ? 'active' : ''}`}
+                    onClick={() => setTheme('system')}
+                  >
+                    <div className="theme-option-icon system">
+                      <Monitor size={24} />
+                    </div>
+                    <div className="theme-option-info">
+                      <span className="theme-option-name">System</span>
+                      <span className="theme-option-desc">Follow your operating system preference</span>
+                    </div>
+                    {preference === 'system' && <Check size={18} className="theme-check" />}
+                  </button>
+                </div>
+
+                {preference === 'system' && (
+                  <p className="theme-system-hint">
+                    Currently using: <strong>{isDark ? 'Cosmic Dark' : 'Light'}</strong>
+                  </p>
+                )}
               </div>
             </div>
           )}

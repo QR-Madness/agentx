@@ -44,6 +44,10 @@ interface ConversationContextValue {
   renameTab: (id: string, title: string) => void;
   updateTab: (id: string, updates: Partial<Omit<ConversationTab, 'id'>>) => void;
 
+  // Per-tab agent profile selection
+  setTabProfile: (tabId: string, profileId: string | null) => void;
+  setActiveTabProfile: (profileId: string | null) => void;
+
   // Server-side conversation history
   serverConversations: ConversationSummary[];
   isLoadingHistory: boolean;
@@ -257,6 +261,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     updateTab(activeTabId, { sessionId });
   }, [activeTabId, updateTab]);
 
+  // Set the agent profile for a specific tab
+  const setTabProfile = useCallback((tabId: string, profileId: string | null) => {
+    updateTab(tabId, { profileId });
+  }, [updateTab]);
+
+  // Set the agent profile for the active tab
+  const setActiveTabProfile = useCallback((profileId: string | null) => {
+    if (!activeTabId) return;
+    updateTab(activeTabId, { profileId });
+  }, [activeTabId, updateTab]);
+
   // Fetch conversation history from server
   const refreshHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -401,6 +416,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         switchTab,
         renameTab,
         updateTab,
+        setTabProfile,
+        setActiveTabProfile,
         serverConversations,
         isLoadingHistory,
         restoreConversation,

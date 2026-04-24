@@ -1750,9 +1750,15 @@ class ApiClient {
     const baseUrl = this.getBaseUrl();
     const controller = new AbortController();
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getAuthToken();
+    if (token) {
+      headers['X-Auth-Token'] = token;
+    }
+
     fetch(`${baseUrl}/api/agent/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(request),
       signal: controller.signal,
     })

@@ -86,7 +86,12 @@ export function ChatPanel() {
     setStreaming,
     setSessionId,
   } = useConversation();
-  const { activeProfile, getAgentName } = useAgentProfile();
+  const { activeProfile, getAgentName, getProfileById } = useAgentProfile();
+
+  // Get the profile for the current tab (falls back to global activeProfile)
+  const tabProfile = activeTab?.profileId
+    ? getProfileById(activeTab.profileId)
+    : activeProfile;
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -153,7 +158,7 @@ export function ChatPanel() {
         {
           message: messageText,
           session_id: activeTab.sessionId || undefined,
-          agent_profile_id: activeProfile?.id,
+          agent_profile_id: tabProfile?.id,
           use_memory: useMemory,
         },
         {

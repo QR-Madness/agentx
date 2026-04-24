@@ -34,6 +34,7 @@ interface AgentProfileContextValue {
 
   // Convenience getters
   getAgentName: () => string;
+  getProfileById: (id: string) => AgentProfile | null;
 }
 
 const AgentProfileContext = createContext<AgentProfileContextValue | null>(null);
@@ -174,6 +175,10 @@ export function AgentProfileProvider({ children }: { children: ReactNode }) {
     return activeProfile?.name ?? 'AgentX';
   }, [activeProfile]);
 
+  const getProfileById = useCallback((id: string): AgentProfile | null => {
+    return profiles.find(p => p.id === id) ?? null;
+  }, [profiles]);
+
   return (
     <AgentProfileContext.Provider
       value={{
@@ -188,6 +193,7 @@ export function AgentProfileProvider({ children }: { children: ReactNode }) {
         setDefaultProfile,
         refresh: loadProfiles,
         getAgentName,
+        getProfileById,
       }}
     >
       {children}

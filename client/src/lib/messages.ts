@@ -10,6 +10,7 @@ export type MessageType =
   | 'tool_result'
   | 'memory_injection'
   | 'plan_execution'
+  | 'agent_handoff'
   | 'error';
 
 interface BaseMessage {
@@ -22,6 +23,8 @@ export interface UserMessage extends BaseMessage {
   type: 'user';
   content: string;
   editedAt?: string;
+  /** Agent IDs mentioned via @ in the message (for multi-agent routing) */
+  targetAgentIds?: string[];
 }
 
 export interface AssistantMessage extends BaseMessage {
@@ -102,6 +105,20 @@ export interface ErrorMessage extends BaseMessage {
   recoverable: boolean;
 }
 
+/** Agent handoff message - displayed when an agent transfers conversation to another */
+export interface AgentHandoffMessage extends BaseMessage {
+  type: 'agent_handoff';
+  fromAgent: {
+    id: string;
+    name: string;
+  };
+  toAgent: {
+    id: string;
+    name: string;
+  };
+  reason?: string;
+}
+
 /** Union of all conversation message types */
 export type ConversationMessage =
   | UserMessage
@@ -110,6 +127,7 @@ export type ConversationMessage =
   | ToolResultMessage
   | MemoryInjectionMessage
   | PlanExecutionMessage
+  | AgentHandoffMessage
   | SystemMessage
   | ErrorMessage;
 
@@ -149,4 +167,8 @@ export function isSystemMessage(msg: ConversationMessage): msg is SystemMessage 
 
 export function isErrorMessage(msg: ConversationMessage): msg is ErrorMessage {
   return msg.type === 'error';
+}
+
+export function isAgentHandoffMessage(msg: ConversationMessage): msg is AgentHandoffMessage {
+  return msg.type === 'agent_handoff';
 }
