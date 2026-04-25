@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from ..utils.responses import json_error, json_success, parse_json_body, require_methods
+from .middleware import is_auth_bypass_active
 from .service import get_auth_service
 
 logger = logging.getLogger(__name__)
@@ -36,17 +37,8 @@ def auth_status(request):
         }
     """
     auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', False)
-    bypass_localhost = getattr(settings, 'AGENTX_AUTH_BYPASS_LOCALHOST', True)
-
-    # Check if bypass is currently active
-    bypass_active = False
-    if not auth_enabled:
-        bypass_active = True
-    elif settings.DEBUG and bypass_localhost:
-        # Check if request is from localhost
-        client_ip = _get_client_ip(request)
-        if client_ip in {"127.0.0.1", "::1", "localhost"}:
-            bypass_active = True
+    client_ip = _get_client_ip(request)
+    bypass_active = is_auth_bypass_active(client_ip)
 
     # Check if setup is required
     setup_required = False

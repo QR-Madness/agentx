@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   api,
   HealthResponse,
@@ -451,6 +452,7 @@ export function useConsolidate() {
 }
 
 export function useConsolidationSettings() {
+  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
   const [settings, setSettings] = useState<ConsolidationSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -470,8 +472,10 @@ export function useConsolidationSettings() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (authRequired && !isAuthenticated) return;
     fetchSettings();
-  }, [fetchSettings]);
+  }, [fetchSettings, authLoading, authRequired, isAuthenticated]);
 
   const updateSettings = useCallback(async (updates: Partial<ConsolidationSettings>) => {
     setSaving(true);
@@ -493,6 +497,7 @@ export function useConsolidationSettings() {
 }
 
 export function useRecallSettings() {
+  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
   const [settings, setSettings] = useState<RecallSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -512,8 +517,10 @@ export function useRecallSettings() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (authRequired && !isAuthenticated) return;
     fetchSettings();
-  }, [fetchSettings]);
+  }, [fetchSettings, authLoading, authRequired, isAuthenticated]);
 
   const updateSettings = useCallback(async (updates: Partial<RecallSettings>) => {
     setSaving(true);

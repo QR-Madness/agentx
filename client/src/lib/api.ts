@@ -3,7 +3,7 @@
  * All calls are routed through the active server configuration
  */
 
-import { getActiveServer, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
+import { getActiveServer, getActiveServerId, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
 
 // === Version Constants (injected from versions.yaml via Vite) ===
 
@@ -666,6 +666,17 @@ export interface RecallSettings {
 
 // === API Client ===
 
+/**
+ * Whether the active server requires authentication. Set by AuthContext
+ * after /api/auth/status resolves so request() can decide whether a missing
+ * token is fatal (auth enabled) or fine (auth disabled — server ignores it).
+ */
+let _authRequired = false;
+
+export function setAuthRequired(value: boolean): void {
+  _authRequired = value;
+}
+
 class ApiClient {
   private getBaseUrl(): string {
     const server = getActiveServer();
@@ -693,7 +704,32 @@ class ApiClient {
       const token = getAuthToken();
       if (token) {
         defaultHeaders['X-Auth-Token'] = token;
+      } else if (_authRequired) {
+        // Diagnostic: surface where the token went missing so we can tell apart
+        // "no active server" vs "active server but no token" vs "raw fetch bypassing this path".
+        // Remove once root cause of memory-settings 401 cascade is confirmed.
+        const activeId = getActiveServerId();
+        console.warn('[api] no auth token at request time', {
+          path,
+          method: options.method ?? 'GET',
+          activeServerId: activeId,
+          hasActiveServer: !!getActiveServer(),
+          knownServerKeys: Object.keys(localStorage).filter(k => k.startsWith('agentx:server:')),
+        });
+
+        // Fail fast only when the server is known to require auth — otherwise the
+        // request would have been served fine without a token. Dispatching
+        // auth-required lets ModalPortal close any open modals so their hooks
+        // stop firing further unauthenticated requests.
+        window.dispatchEvent(new CustomEvent('agentx:auth-required'));
+        throw {
+          message: 'Auth required: no token available',
+          status: 401,
+          details: { path, reason: 'missing-token' },
+        } as ApiError;
       }
+      // If auth is not required server-side, fall through and let the request fire
+      // without a token — the server will accept it.
     }
 
     const response = await fetch(url, {

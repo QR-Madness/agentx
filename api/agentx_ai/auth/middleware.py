@@ -2,6 +2,7 @@
 
 Gates all /api/* routes behind authentication unless:
 - Auth is disabled via settings
+- Localhost bypass is active in DEBUG mode (mirrors /api/auth/status)
 - Route is in PUBLIC_ROUTES list
 
 Tracks client IP for rate-limiting and request auditing.
@@ -14,6 +15,27 @@ from django.http import JsonResponse
 from .service import get_auth_service
 
 logger = logging.getLogger(__name__)
+
+LOCALHOST_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def is_auth_bypass_active(client_ip: str) -> bool:
+    """
+    Whether auth should be bypassed for this client.
+
+    Must match the logic in auth/views.py::auth_status so the client and
+    middleware agree on whether a token is required. If they disagree, the
+    client renders the app while every protected endpoint 401s.
+    """
+    auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', False)
+    if not auth_enabled:
+        return True
+
+    bypass_localhost = getattr(settings, 'AGENTX_AUTH_BYPASS_LOCALHOST', True)
+    if settings.DEBUG and bypass_localhost and client_ip in LOCALHOST_IPS:
+        return True
+
+    return False
 
 
 class AgentXAuthMiddleware:
@@ -57,8 +79,9 @@ class AgentXAuthMiddleware:
         # Always track client IP for rate-limiting and auditing
         request.agentx_client_ip = self._get_client_ip(request)
 
-        # Check if auth is disabled globally
-        if not self._is_auth_enabled():
+        # Honor the same bypass logic that /api/auth/status reports — auth
+        # disabled globally, or localhost bypass active in DEBUG mode.
+        if is_auth_bypass_active(request.agentx_client_ip):
             return self.get_response(request)
 
         # Check if route is public

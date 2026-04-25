@@ -12,6 +12,7 @@ import {
   CLIENT_VERSION,
   CLIENT_PROTOCOL_VERSION,
   compareSemver,
+  setAuthRequired as setApiAuthRequired,
 } from '../lib/api';
 import { getAuthToken, saveAuthToken, clearAuthToken } from '../lib/storage';
 
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Check server's auth requirements
       const status: AuthStatusResponse = await api.authStatus();
       setAuthRequired(status.auth_required);
+      setApiAuthRequired(status.auth_required);
       setSetupRequired(status.setup_required);
 
       // If auth not required (disabled or bypass active), we're "authenticated"
@@ -131,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Server unreachable - assume no auth required for now
       console.error('Failed to check auth status:', error);
       setAuthRequired(false);
+      setApiAuthRequired(false);
       setIsAuthenticated(true);
     } finally {
       setIsLoading(false);
