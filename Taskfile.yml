@@ -283,6 +283,30 @@ tasks:
     cmds:
       - uv run python api/manage.py init_memory_schema --verify
 
+  db:migrate:
+    desc: "Apply pending schema migrations (PostgreSQL + Neo4j)"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py migrate_schema --verbose
+
+  db:migrate:status:
+    desc: "Show current schema versions and list pending migrations"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py migrate_schema --status
+
+  db:migrate:dry-run:
+    desc: "Preview pending migrations without applying"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py migrate_schema --dry-run
+
   memory:worker:
     desc: "Start background memory consolidation worker"
     deps: [db:up]

@@ -112,6 +112,17 @@ class Command(BaseCommand):
         else:
             raise CommandError("Some schema initializations failed")
 
+        # Apply any pending incremental migrations on top of the baseline
+        if not verify_only and not force_recreate:
+            self.stdout.write("\n📦 Applying pending migrations...")
+            from django.core.management import call_command
+            call_command(
+                "migrate_schema",
+                verbose=verbose,
+                stdout=self.stdout,
+                stderr=self.stderr,
+            )
+
     def _get_configured_dims(self) -> int:
         """Get configured embedding dimensions from settings."""
         from agentx_ai.kit.agent_memory.config import get_settings
@@ -374,7 +385,8 @@ class Command(BaseCommand):
                         WHERE table_schema = 'public'
                         AND table_name IN (
                             'conversation_logs', 'memory_timeline', 'tool_invocations',
-                            'user_profiles', 'memory_audit_log', 'schema_version'
+                            'user_profiles', 'memory_audit_log', 'schema_version',
+                            'user_files', 'artifacts', 'blob_cache'
                         )
                     """))
                     tables = [r[0] for r in result.fetchall()]
@@ -410,7 +422,8 @@ class Command(BaseCommand):
                     WHERE table_schema = 'public'
                     AND table_name IN (
                         'conversation_logs', 'memory_timeline', 'tool_invocations',
-                        'user_profiles', 'memory_audit_log', 'schema_version'
+                        'user_profiles', 'memory_audit_log', 'schema_version',
+                        'user_files', 'artifacts', 'blob_cache'
                     )
                 """))
                 tables = [r[0] for r in result.fetchall()]
