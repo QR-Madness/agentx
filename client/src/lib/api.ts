@@ -1512,9 +1512,18 @@ class ApiClient {
       ? JSON.stringify({ jobs: options.jobs })
       : options.trigger ? '{}' : undefined;
 
+    const consolidateHeaders: Record<string, string> = {};
+    if (method === 'POST') {
+      consolidateHeaders['Content-Type'] = 'application/json';
+    }
+    const consolidateToken = getAuthToken();
+    if (consolidateToken) {
+      consolidateHeaders['X-Auth-Token'] = consolidateToken;
+    }
+
     fetch(`${baseUrl}/api/memory/consolidate/stream`, {
       method,
-      headers: method === 'POST' ? { 'Content-Type': 'application/json' } : {},
+      headers: consolidateHeaders,
       body,
       signal: controller.signal,
     })
