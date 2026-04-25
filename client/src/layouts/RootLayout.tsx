@@ -12,6 +12,7 @@ import { AuthPage } from '../pages/AuthPage';
 import { VersionMismatchPage } from '../pages/VersionMismatchPage';
 import { useConversation } from '../contexts/ConversationContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useModal } from '../contexts/ModalContext';
 import './RootLayout.css';
 
 export function RootLayout() {
@@ -27,6 +28,7 @@ export function RootLayout() {
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const rafRef = useRef<number | null>(null);
   const { addTab, closeTab, activeTabId } = useConversation();
+  const { openModal } = useModal();
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -44,6 +46,15 @@ export function RootLayout() {
       } else if (e.key === 'w') {
         e.preventDefault();
         if (activeTabId) closeTab(activeTabId);
+      } else if (e.key === ',') {
+        e.preventDefault();
+        // Open unified settings (Cmd+,)
+        openModal({
+          id: 'unified-settings',
+          type: 'modal',
+          component: 'unifiedSettings',
+          size: 'full',
+        });
       } else if (e.key === 'k') {
         e.preventDefault();
         // Command palette — placeholder for future implementation
@@ -52,7 +63,7 @@ export function RootLayout() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [addTab, closeTab, activeTabId, isLoading, authRequired, isAuthenticated]);
+  }, [addTab, closeTab, activeTabId, openModal, isLoading, authRequired, isAuthenticated]);
 
   // Track cursor position for reactive gradient
   useEffect(() => {

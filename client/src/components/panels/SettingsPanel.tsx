@@ -26,6 +26,7 @@ import { useServer } from '../../contexts/ServerContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ServerConfig } from '../../lib/storage';
 import { api, ConfigUpdate } from '../../lib/api';
+import { ModelSelector } from '../common/ModelSelector';
 import '../../styles/SettingsPanel.css';
 
 type SettingsSection = 'servers' | 'providers' | 'models' | 'memory' | 'prompt' | 'appearance';
@@ -695,19 +696,19 @@ export const SettingsPanel: React.FC = () => {
 
                   {/* Model selection */}
                   <div className="setting-row">
-                    <label className="setting-label">
-                      <span>Enhancement Model</span>
-                      <span className="setting-hint">Model used to enhance prompts (provider:model format)</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="form-input"
+                    <ModelSelector
+                      label="Enhancement Model"
                       value={promptEnhanceSettings.model}
-                      onChange={(e) => setPromptEnhanceSettings(prev => ({
+                      onChange={(modelId) => setPromptEnhanceSettings(prev => ({
                         ...prev,
-                        model: e.target.value
+                        model: modelId
                       }))}
-                      placeholder="anthropic:claude-3-5-haiku-latest"
+                      onProviderChange={(provider) => {
+                        // Optional: track provider separately if needed in future
+                        console.log('Provider changed to:', provider);
+                      }}
+                      showDefault={false}
+                      compact
                     />
                   </div>
 

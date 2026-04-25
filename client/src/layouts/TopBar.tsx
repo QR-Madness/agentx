@@ -58,11 +58,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
   const openSettings = () => {
     openModal({
-      id: 'settings-drawer',
-      type: 'drawer',
-      component: 'settings',
-      position: 'right',
-      size: 'xxl',
+      id: 'unified-settings',
+      type: 'modal',
+      component: 'unifiedSettings',
+      size: 'full',
     });
   };
 

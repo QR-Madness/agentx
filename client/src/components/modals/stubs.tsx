@@ -8,6 +8,7 @@ import { SettingsPanel } from '../panels/SettingsPanel';
 import { MemoryPanel } from '../panels/MemoryPanel';
 import { ToolsPanel } from '../panels/ToolsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
+import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 
 // Re-export ProfileEditorModal for the modal registry
 export { ProfileEditorModal } from './ProfileEditorModal';
@@ -46,6 +47,13 @@ export function TranslationModalContent({ onClose: _onClose }: ModalContentProps
       <TranslationPanel />
     </div>
   );
+}
+
+/**
+ * UnifiedSettingsModalContent — New unified settings interface
+ */
+export function UnifiedSettingsModalContent({ onClose }: ModalContentProps) {
+  return <UnifiedSettings isOpen={true} onClose={onClose} />;
 }
 
 /**
