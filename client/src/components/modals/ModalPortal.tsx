@@ -2,9 +2,10 @@
  * ModalPortal — Renders the modal stack via React portal into #modal-root
  */
 
-import { lazy, Suspense, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import { useModal, type ModalInstance } from '../../contexts/ModalContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { DrawerPanel } from './DrawerPanel';
 import { ModalDialog } from './ModalDialog';
 
@@ -66,10 +67,20 @@ function ModalRenderer({ modal }: { modal: ModalInstance }) {
 }
 
 export function ModalPortal() {
-  const { modals } = useModal();
+  const { modals, closeAll } = useModal();
+  const { authRequired, isAuthenticated } = useAuth();
   const portalRoot = document.getElementById('modal-root');
 
+  // Clear all open modals when session expires so hooks inside them
+  // don't keep firing unauthenticated API requests.
+  useEffect(() => {
+    if (authRequired && !isAuthenticated) {
+      closeAll();
+    }
+  }, [authRequired, isAuthenticated, closeAll]);
+
   if (!portalRoot || modals.length === 0) return null;
+  if (authRequired && !isAuthenticated) return null;
 
   return createPortal(
     <>
