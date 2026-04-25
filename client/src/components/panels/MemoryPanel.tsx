@@ -450,7 +450,7 @@ function Pagination({
 }
 
 // Consolidation Settings Panel Component
-function ConsolidationSettingsPanel({
+export function ConsolidationSettingsPanel({
   onConsolidate
 }: {
   onConsolidate: (jobs?: string[]) => Promise<void>;
@@ -926,7 +926,7 @@ function ConsolidationSettingsPanel({
 }
 
 // RecallLayer Settings Panel Component
-function RecallSettingsPanel() {
+export function RecallSettingsPanel() {
   const { settings, loading, saving, error, updateSettings } = useRecallSettings();
   const [localSettings, setLocalSettings] = useState<Partial<RecallSettings>>({});
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
