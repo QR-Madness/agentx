@@ -3,7 +3,7 @@
  */
 
 import { motion } from 'framer-motion';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { SECTION_HIERARCHY, getAllSections } from './sections';
 import { useSettingsSearch } from './hooks/useSettingsSearch';
 import { navVariants } from './animations/transitions';
@@ -11,19 +11,28 @@ import { navVariants } from './animations/transitions';
 interface SettingsNavProps {
   activeSection: string;
   onSectionChange: (sectionId: string) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function SettingsNav({ activeSection, onSectionChange }: SettingsNavProps) {
+export function SettingsNav({ activeSection, onSectionChange, isOpen, onClose }: SettingsNavProps) {
   const allSections = getAllSections();
   const { query, setQuery, filtered } = useSettingsSearch(allSections);
 
   return (
     <motion.nav
-      className="settings-nav"
+      className={`settings-nav${isOpen ? ' is-open' : ''}`}
       variants={navVariants}
       initial="initial"
       animate="animate"
     >
+      {/* Mobile close button */}
+      {onClose && (
+        <button className="nav-mobile-close" onClick={onClose} title="Close navigation">
+          <X size={18} />
+        </button>
+      )}
+
       {/* Search bar */}
       <div className="nav-search">
         <Search size={16} className="nav-search-icon" />

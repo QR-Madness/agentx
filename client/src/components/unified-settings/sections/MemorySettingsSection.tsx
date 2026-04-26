@@ -1,5 +1,5 @@
 import { useConsolidate } from '../../../lib/hooks';
-import { ConsolidationSettingsPanel, RecallSettingsPanel } from '../../panels/MemoryPanel';
+import { ConsolidationSettingsPanel, RecallSettingsPanel } from '../../panels/MemorySettingsPanels';
 import '../../../styles/MemoryPanel.css';
 
 export default function MemorySettingsSection() {

@@ -10,10 +10,6 @@ import {
   Layers,
   Sparkles,
   Database,
-  Users,
-  FileText,
-  Zap,
-  Clock,
   Settings,
   Wrench,
   Languages,
@@ -82,34 +78,6 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Database size={18} />,
         component: lazy(() => import('./MemoryOverviewSection')),
         keywords: ['storage', 'data', 'retention', 'postgresql', 'neo4j', 'redis']
-      },
-      {
-        id: 'entities',
-        label: 'Entities',
-        icon: <Users size={18} />,
-        component: lazy(() => import('./EntitiesSection')),
-        keywords: ['people', 'organizations', 'semantic', 'knowledge graph']
-      },
-      {
-        id: 'facts',
-        label: 'Facts',
-        icon: <FileText size={18} />,
-        component: lazy(() => import('./FactsSection')),
-        keywords: ['knowledge', 'claims', 'confidence', 'semantic memory']
-      },
-      {
-        id: 'strategies',
-        label: 'Strategies',
-        icon: <Zap size={18} />,
-        component: lazy(() => import('./StrategiesSection')),
-        keywords: ['procedural', 'patterns', 'tools', 'learning']
-      },
-      {
-        id: 'jobs',
-        label: 'Background Jobs',
-        icon: <Clock size={18} />,
-        component: lazy(() => import('./JobsSection')),
-        keywords: ['consolidation', 'scheduled', 'tasks', 'background']
       },
       {
         id: 'memory-settings',

@@ -53,6 +53,61 @@
   padding: 0 12px;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Nav toggle — hidden on desktop, shown on mobile */
+.nav-toggle-btn {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--glass-layer-2);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.nav-toggle-btn:hover {
+  background: var(--glass-layer-3);
+  color: var(--text-primary);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+/* Mobile nav close button — hidden on desktop */
+.nav-mobile-close {
+  display: none;
+  margin-left: auto;
+  margin-bottom: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--glass-layer-2);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+/* Mobile scrim — hidden on desktop */
+.nav-mobile-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  background: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
 .unified-settings-header h1 {
   font-size: 32px;
   font-weight: 700;
@@ -429,11 +484,40 @@
 
   .unified-settings-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
   }
 
+  /* Nav toggle button visible on mobile */
+  .nav-toggle-btn {
+    display: flex;
+  }
+
+  /* Nav becomes a fixed overlay drawer */
   .settings-nav {
-    max-height: 200px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-height: none;
+    z-index: 2100;
+    border-radius: 0 20px 20px 0;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .settings-nav.is-open {
+    transform: translateX(0);
+  }
+
+  /* Mobile close button visible */
+  .nav-mobile-close {
+    display: flex;
+  }
+
+  /* Scrim visible when nav is open */
+  .nav-mobile-scrim {
+    display: block;
   }
 
   .settings-content-area {

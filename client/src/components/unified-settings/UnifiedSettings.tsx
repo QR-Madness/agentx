@@ -8,9 +8,9 @@
  * - Parallax background effects
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Menu } from 'lucide-react';
 import { useSettingsNavigation } from './hooks/useSettingsNavigation';
 import { SettingsNav } from './SettingsNav';
 import { SettingsContent } from './SettingsContent';
@@ -25,6 +25,7 @@ interface UnifiedSettingsProps {
 
 export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
   const { activeSection, navigateTo } = useSettingsNavigation('servers');
+  const [isNavOpen, setIsNavOpen] = useState(false);
 
   // ESC key handler
   useEffect(() => {
@@ -81,17 +82,39 @@ export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
 
             {/* Header with close button */}
             <div className="unified-settings-header">
-              <h1>Settings</h1>
+              <div className="header-left">
+                <button
+                  className="nav-toggle-btn"
+                  onClick={() => setIsNavOpen(true)}
+                  title="Open navigation"
+                >
+                  <Menu size={20} />
+                </button>
+                <h1>Settings</h1>
+              </div>
               <button onClick={onClose} className="close-button" title="Close settings">
                 <X size={20} />
               </button>
             </div>
 
+            {/* Mobile scrim — closes nav when tapped */}
+            {isNavOpen && (
+              <div
+                className="nav-mobile-scrim"
+                onClick={() => setIsNavOpen(false)}
+              />
+            )}
+
             {/* Two-column layout */}
             <div className="unified-settings-layout">
               <SettingsNav
                 activeSection={activeSection}
-                onSectionChange={navigateTo}
+                isOpen={isNavOpen}
+                onSectionChange={(id) => {
+                  navigateTo(id);
+                  setIsNavOpen(false);
+                }}
+                onClose={() => setIsNavOpen(false)}
               />
               <SettingsContent activeSection={activeSection} />
             </div>
