@@ -1,20 +1,17 @@
 /**
  * PromptLibraryModal — Browse, search, select, and edit prompt templates
  *
- * Features:
- * - Tag-based filtering sidebar
- * - Search across name, description, content
- * - Template preview with placeholder highlighting
- * - Insert/Select actions
- * - Create, edit, and delete templates
- * - Reset modified templates
+ * Two responsive layouts:
+ *   wide (≥680px): persistent list on left, preview/edit on right
+ *   narrow (<680px): state-machine with slide transitions
+ *
+ * State machine: browse → preview → edit/create (back returns to preview, not browse)
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  X,
   Search,
-  Tag,
   FileText,
   MessageSquare,
   Code2,
@@ -26,9 +23,19 @@ import {
   Edit3,
   Save,
   Trash2,
+  ArrowLeft,
+  RotateCcw,
 } from 'lucide-react';
-import { api, type PromptTemplate, type TemplateTag, type TemplateType, type PromptTemplateCreate } from '../../lib/api';
+import {
+  api,
+  type PromptTemplate,
+  type TemplateTag,
+  type TemplateType,
+  type PromptTemplateCreate,
+} from '../../lib/api';
 import './PromptLibraryModal.css';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PromptLibraryModalProps {
   onClose: () => void;
@@ -36,7 +43,12 @@ interface PromptLibraryModalProps {
   onSelectTemplate?: (templateId: string, content: string) => void;
   mode?: 'insert' | 'select';
   initialTag?: string;
+  variant?: 'modal' | 'panel';
 }
+
+type ViewState = 'browse' | 'preview' | 'edit' | 'create';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const TYPE_ICONS: Record<TemplateType, typeof FileText> = {
   system: Sparkles,
@@ -50,86 +62,190 @@ const TYPE_LABELS: Record<TemplateType, string> = {
   snippet: 'Snippet',
 };
 
-export function PromptLibraryModal({
-  onClose,
-  onInsert,
-  onSelectTemplate,
-  mode = 'insert',
-  initialTag,
-}: PromptLibraryModalProps) {
-  // Data state
-  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
-  const [tags, setTags] = useState<TemplateTag[]>([]);
+const WIDE_BREAKPOINT = 680;
+
+const slideVariants = {
+  enter: (dir: number) => ({
+    x: dir >= 0 ? '60%' : '-60%',
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+    transition: { type: 'spring' as const, damping: 28, stiffness: 320 },
+  },
+  exit: (dir: number) => ({
+    x: dir >= 0 ? '-60%' : '60%',
+    opacity: 0,
+    transition: { duration: 0.18 },
+  }),
+};
+
+// ─── Data hook ────────────────────────────────────────────────────────────────
+
+function usePromptLibraryData() {
+  const [allTemplates, setAllTemplates] = useState<PromptTemplate[]>([]);
+  const [allTags, setAllTags] = useState<TemplateTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter state
-  const [selectedTag, setSelectedTag] = useState<string | null>(initialTag || null);
-  const [selectedType, setSelectedType] = useState<TemplateType | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Selection state
-  const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
-  const [resetting, setResetting] = useState(false);
-
-  // Edit/Create state
-  const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  // Form fields for edit/create
-  const [formName, setFormName] = useState('');
-  const [formContent, setFormContent] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formTags, setFormTags] = useState('');
-  const [formType, setFormType] = useState<TemplateType>('snippet');
-
-  // Fetch templates and tags
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [templatesRes, tagsRes] = await Promise.all([
-        api.listPromptTemplates({
-          tag: selectedTag || undefined,
-          type: selectedType || undefined,
-          search: searchQuery || undefined,
-        }),
+      const [tr, tagr] = await Promise.all([
+        api.listPromptTemplates({}),
         api.listPromptTemplateTags(),
       ]);
-      setTemplates(templatesRes.templates);
-      setTags(tagsRes.tags);
+      setAllTemplates(tr.templates);
+      setAllTags(tagr.tags);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load templates');
     } finally {
       setLoading(false);
     }
-  }, [selectedTag, selectedType, searchQuery]);
+  }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    loadAll();
+  }, [loadAll]);
 
-  // Filter templates by search (client-side for responsiveness)
+  return { allTemplates, allTags, loading, error, refresh: loadAll };
+}
+
+// ─── Highlight placeholders ───────────────────────────────────────────────────
+
+function HighlightedContent({ content }: { content: string }) {
+  const parts = content.split(/(\{[^}]+\})/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith('{') && part.endsWith('}') ? (
+          <span key={i} className="placeholder-highlight">{part}</span>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function PromptLibraryModal({
+  onClose,
+  onInsert,
+  onSelectTemplate,
+  mode,
+  initialTag,
+  variant = 'modal',
+}: PromptLibraryModalProps) {
+  const { allTemplates, allTags, loading, error: dataError, refresh } = usePromptLibraryData();
+
+  // Layout
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [isWide, setIsWide] = useState(true);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(entries => {
+      setIsWide(entries[0].contentRect.width >= WIDE_BREAKPOINT);
+    });
+    obs.observe(el);
+    setIsWide(el.getBoundingClientRect().width >= WIDE_BREAKPOINT);
+    return () => obs.disconnect();
+  }, []);
+
+  // Filter state
+  const [activeType, setActiveType] = useState<TemplateType | null>(null);
+  const [activeTag, setActiveTag] = useState<string | null>(initialTag ?? null);
+  const [query, setQuery] = useState('');
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+
+  // View state
+  const [viewState, setViewState] = useState<ViewState>('browse');
+  const [slideDir, setSlideDir] = useState(1);
+  const [cameFromPreview, setCameFromPreview] = useState(false);
+
+  // Selection
+  const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
+
+  // Edit/create form
+  const [formName, setFormName] = useState('');
+  const [formContent, setFormContent] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formTags, setFormTags] = useState('');
+  const [formType, setFormType] = useState<TemplateType>('snippet');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+
+  // ── Filtered templates ──────────────────────────────────────────────────────
+
   const filteredTemplates = useMemo(() => {
-    if (!searchQuery.trim()) return templates;
+    return allTemplates
+      .filter(t => !activeType || t.type === activeType)
+      .filter(t => !activeTag || t.tags.includes(activeTag))
+      .filter(t => {
+        if (!query.trim()) return true;
+        const q = query.toLowerCase();
+        return (
+          t.name.toLowerCase().includes(q) ||
+          (t.description?.toLowerCase().includes(q) ?? false) ||
+          t.content.toLowerCase().includes(q)
+        );
+      });
+  }, [allTemplates, activeType, activeTag, query]);
 
-    const query = searchQuery.toLowerCase();
-    return templates.filter(
-      t =>
-        t.name.toLowerCase().includes(query) ||
-        (t.description && t.description.toLowerCase().includes(query)) ||
-        t.content.toLowerCase().includes(query)
-    );
-  }, [templates, searchQuery]);
+  // ── Navigation helpers ──────────────────────────────────────────────────────
 
-  // Handle template selection
-  const handleSelectTemplate = (template: PromptTemplate) => {
-    setSelectedTemplate(template);
+  const goTo = (next: ViewState, dir: number) => {
+    setSlideDir(dir);
+    setViewState(next);
   };
 
-  // Handle insert action
+  const selectCard = (template: PromptTemplate) => {
+    setSelectedTemplate(template);
+    if (!isWide) goTo('preview', 1);
+  };
+
+  const openEdit = (template: PromptTemplate) => {
+    setFormName(template.name);
+    setFormContent(template.content);
+    setFormDescription(template.description ?? '');
+    setFormTags(template.tags.join(', '));
+    setFormType(template.type);
+    setFormError(null);
+    setCameFromPreview(true);
+    goTo('edit', 1);
+  };
+
+  const openCreate = () => {
+    setFormName('');
+    setFormContent('');
+    setFormDescription('');
+    setFormTags('');
+    setFormType('snippet');
+    setFormError(null);
+    setCameFromPreview(false);
+    goTo('create', 1);
+  };
+
+  const goBack = () => {
+    if (viewState === 'preview') {
+      goTo('browse', -1);
+    } else if (viewState === 'edit' || viewState === 'create') {
+      if (cameFromPreview && selectedTemplate) {
+        goTo('preview', -1);
+      } else {
+        goTo('browse', -1);
+      }
+    }
+  };
+
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
   const handleInsert = () => {
     if (selectedTemplate && onInsert) {
       onInsert(selectedTemplate.content);
@@ -137,7 +253,6 @@ export function PromptLibraryModal({
     }
   };
 
-  // Handle select as base action
   const handleSelectAsBase = () => {
     if (selectedTemplate && onSelectTemplate) {
       onSelectTemplate(selectedTemplate.id, selectedTemplate.content);
@@ -145,476 +260,502 @@ export function PromptLibraryModal({
     }
   };
 
-  // Handle reset to default
   const handleReset = async () => {
     if (!selectedTemplate) return;
-
     setResetting(true);
     try {
       const { template } = await api.resetPromptTemplate(selectedTemplate.id);
-      // Update in list
-      setTemplates(prev => prev.map(t => (t.id === template.id ? template : t)));
       setSelectedTemplate(template);
+      await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset template');
+      setFormError(err instanceof Error ? err.message : 'Failed to reset');
     } finally {
       setResetting(false);
     }
   };
 
-  // Start editing an existing template
-  const startEditing = (template: PromptTemplate) => {
-    setEditingTemplate(template);
-    setIsCreating(false);
-    setFormName(template.name);
-    setFormContent(template.content);
-    setFormDescription(template.description || '');
-    setFormTags(template.tags.join(', '));
-    setFormType(template.type);
-  };
-
-  // Start creating a new template
-  const startCreating = () => {
-    setIsCreating(true);
-    setEditingTemplate(null);
-    setSelectedTemplate(null);
-    setFormName('');
-    setFormContent('');
-    setFormDescription('');
-    setFormTags('');
-    setFormType('snippet');
-  };
-
-  // Cancel edit/create mode
-  const cancelEdit = () => {
-    setEditingTemplate(null);
-    setIsCreating(false);
-  };
-
-  // Save template (create or update)
   const handleSave = async () => {
     if (!formName.trim() || !formContent.trim()) {
-      setError('Name and content are required');
+      setFormError('Name and content are required');
       return;
     }
-
     setSaving(true);
-    setError(null);
-
+    setFormError(null);
     try {
       const tagsArray = formTags
         .split(',')
         .map(t => t.trim())
-        .filter(t => t.length > 0);
+        .filter(Boolean);
 
-      if (isCreating) {
-        const templateData: PromptTemplateCreate = {
+      let saved: PromptTemplate;
+      if (viewState === 'create') {
+        const data: PromptTemplateCreate = {
           name: formName.trim(),
           content: formContent,
           description: formDescription.trim() || undefined,
           tags: tagsArray.length > 0 ? tagsArray : undefined,
           type: formType,
         };
-        const { template } = await api.createPromptTemplate(templateData);
-        setSelectedTemplate(template);
-      } else if (editingTemplate) {
-        const { template } = await api.updatePromptTemplate(editingTemplate.id, {
+        const res = await api.createPromptTemplate(data);
+        saved = res.template;
+      } else {
+        // edit — selectedTemplate is the one being edited
+        const res = await api.updatePromptTemplate(selectedTemplate!.id, {
           name: formName.trim(),
           content: formContent,
           description: formDescription.trim() || undefined,
           tags: tagsArray,
         });
-        setSelectedTemplate(template);
+        saved = res.template;
       }
 
-      await fetchData();
-      cancelEdit();
+      await refresh();
+      setSelectedTemplate(saved);
+      goTo('preview', -1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template');
+      setFormError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete a template
   const handleDelete = async () => {
-    if (!editingTemplate || editingTemplate.isBuiltin) return;
-
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${editingTemplate.name}"? This action cannot be undone.`
-    );
-    if (!confirmed) return;
-
+    if (!selectedTemplate || selectedTemplate.isBuiltin) return;
+    if (!window.confirm(`Delete "${selectedTemplate.name}"? This cannot be undone.`)) return;
     setDeleting(true);
-    setError(null);
-
+    setFormError(null);
     try {
-      await api.deletePromptTemplate(editingTemplate.id);
-      await fetchData();
-      cancelEdit();
+      await api.deletePromptTemplate(selectedTemplate.id);
+      await refresh();
       setSelectedTemplate(null);
+      goTo('browse', -1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete template');
+      setFormError(err instanceof Error ? err.message : 'Failed to delete');
     } finally {
       setDeleting(false);
     }
   };
 
-  // Check if we're in edit mode
-  const isEditing = isCreating || editingTemplate !== null;
+  // ── Tag chip overflow ────────────────────────────────────────────────────────
 
-  // Highlight placeholders in content
-  const highlightPlaceholders = (content: string) => {
-    const parts = content.split(/(\{[^}]+\})/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('{') && part.endsWith('}')) {
-        return (
-          <span key={i} className="placeholder-highlight">
-            {part}
-          </span>
-        );
-      }
-      return part;
-    });
+  const TAG_SHOW_LIMIT = 6;
+  const visibleTags = tagsExpanded ? allTags : allTags.slice(0, TAG_SHOW_LIMIT);
+  const hiddenCount = allTags.length - TAG_SHOW_LIMIT;
+
+  // ── Render helpers ───────────────────────────────────────────────────────────
+
+  const ModeChip = () => {
+    if (!mode) return null;
+    const label = mode === 'insert' ? 'Inserting into system prompt' : 'Selecting base template';
+    return <span className="plm-mode-chip">✦ {label}</span>;
   };
 
-  const TypeIcon = selectedTemplate ? TYPE_ICONS[selectedTemplate.type] : FileText;
-
-  return (
-    <div className="prompt-library-modal">
-      {/* Header */}
-      <div className="modal-header">
-        <div className="modal-title-group">
-          <FileText size={20} />
-          <h2>Prompt Library</h2>
-        </div>
-        <div className="modal-header-actions">
-          <button
-            className="button-primary"
-            onClick={startCreating}
-            disabled={isEditing}
-          >
-            <Plus size={16} />
-            New Template
-          </button>
-          <button className="button-ghost close-btn" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
+  const FilterBar = () => (
+    <div className="plm-filter-bar">
+      <div className="plm-search">
+        <Search size={14} className="plm-search-icon" />
+        <input
+          type="text"
+          placeholder="Search templates…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          className="plm-search-input"
+        />
+        {query && (
+          <button className="plm-search-clear" onClick={() => setQuery('')}>×</button>
+        )}
       </div>
-
-      {/* Error Banner */}
-      {error && (
-        <div className="error-banner">
-          <AlertCircle size={16} />
-          {error}
+      <div className="plm-type-pills">
+        {(['all', 'system', 'user', 'snippet'] as const).map(t => {
+          const isAll = t === 'all';
+          const active = isAll ? activeType === null : activeType === t;
+          const Icon = isAll ? null : TYPE_ICONS[t];
+          return (
+            <button
+              key={t}
+              className={`plm-type-pill ${active ? 'active' : ''}`}
+              onClick={() => setActiveType(isAll ? null : t)}
+            >
+              {Icon && <Icon size={12} />}
+              {isAll ? 'All' : TYPE_LABELS[t]}
+            </button>
+          );
+        })}
+      </div>
+      {allTags.length > 0 && (
+        <div className="plm-tag-chips">
+          <button
+            className={`plm-tag-chip ${activeTag === null ? 'active' : ''}`}
+            onClick={() => setActiveTag(null)}
+          >
+            All Tags
+          </button>
+          {visibleTags.map(tag => (
+            <button
+              key={tag.name}
+              className={`plm-tag-chip ${activeTag === tag.name ? 'active' : ''}`}
+              onClick={() => setActiveTag(tag.name)}
+            >
+              {tag.name}
+              <span className="plm-tag-count">{tag.count}</span>
+            </button>
+          ))}
+          {!tagsExpanded && hiddenCount > 0 && (
+            <button className="plm-tag-chip plm-tag-more" onClick={() => setTagsExpanded(true)}>
+              +{hiddenCount} more
+            </button>
+          )}
+          {tagsExpanded && hiddenCount > 0 && (
+            <button className="plm-tag-chip plm-tag-more" onClick={() => setTagsExpanded(false)}>
+              show less
+            </button>
+          )}
         </div>
       )}
+    </div>
+  );
 
-      {/* Content */}
-      <div className="library-content">
-        {/* Tag Sidebar */}
-        <div className="tag-sidebar">
-          <div className="sidebar-header">
-            <Tag size={14} />
-            <span>Tags</span>
-          </div>
-          <div className="tag-list">
-            <button
-              className={`tag-item ${selectedTag === null ? 'active' : ''}`}
-              onClick={() => setSelectedTag(null)}
-            >
-              <span className="tag-name">All</span>
-              <span className="tag-count">{templates.length}</span>
-            </button>
-            {tags.map(tag => (
+  const TemplateList = () => (
+    <div className="plm-list-scroll">
+      {loading ? (
+        <div className="plm-state-center">
+          <RefreshCw size={24} className="spin" />
+          <span>Loading…</span>
+        </div>
+      ) : filteredTemplates.length === 0 ? (
+        <div className="plm-state-center">
+          <FileText size={28} />
+          <span>No templates found</span>
+          {query && (
+            <button className="plm-btn-ghost" onClick={() => setQuery('')}>Clear search</button>
+          )}
+        </div>
+      ) : (
+        <div className="plm-card-grid">
+          {filteredTemplates.map(template => {
+            const Icon = TYPE_ICONS[template.type];
+            const isSelected = selectedTemplate?.id === template.id;
+            return (
               <button
-                key={tag.name}
-                className={`tag-item ${selectedTag === tag.name ? 'active' : ''}`}
-                onClick={() => setSelectedTag(tag.name)}
+                key={template.id}
+                className={`plm-card ${isSelected ? 'selected' : ''}`}
+                onClick={() => selectCard(template)}
               >
-                <span className="tag-name">{tag.name}</span>
-                <span className="tag-count">{tag.count}</span>
+                <div className="plm-card-header">
+                  <Icon size={14} />
+                  <span className="plm-card-name">{template.name}</span>
+                  <div className="plm-card-badges">
+                    {template.isBuiltin && <span className="plm-badge plm-badge-builtin">Built-in</span>}
+                    {template.hasModifications && <span className="plm-badge plm-badge-modified">Modified</span>}
+                  </div>
+                </div>
+                {template.description && (
+                  <p className="plm-card-desc">{template.description}</p>
+                )}
+                {template.tags.length > 0 && (
+                  <div className="plm-card-tags">
+                    {template.tags.slice(0, 3).map(tag => (
+                      <span key={tag} className="plm-mini-tag">{tag}</span>
+                    ))}
+                    {template.tags.length > 3 && (
+                      <span className="plm-mini-tag">+{template.tags.length - 3}</span>
+                    )}
+                  </div>
+                )}
               </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const PreviewPanel = () => {
+    if (!selectedTemplate) {
+      return (
+        <div className="plm-detail-empty">
+          <FileText size={32} />
+          <span>Select a template to preview</span>
+        </div>
+      );
+    }
+    const TypeIcon = TYPE_ICONS[selectedTemplate.type];
+    return (
+      <div className="plm-preview">
+        <div className="plm-preview-header">
+          <TypeIcon size={15} />
+          <span className="plm-preview-name">{selectedTemplate.name}</span>
+          <span className="plm-type-badge">{TYPE_LABELS[selectedTemplate.type]}</span>
+          {selectedTemplate.isBuiltin && <span className="plm-badge plm-badge-builtin">Built-in</span>}
+          {selectedTemplate.hasModifications && <span className="plm-badge plm-badge-modified">Modified</span>}
+        </div>
+        {selectedTemplate.description && (
+          <p className="plm-preview-desc">{selectedTemplate.description}</p>
+        )}
+        <div className="plm-preview-content">
+          <pre><HighlightedContent content={selectedTemplate.content} /></pre>
+        </div>
+        {selectedTemplate.placeholders.length > 0 && (
+          <div className="plm-placeholders">
+            <span className="plm-placeholders-label">Placeholders:</span>
+            {selectedTemplate.placeholders.map(p => (
+              <code key={p}>{`{${p}}`}</code>
             ))}
           </div>
-
-          {/* Type Filter */}
-          <div className="sidebar-header" style={{ marginTop: '1rem' }}>
-            <FileText size={14} />
-            <span>Type</span>
-          </div>
-          <div className="tag-list">
+        )}
+        <div className="plm-preview-actions">
+          <button className="plm-btn-secondary" onClick={() => openEdit(selectedTemplate)}>
+            <Edit3 size={13} />
+            Edit
+          </button>
+          {selectedTemplate.hasModifications && (
             <button
-              className={`tag-item ${selectedType === null ? 'active' : ''}`}
-              onClick={() => setSelectedType(null)}
+              className="plm-btn-secondary"
+              onClick={handleReset}
+              disabled={resetting}
             >
-              <span className="tag-name">All Types</span>
+              <RotateCcw size={13} className={resetting ? 'spin' : ''} />
+              Reset
             </button>
-            {(['system', 'user', 'snippet'] as TemplateType[]).map(type => {
-              const Icon = TYPE_ICONS[type];
-              return (
-                <button
-                  key={type}
-                  className={`tag-item ${selectedType === type ? 'active' : ''}`}
-                  onClick={() => setSelectedType(type)}
-                >
-                  <Icon size={14} />
-                  <span className="tag-name">{TYPE_LABELS[type]}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Template List */}
-        <div className="template-list-container">
-          {/* Search Bar */}
-          <div className="search-bar">
-            <Search size={16} />
-            <input
-              type="text"
-              placeholder="Search templates..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {/* Template Grid */}
-          <div className="template-list">
-            {loading ? (
-              <div className="loading-state">
-                <RefreshCw size={24} className="spin" />
-                <span>Loading templates...</span>
-              </div>
-            ) : filteredTemplates.length === 0 ? (
-              <div className="empty-state">
-                <FileText size={32} />
-                <span>No templates found</span>
-                {searchQuery && (
-                  <button
-                    className="button-secondary"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    Clear search
-                  </button>
-                )}
-              </div>
-            ) : (
-              filteredTemplates.map(template => {
-                const Icon = TYPE_ICONS[template.type];
-                return (
-                  <button
-                    key={template.id}
-                    className={`template-card ${selectedTemplate?.id === template.id ? 'selected' : ''}`}
-                    onClick={() => handleSelectTemplate(template)}
-                  >
-                    <div className="template-card-header">
-                      <Icon size={16} />
-                      <span className="template-name">{template.name}</span>
-                      {template.hasModifications && (
-                        <span className="modified-badge" title="Modified from default">
-                          Modified
-                        </span>
-                      )}
-                      {template.isBuiltin && (
-                        <span className="builtin-badge" title="Built-in template">
-                          Built-in
-                        </span>
-                      )}
-                    </div>
-                    {template.description && (
-                      <p className="template-description">{template.description}</p>
-                    )}
-                    <div className="template-tags">
-                      {template.tags.slice(0, 3).map(tag => (
-                        <span key={tag} className="tag-pill">
-                          {tag}
-                        </span>
-                      ))}
-                      {template.tags.length > 3 && (
-                        <span className="tag-pill more">+{template.tags.length - 3}</span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })
+          )}
+          <div className="plm-preview-actions-right">
+            {mode === 'insert' && onInsert && (
+              <button className="plm-btn-primary" onClick={handleInsert}>
+                <Plus size={13} />
+                Insert
+              </button>
+            )}
+            {mode === 'select' && onSelectTemplate && (
+              <button className="plm-btn-primary" onClick={handleSelectAsBase}>
+                <Check size={13} />
+                Use as Base
+              </button>
             )}
           </div>
         </div>
+      </div>
+    );
+  };
 
-        {/* Preview Panel / Edit Form */}
-        <div className="preview-panel">
-          {isEditing ? (
-            /* Edit/Create Form */
-            <div className="edit-form">
-              <div className="edit-form-header">
-                <h3>{isCreating ? 'Create New Template' : 'Edit Template'}</h3>
-                {editingTemplate?.isBuiltin && (
-                  <span className="builtin-badge">Built-in (edits create a modified copy)</span>
-                )}
-              </div>
-
-              <div className="edit-form-field">
-                <label htmlFor="template-name">Name</label>
-                <input
-                  id="template-name"
-                  type="text"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  placeholder="Template name..."
-                  autoFocus
-                />
-              </div>
-
-              {isCreating && (
-                <div className="edit-form-field">
-                  <label htmlFor="template-type">Type</label>
-                  <select
-                    id="template-type"
-                    value={formType}
-                    onChange={e => setFormType(e.target.value as TemplateType)}
-                  >
-                    <option value="snippet">Snippet</option>
-                    <option value="system">System Prompt</option>
-                    <option value="user">User Message</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="edit-form-field">
-                <label htmlFor="template-description">Description</label>
-                <input
-                  id="template-description"
-                  type="text"
-                  value={formDescription}
-                  onChange={e => setFormDescription(e.target.value)}
-                  placeholder="Brief description (optional)..."
-                />
-              </div>
-
-              <div className="edit-form-field">
-                <label htmlFor="template-tags">Tags</label>
-                <input
-                  id="template-tags"
-                  type="text"
-                  value={formTags}
-                  onChange={e => setFormTags(e.target.value)}
-                  placeholder="Comma-separated tags..."
-                />
-                <span className="form-hint">e.g., reasoning, coding, creative</span>
-              </div>
-
-              <div className="edit-form-field edit-form-field-content">
-                <label htmlFor="template-content">Content</label>
-                <textarea
-                  id="template-content"
-                  value={formContent}
-                  onChange={e => setFormContent(e.target.value)}
-                  placeholder="Template content... Use {placeholder} for variables."
-                  rows={10}
-                />
-                <span className="form-hint">
-                  Use {'{'}placeholder{'}'} syntax for dynamic values
-                </span>
-              </div>
-
-              <div className="edit-form-actions">
-                {editingTemplate && !editingTemplate.isBuiltin && (
-                  <button
-                    className="button-danger"
-                    onClick={handleDelete}
-                    disabled={deleting || saving}
-                  >
-                    <Trash2 size={14} />
-                    {deleting ? 'Deleting...' : 'Delete'}
-                  </button>
-                )}
-                <div className="edit-form-actions-right">
-                  <button
-                    className="button-secondary"
-                    onClick={cancelEdit}
-                    disabled={saving || deleting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="button-primary"
-                    onClick={handleSave}
-                    disabled={saving || deleting || !formName.trim() || !formContent.trim()}
-                  >
-                    <Save size={14} />
-                    {saving ? 'Saving...' : isCreating ? 'Create' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : selectedTemplate ? (
-            /* Preview Mode */
-            <>
-              <div className="preview-header">
-                <TypeIcon size={16} />
-                <span className="preview-title">{selectedTemplate.name}</span>
-                <span className="type-badge">{TYPE_LABELS[selectedTemplate.type]}</span>
-              </div>
-
-              {selectedTemplate.description && (
-                <p className="preview-description">{selectedTemplate.description}</p>
-              )}
-
-              <div className="preview-content">
-                <pre>{highlightPlaceholders(selectedTemplate.content)}</pre>
-              </div>
-
-              {selectedTemplate.placeholders.length > 0 && (
-                <div className="preview-placeholders">
-                  <span className="placeholders-label">Placeholders:</span>
-                  {selectedTemplate.placeholders.map(p => (
-                    <code key={p}>{`{${p}}`}</code>
-                  ))}
-                </div>
-              )}
-
-              <div className="preview-actions">
-                <button
-                  className="button-secondary"
-                  onClick={() => startEditing(selectedTemplate)}
-                >
-                  <Edit3 size={14} />
-                  Edit
-                </button>
-                {selectedTemplate.hasModifications && (
-                  <button
-                    className="button-secondary"
-                    onClick={handleReset}
-                    disabled={resetting}
-                  >
-                    <RefreshCw size={14} className={resetting ? 'spin' : ''} />
-                    Reset to Default
-                  </button>
-                )}
-                {mode === 'insert' && onInsert && (
-                  <button className="button-primary" onClick={handleInsert}>
-                    <Plus size={14} />
-                    Insert
-                  </button>
-                )}
-                {mode === 'select' && onSelectTemplate && (
-                  <button className="button-primary" onClick={handleSelectAsBase}>
-                    <Check size={14} />
-                    Use as Base
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="preview-empty">
-              <FileText size={32} />
-              <span>Select a template to preview</span>
-            </div>
+  const EditForm = () => {
+    const isCreate = viewState === 'create';
+    const isBuiltinEdit = !isCreate && selectedTemplate?.isBuiltin;
+    return (
+      <div className="plm-edit-form">
+        <div className="plm-edit-header">
+          <h3>{isCreate ? 'New Template' : 'Edit Template'}</h3>
+          {isBuiltinEdit && (
+            <span className="plm-badge plm-badge-builtin">Edits create a modified copy</span>
           )}
         </div>
+        {formError && (
+          <div className="plm-form-error">
+            <AlertCircle size={13} />
+            {formError}
+          </div>
+        )}
+        <div className="plm-edit-fields">
+          <div className="plm-field">
+            <label>Name</label>
+            <input
+              type="text"
+              value={formName}
+              onChange={e => setFormName(e.target.value)}
+              placeholder="Template name…"
+              autoFocus
+            />
+          </div>
+          {isCreate && (
+            <div className="plm-field">
+              <label>Type</label>
+              <select value={formType} onChange={e => setFormType(e.target.value as TemplateType)}>
+                <option value="snippet">Snippet</option>
+                <option value="system">System Prompt</option>
+                <option value="user">User Message</option>
+              </select>
+            </div>
+          )}
+          <div className="plm-field">
+            <label>Description</label>
+            <input
+              type="text"
+              value={formDescription}
+              onChange={e => setFormDescription(e.target.value)}
+              placeholder="Brief description (optional)…"
+            />
+          </div>
+          <div className="plm-field">
+            <label>Tags</label>
+            <input
+              type="text"
+              value={formTags}
+              onChange={e => setFormTags(e.target.value)}
+              placeholder="Comma-separated: reasoning, coding…"
+            />
+          </div>
+          <div className="plm-field plm-field-content">
+            <label>Content</label>
+            <textarea
+              value={formContent}
+              onChange={e => setFormContent(e.target.value)}
+              placeholder="Template content… Use {placeholder} for variables."
+            />
+            <span className="plm-hint">Use {'{'}placeholder{'}'} syntax for dynamic values</span>
+          </div>
+        </div>
+        <div className="plm-edit-actions">
+          {!isCreate && selectedTemplate && !selectedTemplate.isBuiltin && (
+            <button
+              className="plm-btn-danger"
+              onClick={handleDelete}
+              disabled={deleting || saving}
+            >
+              <Trash2 size={13} />
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
+          <div className="plm-edit-actions-right">
+            <button
+              className="plm-btn-secondary"
+              onClick={goBack}
+              disabled={saving || deleting}
+            >
+              Cancel
+            </button>
+            <button
+              className="plm-btn-primary"
+              onClick={handleSave}
+              disabled={saving || deleting || !formName.trim() || !formContent.trim()}
+            >
+              <Save size={13} />
+              {saving ? 'Saving…' : isCreate ? 'Create' : 'Save'}
+            </button>
+          </div>
+        </div>
       </div>
+    );
+  };
+
+  // ── Layout ───────────────────────────────────────────────────────────────────
+
+  const showingDetail = viewState === 'preview' || viewState === 'edit' || viewState === 'create';
+
+  return (
+    <div
+      ref={rootRef}
+      className={`plm-root plm-variant-${variant} ${isWide ? 'plm-wide' : 'plm-narrow'}`}
+    >
+      {/* Header */}
+      <div className="plm-header">
+        {!isWide && showingDetail ? (
+          <button className="plm-back-btn" onClick={goBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        ) : (
+          <div className="plm-header-title">
+            <FileText size={16} />
+            <span>Prompt Library</span>
+          </div>
+        )}
+        <ModeChip />
+        <div className="plm-header-right">
+          <button
+            className="plm-btn-primary plm-btn-sm"
+            onClick={openCreate}
+            disabled={viewState === 'create'}
+          >
+            <Plus size={14} />
+            New
+          </button>
+        </div>
+      </div>
+
+      {dataError && (
+        <div className="plm-data-error">
+          <AlertCircle size={13} />
+          {dataError}
+        </div>
+      )}
+
+      {/* Wide layout: persistent list + detail panel */}
+      {isWide ? (
+        <div className="plm-wide-body">
+          <div className="plm-wide-list">
+            <FilterBar />
+            <TemplateList />
+          </div>
+          <div className="plm-wide-detail">
+            <AnimatePresence mode="wait">
+              {(viewState === 'edit' || viewState === 'create') ? (
+                <motion.div
+                  key="edit"
+                  className="plm-detail-fill"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0, transition: { type: 'spring', damping: 28, stiffness: 320 } }}
+                  exit={{ opacity: 0, x: 24, transition: { duration: 0.15 } }}
+                >
+                  <EditForm />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={selectedTemplate?.id ?? 'empty'}
+                  className="plm-detail-fill"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1, transition: { duration: 0.2 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                >
+                  <PreviewPanel />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      ) : (
+        /* Narrow layout: slide state machine */
+        <div className="plm-narrow-body">
+          <AnimatePresence mode="wait" custom={slideDir}>
+            {viewState === 'browse' ? (
+              <motion.div
+                key="browse"
+                className="plm-narrow-view"
+                custom={slideDir}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+              >
+                <FilterBar />
+                <TemplateList />
+              </motion.div>
+            ) : viewState === 'preview' ? (
+              <motion.div
+                key="preview"
+                className="plm-narrow-view"
+                custom={slideDir}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+              >
+                <PreviewPanel />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="edit"
+                className="plm-narrow-view"
+                custom={slideDir}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+              >
+                <EditForm />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

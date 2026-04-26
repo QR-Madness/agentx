@@ -38,6 +38,7 @@ export function PromptLibraryPanel({
           onInsert={mode === 'insert' ? handleInsert : undefined}
           onSelectTemplate={mode === 'select' ? handleSelect : undefined}
           mode={mode}
+          variant="panel"
         />
       </div>
     </div>
