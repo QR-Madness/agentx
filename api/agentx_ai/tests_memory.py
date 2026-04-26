@@ -2534,3 +2534,173 @@ class RecallLayerEscapeLuceneTest(TestCase):
 
         result = recall._escape_lucene("path/to/file")
         self.assertIn("\\/", result)
+
+
+# =============================================================================
+# Memory Mutation Routes (PATCH/DELETE) — Phase 18 editable memory
+# =============================================================================
+
+@skipUnless(docker_services_running(), "Docker services not running")
+class MemoryMutationViewTest(APITestBase):
+    """PATCH/DELETE routes for facts and entities, with re-embedding semantics."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch (local vs schema)")
+        # Views always run as DEFAULT_USER_ID = "default"
+        from agentx_ai.kit.agent_memory.models import Entity
+        self.memory = AgentMemory(user_id="default", channel="_global")
+        self.fact = self.memory.learn_fact(
+            "The sky is blue", source="user_stated", confidence=0.9
+        )
+        self.entity = self.memory.upsert_entity(
+            Entity(name="Pluto", type="Concept", description="dwarf planet")
+        )
+
+    def tearDown(self) -> None:
+        # Best-effort cleanup
+        try:
+            with Neo4jConnection.session() as session:
+                session.run(
+                    "MATCH (f:Fact {id: $id}) DETACH DELETE f", id=self.fact.id
+                )
+                session.run(
+                    "MATCH (e:Entity {id: $id}) DETACH DELETE e", id=self.entity.id
+                )
+        except Exception:
+            pass
+        super().tearDown()
+
+    def _get_fact_embedding(self, fact_id: str):
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                "MATCH (f:Fact {id: $id}) RETURN f.embedding AS e, f.claim AS claim, f.claim_hash AS h",
+                id=fact_id,
+            )
+            record = result.single()
+            assert record is not None, f"Fact {fact_id} not found"
+            return record
+
+    def _get_entity_embedding(self, entity_id: str):
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                "MATCH (e:Entity {id: $id}) RETURN e.embedding AS e, e.name AS name",
+                id=entity_id,
+            )
+            record = result.single()
+            assert record is not None, f"Entity {entity_id} not found"
+            return record
+
+    def test_patch_fact_claim_reembeds_and_updates_hash(self) -> None:
+        before = self._get_fact_embedding(self.fact.id)
+        response = self.client.patch(
+            f"/api/memory/facts/{self.fact.id}",
+            data=json.dumps({"claim": "The sky is teal"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        body = response.json()  # type: ignore[union-attr]
+        self.assertEqual(body["fact"]["claim"], "The sky is teal")
+
+        after = self._get_fact_embedding(self.fact.id)
+        self.assertEqual(after["claim"], "The sky is teal")
+        self.assertNotEqual(before["e"], after["e"])  # embedding changed
+        self.assertNotEqual(before["h"], after["h"])  # claim_hash changed
+        self.assertEqual(after["h"], compute_claim_hash("The sky is teal"))
+
+    def test_patch_fact_confidence_does_not_reembed(self) -> None:
+        before = self._get_fact_embedding(self.fact.id)
+        response = self.client.patch(
+            f"/api/memory/facts/{self.fact.id}",
+            data=json.dumps({"confidence": 0.42}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        body = response.json()  # type: ignore[union-attr]
+        self.assertAlmostEqual(body["fact"]["confidence"], 0.42)
+
+        after = self._get_fact_embedding(self.fact.id)
+        self.assertEqual(before["e"], after["e"])  # unchanged
+
+    def test_patch_fact_unknown_field_returns_400(self) -> None:
+        response = self.client.patch(
+            f"/api/memory/facts/{self.fact.id}",
+            data=json.dumps({"banana": 1}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
+
+    def test_patch_fact_empty_body_returns_400(self) -> None:
+        response = self.client.patch(
+            f"/api/memory/facts/{self.fact.id}",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
+
+    def test_patch_fact_invalid_confidence_returns_400(self) -> None:
+        response = self.client.patch(
+            f"/api/memory/facts/{self.fact.id}",
+            data=json.dumps({"confidence": 2.5}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
+
+    def test_patch_fact_missing_returns_404(self) -> None:
+        response = self.client.patch(
+            "/api/memory/facts/does-not-exist",
+            data=json.dumps({"confidence": 0.5}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
+
+    def test_delete_fact_returns_ok_then_404(self) -> None:
+        response = self.client.delete(f"/api/memory/facts/{self.fact.id}")
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        self.assertTrue(response.json()["deleted"])  # type: ignore[union-attr]
+        # Second delete is 404
+        response = self.client.delete(f"/api/memory/facts/{self.fact.id}")
+        self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
+
+    def test_patch_entity_name_reembeds(self) -> None:
+        before = self._get_entity_embedding(self.entity.id)
+        response = self.client.patch(
+            f"/api/memory/entities/{self.entity.id}",
+            data=json.dumps({"name": "Eris"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        body = response.json()  # type: ignore[union-attr]
+        self.assertEqual(body["entity"]["name"], "Eris")
+
+        after = self._get_entity_embedding(self.entity.id)
+        self.assertEqual(after["name"], "Eris")
+        self.assertNotEqual(before["e"], after["e"])
+
+    def test_patch_entity_properties_does_not_reembed(self) -> None:
+        before = self._get_entity_embedding(self.entity.id)
+        response = self.client.patch(
+            f"/api/memory/entities/{self.entity.id}",
+            data=json.dumps({"properties": {"discovered": 1930}}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+
+        after = self._get_entity_embedding(self.entity.id)
+        self.assertEqual(before["e"], after["e"])
+
+    def test_patch_entity_invalid_aliases_returns_400(self) -> None:
+        response = self.client.patch(
+            f"/api/memory/entities/{self.entity.id}",
+            data=json.dumps({"aliases": "not-a-list"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
+
+    def test_delete_entity_returns_ok_then_404(self) -> None:
+        response = self.client.delete(f"/api/memory/entities/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)  # type: ignore[union-attr]
+        self.assertTrue(response.json()["deleted"])  # type: ignore[union-attr]
+        response = self.client.delete(f"/api/memory/entities/{self.entity.id}")
+        self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]

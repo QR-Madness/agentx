@@ -2334,6 +2334,125 @@ def memory_facts(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+FACT_EDITABLE_FIELDS = {"claim", "confidence", "source", "temporal_context"}
+ENTITY_EDITABLE_FIELDS = {"name", "type", "description", "aliases", "properties"}
+
+
+def _parse_patch_body(request, allowed_fields):
+    """Parse and whitelist a PATCH JSON body. Returns (patch_dict_or_None, error_response_or_None)."""
+    data, error = parse_json_body(request)
+    if error is not None:
+        return None, error
+    if not isinstance(data, dict) or not data:
+        return None, json_error("Empty or invalid patch body")
+    unknown = set(data.keys()) - allowed_fields
+    if unknown:
+        return None, json_error(
+            f"Unknown fields: {sorted(unknown)}. Allowed: {sorted(allowed_fields)}"
+        )
+    return data, None
+
+
+@csrf_exempt
+def memory_fact_detail(request, fact_id):
+    """
+    PATCH /api/memory/facts/{id} - Update editable fact fields (re-embeds on claim change).
+    DELETE /api/memory/facts/{id} - Delete a fact and its relationships.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method not in ('PATCH', 'DELETE'):
+        return json_error("PATCH or DELETE only", status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+
+        if request.method == 'DELETE':
+            deleted = memory.delete_fact(fact_id)
+            if not deleted:
+                return json_error("Fact not found", status=404)
+            return JsonResponse({"deleted": True})
+
+        # PATCH
+        patch, error = _parse_patch_body(request, FACT_EDITABLE_FIELDS)
+        if error is not None or patch is None:
+            return error or json_error("Invalid patch body")
+
+        # Validate types
+        if "confidence" in patch:
+            try:
+                conf = float(patch["confidence"])
+            except (TypeError, ValueError):
+                return json_error("confidence must be a number")
+            if not 0.0 <= conf <= 1.0:
+                return json_error("confidence must be between 0.0 and 1.0")
+            patch["confidence"] = conf
+        if "claim" in patch and (not isinstance(patch["claim"], str) or not patch["claim"].strip()):
+            return json_error("claim must be a non-empty string")
+        if "temporal_context" in patch:
+            tc = patch["temporal_context"]
+            if tc is not None and tc not in ("current", "past", "future"):
+                return json_error("temporal_context must be one of: current, past, future, or null")
+
+        updated = memory.update_fact(fact_id, **patch)
+        if updated is None:
+            return json_error("Fact not found", status=404)
+        return JsonResponse({"fact": updated})
+
+    except Exception as e:
+        logger.error(f"Error in memory_fact_detail: {e}")
+        return json_error(str(e), status=500)
+
+
+@csrf_exempt
+def memory_entity_detail(request, entity_id):
+    """
+    PATCH /api/memory/entities/{id} - Update editable entity fields (re-embeds on name/description change).
+    DELETE /api/memory/entities/{id} - Delete an entity and its relationships.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method not in ('PATCH', 'DELETE'):
+        return json_error("PATCH or DELETE only", status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+
+        if request.method == 'DELETE':
+            deleted = memory.delete_entity(entity_id)
+            if not deleted:
+                return json_error("Entity not found", status=404)
+            return JsonResponse({"deleted": True})
+
+        # PATCH
+        patch, error = _parse_patch_body(request, ENTITY_EDITABLE_FIELDS)
+        if error is not None or patch is None:
+            return error or json_error("Invalid patch body")
+
+        if "name" in patch and (not isinstance(patch["name"], str) or not patch["name"].strip()):
+            return json_error("name must be a non-empty string")
+        if "type" in patch and not isinstance(patch["type"], str):
+            return json_error("type must be a string")
+        if "aliases" in patch:
+            if not isinstance(patch["aliases"], list) or not all(isinstance(a, str) for a in patch["aliases"]):
+                return json_error("aliases must be a list of strings")
+        if "properties" in patch and not isinstance(patch["properties"], dict):
+            return json_error("properties must be an object")
+
+        updated = memory.update_entity(entity_id, **patch)
+        if updated is None:
+            return json_error("Entity not found", status=404)
+        return JsonResponse({"entity": updated})
+
+    except Exception as e:
+        logger.error(f"Error in memory_entity_detail: {e}")
+        return json_error(str(e), status=500)
+
+
 @csrf_exempt
 def memory_strategies(request):
     """

@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Optional, List, Dict, Any, Union
 
-from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle
+from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle, compute_claim_hash
 from ..embeddings import get_embedder
 from ..connections import Neo4jConnection
 from ..config import get_settings
@@ -13,7 +13,11 @@ from ..events import (
     MemoryEventEmitter,
     TurnStoredPayload,
     FactLearnedPayload,
+    FactUpdatedPayload,
+    FactDeletedPayload,
     EntityCreatedPayload,
+    EntityUpdatedPayload,
+    EntityDeletedPayload,
     RetrievalCompletePayload,
 )
 from .episodic import EpisodicMemory
@@ -296,6 +300,168 @@ class AgentMemory:
                 error_message=error_msg,
                 metadata={"entity_type": entity.type, "entity_name": entity.name},
             )
+
+    def update_fact(
+        self,
+        fact_id: str,
+        *,
+        claim: Optional[str] = None,
+        confidence: Optional[float] = None,
+        source: Optional[str] = None,
+        temporal_context: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update editable fields on a fact in place.
+
+        When `claim` changes, re-embeds and recomputes claim_hash.
+        Returns the updated fact dict, or None if not found.
+        """
+        embedding: Optional[List[float]] = None
+        claim_hash: Optional[str] = None
+        if claim is not None:
+            embedding = self.embedder.embed_single(claim)
+            claim_hash = compute_claim_hash(claim)
+
+        updated = self.semantic.update_fact(
+            fact_id=fact_id,
+            user_id=self.user_id,
+            claim=claim,
+            claim_hash=claim_hash,
+            embedding=embedding,
+            confidence=confidence,
+            source=source,
+            temporal_context=temporal_context,
+            channel=self.channel,
+        )
+
+        if updated is None:
+            return None
+
+        fields_updated = [
+            k for k, v in {
+                "claim": claim,
+                "confidence": confidence,
+                "source": source,
+                "temporal_context": temporal_context,
+            }.items() if v is not None
+        ]
+        self.events.emit(
+            MemoryEventEmitter.FACT_UPDATED,
+            FactUpdatedPayload(
+                event_name=MemoryEventEmitter.FACT_UPDATED,
+                fact_id=fact_id,
+                fields_updated=fields_updated,
+                user_id=self.user_id,
+                channel=self.channel,
+            ),
+        )
+        self._invalidate_retrieval_cache()
+        return updated
+
+    def delete_fact(self, fact_id: str) -> bool:
+        """Delete a fact. Returns True if deleted, False if not found."""
+        deleted = self.semantic.delete_fact(
+            fact_id=fact_id,
+            user_id=self.user_id,
+            channel=self.channel,
+        )
+        if deleted:
+            self.events.emit(
+                MemoryEventEmitter.FACT_DELETED,
+                FactDeletedPayload(
+                    event_name=MemoryEventEmitter.FACT_DELETED,
+                    fact_id=fact_id,
+                    user_id=self.user_id,
+                    channel=self.channel,
+                ),
+            )
+            self._invalidate_retrieval_cache()
+        return deleted
+
+    def update_entity(
+        self,
+        entity_id: str,
+        *,
+        name: Optional[str] = None,
+        type: Optional[str] = None,
+        description: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update editable fields on an entity in place.
+
+        When `name` or `description` changes, re-embeds using
+        ``f"{name}: {description or ''}"`` to match upsert_entity.
+        Returns the updated entity dict, or None if not found.
+        """
+        embedding: Optional[List[float]] = None
+        if name is not None or description is not None:
+            current = self.semantic.get_entity_by_id(entity_id, self.user_id)
+            if current is None:
+                return None
+            new_name = name if name is not None else current.get("name", "")
+            new_desc = description if description is not None else current.get("description")
+            new_type = type if type is not None else current.get("type", "")
+            text = f"{new_name}: {new_desc or new_type}"
+            embedding = self.embedder.embed_single(text)
+
+        updated = self.semantic.update_entity(
+            entity_id=entity_id,
+            user_id=self.user_id,
+            name=name,
+            type=type,
+            description=description,
+            aliases=aliases,
+            properties=properties,
+            embedding=embedding,
+            channel=self.channel,
+        )
+
+        if updated is None:
+            return None
+
+        fields_updated = [
+            k for k, v in {
+                "name": name,
+                "type": type,
+                "description": description,
+                "aliases": aliases,
+                "properties": properties,
+            }.items() if v is not None
+        ]
+        self.events.emit(
+            MemoryEventEmitter.ENTITY_UPDATED,
+            EntityUpdatedPayload(
+                event_name=MemoryEventEmitter.ENTITY_UPDATED,
+                entity_id=entity_id,
+                fields_updated=fields_updated,
+                user_id=self.user_id,
+                channel=self.channel,
+            ),
+        )
+        self._invalidate_retrieval_cache()
+        return updated
+
+    def delete_entity(self, entity_id: str) -> bool:
+        """Delete an entity. Returns True if deleted, False if not found."""
+        deleted = self.semantic.delete_entity(
+            entity_id=entity_id,
+            user_id=self.user_id,
+            channel=self.channel,
+        )
+        if deleted:
+            self.events.emit(
+                MemoryEventEmitter.ENTITY_DELETED,
+                EntityDeletedPayload(
+                    event_name=MemoryEventEmitter.ENTITY_DELETED,
+                    entity_id=entity_id,
+                    user_id=self.user_id,
+                    channel=self.channel,
+                ),
+            )
+            self._invalidate_retrieval_cache()
+        return deleted
 
     def add_goal(self, goal: Goal) -> Goal:
         """

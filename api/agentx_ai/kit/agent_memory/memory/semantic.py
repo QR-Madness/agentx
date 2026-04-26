@@ -287,6 +287,250 @@ class SemanticMemory:
 
             return new_fact
 
+    def get_fact_by_id(
+        self,
+        fact_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a single fact by ID, scoped to user_id."""
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (f:Fact {id: $fact_id})
+                WHERE f.user_id = $user_id
+                OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
+                WITH f, collect(e.id) AS entity_ids
+                RETURN f.id AS id,
+                       f.claim AS claim,
+                       f.claim_hash AS claim_hash,
+                       f.confidence AS confidence,
+                       f.source AS source,
+                       f.source_turn_id AS source_turn_id,
+                       f.channel AS channel,
+                       f.created_at AS created_at,
+                       f.last_accessed AS last_accessed,
+                       f.access_count AS access_count,
+                       f.salience AS salience,
+                       f.temporal_context AS temporal_context,
+                       f.superseded_at AS superseded_at,
+                       f.superseded_by_id AS superseded_by_id,
+                       f.flagged_for_review AS flagged_for_review,
+                       entity_ids
+            """, fact_id=fact_id, user_id=user_id)
+
+            record = result.single()
+            if not record:
+                return None
+            return convert_record_datetimes(dict(record))
+
+    def update_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        *,
+        claim: Optional[str] = None,
+        claim_hash: Optional[str] = None,
+        embedding: Optional[List[float]] = None,
+        confidence: Optional[float] = None,
+        source: Optional[str] = None,
+        temporal_context: Optional[str] = None,
+        channel: str = "_global",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update editable fields on a fact in place.
+
+        Caller is responsible for providing a fresh `embedding` and `claim_hash`
+        when `claim` changes — re-embedding is owned by the AgentMemory interface.
+
+        Returns the updated fact dict, or None if not found.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (f:Fact {id: $fact_id})
+                WHERE f.user_id = $user_id
+                SET f.claim = coalesce($claim, f.claim),
+                    f.claim_hash = coalesce($claim_hash, f.claim_hash),
+                    f.embedding = coalesce($embedding, f.embedding),
+                    f.confidence = coalesce($confidence, f.confidence),
+                    f.source = coalesce($source, f.source),
+                    f.temporal_context = coalesce($temporal_context, f.temporal_context)
+                RETURN f.id AS id
+            """,
+                fact_id=fact_id,
+                user_id=user_id,
+                claim=claim,
+                claim_hash=claim_hash,
+                embedding=embedding,
+                confidence=confidence,
+                source=source,
+                temporal_context=temporal_context,
+            )
+            record = result.single()
+            if not record:
+                return None
+
+        if self._audit_logger:
+            self._audit_logger.log_write(
+                operation="update",
+                memory_type="semantic",
+                user_id=user_id,
+                channel=channel,
+                record_ids=[fact_id],
+                metadata={
+                    "entity_kind": "fact",
+                    "fields_updated": [
+                        k for k, v in {
+                            "claim": claim,
+                            "confidence": confidence,
+                            "source": source,
+                            "temporal_context": temporal_context,
+                        }.items() if v is not None
+                    ],
+                },
+            )
+
+        return self.get_fact_by_id(fact_id, user_id)
+
+    def delete_fact(
+        self,
+        fact_id: str,
+        user_id: str,
+        channel: str = "_global",
+    ) -> bool:
+        """
+        Delete a fact and all its relationships.
+
+        Returns True if a fact was deleted, False if not found.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (f:Fact {id: $fact_id})
+                WHERE f.user_id = $user_id
+                WITH f, f.id AS deleted_id
+                DETACH DELETE f
+                RETURN deleted_id
+            """, fact_id=fact_id, user_id=user_id)
+            record = result.single()
+            deleted = record is not None and record["deleted_id"] is not None
+
+        if deleted and self._audit_logger:
+            self._audit_logger.log_write(
+                operation="delete",
+                memory_type="semantic",
+                user_id=user_id,
+                channel=channel,
+                record_ids=[fact_id],
+                metadata={"entity_kind": "fact"},
+            )
+
+        return deleted
+
+    def update_entity(
+        self,
+        entity_id: str,
+        user_id: str,
+        *,
+        name: Optional[str] = None,
+        type: Optional[str] = None,
+        description: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
+        properties: Optional[Dict[str, Any]] = None,
+        embedding: Optional[List[float]] = None,
+        channel: str = "_global",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update editable fields on an entity in place.
+
+        `properties` replaces (not merges) — the explorer is the source of truth.
+        Caller is responsible for providing a fresh `embedding` when `name` or
+        `description` changes.
+
+        Returns the updated entity dict, or None if not found.
+        """
+        validated_type = self._validate_entity_type(type) if type is not None else None
+        properties_json = json.dumps(properties) if properties is not None else None
+
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {id: $entity_id})
+                WHERE e.user_id = $user_id
+                SET e.name = coalesce($name, e.name),
+                    e.type = coalesce($type, e.type),
+                    e.description = coalesce($description, e.description),
+                    e.aliases = coalesce($aliases, e.aliases),
+                    e.properties = coalesce($properties, e.properties),
+                    e.embedding = coalesce($embedding, e.embedding)
+                RETURN e.id AS id
+            """,
+                entity_id=entity_id,
+                user_id=user_id,
+                name=name,
+                type=validated_type,
+                description=description,
+                aliases=aliases,
+                properties=properties_json,
+                embedding=embedding,
+            )
+            record = result.single()
+            if not record:
+                return None
+
+        if self._audit_logger:
+            self._audit_logger.log_write(
+                operation="update",
+                memory_type="semantic",
+                user_id=user_id,
+                channel=channel,
+                record_ids=[entity_id],
+                metadata={
+                    "entity_kind": "entity",
+                    "fields_updated": [
+                        k for k, v in {
+                            "name": name,
+                            "type": type,
+                            "description": description,
+                            "aliases": aliases,
+                            "properties": properties,
+                        }.items() if v is not None
+                    ],
+                },
+            )
+
+        return self.get_entity_by_id(entity_id, user_id)
+
+    def delete_entity(
+        self,
+        entity_id: str,
+        user_id: str,
+        channel: str = "_global",
+    ) -> bool:
+        """
+        Delete an entity and all relationships (including ABOUT edges from facts).
+
+        Returns True if an entity was deleted, False if not found.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {id: $entity_id})
+                WHERE e.user_id = $user_id
+                WITH e, e.id AS deleted_id
+                DETACH DELETE e
+                RETURN deleted_id
+            """, entity_id=entity_id, user_id=user_id)
+            record = result.single()
+            deleted = record is not None and record["deleted_id"] is not None
+
+        if deleted and self._audit_logger:
+            self._audit_logger.log_write(
+                operation="delete",
+                memory_type="semantic",
+                user_id=user_id,
+                channel=channel,
+                record_ids=[entity_id],
+                metadata={"entity_kind": "entity"},
+            )
+
+        return deleted
+
     def vector_search_facts(
         self,
         query_embedding: List[float],

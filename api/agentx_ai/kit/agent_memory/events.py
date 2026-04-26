@@ -82,6 +82,44 @@ class EntityCreatedPayload(EventPayload):
 
 
 @dataclass
+class FactUpdatedPayload(EventPayload):
+    """Payload for on_fact_updated event."""
+
+    fact_id: str = ""
+    fields_updated: List[str] = field(default_factory=list)
+    user_id: str = ""
+    channel: str = "_global"
+
+
+@dataclass
+class FactDeletedPayload(EventPayload):
+    """Payload for on_fact_deleted event."""
+
+    fact_id: str = ""
+    user_id: str = ""
+    channel: str = "_global"
+
+
+@dataclass
+class EntityUpdatedPayload(EventPayload):
+    """Payload for on_entity_updated event."""
+
+    entity_id: str = ""
+    fields_updated: List[str] = field(default_factory=list)
+    user_id: str = ""
+    channel: str = "_global"
+
+
+@dataclass
+class EntityDeletedPayload(EventPayload):
+    """Payload for on_entity_deleted event."""
+
+    entity_id: str = ""
+    user_id: str = ""
+    channel: str = "_global"
+
+
+@dataclass
 class RetrievalCompletePayload(EventPayload):
     """Payload for on_retrieval_complete event."""
 
@@ -135,7 +173,11 @@ class MemoryEventEmitter:
     # Predefined event names
     TURN_STORED = "turn_stored"
     FACT_LEARNED = "fact_learned"
+    FACT_UPDATED = "fact_updated"
+    FACT_DELETED = "fact_deleted"
     ENTITY_CREATED = "entity_created"
+    ENTITY_UPDATED = "entity_updated"
+    ENTITY_DELETED = "entity_deleted"
     RETRIEVAL_COMPLETE = "retrieval_complete"
 
     def __init__(self):

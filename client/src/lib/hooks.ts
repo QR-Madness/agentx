@@ -14,6 +14,8 @@ import {
   MemoryChannel,
   MemoryEntity,
   MemoryFact,
+  MemoryFactPatch,
+  MemoryEntityPatch,
   MemoryStrategy,
   MemoryStats,
   EntityGraph,
@@ -363,6 +365,97 @@ export function useMemoryStats() {
   }, [refresh]);
 
   return { stats, loading, error, refresh };
+}
+
+// === Memory Mutation Hooks ===
+//
+// Each hook returns { mutate, loading, error }. Callers are responsible for
+// triggering refresh() on the relevant list hook (useMemoryFacts /
+// useMemoryEntities / useMemoryStats) after a successful mutation —
+// matching the existing manual-refresh pattern used elsewhere in this file.
+
+export function useUpdateMemoryFact() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (factId: string, patch: MemoryFactPatch): Promise<MemoryFact | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.updateMemoryFact(factId, patch);
+      return result.fact;
+    } catch (err) {
+      setError(err as ApiError);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useDeleteMemoryFact() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (factId: string): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.deleteMemoryFact(factId);
+      return result.deleted;
+    } catch (err) {
+      setError(err as ApiError);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useUpdateMemoryEntity() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (entityId: string, patch: MemoryEntityPatch): Promise<MemoryEntity | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.updateMemoryEntity(entityId, patch);
+      return result.entity;
+    } catch (err) {
+      setError(err as ApiError);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useDeleteMemoryEntity() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (entityId: string): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.deleteMemoryEntity(entityId);
+      return result.deleted;
+    } catch (err) {
+      setError(err as ApiError);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
 }
 
 // === Job Hooks ===

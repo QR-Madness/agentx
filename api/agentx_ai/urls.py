@@ -62,8 +62,10 @@ urlpatterns = [
     path("memory/conversations/<str:conversation_id>", views.memory_conversation_delete, name="memory-conversation-delete"),
     # Memory explorer endpoints
     path("memory/entities", views.memory_entities, name="memory-entities"),
+    path("memory/entities/<str:entity_id>", views.memory_entity_detail, name="memory-entity-detail"),
     path("memory/entities/<str:entity_id>/graph", views.memory_entity_graph, name="memory-entity-graph"),
     path("memory/facts", views.memory_facts, name="memory-facts"),
+    path("memory/facts/<str:fact_id>", views.memory_fact_detail, name="memory-fact-detail"),
     path("memory/strategies", views.memory_strategies, name="memory-strategies"),
     path("memory/stats", views.memory_stats, name="memory-stats"),
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),

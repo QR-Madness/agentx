@@ -401,6 +401,21 @@ export interface MemoryFact {
   entity_ids: string[];
 }
 
+export interface MemoryFactPatch {
+  claim?: string;
+  confidence?: number;
+  source?: string;
+  temporal_context?: 'current' | 'past' | 'future' | null;
+}
+
+export interface MemoryEntityPatch {
+  name?: string;
+  type?: string;
+  description?: string | null;
+  aliases?: string[];
+  properties?: Record<string, unknown>;
+}
+
 export interface MemoryStrategy {
   id: string;
   description: string;
@@ -1490,6 +1505,32 @@ class ApiClient {
 
   async getMemoryStats(): Promise<MemoryStats> {
     return this.request('/api/memory/stats');
+  }
+
+  async updateMemoryFact(factId: string, patch: MemoryFactPatch): Promise<{ fact: MemoryFact }> {
+    return this.request(`/api/memory/facts/${encodeURIComponent(factId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  async deleteMemoryFact(factId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/memory/facts/${encodeURIComponent(factId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async updateMemoryEntity(entityId: string, patch: MemoryEntityPatch): Promise<{ entity: MemoryEntity }> {
+    return this.request(`/api/memory/entities/${encodeURIComponent(entityId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  async deleteMemoryEntity(entityId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/memory/entities/${encodeURIComponent(entityId)}`, {
+      method: 'DELETE',
+    });
   }
 
   // === Jobs ===
