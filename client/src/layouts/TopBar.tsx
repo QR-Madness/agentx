@@ -98,7 +98,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
     openModal({
       id: 'profile-editor',
       type: 'modal',
-      component: 'profileEditor',
+      component: 'unifiedProfileEditor',
       size: 'full',
     });
   };

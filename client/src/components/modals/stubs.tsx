@@ -9,6 +9,7 @@ import { MemoryPanel } from '../panels/MemoryPanel';
 import { ToolsPanel } from '../panels/ToolsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
+import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
 
 // Re-export ProfileEditorModal for the modal registry
 export { ProfileEditorModal } from './ProfileEditorModal';
@@ -54,6 +55,24 @@ export function TranslationModalContent({ onClose: _onClose }: ModalContentProps
  */
 export function UnifiedSettingsModalContent({ onClose }: ModalContentProps) {
   return <UnifiedSettings isOpen={true} onClose={onClose} />;
+}
+
+/**
+ * UnifiedProfileEditorModalContent — Full-screen immersive profile editor
+ */
+export function UnifiedProfileEditorModalContent({
+  onClose,
+  initialProfileId,
+  isNew,
+}: ModalContentProps & { initialProfileId?: string; isNew?: boolean }) {
+  return (
+    <UnifiedProfileEditor
+      isOpen={true}
+      onClose={onClose}
+      initialProfileId={initialProfileId}
+      isNew={isNew}
+    />
+  );
 }
 
 /**

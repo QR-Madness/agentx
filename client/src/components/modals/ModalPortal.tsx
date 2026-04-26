@@ -22,6 +22,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
   translation: lazy(() => import('./stubs').then(m => ({ default: m.TranslationModalContent }))),
   profileEditor: lazy(() => import('./stubs').then(m => ({ default: m.ProfileEditorModal }))),
+  unifiedProfileEditor: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedProfileEditorModalContent }))),
   promptLibrary: lazy(() => import('./PromptLibraryModal').then(m => ({ default: m.PromptLibraryModal }))),
   toolOutput: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputDrawer }))),
 };
