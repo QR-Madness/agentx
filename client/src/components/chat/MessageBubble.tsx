@@ -2,7 +2,7 @@
  * MessageBubble — Unified message renderer for all conversation message types
  */
 
-import { User, AlertTriangle, Info, Edit3 } from 'lucide-react';
+import { User, AlertTriangle, Info, Edit3, Workflow as WorkflowIcon, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageActions } from './MessageActions';
@@ -20,6 +20,7 @@ import {
   isPlanExecutionMessage,
   isSystemMessage,
   isErrorMessage,
+  isDelegationMessage,
 } from '../../lib/messages';
 import './MessageBubble.css';
 
@@ -83,6 +84,10 @@ export function MessageBubble({ message, agentName, avatarId, onRegenerate, onEd
         />
       </div>
     );
+  }
+
+  if (isDelegationMessage(message)) {
+    return <DelegationBubble message={message} />;
   }
 
   if (isSystemMessage(message)) {
@@ -238,6 +243,59 @@ function ErrorBubble({ message }: ErrorBubbleProps) {
           )}
         </div>
         <div className="error-message">{message.content}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Delegation Message (Agent Alloy specialist run)
+// ============================================================================
+
+interface DelegationBubbleProps {
+  message: Extract<ConversationMessage, { type: 'delegation' }>;
+}
+
+function DelegationBubble({ message }: DelegationBubbleProps) {
+  const StatusIcon =
+    message.status === 'streaming' ? Loader2 :
+    message.status === 'completed' ? CheckCircle2 :
+    XCircle;
+  const statusClass = `delegation-status ${message.status}`;
+  const targetName = message.targetAgentName || message.targetAgentId;
+
+  return (
+    <div className="message-bubble delegation">
+      <div className="delegation-card">
+        <div className="delegation-header">
+          <WorkflowIcon size={14} />
+          <span className="delegation-title">
+            Delegated to <strong>{targetName}</strong>
+          </span>
+          {message.depth > 1 && (
+            <span className="delegation-depth">depth {message.depth}</span>
+          )}
+          <span className={statusClass}>
+            <StatusIcon
+              size={12}
+              className={message.status === 'streaming' ? 'spin' : ''}
+            />
+            <span>{message.status}</span>
+          </span>
+        </div>
+        {message.task && (
+          <div className="delegation-task">{message.task}</div>
+        )}
+        {message.content && (
+          <div className="delegation-body">
+            <MessageContent content={message.content} />
+          </div>
+        )}
+        {message.error && (
+          <div className="delegation-error">
+            <AlertTriangle size={12} /> {message.error}
+          </div>
+        )}
       </div>
     </div>
   );

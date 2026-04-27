@@ -5,7 +5,7 @@
 .agent-selector-dropdown {
   position: fixed;
   width: 280px;
-  max-height: 360px;
+  max-height: 540px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -48,6 +48,12 @@
   flex: 1;
   overflow-y: auto;
   padding: 0.5rem;
+}
+
+.agent-selector-section-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 0.25rem 0;
 }
 
 .agent-selector-item {

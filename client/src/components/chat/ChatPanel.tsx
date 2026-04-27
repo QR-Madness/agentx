@@ -16,6 +16,7 @@ import {
   Layers,
   Sparkles,
   Loader2,
+  Workflow as WorkflowIcon,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
@@ -32,8 +33,10 @@ import {
   type MemoryInjectionMessage,
   type PlanExecutionMessage,
   type PlanSubtask,
+  type DelegationMessage,
   createMessageId,
 } from '../../lib/messages';
+import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import './ChatPanel.css';
 
 // Strip thinking tags from content
@@ -86,7 +89,8 @@ export function ChatPanel() {
     setStreaming,
     setSessionId,
   } = useConversation();
-  const { activeProfile, getAgentName, getProfileById } = useAgentProfile();
+  const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
+  const { getWorkflowById } = useAlloyWorkflow();
 
   // Get the profile for the current tab (falls back to global activeProfile)
   const tabProfile = activeTab?.profileId
@@ -116,6 +120,9 @@ export function ChatPanel() {
   // Track active plan execution for in-place updates
   const planMessageIdRef = useRef<string | null>(null);
   const planSubtasksRef = useRef<PlanSubtask[]>([]);
+  // Track delegation card ids by delegation_id for in-place updates
+  const delegationMessageIds = useRef<Map<string, string>>(new Map());
+  const delegationContentRef = useRef<Map<string, string>>(new Map());
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -160,6 +167,7 @@ export function ChatPanel() {
           session_id: activeTab.sessionId || undefined,
           agent_profile_id: tabProfile?.id,
           use_memory: useMemory,
+          workflow_id: activeTab.workflowId || undefined,
         },
         {
           onStart: () => {
@@ -310,6 +318,69 @@ export function ChatPanel() {
             });
             planMessageIdRef.current = null;
             planSubtasksRef.current = [];
+          },
+          onDelegationStart: (data) => {
+            // Flush any in-progress supervisor streaming before delegation card
+            const pending = streamingContentRef.current;
+            if (pending.trim()) {
+              const thinking = extractThinking(pending);
+              const cleanContent = stripThinkingTags(pending, false);
+              if (thinking || cleanContent) {
+                appendMessage({
+                  id: createMessageId(),
+                  type: 'assistant',
+                  timestamp: new Date().toISOString(),
+                  content: cleanContent,
+                  thinking: thinking || undefined,
+                  agentName,
+                });
+              }
+              streamingContentRef.current = '';
+              setStreamingContent('');
+            }
+
+            const targetProfile = profiles.find(p => p.agentId === data.target_agent_id);
+            const messageId = createMessageId();
+            delegationMessageIds.current.set(data.delegation_id, messageId);
+
+            const message: DelegationMessage = {
+              id: messageId,
+              type: 'delegation',
+              timestamp: new Date().toISOString(),
+              delegationId: data.delegation_id,
+              targetAgentId: data.target_agent_id,
+              targetAgentName: targetProfile?.name,
+              task: data.task,
+              depth: data.depth,
+              status: 'streaming',
+              content: '',
+            };
+            appendMessage(message);
+          },
+          onDelegationChunk: (data) => {
+            const messageId = delegationMessageIds.current.get(data.delegation_id);
+            if (!messageId) return;
+            // Append to current content. updateMessage replaces fields, so we
+            // need to compute the new value off the latest state. Storing
+            // accumulated content in a ref keyed by delegation_id avoids a
+            // race against React state.
+            const accumulated = (delegationContentRef.current.get(data.delegation_id) ?? '') + data.content;
+            delegationContentRef.current.set(data.delegation_id, accumulated);
+            updateMessage(messageId, { content: accumulated });
+          },
+          onDelegationComplete: (data) => {
+            const key = data.delegation_id ?? '';
+            const messageId = key ? delegationMessageIds.current.get(key) : undefined;
+            if (!messageId) return;
+            const finalContent = delegationContentRef.current.get(key) ?? '';
+            updateMessage(messageId, {
+              status: data.status === 'success' ? 'completed' : 'failed',
+              content: finalContent || data.result_preview,
+              error: data.error ?? undefined,
+              resultPreview: data.result_preview,
+            });
+            delegationMessageIds.current.delete(key);
+            delegationContentRef.current.delete(key);
           },
           onDone: (data) => {
             const finalContent = streamingContentRef.current;
@@ -567,6 +638,15 @@ export function ChatPanel() {
           >
             <Sparkles size={12} />
             <span>{activeProfile?.name || 'Select Agent'}</span>
+            {activeTab?.workflowId && (() => {
+              const wf = getWorkflowById(activeTab.workflowId);
+              return (
+                <span className="profile-indicator-workflow" title={`Alloy workflow: ${wf?.name ?? activeTab.workflowId}`}>
+                  <WorkflowIcon size={10} />
+                  <span>{wf?.name ?? activeTab.workflowId}</span>
+                </span>
+              );
+            })()}
             <ChevronUp size={10} className={showAgentSelector ? 'rotated' : ''} />
           </button>
           <AgentSelectorDropdown

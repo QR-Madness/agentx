@@ -5,8 +5,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Settings, Check, Plus, ChevronUp } from 'lucide-react';
+import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
+import { useConversation } from '../../contexts/ConversationContext';
 import { useModal } from '../../contexts/ModalContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import './AgentSelectorDropdown.css';
@@ -19,6 +21,8 @@ interface AgentSelectorDropdownProps {
 
 export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelectorDropdownProps) {
   const { profiles, activeProfile, setActiveProfile } = useAgentProfile();
+  const { workflows } = useAlloyWorkflow();
+  const { activeTab, setActiveTabWorkflow } = useConversation();
   const { openModal } = useModal();
   const [position, setPosition] = useState({ bottom: 0, left: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -105,6 +109,23 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
     onClose();
   };
 
+  const activeWorkflowId = activeTab?.workflowId ?? null;
+
+  const handleSelectWorkflow = (workflowId: string | null) => {
+    setActiveTabWorkflow(workflowId);
+    onClose();
+  };
+
+  const handleManageWorkflows = () => {
+    openModal({
+      id: 'alloy-factory',
+      type: 'modal',
+      component: 'alloyFactory',
+      size: 'full',
+    });
+    onClose();
+  };
+
   const dropdown = (
     <div
       className="agent-selector-dropdown"
@@ -152,6 +173,58 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
         <button className="agent-create-button" onClick={handleCreateNew}>
           <Plus size={14} />
           <span>Create New Agent</span>
+        </button>
+      </div>
+
+      <div className="agent-selector-section-divider" />
+
+      <div className="agent-selector-header">
+        <WorkflowIcon size={14} />
+        <span>Alloy Workflow</span>
+      </div>
+
+      <div className="agent-selector-list">
+        <div
+          className={`agent-selector-item ${activeWorkflowId === null ? 'active' : ''}`}
+          onClick={() => handleSelectWorkflow(null)}
+        >
+          <div className="agent-item-avatar" style={{ background: 'transparent', border: '1px dashed var(--border-color)' }}>
+            <Bot size={14} />
+          </div>
+          <div className="agent-item-info">
+            <span className="agent-item-name">No workflow</span>
+            <span className="agent-item-model">Single-agent chat</span>
+          </div>
+          {activeWorkflowId === null && <Check size={14} className="agent-item-check" />}
+        </div>
+
+        {workflows.map(w => {
+          const specialistCount = w.members.filter(m => m.role === 'specialist').length;
+          return (
+            <div
+              key={w.id}
+              className={`agent-selector-item ${activeWorkflowId === w.id ? 'active' : ''}`}
+              onClick={() => handleSelectWorkflow(w.id)}
+            >
+              <div className="agent-item-avatar">
+                <WorkflowIcon size={14} />
+              </div>
+              <div className="agent-item-info">
+                <span className="agent-item-name">{w.name}</span>
+                <span className="agent-item-model">
+                  {specialistCount} specialist{specialistCount === 1 ? '' : 's'}
+                </span>
+              </div>
+              {activeWorkflowId === w.id && <Check size={14} className="agent-item-check" />}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="agent-selector-footer">
+        <button className="agent-create-button" onClick={handleManageWorkflows}>
+          <Settings size={14} />
+          <span>Manage Workflows…</span>
         </button>
       </div>
     </div>

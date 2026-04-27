@@ -25,6 +25,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   unifiedProfileEditor: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedProfileEditorModalContent }))),
   promptLibrary: lazy(() => import('./PromptLibraryModal').then(m => ({ default: m.PromptLibraryModal }))),
   toolOutput: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputDrawer }))),
+  alloyFactory: lazy(() => import('./AlloyFactoryModal').then(m => ({ default: m.AlloyFactoryModal as ComponentType<ModalComponentProps> }))),
 };
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {

@@ -11,6 +11,7 @@ export type MessageType =
   | 'memory_injection'
   | 'plan_execution'
   | 'agent_handoff'
+  | 'delegation'
   | 'error';
 
 interface BaseMessage {
@@ -105,6 +106,20 @@ export interface ErrorMessage extends BaseMessage {
   recoverable: boolean;
 }
 
+/** Delegation message — supervisor delegating a task to a specialist via Agent Alloy */
+export interface DelegationMessage extends BaseMessage {
+  type: 'delegation';
+  delegationId: string;
+  targetAgentId: string;
+  targetAgentName?: string;
+  task: string;
+  depth: number;
+  status: 'streaming' | 'completed' | 'failed';
+  content: string;
+  error?: string;
+  resultPreview?: string;
+}
+
 /** Agent handoff message - displayed when an agent transfers conversation to another */
 export interface AgentHandoffMessage extends BaseMessage {
   type: 'agent_handoff';
@@ -128,6 +143,7 @@ export type ConversationMessage =
   | MemoryInjectionMessage
   | PlanExecutionMessage
   | AgentHandoffMessage
+  | DelegationMessage
   | SystemMessage
   | ErrorMessage;
 
@@ -171,4 +187,8 @@ export function isErrorMessage(msg: ConversationMessage): msg is ErrorMessage {
 
 export function isAgentHandoffMessage(msg: ConversationMessage): msg is AgentHandoffMessage {
   return msg.type === 'agent_handoff';
+}
+
+export function isDelegationMessage(msg: ConversationMessage): msg is DelegationMessage {
+  return msg.type === 'delegation';
 }

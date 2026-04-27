@@ -191,3 +191,86 @@
 .message-bubble.unknown {
   opacity: 0.6;
 }
+
+/* Delegation message (Agent Alloy specialist) */
+.message-bubble.delegation {
+  padding-left: 2.5rem;
+}
+
+.delegation-card {
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #7c5cff;
+  border-radius: 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(124, 92, 255, 0.04),
+    rgba(124, 92, 255, 0.01)
+  );
+  padding: 0.75rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.delegation-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.delegation-title strong {
+  color: var(--text-primary);
+}
+
+.delegation-depth {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(124, 92, 255, 0.15);
+  color: #b39dff;
+}
+
+.delegation-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.delegation-status.streaming { color: #7c5cff; }
+.delegation-status.completed { color: #22c55e; }
+.delegation-status.failed { color: #ef4444; }
+
+.delegation-task {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  border-left: 2px solid var(--border-color);
+  padding-left: 0.625rem;
+}
+
+.delegation-body {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.delegation-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: #ef4444;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

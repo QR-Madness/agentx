@@ -3435,6 +3435,7 @@ def agent_profiles_list(request):
                 {
                     "id": p.id,
                     "name": p.name,
+                    "agent_id": p.agent_id,
                     "avatar": p.avatar,
                     "description": p.description,
                     "default_model": p.default_model,
@@ -3475,6 +3476,7 @@ def agent_profiles_list(request):
                 "profile": {
                     "id": created.id,
                     "name": created.name,
+                    "agent_id": created.agent_id,
                     "avatar": created.avatar,
                     "description": created.description,
                     "default_model": created.default_model,
@@ -3519,6 +3521,7 @@ def agent_profile_detail(request, profile_id):
             "profile": {
                 "id": profile.id,
                 "name": profile.name,
+                "agent_id": profile.agent_id,
                 "avatar": profile.avatar,
                 "description": profile.description,
                 "default_model": profile.default_model,
@@ -3548,6 +3551,7 @@ def agent_profile_detail(request, profile_id):
             "profile": {
                 "id": updated.id,
                 "name": updated.name,
+                "agent_id": updated.agent_id,
                 "avatar": updated.avatar,
                 "description": updated.description,
                 "default_model": updated.default_model,

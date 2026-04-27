@@ -176,6 +176,7 @@ export interface ChatRequest {
   agent_profile_id?: string;  // Agent profile to use (includes model, temperature, etc.)
   temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
   use_memory?: boolean;  // Enable memory retrieval (default true)
+  workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
 }
 
 export interface ChatResponse {
@@ -294,6 +295,7 @@ export type ReasoningStrategy = 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
 export interface AgentProfile {
   id: string;
   name: string;
+  agentId: string;  // Docker-style stable identifier (used by Alloy workflows)
   avatar?: string;
   description?: string;
   defaultModel?: string;
@@ -323,6 +325,147 @@ export interface AgentProfileCreate {
   memory_channel?: string;
   enable_tools?: boolean;
   is_default?: boolean;
+}
+
+// === Agent Alloy Types ===
+
+export type AlloyMemberRole = 'supervisor' | 'specialist';
+
+export interface AlloyWorkflowMember {
+  agentId: string;
+  role: AlloyMemberRole;
+  delegationHint?: string;
+}
+
+export interface AlloyWorkflowRoute {
+  fromAgentId: string;
+  toAgentId: string;
+  when: string;
+}
+
+export interface AlloyWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  supervisorAgentId: string;
+  members: AlloyWorkflowMember[];
+  routes: AlloyWorkflowRoute[];
+  sharedChannel: string;
+  canvas: Record<string, unknown>;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface AlloyWorkflowCreate {
+  id: string;
+  name: string;
+  description?: string;
+  supervisorAgentId: string;
+  members: AlloyWorkflowMember[];
+  routes?: AlloyWorkflowRoute[];
+  canvas?: Record<string, unknown>;
+}
+
+export type AlloyWorkflowUpdate = Partial<Omit<AlloyWorkflowCreate, 'id'>>;
+
+// SSE event payloads emitted during a workflow-driven chat
+export interface DelegationStartEvent {
+  delegation_id: string;
+  target_agent_id: string;
+  tool_call_id: string;
+  task: string;
+  depth: number;
+  supervisor_agent_id: string;
+  shared_channel: string;
+}
+
+export interface DelegationChunkEvent {
+  delegation_id: string;
+  target_agent_id: string;
+  content: string;
+}
+
+export interface DelegationCompleteEvent {
+  delegation_id?: string;  // absent on pre-validation failures
+  target_agent_id: string;
+  tool_call_id: string;
+  status: 'success' | 'failed';
+  error: string | null;
+  result_preview: string;
+}
+
+interface ServerWorkflowMember {
+  agent_id: string;
+  role: AlloyMemberRole;
+  delegation_hint?: string;
+}
+
+interface ServerWorkflowRoute {
+  from_agent_id: string;
+  to_agent_id: string;
+  when: string;
+}
+
+interface ServerWorkflow {
+  id: string;
+  name: string;
+  description: string | null;
+  supervisor_agent_id: string;
+  members: ServerWorkflowMember[];
+  routes: ServerWorkflowRoute[];
+  shared_channel: string;
+  canvas: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+function deserializeWorkflow(w: ServerWorkflow): AlloyWorkflow {
+  return {
+    id: w.id,
+    name: w.name,
+    description: w.description ?? undefined,
+    supervisorAgentId: w.supervisor_agent_id,
+    members: w.members.map((m) => ({
+      agentId: m.agent_id,
+      role: m.role,
+      delegationHint: m.delegation_hint,
+    })),
+    routes: (w.routes || []).map((r) => ({
+      fromAgentId: r.from_agent_id,
+      toAgentId: r.to_agent_id,
+      when: r.when,
+    })),
+    sharedChannel: w.shared_channel,
+    canvas: w.canvas || {},
+    createdAt: w.created_at,
+    updatedAt: w.updated_at,
+  };
+}
+
+function serializeWorkflow(
+  w: AlloyWorkflowCreate | AlloyWorkflowUpdate
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if ('id' in w && w.id !== undefined) out.id = w.id;
+  if (w.name !== undefined) out.name = w.name;
+  if (w.description !== undefined) out.description = w.description;
+  if (w.supervisorAgentId !== undefined) out.supervisor_agent_id = w.supervisorAgentId;
+  if (w.members !== undefined) {
+    out.members = w.members.map((m) => ({
+      agent_id: m.agentId,
+      role: m.role,
+      ...(m.delegationHint ? { delegation_hint: m.delegationHint } : {}),
+    }));
+  }
+  if (w.routes !== undefined) {
+    out.routes = w.routes.map((r) => ({
+      from_agent_id: r.fromAgentId,
+      to_agent_id: r.toAgentId,
+      when: r.when,
+    }));
+  }
+  if (w.canvas !== undefined) out.canvas = w.canvas;
+  return out;
 }
 
 export interface TranslateRequest {
@@ -1233,6 +1376,7 @@ class ApiClient {
     const response = await this.request<{ profiles: Array<{
       id: string;
       name: string;
+      agent_id?: string;
       avatar?: string;
       description?: string;
       default_model?: string;
@@ -1252,6 +1396,7 @@ class ApiClient {
       profiles: response.profiles.map(p => ({
         id: p.id,
         name: p.name,
+        agentId: p.agent_id || p.id,
         avatar: p.avatar,
         description: p.description,
         defaultModel: p.default_model,
@@ -1273,6 +1418,7 @@ class ApiClient {
     const response = await this.request<{ profile: {
       id: string;
       name: string;
+      agent_id?: string;
       avatar?: string;
       description?: string;
       default_model?: string;
@@ -1292,6 +1438,7 @@ class ApiClient {
       profile: {
         id: p.id,
         name: p.name,
+        agentId: p.agent_id || p.id,
         avatar: p.avatar,
         description: p.description,
         defaultModel: p.default_model,
@@ -1313,6 +1460,7 @@ class ApiClient {
     const response = await this.request<{ profile: {
       id: string;
       name: string;
+      agent_id?: string;
       avatar?: string;
       description?: string;
       default_model?: string;
@@ -1335,6 +1483,7 @@ class ApiClient {
       profile: {
         id: p.id,
         name: p.name,
+        agentId: p.agent_id || p.id,
         avatar: p.avatar,
         description: p.description,
         defaultModel: p.default_model,
@@ -1356,6 +1505,7 @@ class ApiClient {
     const response = await this.request<{ profile: {
       id: string;
       name: string;
+      agent_id?: string;
       avatar?: string;
       description?: string;
       default_model?: string;
@@ -1378,6 +1528,7 @@ class ApiClient {
       profile: {
         id: p.id,
         name: p.name,
+        agentId: p.agent_id || p.id,
         avatar: p.avatar,
         description: p.description,
         defaultModel: p.default_model,
@@ -1404,6 +1555,44 @@ class ApiClient {
   async setDefaultAgentProfile(id: string): Promise<{ default_profile_id: string }> {
     return this.request(`/api/agent/profiles/${encodeURIComponent(id)}/set-default`, {
       method: 'POST',
+    });
+  }
+
+  // === Agent Alloy Workflows ===
+
+  async listAlloyWorkflows(): Promise<{ workflows: AlloyWorkflow[] }> {
+    const response = await this.request<{ workflows: ServerWorkflow[] }>(
+      '/api/alloy/workflows'
+    );
+    return { workflows: response.workflows.map(deserializeWorkflow) };
+  }
+
+  async getAlloyWorkflow(id: string): Promise<{ workflow: AlloyWorkflow }> {
+    const response = await this.request<{ workflow: ServerWorkflow }>(
+      `/api/alloy/workflows/${encodeURIComponent(id)}`
+    );
+    return { workflow: deserializeWorkflow(response.workflow) };
+  }
+
+  async createAlloyWorkflow(workflow: AlloyWorkflowCreate): Promise<{ workflow: AlloyWorkflow }> {
+    const response = await this.request<{ workflow: ServerWorkflow }>(
+      '/api/alloy/workflows',
+      { method: 'POST', body: JSON.stringify(serializeWorkflow(workflow)) }
+    );
+    return { workflow: deserializeWorkflow(response.workflow) };
+  }
+
+  async updateAlloyWorkflow(id: string, patch: AlloyWorkflowUpdate): Promise<{ workflow: AlloyWorkflow }> {
+    const response = await this.request<{ workflow: ServerWorkflow }>(
+      `/api/alloy/workflows/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(serializeWorkflow(patch)) }
+    );
+    return { workflow: deserializeWorkflow(response.workflow) };
+  }
+
+  async deleteAlloyWorkflow(id: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/alloy/workflows/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     });
   }
 
@@ -1830,6 +2019,9 @@ class ApiClient {
         completed_count: number;
         total_time_ms: number;
       }) => void;
+      onDelegationStart?: (data: DelegationStartEvent) => void;
+      onDelegationChunk?: (data: DelegationChunkEvent) => void;
+      onDelegationComplete?: (data: DelegationCompleteEvent) => void;
       onError?: (error: string) => void;
     }
   ): { abort: () => void } {
@@ -1902,6 +2094,15 @@ class ApiClient {
                       break;
                     case 'plan_complete':
                       callbacks.onPlanComplete?.(data);
+                      break;
+                    case 'delegation_start':
+                      callbacks.onDelegationStart?.(data);
+                      break;
+                    case 'delegation_chunk':
+                      callbacks.onDelegationChunk?.(data);
+                      break;
+                    case 'delegation_complete':
+                      callbacks.onDelegationComplete?.(data);
                       break;
                     case 'done':
                       callbacks.onDone?.(data);

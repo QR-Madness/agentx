@@ -357,6 +357,7 @@ export interface ConversationTab {
   title: string;
   sessionId: string | null;
   profileId: string | null;
+  workflowId: string | null;
   messages: ConversationMessage[];
   isStreaming: boolean;
   createdAt: string;
@@ -377,6 +378,7 @@ export function createDefaultTab(): ConversationTab {
     title: 'New Conversation',
     sessionId: null,
     profileId: null,
+    workflowId: null,
     messages: [],
     isStreaming: false,
     createdAt: now,
@@ -389,7 +391,9 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
   if (!id) return [];
 
   const data = localStorage.getItem(STORAGE_KEYS.conversationTabs(id));
-  return safeJsonParse<ConversationTab[]>(data, []);
+  const tabs = safeJsonParse<ConversationTab[]>(data, []);
+  // Backfill fields added after this server's tabs were first persisted
+  return tabs.map(t => ({ ...t, workflowId: t.workflowId ?? null }));
 }
 
 export function saveConversationTabs(tabs: ConversationTab[], serverId?: string): void {

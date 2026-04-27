@@ -48,6 +48,10 @@ interface ConversationContextValue {
   setTabProfile: (tabId: string, profileId: string | null) => void;
   setActiveTabProfile: (profileId: string | null) => void;
 
+  // Per-tab Agent Alloy workflow selection
+  setTabWorkflow: (tabId: string, workflowId: string | null) => void;
+  setActiveTabWorkflow: (workflowId: string | null) => void;
+
   // Server-side conversation history
   serverConversations: ConversationSummary[];
   isLoadingHistory: boolean;
@@ -157,6 +161,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       title: 'New Conversation',
       sessionId: null,
       profileId: profileId ?? null,
+      workflowId: null,
       messages: [],
       isStreaming: false,
       createdAt: now,
@@ -272,6 +277,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     updateTab(activeTabId, { profileId });
   }, [activeTabId, updateTab]);
 
+  // Set the Alloy workflow for a specific tab
+  const setTabWorkflow = useCallback((tabId: string, workflowId: string | null) => {
+    updateTab(tabId, { workflowId });
+  }, [updateTab]);
+
+  // Set the Alloy workflow for the active tab
+  const setActiveTabWorkflow = useCallback((workflowId: string | null) => {
+    if (!activeTabId) return;
+    updateTab(activeTabId, { workflowId });
+  }, [activeTabId, updateTab]);
+
   // Fetch conversation history from server
   const refreshHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -362,6 +378,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       title: title.length >= 40 ? title + '...' : title,
       sessionId: conversationId,
       profileId: null,
+      workflowId: null,
       messages,
       isStreaming: false,
       createdAt: response.messages[0]?.timestamp || now,
@@ -418,6 +435,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         updateTab,
         setTabProfile,
         setActiveTabProfile,
+        setTabWorkflow,
+        setActiveTabWorkflow,
         serverConversations,
         isLoadingHistory,
         restoreConversation,
