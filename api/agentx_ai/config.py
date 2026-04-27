@@ -91,6 +91,13 @@ DEFAULT_CONFIG = {
         "default_reasoning_strategy": "auto",
         "enable_memory_by_default": True,
     },
+    "session": {
+        "rolling_summary": {
+            "enabled": True,
+            "recent_window": 8,
+            "model": "anthropic:claude-haiku-4-5-20251001",
+        },
+    },
 }
 
 

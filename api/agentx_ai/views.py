@@ -724,6 +724,25 @@ async def agent_chat_stream(request):
                 except Exception as mem_err:
                     logger.warning(f"Failed to retrieve memories: {mem_err}")
 
+            # Inject rolling session summary (covers turns older than the
+            # recent window). The recent window itself stays verbatim below.
+            if session.summary:
+                from .config import get_config_manager
+                cfg = get_config_manager()
+                recent_window = int(
+                    cfg.get("session.rolling_summary.recent_window", 8)
+                )
+                messages.append(Message(
+                    role=MessageRole.SYSTEM,
+                    content=f"Earlier conversation summary: {session.summary}",
+                ))
+                # Keep only the most recent N non-system messages from history.
+                non_system = [m for m in context if m.role != MessageRole.SYSTEM]
+                if len(non_system) > recent_window:
+                    trimmed = non_system[-recent_window:]
+                    system_msgs = [m for m in context if m.role == MessageRole.SYSTEM]
+                    context = system_msgs + trimmed
+
             if context:
                 messages.extend(context)
             # Use truncated/cached version for the LLM context
@@ -870,6 +889,12 @@ async def agent_chat_stream(request):
 
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
+
+            # Roll up older turns into session.summary (best-effort).
+            try:
+                await agent._session_manager.maybe_update_summary(session.id)
+            except Exception as e:
+                logger.warning(f"Rolling summary update failed: {e}")
 
             total_time = (time.time() - start_time) * 1000
             logger.debug(f"Stream total time: {total_time:.0f}ms, sending done event...")
@@ -1032,6 +1057,40 @@ def agent_status(request):
     """Get the current agent status."""
     agent = get_agent()
     return JsonResponse(agent.get_status())
+
+
+@csrf_exempt
+def agent_plan_cancel(request):
+    """
+    POST /api/agent/plans/cancel — request cancellation of a running plan.
+
+    Body: {"session_id": str, "plan_id": str}
+
+    Cancellation is cooperative: the plan executor checks the flag at subtask
+    boundaries and stops cleanly without interrupting an in-flight LLM/tool call.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({"error": "invalid JSON"}, status=400)
+
+    session_id = data.get("session_id")
+    plan_id = data.get("plan_id")
+    if not session_id or not plan_id:
+        return JsonResponse(
+            {"error": "session_id and plan_id required"}, status=400
+        )
+
+    from .agent.plan_state import PlanStateStore
+    store = PlanStateStore(session_id)
+    requested = store.request_cancel(plan_id)
+    return JsonResponse({
+        "session_id": session_id,
+        "plan_id": plan_id,
+        "cancel_requested": requested,
+    })
 
 
 # ============== Tool Output Storage Endpoints ==============

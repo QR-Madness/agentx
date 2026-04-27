@@ -361,6 +361,25 @@ class TaskPlanner:
             memory.add_goal(goal)
             plan.goal_id = goal.id
             logger.debug(f"Created goal {goal.id} for task plan")
+
+            # Create child goals for each subtask (skip if plan has only one step;
+            # the parent goal already represents that work).
+            if len(plan.steps) > 1:
+                for step in plan.steps:
+                    try:
+                        sub_goal = Goal(
+                            id=str(uuid4()),
+                            description=step.description[:500],
+                            status="active",
+                            priority=3,
+                            parent_goal_id=plan.goal_id,
+                        )
+                        memory.add_goal(sub_goal)
+                        step.goal_id = sub_goal.id
+                    except Exception as sub_e:
+                        logger.warning(
+                            f"Failed to create subgoal for step {step.id}: {sub_e}"
+                        )
         except Exception as e:
             logger.warning(f"Failed to create goal for plan: {e}")
 

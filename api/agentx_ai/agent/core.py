@@ -573,9 +573,10 @@ class Agent:
 
                 if self.memory and plan.goal_id:
                     try:
+                        goal_status = "abandoned" if answer == "[CANCELLED]" else "completed"
                         self.memory.complete_goal(
                             plan.goal_id,
-                            status="completed",
+                            status=goal_status,
                             result=answer[:500] if answer else None,
                         )
                     except Exception as e:

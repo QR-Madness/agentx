@@ -111,3 +111,31 @@ class PlanStateStore:
             client.hset(key, mapping={"status": status, "updated_at": now})
         except Exception as e:
             logger.warning(f"Failed to mark plan {status}: {e}")
+
+    def request_cancel(self, plan_id: str) -> bool:
+        """Flag a plan for cancellation. Returns True if the flag was written."""
+        try:
+            client = _get_redis_client()
+            key = self._key(plan_id)
+            if not client.exists(key):
+                return False
+            client.hset(key, "cancel_requested", "1")
+            client.expire(key, PLAN_TTL_SECONDS)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to request cancel for plan {plan_id}: {e}")
+            return False
+
+    def is_cancel_requested(self, plan_id: str) -> bool:
+        """Check whether cancellation has been requested for this plan."""
+        try:
+            client = _get_redis_client()
+            value = client.hget(self._key(plan_id), "cancel_requested")
+            if value is None:
+                return False
+            if isinstance(value, bytes):
+                value = value.decode()
+            return value == "1"
+        except Exception as e:
+            logger.warning(f"Failed to read cancel flag for plan {plan_id}: {e}")
+            return False

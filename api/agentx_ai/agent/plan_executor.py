@@ -39,6 +39,21 @@ class PlanExecutor:
         self.agent = agent
         self.state = state_store
 
+    def _complete_subtask_goal(
+        self,
+        subtask: Subtask,
+        status: str,
+        result: Optional[str] = None,
+    ) -> None:
+        """Update the memory goal linked to a subtask, if one exists."""
+        memory = getattr(self.agent, "memory", None)
+        if not memory or not subtask.goal_id:
+            return
+        try:
+            memory.complete_goal(subtask.goal_id, status=status, result=result)
+        except Exception as e:
+            logger.warning(f"Failed to complete subgoal {subtask.goal_id}: {e}")
+
     # ------------------------------------------------------------------
     # Synchronous execution (for Agent.run)
     # ------------------------------------------------------------------
@@ -55,9 +70,15 @@ class PlanExecutor:
             Composed answer string from all subtask results
         """
         plan_id = uuid4().hex[:8]
+        self.plan_id = plan_id
         self.state.create(plan_id, plan)
 
+        cancelled = False
         while not plan.is_complete():
+            if self.state.is_cancel_requested(plan_id):
+                cancelled = True
+                break
+
             subtask = plan.get_next_subtask()
             if subtask is None:
                 logger.warning("Plan deadlocked — no executable subtask found")
@@ -69,10 +90,18 @@ class PlanExecutor:
                 result = self._execute_subtask_sync(plan, subtask)
                 plan.mark_complete(subtask.id, result)
                 self.state.update_subtask(plan_id, subtask.id, "complete", result=result)
+                self._complete_subtask_goal(
+                    subtask, "completed", result[:500] if result else None
+                )
                 logger.info(f"Subtask {subtask.id} complete: {subtask.description[:60]}")
             except Exception as e:
                 logger.error(f"Subtask {subtask.id} failed: {e}")
                 self._handle_failure(plan, plan_id, subtask, e)
+
+        if cancelled:
+            self._abandon_pending_subtasks(plan, plan_id)
+            self.state.mark_complete(plan_id, status="cancelled")
+            return "[CANCELLED]"
 
         final_answer = self._compose_answer_sync(plan)
         self.state.mark_complete(plan_id)
@@ -104,6 +133,7 @@ class PlanExecutor:
             plan_complete)
         """
         plan_id = uuid4().hex[:8]
+        self.plan_id = plan_id
         start_time = time.time()
         self.state.create(plan_id, plan)
 
@@ -120,7 +150,12 @@ class PlanExecutor:
             "complexity": plan.complexity.value,
         })
 
+        cancelled = False
         while not plan.is_complete():
+            if self.state.is_cancel_requested(plan_id):
+                cancelled = True
+                break
+
             subtask = plan.get_next_subtask()
             if subtask is None:
                 logger.warning("Plan deadlocked — no executable subtask found")
@@ -148,6 +183,9 @@ class PlanExecutor:
                 subtask_content = self._last_subtask_content
                 plan.mark_complete(subtask.id, subtask_content)
                 self.state.update_subtask(plan_id, subtask.id, "complete", result=subtask_content)
+                self._complete_subtask_goal(
+                    subtask, "completed", subtask_content[:500] if subtask_content else None
+                )
 
                 yield _sse("subtask_complete", {
                     "plan_id": plan_id,
@@ -166,6 +204,22 @@ class PlanExecutor:
                     "error": str(e)[:500],
                     "progress": plan.get_progress(),
                 })
+
+        if cancelled:
+            self._abandon_pending_subtasks(plan, plan_id)
+            total_time = (time.time() - start_time) * 1000
+            self.state.mark_complete(plan_id, status="cancelled")
+            yield _sse("plan_cancelled", {
+                "plan_id": plan_id,
+                "subtask_count": len(plan.steps),
+                "completed_count": sum(
+                    1 for s in plan.steps
+                    if s.result and not s.result.startswith("[FAILED")
+                    and not s.result.startswith("[ABANDONED")
+                ),
+                "total_time_ms": round(total_time, 1),
+            })
+            return
 
         # Synthesis: compose final answer from subtask results
         async for event_str in self._compose_answer_streaming(
@@ -296,6 +350,7 @@ class PlanExecutor:
         plan.steps[subtask.id].completed = True
         plan.steps[subtask.id].result = f"[FAILED: {error}]"
         self.state.update_subtask(plan_id, subtask.id, "failed", error=str(error))
+        self._complete_subtask_goal(subtask, "blocked", f"[FAILED: {error}]"[:500])
 
         for step in plan.steps:
             if step.completed:
@@ -315,7 +370,18 @@ class PlanExecutor:
                 step.completed = True
                 step.result = "[SKIPPED: all dependencies failed]"
                 self.state.update_subtask(plan_id, step.id, "skipped")
+                self._complete_subtask_goal(step, "abandoned", "[SKIPPED: all dependencies failed]")
                 logger.info(f"Skipped subtask {step.id}: all dependencies failed")
+
+    def _abandon_pending_subtasks(self, plan: TaskPlan, plan_id: str) -> None:
+        """Mark all not-yet-completed subtasks as abandoned (called on cancel)."""
+        for step in plan.steps:
+            if step.completed:
+                continue
+            step.completed = True
+            step.result = "[ABANDONED: plan cancelled]"
+            self.state.update_subtask(plan_id, step.id, "abandoned")
+            self._complete_subtask_goal(step, "abandoned", "[ABANDONED: plan cancelled]")
 
     # ------------------------------------------------------------------
     # Internal: answer synthesis

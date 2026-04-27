@@ -503,6 +503,15 @@ class AgentMemory:
                     channel=self.channel,
                     embedding=goal.embedding
                 )
+                if goal.parent_goal_id:
+                    session.run("""
+                        MATCH (child:Goal {id: $child_id})
+                        MATCH (parent:Goal {id: $parent_id})
+                        MERGE (child)-[:SUBGOAL_OF]->(parent)
+                    """,
+                        child_id=goal.id,
+                        parent_id=goal.parent_goal_id,
+                    )
             return goal
         except Exception as e:
             success = False
