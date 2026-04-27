@@ -2,7 +2,7 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Pre-prototype
-**Last Updated**: 2026-03-29
+**Last Updated**: 2026-04-27
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -18,7 +18,7 @@
 | Phase 13: UX Overhaul | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 14: Context Gating | **Complete** | See [roadmap.md](docs/roadmap.md) |
 | Phase 15: Plan Execution | **In Progress** | ~80% |
-| Phase 16: Multi-Agent Conversations | Not Started | 0% |
+| Phase 16: Multi-Agent Conversations | **In Progress** | ~30% (Agent Alloy v1 backend shipped) |
 | Phase 17: Server Management | **Complete** | 100% |
 
 ---
@@ -126,6 +126,38 @@
 > **Priority**: MEDIUM
 > **Goal**: Enable multiple agents to collaborate in shared conversation threads
 > **Depends on**: Plan execution (Phase 15)
+
+### 16.0 Agent Alloy v1 — Backend (shipped 2026-04-27)
+
+> **Agent Alloy** = the multi-agent system. **Factory** = the visual editor (frontend, not yet built).
+> Control flow: supervisor agent owns the conversation; specialists are invoked via a `delegate_to` tool. Opt-in per chat request via `workflow_id`.
+
+- [x] `api/agentx_ai/alloy/` package: `models.py`, `manager.py`, `delegation_tool.py`, `executor.py`, `prompts.py`
+- [x] Workflow data model: supervisor + members (each with `agent_id`, role, delegation_hint), declarative `routes` (schema only), shared memory channel `_alloy_<id>`, opaque `canvas` blob for the Factory editor
+- [x] `WorkflowManager` singleton with YAML CRUD at `data/workflows.yaml` (mirrors `ProfileManager`)
+- [x] Validation: one supervisor, unique members, all `agent_id`s resolve to a real profile
+- [x] `delegate_to` tool descriptor built per-workflow with `enum` of allowed specialists + delegation hints
+- [x] `AlloyExecutor`: spawns specialist `Agent` with shared channel, streams tokens as `delegation_chunk` SSE events, creates child `Goal` (uses parent/child wiring from 15.x), stores result as Turn in shared channel
+- [x] Specialist scope: just the delegated task + access to shared workflow memory channel (no full conversation)
+- [x] Live streaming: new SSE events `delegation_start`, `delegation_chunk`, `delegation_complete`
+- [x] Re-delegation supported up to `alloy.max_delegation_depth` (default 3)
+- [x] `agent_chat_stream` accepts optional `workflow_id`; without it, behavior unchanged (fully opt-in)
+- [x] Built-in supervisor framing prompt layered on top of profile system prompt when Alloy is on
+- [x] CRUD endpoints: `GET/POST /api/alloy/workflows`, `GET/PATCH/DELETE /api/alloy/workflows/<id>`
+- [x] Config: `alloy.max_delegation_depth`, `alloy.specialist_inherits_supervisor_tools`, `alloy.delegation_timeout_seconds`
+
+### 16.0.1 Agent Alloy v1 — Deferred / Next
+
+- [ ] Factory canvas frontend (Tauri client) — backend exposes everything needed
+- [ ] Declarative route execution (`on_complete`, `on_match:<predicate>`, `on_failure`) — schema accepted but ignored in v1
+- [ ] Parallel / fan-out delegation (supervisor delegates to multiple specialists at once)
+- [ ] Loop nodes (specialist iterates over a list)
+- [ ] Human-in-the-loop checkpoint nodes
+- [ ] Async delegation (specialist runs in background; supervisor continues other work)
+- [ ] "User as supervisor" mode (no LLM supervisor — user manually invokes specialists from the chat UI)
+- [ ] Tracing / replay UI for an Alloy run
+- [ ] Tool-output sharing across agents (specialist's raw tool outputs visible to supervisor, not just final text)
+- [ ] Per-workflow tool isolation (specialist inherits a *subset* of supervisor tools, not all)
 
 ### 16.1 Message Attribution
 

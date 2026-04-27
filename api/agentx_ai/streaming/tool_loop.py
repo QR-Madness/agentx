@@ -150,9 +150,43 @@ async def streaming_tool_loop(
             ],
         ))
 
-        # Execute tools and emit result events
+        # Split off Agent Alloy delegate_to calls — these run through the
+        # active AlloyExecutor (async, streaming) instead of the sync
+        # _execute_tool_calls path.
+        alloy_executor = getattr(agent, "_active_alloy_executor", None)
+        delegation_calls = []
+        regular_calls = []
+        for tc in round_tool_calls:
+            if tc.name == "delegate_to" and alloy_executor is not None:
+                delegation_calls.append(tc)
+            else:
+                regular_calls.append(tc)
+
+        delegation_messages: list[Message] = []
+        for tc in delegation_calls:
+            args = tc.arguments or {}
+            target = args.get("agent_id", "")
+            task = args.get("task", "")
+            accumulated = ""
+            async for event_str, partial in alloy_executor.delegate(
+                target, task, tool_call_id=tc.id,
+            ):
+                yield event_str, result
+                accumulated = partial
+            delegation_messages.append(Message(
+                role=MessageRole.TOOL,
+                content=accumulated or "[delegation produced no output]",
+                tool_call_id=tc.id,
+                name=tc.name,
+            ))
+
+        # Execute remaining tools (sync) and emit result events
         tool_start_time = time.perf_counter()
-        tool_messages = agent._execute_tool_calls(round_tool_calls, task_context=task_context)
+        tool_messages = (
+            agent._execute_tool_calls(regular_calls, task_context=task_context)
+            if regular_calls else []
+        )
+        tool_messages = delegation_messages + tool_messages
         tool_total_time = (time.perf_counter() - tool_start_time) * 1000
         tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
 

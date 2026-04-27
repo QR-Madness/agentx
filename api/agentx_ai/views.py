@@ -577,6 +577,7 @@ async def agent_chat_stream(request):
         agent_profile_id = data.get("agent_profile_id")  # Agent profile
         temperature = data.get("temperature")  # None if not specified
         use_memory = data.get("use_memory", True)
+        workflow_id = data.get("workflow_id")  # Optional Agent Alloy workflow
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -597,10 +598,34 @@ async def agent_chat_stream(request):
         start_time = time.time()
 
         # Look up agent profile early to apply all settings
-        logger.debug(f"Stream chat request: agent_profile_id={agent_profile_id}, model={model}")
+        logger.debug(f"Stream chat request: agent_profile_id={agent_profile_id}, model={model}, workflow_id={workflow_id}")
         profile_manager = get_profile_manager()
         agent_profile = None
-        if agent_profile_id:
+
+        # If a workflow_id is provided, the workflow's supervisor takes over
+        # the request: its profile becomes the active agent_profile, and the
+        # workflow's shared channel scopes memory.
+        active_workflow = None
+        if workflow_id:
+            from .alloy import get_workflow_manager
+            wm = get_workflow_manager()
+            active_workflow = wm.get(workflow_id)
+            if active_workflow is None:
+                yield f"event: error\ndata: {json.dumps({'error': f'Unknown workflow_id: {workflow_id}'})}\n\n"
+                return
+            agent_profile = next(
+                (p for p in profile_manager.list_profiles()
+                 if p.agent_id == active_workflow.supervisor_agent_id),
+                None,
+            )
+            if agent_profile is None:
+                yield f"event: error\ndata: {json.dumps({'error': f'Workflow {workflow_id!r} supervisor agent_id has no matching profile'})}\n\n"
+                return
+            logger.info(
+                f"Workflow {workflow_id!r} active — supervisor profile: "
+                f"{agent_profile.name} ({agent_profile.agent_id})"
+            )
+        elif agent_profile_id:
             agent_profile = profile_manager.get_profile(agent_profile_id)
             if agent_profile:
                 logger.debug(f"Found agent profile: {agent_profile.name} (model: {agent_profile.default_model})")
@@ -634,6 +659,13 @@ async def agent_chat_stream(request):
             0.7,
         )
 
+        # When a workflow is active, the supervisor agent must use the
+        # workflow's shared memory channel and inherit the supervisor profile's
+        # agent_id so its self-channel is consistent.
+        if active_workflow is not None and agent_profile is not None:
+            config_kwargs["memory_channel"] = active_workflow.shared_channel
+            config_kwargs["agent_id"] = agent_profile.agent_id
+
         logger.debug(f"Agent config_kwargs: {config_kwargs}")
         agent = Agent(AgentConfig(**config_kwargs))
         logger.debug(f"Agent created with default_model: {agent.config.default_model}")
@@ -642,6 +674,19 @@ async def agent_chat_stream(request):
         if agent._session_manager is None:
             agent._session_manager = SessionManager()
         session = agent._session_manager.get_or_create(session_id)
+
+        # Attach the AlloyExecutor for the duration of this request. Picked up
+        # by the streaming tool loop when delegate_to calls arrive.
+        if active_workflow is not None:
+            from .alloy.executor import AlloyExecutor
+            from .config import get_config_manager
+            cfg = get_config_manager()
+            agent._active_alloy_executor = AlloyExecutor(  # type: ignore[attr-defined]
+                workflow=active_workflow,
+                supervisor_agent=agent,
+                session=session,
+                max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
+            )
 
         # Cache large user messages in Redis to save context
         message_for_context = message  # Version sent to LLM (may be truncated)
@@ -704,6 +749,15 @@ async def agent_chat_stream(request):
                 )
             ]
 
+            # When a workflow is active, layer the Alloy supervisor framing on
+            # top of the profile's normal system prompt.
+            if active_workflow is not None:
+                from .alloy.prompts import build_supervisor_prompt
+                messages.append(Message(
+                    role=MessageRole.SYSTEM,
+                    content=build_supervisor_prompt(active_workflow),
+                ))
+
             # Retrieve relevant memories and inject into context
             memory_bundle = None
             if use_memory and agent.memory:
@@ -751,6 +805,20 @@ async def agent_chat_stream(request):
             # Get MCP tools for function calling
             tools = agent._get_tools_for_provider()
             logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
+
+            # When a workflow is active, append the delegate_to tool so the
+            # supervisor can hand work to specialists.
+            if active_workflow is not None and active_workflow.specialists():
+                from .alloy.delegation_tool import build_delegation_tool
+                desc = build_delegation_tool(active_workflow)
+                tools = (tools or []) + [{
+                    "type": "function",
+                    "function": {
+                        "name": desc["name"],
+                        "description": desc["description"],
+                        "parameters": desc["input_schema"],
+                    },
+                }]
 
             # Resolve prompt profile name for metadata
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
@@ -3525,3 +3593,112 @@ def agent_profile_set_default(request, profile_id):
         return json_error("Profile not found", status=404)
 
     return JsonResponse({"default_profile_id": profile_id})
+
+
+# ============== Agent Alloy Workflow Endpoints ==============
+
+def _serialize_workflow(wf) -> dict:
+    return wf.to_dict()
+
+
+def _parse_workflow_payload(data: dict):
+    """Build a Workflow instance from a JSON payload. Raises ValueError."""
+    from .alloy.models import MemberRole, Workflow, WorkflowMember, WorkflowRoute
+    members = [
+        WorkflowMember(
+            agent_id=m["agent_id"],
+            role=MemberRole(m["role"]),
+            delegation_hint=m.get("delegation_hint"),
+        )
+        for m in data.get("members", [])
+    ]
+    routes = [
+        WorkflowRoute(
+            from_agent_id=r["from_agent_id"],
+            to_agent_id=r["to_agent_id"],
+            when=r["when"],
+        )
+        for r in data.get("routes", [])
+    ]
+    return Workflow(
+        id=data["id"],
+        name=data["name"],
+        description=data.get("description"),
+        supervisor_agent_id=data["supervisor_agent_id"],
+        members=members,
+        routes=routes,
+        shared_channel=data.get("shared_channel"),
+        canvas=data.get("canvas") or {},
+    )
+
+
+@csrf_exempt
+def alloy_workflows_list(request):
+    """
+    GET  /api/alloy/workflows — list workflows.
+    POST /api/alloy/workflows — create a workflow.
+    """
+    from .alloy import get_workflow_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    manager = get_workflow_manager()
+
+    if request.method == 'GET':
+        return JsonResponse({
+            "workflows": [_serialize_workflow(wf) for wf in manager.list()],
+        })
+
+    if request.method == 'POST':
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        try:
+            wf = _parse_workflow_payload(data)
+            created = manager.create(wf)
+            return JsonResponse({"workflow": _serialize_workflow(created)}, status=201)
+        except (KeyError, ValueError) as e:
+            return json_error(str(e), status=400)
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
+def alloy_workflow_detail(request, workflow_id):
+    """
+    GET    /api/alloy/workflows/{id} — fetch a workflow.
+    PATCH  /api/alloy/workflows/{id} — partial update (incl. canvas blob).
+    DELETE /api/alloy/workflows/{id} — delete.
+    """
+    from .alloy import get_workflow_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    manager = get_workflow_manager()
+
+    if request.method == 'GET':
+        wf = manager.get(workflow_id)
+        if wf is None:
+            return json_error("Workflow not found", status=404)
+        return JsonResponse({"workflow": _serialize_workflow(wf)})
+
+    if request.method == 'PATCH':
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        try:
+            updated = manager.update(workflow_id, data)
+            if updated is None:
+                return json_error("Workflow not found", status=404)
+            return JsonResponse({"workflow": _serialize_workflow(updated)})
+        except (KeyError, ValueError) as e:
+            return json_error(str(e), status=400)
+
+    if request.method == 'DELETE':
+        if not manager.delete(workflow_id):
+            return json_error("Workflow not found", status=404)
+        return JsonResponse({"deleted": True})
+
+    return json_error("Method not allowed", status=405)

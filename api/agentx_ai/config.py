@@ -98,6 +98,11 @@ DEFAULT_CONFIG = {
             "model": "anthropic:claude-haiku-4-5-20251001",
         },
     },
+    "alloy": {
+        "max_delegation_depth": 3,
+        "specialist_inherits_supervisor_tools": True,
+        "delegation_timeout_seconds": 300,
+    },
 }
 
 
