@@ -308,54 +308,123 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     refreshHistory();
   }, [activeServer, refreshHistory]);
 
-  // Map server messages to frontend ConversationMessage types
+  // Map server messages to frontend ConversationMessage types.
+  // Pairs adjacent tool_call + tool_result rows (matched by tool_call_id)
+  // into a single ToolCallMessage, and reconstructs a DelegationMessage for
+  // delegate_to pairs so workflow conversations restore as the user saw
+  // them live (single delegation card with full specialist output).
   const mapServerMessages = useCallback((messages: ServerMessage[]): ConversationMessage[] => {
-    return messages
-      .filter(m => ['user', 'assistant', 'tool_call', 'tool_result'].includes(m.role))
-      .map(m => {
-        const base = {
-          id: createMessageId(),
-          timestamp: m.timestamp || new Date().toISOString(),
-        };
+    const filtered = messages.filter(m =>
+      ['user', 'assistant', 'tool_call', 'tool_result'].includes(m.role)
+    );
 
-        switch (m.role) {
-          case 'user':
-            return { ...base, type: 'user' as const, content: m.content };
+    // Index tool_result rows by tool_call_id so we can pair them with their
+    // tool_call and skip them when iterating.
+    const resultsByCallId = new Map<string, ServerMessage>();
+    for (const m of filtered) {
+      if (m.role === 'tool_result') {
+        const id = m.metadata?.tool_call_id as string | undefined;
+        if (id) resultsByCallId.set(id, m);
+      }
+    }
+    const consumedResults = new Set<string>();
 
-          case 'assistant':
-            return {
-              ...base,
-              type: 'assistant' as const,
-              content: m.content,
-              model: m.metadata?.model as string | undefined,
-              thinking: m.metadata?.thinking as string | undefined,
-            };
+    const out: ConversationMessage[] = [];
+    for (const m of filtered) {
+      const base = {
+        id: createMessageId(),
+        timestamp: m.timestamp || new Date().toISOString(),
+      };
 
-          case 'tool_call':
-            return {
-              ...base,
-              type: 'tool_call' as const,
-              toolName: (m.metadata?.tool as string) || 'unknown',
-              toolCallId: (m.metadata?.tool_call_id as string) || base.id,
-              arguments: safeParseJson(m.content),
-              status: 'completed' as const,
-            };
+      if (m.role === 'user') {
+        out.push({ ...base, type: 'user', content: m.content });
+        continue;
+      }
 
-          case 'tool_result':
-            return {
-              ...base,
-              type: 'tool_result' as const,
-              toolName: (m.metadata?.tool as string) || 'unknown',
-              toolCallId: (m.metadata?.tool_call_id as string) || base.id,
-              content: m.content,
-              success: (m.metadata?.success as boolean) ?? true,
-              durationMs: m.metadata?.duration_ms as number | undefined,
-            };
+      if (m.role === 'assistant') {
+        // Skip phantom empty assistant turns from older data.
+        if (!m.content || !m.content.trim()) continue;
+        out.push({
+          ...base,
+          type: 'assistant',
+          content: m.content,
+          model: m.metadata?.model as string | undefined,
+          thinking: m.metadata?.thinking as string | undefined,
+        });
+        continue;
+      }
 
-          default:
-            return { ...base, type: 'system' as const, content: m.content };
+      if (m.role === 'tool_call') {
+        const toolName = (m.metadata?.tool as string) || 'unknown';
+        const toolCallId = (m.metadata?.tool_call_id as string) || base.id;
+        const args = safeParseJson(m.content);
+        const result = resultsByCallId.get(toolCallId);
+        if (result) consumedResults.add(toolCallId);
+
+        if (toolName === 'delegate_to') {
+          const delegationMeta = (result?.metadata?.delegation ?? {}) as {
+            raw_content?: string;
+            target_agent_id?: string;
+            task?: string;
+          };
+          const targetAgentId =
+            delegationMeta.target_agent_id ||
+            (args.agent_id as string | undefined) ||
+            'unknown';
+          const task = delegationMeta.task || (args.task as string | undefined) || '';
+          const success = (result?.metadata?.success as boolean) ?? true;
+          out.push({
+            ...base,
+            type: 'delegation',
+            delegationId: toolCallId,
+            targetAgentId,
+            task,
+            depth: 1,
+            status: success ? 'completed' : 'failed',
+            content: delegationMeta.raw_content || result?.content || '',
+            resultPreview: result?.content,
+          });
+          continue;
         }
-      });
+
+        out.push({
+          ...base,
+          type: 'tool_call',
+          toolName,
+          toolCallId,
+          arguments: args,
+          status: result
+            ? ((result.metadata?.success as boolean) ?? true ? 'completed' : 'failed')
+            : 'completed',
+          result: result
+            ? {
+                content: result.content,
+                success: (result.metadata?.success as boolean) ?? true,
+                durationMs: result.metadata?.duration_ms as number | undefined,
+              }
+            : undefined,
+        });
+        continue;
+      }
+
+      if (m.role === 'tool_result') {
+        const toolCallId = (m.metadata?.tool_call_id as string) || base.id;
+        if (consumedResults.has(toolCallId)) continue;  // already merged into its tool_call
+        // Orphan tool_result (no matching tool_call row) — keep as a standalone card.
+        out.push({
+          ...base,
+          type: 'tool_result',
+          toolName: (m.metadata?.tool as string) || 'unknown',
+          toolCallId,
+          content: m.content,
+          success: (m.metadata?.success as boolean) ?? true,
+          durationMs: m.metadata?.duration_ms as number | undefined,
+        });
+        continue;
+      }
+    }
+
+    return out;
   }, []);
 
   // Restore a conversation from the server into a new tab

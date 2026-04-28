@@ -231,20 +231,23 @@ class AlloyExecutor:
             self.depth -= 1
 
         # ------- record result in shared channel + close goal -------
+        # Store the full accumulated specialist output (no pre-truncation):
+        # recall is responsible for budgeting, not the storage layer.
         if memory_for_goal is not None:
             try:
                 from ..kit.agent_memory.models import Turn
+                delegation_metadata = {
+                    "delegation_id": delegation_id,
+                    "agent_id": target_agent_id,
+                    "task": task[:500],
+                }
                 memory_for_goal.store_turn(Turn(
                     conversation_id=self.session.id,
                     index=len(self.history),
                     role="assistant",
-                    content=f"[{target_agent_id} → delegation] {accumulated[:2000]}",
+                    content=f"[{target_agent_id} → delegation] {accumulated}",
                     channel=self.workflow.shared_channel,
-                    metadata={
-                        "delegation_id": delegation_id,
-                        "agent_id": target_agent_id,
-                        "task": task[:500],
-                    },
+                    metadata=delegation_metadata,
                 ))
             except Exception as e:
                 logger.warning(f"Failed to store delegation turn: {e}")
@@ -309,7 +312,10 @@ class AlloyExecutor:
                     time_window_hours=specialist.config.memory_time_window_hours,
                 )
                 if bundle:
-                    ctx = bundle.to_context_string()
+                    ctx = bundle.to_context_string(
+                        turn_char_limit=specialist.config.memory_recall_turn_chars,
+                        max_turns=specialist.config.memory_recall_max_turns,
+                    )
                     if ctx:
                         messages.append(Message(
                             role=MessageRole.SYSTEM,

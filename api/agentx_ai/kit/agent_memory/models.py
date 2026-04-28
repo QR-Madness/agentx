@@ -176,15 +176,28 @@ class MemoryBundle(BaseModel):
     active_goals: List[Dict[str, Any]] = Field(default_factory=list)
     user_context: Dict[str, Any] = Field(default_factory=dict)
 
-    def to_context_string(self) -> str:
-        """Format memory bundle as context for LLM prompt."""
+    def to_context_string(
+        self,
+        *,
+        turn_char_limit: int = 2000,
+        max_turns: int = 10,
+    ) -> str:
+        """Format memory bundle as context for LLM prompt.
+
+        Per-turn truncation and turn count are tunable so callers can give
+        the model enough verbatim context to actually continue prior work
+        (e.g. write a second paragraph that references the first).
+        """
         sections = []
 
         if self.relevant_turns:
-            turns_text = "\n".join(
-                f"[{t['timestamp']}] {t['role']}: {t['content'][:200]}..."
-                for t in self.relevant_turns[:5]
-            )
+            def _format_turn(t: Dict[str, Any]) -> str:
+                content = t["content"] or ""
+                if len(content) > turn_char_limit:
+                    content = content[:turn_char_limit] + "…[truncated]"
+                return f"[{t['timestamp']}] {t['role']}: {content}"
+
+            turns_text = "\n".join(_format_turn(t) for t in self.relevant_turns[:max_turns])
             sections.append(f"## Relevant Past Conversations\n{turns_text}")
 
         if self.facts:

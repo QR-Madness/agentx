@@ -775,7 +775,10 @@ async def agent_chat_stream(request):
                         time_window_hours=agent.config.memory_time_window_hours,
                     )
                     if memory_bundle:
-                        memory_context = memory_bundle.to_context_string()
+                        memory_context = memory_bundle.to_context_string(
+                            turn_char_limit=agent.config.memory_recall_turn_chars,
+                            max_turns=agent.config.memory_recall_max_turns,
+                        )
                         if memory_context:
                             messages.append(Message(
                                 role=MessageRole.SYSTEM,
@@ -1081,38 +1084,51 @@ async def agent_chat_stream(request):
                                     },
                                 )
                             else:  # tool_result
+                                tr_metadata = {
+                                    "tool": td['tool'],
+                                    "tool_call_id": td['tool_call_id'],
+                                    "success": td.get('success', True),
+                                    "duration_ms": td.get('duration_ms'),
+                                }
+                                if td.get('delegation'):
+                                    # Carry the full specialist output + delegation
+                                    # context so a restored conversation can rebuild
+                                    # the delegation card.
+                                    tr_metadata["delegation"] = td['delegation']
                                 turn = Turn(
                                     id=turn_id,
                                     conversation_id=conv_id,
                                     role="tool_result",
                                     content=td.get('content', ''),
                                     index=idx,
-                                    metadata={
-                                        "tool": td['tool'],
-                                        "tool_call_id": td['tool_call_id'],
-                                        "success": td.get('success', True),
-                                        "duration_ms": td.get('duration_ms'),
-                                    },
+                                    metadata=tr_metadata,
                                 )
                             agent.memory.store_turn(turn)
                             idx += 1
 
-                        # Store assistant turn with thinking in metadata
-                        asst_metadata = {"model": model_id, "latency_ms": total_time}
-                        if parsed.thinking:
-                            asst_metadata["thinking"] = parsed.thinking
+                        # Store assistant turn with thinking in metadata.
+                        # Skip empty assistant turns — these happen when the
+                        # supervisor delegated and stopped without wrap-up
+                        # commentary; storing a blank row makes the final
+                        # message "disappear" on conversation restore.
+                        if parsed.content.strip():
+                            asst_metadata = {"model": model_id, "latency_ms": total_time}
+                            if parsed.thinking:
+                                asst_metadata["thinking"] = parsed.thinking
 
-                        assistant_turn = Turn(
-                            id=asst_turn_id,
-                            conversation_id=conv_id,
-                            role="assistant",
-                            content=parsed.content,
-                            index=idx,
-                            metadata=asst_metadata,
-                            agent_id=getattr(agent_profile, "agent_id", None),
-                        )
-                        agent.memory.store_turn(assistant_turn)
-                        logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")
+                            assistant_turn = Turn(
+                                id=asst_turn_id,
+                                conversation_id=conv_id,
+                                role="assistant",
+                                content=parsed.content,
+                                index=idx,
+                                metadata=asst_metadata,
+                                agent_id=getattr(agent_profile, "agent_id", None),
+                            )
+                            agent.memory.store_turn(assistant_turn)
+                            logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")
+                        else:
+                            logger.debug(f"Skipped empty assistant turn for conversation {conv_id}")
                     except Exception as mem_err:
                         logger.warning(f"Failed to store turns in memory: {mem_err}")
 

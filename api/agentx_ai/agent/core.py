@@ -122,6 +122,8 @@ class AgentConfig:
     memory_channel: str = "_default"  # Channel for memory scoping (use _default, not _global)
     memory_top_k: int = 10  # Number of memories to retrieve
     memory_time_window_hours: Optional[int] = None  # Time window filter for retrieval
+    memory_recall_turn_chars: int = 2000  # Per-turn char budget when formatting recall context
+    memory_recall_max_turns: int = 10  # Max recalled turns surfaced in the prompt
 
 
 class Agent:

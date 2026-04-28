@@ -167,6 +167,10 @@ async def streaming_tool_loop(
         ))
 
         delegation_messages: list[Message] = []
+        # Per-tool-call delegation metadata captured for persistence so
+        # restored conversations can reconstruct the delegation card with
+        # its full raw content (rather than the LLM-facing storage hint).
+        delegation_raw: dict[str, dict[str, Any]] = {}
         for tc in delegation_calls:
             args = tc.arguments or {}
             target = args.get("agent_id", "")
@@ -177,6 +181,11 @@ async def streaming_tool_loop(
             ):
                 yield event_str, result
                 accumulated = partial
+            delegation_raw[tc.id] = {
+                "raw_content": accumulated,
+                "target_agent_id": target,
+                "task": task,
+            }
             # Route the delegation output through the same oversize handling
             # as a regular tool call, so a long specialist response is stored
             # in Redis with a retrieval key instead of being hard-truncated
@@ -231,14 +240,20 @@ async def streaming_tool_loop(
                         {},
                     ),
                 })
-                result.tool_turns_data.append({
+                result_entry: dict[str, Any] = {
                     "type": "tool_result",
                     "tool": tm.name,
                     "tool_call_id": tm.tool_call_id,
                     "content": tm.content[:2000],
                     "success": not is_error,
                     "duration_ms": round(tool_avg_time, 2),
-                })
+                }
+                if tm.tool_call_id in delegation_raw:
+                    # Persist the full specialist output + delegation context
+                    # so the client can reconstruct a DelegationMessage card
+                    # on conversation restore.
+                    result_entry["delegation"] = delegation_raw[tm.tool_call_id]
+                result.tool_turns_data.append(result_entry)
 
         messages.extend(tool_messages)
 
