@@ -117,20 +117,30 @@ class SessionManager:
         self.max_sessions = max_sessions
         self.session_timeout = session_timeout  # 1 hour default
     
-    def create(self, user_id: Optional[str] = None, **metadata: Any) -> Session:
-        """Create a new session."""
+    def create(
+        self,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        **metadata: Any,
+    ) -> Session:
+        """Create a new session.
+
+        If ``session_id`` is supplied, the session is stored under that id
+        (so client-supplied ids round-trip across requests). Otherwise a
+        fresh UUID is generated.
+        """
         # Clean up old sessions if at limit
         if len(self.sessions) >= self.max_sessions:
             self._cleanup_old_sessions()
-        
-        session_id = str(uuid.uuid4())
+
+        sid = session_id or str(uuid.uuid4())
         session = Session(
-            id=session_id,
+            id=sid,
             user_id=user_id,
             metadata=metadata,
         )
-        
-        self.sessions[session_id] = session
+
+        self.sessions[sid] = session
         return session
     
     def get(self, session_id: str) -> Optional[Session]:
@@ -158,8 +168,8 @@ class SessionManager:
             session = self.get(session_id)
             if session:
                 return session
-        
-        return self.create(user_id=user_id, **metadata)
+
+        return self.create(user_id=user_id, session_id=session_id, **metadata)
     
     def delete(self, session_id: str) -> bool:
         """Delete a session."""
@@ -258,5 +268,22 @@ class SessionManager:
             for sid, _ in sorted_sessions[:to_remove]:
                 del self.sessions[sid]
                 expired.append(sid)
-        
+
         return len(expired)
+
+
+_SESSION_MANAGER: Optional[SessionManager] = None
+
+
+def get_session_manager() -> SessionManager:
+    """Process-wide SessionManager singleton.
+
+    Per-request agents are constructed fresh (with per-profile config), so
+    a per-agent SessionManager would always be empty on the next request.
+    Sessions are keyed by client-supplied session_id, so a single shared
+    manager serves all agent instances correctly.
+    """
+    global _SESSION_MANAGER
+    if _SESSION_MANAGER is None:
+        _SESSION_MANAGER = SessionManager()
+    return _SESSION_MANAGER

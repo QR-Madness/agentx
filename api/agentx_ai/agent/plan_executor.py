@@ -38,6 +38,10 @@ class PlanExecutor:
         """
         self.agent = agent
         self.state = state_store
+        # Conversation context inherited from the chat request. Set per-call
+        # via execute()/execute_streaming(); subtasks reuse only the system
+        # framing, synthesis reuses the full thread.
+        self.conversation_context: list[Message] = []
 
     def _complete_subtask_goal(
         self,
@@ -64,11 +68,14 @@ class PlanExecutor:
 
         Args:
             plan: The task plan with subtasks
-            context: Optional conversation context messages
+            context: Optional conversation context messages (system prompts +
+                prior turns) inherited from the chat request. Subtasks see
+                only the system slice; synthesis sees the full thread.
 
         Returns:
             Composed answer string from all subtask results
         """
+        self.conversation_context = context or []
         plan_id = uuid4().hex[:8]
         self.plan_id = plan_id
         self.state.create(plan_id, plan)
@@ -121,6 +128,7 @@ class PlanExecutor:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         max_context_tokens: int = 100000,
+        conversation_context: Optional[list[Message]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Execute a plan as an async generator, yielding SSE event strings.
@@ -132,6 +140,7 @@ class PlanExecutor:
             tool_call, tool_result, subtask_complete, subtask_failed,
             plan_complete)
         """
+        self.conversation_context = conversation_context or []
         plan_id = uuid4().hex[:8]
         self.plan_id = plan_id
         start_time = time.time()
@@ -301,8 +310,21 @@ class PlanExecutor:
     # ------------------------------------------------------------------
 
     def _build_subtask_messages(self, plan: TaskPlan, subtask: Subtask) -> list[Message]:
-        """Build a self-contained message list for a subtask."""
+        """Build a self-contained message list for a subtask.
+
+        Inherits the *system* slice of the chat-request context (profile
+        system prompt, Alloy supervisor framing, memory bundle, rolling
+        summary) so each subtask has the same base framing as a normal turn.
+        Prior user/assistant turns are intentionally not propagated — they
+        explode token cost and pull focus away from the subtask.
+        """
         messages = []
+
+        # Carry over inherited system framing (skip non-system turns to keep
+        # subtasks tightly scoped).
+        for m in self.conversation_context:
+            if m.role == MessageRole.SYSTEM:
+                messages.append(m)
 
         # System prompt scoped to this subtask
         system_parts = [
@@ -417,7 +439,13 @@ class PlanExecutor:
                 yield _sse("chunk", {"content": chunk.content})
 
     def _build_synthesis_messages(self, plan: TaskPlan) -> list[Message]:
-        """Build messages for the synthesis LLM call."""
+        """Build messages for the synthesis LLM call.
+
+        Synthesis is the message the user actually reads, so it inherits the
+        full conversation context (system framing + prior turns) and ends
+        with the synthesis instruction + step results, ensuring the answer
+        reads as a continuation of the chat rather than a standalone report.
+        """
         step_summaries = []
         for step in plan.steps:
             if step.result and not step.result.startswith("[FAILED") and not step.result.startswith("[SKIPPED"):
@@ -430,19 +458,20 @@ class PlanExecutor:
                     f"Step {step.id + 1} ({step.description}): {status}"
                 )
 
-        return [
-            Message(
-                role=MessageRole.SYSTEM,
-                content=(
-                    "You are composing a final response from the results of a multi-step plan. "
-                    "Synthesize the step results into a coherent, well-structured answer. "
-                    "Do not mention the steps or plan structure unless it adds clarity. "
-                    "If some steps failed, work with whatever results are available."
-                ),
+        messages: list[Message] = list(self.conversation_context)
+        messages.append(Message(
+            role=MessageRole.SYSTEM,
+            content=(
+                "You are composing a final response from the results of a multi-step plan. "
+                "Synthesize the step results into a coherent, well-structured answer that "
+                "continues the ongoing conversation above. Do not mention the steps or plan "
+                "structure unless it adds clarity. If some steps failed, work with whatever "
+                "results are available."
             ),
-            Message(
-                role=MessageRole.USER,
-                content=f"Original task: {plan.task}\n\nStep results:\n\n"
-                + "\n\n---\n\n".join(step_summaries),
-            ),
-        ]
+        ))
+        messages.append(Message(
+            role=MessageRole.USER,
+            content=f"Original task: {plan.task}\n\nStep results:\n\n"
+            + "\n\n---\n\n".join(step_summaries),
+        ))
+        return messages

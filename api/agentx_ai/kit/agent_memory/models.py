@@ -36,6 +36,10 @@ class Turn(BaseModel):
     token_count: Optional[int] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     channel: str = "_global"
+    # Docker-style agent_id of the producing agent (assistant turns only).
+    # Enables multi-agent transcript reconstruction (Phase 16 — message
+    # attribution).
+    agent_id: Optional[str] = None
 
 
 class Entity(BaseModel):

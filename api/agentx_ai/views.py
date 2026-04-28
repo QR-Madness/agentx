@@ -587,7 +587,7 @@ async def agent_chat_stream(request):
         import time
         import uuid
         from .agent import Agent, AgentConfig
-        from .agent.session import SessionManager
+        from .agent.session import get_session_manager
         from .agent.output_parser import parse_output
         from .agent.profiles import get_profile_manager
         from .prompts import get_prompt_manager
@@ -670,9 +670,10 @@ async def agent_chat_stream(request):
         agent = Agent(AgentConfig(**config_kwargs))
         logger.debug(f"Agent created with default_model: {agent.config.default_model}")
 
-        # Session management
-        if agent._session_manager is None:
-            agent._session_manager = SessionManager()
+        # Session management — use the process-wide singleton so conversation
+        # history survives across requests (per-request Agent instances would
+        # otherwise each get a fresh empty SessionManager).
+        agent._session_manager = get_session_manager()
         session = agent._session_manager.get_or_create(session_id)
 
         # Attach the AlloyExecutor for the duration of this request. Picked up
@@ -916,11 +917,18 @@ async def agent_chat_stream(request):
                 state_store = PlanStateStore(conv_id)
                 executor = PlanExecutor(agent, state_store)
 
+                # Pass the chat-request context (system framing + prior
+                # turns), excluding the trailing current-user message which
+                # is already the plan.task. This keeps follow-up prompts
+                # tied to the ongoing conversation instead of resetting it.
+                inherited_context = messages[:-1] if messages else []
+
                 async for event_str in executor.execute_streaming(
                     plan, provider, model_id, tools,
                     temperature=effective_temperature,
                     max_tokens=adaptive_max_tokens,
                     max_context_tokens=max_context_tokens,
+                    conversation_context=inherited_context,
                 ):
                     yield event_str
 
@@ -1095,6 +1103,7 @@ async def agent_chat_stream(request):
                             content=parsed.content,
                             index=idx,
                             metadata=asst_metadata,
+                            agent_id=getattr(agent_profile, "agent_id", None),
                         )
                         agent.memory.store_turn(assistant_turn)
                         logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")

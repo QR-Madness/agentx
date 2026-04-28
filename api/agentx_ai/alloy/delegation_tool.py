@@ -9,6 +9,7 @@ context — see ``alloy/executor.py`` and the special-case branch in
 """
 
 from .models import Workflow
+from .prompts import resolve_specialist_names
 
 DELEGATION_TOOL_NAME = "delegate_to"
 
@@ -25,9 +26,11 @@ def build_delegation_tool(workflow: Workflow) -> dict:
         enum_values: list[str] = []
         bullet_lines = "  (no specialists configured)"
     else:
+        names = resolve_specialist_names(workflow)
         enum_values = [m.agent_id for m in specialists]
         bullet_lines = "\n".join(
-            f"  - {m.agent_id}: {m.delegation_hint or '(no hint provided)'}"
+            f"  - {names.get(m.agent_id, m.agent_id)} (id: {m.agent_id}): "
+            f"{m.delegation_hint or '(no hint provided)'}"
             for m in specialists
         )
 
@@ -44,7 +47,10 @@ def build_delegation_tool(workflow: Workflow) -> dict:
         "properties": {
             "agent_id": {
                 "type": "string",
-                "description": "The specialist agent_id to delegate to.",
+                "description": (
+                    "The specialist's agent_id (the slug shown in parentheses "
+                    "for each team member above)."
+                ),
             },
             "task": {
                 "type": "string",

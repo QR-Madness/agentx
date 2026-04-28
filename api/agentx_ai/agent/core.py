@@ -782,10 +782,10 @@ class Agent:
         task_id = str(uuid.uuid4())[:8]
         start_time = time.time()
 
-        # Get or create session
-        from .session import SessionManager
-        if self._session_manager is None:
-            self._session_manager = SessionManager()
+        # Get or create session — use the process-wide singleton so history
+        # survives across per-request Agent instances.
+        from .session import get_session_manager
+        self._session_manager = get_session_manager()
 
         session = self._session_manager.get_or_create(session_id)
         conversation_id = session_id or session.id
