@@ -286,6 +286,24 @@ function DelegationBubble({ message }: DelegationBubbleProps) {
         {message.task && (
           <div className="delegation-task">{message.task}</div>
         )}
+        {message.toolEvents && message.toolEvents.length > 0 && (
+          <div className="delegation-tool-events">
+            {message.toolEvents.map(evt => (
+              <ToolExecutionBlock
+                key={evt.toolCallId}
+                toolName={evt.toolName}
+                toolCallId={evt.toolCallId}
+                arguments={evt.arguments ?? {}}
+                status={evt.status}
+                result={evt.content !== undefined ? {
+                  content: evt.content,
+                  success: evt.success ?? true,
+                  durationMs: evt.durationMs,
+                } : undefined}
+              />
+            ))}
+          </div>
+        )}
         {message.content && (
           <div className="delegation-body">
             <MessageContent content={message.content} />

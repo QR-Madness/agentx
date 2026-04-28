@@ -106,6 +106,17 @@ export interface ErrorMessage extends BaseMessage {
   recoverable: boolean;
 }
 
+/** A nested tool invocation that occurred inside a delegation. */
+export interface DelegationToolEvent {
+  toolName: string;
+  toolCallId: string;
+  status: 'running' | 'completed' | 'failed';
+  arguments?: Record<string, unknown>;
+  content?: string;
+  success?: boolean;
+  durationMs?: number;
+}
+
 /** Delegation message — supervisor delegating a task to a specialist via Agent Alloy */
 export interface DelegationMessage extends BaseMessage {
   type: 'delegation';
@@ -118,6 +129,8 @@ export interface DelegationMessage extends BaseMessage {
   content: string;
   error?: string;
   resultPreview?: string;
+  /** Specialist tool calls made during the delegation, rendered inside the card. */
+  toolEvents?: DelegationToolEvent[];
 }
 
 /** Agent handoff message - displayed when an agent transfers conversation to another */

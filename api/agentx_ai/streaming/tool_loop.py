@@ -130,9 +130,25 @@ async def streaming_tool_loop(
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
             break
 
-        # Emit tool call events
+        # Split off Agent Alloy delegate_to calls — these run through the
+        # active AlloyExecutor (async, streaming) instead of the sync
+        # _execute_tool_calls path. Delegations emit their own
+        # `delegation_start`/`delegation_chunk`/`delegation_complete` event
+        # stream, so we suppress the generic `tool_call`/`tool_result` SSE
+        # events for them to avoid a redundant ToolExecutionBlock card.
+        alloy_executor = getattr(agent, "_active_alloy_executor", None)
+        delegation_calls = []
+        regular_calls = []
+        for tc in round_tool_calls:
+            if tc.name == "delegate_to" and alloy_executor is not None:
+                delegation_calls.append(tc)
+            else:
+                regular_calls.append(tc)
+
+        # Emit tool call events (only for non-delegation calls)
         for tc in round_tool_calls:
             result.tools_used.append(tc.name)
+        for tc in regular_calls:
             yield _sse("tool_call", {
                 "tool": tc.name,
                 "tool_call_id": tc.id,
@@ -149,18 +165,6 @@ async def streaming_tool_loop(
                 for tc in round_tool_calls
             ],
         ))
-
-        # Split off Agent Alloy delegate_to calls — these run through the
-        # active AlloyExecutor (async, streaming) instead of the sync
-        # _execute_tool_calls path.
-        alloy_executor = getattr(agent, "_active_alloy_executor", None)
-        delegation_calls = []
-        regular_calls = []
-        for tc in round_tool_calls:
-            if tc.name == "delegate_to" and alloy_executor is not None:
-                delegation_calls.append(tc)
-            else:
-                regular_calls.append(tc)
 
         delegation_messages: list[Message] = []
         for tc in delegation_calls:
@@ -190,15 +194,19 @@ async def streaming_tool_loop(
         tool_total_time = (time.perf_counter() - tool_start_time) * 1000
         tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
 
+        delegation_tool_call_ids = {tc.id for tc in delegation_calls}
         for tm in tool_messages:
             is_error = tm.content.startswith('{"error"') or tm.content.startswith("Error:")
-            yield _sse("tool_result", {
-                "tool": tm.name,
-                "tool_call_id": tm.tool_call_id,
-                "content": tm.content[:500],
-                "success": not is_error,
-                "duration_ms": round(tool_avg_time, 2),
-            }), result
+            # Skip emitting a generic tool_result for delegations; the
+            # delegation_complete event already carries the result.
+            if tm.tool_call_id not in delegation_tool_call_ids:
+                yield _sse("tool_result", {
+                    "tool": tm.name,
+                    "tool_call_id": tm.tool_call_id,
+                    "content": tm.content[:500],
+                    "success": not is_error,
+                    "duration_ms": round(tool_avg_time, 2),
+                }), result
 
             if capture_tool_turns:
                 result.tool_turns_data.append({

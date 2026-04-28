@@ -394,6 +394,24 @@ export interface DelegationCompleteEvent {
   result_preview: string;
 }
 
+export interface DelegationToolCallEvent {
+  delegation_id: string;
+  target_agent_id: string;
+  tool: string;
+  tool_call_id: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface DelegationToolResultEvent {
+  delegation_id: string;
+  target_agent_id: string;
+  tool: string;
+  tool_call_id: string;
+  content: string;
+  success: boolean;
+  duration_ms?: number;
+}
+
 interface ServerWorkflowMember {
   agent_id: string;
   role: AlloyMemberRole;
@@ -2022,6 +2040,8 @@ class ApiClient {
       onDelegationStart?: (data: DelegationStartEvent) => void;
       onDelegationChunk?: (data: DelegationChunkEvent) => void;
       onDelegationComplete?: (data: DelegationCompleteEvent) => void;
+      onDelegationToolCall?: (data: DelegationToolCallEvent) => void;
+      onDelegationToolResult?: (data: DelegationToolResultEvent) => void;
       onError?: (error: string) => void;
     }
   ): { abort: () => void } {
@@ -2103,6 +2123,12 @@ class ApiClient {
                       break;
                     case 'delegation_complete':
                       callbacks.onDelegationComplete?.(data);
+                      break;
+                    case 'delegation_tool_call':
+                      callbacks.onDelegationToolCall?.(data);
+                      break;
+                    case 'delegation_tool_result':
+                      callbacks.onDelegationToolResult?.(data);
                       break;
                     case 'done':
                       callbacks.onDone?.(data);

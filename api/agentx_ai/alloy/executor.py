@@ -185,22 +185,42 @@ class AlloyExecutor:
                 task_context=task,
                 emit_trajectory_info=False,
             ):
-                # Re-emit each event prefixed with delegation context.
-                # We rewrap "chunk" events as "delegation_chunk" so the client
-                # can tell sub-agent tokens apart from supervisor tokens.
-                if "event: chunk\n" in event_str:
-                    # Extract the JSON payload after "data: "
-                    data_line = event_str.split("data: ", 1)[1].rstrip()
-                    chunk_data = json.loads(data_line)
+                # Re-wrap every nested event as a delegation-scoped event so
+                # the specialist's activity stays inside the delegation card
+                # rather than fragmenting the supervisor's chat flow.
+                event_name, _, payload = event_str.partition("\n")
+                event_name = event_name.removeprefix("event: ").strip()
+                data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
+                try:
+                    inner = json.loads(data_line)
+                except json.JSONDecodeError:
+                    inner = {}
+
+                if event_name == "chunk":
                     yield _sse("delegation_chunk", {
                         "delegation_id": delegation_id,
                         "target_agent_id": target_agent_id,
-                        "content": chunk_data.get("content", ""),
+                        "content": inner.get("content", ""),
                     }), accumulated
-                else:
-                    # Pass tool_call/tool_result/info events through unchanged so
-                    # the user can see the specialist's tool activity.
-                    yield event_str, accumulated
+                elif event_name == "tool_call":
+                    yield _sse("delegation_tool_call", {
+                        "delegation_id": delegation_id,
+                        "target_agent_id": target_agent_id,
+                        "tool": inner.get("tool"),
+                        "tool_call_id": inner.get("tool_call_id"),
+                        "arguments": inner.get("arguments", {}),
+                    }), accumulated
+                elif event_name == "tool_result":
+                    yield _sse("delegation_tool_result", {
+                        "delegation_id": delegation_id,
+                        "target_agent_id": target_agent_id,
+                        "tool": inner.get("tool"),
+                        "tool_call_id": inner.get("tool_call_id"),
+                        "content": inner.get("content", ""),
+                        "success": inner.get("success", True),
+                        "duration_ms": inner.get("duration_ms"),
+                    }), accumulated
+                # Drop info/other events — they would create top-level cards.
                 accumulated = loop_result.content
         except Exception as e:
             logger.exception(f"Specialist {target_agent_id} failed during delegation")

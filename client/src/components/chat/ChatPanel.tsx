@@ -133,6 +133,10 @@ export function ChatPanel() {
   // Track delegation card ids by delegation_id for in-place updates
   const delegationMessageIds = useRef<Map<string, string>>(new Map());
   const delegationContentRef = useRef<Map<string, string>>(new Map());
+  // Per-delegation tool event timeline (rendered inside the delegation card)
+  const delegationToolEventsRef = useRef<Map<string, import('../../lib/messages').DelegationToolEvent[]>>(new Map());
+  // Active delegation count — suppress the main "Thinking..." spinner while > 0
+  const [activeDelegations, setActiveDelegations] = useState(0);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -352,6 +356,8 @@ export function ChatPanel() {
             const targetProfile = profiles.find(p => p.agentId === data.target_agent_id);
             const messageId = createMessageId();
             delegationMessageIds.current.set(data.delegation_id, messageId);
+            delegationToolEventsRef.current.set(data.delegation_id, []);
+            setActiveDelegations(c => c + 1);
 
             const message: DelegationMessage = {
               id: messageId,
@@ -364,6 +370,7 @@ export function ChatPanel() {
               depth: data.depth,
               status: 'streaming',
               content: '',
+              toolEvents: [],
             };
             appendMessage(message);
           },
@@ -381,16 +388,47 @@ export function ChatPanel() {
           onDelegationComplete: (data) => {
             const key = data.delegation_id ?? '';
             const messageId = key ? delegationMessageIds.current.get(key) : undefined;
+            if (messageId) {
+              const finalContent = delegationContentRef.current.get(key) ?? '';
+              updateMessage(messageId, {
+                status: data.status === 'success' ? 'completed' : 'failed',
+                content: finalContent || data.result_preview,
+                error: data.error ?? undefined,
+                resultPreview: data.result_preview,
+              });
+            }
+            if (key) {
+              delegationMessageIds.current.delete(key);
+              delegationContentRef.current.delete(key);
+              delegationToolEventsRef.current.delete(key);
+            }
+            setActiveDelegations(c => Math.max(0, c - 1));
+          },
+          onDelegationToolCall: (data) => {
+            const messageId = delegationMessageIds.current.get(data.delegation_id);
             if (!messageId) return;
-            const finalContent = delegationContentRef.current.get(key) ?? '';
-            updateMessage(messageId, {
-              status: data.status === 'success' ? 'completed' : 'failed',
-              content: finalContent || data.result_preview,
-              error: data.error ?? undefined,
-              resultPreview: data.result_preview,
+            const events = delegationToolEventsRef.current.get(data.delegation_id) ?? [];
+            events.push({
+              toolName: data.tool,
+              toolCallId: data.tool_call_id,
+              status: 'running',
+              arguments: data.arguments,
             });
-            delegationMessageIds.current.delete(key);
-            delegationContentRef.current.delete(key);
+            delegationToolEventsRef.current.set(data.delegation_id, events);
+            updateMessage(messageId, { toolEvents: [...events] });
+          },
+          onDelegationToolResult: (data) => {
+            const messageId = delegationMessageIds.current.get(data.delegation_id);
+            if (!messageId) return;
+            const events = delegationToolEventsRef.current.get(data.delegation_id) ?? [];
+            const evt = events.find(e => e.toolCallId === data.tool_call_id);
+            if (evt) {
+              evt.status = data.success ? 'completed' : 'failed';
+              evt.content = data.content;
+              evt.success = data.success;
+              evt.durationMs = data.duration_ms;
+              updateMessage(messageId, { toolEvents: [...events] });
+            }
           },
           onDone: (data) => {
             const finalContent = streamingContentRef.current;
@@ -433,6 +471,10 @@ export function ChatPanel() {
             setStreamingContent('');
             setIsTyping(false);
             setStreaming(false);
+            delegationMessageIds.current.clear();
+            delegationContentRef.current.clear();
+            delegationToolEventsRef.current.clear();
+            setActiveDelegations(0);
 
             const errorMessage: AssistantMessage = {
               id: createMessageId(),
@@ -590,8 +632,10 @@ export function ChatPanel() {
           <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
         ))}
 
-        {/* Streaming message or typing indicator */}
-        {isTyping && (() => {
+        {/* Streaming message or typing indicator. Suppress the empty-state
+            spinner while a delegation card is actively streaming — the card
+            is the source of activity, the main bubble would just look stalled. */}
+        {isTyping && (streamingContent || activeDelegations === 0) && (() => {
           const AvatarIcon = getAvatarIcon(tabProfile?.avatar);
           return (
           <div className="message-bubble assistant">
