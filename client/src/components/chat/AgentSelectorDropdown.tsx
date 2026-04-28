@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon } from 'lucide-react';
+import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon, Crown } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
@@ -110,6 +110,12 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
   };
 
   const activeWorkflowId = activeTab?.workflowId ?? null;
+  const activeWorkflow = activeWorkflowId
+    ? workflows.find(w => w.id === activeWorkflowId) ?? null
+    : null;
+  const supervisorProfile = activeWorkflow
+    ? profiles.find(p => p.agentId === activeWorkflow.supervisorAgentId) ?? null
+    : null;
 
   const handleSelectWorkflow = (workflowId: string | null) => {
     setActiveTabWorkflow(workflowId);
@@ -134,47 +140,90 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
     >
       <div className="agent-selector-header">
         <Bot size={14} />
-        <span>Select Agent</span>
-        <ChevronUp size={14} className="header-icon" />
+        <span>{activeWorkflow ? 'Supervisor' : 'Select Agent'}</span>
+        {activeWorkflow ? (
+          <Crown size={12} className="header-icon" />
+        ) : (
+          <ChevronUp size={14} className="header-icon" />
+        )}
       </div>
 
-      <div className="agent-selector-list">
-        {profiles.map(profile => {
-          const AvatarIcon = getAvatarIcon(profile.avatar);
-          return (
-            <div
-              key={profile.id}
-              className={`agent-selector-item ${profile.id === activeProfile?.id ? 'active' : ''}`}
-              onClick={() => handleSelect(profile.id)}
-            >
-              <div className="agent-item-avatar">
-                <AvatarIcon size={16} />
+      {activeWorkflow ? (
+        <>
+          <div className="agent-selector-list">
+            {supervisorProfile ? (
+              <div className="agent-selector-item locked active">
+                <div className="agent-item-avatar">
+                  {(() => {
+                    const SupAvatar = getAvatarIcon(supervisorProfile.avatar);
+                    return <SupAvatar size={16} />;
+                  })()}
+                </div>
+                <div className="agent-item-info">
+                  <span className="agent-item-name">{supervisorProfile.name}</span>
+                  <span className="agent-item-model">
+                    {supervisorProfile.defaultModel || 'Default model'}
+                  </span>
+                </div>
+                <Crown size={12} className="agent-item-check" />
               </div>
-              <div className="agent-item-info">
-              <span className="agent-item-name">{profile.name}</span>
-              <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
-            </div>
-            {profile.id === activeProfile?.id && (
-              <Check size={14} className="agent-item-check" />
+            ) : (
+              <div className="agent-selector-item locked">
+                <div className="agent-item-avatar">
+                  <Bot size={16} />
+                </div>
+                <div className="agent-item-info">
+                  <span className="agent-item-name">{activeWorkflow.supervisorAgentId}</span>
+                  <span className="agent-item-model">Supervisor profile not found</span>
+                </div>
+              </div>
             )}
-            <button
-              className="agent-item-edit"
-              onClick={(e) => handleEdit(e, profile.id)}
-              title="Edit profile"
-            >
-              <Settings size={12} />
+          </div>
+          <div className="agent-selector-locked-hint">
+            The agent is set by the active workflow. Switch workflow to "No workflow" to choose a different agent.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="agent-selector-list">
+            {profiles.map(profile => {
+              const AvatarIcon = getAvatarIcon(profile.avatar);
+              return (
+                <div
+                  key={profile.id}
+                  className={`agent-selector-item ${profile.id === activeProfile?.id ? 'active' : ''}`}
+                  onClick={() => handleSelect(profile.id)}
+                >
+                  <div className="agent-item-avatar">
+                    <AvatarIcon size={16} />
+                  </div>
+                  <div className="agent-item-info">
+                    <span className="agent-item-name">{profile.name}</span>
+                    <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
+                  </div>
+                  {profile.id === activeProfile?.id && (
+                    <Check size={14} className="agent-item-check" />
+                  )}
+                  <button
+                    className="agent-item-edit"
+                    onClick={(e) => handleEdit(e, profile.id)}
+                    title="Edit profile"
+                  >
+                    <Settings size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="agent-selector-footer">
+            <button className="agent-create-button" onClick={handleCreateNew}>
+              <Plus size={14} />
+              <span>Create New Agent</span>
             </button>
           </div>
-          );
-        })}
-      </div>
-
-      <div className="agent-selector-footer">
-        <button className="agent-create-button" onClick={handleCreateNew}>
-          <Plus size={14} />
-          <span>Create New Agent</span>
-        </button>
-      </div>
+        </>
+      )}
 
       <div className="agent-selector-section-divider" />
 

@@ -18,10 +18,19 @@ def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
     """Log the full LLM request payload when DEBUG_LOG_LLM_REQUESTS is set."""
     if os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() in ("", "0", "false"):
         return
+    params = request_params
+    if os.environ.get("COMPRESS_TOOL_OUTPUTS_IN_LLM_LOGS", "").strip() not in ("", "0", "false"):
+        tools = request_params.get("tools")
+        if tools:
+            names = [
+                (t.get("function", {}).get("name") or t.get("name", "?"))
+                for t in tools
+            ]
+            params = {**request_params, "tools": f"<{len(tools)} tools: {', '.join(names)}>"}
     try:
-        dumped = json.dumps(request_params, indent=2, default=str)
+        dumped = json.dumps(params, indent=2, default=str)
     except Exception:
-        dumped = str(request_params)
+        dumped = str(params)
     logger.info(f"[DEBUG LLM REQUEST] {provider_name}:\n{dumped}")
 
 

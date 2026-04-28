@@ -70,3 +70,9 @@ mcp_servers.json
 
 # Clusters (data ignored, .gitignore tracked)
 clusters/*/
+
+# Client build/IDE artifacts
+client/*.tsbuildinfo
+client/**/*.tsbuildinfo
+client/vite.config.js
+client/vite.config.d.ts

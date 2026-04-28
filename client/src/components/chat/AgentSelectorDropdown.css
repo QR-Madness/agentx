@@ -169,3 +169,20 @@
   border-color: var(--cosmic-violet);
   color: var(--text-primary);
 }
+
+.agent-selector-item.locked {
+  cursor: default;
+  opacity: 0.95;
+}
+
+.agent-selector-item.locked:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.agent-selector-locked-hint {
+  padding: 0.5rem 0.875rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  border-bottom: 1px solid var(--border-color);
+}

@@ -17,6 +17,7 @@ import {
   Sparkles,
   Loader2,
   Workflow as WorkflowIcon,
+  Crown,
 } from 'lucide-react';
 import { api, type ChatResponse } from '../../lib/api';
 import { MessageContent } from './MessageContent';
@@ -92,10 +93,19 @@ export function ChatPanel() {
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
 
-  // Get the profile for the current tab (falls back to global activeProfile)
-  const tabProfile = activeTab?.profileId
-    ? getProfileById(activeTab.profileId)
-    : activeProfile;
+  // When a workflow is selected, the supervisor profile takes over.
+  // Otherwise, the tab's per-tab profile (or the global active profile) is used.
+  const activeWorkflow = activeTab?.workflowId
+    ? getWorkflowById(activeTab.workflowId)
+    : null;
+  const supervisorProfile = activeWorkflow
+    ? profiles.find(p => p.agentId === activeWorkflow.supervisorAgentId) ?? null
+    : null;
+  const tabProfile = supervisorProfile
+    ? supervisorProfile
+    : activeTab?.profileId
+      ? getProfileById(activeTab.profileId)
+      : activeProfile;
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -109,7 +119,7 @@ export function ChatPanel() {
     window: number;
     used: number;
   } | null>(null);
-  const agentName = getAgentName();
+  const agentName = supervisorProfile?.name ?? getAgentName();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
@@ -577,12 +587,12 @@ export function ChatPanel() {
         )}
 
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={activeProfile?.avatar} />
+          <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
         ))}
 
         {/* Streaming message or typing indicator */}
         {isTyping && (() => {
-          const AvatarIcon = getAvatarIcon(activeProfile?.avatar);
+          const AvatarIcon = getAvatarIcon(tabProfile?.avatar);
           return (
           <div className="message-bubble assistant">
             <div className="message-avatar">
@@ -636,17 +646,17 @@ export function ChatPanel() {
             onClick={() => setShowAgentSelector(!showAgentSelector)}
             title="Select agent profile"
           >
-            <Sparkles size={12} />
-            <span>{activeProfile?.name || 'Select Agent'}</span>
-            {activeTab?.workflowId && (() => {
-              const wf = getWorkflowById(activeTab.workflowId);
-              return (
-                <span className="profile-indicator-workflow" title={`Alloy workflow: ${wf?.name ?? activeTab.workflowId}`}>
-                  <WorkflowIcon size={10} />
-                  <span>{wf?.name ?? activeTab.workflowId}</span>
-                </span>
-              );
-            })()}
+            {activeWorkflow ? <Crown size={12} /> : <Sparkles size={12} />}
+            <span>{tabProfile?.name || 'Select Agent'}</span>
+            {activeWorkflow && (
+              <span
+                className="profile-indicator-workflow"
+                title={`Alloy workflow: ${activeWorkflow.name}`}
+              >
+                <WorkflowIcon size={10} />
+                <span>{activeWorkflow.name}</span>
+              </span>
+            )}
             <ChevronUp size={10} className={showAgentSelector ? 'rotated' : ''} />
           </button>
           <AgentSelectorDropdown
