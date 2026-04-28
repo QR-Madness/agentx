@@ -3,8 +3,24 @@
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
+
+
+def _coerce_datetime(value: Any) -> Any:
+    """Convert neo4j.time.DateTime (or anything with .to_native()) → datetime.
+
+    Neo4j driver returns its own DateTime type for datetime properties on
+    nodes; Pydantic v2 rejects it as not a python datetime. This shim runs
+    in field validators so models can be constructed directly from
+    ``dict(record["g"])`` without per-call conversion.
+    """
+    if value is None or isinstance(value, datetime):
+        return value
+    to_native = getattr(value, "to_native", None)
+    if callable(to_native):
+        return to_native()
+    return value
 
 
 def compute_claim_hash(claim: str) -> str:
@@ -41,6 +57,11 @@ class Turn(BaseModel):
     # attribution).
     agent_id: Optional[str] = None
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
+
 
 class Entity(BaseModel):
     """Represents a named entity (person, organization, concept, etc.)."""
@@ -57,6 +78,11 @@ class Entity(BaseModel):
     last_accessed: datetime = Field(default_factory=_utc_now)
     access_count: int = 0
     channel: str = "_global"
+
+    @field_validator("first_seen", "last_accessed", mode="before")
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
 
 
 class Fact(BaseModel):
@@ -89,6 +115,13 @@ class Fact(BaseModel):
     # Review flags
     flagged_for_review: bool = False
 
+    @field_validator(
+        "created_at", "last_accessed", "superseded_at", mode="before"
+    )
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
+
     def model_post_init(self, __context) -> None:
         """Compute claim_hash after initialization if not set."""
         if self.claim_hash is None and self.claim:
@@ -108,6 +141,11 @@ class Goal(BaseModel):
     deadline: Optional[datetime] = None
     channel: str = "_global"
 
+    @field_validator("created_at", "deadline", mode="before")
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
+
 
 class Strategy(BaseModel):
     """Represents a successful procedural pattern or strategy."""
@@ -121,6 +159,11 @@ class Strategy(BaseModel):
     failure_count: int = 0
     last_used: Optional[datetime] = None
     channel: str = "_global"
+
+    @field_validator("last_used", mode="before")
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
 
 
 class MemoryBundle(BaseModel):

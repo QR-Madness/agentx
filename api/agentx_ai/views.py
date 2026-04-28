@@ -672,9 +672,13 @@ async def agent_chat_stream(request):
 
         # Session management — use the process-wide singleton so conversation
         # history survives across requests (per-request Agent instances would
-        # otherwise each get a fresh empty SessionManager).
+        # otherwise each get a fresh empty SessionManager). Key the session
+        # under the same id we report back to the client so the next request
+        # round-trips into the same Session.
         agent._session_manager = get_session_manager()
-        session = agent._session_manager.get_or_create(session_id)
+        session = agent._session_manager.get_or_create(
+            session_id or full_conversation_id
+        )
 
         # Attach the AlloyExecutor for the duration of this request. Picked up
         # by the streaming tool loop when delegate_to calls arrive.
@@ -719,8 +723,10 @@ async def agent_chat_stream(request):
         session.add_message(Message(role=MessageRole.USER, content=message))
         context = session.get_messages()[:-1]
 
-        # Resolve conversation ID early so tool usage recording has it
-        conv_id = session_id or full_conversation_id
+        # Resolve conversation ID — must match session.id exactly so the
+        # value we return to the client (`done.session_id`) round-trips back
+        # into the same Session on the next request.
+        conv_id = session.id
         if use_memory and agent.memory:
             agent.memory.conversation_id = conv_id
 
