@@ -269,6 +269,7 @@
 
 > Items to consider after prototype is complete
 
+- [ ] New Chat Feature: Comms Toolbox - Message and conversation tools - files, block memory toggle (no consolidation), and more.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
 - [ ] Real-time job progress (polling while running)

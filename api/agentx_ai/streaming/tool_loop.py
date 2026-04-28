@@ -177,9 +177,22 @@ async def streaming_tool_loop(
             ):
                 yield event_str, result
                 accumulated = partial
+            # Route the delegation output through the same oversize handling
+            # as a regular tool call, so a long specialist response is stored
+            # in Redis with a retrieval key instead of being hard-truncated
+            # by `truncate_tool_messages` (which would leave the supervisor
+            # unable to recover the full content).
+            tool_content = accumulated or "[delegation produced no output]"
+            if hasattr(agent, "handle_oversized_tool_output"):
+                tool_content = agent.handle_oversized_tool_output(
+                    tool_call_id=tc.id,
+                    tool_name=tc.name,
+                    content=tool_content,
+                    task_context=task,
+                )
             delegation_messages.append(Message(
                 role=MessageRole.TOOL,
-                content=accumulated or "[delegation produced no output]",
+                content=tool_content,
                 tool_call_id=tc.id,
                 name=tc.name,
             ))

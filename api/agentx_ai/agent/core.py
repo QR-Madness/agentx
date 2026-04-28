@@ -322,71 +322,12 @@ class Agent:
                 logger.error(f"Tool execution error for '{tc.name}': {e}")
                 content = json.dumps({"error": str(e)})
 
-            # Handle large tool results - store in Redis or truncate
-            # Skip for retrieval tools (they access already-stored content, re-storing causes loops)
-            from ..mcp.internal_tools import is_retrieval_tool
-            max_chars = self.config.max_tool_result_chars
-            original_len = len(content)
-            if original_len > max_chars and not is_retrieval_tool(tc.name):
-                stored = False
-                if self.config.store_oversized_results:
-                    # Try to store full output in Redis
-                    storage_key = store_tool_output(
-                        tool_call_id=tc.id,
-                        tool_name=tc.name,
-                        content=content,
-                        ttl_seconds=self.config.tool_output_ttl_seconds,
-                    )
-                    if storage_key:
-                        # Try LLM compression, fall back to dumb preview
-                        compressed_preview = None
-                        if self.config.compress_tool_outputs:
-                            try:
-                                compressor = get_compressor()
-                                cr = compressor.compress_sync(
-                                    tool_name=tc.name,
-                                    tool_output=content,
-                                    task_context=task_context,
-                                )
-                                if cr.success and cr.compressed_text:
-                                    compressed_preview = cr.compressed_text
-                                    logger.info(
-                                        f"Compressed tool output for '{tc.name}': "
-                                        f"{original_len:,} -> {cr.compressed_chars:,} chars "
-                                        f"({cr.tokens_used} tokens)"
-                                    )
-                            except Exception as e:
-                                logger.warning(f"Compression failed for '{tc.name}', using preview: {e}")
-
-                        tool_hint = (
-                            f"Retrieval tools for key=\"{storage_key}\":\n"
-                            f"- read_stored_output(key, offset=0, limit=12000) — paginated raw content\n"
-                            f"- tool_output_query(key, query) — semantic search (best for finding specific info)\n"
-                            f"- tool_output_section(key) — list/access named sections\n"
-                            f"- tool_output_path(key, jsonpath) — JSON path query\n"
-                            f"TIP: Prefer query/section/path over reading raw content."
-                        )
-                        if compressed_preview:
-                            content = (
-                                f"{compressed_preview}\n\n"
-                                f"[COMPRESSED SUMMARY - {original_len:,} chars total]\n"
-                                f"{tool_hint}"
-                            )
-                        else:
-                            preview = content[:1000] + "..." if len(content) > 1000 else content
-                            content = (
-                                f"{preview}\n\n"
-                                f"[OUTPUT STORED - {original_len:,} chars total]\n"
-                                f"{tool_hint}"
-                            )
-                        logger.info(f"Stored tool result for '{tc.name}' in Redis: {storage_key} ({original_len:,} chars)")
-                        stored = True
-
-                if not stored:
-                    # Fall back to truncation (Redis unavailable or storage disabled)
-                    truncated_content = content[:max_chars]
-                    content = f"{truncated_content}\n\n[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
-                    logger.info(f"Truncated tool result for '{tc.name}': {original_len:,} -> {max_chars:,} chars")
+            content = self.handle_oversized_tool_output(
+                tool_call_id=tc.id,
+                tool_name=tc.name,
+                content=content,
+                task_context=task_context,
+            )
 
             results.append(Message(
                 role=MessageRole.TOOL,
@@ -394,9 +335,95 @@ class Agent:
                 tool_call_id=tc.id,
                 name=tc.name,
             ))
-        
+
         return results
-    
+
+    def handle_oversized_tool_output(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        content: str,
+        task_context: str = "",
+    ) -> str:
+        """
+        Apply storage + compression to a tool result if it exceeds the
+        size threshold, returning the (possibly summarized) content with
+        a retrieval hint pointing to the stored key.
+
+        Used by both ``_execute_tool_calls`` (regular tool path) and the
+        Agent Alloy delegation path so the supervisor sees the same
+        ``read_stored_output``/``tool_output_query`` affordances when a
+        specialist returns a large response.
+        """
+        from ..mcp.internal_tools import is_retrieval_tool
+
+        max_chars = self.config.max_tool_result_chars
+        original_len = len(content)
+        if original_len <= max_chars or is_retrieval_tool(tool_name):
+            return content
+
+        if self.config.store_oversized_results:
+            storage_key = store_tool_output(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                content=content,
+                ttl_seconds=self.config.tool_output_ttl_seconds,
+            )
+            if storage_key:
+                compressed_preview = None
+                if self.config.compress_tool_outputs:
+                    try:
+                        compressor = get_compressor()
+                        cr = compressor.compress_sync(
+                            tool_name=tool_name,
+                            tool_output=content,
+                            task_context=task_context,
+                        )
+                        if cr.success and cr.compressed_text:
+                            compressed_preview = cr.compressed_text
+                            logger.info(
+                                f"Compressed tool output for '{tool_name}': "
+                                f"{original_len:,} -> {cr.compressed_chars:,} chars "
+                                f"({cr.tokens_used} tokens)"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Compression failed for '{tool_name}', using preview: {e}")
+
+                tool_hint = (
+                    f"Retrieval tools for key=\"{storage_key}\":\n"
+                    f"- read_stored_output(key, offset=0, limit=12000) — paginated raw content\n"
+                    f"- tool_output_query(key, query) — semantic search (best for finding specific info)\n"
+                    f"- tool_output_section(key) — list/access named sections\n"
+                    f"- tool_output_path(key, jsonpath) — JSON path query\n"
+                    f"TIP: Prefer query/section/path over reading raw content."
+                )
+                if compressed_preview:
+                    body = (
+                        f"{compressed_preview}\n\n"
+                        f"[COMPRESSED SUMMARY - {original_len:,} chars total]\n"
+                        f"{tool_hint}"
+                    )
+                else:
+                    preview = content[:1000] + "..." if len(content) > 1000 else content
+                    body = (
+                        f"{preview}\n\n"
+                        f"[OUTPUT STORED - {original_len:,} chars total]\n"
+                        f"{tool_hint}"
+                    )
+                logger.info(
+                    f"Stored tool result for '{tool_name}' in Redis: {storage_key} ({original_len:,} chars)"
+                )
+                return body
+
+        # Fall back to truncation (Redis unavailable or storage disabled)
+        truncated_content = content[:max_chars]
+        logger.info(f"Truncated tool result for '{tool_name}': {original_len:,} -> {max_chars:,} chars")
+        return (
+            f"{truncated_content}\n\n"
+            f"[OUTPUT TRUNCATED - {original_len:,} chars total, showing first {max_chars:,}]"
+        )
+
     def _complete_with_tools(
         self,
         provider,
