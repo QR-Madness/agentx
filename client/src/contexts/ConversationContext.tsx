@@ -342,12 +342,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       }
 
       if (m.role === 'assistant') {
-        // Skip phantom empty assistant turns from older data.
-        if (!m.content || !m.content.trim()) continue;
+        // Render whatever was persisted, even if empty — silently dropping
+        // legacy rows hides messages from conversations stored before the
+        // write-side empty-skip landed. New empty rows are blocked at
+        // _store_turns() time.
         out.push({
           ...base,
           type: 'assistant',
-          content: m.content,
+          content: m.content || '',
           model: m.metadata?.model as string | undefined,
           thinking: m.metadata?.thinking as string | undefined,
         });
