@@ -131,7 +131,7 @@ export function ChatPanel() {
     return () => {
       stream.stop();
     };
-  }, [activeTab?.id, stream]);
+  }, [activeTab?.id, stream.stop]);
 
   // Mirror streaming phase into ConversationContext for cross-component awareness
   useEffect(() => {

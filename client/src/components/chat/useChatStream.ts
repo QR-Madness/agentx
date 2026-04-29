@@ -75,6 +75,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
   const abortRef = useRef<{ abort: () => void } | null>(null);
 
+  // Caller passes a fresh opts literal every render, so capture it in a ref
+  // and read through the ref inside callbacks. Lets `send`/`stop`/`flush`
+  // stay referentially stable, which matters because consumers put them in
+  // useEffect deps.
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+
   // Mirror state into refs so SSE callbacks (which close over the first
   // render's state) always see the latest snapshot. The reducer remains
   // the source of truth for renders; these refs only serve the callbacks.
@@ -100,10 +107,10 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       content: cleanContent,
       thinking: thinking ?? undefined,
       timestamp: new Date().toISOString(),
-      agentName: opts.agentName,
+      agentName: optsRef.current.agentName,
     };
-    opts.appendMessage(msg);
-  }, [opts]);
+    optsRef.current.appendMessage(msg);
+  }, []);
 
   const reset = useCallback(() => {
     liveContentRef.current = '';
@@ -138,7 +145,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           relevantTurns: data.relevant_turns ?? [],
           queryUsed: data.query,
         };
-        opts.appendMessage(memMsg);
+        optsRef.current.appendMessage(memMsg);
       },
 
       onToolCall: (data) => {
@@ -163,13 +170,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           arguments: data.arguments,
           status: 'running',
         };
-        opts.appendMessage(msg);
+        optsRef.current.appendMessage(msg);
       },
 
       onToolResult: (data) => {
         const handle = activeToolCallsRef.current.get(data.tool_call_id);
         if (!handle) return;
-        opts.updateMessage(handle.messageId, {
+        optsRef.current.updateMessage(handle.messageId, {
           status: data.success ? 'completed' : 'failed',
           result: {
             content: data.content,
@@ -196,10 +203,15 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           status: 'running',
           subtasks: [],
         };
-        opts.appendMessage(msg);
+        optsRef.current.appendMessage(msg);
       },
 
       onSubtaskStart: (data) => {
+        // Each subtask runs its own streaming_tool_loop, so any supervisor
+        // text left over from the previous subtask must be flushed before
+        // the next round of chunks begins — otherwise preambles from
+        // every subtask concatenate into one bubble.
+        flushLiveContent();
         const plan = activePlanRef.current;
         if (!plan) return;
         const idx = plan.subtasks.findIndex(s => s.subtaskId === data.subtask_id);
@@ -215,7 +227,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         }
         const subtasks = [...plan.subtasks];
         dispatch({ type: 'plan_subtasks_updated', subtasks });
-        opts.updateMessage(plan.messageId, { subtasks });
+        optsRef.current.updateMessage(plan.messageId, { subtasks });
       },
 
       onSubtaskComplete: (data) => {
@@ -229,7 +241,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         const subtasks = [...plan.subtasks];
         const completedCount = subtasks.filter(s => s.status === 'completed').length;
         dispatch({ type: 'plan_subtasks_updated', subtasks });
-        opts.updateMessage(plan.messageId, { subtasks, completedCount });
+        optsRef.current.updateMessage(plan.messageId, { subtasks, completedCount });
       },
 
       onSubtaskFailed: (data) => {
@@ -242,13 +254,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         }
         const subtasks = [...plan.subtasks];
         dispatch({ type: 'plan_subtasks_updated', subtasks });
-        opts.updateMessage(plan.messageId, { subtasks });
+        optsRef.current.updateMessage(plan.messageId, { subtasks });
       },
 
       onPlanComplete: (data) => {
         const plan = activePlanRef.current;
         if (!plan) return;
-        opts.updateMessage(plan.messageId, {
+        optsRef.current.updateMessage(plan.messageId, {
           status: data.completed_count === data.subtask_count ? 'completed' : 'failed',
           completedCount: data.completed_count,
           totalTimeMs: data.total_time_ms,
@@ -267,7 +279,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         });
         dispatch({ type: 'delegation_started', delegationId: data.delegation_id, messageId });
 
-        const targetName = opts.resolveAgentName?.(data.target_agent_id);
+        const targetName = optsRef.current.resolveAgentName?.(data.target_agent_id);
         const msg: DelegationMessage = {
           id: messageId,
           type: 'delegation',
@@ -281,7 +293,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           content: '',
           toolEvents: [],
         };
-        opts.appendMessage(msg);
+        optsRef.current.appendMessage(msg);
       },
 
       onDelegationChunk: (data) => {
@@ -294,14 +306,14 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           delegationId: data.delegation_id,
           content: data.content,
         });
-        opts.updateMessage(handle.messageId, { content: accumulated });
+        optsRef.current.updateMessage(handle.messageId, { content: accumulated });
       },
 
       onDelegationComplete: (data) => {
         const key = data.delegation_id ?? '';
         const handle = key ? activeDelegationsRef.current.get(key) : undefined;
         if (handle) {
-          opts.updateMessage(handle.messageId, {
+          optsRef.current.updateMessage(handle.messageId, {
             status: data.status === 'success' ? 'completed' : 'failed',
             content: handle.content || data.result_preview,
             error: data.error ?? undefined,
@@ -332,7 +344,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           delegationId: data.delegation_id,
           events,
         });
-        opts.updateMessage(handle.messageId, { toolEvents: events });
+        optsRef.current.updateMessage(handle.messageId, { toolEvents: events });
       },
 
       onDelegationToolResult: (data) => {
@@ -355,7 +367,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           delegationId: data.delegation_id,
           events,
         });
-        opts.updateMessage(handle.messageId, { toolEvents: events });
+        optsRef.current.updateMessage(handle.messageId, { toolEvents: events });
       },
 
       onDone: (data) => {
@@ -372,16 +384,16 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             timestamp: new Date().toISOString(),
             thinking: data.thinking,
             latencyMs: data.total_time_ms,
-            agentName: data.agent_name ?? opts.agentName,
+            agentName: data.agent_name ?? optsRef.current.agentName,
             tokensInput: data.tokens_input ?? undefined,
             tokensOutput: data.tokens_output ?? undefined,
           };
-          opts.appendMessage(msg);
+          optsRef.current.appendMessage(msg);
         }
 
-        if (data.session_id) opts.onSessionId?.(data.session_id);
+        if (data.session_id) optsRef.current.onSessionId?.(data.session_id);
         if (data.context_window && data.context_used) {
-          opts.onContextInfo?.({ window: data.context_window, used: data.context_used });
+          optsRef.current.onContextInfo?.({ window: data.context_window, used: data.context_used });
         }
       },
 
@@ -398,10 +410,10 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           content: `Sorry, I encountered an error: ${error}`,
           timestamp: new Date().toISOString(),
         };
-        opts.appendMessage(msg);
+        optsRef.current.appendMessage(msg);
       },
     });
-  }, [opts, flushLiveContent, reset]);
+  }, [flushLiveContent, reset]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
