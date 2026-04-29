@@ -28,6 +28,8 @@ def _sse(event: str, data: dict) -> str:
 class ToolLoopResult:
     """Accumulated state from a streaming tool loop run."""
     content: str = ""
+    final_content: str = ""
+    delegations: list[str] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
     tokens_in: int = 0
     tokens_out: int = 0
@@ -82,6 +84,7 @@ async def streaming_tool_loop(
 
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
+        round_content = ""
 
         # Trajectory compression: consolidate older tool rounds
         if compress_trajectory(messages, max_context_tokens, task_context=task_context):
@@ -123,10 +126,12 @@ async def streaming_tool_loop(
                 result.tokens_out += chunk.usage.get("completion_tokens", 0)
             if chunk.content:
                 result.content += chunk.content
+                round_content += chunk.content
                 yield _sse("chunk", {"content": chunk.content}), result
 
         # No tool calls means we're done
         if not round_tool_calls:
+            result.final_content = round_content
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
             break
 
@@ -181,6 +186,8 @@ async def streaming_tool_loop(
             ):
                 yield event_str, result
                 accumulated = partial
+            if accumulated:
+                result.delegations.append(accumulated)
             delegation_raw[tc.id] = {
                 "raw_content": accumulated,
                 "target_agent_id": target,

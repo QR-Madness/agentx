@@ -409,6 +409,9 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
         </select>
         <span className="form-hint">
           The supervisor owns the conversation and decides when to delegate.
+          The supervisor <strong>must</strong> be a high-quality model that's
+          tested in multi-agent orchestration; actionable results aren't
+          guaranteed otherwise.
         </span>
       </div>
 

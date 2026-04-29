@@ -181,6 +181,7 @@ class PlanExecutor:
 
             try:
                 self._last_subtask_content = ""
+                self._last_subtask_content_source = "final"
                 async for event_str in self._execute_subtask_streaming(
                     plan, subtask, provider, model_id, tools,
                     temperature=temperature,
@@ -202,7 +203,10 @@ class PlanExecutor:
                     "result_preview": subtask_content[:200] if subtask_content else "",
                     "progress": plan.get_progress(),
                 })
-                logger.info(f"Subtask {subtask.id} complete: {subtask.description[:60]}")
+                logger.info(
+                    f"Subtask {subtask.id} complete [{self._last_subtask_content_source}]: "
+                    f"{subtask.description[:60]}"
+                )
 
             except Exception as e:
                 logger.error(f"Subtask {subtask.id} failed: {e}")
@@ -288,6 +292,33 @@ class PlanExecutor:
         max_tool_rounds = getattr(self.agent.config, 'max_tool_rounds', 10)
         subtask_tools = tools if subtask.tools_needed else None
 
+        # Always expose `delegate_to` to alloy subtasks. The planner has no
+        # awareness of the per-workflow delegation tool, so `tools_needed`
+        # never lists it; without this injection, supervisors running inside
+        # a subtask can only narrate delegation in text rather than actually
+        # invoking a specialist.
+        alloy_executor = getattr(self.agent, "_active_alloy_executor", None)
+        if alloy_executor is not None:
+            from ..alloy.delegation_tool import DELEGATION_TOOL_NAME, build_delegation_tool
+
+            delegation_descriptor = build_delegation_tool(alloy_executor.workflow)
+            delegation_tool = {
+                "type": "function",
+                "function": {
+                    "name": DELEGATION_TOOL_NAME,
+                    "description": delegation_descriptor["description"],
+                    "parameters": delegation_descriptor["input_schema"],
+                },
+            }
+            existing = list(subtask_tools or [])
+            already_present = any(
+                t.get("function", {}).get("name") == DELEGATION_TOOL_NAME
+                for t in existing
+            )
+            if not already_present:
+                existing.append(delegation_tool)
+            subtask_tools = existing
+
         async for event_str, loop_result in streaming_tool_loop(
             provider, model_id, messages, subtask_tools, self.agent,
             temperature=temperature,
@@ -303,7 +334,21 @@ class PlanExecutor:
         self.tools_used.extend(loop_result.tools_used)
         self.total_tokens_in += loop_result.tokens_in
         self.total_tokens_out += loop_result.tokens_out
-        self._last_subtask_content = loop_result.content
+
+        # Pick the most useful representation of this subtask's output:
+        # the supervisor's post-tool synthesis if it produced one; otherwise
+        # the specialist's delegated output(s); otherwise the legacy
+        # cross-round aggregate (used by non-alloy plans).
+        content = (loop_result.final_content or "").strip()
+        source = "final"
+        if not content and loop_result.delegations:
+            content = "\n\n---\n\n".join(loop_result.delegations).strip()
+            source = "delegation"
+        if not content:
+            content = (loop_result.content or "").strip()
+            source = "aggregate"
+        self._last_subtask_content = content
+        self._last_subtask_content_source = source
 
     # ------------------------------------------------------------------
     # Internal: message building

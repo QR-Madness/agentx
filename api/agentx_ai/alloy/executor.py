@@ -17,7 +17,6 @@ from uuid import uuid4
 from ..agent.profiles import get_profile_manager
 from ..agent.session import Session
 from ..providers.base import Message, MessageRole
-from .delegation_tool import DELEGATION_TOOL_NAME
 from .models import MemberRole, Workflow
 
 logger = logging.getLogger(__name__)
@@ -149,9 +148,11 @@ class AlloyExecutor:
             max_tool_rounds=self.supervisor.config.max_tool_rounds,
         )
         specialist = Agent(specialist_config)
-        # Specialists may re-delegate up to the depth limit; share the executor.
-        if self.depth < self.max_delegation_depth:
-            specialist._active_alloy_executor = self  # type: ignore[attr-defined]
+        # Specialists do not re-delegate. Only the supervisor receives the
+        # `delegate_to` tool; giving it to leaf specialists creates a
+        # self-referential descriptor (the only listed target is the
+        # specialist themselves) and routinely confuses smaller models into
+        # emitting fake delegation JSON as their assistant text.
 
         # ------- compose specialist messages -------
         messages = self._build_specialist_messages(profile, task, specialist)
@@ -161,16 +162,6 @@ class AlloyExecutor:
             specialist.config.default_model
         )
         tools = specialist._get_tools_for_provider() if profile.enable_tools else None
-        if specialist._active_alloy_executor is not None:  # type: ignore[attr-defined]
-            from .delegation_tool import build_delegation_tool
-            tools = (tools or []) + [{
-                "type": "function",
-                "function": {
-                    "name": DELEGATION_TOOL_NAME,
-                    "description": build_delegation_tool(self.workflow)["description"],
-                    "parameters": build_delegation_tool(self.workflow)["input_schema"],
-                },
-            }]
 
         # ------- stream specialist run -------
         accumulated = ""
