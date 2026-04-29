@@ -9,12 +9,12 @@
 # Run `task version:sync` after updating versions here.
 # ----------------------------------------------
 # Milestone Versions:
-# v.0.18.0 - Alpha Release Version (following versions need to be able to be migrated to later versions; ensure compatibility)
+# v.0.20.0 - Alpha Release Version (following versions need to be able to be migrated to later versions; ensure compatibility)
 # ----------------------------------------------
 
 api:
   # Semantic version of the API
-  version: "0.17.0"
+  version: "0.19.0"
 
   # Protocol version - integer that increments on breaking API changes
   # Clients must match this exactly to connect
@@ -22,8 +22,8 @@ api:
 
   # Minimum compatible client version (semver)
   # Clients below this version will be prompted to upgrade
-  min_client_version: "0.17.0"
+  min_client_version: "0.19.0"
 
 client:
   # Client version (should match api.version for releases)
-  version: "0.17.0"
+  version: "0.19.0"
