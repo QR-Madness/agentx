@@ -65,6 +65,9 @@ Thumbs.db
 # MCP configuration (may contain sensitive data)
 mcp_servers.json
 
+# Cloudflare Tunnel credentials (per-tunnel secret)
+deploy/cloudflared/credentials.json
+
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
 
@@ -76,3 +79,11 @@ client/*.tsbuildinfo
 client/**/*.tsbuildinfo
 client/vite.config.js
 client/vite.config.d.ts
+
+# Tauri Android generated build artifacts (the gen/android/ project itself
+# is committed for reproducibility; only build outputs are ignored)
+client/src-tauri/gen/android/app/build/
+client/src-tauri/gen/android/.gradle/
+client/src-tauri/gen/android/local.properties
+client/src-tauri/gen/android/build/
+client/src-tauri/gen/android/.cxx/

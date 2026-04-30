@@ -1,0 +1,47 @@
+# docker-compose.cluster.yml
+#
+# Cluster gateway overlay: adds an Nginx gateway and a Cloudflare Tunnel in
+# front of the API service from docker-compose.yml. The tunnel terminates
+# HTTPS at Cloudflare's edge and forwards requests to nginx, which enforces
+# the shared AgentX-Gateway-Token header before anything reaches Django.
+#
+# This overlay is opt-in per cluster. `task cluster:up CLUSTER=<name>`
+# automatically includes it when clusters/<name>/nginx.conf exists; you can
+# scaffold those files with `task cluster:new CLUSTER=<name> GATEWAY=1` or
+# `task cluster:gateway:enable CLUSTER=<name>`.
+#
+# All bind mounts resolve under clusters/${AGENTX_CLUSTER_NAME}/, which is
+# set by the cluster's .env.
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ${AGENTX_CLUSTER_NAME:-agent}-nginx
+    environment:
+      - AGENTX_GATEWAY_TOKEN=${AGENTX_GATEWAY_TOKEN}
+      - AGENTX_API_HOST=api
+      - AGENTX_API_PORT=${API_PORT:-12319}
+      # Limit envsubst to AGENTX_* env vars so nginx variables like
+      # $host and $http_* in the template are left untouched.
+      - NGINX_ENVSUBST_FILTER=^AGENTX_
+    volumes:
+      - ./clusters/${AGENTX_CLUSTER_NAME}/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - production
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${AGENTX_CLUSTER_NAME:-agent}-cloudflared
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./clusters/${AGENTX_CLUSTER_NAME}/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./clusters/${AGENTX_CLUSTER_NAME}/cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    profiles:
+      - production

@@ -25,7 +25,7 @@ interface ServerContextValue {
   
   // Server management
   switchServer: (id: string) => void;
-  addNewServer: (name: string, url: string) => ServerConfig;
+  addNewServer: (name: string, url: string, gatewayToken?: string) => ServerConfig;
   updateServerConfig: (id: string, updates: Partial<ServerConfig>) => void;
   deleteServer: (id: string) => void;
   
@@ -64,8 +64,8 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     refreshServers();
   }, [refreshServers]);
 
-  const addNewServer = useCallback((name: string, url: string) => {
-    const server = addServer(name, url);
+  const addNewServer = useCallback((name: string, url: string, gatewayToken?: string) => {
+    const server = addServer(name, url, gatewayToken);
     refreshServers();
     return server;
   }, [refreshServers]);

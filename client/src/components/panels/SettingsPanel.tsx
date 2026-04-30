@@ -53,6 +53,7 @@ export const SettingsPanel: React.FC = () => {
   const [showNewServer, setShowNewServer] = useState(false);
   const [newServerName, setNewServerName] = useState('');
   const [newServerUrl, setNewServerUrl] = useState('');
+  const [newServerGatewayToken, setNewServerGatewayToken] = useState('');
 
   // API key visibility
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
@@ -92,9 +93,14 @@ export const SettingsPanel: React.FC = () => {
 
   const handleAddServer = () => {
     if (newServerName.trim() && newServerUrl.trim()) {
-      addNewServer(newServerName.trim(), newServerUrl.trim());
+      addNewServer(
+        newServerName.trim(),
+        newServerUrl.trim(),
+        newServerGatewayToken.trim() || undefined,
+      );
       setNewServerName('');
       setNewServerUrl('');
+      setNewServerGatewayToken('');
       setShowNewServer(false);
     }
   };
@@ -351,6 +357,18 @@ export const SettingsPanel: React.FC = () => {
                         value={newServerUrl}
                         onChange={(e) => setNewServerUrl(e.target.value)}
                         placeholder="e.g., https://api.example.com"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>Gateway Token (optional)</label>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={newServerGatewayToken}
+                        onChange={(e) => setNewServerGatewayToken(e.target.value)}
+                        placeholder="Required only for cluster gateway"
                       />
                     </div>
                   </div>

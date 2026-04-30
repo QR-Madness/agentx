@@ -1,0 +1,35 @@
+# clusters/<name>/cloudflared/config.yml
+#
+# Cloudflare Tunnel ingress for an AgentX cluster.
+#
+# One-time setup on the host before bringing the cluster up:
+#   1. cloudflared tunnel login
+#   2. cloudflared tunnel create agentx-<cluster>
+#      → writes credentials to ~/.cloudflared/<tunnel-id>.json
+#   3. Copy that file to clusters/<name>/cloudflared/credentials.json
+#   4. cloudflared tunnel route dns agentx-<cluster> <public-host>
+#   5. Replace <tunnel-id> and <public-host> below to match
+#      AGENTX_PUBLIC_HOST in clusters/<name>/.env.
+#
+# Then: task cluster:up CLUSTER=<name>
+
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/credentials.json
+
+# Reduce noise; bump to "info" or "debug" while diagnosing.
+loglevel: warn
+
+ingress:
+  # Public hostname → nginx gateway on the compose network.
+  - hostname: <public-host>
+    service: http://nginx:80
+    originRequest:
+      httpHostHeader: <public-host>
+      connectTimeout: 10s
+      # Long-running streaming responses (chat SSE) need the tunnel to
+      # hold the connection open well beyond the default 100s.
+      noHappyEyeballs: true
+
+  # Catch-all: anything not matching the hostname above gets a flat 404
+  # at the tunnel, never touches nginx.
+  - service: http_status:404

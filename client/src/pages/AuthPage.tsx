@@ -16,6 +16,7 @@ function ServerSelector({ disabled }: { disabled: boolean }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
+  const [newGatewayToken, setNewGatewayToken] = useState('');
 
   const handleSelect = (id: string) => {
     switchServer(id);
@@ -24,10 +25,15 @@ function ServerSelector({ disabled }: { disabled: boolean }) {
 
   const handleAdd = () => {
     if (!newName.trim() || !newUrl.trim()) return;
-    const server = addNewServer(newName.trim(), newUrl.trim());
+    const server = addNewServer(
+      newName.trim(),
+      newUrl.trim(),
+      newGatewayToken.trim() || undefined,
+    );
     switchServer(server.id);
     setNewName('');
     setNewUrl('');
+    setNewGatewayToken('');
     setShowAddForm(false);
     setOpen(false);
   };
@@ -92,11 +98,25 @@ function ServerSelector({ disabled }: { disabled: boolean }) {
                 onChange={e => setNewUrl(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAdd()}
               />
+              <input
+                type="password"
+                autoComplete="off"
+                className="auth-server-add-input"
+                placeholder="Gateway token (optional)"
+                value={newGatewayToken}
+                onChange={e => setNewGatewayToken(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              />
               <div className="auth-server-add-actions">
                 <button
                   type="button"
                   className="auth-server-add-cancel"
-                  onClick={() => { setShowAddForm(false); setNewName(''); setNewUrl(''); }}
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setNewName('');
+                    setNewUrl('');
+                    setNewGatewayToken('');
+                  }}
                 >
                   <X size={13} /> Cancel
                 </button>

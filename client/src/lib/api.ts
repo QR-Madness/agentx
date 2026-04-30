@@ -3,7 +3,7 @@
  * All calls are routed through the active server configuration
  */
 
-import { getActiveServer, getActiveServerId, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken } from './storage';
+import { getActiveServer, getActiveServerId, markServerConnected, updateActiveServerMetadata, getAuthToken, clearAuthToken, getActiveGatewayToken } from './storage';
 
 // === Version Constants (injected from versions.yaml via Vite) ===
 
@@ -874,6 +874,14 @@ class ApiClient {
     const defaultHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+
+    // Cluster gateway header — required when the API is fronted by the
+    // Nginx gateway in docker-compose.cluster.yml. Absent for local/LAN
+    // servers, in which case the header simply isn't sent.
+    const gatewayToken = getActiveGatewayToken();
+    if (gatewayToken) {
+      defaultHeaders['AgentX-Gateway-Token'] = gatewayToken;
+    }
 
     // Add auth token if available (unless skipped for auth endpoints)
     if (!skipAuth) {
@@ -1804,6 +1812,10 @@ class ApiClient {
     if (consolidateToken) {
       consolidateHeaders['X-Auth-Token'] = consolidateToken;
     }
+    const consolidateGatewayToken = getActiveGatewayToken();
+    if (consolidateGatewayToken) {
+      consolidateHeaders['AgentX-Gateway-Token'] = consolidateGatewayToken;
+    }
 
     fetch(`${baseUrl}/api/memory/consolidate/stream`, {
       method,
@@ -2052,6 +2064,10 @@ class ApiClient {
     const token = getAuthToken();
     if (token) {
       headers['X-Auth-Token'] = token;
+    }
+    const streamGatewayToken = getActiveGatewayToken();
+    if (streamGatewayToken) {
+      headers['AgentX-Gateway-Token'] = streamGatewayToken;
     }
 
     fetch(`${baseUrl}/api/agent/chat/stream`, {

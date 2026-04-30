@@ -19,6 +19,7 @@ import {
   Brain,
   Zap,
   LogOut,
+  KeyRound,
 } from 'lucide-react';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
@@ -208,6 +209,18 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         {authRequired && isAuthenticated && (
           <>
             <span className="topbar-divider" />
+            <button
+              className="toolbar-icon"
+              onClick={() => openModal({
+                id: 'change-password',
+                type: 'modal',
+                component: 'changePassword',
+                size: 'sm',
+              })}
+              title="Change password"
+            >
+              <KeyRound size={18} />
+            </button>
             <button
               className="toolbar-icon toolbar-icon--danger"
               onClick={handleLogout}

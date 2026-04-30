@@ -26,6 +26,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   promptLibrary: lazy(() => import('./PromptLibraryModal').then(m => ({ default: m.PromptLibraryModal }))),
   toolOutput: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputDrawer }))),
   alloyFactory: lazy(() => import('./AlloyFactoryModal').then(m => ({ default: m.AlloyFactoryModal as ComponentType<ModalComponentProps> }))),
+  changePassword: lazy(() => import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))),
 };
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {

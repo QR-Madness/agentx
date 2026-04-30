@@ -1011,72 +1011,237 @@ tasks:
       - docker compose --profile production exec api /bin/bash
 
 # ============================================================================
-# MULTI-CLUSTER DEPLOYMENT (Phase 17.4)
+# MOBILE / ANDROID
 # ============================================================================
-# Clusters are stored in clusters/<name>/ with .env and data/ subdirectories.
+# Tauri v2 mobile builds. Requires Android Studio + SDK + NDK + JDK 17 with
+# ANDROID_HOME, NDK_HOME, JAVA_HOME exported. First run needs:
+#   cd client && bunx tauri android init
+
+  client:android:init:
+    desc: "Bootstrap Tauri Android project (first-time only)"
+    dir: client
+    cmds:
+      - bunx tauri android init
+
+  client:dev:android:
+    desc: "Run Tauri Android app in dev mode (hot-reload onto connected device)"
+    dir: client
+    cmds:
+      - bunx tauri android dev
+
+  client:build:android:
+    desc: "Build debug-signed Android APK"
+    dir: client
+    cmds:
+      # The APK ships with no baked-in server URL or gateway token — users
+      # add servers (and their tokens) through the in-app login screen.
+      - bunx tauri android build --apk --debug
+      - echo ""
+      - 'echo "📦 APK: client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/"'
+      - 'echo "Install with: adb install <path-to-apk>"'
+
+# ============================================================================
+# CLUSTER DEPLOYMENT
+# ============================================================================
+# Clusters are the production deployment unit. Each lives in clusters/<name>/
+# with its own .env and data/. Public-facing clusters opt in to the Nginx +
+# Cloudflare Tunnel gateway by additionally having nginx.conf and a populated
+# cloudflared/ directory; cluster:up auto-detects the overlay by file
+# presence.
+#
 # Usage: task cluster:<command> CLUSTER=<name>
+#        task cluster:new CLUSTER=<name> [GATEWAY=1]
 
   cluster:new:
-    desc: "Create a new cluster (CLUSTER=name)"
+    desc: "Create a new cluster (CLUSTER=name [GATEWAY=1])"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+      GATEWAY: '{{.GATEWAY}}'
+    cmds:
+      - |
+        if [ -z "{{.CLUSTER}}" ]; then
+          echo "Usage: task cluster:new CLUSTER=<name> [GATEWAY=1]"
+          echo ""
+          echo "Creates clusters/<name>/ from clusters/template/:"
+          echo "  - .env (copy of clusters/template/.env.example)"
+          echo "  - data/ directory structure"
+          echo "  - With GATEWAY=1: nginx.conf + cloudflared/config.yml"
+          exit 1
+        fi
+        if [ -e "clusters/{{.CLUSTER}}" ]; then
+          echo "Cluster already exists: clusters/{{.CLUSTER}}/"
+          exit 1
+        fi
+        mkdir -p "clusters/{{.CLUSTER}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
+        cp clusters/template/.env.example "clusters/{{.CLUSTER}}/.env"
+        sed -i "s|^AGENTX_CLUSTER_NAME=$|AGENTX_CLUSTER_NAME={{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
+        sed -i "s|^AGENTX_DATA_DIR=.*|AGENTX_DATA_DIR=./clusters/{{.CLUSTER}}/data|" "clusters/{{.CLUSTER}}/.env"
+        echo "Cluster created: clusters/{{.CLUSTER}}/"
+        if [ "{{.GATEWAY}}" = "1" ]; then
+          mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
+          cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
+          cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
+          echo "Gateway scaffolded: nginx.conf + cloudflared/config.yml"
+        fi
+        echo ""
+        echo "Next steps:"
+        echo "  1. Edit clusters/{{.CLUSTER}}/.env"
+        echo "     - Set unique ports if running alongside other clusters"
+        echo "     - Generate DJANGO_SECRET_KEY"
+        echo "     - Set database passwords + provider API keys"
+        if [ "{{.GATEWAY}}" = "1" ]; then
+          echo "     - Set AGENTX_PUBLIC_HOST and AGENTX_GATEWAY_TOKEN"
+          echo "  2. Edit clusters/{{.CLUSTER}}/cloudflared/config.yml — paste tunnel id + hostname"
+          echo "  3. Drop credentials.json into clusters/{{.CLUSTER}}/cloudflared/"
+          echo "  4. Start: task cluster:up CLUSTER={{.CLUSTER}}"
+        else
+          echo "  2. Start: task cluster:up CLUSTER={{.CLUSTER}}"
+        fi
+
+  cluster:gateway:enable:
+    desc: "Add the Nginx + Cloudflare gateway to an existing cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
       - |
-        if [ -z "{{.CLUSTER}}" ]; then
-          echo "Usage: task cluster:new CLUSTER=<name>"
-          echo ""
-          echo "Creates clusters/<name>/ with:"
-          echo "  - .env (copy of .env.production.example)"
-          echo "  - data/ directory structure"
+        if [ -z "{{.CLUSTER}}" ] || [ ! -d "clusters/{{.CLUSTER}}" ]; then
+          echo "Usage: task cluster:gateway:enable CLUSTER=<name> (must already exist)"
           exit 1
         fi
-        mkdir -p "clusters/{{.CLUSTER}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
-        cp .env.production.example "clusters/{{.CLUSTER}}/.env"
-        echo "Cluster created: clusters/{{.CLUSTER}}/"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Edit clusters/{{.CLUSTER}}/.env"
-        echo "     - Set AGENTX_CLUSTER_NAME={{.CLUSTER}}"
-        echo "     - Set AGENTX_DATA_DIR=./clusters/{{.CLUSTER}}/data"
-        echo "     - Set unique ports (API_PORT, etc.)"
-        echo "     - Generate DJANGO_SECRET_KEY"
-        echo "     - Set database passwords"
-        echo "  2. Start: task cluster:up CLUSTER={{.CLUSTER}}"
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          echo "Gateway already enabled for clusters/{{.CLUSTER}}/"
+          exit 0
+        fi
+        mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
+        cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
+        cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
+        echo "Gateway scaffolded for clusters/{{.CLUSTER}}/."
+        echo "Edit clusters/{{.CLUSTER}}/.env (AGENTX_PUBLIC_HOST, AGENTX_GATEWAY_TOKEN)"
+        echo "and clusters/{{.CLUSTER}}/cloudflared/config.yml, then drop credentials.json."
 
   cluster:up:
-    desc: "Start a cluster (CLUSTER=name)"
+    desc: "Start a cluster (CLUSTER=name [REBUILD=1]); auto-includes gateway overlay if nginx.conf present"
     vars:
       CLUSTER: '{{.CLUSTER}}'
+      REBUILD: '{{.REBUILD}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production up -d
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
+        else
+          OVERLAY=""
+          echo "🚀 Starting cluster {{.CLUSTER}} (no public gateway)..."
+        fi
+        BUILD_FLAG=""
+        if [ "{{.REBUILD}}" = "1" ]; then
+          echo "🔨 Rebuilding images..."
+          BUILD_FLAG="--build"
+        fi
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d $BUILD_FLAG
+        echo ""
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          echo "Smoke test:"
+          echo "  curl -I https://\$AGENTX_PUBLIC_HOST/api/health  → expect 401"
+          echo "  curl -I -H 'AgentX-Gateway-Token: \$AGENTX_GATEWAY_TOKEN' https://\$AGENTX_PUBLIC_HOST/api/health  → expect 200"
+        else
+          echo "API: http://localhost:\$API_PORT/api/health"
+        fi
 
   cluster:down:
     desc: "Stop a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production down
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+        else
+          OVERLAY=""
+        fi
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production down
 
-  cluster:logs:
-    desc: "View cluster logs (CLUSTER=name)"
+  cluster:rebuild:
+    desc: "Rebuild images and restart a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production logs -f
-
-  cluster:status:
-    desc: "Show cluster status (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
-    cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production ps
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+        else
+          OVERLAY=""
+        fi
+        echo "🔨 Rebuilding images for cluster {{.CLUSTER}}..."
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production build
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d
 
   cluster:restart:
     desc: "Restart a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production restart
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+        else
+          OVERLAY=""
+        fi
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production restart
+
+  cluster:logs:
+    desc: "View cluster logs (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+        else
+          OVERLAY=""
+        fi
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production logs -f
+
+  cluster:logs:gateway:
+    desc: "Tail nginx gateway logs (CLUSTER=name; token rejections appear as 401)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.cluster.yml --profile production logs -f nginx
+
+  cluster:logs:tunnel:
+    desc: "Tail cloudflared tunnel logs (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.cluster.yml --profile production logs -f cloudflared
+
+  cluster:status:
+    desc: "Show cluster status (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - |
+        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
+          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+        else
+          OVERLAY=""
+        fi
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production ps
+
+  cluster:migrate:
+    desc: "Apply Django migrations in a cluster (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py migrate
+
+  cluster:makemigrations:
+    desc: "Generate new Django migrations in a cluster (CLUSTER=name)"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+    cmds:
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py makemigrations
 
   cluster:auth:setup:
     desc: "Set up root password for cluster (CLUSTER=name)"
@@ -1098,12 +1263,12 @@ tasks:
       - |
         echo "Clusters:"
         for dir in clusters/*/; do
+          name=$(basename "$dir")
+          [ "$name" = "template" ] && continue
           if [ -d "$dir" ]; then
-            name=$(basename "$dir")
-            if [ -f "$dir/.env" ]; then
-              echo "  $name (configured)"
-            else
-              echo "  $name (missing .env)"
-            fi
+            tags=""
+            [ -f "$dir/.env" ] || tags="$tags missing-env"
+            [ -f "$dir/nginx.conf" ] && tags="$tags gateway"
+            echo "  $name${tags:+ —$tags}"
           fi
         done 2>/dev/null || echo "  (none)"

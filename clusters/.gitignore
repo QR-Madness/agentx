@@ -1,14 +1,14 @@
 # Cluster Management Directory
-# Each subdirectory is a cluster with its own .env and data/
+#
+# Each subdirectory is a real cluster (e.g. clusters/justin/) with its own
+# .env, optional nginx/cloudflared config, and data/. Only `template/` —
+# the source of `task cluster:new` — is tracked.
 
-# Ignore all cluster data directories
-*/data/
+*
+!.gitignore
+!template/
+!template/**
 
-# But track the .env files (they're templates, not secrets)
-# Users should ensure they don't commit actual secrets
-!*/.env
-
-# Ignore any backup or temp files
-*.bak
-*.tmp
-*~
+# Inside template/, never track real credentials even if a user drops them
+# in by mistake.
+template/cloudflared/credentials.json

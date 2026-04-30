@@ -4,6 +4,8 @@
 **Status**: Pre-prototype
 **Last Updated**: 2026-04-27
 
+**NOTE**: After v.20, UI must be optimized for mobile, but native to desktop.
+
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
 ---

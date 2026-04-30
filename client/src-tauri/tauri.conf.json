@@ -26,7 +26,7 @@
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src": "'self' https://fonts.gstatic.com data:",
         "img-src": "'self' data: blob: https:",
-        "connect-src": "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* wss://localhost:* http://192.168.0.0/16:*"
+        "connect-src": "'self' http://localhost:* http://127.0.0.1:* ws://localhost:* wss://localhost:* http://192.168.0.0/16:* https: wss:"
       }
     },
     "withGlobalTauri": false
@@ -40,6 +40,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "android": {
+      "minSdkVersion": 24
+    }
   }
 }

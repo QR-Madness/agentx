@@ -192,6 +192,20 @@ else:
         "tauri://localhost",
     ]
 
+# AGENTX_PUBLIC_HOST is a convenience knob for clusters fronted by an HTTPS
+# reverse proxy (e.g. Cloudflare Tunnel + nginx gateway).
+# Setting it to a bare hostname extends ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS,
+# and CSRF_TRUSTED_ORIGINS in one shot so the three lists can't drift.
+_public_host = os.environ.get('AGENTX_PUBLIC_HOST', '').strip()
+if _public_host:
+    if _public_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_public_host)
+    _public_origin = f'https://{_public_host}'
+    if isinstance(CORS_ALLOWED_ORIGINS, list) and _public_origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_public_origin)
+    if _public_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_public_origin)
+
 # Logging configuration
 LOGGING = {
     'version': 1,

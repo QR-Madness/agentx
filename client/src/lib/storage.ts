@@ -12,6 +12,10 @@ export interface ServerConfig {
   isActive: boolean;
   createdAt: string;
   lastConnected?: string;
+  // Shared-secret header sent on every request as `AgentX-Gateway-Token`.
+  // Only used when the server is fronted by the cluster's Nginx gateway —
+  // a missing token is fine for local/LAN deployments.
+  gatewayToken?: string;
 }
 
 export interface ServerApiKeys {
@@ -104,16 +108,18 @@ export function saveServers(servers: ServerConfig[]): void {
   localStorage.setItem(STORAGE_KEYS.servers, JSON.stringify(servers));
 }
 
-export function addServer(name: string, url: string): ServerConfig {
+export function addServer(name: string, url: string, gatewayToken?: string): ServerConfig {
   const servers = getServers();
   const isFirst = servers.length === 0;
-  
+
+  const trimmedToken = gatewayToken?.trim();
   const newServer: ServerConfig = {
     id: generateId(),
     name,
     url: url.replace(/\/$/, ''), // Remove trailing slash
     isActive: isFirst, // First server is automatically active
     createdAt: new Date().toISOString(),
+    ...(trimmedToken ? { gatewayToken: trimmedToken } : {}),
   };
   
   servers.push(newServer);
@@ -264,6 +270,12 @@ export function ensureDefaultServer(): ServerConfig {
   }
 
   return servers.find(s => s.id === activeId)!;
+}
+
+// Convenience accessor for code paths that need just the gateway token
+// (e.g., the streaming fetch helpers in lib/api.ts).
+export function getActiveGatewayToken(): string | null {
+  return getActiveServer()?.gatewayToken ?? null;
 }
 
 // === Recent Chats ===
