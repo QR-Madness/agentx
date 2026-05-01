@@ -1,9 +1,15 @@
 # docker-compose.yml
 #
-# Multi-cluster support (Phase 17.4):
+# Multi-cluster support:
 # - AGENTX_CLUSTER_NAME: Unique cluster identifier (default: agent)
-# - AGENTX_DATA_DIR: Data directory for databases (default: ./data)
-# - Ports are configurable via env vars for running multiple clusters
+# - AGENTX_CONFIG_DIR:  Per-cluster app config dir, mounted at /app/data in
+#                       the API container. Holds agent_profiles.yaml,
+#                       prompt_templates.yaml, workflows.yaml, config.json,
+#                       memory_settings.json. (default: ./data)
+# - AGENTX_DB_DIR:      Per-cluster database storage dir holding
+#                       neo4j/, postgres/, redis/ subdirs. (default: ./data)
+# - Both default to ./data so the dev stack keeps working unchanged.
+# - Ports are configurable via env vars for running multiple clusters.
 
 services:
   neo4j:
@@ -23,9 +29,9 @@ services:
       - NEO4J_server_memory_heap_max__size=2G
       - NEO4J_server_memory_pagecache_size=1G
     volumes:
-      - ${AGENTX_DATA_DIR:-./data}/neo4j/data:/data
-      - ${AGENTX_DATA_DIR:-./data}/neo4j/logs:/logs
-      - ${AGENTX_DATA_DIR:-./data}/neo4j/plugins:/plugins
+      - ${AGENTX_DB_DIR:-./data}/neo4j/data:/data
+      - ${AGENTX_DB_DIR:-./data}/neo4j/logs:/logs
+      - ${AGENTX_DB_DIR:-./data}/neo4j/plugins:/plugins
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${NEO4J_HTTP_PORT:-7474}/ || exit 1"]
       interval: 10s
@@ -42,7 +48,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - POSTGRES_DB=${POSTGRES_DB:-agent_memory}
     volumes:
-      - ${AGENTX_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+      - ${AGENTX_DB_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./queries:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent} -d ${POSTGRES_DB:-agent_memory}"]
@@ -57,7 +63,7 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
-      - ${AGENTX_DATA_DIR:-./data}/redis:/data
+      - ${AGENTX_DB_DIR:-./data}/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -102,7 +108,7 @@ services:
       # Embedding configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
     volumes:
-      - ${AGENTX_DATA_DIR:-./data}:/app/data
+      - ${AGENTX_CONFIG_DIR:-./data}:/app/data
       - ./mcp_servers.json:/app/mcp_servers.json:ro
     depends_on:
       neo4j:

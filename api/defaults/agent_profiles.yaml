@@ -1,0 +1,35 @@
+profiles:
+  - id: default
+    name: AgentX
+    avatar: sparkles
+    description: Default assistant profile with balanced settings
+    temperature: 0.7
+    reasoning_strategy: auto
+    enable_memory: true
+    memory_channel: _global
+    enable_tools: true
+    is_default: true
+
+  - id: creative
+    name: Muse
+    avatar: palette
+    description: Creative assistant for brainstorming and content creation
+    temperature: 1.0
+    prompt_profile_id: creative
+    reasoning_strategy: auto
+    enable_memory: true
+    memory_channel: _global
+    enable_tools: true
+    is_default: false
+
+  - id: analyst
+    name: Sage
+    avatar: brain
+    description: Analytical assistant for research and logical reasoning
+    temperature: 0.3
+    prompt_profile_id: analyst
+    reasoning_strategy: cot
+    enable_memory: true
+    memory_channel: _global
+    enable_tools: true
+    is_default: false

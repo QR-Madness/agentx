@@ -1063,8 +1063,9 @@ tasks:
           echo "Usage: task cluster:new CLUSTER=<name> [GATEWAY=1]"
           echo ""
           echo "Creates clusters/<name>/ from clusters/template/:"
-          echo "  - .env (copy of clusters/template/.env.example)"
-          echo "  - data/ directory structure"
+          echo "  - .env       (copy of clusters/template/.env.example)"
+          echo "  - config/    (seeded from api/defaults/)"
+          echo "  - db/        (empty neo4j/postgres/redis subdirs)"
           echo "  - With GATEWAY=1: nginx.conf + cloudflared/config.yml"
           exit 1
         fi
@@ -1072,16 +1073,20 @@ tasks:
           echo "Cluster already exists: clusters/{{.CLUSTER}}/"
           exit 1
         fi
-        mkdir -p "clusters/{{.CLUSTER}}/data"/{neo4j/{data,logs,plugins},postgres,redis}
+        mkdir -p "clusters/{{.CLUSTER}}/db"/{neo4j/{data,logs,plugins},postgres,redis}
+        mkdir -p "clusters/{{.CLUSTER}}/config"
+        cp api/defaults/*.yaml api/defaults/*.json "clusters/{{.CLUSTER}}/config/"
         cp clusters/template/.env.example "clusters/{{.CLUSTER}}/.env"
         sed -i "s|^AGENTX_CLUSTER_NAME=$|AGENTX_CLUSTER_NAME={{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
-        sed -i "s|^AGENTX_DATA_DIR=.*|AGENTX_DATA_DIR=./clusters/{{.CLUSTER}}/data|" "clusters/{{.CLUSTER}}/.env"
+        sed -i "s|^AGENTX_CONFIG_DIR=.*|AGENTX_CONFIG_DIR=./clusters/{{.CLUSTER}}/config|" "clusters/{{.CLUSTER}}/.env"
+        sed -i "s|^AGENTX_DB_DIR=.*|AGENTX_DB_DIR=./clusters/{{.CLUSTER}}/db|" "clusters/{{.CLUSTER}}/.env"
         echo "Cluster created: clusters/{{.CLUSTER}}/"
+        echo "  ✓ config/ seeded from api/defaults/"
         if [ "{{.GATEWAY}}" = "1" ]; then
           mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
           cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
           cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
-          echo "Gateway scaffolded: nginx.conf + cloudflared/config.yml"
+          echo "  ✓ Gateway scaffolded: nginx.conf + cloudflared/config.yml"
         fi
         echo ""
         echo "Next steps:"
@@ -1097,6 +1102,64 @@ tasks:
         else
           echo "  2. Start: task cluster:up CLUSTER={{.CLUSTER}}"
         fi
+
+  cluster:seed:
+    desc: "Seed a cluster's config/ from api/defaults/ (CLUSTER=name [FORCE=1])"
+    vars:
+      CLUSTER: '{{.CLUSTER}}'
+      FORCE: '{{.FORCE}}'
+    cmds:
+      - |
+        if [ -z "{{.CLUSTER}}" ] || [ ! -d "clusters/{{.CLUSTER}}" ]; then
+          echo "Usage: task cluster:seed CLUSTER=<name> [FORCE=1]"
+          echo "  Cluster must already exist."
+          exit 1
+        fi
+        shopt -s nullglob
+        # Legacy layout migration: clusters/<name>/data/{neo4j,postgres,redis}
+        # → clusters/<name>/db/{neo4j,postgres,redis}.
+        if [ -d "clusters/{{.CLUSTER}}/data" ] && [ ! -d "clusters/{{.CLUSTER}}/db" ]; then
+          echo "Migrating legacy data/ → db/ + config/ layout..."
+          if ! mv "clusters/{{.CLUSTER}}/data" "clusters/{{.CLUSTER}}/db"; then
+            echo "  ✗ Failed to move data/ → db/. Is the cluster running? Try:"
+            echo "      task cluster:down CLUSTER={{.CLUSTER}}"
+            exit 1
+          fi
+          # If the legacy data/ also contained app config (yaml/json next to
+          # the db subdirs), pull it out into config/.
+          mkdir -p "clusters/{{.CLUSTER}}/config"
+          for f in "clusters/{{.CLUSTER}}/db"/*.yaml "clusters/{{.CLUSTER}}/db"/*.json; do
+            mv "$f" "clusters/{{.CLUSTER}}/config/"
+          done
+          echo "  ✓ Moved db storage to clusters/{{.CLUSTER}}/db/"
+          # Update .env: drop AGENTX_DATA_DIR, add AGENTX_CONFIG_DIR + AGENTX_DB_DIR.
+          ENV="clusters/{{.CLUSTER}}/.env"
+          if [ -f "$ENV" ]; then
+            sed -i '/^AGENTX_DATA_DIR=/d' "$ENV"
+            grep -q '^AGENTX_CONFIG_DIR=' "$ENV" || \
+              echo "AGENTX_CONFIG_DIR=./clusters/{{.CLUSTER}}/config" >> "$ENV"
+            grep -q '^AGENTX_DB_DIR=' "$ENV" || \
+              echo "AGENTX_DB_DIR=./clusters/{{.CLUSTER}}/db" >> "$ENV"
+            echo "  ✓ Updated $ENV (AGENTX_CONFIG_DIR + AGENTX_DB_DIR)"
+          fi
+        fi
+        mkdir -p "clusters/{{.CLUSTER}}/config"
+        seed_files=(api/defaults/*.yaml api/defaults/*.json)
+        if [ ${#seed_files[@]} -eq 0 ]; then
+          echo "  ✗ No seed files found under api/defaults/"
+          exit 1
+        fi
+        for src in "${seed_files[@]}"; do
+          name=$(basename "$src")
+          dest="clusters/{{.CLUSTER}}/config/$name"
+          if [ -f "$dest" ] && [ "{{.FORCE}}" != "1" ]; then
+            echo "  skip $name (exists; pass FORCE=1 to overwrite)"
+          else
+            cp "$src" "$dest"
+            echo "  seed $name"
+          fi
+        done
+        echo "Seeded clusters/{{.CLUSTER}}/config/"
 
   cluster:gateway:enable:
     desc: "Add the Nginx + Cloudflare gateway to an existing cluster (CLUSTER=name)"
