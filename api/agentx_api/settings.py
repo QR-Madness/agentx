@@ -47,9 +47,10 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-dev-only-repla
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() in ('true', '1', 'yes')
 
-# Parse ALLOWED_HOSTS from comma-separated env var, with localhost defaults for dev
+# localhost/127.0.0.1 are always included; DJANGO_ALLOWED_HOSTS appends extra hosts (e.g. LAN IPs)
 _allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
-ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()] if _allowed_hosts_env else ['localhost', '127.0.0.1']
+_extra_hosts = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
+ALLOWED_HOSTS = list(dict.fromkeys(['localhost', '127.0.0.1'] + _extra_hosts))
 
 
 # Application definition

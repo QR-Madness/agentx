@@ -1080,6 +1080,10 @@ tasks:
         sed -i "s|^AGENTX_CLUSTER_NAME=$|AGENTX_CLUSTER_NAME={{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
         sed -i "s|^AGENTX_CONFIG_DIR=.*|AGENTX_CONFIG_DIR=./clusters/{{.CLUSTER}}/config|" "clusters/{{.CLUSTER}}/.env"
         sed -i "s|^AGENTX_DB_DIR=.*|AGENTX_DB_DIR=./clusters/{{.CLUSTER}}/db|" "clusters/{{.CLUSTER}}/.env"
+        HOST_IP=$(hostname -I | awk '{print $1}')
+        if [ -n "$HOST_IP" ]; then
+          sed -i "s|^DJANGO_ALLOWED_HOSTS=$|DJANGO_ALLOWED_HOSTS=${HOST_IP}|" "clusters/{{.CLUSTER}}/.env"
+        fi
         echo "Cluster created: clusters/{{.CLUSTER}}/"
         echo "  ✓ config/ seeded from api/defaults/"
         if [ "{{.GATEWAY}}" = "1" ]; then
