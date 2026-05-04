@@ -1035,7 +1035,7 @@ tasks:
     cmds:
       # The APK ships with no baked-in server URL or gateway token — users
       # add servers (and their tokens) through the in-app login screen.
-      - bunx tauri android build --apk --debug
+      - bunx tauri android build --apk true --debug
       - echo ""
       - 'echo "📦 APK: client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/"'
       - 'echo "Install with: adb install <path-to-apk>"'
