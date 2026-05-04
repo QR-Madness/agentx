@@ -3,150 +3,71 @@
  */
 
 import { useState, FormEvent } from 'react';
-import { Lock, Eye, EyeOff, Shield, AlertCircle, Server, ChevronDown, ChevronUp, KeyRound, Plus, X } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, AlertCircle, KeyRound, Loader2, WifiOff, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useServer } from '../contexts/ServerContext';
+import { ServerSelector } from '../components/ServerSelector';
 import './AuthPage.css';
 
 const LOGIN_USERNAME = 'root';
 
-function ServerSelector({ disabled }: { disabled: boolean }) {
-  const { servers, activeServer, switchServer, addNewServer } = useServer();
-  const [open, setOpen] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newUrl, setNewUrl] = useState('');
-  const [newGatewayToken, setNewGatewayToken] = useState('');
+interface ConnectionStatusProps {
+  state: 'connecting' | 'unreachable' | 'ready';
+  error: string | null;
+  serverName: string | null;
+  serverUrl: string | null;
+  onRetry: () => void;
+}
 
-  const handleSelect = (id: string) => {
-    switchServer(id);
-    setOpen(false);
-  };
+function ConnectionStatus({ state, error, serverName, serverUrl, onRetry }: ConnectionStatusProps) {
+  const target = serverName ? `${serverName} (${serverUrl ?? ''})` : (serverUrl ?? 'the server');
 
-  const handleAdd = () => {
-    if (!newName.trim() || !newUrl.trim()) return;
-    const server = addNewServer(
-      newName.trim(),
-      newUrl.trim(),
-      newGatewayToken.trim() || undefined,
+  if (state === 'connecting') {
+    return (
+      <div className="auth-connection-status auth-connection-status--pending">
+        <Loader2 size={16} className="auth-connection-spinner" />
+        <span>Connecting to {target}…</span>
+      </div>
     );
-    switchServer(server.id);
-    setNewName('');
-    setNewUrl('');
-    setNewGatewayToken('');
-    setShowAddForm(false);
-    setOpen(false);
-  };
+  }
+
+  if (state === 'unreachable') {
+    return (
+      <div className="auth-connection-status auth-connection-status--error">
+        <WifiOff size={16} />
+        <div className="auth-connection-status-body">
+          <strong>Couldn't reach {target}</strong>
+          {error && <span className="auth-connection-status-detail">{error}</span>}
+          <span className="auth-connection-status-hint">
+            Check the URL above, switch servers, or retry.
+          </span>
+        </div>
+        <button type="button" className="auth-connection-retry" onClick={onRetry}>
+          <RefreshCw size={14} /> Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className={`auth-server-selector${disabled ? ' auth-server-selector--disabled' : ''}`}>
-      <label className="auth-server-label">
-        <Server size={13} />
-        Server
-      </label>
-
-      <button
-        type="button"
-        className="auth-server-current"
-        onClick={() => !disabled && setOpen(o => !o)}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <Server size={16} className="auth-server-icon" />
-        <span className="auth-server-current-info">
-          <span className="auth-server-current-name">{activeServer?.name ?? 'No server'}</span>
-          <span className="auth-server-current-url">{activeServer?.url ?? ''}</span>
-        </span>
-        {open ? <ChevronUp size={15} className="auth-server-chevron" /> : <ChevronDown size={15} className="auth-server-chevron" />}
-      </button>
-
-      {open && (
-        <div className="auth-server-dropdown" role="listbox">
-          {servers.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              role="option"
-              aria-selected={s.id === activeServer?.id}
-              className={`auth-server-option${s.id === activeServer?.id ? ' auth-server-option--active' : ''}`}
-              onClick={() => handleSelect(s.id)}
-            >
-              <Server size={14} />
-              <span className="auth-server-option-info">
-                <span className="auth-server-option-name">{s.name}</span>
-                <span className="auth-server-option-url">{s.url}</span>
-              </span>
-            </button>
-          ))}
-
-          {showAddForm ? (
-            <div className="auth-server-add-form">
-              <input
-                type="text"
-                className="auth-server-add-input"
-                placeholder="Server name"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                autoFocus
-              />
-              <input
-                type="text"
-                className="auth-server-add-input"
-                placeholder="URL (e.g. http://localhost:12319)"
-                value={newUrl}
-                onChange={e => setNewUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              />
-              <input
-                type="password"
-                autoComplete="off"
-                className="auth-server-add-input"
-                placeholder="Gateway token (optional)"
-                value={newGatewayToken}
-                onChange={e => setNewGatewayToken(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              />
-              <div className="auth-server-add-actions">
-                <button
-                  type="button"
-                  className="auth-server-add-cancel"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setNewName('');
-                    setNewUrl('');
-                    setNewGatewayToken('');
-                  }}
-                >
-                  <X size={13} /> Cancel
-                </button>
-                <button
-                  type="button"
-                  className="auth-server-add-confirm"
-                  onClick={handleAdd}
-                  disabled={!newName.trim() || !newUrl.trim()}
-                >
-                  <Plus size={13} /> Add
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="auth-server-add-btn"
-              onClick={() => setShowAddForm(true)}
-            >
-              <Plus size={14} /> Add Server
-            </button>
-          )}
-        </div>
-      )}
+    <div className="auth-connection-status auth-connection-status--ok">
+      <CheckCircle2 size={16} />
+      <span>Connected to {target}</span>
     </div>
   );
 }
 
 export function AuthPage() {
-  const { setupRequired, login, setupPassword } = useAuth();
+  const {
+    setupRequired,
+    login,
+    setupPassword,
+    connectionState,
+    connectionError,
+    authRequired,
+    checkAuthStatus,
+  } = useAuth();
+  const { activeServer } = useServer();
 
   // Form state
   const [password, setPassword] = useState('');
@@ -210,17 +131,28 @@ export function AuthPage() {
             <Shield size={48} />
           </div>
           <h1 className="auth-title">
-            {setupRequired ? 'Set Up AgentX' : 'Welcome Back'}
+            {setupRequired ? 'Set Up AgentX' : 'Welcome to AgentX'}
           </h1>
           <p className="auth-subtitle">
             {setupRequired
               ? 'Create a password to secure your AgentX server'
-              : 'Sign in to continue to AgentX'}
+              : connectionState === 'ready'
+                ? (authRequired ? 'Sign in to continue' : 'Connected — entering workspace…')
+                : 'Choose a server to continue'}
           </p>
         </div>
 
         <ServerSelector disabled={isSubmitting} />
 
+        <ConnectionStatus
+          state={connectionState}
+          error={connectionError}
+          serverName={activeServer?.name ?? null}
+          serverUrl={activeServer?.url ?? null}
+          onRetry={checkAuthStatus}
+        />
+
+        {authRequired && connectionState === 'ready' && (
         <form className="auth-form" onSubmit={handleSubmit}>
           {error && (
             <div className="auth-error">
@@ -305,6 +237,7 @@ export function AuthPage() {
                 : 'Sign In'}
           </button>
         </form>
+        )}
 
         {setupRequired && (
           <div className="auth-footer">

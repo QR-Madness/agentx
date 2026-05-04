@@ -16,6 +16,8 @@ import {
 } from '../lib/api';
 import { getAuthToken, saveAuthToken, clearAuthToken } from '../lib/storage';
 
+export type ConnectionState = 'connecting' | 'unreachable' | 'ready';
+
 interface AuthContextValue {
   // Auth state
   isAuthenticated: boolean;
@@ -23,6 +25,13 @@ interface AuthContextValue {
   authRequired: boolean;
   setupRequired: boolean;
   sessionInfo: AuthSessionResponse | null;
+
+  // Connection state — surfaces whether we have actually reached the server.
+  // Boot is non-blocking: the UI renders the Connect page while this is
+  // 'connecting' or 'unreachable', so the user always sees what host we're
+  // attempting and can switch / retry.
+  connectionState: ConnectionState;
+  connectionError: string | null;
 
   // Version state
   versionMismatch: boolean;
@@ -37,6 +46,21 @@ interface AuthContextValue {
   checkAuthStatus: () => Promise<void>;
 }
 
+const CONNECT_TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -45,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authRequired, setAuthRequired] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<AuthSessionResponse | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Version state
   const [versionMismatch, setVersionMismatch] = useState(false);
@@ -53,10 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check auth status on mount and when server changes
   const checkAuthStatus = useCallback(async () => {
     setIsLoading(true);
+    setConnectionState('connecting');
+    setConnectionError(null);
     try {
-      // First, check version compatibility
+      // Version probe — also doubles as the reachability check. Bounded so a
+      // dead host never wedges boot.
       try {
-        const verInfo = await api.version();
+        const verInfo = await withTimeout(api.version(), CONNECT_TIMEOUT_MS, 'Server version probe');
         setVersionInfo(verInfo);
 
         // Check protocol version (must match exactly)
@@ -65,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             `Protocol mismatch: client=${CLIENT_PROTOCOL_VERSION}, server=${verInfo.protocol_version}`
           );
           setVersionMismatch(true);
+          setConnectionState('ready');
           setIsLoading(false);
           return;
         }
@@ -75,23 +105,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             `Client outdated: client=${CLIENT_VERSION}, min=${verInfo.min_client_version}`
           );
           setVersionMismatch(true);
+          setConnectionState('ready');
           setIsLoading(false);
           return;
         }
 
         setVersionMismatch(false);
       } catch (error) {
-        // Version endpoint not available (older server) - allow connection
-        console.warn('Version check failed, server may be outdated:', error);
+        // Server unreachable / version endpoint missing. Surface to the UI so
+        // the user can pick another host instead of staring at a spinner.
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('Server reachability check failed:', message);
         setVersionInfo(null);
         setVersionMismatch(false);
+        setConnectionState('unreachable');
+        setConnectionError(message);
+        setIsLoading(false);
+        return;
       }
 
       // Check server's auth requirements
-      const status: AuthStatusResponse = await api.authStatus();
+      const status: AuthStatusResponse = await withTimeout(
+        api.authStatus(),
+        CONNECT_TIMEOUT_MS,
+        'Auth status probe',
+      );
       setAuthRequired(status.auth_required);
       setApiAuthRequired(status.auth_required);
       setSetupRequired(status.setup_required);
+      setConnectionState('ready');
 
       // If auth not required (disabled or bypass active), we're "authenticated"
       if (!status.auth_required) {
@@ -130,11 +172,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSessionInfo(null);
       }
     } catch (error) {
-      // Server unreachable - assume no auth required for now
-      console.error('Failed to check auth status:', error);
-      setAuthRequired(false);
-      setApiAuthRequired(false);
-      setIsAuthenticated(true);
+      // Reached the server but a follow-up call (e.g. authStatus) failed —
+      // treat as unreachable so the user can act on it.
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Failed to check auth status:', message);
+      setConnectionState('unreachable');
+      setConnectionError(message);
     } finally {
       setIsLoading(false);
     }
@@ -226,6 +269,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authRequired,
     setupRequired,
     sessionInfo,
+    connectionState,
+    connectionError,
     versionMismatch,
     versionInfo,
     clientVersion: CLIENT_VERSION,

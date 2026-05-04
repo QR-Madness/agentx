@@ -24,7 +24,7 @@ interface UnifiedSettingsProps {
 }
 
 export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
-  const { activeSection, navigateTo } = useSettingsNavigation('servers');
+  const { activeSection, navigateTo } = useSettingsNavigation('providers');
   const [isNavOpen, setIsNavOpen] = useState(false);
 
   // ESC key handler

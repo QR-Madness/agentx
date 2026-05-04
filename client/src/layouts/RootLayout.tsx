@@ -3,7 +3,6 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
 import { TopBar, PageId } from './TopBar';
 import { StartPage } from '../pages/StartPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -19,7 +18,7 @@ export function RootLayout() {
   const {
     isAuthenticated,
     authRequired,
-    isLoading,
+    connectionState,
     versionMismatch,
     versionInfo,
     checkAuthStatus,
@@ -32,8 +31,9 @@ export function RootLayout() {
 
   // Global keyboard shortcuts
   useEffect(() => {
-    // Skip if not authenticated
-    if (isLoading || (authRequired && !isAuthenticated)) return;
+    // Skip while booting or unauthenticated — i.e. whenever the Connect
+    // screen is the active surface.
+    if (connectionState !== 'ready' || (authRequired && !isAuthenticated)) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -63,7 +63,7 @@ export function RootLayout() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [addTab, closeTab, activeTabId, openModal, isLoading, authRequired, isAuthenticated]);
+  }, [addTab, closeTab, activeTabId, openModal, connectionState, authRequired, isAuthenticated]);
 
   // Track cursor position for reactive gradient
   useEffect(() => {
@@ -84,18 +84,6 @@ export function RootLayout() {
     };
   }, []);
 
-  // Show loading screen while checking auth
-  if (isLoading) {
-    return (
-      <div className="root-layout root-layout--loading">
-        <div className="loading-spinner">
-          <Loader2 size={32} className="animate-spin" />
-          <span>Connecting...</span>
-        </div>
-      </div>
-    );
-  }
-
   // Show version mismatch page if versions are incompatible
   if (versionMismatch) {
     return (
@@ -111,8 +99,14 @@ export function RootLayout() {
     );
   }
 
-  // Show auth page if auth is required and not authenticated
-  if (authRequired && !isAuthenticated) {
+  // Show the Connect screen whenever we don't have a confirmed connection,
+  // or auth is required and the user isn't signed in. The Connect screen
+  // surfaces the active server, connection status, and lets the user switch
+  // hosts — boot is non-blocking, so this can render before any probe finishes.
+  const showConnect =
+    connectionState !== 'ready' || (authRequired && !isAuthenticated);
+
+  if (showConnect) {
     return (
       <div
         className="root-layout"

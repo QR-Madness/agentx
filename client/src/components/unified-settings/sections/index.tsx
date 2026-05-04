@@ -39,13 +39,6 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
     icon: <Server size={16} />,
     sections: [
       {
-        id: 'servers',
-        label: 'Backend Servers',
-        icon: <Server size={18} />,
-        component: lazy(() => import('./ServersSection')),
-        keywords: ['api', 'backend', 'connection', 'url']
-      },
-      {
         id: 'providers',
         label: 'Model Providers',
         icon: <Key size={18} />,

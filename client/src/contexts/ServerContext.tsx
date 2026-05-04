@@ -8,6 +8,7 @@ import {
   ServerMetadata,
   getServers,
   getActiveServer,
+  getActiveServerId,
   getActiveServerMetadata,
   setActiveServerId,
   addServer,
@@ -60,11 +61,19 @@ export function ServerProvider({ children }: { children: ReactNode }) {
   }, [refreshServers]);
 
   const switchServer = useCallback((id: string) => {
+    const current = getActiveServerId();
     setActiveServerId(id);
-    refreshServers();
+    if (current === id) {
+      refreshServers();
+      return;
+    }
+    // Hard reload guarantees no in-flight requests, SSE streams, or in-memory
+    // context state from the previous host leak into the new one.
+    window.location.reload();
   }, [refreshServers]);
 
   const addNewServer = useCallback((name: string, url: string, gatewayToken?: string) => {
+    // Persist only — switching is the caller's decision (and triggers a reload).
     const server = addServer(name, url, gatewayToken);
     refreshServers();
     return server;
@@ -76,7 +85,12 @@ export function ServerProvider({ children }: { children: ReactNode }) {
   }, [refreshServers]);
 
   const deleteServer = useCallback((id: string) => {
+    const wasActive = getActiveServerId() === id;
     removeServer(id);
+    if (wasActive) {
+      window.location.reload();
+      return;
+    }
     refreshServers();
   }, [refreshServers]);
 

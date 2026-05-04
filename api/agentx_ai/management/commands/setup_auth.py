@@ -92,14 +92,18 @@ class Command(BaseCommand):
             if options["force"] and not auth_service.is_setup_required():
                 # Use internal method to update password
                 import bcrypt
+                from sqlalchemy import text
                 from agentx_ai.kit.agent_memory.connections import get_postgres_session
 
                 password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(12))
 
                 with get_postgres_session() as session:
                     session.execute(
-                        "UPDATE agentx_auth SET password_hash = %s, updated_at = NOW() WHERE username = 'root'",
-                        (password_hash.decode('utf-8'),)
+                        text(
+                            "UPDATE agentx_auth SET password_hash = :hash, updated_at = NOW() "
+                            "WHERE username = 'root'"
+                        ),
+                        {"hash": password_hash.decode('utf-8')},
                     )
 
                 # Invalidate all sessions

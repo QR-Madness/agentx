@@ -30,6 +30,32 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+// === Active stream registry ===
+//
+// Streams (SSE fetches with AbortControllers) register themselves here so the
+// page can guarantee they are torn down on unload — including the hard reload
+// triggered by `ServerContext.switchServer`. Without this, a server switch
+// could leave a long-running SSE connection open against the previous host
+// just long enough to overlap with the new one.
+
+const activeStreamControllers = new Set<AbortController>();
+
+function registerStreamController(controller: AbortController): () => void {
+  activeStreamControllers.add(controller);
+  const cleanup = () => activeStreamControllers.delete(controller);
+  controller.signal.addEventListener('abort', cleanup, { once: true });
+  return cleanup;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    for (const c of activeStreamControllers) {
+      try { c.abort(); } catch { /* ignore */ }
+    }
+    activeStreamControllers.clear();
+  });
+}
+
 // === Types ===
 
 export interface ApiError {
@@ -1817,6 +1843,8 @@ class ApiClient {
       consolidateHeaders['AgentX-Gateway-Token'] = consolidateGatewayToken;
     }
 
+    registerStreamController(controller);
+
     fetch(`${baseUrl}/api/memory/consolidate/stream`, {
       method,
       headers: consolidateHeaders,
@@ -2069,6 +2097,8 @@ class ApiClient {
     if (streamGatewayToken) {
       headers['AgentX-Gateway-Token'] = streamGatewayToken;
     }
+
+    registerStreamController(controller);
 
     fetch(`${baseUrl}/api/agent/chat/stream`, {
       method: 'POST',
