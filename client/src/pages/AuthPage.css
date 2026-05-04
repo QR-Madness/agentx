@@ -650,3 +650,41 @@
   border-color: var(--accent-purple);
   color: var(--accent-purple);
 }
+
+/* === Mobile Responsive === */
+@media (max-width: 600px) {
+  .auth-page {
+    padding: 16px;
+    align-items: flex-start;
+    padding-top: max(32px, env(safe-area-inset-top, 16px));
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .auth-container {
+    padding: 24px 20px;
+    max-width: none;
+    width: 100%;
+    border-radius: 12px;
+  }
+
+  .auth-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+
+  .auth-title {
+    font-size: 22px;
+  }
+
+  .auth-server-current {
+    min-height: 48px;
+  }
+
+  .auth-server-option,
+  .auth-server-add-btn {
+    min-height: 44px;
+  }
+}

@@ -108,6 +108,7 @@
 .search-wrapper {
   position: relative;
   width: 280px;
+  max-width: 100%;
 }
 
 .search-icon {
@@ -297,17 +298,28 @@
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .browser-header {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .search-wrapper {
     width: 100%;
   }
-  
+
   .tools-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .tools-tab {
+    padding: 16px;
+  }
+
+  .tool-card {
+    padding: 16px;
+    min-height: 100px;
   }
 }

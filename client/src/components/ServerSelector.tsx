@@ -7,7 +7,8 @@
  * previous host can leak into the new one.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Server, ChevronDown, ChevronUp, Plus, X } from 'lucide-react';
 import { useServer } from '../contexts/ServerContext';
 import '../pages/AuthPage.css';
@@ -22,15 +23,49 @@ interface ServerSelectorProps {
 export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch }: ServerSelectorProps) {
   const { servers, activeServer, switchServer, addNewServer } = useServer();
   const [open, setOpen] = useState(defaultOpen);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newGatewayToken, setNewGatewayToken] = useState('');
 
+  const openDropdown = useCallback(() => {
+    if (disabled || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropdownRect({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    setOpen(true);
+  }, [disabled]);
+
+  const closeDropdown = useCallback(() => {
+    setOpen(false);
+    setDropdownRect(null);
+  }, []);
+
+  // Close on scroll or orientation change.
+  // Deliberately ignore height-only resize (Android keyboard opening) — the dropdown
+  // is position:fixed via portal so it doesn't shift, and closing on keyboard-open
+  // creates an unbreakable collapse loop on real devices.
+  useEffect(() => {
+    if (!open) return;
+    let lastWidth = window.innerWidth;
+    const onScroll = () => closeDropdown();
+    const onResize = () => {
+      const w = window.innerWidth;
+      if (w !== lastWidth) { lastWidth = w; closeDropdown(); }
+    };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, closeDropdown]);
+
   const handleSelect = (id: string) => {
     onSwitch?.();
     switchServer(id);
-    setOpen(false);
+    closeDropdown();
   };
 
   const handleAdd = () => {
@@ -46,7 +81,7 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
     setNewUrl('');
     setNewGatewayToken('');
     setShowAddForm(false);
-    setOpen(false);
+    closeDropdown();
   };
 
   return (
@@ -57,9 +92,10 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
       </label>
 
       <button
+        ref={triggerRef}
         type="button"
         className="auth-server-current"
-        onClick={() => !disabled && setOpen(o => !o)}
+        onClick={() => (open ? closeDropdown() : openDropdown())}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -72,8 +108,18 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
         {open ? <ChevronUp size={15} className="auth-server-chevron" /> : <ChevronDown size={15} className="auth-server-chevron" />}
       </button>
 
-      {open && (
-        <div className="auth-server-dropdown" role="listbox">
+      {open && dropdownRect && createPortal(
+        <div
+          className="auth-server-dropdown"
+          role="listbox"
+          style={{
+            position: 'fixed',
+            top: dropdownRect.top,
+            left: dropdownRect.left,
+            width: dropdownRect.width,
+            zIndex: 9999,
+          }}
+        >
           {servers.map(s => (
             <button
               key={s.id}
@@ -150,7 +196,8 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
               <Plus size={14} /> Add Server
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

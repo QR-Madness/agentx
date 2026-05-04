@@ -238,6 +238,65 @@
   flex-shrink: 0;
 }
 
+/* === Overflow Menu === */
+.toolbar-overflow-trigger {
+  display: none; /* hidden on desktop */
+}
+
+.toolbar-overflow-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+}
+
+.toolbar-overflow-menu {
+  position: fixed;
+  z-index: 500;
+  min-width: 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.12s ease;
+}
+
+.toolbar-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  width: 100%;
+  min-height: 44px;
+}
+
+.toolbar-overflow-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.toolbar-overflow-item--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.toolbar-overflow-divider {
+  height: 1px;
+  background: var(--border-subtle, rgba(255,255,255,0.08));
+  margin: 2px 4px;
+}
+
 /* === Responsive === */
 @media (max-width: 768px) {
   .top-bar {
@@ -251,5 +310,21 @@
 
   .nav-pill {
     padding: 8px 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .top-bar {
+    padding: 0 8px;
+    gap: 4px;
+  }
+
+  /* Show overflow trigger, hide secondary icons */
+  .toolbar-overflow-trigger {
+    display: flex;
+  }
+
+  .toolbar-secondary {
+    display: none !important;
   }
 }

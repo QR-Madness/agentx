@@ -160,7 +160,9 @@ else:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:1420",
         "http://127.0.0.1:1420",
-        "tauri://localhost",
+        "tauri://localhost",       # desktop (macOS/Windows/Linux)
+        "http://tauri.localhost",  # Android WebView
+        "https://tauri.localhost", # Android WebView (HTTPS builds)
     ]
     # Allow all origins in debug mode for easier development
     if DEBUG:
@@ -191,6 +193,8 @@ else:
         "http://localhost:1420",
         "http://127.0.0.1:1420",
         "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
     ]
 
 # AGENTX_PUBLIC_HOST is a convenience knob for clusters fronted by an HTTPS

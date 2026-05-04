@@ -6,7 +6,7 @@
  * Both pulse when their respective operations are active.
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Home,
@@ -20,7 +20,9 @@ import {
   Zap,
   LogOut,
   KeyRound,
+  MoreHorizontal,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -51,9 +53,40 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const [overflowPos, setOverflowPos] = useState<{ top: number; right: number } | null>(null);
 
   const brainButtonRef = useRef<HTMLButtonElement>(null);
   const lightningButtonRef = useRef<HTMLButtonElement>(null);
+  const overflowButtonRef = useRef<HTMLButtonElement>(null);
+
+  const openOverflow = useCallback(() => {
+    if (!overflowButtonRef.current) return;
+    const rect = overflowButtonRef.current.getBoundingClientRect();
+    setOverflowPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setShowOverflow(true);
+  }, []);
+
+  const closeOverflow = useCallback(() => {
+    setShowOverflow(false);
+    setOverflowPos(null);
+  }, []);
+
+  useEffect(() => {
+    if (!showOverflow) return;
+    let lastWidth = window.innerWidth;
+    const onScroll = () => closeOverflow();
+    const onResize = () => {
+      const w = window.innerWidth;
+      if (w !== lastWidth) { lastWidth = w; closeOverflow(); }
+    };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [showOverflow, closeOverflow]);
 
   const hasStreamingTabs = tabs.some(t => t.isStreaming);
 
@@ -177,27 +210,29 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           />
         </div>
 
+        {/* Secondary icons — hidden on small screens, exposed via overflow menu */}
         <button
-          className="toolbar-icon"
+          className="toolbar-icon toolbar-secondary"
           onClick={openTranslation}
           title="Translation"
         >
           <Languages size={18} />
         </button>
         <button
-          className="toolbar-icon"
+          className="toolbar-icon toolbar-secondary"
           onClick={openTools}
           title="Tools"
         >
           <Wrench size={18} />
         </button>
         <button
-          className="toolbar-icon"
+          className="toolbar-icon toolbar-secondary"
           onClick={openMemory}
           title="Memory"
         >
           <Database size={18} />
         </button>
+
         <button
           className="toolbar-icon"
           onClick={openSettings}
@@ -206,11 +241,21 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           <Settings size={18} />
         </button>
 
+        {/* Overflow button — only visible on small screens */}
+        <button
+          ref={overflowButtonRef}
+          className={`toolbar-icon toolbar-overflow-trigger ${showOverflow ? 'active' : ''}`}
+          onClick={() => (showOverflow ? closeOverflow() : openOverflow())}
+          title="More options"
+        >
+          <MoreHorizontal size={18} />
+        </button>
+
         {authRequired && isAuthenticated && (
           <>
-            <span className="topbar-divider" />
+            <span className="topbar-divider toolbar-secondary" />
             <button
-              className="toolbar-icon"
+              className="toolbar-icon toolbar-secondary"
               onClick={() => openModal({
                 id: 'change-password',
                 type: 'modal',
@@ -222,7 +267,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
               <KeyRound size={18} />
             </button>
             <button
-              className="toolbar-icon toolbar-icon--danger"
+              className="toolbar-icon toolbar-icon--danger toolbar-secondary"
               onClick={handleLogout}
               title="Sign out"
             >
@@ -231,6 +276,50 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           </>
         )}
       </div>
+
+      {/* Overflow dropdown — portal-rendered below the overflow button */}
+      {showOverflow && overflowPos && createPortal(
+        <>
+          <div className="toolbar-overflow-backdrop" onClick={closeOverflow} />
+          <div
+            className="toolbar-overflow-menu"
+            style={{ top: overflowPos.top, right: overflowPos.right }}
+          >
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTranslation(); }}>
+              <Languages size={16} />
+              <span>Translation</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTools(); }}>
+              <Wrench size={16} />
+              <span>Tools</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openMemory(); }}>
+              <Database size={16} />
+              <span>Memory</span>
+            </button>
+            {authRequired && isAuthenticated && (
+              <>
+                <div className="toolbar-overflow-divider" />
+                <button
+                  className="toolbar-overflow-item"
+                  onClick={() => {
+                    closeOverflow();
+                    openModal({ id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' });
+                  }}
+                >
+                  <KeyRound size={16} />
+                  <span>Change Password</span>
+                </button>
+                <button className="toolbar-overflow-item toolbar-overflow-item--danger" onClick={() => { closeOverflow(); handleLogout(); }}>
+                  <LogOut size={16} />
+                  <span>Sign Out</span>
+                </button>
+              </>
+            )}
+          </div>
+        </>,
+        document.body,
+      )}
     </header>
   );
 }

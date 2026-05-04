@@ -218,12 +218,42 @@
   .translation-panels {
     grid-template-columns: 1fr;
   }
-  
+
   .translate-action {
     padding: 8px 0;
   }
-  
+
   .language-bar {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .translation-tab {
+    padding: 16px 20px;
+    gap: 16px;
+  }
+
+  .translation-panels {
+    min-height: 0;
+  }
+
+  .translation-panel {
+    min-height: 140px;
+  }
+
+  .translation-textarea {
+    min-height: 100px;
+  }
+
+  .language-bar {
+    gap: 12px;
+    padding: 12px 16px;
+    justify-content: flex-start;
+  }
+
+  .translate-button {
+    min-width: 0;
+    width: 100%;
   }
 }

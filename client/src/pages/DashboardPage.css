@@ -184,3 +184,9 @@
     padding: 24px 20px;
   }
 }
+
+@media (max-width: 480px) {
+  .dashboard-page {
+    padding: 16px;
+  }
+}

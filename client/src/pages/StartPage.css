@@ -62,3 +62,43 @@
   padding: 14px 28px;
   font-size: 15px;
 }
+
+@media (max-width: 600px) {
+  .start-page {
+    padding: 20px 16px;
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+
+  .start-hero {
+    padding-top: 16px;
+    width: 100%;
+  }
+
+  .start-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+
+  .start-title {
+    font-size: 24px;
+  }
+
+  .start-subtitle {
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+
+  .start-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .start-cta,
+  .start-cta-secondary {
+    width: 100%;
+    text-align: center;
+  }
+}

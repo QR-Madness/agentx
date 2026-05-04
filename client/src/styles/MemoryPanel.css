@@ -1140,6 +1140,29 @@
   }
 }
 
+@media (max-width: 480px) {
+  /* On very narrow screens the fixed detail panel should fill width */
+  .split-detail.is-open {
+    width: 100vw;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding: 16px;
+  }
+
+  .graph-view {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-nav {
+    gap: 4px;
+  }
+
+  .memory-nav .nav-item {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
+
 /* ============================================
    Jobs Panel Styles
    ============================================ */
