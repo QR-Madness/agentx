@@ -79,6 +79,12 @@ class AgentXAuthMiddleware:
         # Always track client IP for rate-limiting and auditing
         request.agentx_client_ip = self._get_client_ip(request)
 
+        # OPTIONS preflight requests must never be blocked by auth — the actual
+        # request carries the token, not the preflight. Pass through so
+        # CorsMiddleware can annotate the response on the way back.
+        if request.method == 'OPTIONS':
+            return self.get_response(request)
+
         # Honor the same bypass logic that /api/auth/status reports — auth
         # disabled globally, or localhost bypass active in DEBUG mode.
         if is_auth_bypass_active(request.agentx_client_ip):
