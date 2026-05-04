@@ -152,17 +152,27 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS settings for Tauri client and development
 # In production, set CORS_ALLOWED_ORIGINS env var to comma-separated list
+#
+# Tauri origins are always included regardless of the env var:
+#   tauri://localhost      — desktop (macOS/Windows/Linux custom scheme)
+#   http://tauri.localhost — Android WebView (uses http scheme, not custom)
+#   https://tauri.localhost — Android WebView HTTPS builds
+_TAURI_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+]
+
 _cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if _cors_origins_env:
-    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(',') if o.strip()]
+    _from_env = [o.strip() for o in _cors_origins_env.split(',') if o.strip()]
+    CORS_ALLOWED_ORIGINS = list(dict.fromkeys(_from_env + _TAURI_ORIGINS))
 else:
     # Development defaults - permissive for private server use
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:1420",
         "http://127.0.0.1:1420",
-        "tauri://localhost",       # desktop (macOS/Windows/Linux)
-        "http://tauri.localhost",  # Android WebView
-        "https://tauri.localhost", # Android WebView (HTTPS builds)
+        *_TAURI_ORIGINS,
     ]
     # Allow all origins in debug mode for easier development
     if DEBUG:
@@ -187,14 +197,13 @@ CORS_ALLOW_HEADERS = [
 # Exempt API endpoints from CSRF since we're using CORS
 _csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 if _csrf_origins_env:
-    CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins_env.split(',') if o.strip()]
+    _csrf_from_env = [o.strip() for o in _csrf_origins_env.split(',') if o.strip()]
+    CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(_csrf_from_env + _TAURI_ORIGINS))
 else:
     CSRF_TRUSTED_ORIGINS = [
         "http://localhost:1420",
         "http://127.0.0.1:1420",
-        "tauri://localhost",
-        "http://tauri.localhost",
-        "https://tauri.localhost",
+        *_TAURI_ORIGINS,
     ]
 
 # AGENTX_PUBLIC_HOST is a convenience knob for clusters fronted by an HTTPS
