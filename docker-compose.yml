@@ -37,6 +37,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 2G
+          cpus: "0.5"
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -55,6 +63,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
 
   redis:
     image: redis:7-alpine
@@ -69,6 +85,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
 
   # AgentX API Server (Phase 17)
   api:
@@ -124,6 +148,17 @@ services:
       start_period: 60s
       retries: 3
     restart: unless-stopped
+    deploy:
+      resources:
+        # API hosts BGE-M3 (~2.5G) + NLLB-200 translation (~2.5G) + language
+        # detection (~200M) all loaded eagerly at startup, plus Django/uvicorn
+        # baseline and inference activation buffers. 8G limit gives headroom.
+        limits:
+          memory: 8G
+          cpus: "4.0"
+        reservations:
+          memory: 4G
+          cpus: "1.0"
     profiles:
       - production
 
@@ -137,6 +172,11 @@ services:
       - REDIS_HOSTS=local:redis:6379
     depends_on:
       - redis
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     profiles:
       - tools
 
