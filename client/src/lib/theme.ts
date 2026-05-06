@@ -133,6 +133,25 @@ export const COSMIC_THEME: ThemeDefinition = {
     '--glass-bg-hover': 'rgba(17, 24, 39, 0.85)',
     '--glass-blur': '12px',
 
+    // === Settings / Panel Glass Layers (depth 0 → 3) ===
+    '--glass-backdrop': 'rgba(5, 7, 15, 0.6)',
+    '--glass-layer-0': 'rgba(17, 24, 39, 0.5)',
+    '--glass-layer-1': 'rgba(17, 24, 39, 0.7)',
+    '--glass-layer-2': 'rgba(26, 32, 53, 0.85)',
+    '--glass-layer-3': 'rgba(31, 41, 70, 0.95)',
+    '--blur-subtle': '8px',
+    '--blur-medium': '16px',
+    '--blur-strong': '24px',
+    '--border-glow-subtle': '0 0 12px rgba(139, 92, 246, 0.15)',
+    '--border-glow-medium': '0 0 24px rgba(139, 92, 246, 0.3)',
+    '--border-glow-strong': '0 0 36px rgba(139, 92, 246, 0.5)',
+    '--accent-tint-soft': 'rgba(139, 92, 246, 0.15)',
+    '--accent-tint-medium': 'rgba(139, 92, 246, 0.3)',
+    '--accent-tint-strong': 'rgba(139, 92, 246, 0.5)',
+    '--accent-tint-faint': 'rgba(139, 92, 246, 0.08)',
+    '--text-error': COSMIC_PRIMITIVES.red500,
+    '--text-tertiary': COSMIC_PRIMITIVES.textDim,
+
     // === Backwards Compatibility (legacy variable names) ===
     // Background Palette
     '--bg-space': COSMIC_PRIMITIVES.space,
@@ -230,6 +249,25 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--glass-bg': 'rgba(255, 255, 255, 0.8)',
     '--glass-bg-hover': 'rgba(255, 255, 255, 0.9)',
     '--glass-blur': '12px',
+
+    // === Settings / Panel Glass Layers (depth 0 → 3) ===
+    '--glass-backdrop': 'rgba(15, 23, 42, 0.4)',
+    '--glass-layer-0': 'rgba(255, 255, 255, 0.65)',
+    '--glass-layer-1': 'rgba(255, 255, 255, 0.8)',
+    '--glass-layer-2': 'rgba(248, 250, 252, 0.9)',
+    '--glass-layer-3': 'rgba(241, 245, 249, 0.96)',
+    '--blur-subtle': '8px',
+    '--blur-medium': '16px',
+    '--blur-strong': '24px',
+    '--border-glow-subtle': '0 0 12px rgba(124, 58, 237, 0.1)',
+    '--border-glow-medium': '0 0 24px rgba(124, 58, 237, 0.2)',
+    '--border-glow-strong': '0 0 36px rgba(124, 58, 237, 0.35)',
+    '--accent-tint-soft': 'rgba(124, 58, 237, 0.1)',
+    '--accent-tint-medium': 'rgba(124, 58, 237, 0.22)',
+    '--accent-tint-strong': 'rgba(124, 58, 237, 0.4)',
+    '--accent-tint-faint': 'rgba(124, 58, 237, 0.05)',
+    '--text-error': LIGHT_PRIMITIVES.red600,
+    '--text-tertiary': LIGHT_PRIMITIVES.textLight,
 
     // === Backwards Compatibility (legacy variable names) ===
     // Background Palette - mapped to light equivalents

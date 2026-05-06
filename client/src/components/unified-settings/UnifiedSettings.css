@@ -2,22 +2,7 @@
  * Unified Settings — Enhanced Glassmorphism Styles
  */
 
-/* ── Depth layer tokens ── */
-:root {
-  --glass-backdrop: rgba(5, 7, 15, 0.6);
-  --glass-layer-0: rgba(17, 24, 39, 0.5);
-  --glass-layer-1: rgba(17, 24, 39, 0.7);
-  --glass-layer-2: rgba(26, 32, 53, 0.85);
-  --glass-layer-3: rgba(31, 41, 70, 0.95);
-
-  --blur-subtle: 8px;
-  --blur-medium: 16px;
-  --blur-strong: 24px;
-
-  --border-glow-subtle: 0 0 12px rgba(139, 92, 246, 0.15);
-  --border-glow-medium: 0 0 24px rgba(139, 92, 246, 0.3);
-  --border-glow-strong: 0 0 36px rgba(139, 92, 246, 0.5);
-}
+/* Tokens (--glass-layer-*, --blur-*, --border-glow-*, --accent-tint-*) live in theme.ts */
 
 /* ── Backdrop ── */
 .unified-settings-backdrop {
@@ -66,7 +51,7 @@
   height: 40px;
   border-radius: 12px;
   background: var(--glass-layer-2);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--accent-tint-medium);
   color: var(--text-secondary);
   cursor: pointer;
   align-items: center;
@@ -78,7 +63,7 @@
 .nav-toggle-btn:hover {
   background: var(--glass-layer-3);
   color: var(--text-primary);
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-tint-strong);
 }
 
 /* Mobile nav close button — hidden on desktop */
@@ -90,7 +75,7 @@
   height: 32px;
   border-radius: 8px;
   background: var(--glass-layer-2);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--accent-tint-medium);
   color: var(--text-secondary);
   cursor: pointer;
   align-items: center;
@@ -124,7 +109,7 @@
   height: 40px;
   border-radius: 12px;
   background: var(--glass-layer-2);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--accent-tint-medium);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -135,7 +120,7 @@
 
 .close-button:hover {
   background: var(--glass-layer-3);
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-tint-strong);
   color: var(--text-primary);
   box-shadow: var(--border-glow-subtle);
   transform: scale(1.05);
@@ -148,16 +133,21 @@
   gap: 24px;
   overflow: hidden;
   height: 100%;
+  min-height: 0;
 }
 
 /* ── Sidebar navigation ── */
 .settings-nav {
   background: var(--glass-layer-1);
   backdrop-filter: blur(var(--blur-medium));
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--accent-tint-medium);
   border-radius: 20px;
   padding: 16px;
   overflow-y: auto;
+  /* Required so the nav can shrink below its content height inside
+     the grid row and actually scroll instead of expanding. */
+  min-height: 0;
+  height: 100%;
   box-shadow:
     var(--shadow-lg),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
@@ -173,12 +163,12 @@
 }
 
 .settings-nav::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.3);
+  background: var(--accent-tint-medium);
   border-radius: 4px;
 }
 
 .settings-nav::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.5);
+  background: var(--accent-tint-strong);
 }
 
 /* ── Search bar ── */
@@ -188,14 +178,14 @@
   gap: 8px;
   padding: 10px 12px;
   background: var(--glass-layer-2);
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--accent-tint-soft);
   border-radius: 12px;
   margin-bottom: 16px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-search:focus-within {
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-tint-strong);
   box-shadow: var(--border-glow-subtle);
 }
 
@@ -264,7 +254,7 @@
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(6, 182, 212, 0.1));
+  background: linear-gradient(135deg, var(--accent-tint-medium), rgba(6, 182, 212, 0.1));
   border-left: 3px solid var(--cosmic-violet);
   padding-left: 13px;
   color: var(--cosmic-violet);
@@ -291,9 +281,11 @@
 .settings-content-area {
   background: var(--glass-layer-0);
   backdrop-filter: blur(var(--blur-subtle));
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--accent-tint-soft);
   border-radius: 20px;
   padding: 32px;
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
   position: relative;
 }
@@ -308,14 +300,14 @@
 }
 
 .settings-content-area::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.3);
+  background: var(--accent-tint-medium);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 .settings-content-area::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.5);
+  background: var(--accent-tint-strong);
   background-clip: content-box;
 }
 
@@ -347,7 +339,7 @@
 .section-card {
   background: var(--glass-layer-1);
   backdrop-filter: blur(var(--blur-medium));
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--accent-tint-soft);
   border-radius: 16px;
   padding: 24px;
   margin-bottom: 16px;
@@ -356,7 +348,7 @@
 
 .section-card:hover {
   background: var(--glass-layer-2);
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: var(--accent-tint-medium);
   box-shadow: var(--border-glow-medium);
   transform: translateY(-2px);
 }
@@ -396,7 +388,7 @@
 .parallax-orb-1 {
   background: radial-gradient(
     circle at center,
-    rgba(139, 92, 246, 0.15) 0%,
+    var(--accent-tint-soft) 0%,
     transparent 70%
   );
   top: 20%;
@@ -446,8 +438,8 @@
   width: 100%;
   height: 100%;
   background-image:
-    linear-gradient(rgba(139, 92, 246, 0.3) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(139, 92, 246, 0.3) 1px, transparent 1px);
+    linear-gradient(var(--accent-tint-medium) 1px, transparent 1px),
+    linear-gradient(90deg, var(--accent-tint-medium) 1px, transparent 1px);
   background-size: 50px 50px;
 }
 
@@ -522,5 +514,17 @@
 
   .settings-content-area {
     padding: 24px;
+  }
+}
+
+/* On phones: leave room for bottom TopBar + safe-area, and lock the
+   nav drawer above the bottom bar so it isn't covered. */
+@media (max-width: 600px) {
+  .unified-settings-container {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  .settings-nav {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 }

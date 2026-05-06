@@ -276,9 +276,9 @@
 
 ### 18.2: Tools Menu -> Toolkit
 
-- [ ] Use our new immersive, full-screen approach for our Tools menu to transform it into the Toolkit
-- [ ] The Toolkit should have ability for CRD on tools in the mcp-servers.json; guided editor is the goal, but a simple text editor + pre-save checker will suffice
-- [ ] Add tool metadata; access whitelists (allow access for specific agents), tags, groups, etc. (anything else that's a quick payoff)
+- [ ] Migrate our settings menu for tools into our new immersive, full-screen approach for our Tools menu, transforming it into the "Toolkit".
+- [ ] The Toolkit should have ability for CRD on tools in the mcp-servers.json; guided editor is the goal, but a simple text editor + pre-save checker will suffice.
+- [ ] Add tool metadata; access whitelists (allow access for specific agents), tags, groups, etc. (anything else that's a quick payoff).
 
 ### 18.3: Relay Module (RM) Foundation
 
