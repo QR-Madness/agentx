@@ -22,6 +22,8 @@ export interface ServerApiKeys {
   lmstudio?: string;  // LM Studio base URL (e.g., http://192.168.x.x:1234/v1)
   anthropic?: string; // Anthropic API key
   openai?: string;    // OpenAI API key
+  openrouter?: string; // OpenRouter API key
+  vercel?: string; // Vercel AI Gateway API key
 }
 
 export interface ServerPreferences {

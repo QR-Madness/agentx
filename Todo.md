@@ -1,10 +1,10 @@
 # AgentX Development To-do
 
 **Project**: AgentX - AI Agent Platform
-**Status**: Pre-prototype
-**Last Updated**: 2026-04-27
+**Status**: Prototype
+**Last Updated**: 2026-05-06
 
-**NOTE**: After v.20, UI must be optimized for mobile, but native to desktop.
+**NOTE**: UI must be highly responsive between PC and mobile devices.
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -258,12 +258,48 @@
 - [x] Client checks `protocol_version` on connect, shows `VersionMismatchPage` if incompatible
 - [x] Client package.json version bumped to 0.17.0
 
-### 17.6 Deferred Items
+### 17.6 ~~Deferred~~ Items
 
-- [ ] iOS/Android builds with Tauri v2 mobile support
-- [ ] Cloudflare Tunnel deployment documentation
-- [ ] Rate limiting on auth endpoints (login, setup)
-- [ ] Request auditing log (store auth attempts, API calls with client IP)
+- [X] ~~iOS/~~Android builds with Tauri v2 mobile support
+- [-] Cloudflare Tunnel deployment documentation - Pending
+- [-] ~~Rate limiting on auth endpoints (login, setup)~~ Put on hold with edge-security layer provided by the Gateway.
+- [-] ~~Request auditing log (store auth attempts, API calls with client IP)~~ Replaced by Gateway.
+
+---
+
+## Phase 18: UX Improvements & Optimization and Memory Tuning
+
+### 18.1: Wave 1 Fixes
+
+- [x] LLM Providers Settings do not have an OpenRouter section. — Added OpenRouter + Vercel AI Gateway cards with brand SVG icons; LM Studio/Anthropic/OpenAI re-iconed and re-badged (Offline / High-Reasoning / Cloud).
+- [x] Mobile UI Fix: topbar moved to bottom on mobile (`@media (max-width: 600px)` flips RootLayout to `column-reverse`), transparent `safe-area-inset-top` margin on `.page-content`, viewport-fit=cover added so insets resolve on Android.
+
+### 18.2: Tools Menu -> Toolkit
+
+- [ ] Use our new immersive, full-screen approach for our Tools menu to transform it into the Toolkit
+- [ ] The Toolkit should have ability for CRD on tools in the mcp-servers.json; guided editor is the goal, but a simple text editor + pre-save checker will suffice
+- [ ] Add tool metadata; access whitelists (allow access for specific agents), tags, groups, etc. (anything else that's a quick payoff)
+
+### 18.3: Relay Module (RM) Foundation
+
+- [ ] Conduct these fixes concurrently:
+  - [ ] Instead of a streaming toggle, offer a way to launch a background conversation; runs without opening it.
+  - [ ] Instead of a DB icon to disable/enable memory consolidation on a conversation; use a toggle that says "Remember our conversation".
+  - [ ] Migrate the chat toolbar into a nice menu with a button trigger that way we can clear the chat for immersion. 
+- Remember that RM will be used for file communication and controlling the different modes of the model when feature support it.
+- NOTE: Before we can work with images; we'll need to improve model metadata and also our file management to target image and video output models.
+
+### 18.4: Model Metadata, Selector Refinement
+
+Currently our model selection and selector are a very solid foundation but are just that. We cannot have advanced capabilities until we can profile our models. We're going specialice in OpenRouter and Vercel Gateway, with anthropic for high-quality reasoning.
+
+- Improve the model selector to use filter-based lists with a comfortable UX, and show the model selector in a modal or full-screen menu; it's cluttering the agent profile and the large lists can lag the UI.
+- [ ] Vercel Gateway model selection is fairly weak, only showing context limits, we want to see capabilities, pricing, max-tokens, etc. (see more https://vercel.com/docs/ai-gateway/models-and-providers#dynamic-model-discovery)
+- [ ] OpenRouter has a ton of metadata like Vercel gateway, and we need match capability to what we'll add in Vercel Gateway. (see more https://openrouter.ai/docs/guides/overview/models#model-object-schema) 
+
+## 18.5: Metrics Overhaul
+
+- [ ] 
 
 ---
 
@@ -271,7 +307,7 @@
 
 > Items to consider after prototype is complete
 
-- [ ] New Chat Feature: Comms Toolbox - Message and conversation tools - files, block memory toggle (no consolidation), and more.
+- [ ] New Chat Feature: Relay Module - Message and conversation tools - files, block memory toggle (no consolidation), and more.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
 - [ ] Real-time job progress (polling while running)

@@ -539,6 +539,7 @@ export interface ConfigUpdate {
     anthropic?: { api_key?: string; base_url?: string };
     openai?: { api_key?: string; base_url?: string };
     openrouter?: { api_key?: string; site_url?: string; app_name?: string };
+    vercel?: { api_key?: string; base_url?: string };
   };
   preferences?: {
     default_model?: string;

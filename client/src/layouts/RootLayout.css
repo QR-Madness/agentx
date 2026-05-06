@@ -68,6 +68,23 @@
   overflow: auto;
 }
 
+/* === Mobile: TopBar at bottom, transparent inset at top === */
+@media (max-width: 600px) {
+  .root-layout {
+    flex-direction: column-reverse;
+  }
+
+  /* Transparent strip under the device status bar so cosmic backdrop bleeds through */
+  .root-layout::before {
+    /* keep twinkling stars visible behind the inset */
+    z-index: 0;
+  }
+
+  .page-content {
+    margin-top: env(safe-area-inset-top, 0px);
+  }
+}
+
 /* === Loading State === */
 .root-layout--loading {
   align-items: center;

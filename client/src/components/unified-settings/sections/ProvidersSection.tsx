@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   Key,
   Server,
-  Sparkles,
   Eye,
   EyeOff,
   RefreshCw,
@@ -12,6 +11,11 @@ import {
 } from 'lucide-react';
 import { useServer } from '../../../contexts/ServerContext';
 import { api, ConfigUpdate } from '../../../lib/api';
+import anthropicIcon from '../../../assets/providers/anthropic-dark.svg';
+import openaiIcon from '../../../assets/providers/openai-light.svg';
+import openrouterIcon from '../../../assets/providers/open-router-dark.svg';
+import lmstudioIcon from '../../../assets/providers/lmstudio.svg';
+import vercelIcon from '../../../assets/providers/vercel.svg';
 
 export default function ProvidersSection() {
   const { activeServer, activeMetadata, updateMetadata } = useServer();
@@ -21,7 +25,9 @@ export default function ProvidersSection() {
     lmstudio: string;
     anthropic: string;
     openai: string;
-  }>({ lmstudio: '', anthropic: '', openai: '' });
+    openrouter: string;
+    vercel: string;
+  }>({ lmstudio: '', anthropic: '', openai: '', openrouter: '', vercel: '' });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configSaveMessage, setConfigSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -31,6 +37,8 @@ export default function ProvidersSection() {
         lmstudio: activeMetadata.apiKeys.lmstudio || '',
         anthropic: activeMetadata.apiKeys.anthropic || '',
         openai: activeMetadata.apiKeys.openai || '',
+        openrouter: activeMetadata.apiKeys.openrouter || '',
+        vercel: activeMetadata.apiKeys.vercel || '',
       });
     }
   }, [activeMetadata]);
@@ -39,7 +47,7 @@ export default function ProvidersSection() {
     setShowApiKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
   };
 
-  const handleProviderSettingChange = (provider: 'lmstudio' | 'anthropic' | 'openai', value: string) => {
+  const handleProviderSettingChange = (provider: 'lmstudio' | 'anthropic' | 'openai' | 'openrouter' | 'vercel', value: string) => {
     setProviderSettings(prev => ({ ...prev, [provider]: value }));
     updateMetadata({
       apiKeys: {
@@ -64,6 +72,8 @@ export default function ProvidersSection() {
           lmstudio: providerSettings.lmstudio ? { base_url: providerSettings.lmstudio } : undefined,
           anthropic: providerSettings.anthropic ? { api_key: providerSettings.anthropic } : undefined,
           openai: providerSettings.openai ? { api_key: providerSettings.openai } : undefined,
+          openrouter: providerSettings.openrouter ? { api_key: providerSettings.openrouter } : undefined,
+          vercel: providerSettings.vercel ? { api_key: providerSettings.vercel } : undefined,
         },
       };
 
@@ -127,15 +137,15 @@ export default function ProvidersSection() {
             <div className="provider-header">
               <div className="provider-info">
                 <div className="provider-icon local">
-                  <Server size={20} />
+                  <img src={lmstudioIcon} alt="" width={20} height={20} />
                 </div>
                 <div>
                   <h3 className="provider-name">
                     LM Studio
-                    <span className="provider-badge local">Local</span>
+                    <span className="provider-badge local">Offline</span>
                   </h3>
                   <p className="provider-description">
-                    Local model server URL (OpenAI-compatible)
+                    Local model server (OpenAI-compatible) — recommended for sensitive data
                   </p>
                 </div>
               </div>
@@ -162,15 +172,15 @@ export default function ProvidersSection() {
             <div className="provider-header">
               <div className="provider-info">
                 <div className="provider-icon cloud">
-                  <Sparkles size={20} />
+                  <img src={anthropicIcon} alt="" width={20} height={20} />
                 </div>
                 <div>
                   <h3 className="provider-name">
                     Anthropic
-                    <span className="provider-badge primary">Primary</span>
+                    <span className="provider-badge primary">High-Reasoning</span>
                   </h3>
                   <p className="provider-description">
-                    API key for Claude models
+                    Claude models — best for complex reasoning tasks
                   </p>
                 </div>
               </div>
@@ -197,15 +207,15 @@ export default function ProvidersSection() {
             <div className="provider-header">
               <div className="provider-info">
                 <div className="provider-icon experimental">
-                  <Sparkles size={20} />
+                  <img src={openaiIcon} alt="" width={20} height={20} />
                 </div>
                 <div>
                   <h3 className="provider-name">
                     OpenAI
-                    <span className="provider-badge experimental">Experimental</span>
+                    <span className="provider-badge cloud">Cloud</span>
                   </h3>
                   <p className="provider-description">
-                    API key for GPT models
+                    GPT models — day-to-day operations and offloading
                   </p>
                 </div>
               </div>
@@ -223,6 +233,76 @@ export default function ProvidersSection() {
                   onClick={() => toggleApiKeyVisibility('openai')}
                 >
                   {showApiKeys.openai ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="provider-card card">
+            <div className="provider-header">
+              <div className="provider-info">
+                <div className="provider-icon cloud">
+                  <img src={openrouterIcon} alt="" width={20} height={20} />
+                </div>
+                <div>
+                  <h3 className="provider-name">
+                    OpenRouter
+                    <span className="provider-badge router">Cloud Router</span>
+                  </h3>
+                  <p className="provider-description">
+                    Unified access to many providers and orgs through one key
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="provider-form">
+              <div className="api-key-input">
+                <input
+                  type={showApiKeys.openrouter ? 'text' : 'password'}
+                  value={providerSettings.openrouter}
+                  onChange={(e) => handleProviderSettingChange('openrouter', e.target.value)}
+                  placeholder="sk-or-..."
+                />
+                <button
+                  className="button-ghost visibility-toggle"
+                  onClick={() => toggleApiKeyVisibility('openrouter')}
+                >
+                  {showApiKeys.openrouter ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="provider-card card">
+            <div className="provider-header">
+              <div className="provider-info">
+                <div className="provider-icon cloud">
+                  <img src={vercelIcon} alt="" width={20} height={20} />
+                </div>
+                <div>
+                  <h3 className="provider-name">
+                    Vercel AI Gateway
+                    <span className="provider-badge cloud">Cloud</span>
+                  </h3>
+                  <p className="provider-description">
+                    Vercel-hosted gateway — day-to-day operations and offloading
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="provider-form">
+              <div className="api-key-input">
+                <input
+                  type={showApiKeys.vercel ? 'text' : 'password'}
+                  value={providerSettings.vercel}
+                  onChange={(e) => handleProviderSettingChange('vercel', e.target.value)}
+                  placeholder="vck_..."
+                />
+                <button
+                  className="button-ghost visibility-toggle"
+                  onClick={() => toggleApiKeyVisibility('vercel')}
+                >
+                  {showApiKeys.vercel ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
