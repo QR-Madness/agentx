@@ -1,0 +1,32 @@
+# docker-compose.gpu.yml
+#
+# Optional NVIDIA GPU passthrough overlay for the API container.
+# Layer this on top of docker-compose.yml when the host has a GPU and the
+# NVIDIA Container Toolkit installed:
+#
+#   Linux:   nvidia-ctk runtime configure --runtime=docker && systemctl restart docker
+#   Windows: Docker Desktop + WSL2 backend with NVIDIA GPU support enabled
+#            (Settings → Resources → WSL Integration; install the NVIDIA driver
+#            for WSL on the Windows host — no driver inside WSL).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile production up -d
+#
+# Or for a cluster:
+#   docker compose -f docker-compose.yml -f docker-compose.cluster.yml -f docker-compose.gpu.yml \
+#     --profile production --env-file clusters/<name>/.env up -d
+#
+# SentenceTransformer auto-selects CUDA when torch.cuda.is_available() is true,
+# so no application config change is required. Verify after start:
+#
+#   docker exec <cluster>-api python -c "import torch; print(torch.cuda.is_available())"
+
+services:
+  api:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

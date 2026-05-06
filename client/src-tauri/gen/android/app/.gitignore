@@ -1,0 +1,6 @@
+/src/main/java/com/redacted/agentx_client/generated
+/src/main/jniLibs/**/*.so
+/src/main/assets/tauri.conf.json
+/tauri.build.gradle.kts
+/proguard-tauri.pro
+/tauri.properties
