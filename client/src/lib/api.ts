@@ -149,6 +149,31 @@ export interface MCPServer {
   tools?: string[];
   tools_count?: number;
   resources_count?: number;
+  // Phase 18.2: full config returned by GET /api/mcp/servers
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string | null;
+  headers?: Record<string, string>;
+  timeout?: number;
+  auto_reconnect?: boolean;
+  tags?: string[];
+  groups?: string[];
+  allowed_agent_ids?: string[] | null;
+}
+
+export interface MCPServerConfigInput {
+  transport: string;
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string | null;
+  headers?: Record<string, string>;
+  timeout?: number;
+  auto_reconnect?: boolean;
+  tags?: string[];
+  groups?: string[];
+  allowed_agent_ids?: string[] | null;
 }
 
 export interface MCPTool {
@@ -1088,6 +1113,33 @@ class ApiClient {
     return this.request('/api/mcp/disconnect', {
       method: 'POST',
       body: JSON.stringify({ server }),
+    });
+  }
+
+  async createMCPServer(name: string, config: MCPServerConfigInput): Promise<{ status: string; server: MCPServer }> {
+    return this.request('/api/mcp/servers', {
+      method: 'POST',
+      body: JSON.stringify({ name, config }),
+    });
+  }
+
+  async updateMCPServer(name: string, config: MCPServerConfigInput, rename?: string): Promise<{ status: string; server: MCPServer }> {
+    return this.request(`/api/mcp/servers/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(rename && rename !== name ? { config, rename } : { config }),
+    });
+  }
+
+  async deleteMCPServer(name: string): Promise<{ status: string; server: string }> {
+    return this.request(`/api/mcp/servers/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async validateMCPServer(name: string, config: MCPServerConfigInput): Promise<{ valid: boolean; errors: string[] }> {
+    return this.request('/api/mcp/servers/validate', {
+      method: 'POST',
+      body: JSON.stringify({ name, config }),
     });
   }
 

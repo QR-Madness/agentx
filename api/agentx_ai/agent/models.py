@@ -86,6 +86,15 @@ class AgentProfile(BaseModel):
     enable_memory: bool = Field(True, description="Whether to use the memory system")
     memory_channel: str = Field("_global", description="Memory channel to use for this profile")
     enable_tools: bool = Field(True, description="Whether to enable MCP tools")
+    # Phase 18.2: per-profile tool gating. Tool names are fully-qualified ("server.tool").
+    allowed_tools: Optional[list[str]] = Field(
+        None,
+        description="If set, only these fully-qualified tools (server.tool) are exposed to this agent. None = all enabled.",
+    )
+    blocked_tools: list[str] = Field(
+        default_factory=list,
+        description="Fully-qualified tools (server.tool) explicitly hidden from this agent. Wins over allowed_tools.",
+    )
 
     # Metadata
     is_default: bool = Field(False, description="Whether this is the default profile")

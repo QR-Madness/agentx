@@ -6,9 +6,9 @@ import { useState } from 'react';
 import { CheckCircle, XCircle, Copy, Check } from 'lucide-react';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { MemoryPanel } from '../panels/MemoryPanel';
-import { ToolsPanel } from '../panels/ToolsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
+import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
 
 // Re-export ProfileEditorModal for the modal registry
@@ -34,12 +34,9 @@ export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
   );
 }
 
-export function ToolsModalContent({ onClose: _onClose }: ModalContentProps) {
-  return (
-    <div className="modal-content-wrapper">
-      <ToolsPanel />
-    </div>
-  );
+export function ToolsModalContent({ onClose }: ModalContentProps) {
+  // Phase 18.2: full-screen Toolkit replaces the read-only ToolsPanel drawer.
+  return <ToolkitPage isOpen={true} onClose={onClose} />;
 }
 
 export function TranslationModalContent({ onClose: _onClose }: ModalContentProps) {

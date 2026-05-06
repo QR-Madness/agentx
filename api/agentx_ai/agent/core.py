@@ -268,14 +268,44 @@ class Agent:
         if not mcp_tools:
             return None
         
+        # Phase 18.2: server-side per-agent whitelist (allowed_agent_ids on ServerConfig).
+        # Build server_name -> bool gate once per call.
+        # Security: when a whitelist is set but the caller's agent_id is unknown,
+        # default to DENY rather than allow — otherwise a misrouted request silently
+        # bypasses the whitelist.
+        agent_id = getattr(self.config, "agent_id", None)
+        server_gate: dict[str, bool] = {}
+        try:
+            for cfg in self.mcp_client.registry.list():
+                allowed = cfg.allowed_agent_ids
+                if allowed is None:
+                    server_gate[cfg.name] = True
+                elif agent_id is None:
+                    server_gate[cfg.name] = False
+                    logger.warning(
+                        f"Server '{cfg.name}' has whitelist but agent_id is unknown — denying"
+                    )
+                else:
+                    server_gate[cfg.name] = agent_id in allowed
+            logger.info(
+                f"[tool-gate] agent_id={agent_id!r} gate={server_gate}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build server gate: {e}")
+
         tools = []
         for t in mcp_tools:
+            # Server-side whitelist (default-allow only for servers not in registry,
+            # e.g. internal tools with server_name="_internal").
+            server_name = getattr(t, "server_name", None) or getattr(t, "server", None)
+            if server_name in server_gate and server_gate[server_name] is False:
+                continue
             # Apply allow/block filters
             if self.config.allowed_tools and t.name not in self.config.allowed_tools:
                 continue
             if self.config.blocked_tools and t.name in self.config.blocked_tools:
                 continue
-            
+
             tools.append({
                 "type": "function",
                 "function": {

@@ -176,23 +176,10 @@ class ProfileManager:
 
         current = self._profiles[profile_id]
         updates.pop("agent_id", None)  # agent_id is immutable once generated
-        updated_data = {
-            "id": current.id,
-            "name": current.name,
-            "agent_id": current.agent_id,
-            "avatar": current.avatar,
-            "description": current.description,
-            "default_model": current.default_model,
-            "temperature": current.temperature,
-            "prompt_profile_id": current.prompt_profile_id,
-            "system_prompt": current.system_prompt,
-            "reasoning_strategy": current.reasoning_strategy,
-            "enable_memory": current.enable_memory,
-            "memory_channel": current.memory_channel,
-            "enable_tools": current.enable_tools,
-            "is_default": current.is_default,
-            "created_at": current.created_at,
-        }
+        # Use model_dump to carry every field forward, so adding new fields to
+        # AgentProfile (e.g. allowed_tools/blocked_tools in Phase 18.2) doesn't
+        # silently reset them on any edit.
+        updated_data = current.model_dump()
         updated_data.update(updates)
         updated_data["updated_at"] = datetime.utcnow()
 
@@ -215,23 +202,10 @@ class ProfileManager:
         # If deleted profile was default, set another as default
         if profile.is_default and self._profiles:
             first_profile = next(iter(self._profiles.values()))
-            self._profiles[first_profile.id] = AgentProfile(
-                id=first_profile.id,
-                name=first_profile.name,
-                avatar=first_profile.avatar,
-                description=first_profile.description,
-                default_model=first_profile.default_model,
-                temperature=first_profile.temperature,
-                prompt_profile_id=first_profile.prompt_profile_id,
-                system_prompt=first_profile.system_prompt,
-                reasoning_strategy=first_profile.reasoning_strategy,
-                enable_memory=first_profile.enable_memory,
-                memory_channel=first_profile.memory_channel,
-                enable_tools=first_profile.enable_tools,
-                is_default=True,
-                created_at=first_profile.created_at,
-                updated_at=datetime.utcnow(),
-            )
+            data = first_profile.model_dump()
+            data["is_default"] = True
+            data["updated_at"] = datetime.utcnow()
+            self._profiles[first_profile.id] = AgentProfile(**data)
 
         self.save_config()
         return True
@@ -242,23 +216,10 @@ class ProfileManager:
             return False
 
         for pid, profile in self._profiles.items():
-            self._profiles[pid] = AgentProfile(
-                id=profile.id,
-                name=profile.name,
-                avatar=profile.avatar,
-                description=profile.description,
-                default_model=profile.default_model,
-                temperature=profile.temperature,
-                prompt_profile_id=profile.prompt_profile_id,
-                system_prompt=profile.system_prompt,
-                reasoning_strategy=profile.reasoning_strategy,
-                enable_memory=profile.enable_memory,
-                memory_channel=profile.memory_channel,
-                enable_tools=profile.enable_tools,
-                is_default=(pid == profile_id),
-                created_at=profile.created_at,
-                updated_at=datetime.utcnow() if pid == profile_id else profile.updated_at,
-            )
+            data = profile.model_dump()
+            data["is_default"] = (pid == profile_id)
+            data["updated_at"] = datetime.utcnow() if pid == profile_id else profile.updated_at
+            self._profiles[pid] = AgentProfile(**data)
 
         self.save_config()
         return True

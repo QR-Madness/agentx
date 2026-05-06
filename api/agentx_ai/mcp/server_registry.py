@@ -42,7 +42,13 @@ class ServerConfig:
     # Connection settings
     timeout: float = 30.0
     auto_reconnect: bool = True
-    
+
+    # Toolkit metadata (Phase 18.2)
+    tags: list[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=list)
+    # None = all agents allowed; [] = none allowed; [...] = whitelist by AgentProfile.agent_id
+    allowed_agent_ids: list[str] | None = None
+
     def __post_init__(self):
         if isinstance(self.transport, str):
             self.transport = TransportType(self.transport)
@@ -94,6 +100,13 @@ class ServerConfig:
             headers=data.get("headers", {}),
             timeout=data.get("timeout", 30.0),
             auto_reconnect=data.get("auto_reconnect", True),
+            tags=list(data.get("tags", []) or []),
+            groups=list(data.get("groups", []) or []),
+            allowed_agent_ids=(
+                list(data["allowed_agent_ids"])
+                if data.get("allowed_agent_ids") is not None
+                else None
+            ),
         )
 
 
@@ -162,19 +175,36 @@ class ServerRegistry:
         """Export registry as dictionary."""
         return {
             "servers": {
-                name: {
-                    "transport": config.transport.value,
-                    "command": config.command,
-                    "args": config.args,
-                    "env": config.env,
-                    "url": config.url,
-                    "headers": config.headers,
-                    "timeout": config.timeout,
-                    "auto_reconnect": config.auto_reconnect,
-                }
+                name: self._server_to_dict(config)
                 for name, config in self._servers.items()
             }
         }
+
+    @staticmethod
+    def _server_to_dict(config: ServerConfig) -> dict[str, Any]:
+        """Serialize a single ServerConfig, omitting empty/default fields for stable JSON."""
+        out: dict[str, Any] = {"transport": config.transport.value}
+        if config.command is not None:
+            out["command"] = config.command
+        if config.args:
+            out["args"] = list(config.args)
+        if config.env:
+            out["env"] = dict(config.env)
+        if config.url is not None:
+            out["url"] = config.url
+        if config.headers:
+            out["headers"] = dict(config.headers)
+        if config.timeout != 30.0:
+            out["timeout"] = config.timeout
+        if config.auto_reconnect is not True:
+            out["auto_reconnect"] = config.auto_reconnect
+        if config.tags:
+            out["tags"] = list(config.tags)
+        if config.groups:
+            out["groups"] = list(config.groups)
+        if config.allowed_agent_ids is not None:
+            out["allowed_agent_ids"] = list(config.allowed_agent_ids)
+        return out
     
     def save_to_file(self, path: Path | None = None) -> None:
         """Save registry to a JSON file."""

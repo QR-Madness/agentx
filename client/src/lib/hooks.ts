@@ -9,6 +9,7 @@ import {
   HealthResponse,
   ProviderInfo,
   MCPServer,
+  MCPServerConfigInput,
   MCPTool,
   ApiError,
   MemoryChannel,
@@ -122,11 +123,37 @@ export function useMCPServers() {
     }
   }, [refresh]);
 
+  const createServer = useCallback(async (name: string, config: MCPServerConfigInput) => {
+    const result = await api.createMCPServer(name, config);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const updateServer = useCallback(async (name: string, config: MCPServerConfigInput, rename?: string) => {
+    const result = await api.updateMCPServer(name, config, rename);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const deleteServer = useCallback(async (name: string) => {
+    const result = await api.deleteMCPServer(name);
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const validateServer = useCallback(async (name: string, config: MCPServerConfigInput) => {
+    return api.validateMCPServer(name, config);
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { servers, loading, error, refresh, connectServer, connectAll, disconnectServer };
+  return {
+    servers, loading, error, refresh,
+    connectServer, connectAll, disconnectServer,
+    createServer, updateServer, deleteServer, validateServer,
+  };
 }
 
 export function useMCPTools() {

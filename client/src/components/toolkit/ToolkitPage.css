@@ -1,0 +1,469 @@
+/**
+ * Toolkit — Full-screen immersive MCP server + tool management
+ * Mirrors UnifiedSettings glass shell (see UnifiedSettings.css for token usage).
+ */
+
+.toolkit-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: var(--glass-backdrop);
+  cursor: pointer;
+}
+
+.toolkit-container {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 24px;
+  padding: 24px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.toolkit-container > * { pointer-events: auto; }
+
+.toolkit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+}
+.toolkit-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toolkit-header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #8B5CF6, #06B6D4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.toolkit-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+
+.toolkit-nav {
+  background: var(--glass-layer-1);
+  backdrop-filter: blur(var(--blur-medium));
+  border: 1px solid var(--accent-tint-medium);
+  border-radius: 20px;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.toolkit-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+}
+.toolkit-nav-item:hover {
+  background: var(--glass-layer-2);
+  color: var(--text-primary);
+  transform: translateX(4px);
+}
+.toolkit-nav-item.active {
+  background: linear-gradient(135deg, var(--accent-tint-medium), rgba(6, 182, 212, 0.1));
+  border-left: 3px solid var(--cosmic-violet);
+  padding-left: 13px;
+  color: var(--cosmic-violet);
+  box-shadow: var(--border-glow-medium);
+}
+.toolkit-nav-item svg { flex-shrink: 0; }
+
+.toolkit-content {
+  background: var(--glass-layer-0);
+  backdrop-filter: blur(var(--blur-subtle));
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 20px;
+  padding: 32px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+}
+
+.toolkit-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 20px;
+}
+.toolkit-section-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.toolkit-section-title p {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.toolkit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--accent-tint-medium);
+  background: var(--glass-layer-2);
+  color: var(--text-primary);
+}
+.toolkit-button:hover:not(:disabled) {
+  background: var(--glass-layer-3);
+  border-color: var(--accent-tint-strong);
+}
+.toolkit-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.toolkit-button.primary {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(6, 182, 212, 0.15));
+  border-color: var(--cosmic-violet);
+}
+.toolkit-button.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: rgba(239, 68, 68, 0.95);
+}
+.toolkit-button.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+.toolkit-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.toolkit-card {
+  background: var(--glass-layer-1);
+  backdrop-filter: blur(var(--blur-medium));
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s;
+}
+.toolkit-card:hover {
+  border-color: var(--accent-tint-medium);
+  transform: translateY(-2px);
+  box-shadow: var(--border-glow-subtle);
+}
+
+.toolkit-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toolkit-card-header .name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolkit-card .meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.online { background: rgb(34, 197, 94); box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+.status-dot.offline { background: rgba(255, 255, 255, 0.25); }
+
+.toolkit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.toolkit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  color: var(--text-secondary);
+}
+
+/* Buttons rendered as chips need a real hit-target. */
+button.toolkit-chip {
+  cursor: pointer;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  min-height: 32px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+button.toolkit-chip:hover {
+  background: var(--glass-layer-3);
+  border-color: var(--accent-tint-medium);
+  color: var(--text-primary);
+}
+button.toolkit-chip.solid:hover {
+  filter: brightness(1.1);
+}
+
+/* Access view: roomier chips, easier to tap. */
+.toolkit-access-chips button.toolkit-chip {
+  padding: 9px 16px;
+  font-size: 13px;
+  min-height: 38px;
+}
+.toolkit-chip.solid {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: var(--cosmic-violet);
+  color: var(--text-primary);
+}
+.toolkit-chip button {
+  background: none; border: none; color: inherit; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center;
+}
+
+.toolkit-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+/* Form */
+.toolkit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.toolkit-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.toolkit-form input,
+.toolkit-form select,
+.toolkit-form textarea {
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.toolkit-form input:focus,
+.toolkit-form select:focus,
+.toolkit-form textarea:focus {
+  border-color: var(--cosmic-violet);
+  box-shadow: var(--border-glow-subtle);
+}
+.toolkit-form textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  resize: vertical;
+  min-height: 90px;
+}
+.toolkit-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.toolkit-form .checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.toolkit-form .checkbox-row:hover {
+  border-color: var(--accent-tint-medium);
+  background: var(--glass-layer-3);
+}
+.toolkit-form .checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--cosmic-violet);
+  cursor: pointer;
+}
+.toolkit-form .checkbox-row span {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: normal;
+}
+
+.toolkit-error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: rgb(252, 165, 165);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolkit-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.toolkit-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  outline: none;
+  font-size: 14px;
+}
+
+.toolkit-empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--accent-tint-soft);
+  border-radius: 14px;
+}
+
+.toolkit-raw-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+.toolkit-raw-editor textarea {
+  flex: 1;
+  min-height: 360px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 10px;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  outline: none;
+  resize: none;
+}
+.toolkit-raw-editor .actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.toolkit-raw-editor .warning {
+  color: rgb(251, 191, 36);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolkit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(4px);
+}
+.toolkit-modal-card {
+  background: var(--glass-layer-1);
+  backdrop-filter: blur(var(--blur-medium));
+  border: 1px solid var(--accent-tint-medium);
+  border-radius: 18px;
+  padding: 24px;
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+.toolkit-modal-card h3 {
+  margin: 0 0 16px;
+  color: var(--text-primary);
+  font-size: 18px;
+}
+.toolkit-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+@media (max-width: 1024px) {
+  .toolkit-layout { grid-template-columns: 200px 1fr; }
+  .toolkit-header h1 { font-size: 26px; }
+}
+@media (max-width: 768px) {
+  .toolkit-container { padding: 16px; gap: 16px; }
+  .toolkit-layout { grid-template-columns: 1fr; }
+  .toolkit-nav { flex-direction: row; overflow-x: auto; height: auto; }
+  .toolkit-nav-item { flex: 0 0 auto; }
+  .toolkit-nav-item:hover { transform: none; }
+  .toolkit-content { padding: 20px; }
+  .toolkit-form-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .toolkit-container { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px); }
+}

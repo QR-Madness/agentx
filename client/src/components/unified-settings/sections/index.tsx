@@ -85,13 +85,7 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
     label: 'Tools',
     icon: <Wrench size={16} />,
     sections: [
-      {
-        id: 'tools-browser',
-        label: 'MCP Tools',
-        icon: <Wrench size={18} />,
-        component: lazy(() => import('./ToolsSection')),
-        keywords: ['mcp', 'servers', 'capabilities', 'functions']
-      },
+      // 'tools-browser' removed — now lives in the immersive Toolkit (Phase 18.2).
       {
         id: 'translation',
         label: 'Translation',

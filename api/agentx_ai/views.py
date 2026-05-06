@@ -233,24 +233,170 @@ def language_detect(request):
     })
 
 
+def _serialize_server(config, connection) -> dict:
+    """Build the full client-facing server payload (config + live connection state)."""
+    return {
+        "name": config.name,
+        "transport": config.transport.value,
+        "command": config.command,
+        "args": list(config.args),
+        "env": dict(config.env),
+        "url": config.url,
+        "headers": dict(config.headers),
+        "timeout": config.timeout,
+        "auto_reconnect": config.auto_reconnect,
+        "tags": list(config.tags),
+        "groups": list(config.groups),
+        "allowed_agent_ids": (
+            list(config.allowed_agent_ids)
+            if config.allowed_agent_ids is not None
+            else None
+        ),
+        "status": "connected" if connection else "disconnected",
+        "tools": [t.name for t in connection.tools] if connection else [],
+        "tools_count": len(connection.tools) if connection else 0,
+        "resources_count": len(connection.resources) if connection else 0,
+    }
+
+
+@csrf_exempt
 def mcp_servers(request):
-    """List configured MCP servers and their connection status."""
+    """
+    GET: List configured MCP servers (config + connection status).
+    POST: Create a new server. Body: {"name": str, "config": {...}}. 409 if name exists.
+    """
     manager = get_mcp_manager()
-    
-    servers = []
-    for config in manager.registry.list():
-        connection = manager.get_connection(config.name)
-        server_data = {
-            "name": config.name,
-            "transport": config.transport.value,
-            "status": "connected" if connection else "disconnected",
-            "tools": [t.name for t in connection.tools] if connection else [],
-            "tools_count": len(connection.tools) if connection else 0,
-            "resources_count": len(connection.resources) if connection else 0,
-        }
-        servers.append(server_data)
-    
+
+    if request.method == "POST":
+        return _mcp_server_create(request, manager)
+
+    servers = [
+        _serialize_server(config, manager.get_connection(config.name))
+        for config in manager.registry.list()
+    ]
     return JsonResponse({"servers": servers})
+
+
+def _persist_registry(manager) -> None:
+    """Persist registry to its configured file path (best-effort logged)."""
+    path = manager.registry._config_path
+    if path is None:
+        from pathlib import Path
+        path = Path(__file__).parent.parent.parent / "mcp_servers.json"
+        manager.registry._config_path = path
+    manager.registry.save_to_file(path)
+
+
+def _refresh_connection(manager, name: str) -> None:
+    """Disconnect (if connected) and let the user manually reconnect via existing endpoint."""
+    try:
+        if manager.get_connection(name):
+            manager.disconnect(name)
+    except Exception as e:
+        logger.warning(f"Failed to refresh connection for '{name}': {e}")
+
+
+def _build_server_config(name, raw):
+    """Construct + validate ServerConfig from a raw dict, raising ValueError on issues."""
+    from .mcp.server_registry import ServerConfig
+    if not name or not isinstance(name, str):
+        raise ValueError("Server 'name' is required")
+    if not isinstance(raw, dict):
+        raise ValueError("Server 'config' must be an object")
+    config = ServerConfig.from_dict(name, raw)
+    config.validate()
+    return config
+
+
+def _mcp_server_create(request, manager):
+    data, error = parse_json_body(request)
+    if error:
+        return error
+    name = data.get("name")
+    raw = data.get("config") or {}
+    if name in manager.registry.list_names():
+        return json_error(f"Server '{name}' already exists", status=409)
+    try:
+        config = _build_server_config(name, raw)
+    except ValueError as e:
+        return json_error(str(e), status=400)
+    manager.registry.register(config)
+    try:
+        _persist_registry(manager)
+    except Exception as e:
+        logger.error(f"Failed to persist mcp_servers.json: {e}")
+        return json_error(f"Saved in memory but persist failed: {e}", status=500)
+    return JsonResponse(
+        {"status": "created", "server": _serialize_server(config, None)},
+        status=201,
+    )
+
+
+@csrf_exempt
+def mcp_server_detail(request, name: str):
+    """
+    PUT: Replace a server config. Body: {"config": {...}, "rename"?: str}. 404 if missing.
+    DELETE: Remove a server. 404 if missing.
+    """
+    manager = get_mcp_manager()
+    existing = manager.registry.get(name)
+    if existing is None:
+        return json_error(f"Server '{name}' not found", status=404)
+
+    if request.method == "DELETE":
+        _refresh_connection(manager, name)
+        manager.registry.unregister(name)
+        try:
+            _persist_registry(manager)
+        except Exception as e:
+            logger.error(f"Failed to persist mcp_servers.json after delete: {e}")
+            return json_error(f"Removed in memory but persist failed: {e}", status=500)
+        return JsonResponse({"status": "deleted", "server": name})
+
+    if request.method == "PUT":
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        raw = data.get("config") or {}
+        new_name = data.get("rename") or name
+        if new_name != name and new_name in manager.registry.list_names():
+            return json_error(f"Server '{new_name}' already exists", status=409)
+        try:
+            config = _build_server_config(new_name, raw)
+        except ValueError as e:
+            return json_error(str(e), status=400)
+        _refresh_connection(manager, name)
+        manager.registry.unregister(name)
+        manager.registry.register(config)
+        try:
+            _persist_registry(manager)
+        except Exception as e:
+            logger.error(f"Failed to persist mcp_servers.json after update: {e}")
+            return json_error(f"Updated in memory but persist failed: {e}", status=500)
+        return JsonResponse(
+            {"status": "updated", "server": _serialize_server(config, None)}
+        )
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
+def mcp_server_validate(request):
+    """POST: Dry-run validate a server config. Body: {"name": str, "config": {...}}."""
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+    data, error = parse_json_body(request)
+    if error:
+        return error
+    name = data.get("name") or "__candidate__"
+    raw = data.get("config") or {}
+    try:
+        _build_server_config(name, raw)
+    except ValueError as e:
+        return JsonResponse({"valid": False, "errors": [str(e)]})
+    except Exception as e:
+        return JsonResponse({"valid": False, "errors": [f"Unexpected: {e}"]})
+    return JsonResponse({"valid": True, "errors": []})
 
 
 def mcp_tools(request):
@@ -658,6 +804,16 @@ async def agent_chat_stream(request):
             agent_profile.temperature if agent_profile else None,
             0.7,
         )
+
+        # Phase 18.2: per-profile tool gating (allow/block lists carried into AgentConfig)
+        if agent_profile is not None:
+            if agent_profile.allowed_tools is not None:
+                config_kwargs["allowed_tools"] = list(agent_profile.allowed_tools)
+            if agent_profile.blocked_tools:
+                config_kwargs["blocked_tools"] = list(agent_profile.blocked_tools)
+            if agent_profile.agent_id:
+                # Needed for server-side allowed_agent_ids gate in _get_tools_for_provider.
+                config_kwargs.setdefault("agent_id", agent_profile.agent_id)
 
         # When a workflow is active, the supervisor agent must use the
         # workflow's shared memory channel and inherit the supervisor profile's
@@ -3477,6 +3633,8 @@ def agent_profiles_list(request):
                     "enable_memory": p.enable_memory,
                     "memory_channel": p.memory_channel,
                     "enable_tools": p.enable_tools,
+                    "allowed_tools": list(p.allowed_tools) if p.allowed_tools is not None else None,
+                    "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "is_default": p.is_default,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -3518,6 +3676,8 @@ def agent_profiles_list(request):
                     "enable_memory": created.enable_memory,
                     "memory_channel": created.memory_channel,
                     "enable_tools": created.enable_tools,
+                    "allowed_tools": list(created.allowed_tools) if created.allowed_tools is not None else None,
+                    "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "is_default": created.is_default,
                     "created_at": created.created_at.isoformat() if created.created_at else None,
                     "updated_at": created.updated_at.isoformat() if created.updated_at else None,
@@ -3563,6 +3723,8 @@ def agent_profile_detail(request, profile_id):
                 "enable_memory": profile.enable_memory,
                 "memory_channel": profile.memory_channel,
                 "enable_tools": profile.enable_tools,
+                "allowed_tools": list(profile.allowed_tools) if profile.allowed_tools is not None else None,
+                "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "is_default": profile.is_default,
                 "created_at": profile.created_at.isoformat() if profile.created_at else None,
                 "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
@@ -3593,6 +3755,8 @@ def agent_profile_detail(request, profile_id):
                 "enable_memory": updated.enable_memory,
                 "memory_channel": updated.memory_channel,
                 "enable_tools": updated.enable_tools,
+                "allowed_tools": list(updated.allowed_tools) if updated.allowed_tools is not None else None,
+                "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "is_default": updated.is_default,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,

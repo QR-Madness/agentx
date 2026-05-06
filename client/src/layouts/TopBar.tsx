@@ -111,11 +111,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
   const openTools = () => {
     openModal({
-      id: 'tools-drawer',
-      type: 'drawer',
+      id: 'toolkit',
+      type: 'modal',
       component: 'tools',
-      position: 'right',
-      size: 'md',
+      size: 'full',
     });
   };
 
