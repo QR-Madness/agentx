@@ -320,7 +320,7 @@
     /* Sits at the bottom on mobile (RootLayout uses column-reverse).
        Pad below by the home-indicator inset, and swap the bottom border
        for a top one since the bar is now flipped. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
     border-bottom: none;
     border-top: 1px solid var(--border-color);
   }

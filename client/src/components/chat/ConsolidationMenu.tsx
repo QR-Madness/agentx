@@ -75,16 +75,19 @@ export function ConsolidationMenu({ isOpen, onClose, anchorRef, consolidation }:
     () => localStorage.getItem(CONSOLIDATION_SKIP_KEY) === 'true'
   );
 
-  // Position the menu below the anchor button
+  // Position the menu — flips above the anchor when there isn't room below
   useEffect(() => {
     if (!isOpen || !anchorRef.current) return;
 
     const rect = anchorRef.current.getBoundingClientRect();
-    setPosition({
-      top: rect.bottom + 6,
-      right: window.innerWidth - rect.right,
-    });
-  }, [isOpen, anchorRef]);
+    const right = window.innerWidth - rect.right;
+    const measuredHeight = menuRef.current?.offsetHeight ?? 320;
+    const wouldOverflow = rect.bottom + measuredHeight + 8 > window.innerHeight;
+    const top = wouldOverflow
+      ? Math.max(8, rect.top - measuredHeight - 6)
+      : rect.bottom + 6;
+    setPosition({ top, right });
+  }, [isOpen, anchorRef, consolidation.isActive, skipPrompt]);
 
   // Close on outside click
   useEffect(() => {

@@ -63,9 +63,13 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const openOverflow = useCallback(() => {
     if (!overflowButtonRef.current) return;
     const rect = overflowButtonRef.current.getBoundingClientRect();
-    setOverflowPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    const itemCount = 3 + (authRequired && isAuthenticated ? 2 : 0);
+    const estHeight = itemCount * 44 + 16;
+    const wouldOverflow = rect.bottom + estHeight + 8 > window.innerHeight;
+    const top = wouldOverflow ? Math.max(8, rect.top - estHeight - 6) : rect.bottom + 4;
+    setOverflowPos({ top, right: window.innerWidth - rect.right });
     setShowOverflow(true);
-  }, []);
+  }, [authRequired, isAuthenticated]);
 
   const closeOverflow = useCallback(() => {
     setShowOverflow(false);

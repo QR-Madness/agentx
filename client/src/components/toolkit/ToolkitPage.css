@@ -465,5 +465,5 @@ button.toolkit-chip.solid:hover {
   .toolkit-form-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-  .toolkit-container { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px); }
+  .toolkit-container { padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px) + 16px); }
 }
