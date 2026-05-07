@@ -528,7 +528,8 @@ def get_mcp_manager() -> MCPClientManager:
             return _global_manager
         
         # Auto-discover config file from project root
-        config_path = Path(__file__).parent.parent.parent.parent / "mcp_servers.json"
+        # TODO make this a bit smarter (search up the directory tree, support env var override, etc.)
+        config_path = Path(__file__).parent.parent.parent.parent / "data" / "mcp_servers.json"
         if config_path.exists():
             registry = ServerRegistry(config_path)
             logger.info(f"MCP config loaded from {config_path}: {len(registry.list())} servers")

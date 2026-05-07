@@ -133,7 +133,6 @@ services:
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
     volumes:
       - ${AGENTX_CONFIG_DIR:-./data}:/app/data
-      - ./mcp_servers.json:/app/mcp_servers.json:ro
     depends_on:
       neo4j:
         condition: service_healthy
