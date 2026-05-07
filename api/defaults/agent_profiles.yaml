@@ -11,7 +11,7 @@ profiles:
     is_default: true
 
   - id: creative
-    name: Muse
+    name: Ginny
     avatar: palette
     description: Creative assistant for brainstorming and content creation
     temperature: 1.0

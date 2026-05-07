@@ -18,7 +18,14 @@ ENV PATH="/root/.local/bin:$PATH"
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies (production only)
+# Install NPM (npx needed for local MCP tools) - Reference: https://nodejs.org/en/download
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+# activate nvm and install Node.js
+RUN \. "$HOME/.nvm/nvm.sh"
+RUN chmod +x "$HOME/.nvm/nvm.sh"
+RUN "$HOME/.nvm/nvm.sh" install 24
+
+# LONG STEP - 5-15 mins - Install Python dependencies (production only)
 RUN uv sync --frozen --no-dev
 
 # Copy application code
