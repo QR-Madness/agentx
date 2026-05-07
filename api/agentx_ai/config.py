@@ -35,6 +35,11 @@ DEFAULT_CONFIG = {
             "api_key": None,
             "base_url": None,
         },
+        "openrouter": {
+            "api_key": None,
+            "site_url": None,
+            "app_name": None,
+        },
     },
     "models": {
         "defaults": {

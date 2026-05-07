@@ -291,7 +291,7 @@
 
 ### 18.4: Model Metadata, Selector Refinement
 
-Currently our model selection and selector are a very solid foundation but are just that. We cannot have advanced capabilities until we can profile our models. We're going specialice in OpenRouter and Vercel Gateway, with anthropic for high-quality reasoning.
+Currently our model selection and selector are a very solid foundation but are just that. We cannot have advanced capabilities until we can profile our models. We're going specialize in OpenRouter and Vercel Gateway, with anthropic for high-quality reasoning. We'll also need a solid base for workflows deciding which agents can analyze various forms of media (eg. images, videos, etc.) and which can generate various forms of media.
 
 - Improve the model selector to use filter-based lists with a comfortable UX, and show the model selector in a modal or full-screen menu; it's cluttering the agent profile and the large lists can lag the UI.
 - [ ] Vercel Gateway model selection is fairly weak, only showing context limits, we want to see capabilities, pricing, max-tokens, etc. (see more https://vercel.com/docs/ai-gateway/models-and-providers#dynamic-model-discovery)
@@ -300,8 +300,16 @@ Currently our model selection and selector are a very solid foundation but are j
 ## 18.5: Metrics Overhaul
 
 - [ ] Currently the context window display gets stuck across conversations; it should dynicamically switch per conversation tab.
-- [ ] Conversations should also have cost trackers with the new model metadata from subphase 18.4
-- [ ] Show token + turn metrics on the dashboard (we can defer this too)
+- [ ] Conversation turns should also have estimated costs (accurate as possible) with the new model metadata from subphase 18.4
+- [ ] Show token + turn metrics (total turns, total tokens, tokens today, cost today, etc.) on the dashboard (we can defer this too)
+
+### 18.8: Wave 2 Fixes
+
+- [ ] Chats cannot render equations.
+- [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
+- [ ] Plans aren't rendered in single agent conversations in the UI.
+- [ ] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
+- [ ] Fix consolidation bug: [API] DEBUG 2026-05-07 01:10:36,474 jobs Semantic duplicate check failed (index may not exist): {neo4j_code: Neo.ClientError.Statement.TypeError} {message: Can't coerce `List{Double(-6.041204e-02)...
 
 ### 18.9: Memory Tuning
 
@@ -337,8 +345,6 @@ Currently our model selection and selector are a very solid foundation but are j
   - When the tool is invoked mid-stream, render its result as a collapsible "User history recall" card in the chat (similar treatment to existing tool result cards) instead of raw JSON.
   - Memory drawer: add a "User History" tab that calls the same tool with no topic to give a manual browse experience.
   - Toolkit gating entry alongside `checkpoint`.
-- [ ] Token-budget HUD
-  - The header line is currently sent only to the model. Mirror it in the existing context-window display (referenced in 18.5 first bullet) so the user sees the same pressure indicator.
   - When the model autonomously calls `checkpoint`, flash the new entry in the sidebar so the user notices the anchor was saved.
 - [ ] Combined Extraction settings polish
   - Add inline help in `MemorySettingsPanels.tsx` explaining what the "Combined Extraction" stage does and when it overrides the separate Relevance + Extraction calls.

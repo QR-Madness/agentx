@@ -3519,7 +3519,7 @@ def config_update(request):
     # Update providers
     providers = data.get("providers", {})
     for provider, settings in providers.items():
-        if provider not in ("lmstudio", "anthropic", "openai"):
+        if provider not in ("lmstudio", "anthropic", "openai", "openrouter", "vercel"):
             continue  # Skip unknown providers
         for key, value in settings.items():
             if value is not None:
