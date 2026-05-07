@@ -886,6 +886,21 @@ async def agent_chat_stream(request):
         if use_memory and agent.memory:
             agent.memory.conversation_id = conv_id
 
+        # Bind the active agent context for internal tools (recall_user_history,
+        # checkpoint). The token is reset at the end of the request so concurrent
+        # streams don't see each other's bindings.
+        from .mcp.internal_context import (
+            InternalToolContext,
+            set_context as _set_internal_ctx,
+            reset_context as _reset_internal_ctx,
+        )
+        _internal_ctx_token = _set_internal_ctx(InternalToolContext(
+            user_id=(agent.config.user_id or "default"),
+            channel=agent.config.memory_channel,
+            agent_id=agent.config.agent_id,
+            conversation_id=conv_id,
+        ))
+
         try:
             # Get provider and model
             provider, model_id = agent.registry.get_provider_for_model(
@@ -921,6 +936,20 @@ async def agent_chat_stream(request):
                     content=build_supervisor_prompt(active_workflow),
                 ))
 
+            # Re-inject any model-authored checkpoints for this conversation.
+            # They live in Redis and are appended fresh each turn so trajectory
+            # compression cannot strip them.
+            try:
+                from .agent.checkpoint_storage import render_checkpoints_block
+                checkpoints_block = render_checkpoints_block(conv_id)
+                if checkpoints_block:
+                    messages.append(Message(
+                        role=MessageRole.SYSTEM,
+                        content=checkpoints_block,
+                    ))
+            except Exception as cp_err:
+                logger.debug(f"Checkpoint injection skipped: {cp_err}")
+
             # Retrieve relevant memories and inject into context
             memory_bundle = None
             if use_memory and agent.memory:
@@ -931,9 +960,15 @@ async def agent_chat_stream(request):
                         time_window_hours=agent.config.memory_time_window_hours,
                     )
                     if memory_bundle:
+                        # Restrict the auto-injected turn dump to the current
+                        # conversation. Cross-conversation history is opt-in via
+                        # the ``recall_user_history`` internal tool — auto-
+                        # dumping it polluted context and caused smaller models
+                        # to hallucinate against unrelated prior threads.
                         memory_context = memory_bundle.to_context_string(
                             turn_char_limit=agent.config.memory_recall_turn_chars,
                             max_turns=agent.config.memory_recall_max_turns,
+                            current_conversation_id=conv_id,
                         )
                         if memory_context:
                             messages.append(Message(
@@ -1001,6 +1036,26 @@ async def agent_chat_stream(request):
                 f"Using context limits for {provider.name}/{model_id}: "
                 f"window={context_window:,}, max_output={max_output_tokens:,}"
             )
+
+            # Token budget header: a one-line system message telling the model
+            # how full its context window is, so it can self-pace (wrap up,
+            # checkpoint, summarize) before automatic compression kicks in.
+            try:
+                from .streaming.helpers import estimate_tokens
+                used_tokens = estimate_tokens(messages)
+                pct = (used_tokens / context_window * 100.0) if context_window else 0.0
+                budget_line = (
+                    f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
+                    f"({pct:.0f}% used). When usage approaches 70% consider "
+                    f"calling the `checkpoint` tool to anchor progress before "
+                    f"automatic compression."
+                )
+                messages.append(Message(
+                    role=MessageRole.SYSTEM,
+                    content=budget_line,
+                ))
+            except Exception as bh_err:
+                logger.debug(f"Token budget header skipped: {bh_err}")
 
             # Send start event with enhanced metadata
             start_data = {
@@ -1298,6 +1353,11 @@ async def agent_chat_stream(request):
             logger.error(f"Streaming error: {e}")
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
             return  # Ensure generator terminates after error
+        finally:
+            try:
+                _reset_internal_ctx(_internal_ctx_token)
+            except Exception:
+                pass
 
     response = StreamingHttpResponse(
         generate_sse(),

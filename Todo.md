@@ -299,7 +299,50 @@ Currently our model selection and selector are a very solid foundation but are j
 
 ## 18.5: Metrics Overhaul
 
-- [ ] 
+- [ ] Currently the context window display gets stuck across conversations; it should dynicamically switch per conversation tab.
+- [ ] Conversations should also have cost trackers with the new model metadata from subphase 18.4
+- [ ] Show token + turn metrics on the dashboard (we can defer this too)
+
+### 18.9: Memory Tuning
+
+- [x] Fix: consolidation extractor honors user-selected model
+  - Added `combined_extraction_model` / `combined_extraction_temperature` / `combined_extraction_max_tokens` to `get_consolidation_settings()` and the POST `/api/memory/settings` allowlist (config.py, views.py).
+  - Removed `ExtractionService.settings` instance cache so updates flow through the existing TTL cache instead of being pinned at first call (extraction/service.py).
+  - Added "Combined Extraction" section to `MemorySettingsPanels.tsx` mirroring extraction/relevance pickers; matched fields in `ConsolidationSettings` (api.ts).
+- [x] Fix: stop leaking raw past turns at conversation start
+  - `_retrieve_episodic` (retrieval.py) now drops cross-conversation results whose `role != "user"`. Always-include turns from the active conversation keep all roles.
+  - `MemoryBundle.to_context_string` (models.py) gained `roles` and `current_conversation_id` filters; both default to permissive so other call sites (alloy/executor, agent/context) are unchanged.
+  - Streaming chat (views.py) passes `current_conversation_id=conv_id`, so cross-conversation history is opt-in via the new `recall_user_history` tool instead of being auto-dumped.
+- [x] New internal tool: `recall_user_history(topic?, limit=10)`
+  - Registered in `mcp/internal_tools.py`; resolves the active user/channel via the new `mcp/internal_context.py` `ContextVar` set by the streaming chat endpoint.
+  - Returns deduped past-conversation user turns plus top facts; capped to 30 turns; bypasses tool-output storage via `RETRIEVAL_TOOL_NAMES`.
+  - Gateable per profile via the existing Phase 18.2 allowed/blocked tool lists (no new mechanism needed).
+- [x] Working memory: token budget header
+  - Streaming chat appends a SYSTEM line each turn: `Context budget: ~X / Y tokens (Z% used). When usage approaches 70% consider calling the checkpoint tool…` (uses existing `streaming.helpers.estimate_tokens`).
+- [x] Working memory: `checkpoint(summary, decisions, next_step)` internal tool
+  - Persists per-conversation entries to Redis (`agent/checkpoint_storage.py`, 7-day TTL, capped at 8 per conversation).
+  - Streaming chat re-injects a `## Checkpoints (model-authored, survive compression)` SYSTEM block every turn so anchors survive trajectory compression.
+- [ ] Deferred to follow-up phase
+  - Pin/anchor on arbitrary turns, `scratchpad_note` tool, `inspect_working_memory`, active-goals header, `forget` tool, plus the cached `user_recap_summary` rolling summary (skipped — `recall_user_history` covers the immediate need without adding a consolidation-job dependency).
+
+#### 18.9.x: UI follow-ups for new memory tools
+
+> Backend ships in 18.9; these are the client-side surfaces needed to make the new functionality discoverable.
+
+- [ ] Checkpoints sidebar/badge in the conversation pane
+  - Show a small badge with the live checkpoint count for the active conversation (read from `agent/checkpoint_storage.py` via a new `GET /api/memory/checkpoints?conversation_id=` endpoint).
+  - Click opens a panel listing each checkpoint's summary, decisions, next step, and `created_at`. Provide a "Clear" button (calls `DELETE /api/memory/checkpoints?conversation_id=`).
+  - Toolkit gating: surface `checkpoint` in the per-profile tool allowlist UI so users can opt agents in/out.
+- [ ] Recall view for `recall_user_history`
+  - When the tool is invoked mid-stream, render its result as a collapsible "User history recall" card in the chat (similar treatment to existing tool result cards) instead of raw JSON.
+  - Memory drawer: add a "User History" tab that calls the same tool with no topic to give a manual browse experience.
+  - Toolkit gating entry alongside `checkpoint`.
+- [ ] Token-budget HUD
+  - The header line is currently sent only to the model. Mirror it in the existing context-window display (referenced in 18.5 first bullet) so the user sees the same pressure indicator.
+  - When the model autonomously calls `checkpoint`, flash the new entry in the sidebar so the user notices the anchor was saved.
+- [ ] Combined Extraction settings polish
+  - Add inline help in `MemorySettingsPanels.tsx` explaining what the "Combined Extraction" stage does and when it overrides the separate Relevance + Extraction calls.
+  - Add a "Reset to default" affordance for the model field (matching the existing pattern on `extraction_system_prompt`).
 
 ---
 

@@ -343,6 +343,46 @@ export function ConsolidationSettingsPanel({
         </div>
       </div>
 
+      {/* Combined Extraction Settings */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Combined Extraction</h3>
+        <p className="settings-section-hint">
+          Single-pass relevance + extraction. Handles ~75% of consolidation traffic when enabled.
+        </p>
+        <div className="settings-grid">
+          <div className="setting-row">
+            <ModelSelector
+              label="Model"
+              value={localSettings.combined_extraction_model || ''}
+              onChange={v => handleChange('combined_extraction_model', v)}
+              showDefault={false}
+              compact
+            />
+          </div>
+          <div className="setting-row">
+            <label>Temperature: {(localSettings.combined_extraction_temperature ?? 0.3).toFixed(2)}</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={localSettings.combined_extraction_temperature ?? 0.3}
+              onChange={e => handleChange('combined_extraction_temperature', parseFloat(e.target.value))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Max Tokens</label>
+            <input
+              type="number"
+              value={localSettings.combined_extraction_max_tokens ?? 2000}
+              onChange={e => handleChange('combined_extraction_max_tokens', parseInt(e.target.value) || 2000)}
+              min={100}
+              max={8000}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Entity Linking Settings */}
       <div className="settings-section">
         <h3 className="settings-section-title">Entity Linking</h3>

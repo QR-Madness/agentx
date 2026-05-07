@@ -317,6 +317,11 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "relevance_filter_model": settings.relevance_filter_model,
         "relevance_filter_prompt": settings.relevance_filter_prompt,
 
+        # Combined relevance + extraction (handles ~75% of consolidation traffic)
+        "combined_extraction_model": settings.combined_extraction_model,
+        "combined_extraction_temperature": settings.combined_extraction_temperature,
+        "combined_extraction_max_tokens": settings.combined_extraction_max_tokens,
+
         # Entity linking
         "entity_linking_enabled": settings.entity_linking_enabled,
         "entity_linking_similarity_threshold": settings.entity_linking_similarity_threshold,

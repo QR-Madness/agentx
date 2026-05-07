@@ -181,12 +181,19 @@ class MemoryBundle(BaseModel):
         *,
         turn_char_limit: int = 2000,
         max_turns: int = 10,
+        roles: Optional[set] = None,
+        current_conversation_id: Optional[str] = None,
     ) -> str:
         """Format memory bundle as context for LLM prompt.
 
         Per-turn truncation and turn count are tunable so callers can give
         the model enough verbatim context to actually continue prior work
         (e.g. write a second paragraph that references the first).
+
+        ``roles`` optionally restricts which turn roles are rendered.
+        ``current_conversation_id``, when set, drops turns from other
+        conversations (cross-conversation history is opt-in via the
+        ``recall_user_history`` tool, not auto-injected).
         """
         sections = []
 
@@ -197,8 +204,17 @@ class MemoryBundle(BaseModel):
                     content = content[:turn_char_limit] + "…[truncated]"
                 return f"[{t['timestamp']}] {t['role']}: {content}"
 
-            turns_text = "\n".join(_format_turn(t) for t in self.relevant_turns[:max_turns])
-            sections.append(f"## Relevant Past Conversations\n{turns_text}")
+            visible = list(self.relevant_turns)
+            if roles is not None:
+                visible = [t for t in visible if t.get("role") in roles]
+            if current_conversation_id is not None:
+                visible = [
+                    t for t in visible
+                    if t.get("conversation_id") == current_conversation_id
+                ]
+            if visible:
+                turns_text = "\n".join(_format_turn(t) for t in visible[:max_turns])
+                sections.append(f"## Relevant Past Conversations\n{turns_text}")
 
         if self.facts:
             facts_text = "\n".join(

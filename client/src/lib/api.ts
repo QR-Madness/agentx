@@ -834,6 +834,11 @@ export interface ConsolidationSettings {
   relevance_filter_max_tokens: number;
   relevance_filter_prompt: string;
 
+  // Combined relevance + extraction (handles ~75% of consolidation traffic)
+  combined_extraction_model: string;
+  combined_extraction_temperature: number;
+  combined_extraction_max_tokens: number;
+
   // Entity linking
   entity_linking_enabled: boolean;
   entity_linking_similarity_threshold: number;

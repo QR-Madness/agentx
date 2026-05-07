@@ -522,12 +522,23 @@ class MemoryRetriever:
                 seen_ids.add(turn_id)
                 combined.append(turn)
 
-        # Then similarity-based and time-based turns
+        # Then similarity-based and time-based turns.
+        # For cross-conversation results, restrict to role == 'user' so the
+        # active conversation only sees what the user previously said, not raw
+        # assistant/tool transcripts (which polluted context and caused smaller
+        # models to hallucinate against irrelevant prior responses).
         for turn in turns + recent:
             turn_id = turn.get("id") or f"{turn.get('conversation_id')}:{turn.get('timestamp')}"
-            if turn_id not in seen_ids:
-                seen_ids.add(turn_id)
-                combined.append(turn)
+            if turn_id in seen_ids:
+                continue
+            same_conversation = (
+                conversation_id is not None
+                and turn.get("conversation_id") == conversation_id
+            )
+            if not same_conversation and turn.get("role") != "user":
+                continue
+            seen_ids.add(turn_id)
+            combined.append(turn)
 
         return combined[:top_k * 2]  # Return more for reranking
 

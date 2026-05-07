@@ -105,7 +105,6 @@ class ExtractionService:
 
     def __init__(self):
         self._registry = None
-        self._settings = None
 
     @property
     def registry(self):
@@ -116,10 +115,10 @@ class ExtractionService:
 
     @property
     def settings(self):
-        """Lazy-load settings."""
-        if self._settings is None:
-            self._settings = get_settings()
-        return self._settings
+        # Resolve every access so runtime updates via save_memory_settings()
+        # propagate without restarting the service. get_settings() has its own
+        # TTL cache so this stays cheap.
+        return get_settings()
 
     def _get_provider_for_stage(self, stage: str) -> Tuple[Any, str, float, int]:
         """

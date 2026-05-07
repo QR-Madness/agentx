@@ -42,6 +42,7 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "tool_output_section",
     "tool_output_path",
     "read_user_message",
+    "recall_user_history",
 })
 
 
@@ -395,6 +396,169 @@ def read_user_message(
         "has_more": has_more,
         "next_offset": offset + len(content) if has_more else None,
         "stored_at": data.get("stored_at"),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="recall_user_history",
+    description=(
+        "Recall what this user has said across past conversations. Returns a "
+        "summary of user-authored turns matching an optional topic. Use when "
+        "you need context about the user's prior questions, preferences, or "
+        "ongoing work — not for the current conversation's transcript."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": "Optional focus query. Omit to get a general recap.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max number of past user turns to return (default 10, max 30).",
+                "default": 10,
+            },
+        },
+    },
+)
+def recall_user_history(
+    topic: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Look up the calling user's prior turns via AgentMemory."""
+    from .internal_context import current_context
+
+    ctx = current_context()
+    if ctx is None:
+        return {
+            "error": "No active agent context — recall_user_history can only be called during a chat turn.",
+            "success": False,
+        }
+
+    try:
+        from ..kit.agent_memory.memory.interface import get_agent_memory
+    except Exception as e:
+        return {"error": f"Memory system unavailable: {e}", "success": False}
+
+    memory = get_agent_memory(
+        user_id=ctx.user_id,
+        channel=ctx.channel,
+        agent_id=ctx.agent_id,
+    )
+    if memory is None:
+        return {"error": "Memory system unavailable", "success": False}
+
+    capped = max(1, min(int(limit or 10), 30))
+    query = topic.strip() if topic else "user background, preferences, goals"
+
+    try:
+        bundle = memory.remember(query=query, top_k=capped * 2)
+    except Exception as e:
+        return {"error": f"Recall failed: {e}", "success": False}
+
+    if bundle is None:
+        return {"summary": "", "user_turns": [], "facts": [], "success": True}
+
+    user_turns: list[dict[str, Any]] = []
+    seen_conv_pairs: set[tuple[Any, Any]] = set()
+    for t in bundle.relevant_turns or []:
+        if t.get("role") != "user":
+            continue
+        if ctx.conversation_id and t.get("conversation_id") == ctx.conversation_id:
+            continue
+        key = (t.get("conversation_id"), t.get("timestamp"))
+        if key in seen_conv_pairs:
+            continue
+        seen_conv_pairs.add(key)
+        user_turns.append({
+            "timestamp": str(t.get("timestamp")),
+            "conversation_id": t.get("conversation_id"),
+            "content": (t.get("content") or "")[:600],
+        })
+        if len(user_turns) >= capped:
+            break
+
+    facts = [
+        {
+            "claim": (f.get("claim") if isinstance(f, dict) else getattr(f, "claim", "")) or "",
+            "confidence": (f.get("confidence") if isinstance(f, dict) else getattr(f, "confidence", 0.0)) or 0.0,
+        }
+        for f in (bundle.facts or [])[:10]
+    ]
+
+    return {
+        "topic": topic,
+        "user_turns": user_turns,
+        "facts": facts,
+        "turn_count": len(user_turns),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="checkpoint",
+    description=(
+        "Record a checkpoint of where you are in the current task. The "
+        "checkpoint is re-injected into the system prompt every turn and "
+        "survives automatic context compression. Use when you have made a "
+        "non-trivial decision, completed a sub-step, or want to lock in "
+        "intent before continuing."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "One-sentence summary of the current state.",
+            },
+            "decisions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of decisions locked in.",
+                "default": [],
+            },
+            "next_step": {
+                "type": "string",
+                "description": "Optional one-line description of what's next.",
+                "default": "",
+            },
+        },
+        "required": ["summary"],
+    },
+)
+def checkpoint(
+    summary: str,
+    decisions: list[str] | None = None,
+    next_step: str = "",
+) -> dict[str, Any]:
+    """Persist a checkpoint anchor for the current conversation."""
+    from .internal_context import current_context
+    from ..agent.checkpoint_storage import add_checkpoint, list_checkpoints
+
+    ctx = current_context()
+    if ctx is None or not ctx.conversation_id:
+        return {
+            "error": "Checkpoint requires an active conversation context.",
+            "success": False,
+        }
+
+    if not summary or not summary.strip():
+        return {"error": "summary is required", "success": False}
+
+    entry = add_checkpoint(
+        conversation_id=ctx.conversation_id,
+        summary=summary,
+        decisions=decisions,
+        next_step=next_step,
+    )
+    total = len(list_checkpoints(ctx.conversation_id))
+
+    return {
+        "stored": entry,
+        "checkpoint_count": total,
+        "note": "Checkpoint will be re-injected into system context every turn.",
         "success": True,
     }
 
