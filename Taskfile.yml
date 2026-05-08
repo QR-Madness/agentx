@@ -1187,10 +1187,11 @@ tasks:
         echo "and clusters/{{.CLUSTER}}/cloudflared/config.yml, then drop credentials.json."
 
   cluster:up:
-    desc: "Start a cluster (CLUSTER=name [REBUILD=1]); auto-includes gateway overlay if nginx.conf present"
+    desc: "Start a cluster (CLUSTER=name [REBUILD=1] [NVIDIA=1]); auto-includes gateway overlay if nginx.conf present"
     vars:
       CLUSTER: '{{.CLUSTER}}'
       REBUILD: '{{.REBUILD}}'
+      NVIDIA:  '{{.NVIDIA}}'
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
@@ -1205,7 +1206,11 @@ tasks:
           echo "🔨 Rebuilding images..."
           BUILD_FLAG="--build"
         fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d $BUILD_FLAG
+        NVIDIA_FLAG = ""
+        if p "{{.NVIDIA}}" = "1" ]; then
+          echo "Enabling Nvidia Drivers for GPU Support (Using Nvidia Container Toolkit via Host)"
+          NVIDIA_FLAG = "-f docker-compose.gpu.yml"
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d $BUILD_FLAG $NVIDIA_FLAG
         echo ""
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           echo "Smoke test:"
