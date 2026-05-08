@@ -1208,9 +1208,9 @@ tasks:
         fi
         if [ "{{.GPU}}" = "1" ]; then
           echo "Enabling Nvidia Drivers for GPU Support (Using Nvidia Container Toolkit via Host)"
-          GPU_OVERLAY = "-f docker-compose.gpu.yml"
+          GPU_OVERLAY="-f docker-compose.gpu.yml"
         else
-          GPU_OVERLAY = ""
+          GPU_OVERLAY=""
         fi
         docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY $GPU_OVERLAY --profile production up -d $BUILD_FLAG
         echo ""
