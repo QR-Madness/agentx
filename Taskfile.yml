@@ -1210,6 +1210,7 @@ tasks:
         if p "{{.NVIDIA}}" = "1" ]; then
           echo "Enabling Nvidia Drivers for GPU Support (Using Nvidia Container Toolkit via Host)"
           NVIDIA_FLAG = "-f docker-compose.gpu.yml"
+        fi
         docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d $BUILD_FLAG $NVIDIA_FLAG
         echo ""
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
