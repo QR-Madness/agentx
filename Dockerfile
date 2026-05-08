@@ -18,12 +18,27 @@ ENV PATH="/root/.local/bin:$PATH"
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
 
-# Install NPM (npx needed for local MCP tools) - Reference: https://nodejs.org/en/download
+# Install nvm, node + npm (npx needed for local MCP tools) - Reference: https://nodejs.org/en/download
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-# activate nvm and install Node.js
-RUN \. "$HOME/.nvm/nvm.sh"
+
+# Install specific Node version (MUST BE SPECIFIC to target node directory on the path)
+ENV NODE_VERSION=24.15.0
+ENV NVM_DIR=/root/.nvm
+
 RUN chmod +x "$HOME/.nvm/nvm.sh"
-RUN "$HOME/.nvm/nvm.sh" install 24
+RUN \. $NVM_DIR/nvm.sh \
+    && nvm install $NODE_VERSION \
+    && nvm alias default $NODE_VERSION \
+    && nvm use default
+
+# Add Node's bin to PATH
+ENV NODE_PATH=$NVM_DIR/v$NODE_VERSION/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+# Validate installations
+RUN node -v
+RUN npm -v
+RUN npx -v
 
 # LONG STEP - 5-15 mins - Install Python dependencies (production only)
 RUN uv sync --frozen --no-dev
