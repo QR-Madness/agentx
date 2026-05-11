@@ -152,6 +152,26 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     saveActiveTabId(activeTabId, activeServer.id);
   }, [activeTabId, activeServer]);
 
+  // Enforce single-tab mode on mobile: when the viewport drops below the
+  // mobile breakpoint, collapse to just the active tab so the user doesn't
+  // get stranded on a tab they can't see.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 600px)');
+    const collapse = () => {
+      if (!mq.matches) return;
+      setTabs(prev => {
+        if (prev.length <= 1) return prev;
+        const keep = prev.find(t => t.id === activeTabId) ?? prev[prev.length - 1];
+        setActiveTabId(keep.id);
+        return [keep];
+      });
+    };
+    collapse();
+    mq.addEventListener('change', collapse);
+    return () => mq.removeEventListener('change', collapse);
+  }, [activeTabId]);
+
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
 
   const addTab = useCallback((profileId?: string | null): ConversationTab => {
@@ -168,7 +188,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       lastMessageAt: now,
     };
 
-    setTabs(prev => [...prev, newTab]);
+    // Mobile clients can only run one conversation at a time — replace
+    // any existing tabs so the new one becomes the sole active conversation.
+    const isMobile =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 600px)').matches;
+
+    setTabs(prev => (isMobile ? [newTab] : [...prev, newTab]));
     setActiveTabId(newTab.id);
 
     return newTab;

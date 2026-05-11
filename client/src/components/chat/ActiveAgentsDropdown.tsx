@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, Radio } from 'lucide-react';
+import { MessageSquare, Plus, Radio } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../../lib/avatars';
@@ -18,18 +18,32 @@ interface ActiveAgentsDropdownProps {
 }
 
 export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgentsDropdownProps) {
-  const { tabs, activeTabId, switchTab } = useConversation();
+  const { tabs, activeTabId, switchTab, addTab } = useConversation();
   const { activeProfile } = useAgentProfile();
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+  }>({ top: 0, left: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Calculate position based on anchor element
+  // Calculate position based on anchor element. Flip above the anchor when
+  // there isn't enough room below (e.g. mobile, where the TopBar sits at
+  // the bottom of the viewport).
   useEffect(() => {
     if (!isOpen || !anchorRef.current) return;
 
     const updatePosition = () => {
       const rect = anchorRef.current?.getBoundingClientRect();
-      if (rect) {
+      if (!rect) return;
+      const estHeight = dropdownRef.current?.offsetHeight ?? 360;
+      const flip = rect.bottom + estHeight + 8 > window.innerHeight;
+      if (flip) {
+        setPosition({
+          bottom: Math.max(8, window.innerHeight - rect.top + 8),
+          left: rect.left,
+        });
+      } else {
         setPosition({
           top: rect.bottom + 8,
           left: rect.left,
@@ -83,14 +97,28 @@ export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgent
     onClose();
   };
 
+  const handleNew = () => {
+    addTab();
+    onClose();
+  };
+
   const AvatarIcon = getAvatarIcon(activeProfile?.avatar);
 
   const dropdown = (
     <div
       className="active-agents-dropdown"
       ref={dropdownRef}
-      style={{ top: position.top, left: position.left }}
+      style={{
+        top: position.top,
+        bottom: position.bottom,
+        left: position.left,
+      }}
     >
+      <button className="agents-new" onClick={handleNew}>
+        <Plus size={14} />
+        <span>New conversation</span>
+      </button>
+
       {/* Active/streaming conversations */}
       {activeTabs.length > 0 && (
         <>
@@ -145,7 +173,7 @@ export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgent
       )}
 
       {tabs.length === 0 && (
-        <div className="agents-empty">No active conversations</div>
+        <div className="agents-empty">No conversations yet</div>
       )}
     </div>
   );

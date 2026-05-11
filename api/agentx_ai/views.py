@@ -282,7 +282,7 @@ def _persist_registry(manager) -> None:
     path = manager.registry._config_path
     if path is None:
         from pathlib import Path
-        path = Path(__file__).parent.parent.parent / "mcp_servers.json"
+        path = Path(__file__).parent.parent.parent / "data" / "mcp_servers.json"
         manager.registry._config_path = path
     manager.registry.save_to_file(path)
 
@@ -1406,6 +1406,83 @@ def agent_plan_cancel(request):
         "plan_id": plan_id,
         "cancel_requested": requested,
     })
+
+
+# ============== Background Chat Endpoints ==============
+
+
+def _bg_user_id(request) -> str:
+    """Resolve the user id for a background chat request."""
+    info = getattr(request, "agentx_user", None) or {}
+    return info.get("user_id") or "default"
+
+
+@csrf_exempt
+def chat_background(request):
+    """
+    POST /api/chat/background — enqueue a fire-and-forget background chat run.
+    GET  /api/chat/background — list recent jobs for the current user.
+    """
+    if request.method == "OPTIONS":
+        return JsonResponse({}, status=200)
+
+    from .background import (
+        enqueue_background_chat,
+        list_background_chats,
+    )
+
+    if request.method == "GET":
+        limit = int(request.GET.get("limit", "50"))
+        jobs = list_background_chats(_bg_user_id(request), limit=min(limit, 50))
+        return JsonResponse({"jobs": jobs})
+
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        return JsonResponse({"error": f"Invalid JSON: {exc}"}, status=400)
+
+    message = data.get("message")
+    if not message or not message.strip():
+        return JsonResponse({"error": "Missing required field: message"}, status=400)
+
+    job_id = enqueue_background_chat(
+        user_id=_bg_user_id(request),
+        message=message,
+        session_id=data.get("session_id"),
+        profile_id=data.get("profile_id"),
+        agent_profile_id=data.get("agent_profile_id"),
+        workflow_id=data.get("workflow_id"),
+        model=data.get("model"),
+        use_memory=bool(data.get("use_memory", True)),
+    )
+    return JsonResponse({"job_id": job_id, "status": "queued"}, status=202)
+
+
+@csrf_exempt
+def chat_background_detail(request, job_id: str):
+    """
+    GET    /api/chat/background/<job_id> — fetch a single job.
+    DELETE /api/chat/background/<job_id> — dismiss it from the inbox.
+    """
+    if request.method == "OPTIONS":
+        return JsonResponse({}, status=200)
+
+    from .background import dismiss_background_chat, get_background_chat
+
+    if request.method == "GET":
+        job = get_background_chat(job_id)
+        if not job:
+            return JsonResponse({"error": "Not found"}, status=404)
+        return JsonResponse(job)
+
+    if request.method == "DELETE":
+        ok = dismiss_background_chat(job_id, user_id=_bg_user_id(request))
+        return JsonResponse({"deleted": ok})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
 # ============== Tool Output Storage Endpoints ==============

@@ -295,3 +295,13 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* === Mobile: pin to viewport edges so the popup isn't off-center === */
+@media (max-width: 600px) {
+  .history-dropdown-portal {
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: none;
+  }
+}

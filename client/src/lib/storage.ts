@@ -376,6 +376,7 @@ export interface ConversationTab {
   isStreaming: boolean;
   createdAt: string;
   lastMessageAt: string;
+  noMemorization?: boolean;
 }
 
 const MAX_TABS = 20;
@@ -407,7 +408,11 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
   const data = localStorage.getItem(STORAGE_KEYS.conversationTabs(id));
   const tabs = safeJsonParse<ConversationTab[]>(data, []);
   // Backfill fields added after this server's tabs were first persisted
-  return tabs.map(t => ({ ...t, workflowId: t.workflowId ?? null }));
+  return tabs.map(t => ({
+    ...t,
+    workflowId: t.workflowId ?? null,
+    noMemorization: t.noMemorization ?? false,
+  }));
 }
 
 export function saveConversationTabs(tabs: ConversationTab[], serverId?: string): void {

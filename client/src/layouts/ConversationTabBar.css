@@ -16,7 +16,11 @@
   gap: 4px;
   overflow-x: auto;
   overflow-y: hidden;
-  max-width: 100%;
+  /* Allow this flex item to shrink below content size so its internal
+     overflow-x kicks in instead of pushing siblings (e.g. the History
+     button) out of the bar. */
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 4px 0;
 
   /* Hide scrollbar */
@@ -241,5 +245,24 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* === Mobile: single-tab mode === */
+@media (max-width: 600px) {
+  /* Only one conversation is allowed at a time on mobile, so the tab strip
+     is redundant — collapse it and keep just the history button. The "new
+     conversation" affordance is surfaced inside the Active Agents popup
+     instead, so the bare "+" button here would be a duplicate. */
+  .conversation-tab-bar .tabs-container {
+    display: none;
+  }
+
+  .conversation-tab-bar .tabs-actions > .tab-action-button {
+    display: none;
+  }
+
+  .conversation-tab-bar {
+    justify-content: flex-end;
   }
 }

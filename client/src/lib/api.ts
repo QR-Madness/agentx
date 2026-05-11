@@ -239,6 +239,36 @@ export interface ChatResponse {
   tokens_used?: number;
 }
 
+export interface BackgroundChatRequest {
+  message: string;
+  session_id?: string;
+  profile_id?: string;
+  agent_profile_id?: string;
+  workflow_id?: string;
+  model?: string;
+  use_memory?: boolean;
+}
+
+export type BackgroundChatStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface BackgroundChatJob {
+  job_id: string;
+  user_id: string;
+  message: string;
+  status: BackgroundChatStatus | string;
+  response?: string;
+  error?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  session_id?: string;
+  profile_id?: string;
+  agent_profile_id?: string;
+  workflow_id?: string;
+  total_tokens?: string;
+  total_time_ms?: string;
+}
+
 // === Conversation History Types ===
 
 export interface ConversationSummary {
@@ -1166,6 +1196,29 @@ class ApiClient {
 
   async getAgentStatus(): Promise<{ status: string; active_sessions: number }> {
     return this.request('/api/agent/status');
+  }
+
+  // === Background Chat (Relay) ===
+
+  async enqueueBackgroundChat(request: BackgroundChatRequest): Promise<{ job_id: string; status: string }> {
+    return this.request('/api/chat/background', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async listBackgroundChats(): Promise<{ jobs: BackgroundChatJob[] }> {
+    return this.request('/api/chat/background');
+  }
+
+  async getBackgroundChat(jobId: string): Promise<BackgroundChatJob> {
+    return this.request(`/api/chat/background/${encodeURIComponent(jobId)}`);
+  }
+
+  async dismissBackgroundChat(jobId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/chat/background/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+    });
   }
 
   // === Tool Output Storage ===

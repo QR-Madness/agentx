@@ -7,19 +7,18 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Send,
   Bot,
-  Mic,
-  Radio,
-  Database,
   Square,
   ChevronUp,
   ChevronDown,
   Layers,
   Sparkles,
-  Loader2,
   Workflow as WorkflowIcon,
   Crown,
+  Box,
+  Database,
 } from 'lucide-react';
-import { api, type ChatResponse } from '../../lib/api';
+import { api } from '../../lib/api';
+import { RelayMenu } from './relay/RelayMenu';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageBubble } from './MessageBubble';
@@ -29,7 +28,6 @@ import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import {
   type UserMessage,
-  type AssistantMessage,
   createMessageId,
 } from '../../lib/messages';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
@@ -64,6 +62,7 @@ export function ChatPanel() {
     updateMessage,
     setStreaming,
     setSessionId,
+    updateTab,
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
@@ -84,15 +83,21 @@ export function ChatPanel() {
 
   const [input, setInput] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
-  const [useStreamingMode, setUseStreamingMode] = useState(true);
-  const [useMemory, setUseMemory] = useState(true);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [contextInfo, setContextInfo] = useState<{
     window: number;
     used: number;
   } | null>(null);
-  const [isNonStreamingTyping, setIsNonStreamingTyping] = useState(false);
+  const [showRelay, setShowRelay] = useState(false);
+  const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
+  const useMemory = !(activeTab?.noMemorization ?? false);
+  const setNoMemorization = useCallback(
+    (next: boolean) => {
+      if (activeTab) updateTab(activeTab.id, { noMemorization: next });
+    },
+    [activeTab, updateTab],
+  );
   const agentName = supervisorProfile?.name ?? getAgentName();
 
   const resolveAgentName = useCallback(
@@ -109,12 +114,13 @@ export function ChatPanel() {
     onContextInfo: setContextInfo,
   });
 
-  const isTyping = stream.state.phase === 'streaming' || isNonStreamingTyping;
+  const isTyping = stream.state.phase === 'streaming';
   const streamingContent = stream.state.liveContent;
   const activeDelegationCount = stream.state.activeDelegations.size;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
+  const relayButtonRef = useRef<HTMLButtonElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -152,49 +158,30 @@ export function ChatPanel() {
     const messageText = input;
     setInput('');
 
-    if (useStreamingMode) {
-      stream.send({
+    stream.send({
+      message: messageText,
+      session_id: activeTab.sessionId || undefined,
+      agent_profile_id: tabProfile?.id,
+      use_memory: useMemory,
+      workflow_id: activeTab.workflowId || undefined,
+    });
+  };
+
+  const handleSendBackground = async () => {
+    if (!input.trim() || !activeTab) return;
+    const messageText = input;
+    setInput('');
+    try {
+      await api.enqueueBackgroundChat({
         message: messageText,
         session_id: activeTab.sessionId || undefined,
         agent_profile_id: tabProfile?.id,
         use_memory: useMemory,
         workflow_id: activeTab.workflowId || undefined,
       });
-      return;
-    }
-
-    // Non-streaming mode
-    setIsNonStreamingTyping(true);
-    setStreaming(true);
-    try {
-      const response: ChatResponse = await api.chat({
-        message: messageText,
-        session_id: activeTab.sessionId || undefined,
-        use_memory: useMemory,
-      });
-
-      if (response.session_id) setSessionId(response.session_id);
-
-      const assistantMessage: AssistantMessage = {
-        id: createMessageId(),
-        type: 'assistant',
-        content: response.response,
-        timestamp: new Date().toISOString(),
-        thinking: response.thinking,
-        tokensUsed: response.tokens_used,
-      };
-      appendMessage(assistantMessage);
-    } catch {
-      const errorMessage: AssistantMessage = {
-        id: createMessageId(),
-        type: 'assistant',
-        content: 'Sorry, I encountered an error. Please check if the server is running.',
-        timestamp: new Date().toISOString(),
-      };
-      appendMessage(errorMessage);
-    } finally {
-      setIsNonStreamingTyping(false);
-      setStreaming(false);
+      setHasUnreadBgJobs(true);
+    } catch (err) {
+      console.error('Failed to enqueue background chat:', err);
     }
   };
 
@@ -276,23 +263,18 @@ export function ChatPanel() {
             </div>
           )}
         </div>
-        <div className="chat-panel-actions">
-          <button
-            className={`icon-button ${useMemory ? 'active' : ''}`}
-            onClick={() => setUseMemory(!useMemory)}
-            title={useMemory ? 'Memory enabled' : 'Memory disabled'}
-          >
-            <Database size={16} />
-          </button>
-          <button
-            className={`icon-button ${useStreamingMode ? 'active' : ''}`}
-            onClick={() => setUseStreamingMode(!useStreamingMode)}
-            title={useStreamingMode ? 'Streaming enabled' : 'Streaming disabled'}
-          >
-            <Radio size={16} />
-          </button>
-        </div>
       </div>
+
+      {activeTab.noMemorization && (
+        <div className="no-memo-banner" role="status">
+          <Database size={14} />
+          <span>
+            <strong>No Memorization is on.</strong> This conversation will not be
+            stored or recalled — treat its contents as ephemeral and avoid
+            relying on continuity later.
+          </span>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="chat-panel-messages">
@@ -385,17 +367,39 @@ export function ChatPanel() {
           />
         </div>
         <div className="input-container">
-          <button className="voice-button" disabled title="Voice input coming soon">
-            <Mic size={18} />
-          </button>
           <button
-            className={`enhance-button ${isEnhancing ? 'enhancing' : ''}`}
-            onClick={handleEnhancePrompt}
-            disabled={!input.trim() || isEnhancing || isTyping}
-            title="Enhance prompt"
+            ref={relayButtonRef}
+            className={`relay-trigger ${showRelay ? 'active' : ''}`}
+            onClick={() => {
+              setShowRelay(v => !v);
+              if (!showRelay) setHasUnreadBgJobs(false);
+            }}
+            title="Relay Module"
+            aria-label="Open Relay menu"
           >
-            {isEnhancing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+            <Box size={18} />
+            {hasUnreadBgJobs && !showRelay && <span className="relay-trigger-badge" />}
           </button>
+          <RelayMenu
+            isOpen={showRelay}
+            onClose={() => setShowRelay(false)}
+            anchorRef={relayButtonRef}
+            noMemorization={activeTab?.noMemorization ?? false}
+            onToggleNoMemorization={() =>
+              setNoMemorization(!(activeTab?.noMemorization ?? false))
+            }
+            canToggleNoMemorization={
+              !!activeTab &&
+              activeTab.messages.length === 0 &&
+              !activeTab.sessionId
+            }
+            canEnhance={!!input.trim() && !isTyping}
+            onEnhance={handleEnhancePrompt}
+            isEnhancing={isEnhancing}
+            canSendBackground={!!input.trim()}
+            onSendBackground={handleSendBackground}
+            onJobsChanged={() => setHasUnreadBgJobs(false)}
+          />
           <textarea
             ref={textareaRef}
             value={input}
@@ -410,7 +414,6 @@ export function ChatPanel() {
               className="stop-button"
               onClick={() => {
                 stream.stop();
-                setIsNonStreamingTyping(false);
                 setStreaming(false);
               }}
               title="Stop generating"

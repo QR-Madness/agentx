@@ -25,17 +25,31 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [position, setPosition] = useState({ top: 0, right: 0 });
+  const [position, setPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    right: number;
+  }>({ top: 0, right: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Calculate position based on anchor element
+  // Calculate position based on anchor element. Flip above the anchor when
+  // there isn't enough room below (e.g. mobile, where the TopBar sits at
+  // the bottom of the viewport).
   useEffect(() => {
     if (!isOpen || !anchorRef.current) return;
 
     const updatePosition = () => {
       const rect = anchorRef.current?.getBoundingClientRect();
-      if (rect) {
+      if (!rect) return;
+      const estHeight = dropdownRef.current?.offsetHeight ?? 420;
+      const flip = rect.bottom + estHeight + 8 > window.innerHeight;
+      if (flip) {
+        setPosition({
+          bottom: Math.max(8, window.innerHeight - rect.top + 8),
+          right: window.innerWidth - rect.right,
+        });
+      } else {
         setPosition({
           top: rect.bottom + 8,
           right: window.innerWidth - rect.right,
@@ -188,7 +202,11 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     <div
       className="history-dropdown-portal"
       ref={dropdownRef}
-      style={{ top: position.top, right: position.right }}
+      style={{
+        top: position.top,
+        bottom: position.bottom,
+        right: position.right,
+      }}
     >
       <div className="history-header">
         <Clock size={16} />

@@ -809,3 +809,21 @@ export function useConsolidationStatus() {
     checkedOnMount,
   };
 }
+
+
+/**
+ * Returns true when the viewport matches the mobile breakpoint (max-width: 600px).
+ * Mirrors the CSS @media (max-width: 600px) rule used across the layout.
+ */
+export function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 600px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 600px)");
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}

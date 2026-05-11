@@ -133,3 +133,38 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* === New Conversation Action === */
+.agents-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--cosmic-violet, #a78bfa);
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  transition: background 0.15s ease;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agents-new:hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.agents-new svg {
+  flex-shrink: 0;
+}
+
+/* === Mobile: pin to viewport edges so the popup isn't off-center === */
+@media (max-width: 600px) {
+  .active-agents-dropdown {
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: none;
+  }
+}

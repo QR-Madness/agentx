@@ -8,7 +8,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Sparkles,
   Home,
   LayoutDashboard,
   Bot,
@@ -21,6 +20,7 @@ import {
   LogOut,
   KeyRound,
   MoreHorizontal,
+  BrainCircuit,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
@@ -163,12 +163,12 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           anchorRef={brainButtonRef}
         />
         <button
-          className="top-bar-logo"
+          className="top-bar-logo toolbar-secondary"
           onClick={openProfileEditor}
           title="Edit agent profile"
         >
           <div className="logo-icon">
-            <Sparkles size={20} />
+            <BrainCircuit size={20} />
           </div>
         </button>
       </div>
@@ -237,7 +237,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         </button>
 
         <button
-          className="toolbar-icon"
+          className="toolbar-icon toolbar-secondary"
           onClick={openSettings}
           title="Settings"
         >
@@ -288,6 +288,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             className="toolbar-overflow-menu"
             style={{ top: overflowPos.top, right: overflowPos.right }}
           >
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openSettings(); }}>
+              <Settings size={16} />
+              <span>Settings</span>
+            </button>
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTranslation(); }}>
               <Languages size={16} />
               <span>Translation</span>
