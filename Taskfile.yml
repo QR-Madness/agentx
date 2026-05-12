@@ -71,7 +71,7 @@ tasks:
 
         # Check optional files
         [ ! -f ".env" ] && WARNINGS="${WARNINGS}\n  ⚠ .env not found (copy from .env.example)"
-        [ ! -f "mcp_servers.json" ] && WARNINGS="${WARNINGS}\n  ⚠ mcp_servers.json not found (copy from mcp_servers.json.example)"
+        [ ! -f "data/mcp_servers.json" ] && WARNINGS="${WARNINGS}\n  ⚠ data/mcp_servers.json not found (copy from api/defaults/mcp_servers.json.example to data/mcp_servers.json)"
 
         # Report
         if [ -n "$MISSING" ]; then
