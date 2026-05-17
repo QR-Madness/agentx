@@ -101,13 +101,16 @@ class EpisodicMemory:
             # Store embedding as JSON array (not Python str representation) for proper parsing
             embedding_json = json.dumps(turn.embedding) if turn.embedding else None
 
+            metadata_json = json.dumps(turn.metadata) if turn.metadata else "{}"
             session.execute(text("""
                 INSERT INTO conversation_logs
-                (conversation_id, turn_index, timestamp, role, content, token_count, embedding, channel)
-                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :embedding, :channel)
+                (conversation_id, turn_index, timestamp, role, content, token_count, model, metadata, embedding, channel)
+                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :model, CAST(:metadata AS JSONB), :embedding, :channel)
                 ON CONFLICT (conversation_id, turn_index) DO UPDATE
                 SET content = EXCLUDED.content,
                     token_count = EXCLUDED.token_count,
+                    model = EXCLUDED.model,
+                    metadata = EXCLUDED.metadata,
                     embedding = EXCLUDED.embedding,
                     channel = EXCLUDED.channel
             """), {
@@ -117,6 +120,8 @@ class EpisodicMemory:
                 "role": turn.role,
                 "content": turn.content,
                 "tokens": turn.token_count,
+                "model": turn.model,
+                "metadata": metadata_json,
                 "embedding": embedding_json,
                 "channel": channel
             })

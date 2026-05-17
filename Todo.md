@@ -319,11 +319,17 @@ Currently our model selection and selector are a very solid foundation but are j
   - `ModelCapabilities` (`providers/base.py`) gained `input_modalities`, `output_modalities`, `description`, `pricing_currency`.
   - `/api/providers/models` (`views.py`) serializes the new fields; `ModelInfo` (`lib/api.ts`) widened to match. Image/video routing remains a follow-up — this phase only stores the data.
 
-## 18.5: Metrics Overhaul
+### 18.5: Metrics Overhaul
 
-- [ ] Currently the context window display gets stuck across conversations; it should dynicamically switch per conversation tab.
-- [ ] Conversation turns should also have estimated costs (accurate as possible) with the new model metadata from subphase 18.4
-- [ ] Show token + turn metrics (total turns, total tokens, tokens today, cost today, etc.) on the dashboard (we can defer this too)
+- [x] Per-tab context window display
+  - `contextInfo` moved from `ChatPanel` local state to per-tab state on `ConversationContext` so it tracks the active tab instead of getting stuck on whatever streamed last (`ConversationContext.tsx`, `storage.ts`, `ChatPanel.tsx`). The ephemeral field is stripped before persisting to localStorage so stale numbers can't rehydrate.
+  - Persist `context_window` / `context_used` on the assistant `Turn` metadata so `restoreConversation` rehydrates the bar from server history. For inactive tabs and turns predating the field, `ChatPanel` backfills via the cached `/api/providers/models` payload — window from the latest assistant message's model, `used` from the last turn's tokens or a `chars / 4` estimate.
+- [x] Per-turn cost estimate using Phase 18.4 model metadata
+  - New `api/agentx_ai/providers/pricing.py` `estimate_cost(caps, in, out)` computes absolute-dollar cost from `ModelCapabilities` pricing and freezes a `pricing_snapshot` so historical costs stay stable if rates change later.
+  - Streaming `done` event ships `model`, `provider`, `cost_estimate`, `cost_currency`, `pricing_snapshot`. Assistant `Turn` metadata persists those alongside `tokens_input`/`tokens_output`/`latency_ms`; `Turn.model` field added (`models.py`) and the episodic `INSERT` extended to write `model` + `metadata` JSONB into `conversation_logs` (columns already existed; no DDL).
+  - `MetadataBar` renders a `$` cost chip. When the backend can't compute one (provider doesn't expose pricing in caps — e.g. the built-in Anthropic provider — or older turns with no metadata), it backfills from `cost_per_1k_input/output` in the same model cache so the chip still appears.
+- [ ] Dashboard token + turn metrics — UI deferred, data layer ready
+  - Assistant turns are now written to `conversation_logs` with `model` and a `metadata` JSONB containing tokens/cost/latency, so a future dashboard card can aggregate via a single `SELECT model, token_count, metadata FROM conversation_logs` query with no further backend work. `idx_logs_timestamp` already covers "today" windows.
 
 ### 18.8: Wave 2 Fixes
 

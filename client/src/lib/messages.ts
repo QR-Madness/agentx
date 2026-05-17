@@ -36,6 +36,8 @@ export interface AssistantMessage extends BaseMessage {
   tokensUsed?: number;
   tokensInput?: number;
   tokensOutput?: number;
+  costEstimate?: number;
+  costCurrency?: string;
   latencyMs?: number;
   profileId?: string;
   agentName?: string;

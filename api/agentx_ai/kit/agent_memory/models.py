@@ -50,6 +50,7 @@ class Turn(BaseModel):
     content: str
     embedding: Optional[List[float]] = None
     token_count: Optional[int] = None
+    model: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     channel: str = "_global"
     # Docker-style agent_id of the producing agent (assistant turns only).

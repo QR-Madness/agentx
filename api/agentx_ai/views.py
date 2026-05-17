@@ -1218,6 +1218,11 @@ async def agent_chat_stream(request):
                 f"(in={estimated_input:,}, out={estimated_output:,}, chars={final_context_chars:,})"
             )
 
+            # Estimate per-turn cost from model pricing metadata (None when the
+            # model has no pricing, e.g. local LM Studio).
+            from .providers.pricing import estimate_cost
+            cost = estimate_cost(caps, estimated_input, estimated_output)
+
             # Send completion event with enhanced metadata
             done_data = {
                 'task_id': task_id,
@@ -1227,12 +1232,18 @@ async def agent_chat_stream(request):
                 'session_id': conv_id,
                 'profile_name': prompt_profile_name,
                 'agent_name': agent_name or 'AgentX',
+                'model': model_id,
+                'provider': provider.name,
                 # Token counts (actual from provider, or estimated)
                 'tokens_input': estimated_input,
                 'tokens_output': estimated_output,
                 # Context window info for UI display
                 'context_window': context_window,
                 'context_used': final_context_tokens,
+                # Per-turn cost (null when no pricing available)
+                'cost_estimate': cost['cost_total'] if cost else None,
+                'cost_currency': cost['currency'] if cost else None,
+                'pricing_snapshot': cost['pricing_snapshot'] if cost else None,
             }
             done_json = json.dumps(done_data)
             logger.debug(f"Done event JSON length: {len(done_json)} chars")
@@ -1328,7 +1339,19 @@ async def agent_chat_stream(request):
                         # commentary; storing a blank row makes the final
                         # message "disappear" on conversation restore.
                         if parsed.content.strip():
-                            asst_metadata = {"model": model_id, "latency_ms": total_time}
+                            asst_metadata = {
+                                "model": model_id,
+                                "provider": provider.name,
+                                "latency_ms": total_time,
+                                "tokens_input": estimated_input,
+                                "tokens_output": estimated_output,
+                                "context_window": context_window,
+                                "context_used": final_context_tokens,
+                            }
+                            if cost is not None:
+                                asst_metadata["cost_estimate"] = cost["cost_total"]
+                                asst_metadata["cost_currency"] = cost["currency"]
+                                asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
                             if parsed.thinking:
                                 asst_metadata["thinking"] = parsed.thinking
 
@@ -1338,6 +1361,8 @@ async def agent_chat_stream(request):
                                 role="assistant",
                                 content=parsed.content,
                                 index=idx,
+                                token_count=(estimated_input + estimated_output) or None,
+                                model=model_id,
                                 metadata=asst_metadata,
                                 agent_id=getattr(agent_profile, "agent_id", None),
                             )

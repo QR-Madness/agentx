@@ -38,6 +38,11 @@
   color: var(--text-tertiary);
 }
 
+.metadata-item.cost {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .metadata-item.latency {
   color: var(--text-tertiary);
 }

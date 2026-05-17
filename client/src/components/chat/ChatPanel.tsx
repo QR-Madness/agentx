@@ -32,6 +32,7 @@ import {
 } from '../../lib/messages';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useChatStream } from './useChatStream';
+import { fetchModelsOnce } from '../common/ModelSelector';
 import './ChatPanel.css';
 
 // Strip thinking tags from content
@@ -62,6 +63,7 @@ export function ChatPanel() {
     updateMessage,
     setStreaming,
     setSessionId,
+    setTabContextInfo,
     updateTab,
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
@@ -85,10 +87,7 @@ export function ChatPanel() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [contextInfo, setContextInfo] = useState<{
-    window: number;
-    used: number;
-  } | null>(null);
+  const contextInfo = activeTab?.contextInfo ?? null;
   const [showRelay, setShowRelay] = useState(false);
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
   const useMemory = !(activeTab?.noMemorization ?? false);
@@ -111,7 +110,9 @@ export function ChatPanel() {
     agentName,
     resolveAgentName,
     onSessionId: setSessionId,
-    onContextInfo: setContextInfo,
+    onContextInfo: (info) => {
+      if (activeTab) setTabContextInfo(activeTab.id, info);
+    },
   });
 
   const isTyping = stream.state.phase === 'streaming';
@@ -143,6 +144,52 @@ export function ChatPanel() {
   useEffect(() => {
     setStreaming(stream.state.phase === 'streaming');
   }, [stream.state.phase, setStreaming]);
+
+  // Backfill the context-window indicator for conversations that were saved
+  // before context_window/used was persisted on assistant turns, or that
+  // were rehydrated from localStorage (the runtime contextInfo is stripped
+  // on save). Uses the latest assistant message's model to look up the
+  // window, and estimates `used` from message char count if no tokens were
+  // recorded.
+  useEffect(() => {
+    if (!activeTab || activeTab.contextInfo) return;
+    const msgs = activeTab.messages;
+    if (!msgs.length) return;
+
+    let modelId: string | undefined;
+    let usedTokens: number | undefined;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.type !== 'assistant') continue;
+      modelId = m.model;
+      if (m.tokensInput !== undefined) {
+        usedTokens = m.tokensInput + (m.tokensOutput ?? 0);
+      }
+      if (modelId) break;
+    }
+    if (!modelId) return;
+
+    let cancelled = false;
+    fetchModelsOnce().then((models) => {
+      if (cancelled || !activeTab) return;
+      const info = models.find((mm) => mm.id === modelId);
+      const window = info?.context_window ?? info?.context_length;
+      if (!window) return;
+      const used =
+        usedTokens ??
+        Math.ceil(
+          msgs.reduce(
+            (n, m) =>
+              n + (m.type === 'user' || m.type === 'assistant' ? m.content.length : 0),
+            0,
+          ) / 4,
+        );
+      setTabContextInfo(activeTab.id, { window, used });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, setTabContextInfo]);
 
   const handleSend = async () => {
     if (!input.trim() || !activeTab) return;

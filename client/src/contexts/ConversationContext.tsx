@@ -52,6 +52,9 @@ interface ConversationContextValue {
   setTabWorkflow: (tabId: string, workflowId: string | null) => void;
   setActiveTabWorkflow: (workflowId: string | null) => void;
 
+  // Per-tab context-window usage indicator
+  setTabContextInfo: (tabId: string, info: { window: number; used: number } | null) => void;
+
   // Server-side conversation history
   serverConversations: ConversationSummary[];
   isLoadingHistory: boolean;
@@ -314,6 +317,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     updateTab(activeTabId, { workflowId });
   }, [activeTabId, updateTab]);
 
+  const setTabContextInfo = useCallback(
+    (tabId: string, info: { window: number; used: number } | null) => {
+      updateTab(tabId, {
+        contextInfo: info
+          ? { window: info.window, used: info.used, updatedAt: Date.now() }
+          : undefined,
+      });
+    },
+    [updateTab],
+  );
+
   // Fetch conversation history from server
   const refreshHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -378,6 +392,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           content: m.content || '',
           model: m.metadata?.model as string | undefined,
           thinking: m.metadata?.thinking as string | undefined,
+          tokensInput: m.metadata?.tokens_input as number | undefined,
+          tokensOutput: m.metadata?.tokens_output as number | undefined,
+          costEstimate: m.metadata?.cost_estimate as number | undefined,
+          costCurrency: m.metadata?.cost_currency as string | undefined,
+          latencyMs: m.metadata?.latency_ms as number | undefined,
         });
         continue;
       }
@@ -470,6 +489,24 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const title = messages.find(m => m.type === 'user')?.content.slice(0, 40) || 'Restored Conversation';
     const now = new Date().toISOString();
 
+    // Recover the last known context-window snapshot from persisted metadata so
+    // older conversations show the usage bar without requiring a fresh stream.
+    let restoredContextInfo: ConversationTab['contextInfo'];
+    for (let i = response.messages.length - 1; i >= 0; i--) {
+      const m = response.messages[i];
+      if (m.role !== 'assistant') continue;
+      const win = m.metadata?.context_window as number | undefined;
+      const used = m.metadata?.context_used as number | undefined;
+      if (win && used !== undefined) {
+        restoredContextInfo = {
+          window: win,
+          used,
+          updatedAt: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+        };
+        break;
+      }
+    }
+
     const newTab: ConversationTab = {
       id: generateTabId(),
       title: title.length >= 40 ? title + '...' : title,
@@ -480,6 +517,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       isStreaming: false,
       createdAt: response.messages[0]?.timestamp || now,
       lastMessageAt: response.messages[response.messages.length - 1]?.timestamp || now,
+      contextInfo: restoredContextInfo,
     };
 
     setTabs(prev => [...prev, newTab]);
@@ -534,6 +572,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setActiveTabProfile,
         setTabWorkflow,
         setActiveTabWorkflow,
+        setTabContextInfo,
         serverConversations,
         isLoadingHistory,
         restoreConversation,

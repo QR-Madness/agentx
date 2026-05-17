@@ -2168,6 +2168,11 @@ class ApiClient {
         tokens_output?: number;
         context_window?: number;
         context_used?: number;
+        model?: string;
+        provider?: string;
+        cost_estimate?: number | null;
+        cost_currency?: string | null;
+        pricing_snapshot?: { cost_per_1k_input: number; cost_per_1k_output: number } | null;
       }) => void;
       onPlanStart?: (data: {
         plan_id: string;

@@ -189,6 +189,8 @@ function AssistantBubble({ message, agentName, avatarId, onRegenerate }: Assista
           tokensInput={message.tokensInput}
           tokensOutput={message.tokensOutput}
           tokensUsed={message.tokensUsed}
+          costEstimate={message.costEstimate}
+          costCurrency={message.costCurrency}
           latencyMs={message.latencyMs}
         />
 

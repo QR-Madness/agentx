@@ -377,6 +377,9 @@ export interface ConversationTab {
   createdAt: string;
   lastMessageAt: string;
   noMemorization?: boolean;
+  // Latest context-window usage from the most recent stream on this tab.
+  // Not persisted — would mislead if rehydrated stale.
+  contextInfo?: { window: number; used: number; updatedAt: number };
 }
 
 const MAX_TABS = 20;
@@ -422,11 +425,15 @@ export function saveConversationTabs(tabs: ConversationTab[], serverId?: string)
   // Enforce max tabs limit
   const trimmed = tabs.slice(0, MAX_TABS);
 
-  // Enforce max messages per tab
-  const capped = trimmed.map(tab => ({
-    ...tab,
-    messages: tab.messages.slice(-MAX_MESSAGES_PER_TAB),
-  }));
+  // Enforce max messages per tab, and strip ephemeral runtime fields that
+  // would mislead if rehydrated.
+  const capped = trimmed.map(tab => {
+    const { contextInfo: _contextInfo, ...rest } = tab;
+    return {
+      ...rest,
+      messages: tab.messages.slice(-MAX_MESSAGES_PER_TAB),
+    };
+  });
 
   localStorage.setItem(STORAGE_KEYS.conversationTabs(id), JSON.stringify(capped));
 }

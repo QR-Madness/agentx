@@ -387,6 +387,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             agentName: data.agent_name ?? optsRef.current.agentName,
             tokensInput: data.tokens_input ?? undefined,
             tokensOutput: data.tokens_output ?? undefined,
+            costEstimate: data.cost_estimate ?? undefined,
+            costCurrency: data.cost_currency ?? undefined,
+            model: data.model ?? undefined,
           };
           optsRef.current.appendMessage(msg);
         }
