@@ -150,9 +150,9 @@
 
 ### 16.0.1 Agent Alloy v1 — Deferred / Next
 
-- [ ] Factory canvas frontend (Tauri client) — backend exposes everything needed
-- [ ] Declarative route execution (`on_complete`, `on_match:<predicate>`, `on_failure`) — schema accepted but ignored in v1
-- [ ] Parallel / fan-out delegation (supervisor delegates to multiple specialists at once)
+- [-] Factory canvas frontend (Tauri client) — backend exposes everything needed
+- [-] Declarative route execution (`on_complete`, `on_match:<predicate>`, `on_failure`) — schema accepted but ignored in v1
+- [X] Parallel / fan-out delegation (supervisor delegates to multiple specialists at once)
 - [ ] Loop nodes (specialist iterates over a list)
 - [ ] Human-in-the-loop checkpoint nodes
 - [ ] Async delegation (specialist runs in background; supervisor continues other work)
@@ -178,9 +178,9 @@
 
 ### 16.3 Tool Isolation per Agent
 
-- [ ] Add tool group / MCP server config to `AgentProfile`
-- [ ] Use existing `allowed_tools`/`blocked_tools` on `AgentConfig` for per-agent filtering
-- [ ] Each agent only sees its configured tools in `_get_tools_for_provider()`
+- [X] Add tool group / MCP server config to `AgentProfile`
+- [X] Use existing `allowed_tools`/`blocked_tools` on `AgentConfig` for per-agent filtering
+- [X] Each agent only sees its configured tools in `_get_tools_for_provider()`
 
 ### 16.4 Agent-to-Agent Delegation
 
@@ -276,16 +276,30 @@
 
 ### 18.2: Tools Menu -> Toolkit
 
-- [ ] Migrate our settings menu for tools into our new immersive, full-screen approach for our Tools menu, transforming it into the "Toolkit".
-- [ ] The Toolkit should have ability for CRD on tools in the mcp-servers.json; guided editor is the goal, but a simple text editor + pre-save checker will suffice.
-- [ ] Add tool metadata; access whitelists (allow access for specific agents), tags, groups, etc. (anything else that's a quick payoff).
+- [x] Migrate our settings menu for tools into our new immersive, full-screen approach for our Tools menu, transforming it into the "Toolkit".
+  - New `client/src/components/toolkit/` package (`ToolkitPage`, `ServerForm`) modeled on the `UnifiedSettings` shell with sub-views for Servers, Tools Browser, Groups & Tags, Access, and Raw JSON. Topbar wrench opens it as a full-screen modal; legacy `ToolsPanel`/`ToolsSection` removed. Edit modal is portaled to `<body>` to escape framer-motion transform clipping.
+- [x] The Toolkit should have ability for CRD on tools in the mcp-servers.json; guided editor is the goal, but a simple text editor + pre-save checker will suffice.
+  - Added `POST/PUT/DELETE /api/mcp/servers` plus `/servers/validate`; writes persist through `ServerRegistry.save_to_file` with best-effort disconnect on edit/delete. Toolkit ships both a guided `ServerForm` and a Raw JSON editor that goes through the same validate endpoint before save.
+- [x] Add tool metadata; access whitelists (allow access for specific agents), tags, groups, etc. (anything else that's a quick payoff).
+  - `ServerConfig` gained `tags`, `groups`, and `allowed_agent_ids`. `AgentProfile` gained `allowed_tools`/`blocked_tools`; the chat-stream view forwards both lists plus `agent_id` into `AgentConfig`, and `_get_tools_for_provider` enforces server-side `allowed_agent_ids` (default-DENY when a whitelist is set but `agent_id` is unknown).
+  - Fix: `ProfileManager.update_profile` / `set_default_profile` / `delete_profile` now use `model_dump()` so `agent_id` (and any new field) is preserved on edits — previously default-toggling rotated `agent_id`s and orphaned whitelists.
 
 ### 18.3: Relay Module (RM) Foundation
 
-- [ ] Conduct these fixes concurrently:
-  - [ ] Instead of a streaming toggle, offer a way to launch a background conversation; runs without opening it.
-  - [ ] Instead of a DB icon to disable/enable memory consolidation on a conversation; use a toggle that says "Remember our conversation".
-  - [ ] Migrate the chat toolbar into a nice menu with a button trigger that way we can clear the chat for immersion. 
+The Relay module is a new UI component that consolidates various backend features. Its primary goal is to simplify the chat interface with a special toolbox, as we add more communication features to enhance user experience such as user prompt enhancment, file uploads, temporary chats (no memory), voice chat, etc.
+
+- [x] Conduct these fixes concurrently:
+  - [x] Instead of a streaming toggle, offer a way to launch a background conversation; runs without opening it.
+    - Foreground chat is now always streaming; streaming toggle removed from the header. Background runs go through a new Redis-Streams chat job queue (`api/agentx_ai/background/chat_jobs.py`) with a daemon worker started from `AppConfig.ready` (`apps.py`). Exposed via `POST/GET /api/chat/background` and `GET/DELETE /api/chat/background/<id>` (`urls.py`, `views.py`); client uses `lib/api.ts` + `lib/hooks.ts` to poll an inbox surfaced inside the Relay popover.
+  - [x] Migrate the DB icon that disables/enables memory consolidation on a conversation to the RM, and make it more UX friendly (ie. a "No Memorization" toggle).
+    - Header memory icon removed; the toggle now lives in the Relay popover as "No Memorization" and locks in place once the conversation starts (`RelayMenu.tsx`, `ChatPanel.tsx`).
+  - [x] Migrate the chat toolbar into a nice menu with a button trigger that way we can clear the chat for immersion.
+    - New `client/src/components/chat/relay/` package (`RelayMenu.tsx` + `RelayMenu.css`): a single popover sitting left of the textarea consolidating the per-conversation toggles, background-run inbox, and stubs for upcoming voice/file affordances.
+- Mobile pass shipped alongside the Relay foundation:
+  - Single-tab mode: `ConversationContext.addTab` replaces the active tab; viewport drop collapses tabs to the active one (`ConversationContext.tsx`, `storage.ts`).
+  - `.tabs-container` made flex-shrinkable so the History button stops getting pushed out (`ConversationTabBar.css`).
+  - Brain (`ActiveAgentsDropdown`) + history (`ConversationHistoryDropdown`) popups now flip above their anchor when there's no room below and pin to viewport edges on small screens.
+  - "+" tab-bar button hidden on mobile in favor of a "New conversation" action inside the Active Agents popup (`TopBar.tsx`, `ActiveAgentsDropdown.tsx`).
 - Remember that RM will be used for file communication and controlling the different modes of the model when feature support it.
 - NOTE: Before we can work with images; we'll need to improve model metadata and also our file management to target image and video output models.
 
@@ -293,9 +307,17 @@
 
 Currently our model selection and selector are a very solid foundation but are just that. We cannot have advanced capabilities until we can profile our models. We're going specialize in OpenRouter and Vercel Gateway, with anthropic for high-quality reasoning. We'll also need a solid base for workflows deciding which agents can analyze various forms of media (eg. images, videos, etc.) and which can generate various forms of media.
 
-- Improve the model selector to use filter-based lists with a comfortable UX, and show the model selector in a modal or full-screen menu; it's cluttering the agent profile and the large lists can lag the UI.
-- [ ] Vercel Gateway model selection is fairly weak, only showing context limits, we want to see capabilities, pricing, max-tokens, etc. (see more https://vercel.com/docs/ai-gateway/models-and-providers#dynamic-model-discovery)
-- [ ] OpenRouter has a ton of metadata like Vercel gateway, and we need match capability to what we'll add in Vercel Gateway. (see more https://openrouter.ai/docs/guides/overview/models#model-object-schema) 
+- [x] Improve the model selector to use filter-based lists with a comfortable UX, and show the model selector in a modal or full-screen menu; it's cluttering the agent profile and the large lists can lag the UI.
+  - New `client/src/components/common/ModelPickerModal.tsx` + `.css`: fullscreen modal (portaled to `document.body` so it escapes the profile editor's framer-motion transform context), modeled on `ToolkitPage`. Left rail has provider chips + capability chips (Tools / Vision / JSON / Streaming) as AND-filters; main pane has search + rich rows showing name, provider badge, context, max-out, price chip, and capability icons.
+  - `ModelSelector.tsx` now exports `fetchModelsOnce` so the modal shares the same cache; no behavior change for existing callers (Memory settings still uses the old compact selector).
+  - `ProfileContent.tsx` swaps the embedded `<ModelSelector>` for a compact `.profile-model-trigger` row (`Model: <name> [ctx · tools · vision] [chevron]`) that opens the picker; new styles in `UnifiedProfileEditor.css`.
+- [x] Vercel Gateway model selection is fairly weak, only showing context limits, we want to see capabilities, pricing, max-tokens, etc.
+  - `vercel_provider.py` `get_capabilities` now reads `modalities.input/output`, `description`, and `pricing.currency` from the cached `/v1/models` payload (pricing + context + max-tokens were already parsed; tightened None-safety).
+- [x] OpenRouter has a ton of metadata like Vercel gateway, and we need match capability to what we'll add in Vercel Gateway.
+  - `openrouter_provider.py` `get_capabilities` now reads `architecture.input_modalities/output_modalities` (drives `supports_vision`), broader `supported_parameters` keys (`tools`/`function_calling`/`tool_choice` for tools; `response_format`/`json_mode`/`json_object` for JSON), and `description`.
+- [x] Wire metadata through the wire format
+  - `ModelCapabilities` (`providers/base.py`) gained `input_modalities`, `output_modalities`, `description`, `pricing_currency`.
+  - `/api/providers/models` (`views.py`) serializes the new fields; `ModelInfo` (`lib/api.ts`) widened to match. Image/video routing remains a follow-up — this phase only stores the data.
 
 ## 18.5: Metrics Overhaul
 
@@ -307,9 +329,11 @@ Currently our model selection and selector are a very solid foundation but are j
 
 - [ ] Chats cannot render equations.
 - [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
-- [ ] Plans aren't rendered in single agent conversations in the UI.
+- [ ] Plans need to be more adaptive and less sensitive; models will draft 4+ step plans for a simple research prompt.
 - [ ] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
 - [ ] Fix consolidation bug: [API] DEBUG 2026-05-07 01:10:36,474 jobs Semantic duplicate check failed (index may not exist): {neo4j_code: Neo.ClientError.Statement.TypeError} {message: Can't coerce `List{Double(-6.041204e-02)...
+- [ ] Cached servers for the 'Connect' page cannot be edited or deleted.
+- [ ] Plans are sometimes invoked on simple prompts/queries; we should implement some prompts to encourage models to only use it for complex tasks or multi-step processes (such as extended research).
 
 ### 18.9: Memory Tuning
 
@@ -356,7 +380,7 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Items to consider after prototype is complete
 
-- [ ] New Chat Feature: Relay Module - Message and conversation tools - files, block memory toggle (no consolidation), and more.
+- [ ] Disabled memory conversation prompt message banner - informs the model that memory is off for this conversation and the details are not persistent, and also that the conversation may contain confidential material.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)
 - [ ] Real-time job progress (polling while running)

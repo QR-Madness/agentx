@@ -293,41 +293,49 @@ class OpenRouterProvider(ModelProvider):
         """Get capabilities for an OpenRouter model from cached catalog."""
         if model in self._model_cache:
             info = self._model_cache[model]
-            supported_params = info.get("supported_parameters", [])
+            supported_params = info.get("supported_parameters", []) or []
 
-            # Parse context window
             context_window = info.get("context_length", 8192)
 
-            # Parse max output tokens from top_provider
             max_output = None
-            top_provider = info.get("top_provider", {})
+            top_provider = info.get("top_provider", {}) or {}
             if top_provider:
                 max_output = top_provider.get("max_completion_tokens")
 
-            # Parse pricing (OpenRouter uses per-token pricing, convert to per-1k)
-            pricing = info.get("pricing", {})
-            cost_input = None
-            cost_output = None
-            if pricing:
-                prompt_cost = pricing.get("prompt")
-                completion_cost = pricing.get("completion")
-                if prompt_cost:
-                    cost_input = float(prompt_cost) * 1000
-                if completion_cost:
-                    cost_output = float(completion_cost) * 1000
+            pricing = info.get("pricing", {}) or {}
+            cost_input = float(pricing["prompt"]) * 1000 if pricing.get("prompt") else None
+            cost_output = float(pricing["completion"]) * 1000 if pricing.get("completion") else None
+
+            architecture = info.get("architecture", {}) or {}
+            input_modalities = list(architecture.get("input_modalities") or ["text"])
+            output_modalities = list(architecture.get("output_modalities") or ["text"])
+
+            supports_tools = (
+                "tools" in supported_params
+                or "function_calling" in supported_params
+                or "tool_choice" in supported_params
+            )
+            supports_json_mode = (
+                "response_format" in supported_params
+                or "json_mode" in supported_params
+                or "json_object" in supported_params
+            )
 
             return ModelCapabilities(
-                supports_tools="function_calling" in supported_params or "tools" in supported_params,
-                supports_vision="vision" in supported_params,
+                supports_tools=supports_tools,
+                supports_vision="image" in input_modalities or "vision" in supported_params,
                 supports_streaming=True,
-                supports_json_mode="json_mode" in supported_params or "json_object" in supported_params,
+                supports_json_mode=supports_json_mode,
                 context_window=context_window,
                 max_output_tokens=max_output,
                 cost_per_1k_input=cost_input,
                 cost_per_1k_output=cost_output,
+                input_modalities=input_modalities,
+                output_modalities=output_modalities,
+                description=info.get("description"),
+                pricing_currency="USD",
             )
 
-        # Default capabilities for unknown models
         logger.warning(f"Unknown OpenRouter model: {model}, using default capabilities")
         return DEFAULT_CAPABILITIES
 

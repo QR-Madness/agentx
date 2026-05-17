@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Brain,
+  ChevronRight,
   Cpu,
+  Eye,
   Library,
   MessageSquare,
   Save,
   Settings2,
   Trash2,
+  Wrench,
   X,
   Zap,
   AlertCircle,
 } from 'lucide-react';
-import { type AgentProfile } from '../../lib/api';
+import { type AgentProfile, type ModelInfo } from '../../lib/api';
 import { AVATAR_OPTIONS } from '../../lib/avatars';
-import { ModelSelector } from '../common/ModelSelector';
+import { fetchModelsOnce } from '../common/ModelSelector';
+import { ModelPickerModal } from '../common/ModelPickerModal';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { useProfileEditorState, REASONING_OPTIONS } from './hooks/useProfileEditorState';
 
@@ -74,6 +78,24 @@ export function ProfileContent({
 
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryMode, setLibraryMode] = useState<'insert' | 'select'>('insert');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [modelCatalog, setModelCatalog] = useState<ModelInfo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchModelsOnce().then(m => { if (!cancelled) setModelCatalog(m); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedModel = defaultModel ? modelCatalog.find(m => m.id === defaultModel) : undefined;
+  const selectedCtx = selectedModel?.context_length ?? selectedModel?.context_window;
+  const selectedLabel = (() => {
+    if (!defaultModel) return 'System default';
+    if (selectedModel) return selectedModel.name;
+    const parts = defaultModel.split(':');
+    return parts.length > 1 ? parts.slice(1).join(':') : defaultModel;
+  })();
+  const selectedProviderLabel = selectedModel?.provider ?? (defaultModel.includes(':') ? defaultModel.split(':')[0] : '');
   // dir: 1 = library slides in from right, -1 = form slides back in from left
   const [panelDir, setPanelDir] = useState(1);
 
@@ -197,12 +219,41 @@ export function ProfileContent({
               </div>
 
               <div className="profile-model-selector-wrap">
-                <ModelSelector
-                  value={defaultModel}
-                  onChange={setDefaultModel}
-                  showDefault
-                />
+                <button
+                  type="button"
+                  className="profile-model-trigger"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  <div className="profile-model-trigger-main">
+                    <span className="profile-model-trigger-label">Model</span>
+                    <span className="profile-model-trigger-name">{selectedLabel}</span>
+                    {selectedProviderLabel && (
+                      <span className="profile-model-trigger-provider">{selectedProviderLabel}</span>
+                    )}
+                  </div>
+                  <div className="profile-model-trigger-meta">
+                    {selectedCtx && (
+                      <span className="profile-model-trigger-badge">
+                        {selectedCtx >= 1000 ? `${Math.round(selectedCtx / 1000)}k ctx` : `${selectedCtx} ctx`}
+                      </span>
+                    )}
+                    {selectedModel?.supports_tools && (
+                      <span className="profile-model-trigger-cap" title="Tools"><Wrench size={12} /></span>
+                    )}
+                    {selectedModel?.supports_vision && (
+                      <span className="profile-model-trigger-cap" title="Vision"><Eye size={12} /></span>
+                    )}
+                    <ChevronRight size={14} className="profile-model-trigger-chev" />
+                  </div>
+                </button>
               </div>
+              <ModelPickerModal
+                isOpen={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                value={defaultModel}
+                onChange={setDefaultModel}
+                showDefault
+              />
 
               <div className="profile-form-group">
                 <label>Temperature: {temperature.toFixed(1)}</label>

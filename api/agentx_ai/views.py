@@ -551,8 +551,13 @@ async def providers_models(request):
                     "supports_tools": caps.supports_tools,
                     "supports_vision": caps.supports_vision,
                     "supports_streaming": caps.supports_streaming,
+                    "supports_json_mode": caps.supports_json_mode,
                     "cost_per_1k_input": caps.cost_per_1k_input,
                     "cost_per_1k_output": caps.cost_per_1k_output,
+                    "pricing_currency": caps.pricing_currency,
+                    "input_modalities": caps.input_modalities,
+                    "output_modalities": caps.output_modalities,
+                    "description": caps.description,
                 })
             return result
         except asyncio.TimeoutError:

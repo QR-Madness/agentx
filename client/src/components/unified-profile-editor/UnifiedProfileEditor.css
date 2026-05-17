@@ -396,22 +396,78 @@
   box-shadow: var(--border-glow-subtle);
 }
 
-/* ── Model selector container ──
-   Prevents ModelSelector from capturing outer scroll */
+/* ── Model selector trigger (Phase 18.4) ── */
 .profile-model-selector-wrap {
-  overflow: hidden;
-  border-radius: 10px;
-  max-height: 280px;
-  overflow-y: auto;
+  border-radius: 12px;
 }
 
-.profile-model-selector-wrap::-webkit-scrollbar {
-  width: 6px;
+.profile-model-trigger {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--glass-layer-1);
+  border: 1px solid var(--accent-tint-medium);
+  border-radius: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: left;
 }
-.profile-model-selector-wrap::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.3);
-  border-radius: 3px;
+.profile-model-trigger:hover {
+  background: var(--glass-layer-2);
+  border-color: var(--cosmic-violet);
+  box-shadow: var(--border-glow-subtle);
 }
+.profile-model-trigger-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.profile-model-trigger-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+.profile-model-trigger-name {
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.profile-model-trigger-provider {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.profile-model-trigger-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.profile-model-trigger-badge {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--glass-layer-2);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.profile-model-trigger-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--glass-layer-2);
+  color: var(--cosmic-violet);
+}
+.profile-model-trigger-chev { color: var(--text-tertiary); }
 
 /* ── Slider ── */
 .profile-slider {

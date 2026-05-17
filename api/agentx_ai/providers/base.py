@@ -140,6 +140,10 @@ class ModelCapabilities:
     max_output_tokens: Optional[int] = None
     cost_per_1k_input: Optional[float] = None
     cost_per_1k_output: Optional[float] = None
+    input_modalities: list[str] = field(default_factory=lambda: ["text"])
+    output_modalities: list[str] = field(default_factory=lambda: ["text"])
+    description: Optional[str] = None
+    pricing_currency: str = "USD"
 
 
 @dataclass

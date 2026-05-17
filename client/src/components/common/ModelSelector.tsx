@@ -14,7 +14,7 @@ import './ModelSelector.css';
 let modelCache: ModelInfo[] | null = null;
 let modelCachePromise: Promise<ModelInfo[]> | null = null;
 
-function fetchModelsOnce(): Promise<ModelInfo[]> {
+export function fetchModelsOnce(): Promise<ModelInfo[]> {
   if (modelCache) return Promise.resolve(modelCache);
   if (!modelCachePromise) {
     modelCachePromise = api

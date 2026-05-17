@@ -284,37 +284,35 @@ class VercelProvider(ModelProvider):
             info = self._model_cache[model]
             tags = info.get("tags", [])
 
-            # Parse context window
             context_window = info.get("context_window", 8192)
-
-            # Parse max output tokens
             max_output = info.get("max_tokens")
 
-            # Parse pricing (Vercel uses per-token pricing, convert to per-1k)
-            pricing = info.get("pricing", {})
-            cost_input = None
-            cost_output = None
-            if pricing:
-                input_cost = pricing.get("input")
-                output_cost = pricing.get("output")
-                if input_cost:
-                    cost_input = float(input_cost) * 1000
-                if output_cost:
-                    cost_output = float(output_cost) * 1000
+            pricing = info.get("pricing", {}) or {}
+            cost_input = float(pricing["input"]) * 1000 if pricing.get("input") else None
+            cost_output = float(pricing["output"]) * 1000 if pricing.get("output") else None
+            currency = pricing.get("currency", "USD")
 
-            # Determine capabilities from tags
+            modalities = info.get("modalities", {}) or {}
+            input_modalities = list(modalities.get("input") or ["text"])
+            output_modalities = list(modalities.get("output") or ["text"])
+
+            supports_vision = "vision" in tags or "image" in input_modalities
+
             return ModelCapabilities(
                 supports_tools="tool-use" in tags,
-                supports_vision="vision" in tags,
+                supports_vision=supports_vision,
                 supports_streaming=info.get("type") == "language",
-                supports_json_mode=True,  # Most language models support JSON mode
+                supports_json_mode=True,
                 context_window=context_window,
                 max_output_tokens=max_output,
                 cost_per_1k_input=cost_input,
                 cost_per_1k_output=cost_output,
+                input_modalities=input_modalities,
+                output_modalities=output_modalities,
+                description=info.get("description"),
+                pricing_currency=currency,
             )
 
-        # Default capabilities for unknown models
         logger.warning(f"Unknown Vercel AI Gateway model: {model}, using default capabilities")
         return DEFAULT_CAPABILITIES
 

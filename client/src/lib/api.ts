@@ -139,6 +139,18 @@ export interface ModelInfo {
   name: string;
   provider: string;
   context_length?: number;
+  context_window?: number;
+  max_output_tokens?: number | null;
+  supports_tools?: boolean;
+  supports_vision?: boolean;
+  supports_streaming?: boolean;
+  supports_json_mode?: boolean;
+  cost_per_1k_input?: number | null;
+  cost_per_1k_output?: number | null;
+  pricing_currency?: string;
+  input_modalities?: string[];
+  output_modalities?: string[];
+  description?: string | null;
   capabilities?: string[];
 }
 
