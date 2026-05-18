@@ -1131,10 +1131,45 @@ async def agent_chat_stream(request):
 
             # Plan execution: assess complexity and branch
             from .agent.planner import TaskPlanner, TaskComplexity
-            planner = TaskPlanner(agent.config.default_model)
-            plan = await planner.plan(message, memory=agent.memory if use_memory else None)
+            from .config import get_config_manager
+            planner_config = get_config_manager()
+            planner_enabled = planner_config.get("planner.enabled", True)
+            planner_model = planner_config.get("planner.model") or agent.config.default_model
+            planner_temperature = planner_config.get("planner.temperature", 0.3)
+            planner_max_tokens = planner_config.get("planner.max_tokens", 1000)
+            planner_prompt_override = planner_config.get("planner.prompt_override", "")
+            planner_threshold_name = (
+                planner_config.get("planner.complexity_threshold", "moderate") or "moderate"
+            ).lower()
+            _threshold_rank = {"simple": 0, "moderate": 1, "complex": 2}
+            planner_threshold_rank = _threshold_rank.get(planner_threshold_name, 1)
 
-            if plan.complexity != TaskComplexity.SIMPLE and len(plan.steps) > 1:
+            if planner_enabled:
+                planner = TaskPlanner(
+                    planner_model,
+                    temperature=planner_temperature,
+                    max_tokens=planner_max_tokens,
+                    prompt_override=planner_prompt_override,
+                )
+                plan = await planner.plan(message, memory=agent.memory if use_memory else None)
+            else:
+                # Bypass planning entirely; build a single-step plan to keep
+                # the simple-path branch happy.
+                from .agent.planner import Subtask, TaskPlan, SubtaskType
+                plan = TaskPlan(
+                    task=message,
+                    complexity=TaskComplexity.SIMPLE,
+                    steps=[Subtask(id=0, description=message, type=SubtaskType.GENERATION)],
+                    reasoning_strategy="cot",
+                )
+
+            plan_rank = _threshold_rank.get(plan.complexity.value, 0)
+            decompose = (
+                planner_enabled
+                and plan_rank >= planner_threshold_rank
+                and len(plan.steps) > 1
+            )
+            if decompose:
                 # Plan execution path — delegate to PlanExecutor
                 from .agent.plan_state import PlanStateStore
                 from .agent.plan_executor import PlanExecutor
@@ -1164,9 +1199,10 @@ async def agent_chat_stream(request):
 
             else:
                 # Standard single-pass path (simple tasks)
-                from .streaming.tool_loop import streaming_tool_loop
+                from .streaming.tool_loop import streaming_tool_loop, ToolLoopResult
 
-                async for event_str, loop_result in streaming_tool_loop(
+                loop_result = ToolLoopResult()
+                async for event_str in streaming_tool_loop(
                     provider, model_id, messages, tools, agent,
                     temperature=effective_temperature,
                     max_tokens=adaptive_max_tokens,
@@ -1176,6 +1212,7 @@ async def agent_chat_stream(request):
                     context_warning_threshold=CONTEXT_WARNING_THRESHOLD,
                     task_context=message,
                     capture_tool_turns=True,
+                    result=loop_result,
                 ):
                     yield event_str
 
@@ -3664,6 +3701,15 @@ def config_update(request):
         if value is not None:
             config.set(f"prompt_enhancement.{key}", value)
             updated_keys.append(f"prompt_enhancement.{key}")
+
+    # Update planner settings
+    planner_settings = data.get("planner", {})
+    for key, value in planner_settings.items():
+        # Allow explicit None for "model" (means: fall back to default model).
+        if value is None and key != "model":
+            continue
+        config.set(f"planner.{key}", value)
+        updated_keys.append(f"planner.{key}")
 
     # Persist to disk
     if not config.save():

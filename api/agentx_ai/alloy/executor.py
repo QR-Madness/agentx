@@ -134,7 +134,7 @@ class AlloyExecutor:
 
         # ------- build specialist agent -------
         from ..agent.core import Agent, AgentConfig
-        from ..streaming.tool_loop import streaming_tool_loop
+        from ..streaming.tool_loop import streaming_tool_loop, ToolLoopResult
 
         specialist_config = AgentConfig(
             name=profile.name,
@@ -168,13 +168,15 @@ class AlloyExecutor:
         status = "success"
         error: Optional[str] = None
         try:
-            async for event_str, loop_result in streaming_tool_loop(
+            loop_result = ToolLoopResult()
+            async for event_str in streaming_tool_loop(
                 provider, model_id, messages, tools, specialist,
                 temperature=profile.temperature,
                 max_tokens=4096,
                 max_tool_rounds=specialist.config.max_tool_rounds,
                 task_context=task,
                 emit_trajectory_info=False,
+                result=loop_result,
             ):
                 # Re-wrap every nested event as a delegation-scoped event so
                 # the specialist's activity stays inside the delegation card

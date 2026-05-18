@@ -575,9 +575,16 @@ class Agent:
 
             # Step 1: Planning (if enabled)
             plan = None
-            if self.config.enable_planning:
+            from ..config import get_config_manager
+            _pcfg = get_config_manager()
+            if self.config.enable_planning and _pcfg.get("planner.enabled", True):
                 from .planner import TaskPlanner
-                planner = TaskPlanner(self.config.default_model)
+                planner = TaskPlanner(
+                    _pcfg.get("planner.model") or self.config.default_model,
+                    temperature=_pcfg.get("planner.temperature", 0.3),
+                    max_tokens=_pcfg.get("planner.max_tokens", 1000),
+                    prompt_override=_pcfg.get("planner.prompt_override", ""),
+                )
                 # plan() is async — bridge to sync context
                 coro = planner.plan(task, context, memory=self.memory)
                 try:

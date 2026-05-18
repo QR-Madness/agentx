@@ -286,7 +286,7 @@ class PlanExecutor:
         max_context_tokens: int = 100000,
     ) -> AsyncGenerator[str, None]:
         """Stream a single subtask's execution, yielding SSE events."""
-        from ..streaming.tool_loop import streaming_tool_loop
+        from ..streaming.tool_loop import streaming_tool_loop, ToolLoopResult
 
         messages = self._build_subtask_messages(plan, subtask)
         max_tool_rounds = getattr(self.agent.config, 'max_tool_rounds', 10)
@@ -319,7 +319,8 @@ class PlanExecutor:
                 existing.append(delegation_tool)
             subtask_tools = existing
 
-        async for event_str, loop_result in streaming_tool_loop(
+        loop_result = ToolLoopResult()
+        async for event_str in streaming_tool_loop(
             provider, model_id, messages, subtask_tools, self.agent,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -327,6 +328,7 @@ class PlanExecutor:
             max_context_tokens=max_context_tokens,
             task_context=subtask.description,
             emit_trajectory_info=False,
+            result=loop_result,
         ):
             yield event_str
 

@@ -53,13 +53,17 @@ async def streaming_tool_loop(
     emit_trajectory_info: bool = True,
     truncate_on_overflow: bool = True,
     capture_tool_turns: bool = False,
-) -> AsyncGenerator[tuple[str, ToolLoopResult], None]:
+    result: Optional[ToolLoopResult] = None,
+) -> AsyncGenerator[str, None]:
     """
     Async generator running the streaming tool-use loop.
 
-    Yields (sse_event_string, result) tuples. The result object is the
-    same instance throughout and accumulates content, tools_used, token
-    counts, and optionally tool_turns_data for DB persistence.
+    Yields SSE event strings. State is accumulated on the `result` object,
+    which the caller should pre-allocate and pass in so it remains
+    readable even when the generator never yields (e.g. an empty
+    completion with no tool calls). If `result` is None, a fresh
+    instance is created internally but will not be observable by the
+    caller.
 
     Args:
         provider: Model provider instance with async stream() method
@@ -80,7 +84,8 @@ async def streaming_tool_loop(
     """
     from .helpers import truncate_tool_messages
 
-    result = ToolLoopResult()
+    if result is None:
+        result = ToolLoopResult()
 
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
@@ -91,7 +96,7 @@ async def streaming_tool_loop(
             estimated = estimate_tokens(messages)
             logger.info(f"Trajectory compressed, new estimate: ~{estimated:,} tokens")
             if emit_trajectory_info:
-                yield _sse("info", {"type": "trajectory_compressed"}), result
+                yield _sse("info", {"type": "trajectory_compressed"})
 
         estimated_context_tokens = estimate_tokens(messages)
         logger.info(
@@ -127,12 +132,23 @@ async def streaming_tool_loop(
             if chunk.content:
                 result.content += chunk.content
                 round_content += chunk.content
-                yield _sse("chunk", {"content": chunk.content}), result
+                yield _sse("chunk", {"content": chunk.content})
 
         # No tool calls means we're done
         if not round_tool_calls:
             result.final_content = round_content
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
+            # Surface empty completions explicitly so downstream code
+            # (session storage, done event, parsed.content) doesn't carry
+            # silently empty content through to the UI.
+            if tool_round == 0 and not result.content:
+                logger.warning(
+                    f"Empty completion from model={model_id} (no content, no tool calls)"
+                )
+                fallback = "[empty response from model]"
+                result.content = fallback
+                result.final_content = fallback
+                yield _sse("chunk", {"content": fallback})
             break
 
         # Split off Agent Alloy delegate_to calls — these run through the
@@ -158,7 +174,7 @@ async def streaming_tool_loop(
                 "tool": tc.name,
                 "tool_call_id": tc.id,
                 "arguments": tc.arguments,
-            }), result
+            })
 
         # Add assistant message with tool_calls to conversation
         messages.append(Message(
@@ -184,7 +200,7 @@ async def streaming_tool_loop(
             async for event_str, partial in alloy_executor.delegate(
                 target, task, tool_call_id=tc.id,
             ):
-                yield event_str, result
+                yield event_str
                 accumulated = partial
             if accumulated:
                 result.delegations.append(accumulated)
@@ -235,7 +251,7 @@ async def streaming_tool_loop(
                     "content": tm.content[:500],
                     "success": not is_error,
                     "duration_ms": round(tool_avg_time, 2),
-                }), result
+                })
 
             if capture_tool_turns:
                 result.tool_turns_data.append({

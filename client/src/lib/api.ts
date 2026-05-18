@@ -627,6 +627,14 @@ export interface ConfigUpdate {
     max_tokens?: number;
     system_prompt?: string;
   };
+  planner?: {
+    enabled?: boolean;
+    model?: string | null;
+    temperature?: number;
+    max_tokens?: number;
+    prompt_override?: string;
+    complexity_threshold?: 'simple' | 'moderate' | 'complex';
+  };
 }
 
 // === Memory Explorer Types ===

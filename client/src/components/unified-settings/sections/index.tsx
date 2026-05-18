@@ -14,7 +14,8 @@ import {
   Wrench,
   Languages,
   Palette,
-  Brain
+  Brain,
+  ListTree
 } from 'lucide-react';
 
 export interface Section {
@@ -64,6 +65,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Sparkles size={18} />,
         component: lazy(() => import('./PromptsSection')),
         keywords: ['enhance', 'improve', 'temperature', 'system prompt']
+      },
+      {
+        id: 'planner',
+        label: 'Task Planner',
+        icon: <ListTree size={18} />,
+        component: lazy(() => import('./PlannerSection')),
+        keywords: ['plan', 'planner', 'decompose', 'subtask', 'complexity']
       },
       {
         id: 'memory-overview',

@@ -91,6 +91,14 @@ DEFAULT_CONFIG = {
         "max_tokens": 1000,
         "system_prompt": "",  # Empty = use default hardcoded prompt
     },
+    "planner": {
+        "enabled": True,
+        "model": None,                       # None → falls back to agent default model
+        "temperature": 0.3,
+        "max_tokens": 1000,
+        "prompt_override": "",               # Empty = use planner.decompose from system_prompts.yaml
+        "complexity_threshold": "moderate",  # "simple" | "moderate" | "complex"
+    },
     "preferences": {
         "default_model": None,
         "default_reasoning_strategy": "auto",

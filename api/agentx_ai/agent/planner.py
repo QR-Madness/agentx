@@ -133,8 +133,18 @@ class TaskPlanner:
         plan = await planner.plan("Build a web scraper for news articles")
     """
 
-    def __init__(self, model: str = "anthropic:claude-3-5-sonnet-latest"):
+    def __init__(
+        self,
+        model: str = "anthropic:claude-3-5-sonnet-latest",
+        *,
+        temperature: float = 0.3,
+        max_tokens: int = 1000,
+        prompt_override: Optional[str] = None,
+    ):
         self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.prompt_override = (prompt_override or "").strip() or None
         self._registry = None
     
     @property
@@ -182,13 +192,15 @@ class TaskPlanner:
             return self._create_goal_for_plan(plan, memory)
 
         # For complex tasks, use LLM to decompose
+        logger.info(f"Planner decomposing task with model={self.model}")
         provider, model_id = self.registry.get_provider_for_model(self.model)
         loader = get_prompt_loader()
+        system_prompt = self.prompt_override or loader.get("planner.decompose")
 
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content=loader.get("planner.decompose"),
+                content=system_prompt,
             ),
         ]
 
@@ -204,8 +216,8 @@ class TaskPlanner:
             result = await provider.complete(
                 messages,
                 model_id,
-                temperature=0.3,
-                max_tokens=1000,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
             )
 
             steps = self._parse_plan(result.content)
