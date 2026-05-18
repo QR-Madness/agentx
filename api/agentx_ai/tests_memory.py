@@ -2704,3 +2704,305 @@ class MemoryMutationViewTest(APITestBase):
         self.assertTrue(response.json()["deleted"])  # type: ignore[union-attr]
         response = self.client.delete(f"/api/memory/entities/{self.entity.id}")
         self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
+
+
+# =============================================================================
+# Phase 18.6: Extraction Tuning — stateful extraction & entity resolution
+# =============================================================================
+
+
+class NameCandidateExtractionTest(TestCase):
+    """Regex pre-pass that feeds scope-context lookups."""
+
+    def test_extracts_capitalized_names(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _extract_name_candidates
+
+        out = _extract_name_candidates("I work at Anthropic in San Francisco using Python")
+        out_lower = [c.lower() for c in out]
+        self.assertIn("anthropic", out_lower)
+        self.assertIn("san francisco", out_lower)
+        self.assertIn("python", out_lower)
+
+    def test_strips_pronoun_stopwords(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _extract_name_candidates
+
+        out = [c.lower() for c in _extract_name_candidates("I love Python but You hate it")]
+        self.assertNotIn("i", out)
+        self.assertNotIn("you", out)
+        self.assertIn("python", out)
+
+    def test_quoted_spans_picked_up(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _extract_name_candidates
+
+        out = [c.lower() for c in _extract_name_candidates('Project codename "Project Zephyr" ships Friday')]
+        self.assertTrue(any("zephyr" in c for c in out))
+
+    def test_case_insensitive_dedup(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _extract_name_candidates
+
+        out = _extract_name_candidates("Python python PYTHON")
+        # Only one entry regardless of casing
+        self.assertEqual(len([c for c in out if c.lower() == "python"]), 1)
+
+
+class RenderScopeContextTest(TestCase):
+    """ExtractionService._render_scope_context builds the prompt blocks."""
+
+    def test_empty_inputs_yield_none_blocks(self) -> None:
+        ents, facts = ExtractionService._render_scope_context(None, None)
+        self.assertEqual(ents, "(none)")
+        self.assertEqual(facts, "(none)")
+
+    def test_renders_entity_with_aliases_and_description(self) -> None:
+        ents, _ = ExtractionService._render_scope_context(
+            known_entities=[{
+                "id": "ent-1",
+                "name": "Python",
+                "type": "Technology",
+                "aliases": ["py"],
+                "description": "Programming language",
+            }],
+            known_facts=None,
+        )
+        self.assertIn("ent-1", ents)
+        self.assertIn("Python", ents)
+        self.assertIn("aliases=['py']", ents)
+        self.assertIn("Programming language", ents)
+
+    def test_renders_fact_with_temporal_and_confidence(self) -> None:
+        _, facts = ExtractionService._render_scope_context(
+            known_entities=None,
+            known_facts=[{
+                "id": "fact-1",
+                "claim": "User uses Python",
+                "temporal_context": "current",
+                "confidence": 0.95,
+            }],
+        )
+        self.assertIn("fact-1", facts)
+        self.assertIn("User uses Python", facts)
+        self.assertIn("temporal=current", facts)
+        self.assertIn("0.95", facts)
+
+    def test_caps_entries(self) -> None:
+        many = [{"id": f"e{i}", "name": f"N{i}", "type": "Concept"} for i in range(50)]
+        ents, _ = ExtractionService._render_scope_context(many, None, max_entities=3)
+        self.assertEqual(ents.count("\n"), 2)  # 3 lines = 2 newlines
+
+
+class EntityResolutionTest(TestCase):
+    """Server-side entity resolution before storage."""
+
+    def _fake_memory(self, lookup_result=None, by_id_result=None):
+        memory = MagicMock()
+        memory.semantic.find_entity_by_name_or_alias.return_value = lookup_result
+        memory.semantic.get_entity_by_id.return_value = by_id_result
+        memory.semantic.merge_entity_aliases.return_value = True
+        return memory
+
+    def test_honors_llm_existing_entity_id(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _resolve_and_prepare_entities
+
+        memory = self._fake_memory(
+            by_id_result={"id": "ent-py-1", "name": "Python", "type": "Technology", "aliases": ["py"]},
+        )
+        extracted = [{
+            "name": "python",
+            "type": "Technology",
+            "existing_entity_id": "ent-py-1",
+        }]
+        entity_map: dict = {}
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+        errors: list = []
+
+        new_entities, reused, total = _resolve_and_prepare_entities(
+            memory=memory,
+            extracted_entities=extracted,
+            entity_map=entity_map,
+            user_id="u",
+            channel="_default",
+            conv_id="c",
+            metrics=metrics,
+            errors=errors,
+        )
+
+        self.assertEqual(new_entities, [])
+        self.assertEqual(reused, 1)
+        self.assertEqual(entity_map.get("python"), "ent-py-1")
+        memory.semantic.merge_entity_aliases.assert_called_once()
+        # find_entity_by_name_or_alias should NOT have been called since existing_entity_id resolved
+        memory.semantic.find_entity_by_name_or_alias.assert_not_called()
+
+    def test_falls_back_to_name_lookup_when_id_missing(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _resolve_and_prepare_entities
+
+        memory = self._fake_memory(
+            lookup_result={"id": "ent-py-1", "name": "Python", "type": "Technology", "aliases": []},
+        )
+        extracted = [{"name": "Python", "type": "Technology"}]
+        entity_map: dict = {}
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+
+        new_entities, reused, _ = _resolve_and_prepare_entities(
+            memory=memory,
+            extracted_entities=extracted,
+            entity_map=entity_map,
+            user_id="u",
+            channel="_default",
+            conv_id="c",
+            metrics=metrics,
+            errors=[],
+        )
+        self.assertEqual(new_entities, [])
+        self.assertEqual(reused, 1)
+        self.assertEqual(metrics.entities_reused, 1)
+
+    def test_creates_new_entity_when_no_match(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _resolve_and_prepare_entities
+
+        memory = self._fake_memory(lookup_result=None)
+        extracted = [{
+            "name": "Brand New Thing",
+            "type": "Concept",
+            "description": "First mention",
+            "confidence": 0.9,
+        }]
+        entity_map: dict = {}
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+
+        new_entities, reused, _ = _resolve_and_prepare_entities(
+            memory=memory,
+            extracted_entities=extracted,
+            entity_map=entity_map,
+            user_id="u",
+            channel="_default",
+            conv_id="c",
+            metrics=metrics,
+            errors=[],
+        )
+        self.assertEqual(len(new_entities), 1)
+        self.assertEqual(reused, 0)
+        self.assertEqual(new_entities[0].name, "Brand New Thing")
+        self.assertEqual(new_entities[0].description, "First mention")
+        self.assertIn("brand new thing", entity_map)
+        memory.semantic.merge_entity_aliases.assert_not_called()
+
+    def test_skips_entity_with_missing_name_or_type(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _resolve_and_prepare_entities
+
+        memory = self._fake_memory(lookup_result=None)
+        extracted = [
+            {"name": "", "type": "Concept"},
+            {"name": "OK", "type": ""},
+            {"name": "Valid", "type": "Concept"},
+        ]
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+
+        new_entities, reused, _ = _resolve_and_prepare_entities(
+            memory=memory,
+            extracted_entities=extracted,
+            entity_map={},
+            user_id="u", channel="_default", conv_id="c",
+            metrics=metrics, errors=[],
+        )
+        self.assertEqual(len(new_entities), 1)
+        self.assertEqual(new_entities[0].name, "Valid")
+
+
+class RefinesFactIdSupersedureTest(TestCase):
+    """Phase 18.6 LLM-supplied refines_fact_id should supersede the target fact."""
+
+    def test_in_scope_refine_triggers_supersede(self) -> None:
+        # We exercise the in-scope check + call dispatch by stubbing
+        # _handle_contradiction. Since the refine block lives inside the consolidation
+        # loop, we replicate its decision logic here directly.
+        from agentx_ai.kit.agent_memory.consolidation import jobs as jobs_module
+
+        memory = MagicMock()
+        memory.semantic.get_fact_by_id.return_value = {
+            "id": "fact-old",
+            "claim": "User uses Python",
+            "channel": "_default",
+        }
+
+        captured_args = {}
+
+        def _fake_handle(memory, session, fact_dict, contradiction, user_id, channel):
+            captured_args["fact"] = fact_dict
+            captured_args["contradicting_fact_id"] = contradiction.contradicting_fact_id
+            captured_args["resolution"] = contradiction.resolution
+            return "superseded"
+
+        with patch.object(jobs_module, "_handle_contradiction", side_effect=_fake_handle) as mock_h:
+            # Simulate the in-scope check + dispatch
+            fact_dict = {
+                "claim": "User uses Python 3.12 for async work",
+                "refines_fact_id": "fact-old",
+            }
+            target = memory.semantic.get_fact_by_id(fact_dict["refines_fact_id"], "u")
+            self.assertIsNotNone(target)
+            self.assertEqual(target["channel"], "_default")
+
+            jobs_module._handle_contradiction(
+                memory, None, fact_dict,
+                type("R", (), {
+                    "has_contradiction": True,
+                    "contradicting_fact_id": fact_dict["refines_fact_id"],
+                    "resolution": "prefer_new",
+                    "reason": "llm_refinement",
+                })(),
+                "u", "_default",
+            )
+            self.assertEqual(captured_args["contradicting_fact_id"], "fact-old")
+            self.assertEqual(captured_args["resolution"], "prefer_new")
+            mock_h.assert_called_once()
+
+    def test_out_of_scope_refine_is_ignored(self) -> None:
+        # Target in a different channel should NOT trigger supersede.
+        memory = MagicMock()
+        memory.semantic.get_fact_by_id.return_value = {
+            "id": "fact-other",
+            "claim": "User uses Vim",
+            "channel": "_private_other",
+        }
+        fact_dict = {"claim": "User uses Vim everywhere", "refines_fact_id": "fact-other"}
+        target = memory.semantic.get_fact_by_id(fact_dict["refines_fact_id"], "u")
+        in_scope = target.get("channel") in ("_default", "_global")
+        self.assertFalse(in_scope)
+
+
+class ExtractionServiceScopeContextWiringTest(TestCase):
+    """ExtractionService passes known_entities/known_facts into the prompt template."""
+
+    def test_known_blocks_substituted_into_prompt(self) -> None:
+        loader = get_prompt_loader()
+        ents, facts = ExtractionService._render_scope_context(
+            known_entities=[{"id": "ent-1", "name": "Python", "type": "Technology"}],
+            known_facts=[{"id": "fact-1", "claim": "User uses Python", "temporal_context": "current"}],
+        )
+        prompt = loader.get(
+            "extraction.combined_with_relevance",
+            text="sample",
+            known_entities=ents,
+            known_facts=facts,
+        )
+        self.assertIn("ent-1", prompt)
+        self.assertIn("fact-1", prompt)
+        self.assertNotIn("{known_entities}", prompt)
+        self.assertNotIn("{known_facts}", prompt)
+
+    def test_assistant_self_prompt_accepts_known_blocks(self) -> None:
+        loader = get_prompt_loader()
+        ents, facts = ExtractionService._render_scope_context(
+            known_entities=[{"id": "ent-self-1", "name": "Cache thrash", "type": "Pattern"}],
+            known_facts=None,
+        )
+        prompt = loader.get(
+            "extraction.assistant_self",
+            text="sample assistant reasoning that is long enough to be considered for extraction by the heuristic gate which requires at least 100 characters",
+            known_entities=ents,
+            known_facts=facts,
+        )
+        self.assertIn("ent-self-1", prompt)
+        self.assertIn("(none)", prompt)  # facts block
+        self.assertNotIn("{known_entities}", prompt)

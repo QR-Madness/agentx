@@ -97,66 +97,108 @@ extraction:
     - Empty arrays only if truly nothing to extract
 
   # Combined relevance check + extraction in a single call (~75% fewer LLM calls)
-  # Variables: {text}
-  # Uses reasoning model (lmstudio:nvidia/nemotron-3-nano) for better two-step analysis
+  # Variables: {text}, {known_entities}, {known_facts}
+  # Stateful: callers pass scoped context so the LLM can mark mentions with
+  # existing_entity_id and emit refines_fact_id when a claim sharpens a known fact.
   combined_with_relevance: |
-    Analyze this text and extract information if relevant.
+    Extract entities and facts from the USER's text. Use the KNOWN context to avoid
+    duplicating what is already stored.
 
     TEXT: "{text}"
 
-    STEP 1 - RELEVANCE CHECK:
-    Is this text worth remembering? Look for ANY of:
-    - Names (people, places, projects, products, companies)
-    - Personal information (preferences, opinions, goals)
-    - Facts or claims about specific things
-    - Technical details or descriptions
+    KNOWN ENTITIES (already in memory — reuse by setting existing_entity_id):
+    {known_entities}
 
-    IMPORTANT: People often start with pleasantries then include valuable info!
-    "Thanks! I'm moving to Seattle next month" → RELEVANT (location + timeline)
-    "Sure, I work at Google" → RELEVANT (employer)
-    "Yes, and my email is john@example.com" → RELEVANT (contact info)
+    KNOWN FACTS (already stored — do NOT re-extract; only emit NEW or REFINED claims):
+    {known_facts}
 
-    Answer NO ONLY if the ENTIRE message is just a pleasantry with nothing else.
-    Examples of NO: "ok", "thanks", "sounds good", "got it" (by themselves)
+    STEP 1 — RELEVANCE CHECK
+    Does the text contain any extractable information: names, personal info,
+    preferences, opinions, goals, technical details, or claims about specific things?
+    People often start with pleasantries then include valuable info:
+    - "Thanks! I'm moving to Seattle next month" → RELEVANT (location + timeline)
+    - "Sure, I work at Google" → RELEVANT (employer)
+    - "Yes, and my email is john@example.com" → RELEVANT (contact info)
+    Answer NO ONLY if the ENTIRE message is a pleasantry with no substance
+    ("ok", "thanks", "sounds good", "got it").
 
-    STEP 2 - EXTRACTION (only if relevant):
-    If relevant, extract entities and facts from what the USER said.
+    STEP 2 — EXTRACTION (only if relevant)
 
-    CERTAINTY LEVELS (for facts):
-    - "explicit": User directly stated it ("I work at Anthropic")
-    - "implied": Strongly implied by context ("my office in SF" → works in SF)
-    - "inferred": Reasonably inferred ("debugging Python" → knows Python)
-    - "uncertain": Ambiguous or hedged ("I think I might prefer...")
+    CLAIM CONVENTION
+    Every fact claim MUST start with "User " followed by a present-tense verb.
+    Use third person; never echo "I"/"my" into the stored claim.
+    - "I work at Anthropic"            → claim="User works at Anthropic"
+    - "My favorite language is Python" → claim="User prefers Python"
 
-    TEMPORAL CONTEXT (for facts):
-    - "current": Applies now ("I work at Google", "I'm using React")
-    - "past": No longer applies ("I used to work at...", "I switched from...")
-    - "future": Will apply later ("I'm starting at...", "I plan to...")
-    - null: No clear temporal indicator (default - most facts)
+    NEGATION
+    Negation must be explicit in the claim — never emit the positive form for a denial.
+    - "I don't use React"           → claim="User does not use React"
+    - "I no longer work at Google"  → claim="User works at Google", temporal_context="past"
+      (the past temporal context is the canonical encoding; do NOT also emit a
+      negated claim.)
 
-    IMPLICIT CORRECTIONS:
-    If the user's statement implies a change from a previous state, extract BOTH:
-    - The OLD state as a fact with temporal_context="past"
-    - The NEW state as a fact with temporal_context="current"
-    Examples:
+    ENTITY REUSE
+    If a mention matches a KNOWN ENTITY (same real-world referent, even with different
+    casing or via an alias), set existing_entity_id to that entity's id. Only include
+    aliases or a refined description when you are adding NEW information. Do not
+    re-list aliases that are already attached.
+
+    FACT REFINEMENT
+    If a new claim sharpens or replaces a KNOWN FACT (e.g. "User uses Python" →
+    "User uses Python 3.12 for async work"), set refines_fact_id to the existing
+    fact's id. Do NOT also emit the un-refined version separately.
+
+    CERTAINTY (for facts)
+    - "explicit":  user directly stated it ("I work at Anthropic")
+    - "implied":   strongly implied by context ("my office in SF" → works in SF)
+    - "inferred":  reasonably inferred ("debugging Python" → knows Python)
+    - "uncertain": ambiguous or hedged ("I think I might prefer...")
+
+    TEMPORAL CONTEXT (for facts)
+    - "current": applies now
+    - "past":    no longer applies
+    - "future":  will apply later
+    - null:      no clear temporal indicator — use the JSON literal null, NOT the string "null"
+
+    IMPLICIT CORRECTIONS
+    A statement that implies a change from a previous state extracts BOTH:
+    - the OLD state with temporal_context="past"
+    - the NEW state with temporal_context="current"
     - "I switched from React to Vue" →
-      fact1: claim="User uses React", temporal_context="past"
-      fact2: claim="User uses Vue", temporal_context="current"
-    - "I left Google for Meta" →
-      fact1: claim="User works at Google", temporal_context="past"
-      fact2: claim="User works at Meta", temporal_context="current"
+        fact1: claim="User uses React", temporal_context="past"
+        fact2: claim="User uses Vue",   temporal_context="current"
     - "I moved to Seattle" →
-      fact1: claim="User lives in Seattle", temporal_context="current"
-      (only extract the old location if explicitly mentioned)
+        fact1: claim="User lives in Seattle", temporal_context="current"
+      (Only extract an old value if explicitly mentioned.)
 
-    Respond with JSON ONLY:
+    DEDUPLICATION
+    - Do not emit two facts that mean the same thing within this response.
+    - Do not list the same entity twice; pick one canonical name (e.g. "Python", not
+      "python"; "Google", not "Google LLC" or "google").
+
+    ENTITY TYPES: Person | Organization | Technology | Product | Location | Event | Concept
+
+    Respond with JSON ONLY (no prose, no markdown fences):
     {{
       "is_relevant": true|false,
       "entities": [
-        {{"name": "ExactName", "type": "Person|Organization|Technology|Product|Location|Event|Concept", "description": "brief description", "confidence": 0.0-1.0}}
+        {{
+          "name": "CanonicalName",
+          "type": "Person|Organization|Technology|Product|Location|Event|Concept",
+          "description": "brief description (omit if nothing new to add)",
+          "aliases": ["optional new aliases"],
+          "existing_entity_id": "uuid-if-this-matches-a-known-entity (omit if new)",
+          "confidence": 0.0-1.0
+        }}
       ],
       "facts": [
-        {{"claim": "what the user stated", "certainty": "explicit|implied|inferred|uncertain", "temporal_context": "current|past|future|null", "entity_names": ["ExactName"]}}
+        {{
+          "claim": "User <verb> ...",
+          "certainty": "explicit|implied|inferred|uncertain",
+          "temporal_context": "current|past|future|null (JSON literal, not the string)",
+          "entity_names": ["CanonicalName"],
+          "refines_fact_id": "uuid-if-this-refines-a-known-fact (omit otherwise)"
+        }}
       ],
       "relationships": [
         {{"source": "EntityA", "target": "EntityB", "type": "works_at|knows|uses|prefers|etc", "confidence": 0.0-1.0}}
@@ -164,6 +206,44 @@ extraction:
     }}
 
     If NOT relevant, return: {{"is_relevant": false, "entities": [], "facts": [], "relationships": []}}
+
+    ───────── EXAMPLES ─────────
+
+    Example 1 — no prior context, fresh extraction:
+    TEXT: "I work at Anthropic in San Francisco."
+    KNOWN ENTITIES: (none)
+    KNOWN FACTS: (none)
+    OUTPUT:
+    {{
+      "is_relevant": true,
+      "entities": [
+        {{"name": "Anthropic", "type": "Organization", "description": "User's employer", "confidence": 0.95}},
+        {{"name": "San Francisco", "type": "Location", "confidence": 0.9}}
+      ],
+      "facts": [
+        {{"claim": "User works at Anthropic", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Anthropic"]}},
+        {{"claim": "User works in San Francisco", "certainty": "implied", "temporal_context": "current", "entity_names": ["San Francisco"]}}
+      ],
+      "relationships": []
+    }}
+
+    Example 2 — entity reuse + fact refinement:
+    TEXT: "Specifically, I'm on Python 3.12 mostly for async work."
+    KNOWN ENTITIES:
+    - id=ent-py-1 name="Python" type=Technology aliases=["py"] desc="Programming language the user works in"
+    KNOWN FACTS:
+    - id=fact-uses-py "User uses Python" (temporal=current confidence=0.95)
+    OUTPUT:
+    {{
+      "is_relevant": true,
+      "entities": [
+        {{"name": "Python", "type": "Technology", "existing_entity_id": "ent-py-1", "confidence": 0.95}}
+      ],
+      "facts": [
+        {{"claim": "User uses Python 3.12 for async work", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Python"], "refines_fact_id": "fact-uses-py"}}
+      ],
+      "relationships": []
+    }}
 
   # User correction detection prompt
   # Variables: {text}
@@ -231,47 +311,83 @@ extraction:
     If no contradiction: CONTRADICTION: NO
 
   # Assistant self-knowledge extraction
-  # Variables: {text}
-  # Used by consolidation to extract knowledge from the agent's own responses
+  # Variables: {text}, {known_entities}, {known_facts}
+  # Used by consolidation to extract knowledge from the agent's own responses.
   assistant_self: |
-    Analyze this ASSISTANT response and extract the agent's own intellectual contributions.
+    Extract the agent's own intellectual contributions from this ASSISTANT response.
+    Use the KNOWN context to avoid duplicating already-stored self-knowledge.
 
     TEXT: "{text}"
 
-    STEP 1 - RELEVANCE CHECK:
-    Does this response contain any substantive reasoning worth preserving?
-    Answer NO if the response is: a greeting, simple acknowledgment, tool output relay,
-    or direct quotation without analysis.
+    KNOWN ENTITIES (self-channel — reuse by setting existing_entity_id):
+    {known_entities}
 
-    STEP 2 - EXTRACTION (only if relevant):
+    KNOWN FACTS (self-channel — do NOT re-extract; only emit NEW or REFINED items):
+    {known_facts}
+
+    STEP 1 — RELEVANCE CHECK
+    Does this response contain substantive reasoning worth preserving?
+    Answer NO for: greetings, simple acknowledgments, tool-output relays, or
+    direct quotation without analysis.
+
+    STEP 2 — EXTRACTION (only if relevant)
     Extract ONLY the agent's own contributions — reasoning it performed, not data it relayed.
 
-    WHAT TO EXTRACT:
-    - CONCLUSIONS: Decisions or determinations the agent reached
-    - HYPOTHESES: Theories or educated guesses the agent formed
-    - PLANS: Strategies, approaches, or action sequences the agent proposed
-    - PATTERNS: Recurring themes or patterns the agent identified
-    - INSIGHTS: Novel observations or connections the agent made
+    Use this operational test for each fact:
+    - CONCLUSION ("definitive"): would I confidently restate this next session?
+        e.g. "The issue is X"
+    - HYPOTHESIS ("speculative"): did I hedge with "might"/"could"/"seems"?
+        e.g. "This could indicate Z"
+    - ANALYTICAL ("analytical"): analysis-based finding, neither hedged nor certain.
+        e.g. "Based on the data, Y appears likely"
+    - PLAN: an action sequence or strategy the agent proposed.
+    - PATTERN: a recurring structure observed across multiple observations.
+    - INSIGHT: a novel connection between previously separate things.
 
-    WHAT TO SKIP:
-    - Facts the user stated (extracted separately from user turns)
-    - Common knowledge or definitions
-    - Tool outputs or raw data the agent merely relayed
-    - Pleasantries or meta-conversation
+    SKIP:
+    - Facts the user stated (extracted from user turns, not here).
+    - Common knowledge or generic definitions.
+    - Raw tool output relayed without analysis.
+    - Pleasantries / meta-conversation.
 
-    CERTAINTY LEVELS:
-    - "definitive": Agent stated a clear conclusion ("The issue is X")
-    - "analytical": Analysis-based finding ("Based on the data, Y seems likely")
-    - "speculative": Hypothesis or speculation ("This could indicate Z")
+    CLAIM CONVENTION
+    Each fact is a single declarative statement of what the agent concluded or observed.
+    Keep it self-contained: a reader six months later should understand the claim
+    without the original conversation.
 
-    Respond with JSON ONLY:
+    ENTITY REUSE
+    If a referent matches a KNOWN ENTITY, set existing_entity_id to that entity's id.
+    Add aliases or a refined description only when there is new information.
+
+    FACT REFINEMENT
+    If a new finding sharpens or replaces a KNOWN FACT, set refines_fact_id to the
+    existing fact's id. Do not also emit the un-refined version.
+
+    DEDUPLICATION
+    Do not emit two facts that mean the same thing. Do not list the same entity twice.
+
+    ENTITY TYPES: Concept | Pattern | Decision | Approach | Technique
+
+    Respond with JSON ONLY (no prose, no markdown fences):
     {{
       "is_relevant": true|false,
       "entities": [
-        {{"name": "ExactName", "type": "Concept|Pattern|Decision|Approach|Technique", "description": "brief description", "confidence": 0.0-1.0}}
+        {{
+          "name": "CanonicalName",
+          "type": "Concept|Pattern|Decision|Approach|Technique",
+          "description": "brief description (omit if nothing new to add)",
+          "aliases": ["optional new aliases"],
+          "existing_entity_id": "uuid-if-this-matches-a-known-entity (omit if new)",
+          "confidence": 0.0-1.0
+        }}
       ],
       "facts": [
-        {{"claim": "what the agent concluded/observed", "certainty": "definitive|analytical|speculative", "entity_names": ["ExactName"]}}
+        {{
+          "claim": "what the agent concluded/observed",
+          "certainty": "definitive|analytical|speculative",
+          "entity_names": ["CanonicalName"],
+          "refines_fact_id": "uuid-if-this-refines-a-known-fact (omit otherwise)"
+        }}
       ],
       "relationships": [
         {{"source": "EntityA", "target": "EntityB", "type": "implies|contradicts|supports|builds_on|applies_to", "confidence": 0.0-1.0}}
@@ -279,6 +395,30 @@ extraction:
     }}
 
     If NOT relevant, return: {{"is_relevant": false, "entities": [], "facts": [], "relationships": []}}
+
+    ───────── EXAMPLE ─────────
+
+    TEXT: "Looking at the traces, the latency spike correlates with cache evictions on
+    the price service. I'd hypothesize cache thrash under burst writes; the fix is
+    probably to raise the LRU size or shard by region."
+    KNOWN ENTITIES:
+    - id=ent-price-svc name="Price service" type=Concept desc="Internal service the agent has been debugging"
+    KNOWN FACTS: (none)
+    OUTPUT:
+    {{
+      "is_relevant": true,
+      "entities": [
+        {{"name": "Price service", "type": "Concept", "existing_entity_id": "ent-price-svc", "confidence": 0.95}},
+        {{"name": "Cache thrash under burst writes", "type": "Pattern", "description": "Latency spike pattern observed in price service traces", "confidence": 0.7}}
+      ],
+      "facts": [
+        {{"claim": "Latency spikes on the price service correlate with cache evictions", "certainty": "analytical", "entity_names": ["Price service"]}},
+        {{"claim": "Raising LRU size or sharding by region likely mitigates the price-service cache thrash", "certainty": "speculative", "entity_names": ["Price service", "Cache thrash under burst writes"]}}
+      ],
+      "relationships": [
+        {{"source": "Cache thrash under burst writes", "target": "Price service", "type": "applies_to", "confidence": 0.7}}
+      ]
+    }}
 
 # =============================================================================
 # REASONING PROMPTS

@@ -117,6 +117,115 @@ class SemanticMemory:
             ).consume()  # Ensure transaction commits
         return entity
 
+    def find_entity_by_name_or_alias(
+        self,
+        name: str,
+        user_id: str,
+        channel: str = "_global",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Look up an existing entity by name or alias, scoped to (user_id, channel).
+
+        Tries in order:
+          1. Exact case-insensitive name match.
+          2. Case-insensitive alias match.
+          3. Slug match (lowercased, whitespace stripped) against name or aliases.
+
+        Searches the given channel plus '_global'. Returns the most-salient match,
+        or None if nothing matches.
+        """
+        if not name or not name.strip():
+            return None
+
+        needle = name.strip()
+        needle_lower = needle.lower()
+        needle_slug = "".join(ch for ch in needle_lower if ch.isalnum())
+
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (e:Entity)
+                WHERE e.user_id = $user_id
+                  AND (e.channel = $channel OR e.channel = '_global')
+                  AND (
+                    toLower(e.name) = $needle_lower
+                    OR any(a IN coalesce(e.aliases, []) WHERE toLower(a) = $needle_lower)
+                    OR (
+                      $needle_slug <> ''
+                      AND (
+                        replace(toLower(e.name), ' ', '') = $needle_slug
+                        OR any(a IN coalesce(e.aliases, [])
+                               WHERE replace(toLower(a), ' ', '') = $needle_slug)
+                      )
+                    )
+                  )
+                RETURN e.id AS id,
+                       e.name AS name,
+                       e.type AS type,
+                       e.aliases AS aliases,
+                       e.description AS description,
+                       e.channel AS channel,
+                       coalesce(e.salience, 0.5) AS salience
+                ORDER BY
+                    CASE WHEN toLower(e.name) = $needle_lower THEN 0 ELSE 1 END,
+                    coalesce(e.salience, 0.5) DESC,
+                    e.last_accessed DESC
+                LIMIT 1
+            """,
+                user_id=user_id,
+                channel=channel,
+                needle_lower=needle_lower,
+                needle_slug=needle_slug,
+            )
+            record = result.single()
+            if not record:
+                return None
+            return dict(record)
+
+    def merge_entity_aliases(
+        self,
+        entity_id: str,
+        user_id: str,
+        aliases: Optional[List[str]] = None,
+        description: Optional[str] = None,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Idempotently fold new aliases (case-insensitive dedup against existing),
+        coalesce-fill description (never overwrite a populated value), and
+        merge properties (per-key coalesce, JSON-encoded).
+
+        Returns True if the entity exists, False otherwise.
+        """
+        clean_aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
+        properties_json = json.dumps(properties) if properties else None
+
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {id: $entity_id})
+                WHERE e.user_id = $user_id
+                WITH e,
+                     [a IN $aliases
+                      WHERE NOT toLower(a) IN [x IN coalesce(e.aliases, []) | toLower(x)]
+                        AND toLower(a) <> toLower(e.name)
+                     ] AS new_aliases
+                SET e.aliases = coalesce(e.aliases, []) + new_aliases,
+                    e.description = coalesce(e.description, $description),
+                    e.properties = CASE
+                        WHEN e.properties IS NULL THEN $properties
+                        ELSE e.properties
+                    END,
+                    e.last_accessed = datetime(),
+                    e.access_count = coalesce(e.access_count, 0) + 1
+                RETURN e.id AS id
+            """,
+                entity_id=entity_id,
+                user_id=user_id,
+                aliases=clean_aliases,
+                description=description,
+                properties=properties_json,
+            )
+            return result.single() is not None
+
     def store_fact(self, fact: Fact, user_id: Optional[str] = None, channel: str = "_global") -> None:
         """
         Store a fact and link to entities.

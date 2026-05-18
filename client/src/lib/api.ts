@@ -889,6 +889,14 @@ export interface ConsolidationSettings {
   combined_extraction_temperature: number;
   combined_extraction_max_tokens: number;
 
+  // Trajectory compression (consolidates older tool-call rounds into a Knowledge block)
+  trajectory_compression_enabled: boolean;
+  trajectory_compression_model: string;
+  trajectory_compression_temperature: number;
+  trajectory_compression_max_tokens: number;
+  trajectory_compression_threshold_ratio: number;
+  trajectory_compression_preserve_recent_rounds: number;
+
   // Entity linking
   entity_linking_enabled: boolean;
   entity_linking_similarity_threshold: number;

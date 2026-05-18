@@ -331,15 +331,27 @@ Currently our model selection and selector are a very solid foundation but are j
 - [ ] Dashboard token + turn metrics — UI deferred, data layer ready
   - Assistant turns are now written to `conversation_logs` with `model` and a `metadata` JSONB containing tokens/cost/latency, so a future dashboard card can aggregate via a single `SELECT model, token_count, metadata FROM conversation_logs` query with no further backend work. `idx_logs_timestamp` already covers "today" windows.
 
+### 18.6: Extraction Tuning
+
+> Goal: fix fact overlap and entity duplication by making the extraction LLM context-aware and adding a server-side entity-resolution + fact-merge layer in consolidation. Plan file: `~/.claude/plans/look-over-the-system-eventual-hejlsberg.md`.
+
+- [x] Semantic store helpers: `find_entity_by_name_or_alias` (name → alias → slug) and `merge_entity_aliases` (idempotent, never clobbers populated description/properties) — `kit/agent_memory/memory/semantic.py`
+- [x] Consolidation entity resolution: new `_resolve_and_prepare_entities` honors LLM `existing_entity_id` → falls back to name/alias/slug lookup → fresh uuid only if truly new; merges aliases on reuse; populates `entity_map` so downstream fact and relationship linking sees reused ids. Applied to both the user path (~jobs.py:805) and the self-channel path (~jobs.py:1098). Preserves aliases/properties the prior code dropped.
+- [x] Fact supersedure via `refines_fact_id` runs before the hash/semantic gates and dispatches through `_handle_contradiction` with a synthetic `prefer_new` result; falls through to the standard pipeline when the target is out of scope. Tracked via `metrics.facts_superseded_by_refine`.
+- [x] `ExtractionService.check_relevance_and_extract` and `..._assistant` accept optional `known_entities` / `known_facts`; `_render_scope_context` renders them into compact `id=… name="…"` blocks (or `(none)`).
+- [x] `_build_scope_context` in consolidation runs a stopword-aware capitalized-name regex against each turn, looks up matches via `find_entity_by_name_or_alias`, and attaches the top facts per matched entity (capped 8 entities × 3 facts).
+- [x] Prompt updates (`prompts/system_prompts.yaml`): `{known_entities}` / `{known_facts}` placeholders, `existing_entity_id` / `refines_fact_id` in JSON schema, literal-`null` guidance for `temporal_context`, `"User <verb> ..."` claim convention, explicit negation/canonicalization/dedup rules, and worked few-shot examples for both `combined_with_relevance` and `assistant_self`.
+- [x] `ConsolidationMetrics`: new `entities_reused` and `facts_superseded_by_refine` counters.
+- [x] Tests in `tests_memory.py` (20 new): `NameCandidateExtractionTest`, `RenderScopeContextTest`, `EntityResolutionTest`, `RefinesFactIdSupersedureTest`, `ExtractionServiceScopeContextWiringTest`. Full memory suite still green (180 tests, 29 docker-gated skips).
+- [ ] Follow-ups (deferred): one-shot Neo4j cleanup script to dedupe entities created before this fix; cross-channel entity unification; replace the regex correction patterns at `extraction/service.py:84` with an LLM-only path.
+
 ### 18.8: Wave 2 Fixes
 
 - [ ] Chats cannot render equations.
 - [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
-- [ ] Plans need to be more adaptive and less sensitive; models will draft 4+ step plans for a simple research prompt.
 - [ ] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
 - [ ] Fix consolidation bug: [API] DEBUG 2026-05-07 01:10:36,474 jobs Semantic duplicate check failed (index may not exist): {neo4j_code: Neo.ClientError.Statement.TypeError} {message: Can't coerce `List{Double(-6.041204e-02)...
 - [ ] Cached servers for the 'Connect' page cannot be edited or deleted.
-- [ ] Plans are sometimes invoked on simple prompts/queries; we should implement some prompts to encourage models to only use it for complex tasks or multi-step processes (such as extended research).
 
 ### 18.9: Memory Tuning
 
@@ -386,6 +398,7 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Items to consider after prototype is complete
 
+- [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)
 - [ ] Disabled memory conversation prompt message banner - informs the model that memory is off for this conversation and the details are not persistent, and also that the conversation may contain confidential material.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
 - [ ] Consolidation job logs endpoint (`GET /api/jobs/{id}/logs`)

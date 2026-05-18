@@ -383,6 +383,79 @@ export function ConsolidationSettingsPanel({
         </div>
       </div>
 
+      {/* Trajectory Compression Settings */}
+      <div className="settings-section">
+        <h3 className="settings-section-title">Trajectory Compression</h3>
+        <p className="settings-section-hint">
+          Consolidates older tool-call rounds into a Knowledge block when context exceeds the threshold.
+        </p>
+        <div className="settings-grid">
+          <div className="setting-row checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={localSettings.trajectory_compression_enabled ?? true}
+                onChange={e => handleChange('trajectory_compression_enabled', e.target.checked)}
+              />
+              Enable trajectory compression
+            </label>
+          </div>
+          <div className="setting-row">
+            <ModelSelector
+              label="Model"
+              value={localSettings.trajectory_compression_model || ''}
+              onChange={v => handleChange('trajectory_compression_model', v)}
+              showDefault={false}
+              compact
+            />
+          </div>
+          <div className="setting-row">
+            <label>Temperature: {(localSettings.trajectory_compression_temperature ?? 0.2).toFixed(2)}</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={localSettings.trajectory_compression_temperature ?? 0.2}
+              onChange={e => handleChange('trajectory_compression_temperature', parseFloat(e.target.value))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Max Tokens</label>
+            <input
+              type="number"
+              value={localSettings.trajectory_compression_max_tokens ?? 1500}
+              onChange={e => handleChange('trajectory_compression_max_tokens', parseInt(e.target.value) || 1500)}
+              min={100}
+              max={8000}
+            />
+          </div>
+          <div className="setting-row">
+            <label>
+              Trigger Threshold: {((localSettings.trajectory_compression_threshold_ratio ?? 0.75) * 100).toFixed(0)}% of context
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="0.95"
+              step="0.05"
+              value={localSettings.trajectory_compression_threshold_ratio ?? 0.75}
+              onChange={e => handleChange('trajectory_compression_threshold_ratio', parseFloat(e.target.value))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Preserve Recent Rounds</label>
+            <input
+              type="number"
+              value={localSettings.trajectory_compression_preserve_recent_rounds ?? 2}
+              onChange={e => handleChange('trajectory_compression_preserve_recent_rounds', parseInt(e.target.value) || 2)}
+              min={1}
+              max={5}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Entity Linking Settings */}
       <div className="settings-section">
         <h3 className="settings-section-title">Entity Linking</h3>

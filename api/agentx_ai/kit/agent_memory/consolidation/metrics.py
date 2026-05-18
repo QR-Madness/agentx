@@ -53,7 +53,9 @@ class ConsolidationMetrics:
 
     # Storage results
     entities_stored: int = 0
+    entities_reused: int = 0
     facts_stored: int = 0
+    facts_superseded_by_refine: int = 0
     relationships_stored: int = 0
     storage_errors: int = 0
 

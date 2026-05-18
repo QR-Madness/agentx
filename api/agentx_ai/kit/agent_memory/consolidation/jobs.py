@@ -105,7 +105,10 @@ def _is_semantic_duplicate(
         """, embedding=claim_embedding, threshold=threshold, user_id=user_id, channel=channel)
         return result.single() is not None
     except Exception as e:
-        logger.debug(f"Semantic duplicate check failed (index may not exist): {e}")
+        logger.warning(
+            f"Semantic duplicate check failed [{type(e).__name__}] "
+            f"(index missing or param shape mismatch): {e}"
+        )
         return False
 
 
@@ -193,7 +196,10 @@ def _get_contradiction_candidates(
                 seen_ids.add(fid)
                 candidates.append(dict(record))
     except Exception as e:
-        logger.debug(f"Vector contradiction search failed (index may not exist): {e}")
+        logger.warning(
+            f"Vector contradiction search failed [{type(e).__name__}] "
+            f"(index missing or param shape mismatch): {e}"
+        )
 
     # Sort by similarity descending, cap at max_candidates
     candidates.sort(key=lambda c: c.get("similarity_score", 0), reverse=True)
@@ -332,7 +338,7 @@ def _handle_user_correction(
 
         # Generate embedding for new fact
         embedder = get_embedder()
-        new_fact.embedding = embedder.embed(new_fact.claim)
+        new_fact.embedding = embedder.embed_single(new_fact.claim)
 
         # Supersede via semantic memory
         memory._semantic.supersede_fact(
@@ -384,7 +390,7 @@ def _handle_contradiction(
             )
 
             embedder = get_embedder()
-            new_fact.embedding = embedder.embed(new_fact.claim)
+            new_fact.embedding = embedder.embed_single(new_fact.claim)
 
             memory._semantic.supersede_fact(
                 original_fact_id=contradiction.contradicting_fact_id,
@@ -408,6 +414,113 @@ def _handle_contradiction(
         return "flagged"
 
     return "stored"
+
+
+def _resolve_and_prepare_entities(
+    memory: "AgentMemory",
+    extracted_entities: List[Dict[str, Any]],
+    entity_map: Dict[str, str],
+    user_id: str,
+    channel: str,
+    conv_id: str,
+    metrics: ConsolidationMetrics,
+    errors: List[str],
+) -> tuple[List[Entity], int, int]:
+    """
+    Resolve each extracted entity dict against the existing store before storage.
+
+    Resolution order:
+      1. Honor LLM-supplied `existing_entity_id` if it points to an in-scope entity.
+      2. `find_entity_by_name_or_alias` (name → alias → slug).
+      3. Otherwise treat as new and prepare an Entity for batch insert.
+
+    On reuse, fold in any new aliases / description / properties without clobbering
+    populated values. Populates `entity_map` (lowercase name → entity id) so the
+    fact-linking + relationship-linking passes downstream see both new and reused ids.
+
+    Returns (entities_to_store, num_reused, total_entities_resolved).
+    """
+    entities_to_store: List[Entity] = []
+    reused = 0
+    semantic = memory.semantic
+
+    for entity_dict in extracted_entities:
+        try:
+            name = entity_dict.get("name")
+            etype = entity_dict.get("type")
+            if not name or not etype:
+                logger.warning(f"Skipping entity with missing name/type: {entity_dict}")
+                continue
+
+            llm_aliases = [a for a in entity_dict.get("aliases", []) if a]
+            llm_description = entity_dict.get("description")
+            llm_properties = entity_dict.get("properties") or None
+
+            # 1) LLM-supplied existing_entity_id
+            existing_id = entity_dict.get("existing_entity_id")
+            resolved = None
+            if existing_id:
+                resolved = semantic.get_entity_by_id(existing_id, user_id)
+                if not resolved:
+                    logger.debug(
+                        f"existing_entity_id {existing_id} not found in scope; "
+                        f"falling back to name lookup for '{name}'"
+                    )
+
+            # 2) Name / alias / slug lookup
+            if not resolved:
+                resolved = semantic.find_entity_by_name_or_alias(
+                    name=name, user_id=user_id, channel=channel,
+                )
+
+            if resolved:
+                resolved_id = resolved["id"]
+                # Fold in any new aliases / fill description if missing.
+                # The LLM's `name` itself becomes an alias if it differs from canonical.
+                merged_aliases = list(llm_aliases)
+                if name.lower() != (resolved.get("name") or "").lower():
+                    merged_aliases.append(name)
+                try:
+                    semantic.merge_entity_aliases(
+                        entity_id=resolved_id,
+                        user_id=user_id,
+                        aliases=merged_aliases,
+                        description=llm_description,
+                        properties=llm_properties,
+                    )
+                except Exception as merge_err:
+                    logger.warning(
+                        f"merge_entity_aliases failed for {resolved_id}: {merge_err}"
+                    )
+
+                entity_map[name.lower()] = resolved_id
+                # Also map canonical name for downstream relationship resolution
+                canonical = resolved.get("name")
+                if canonical:
+                    entity_map[canonical.lower()] = resolved_id
+                reused += 1
+                metrics.entities_reused += 1
+                continue
+
+            # 3) New entity
+            entity = Entity(
+                id=str(uuid4()),
+                name=name,
+                type=etype,
+                description=llm_description,
+                aliases=llm_aliases,
+                properties=llm_properties or {},
+                salience=entity_dict.get("confidence", 0.5),
+            )
+            entities_to_store.append(entity)
+            entity_map[name.lower()] = entity.id
+
+        except Exception as e:
+            logger.warning(f"Failed to prepare entity {entity_dict.get('name')}: {e}")
+            metrics.storage_errors += 1
+            errors.append(f"entity_prep:{conv_id}:{e}")
+
+    return entities_to_store, reused, len(entities_to_store) + reused
 
 
 def _batch_store_entities(
@@ -534,6 +647,114 @@ def _batch_store_relationships(
     return len(valid_rels)
 
 
+# Candidate name regex: capitalized words (incl. inner caps like PostgreSQL),
+# acronyms (2-6 caps), and quoted spans. Cheap pre-pass; the LLM normalizes.
+_NAME_CANDIDATE_RE = re.compile(
+    r'"([^"\n]{2,40})"'                       # double-quoted spans
+    r"|'([^'\n]{2,40})'"                      # single-quoted spans
+    r"|\b([A-Z][A-Za-z0-9+#.\-]{1,30}"
+    r"(?:\s+[A-Z][A-Za-z0-9+#.\-]{1,30}){0,3})\b"  # Capitalized name (1-4 words)
+    r"|\b([A-Z]{2,6})\b"                       # ALL-CAPS acronyms
+)
+
+# Stopwords stripped from the candidate set — words that match the capitalized
+# regex but rarely refer to extractable entities.
+_NAME_STOPWORDS = frozenset({
+    "I", "I'm", "I'd", "I've", "I'll", "My", "Me", "Mine",
+    "You", "Your", "We", "Our", "He", "She", "They", "Their",
+    "The", "A", "An", "This", "That", "These", "Those",
+    "Yes", "No", "Ok", "Okay", "Sure", "Thanks", "Hi", "Hello", "Hey",
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    "January", "February", "March", "April", "May", "June", "July",
+    "August", "September", "October", "November", "December",
+})
+
+
+def _extract_name_candidates(text: str, max_candidates: int = 12) -> List[str]:
+    """Cheap regex pre-pass: pull proper-noun-shaped tokens from a turn."""
+    if not text:
+        return []
+    # Preserve original casing of first occurrence; dedup by lowercase
+    seen_lower: set[str] = set()
+    out: List[str] = []
+    for match in _NAME_CANDIDATE_RE.finditer(text):
+        candidate = next((g for g in match.groups() if g), None)
+        if not candidate:
+            continue
+        candidate = candidate.strip()
+        if len(candidate) < 2 or candidate in _NAME_STOPWORDS:
+            continue
+        key = candidate.lower()
+        if key in seen_lower:
+            continue
+        seen_lower.add(key)
+        out.append(candidate)
+        if len(out) >= max_candidates:
+            break
+    return out
+
+
+def _build_scope_context(
+    memory: "AgentMemory",
+    text: str,
+    user_id: str,
+    channel: str,
+    max_entities: int = 8,
+    max_facts_per_entity: int = 3,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Build (known_entities, known_facts) for the extraction prompt.
+
+    Pulls existing entities matching capitalized tokens in the turn (case-insensitive
+    name/alias/slug), plus the top facts attached to those entities. Caps total
+    entities at `max_entities` and total facts at `max_entities * max_facts_per_entity`.
+    Returns ([], []) when nothing relevant is in scope — the prompt then renders
+    "(none)" blocks and the call behaves like the old stateless extraction.
+    """
+    candidates = _extract_name_candidates(text)
+    if not candidates:
+        return [], []
+
+    semantic = memory.semantic
+    entities: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    for name in candidates:
+        if len(entities) >= max_entities:
+            break
+        try:
+            match = semantic.find_entity_by_name_or_alias(
+                name=name, user_id=user_id, channel=channel,
+            )
+        except Exception as e:
+            logger.debug(f"scope-context lookup failed for {name!r}: {e}")
+            continue
+        if match and match["id"] not in seen_ids:
+            entities.append(match)
+            seen_ids.add(match["id"])
+
+    if not entities:
+        return [], []
+
+    # Pull a few facts per entity. `get_entity_facts_and_relationships` returns
+    # facts ordered by confidence DESC, so a head slice is fine.
+    facts: List[Dict[str, Any]] = []
+    fact_ids: set[str] = set()
+    for ent in entities:
+        try:
+            ctx = semantic.get_entity_facts_and_relationships(ent["id"], user_id)
+        except Exception as e:
+            logger.debug(f"fact fetch failed for {ent['id']}: {e}")
+            continue
+        for f in (ctx.get("facts") or [])[:max_facts_per_entity]:
+            fid = f.get("id")
+            if fid and fid not in fact_ids:
+                facts.append(f)
+                fact_ids.add(fid)
+
+    return entities, facts
+
+
 async def consolidate_episodic_to_semantic(
     progress_callback: Optional[Callable] = None,
 ) -> Dict[str, Any]:
@@ -647,8 +868,21 @@ async def consolidate_episodic_to_semantic(
                             metrics.corrections_applied += 1
                         # Still extract from the turn - it may have new info
 
+                # Build scope context so the LLM can mark mentions with
+                # existing_entity_id and emit refines_fact_id when applicable.
+                scope_entities, scope_facts = _build_scope_context(
+                    memory=memory,
+                    text=content,
+                    user_id=user_id,
+                    channel=channel,
+                )
+
                 # Combined relevance + extraction in a single LLM call (~75% fewer calls)
-                combined_result = await extraction_service.check_relevance_and_extract(content)
+                combined_result = await extraction_service.check_relevance_and_extract(
+                    content,
+                    known_entities=scope_entities,
+                    known_facts=scope_facts,
+                )
                 metrics.extraction_calls += 1
                 metrics.total_tokens_used += combined_result.tokens_used
 
@@ -706,40 +940,29 @@ async def consolidate_episodic_to_semantic(
                     "relationships": len(extracted_relationships),
                 })
 
-            entities_to_store: List[Entity] = []
-            for entity_dict in extracted_entities:
-                try:
-                    # Validate required fields
-                    if not entity_dict.get("name") or not entity_dict.get("type"):
-                        logger.warning(f"Skipping entity with missing name/type: {entity_dict}")
-                        continue
+            entities_to_store, entities_reused, entity_count = _resolve_and_prepare_entities(
+                memory=memory,
+                extracted_entities=extracted_entities,
+                entity_map=entity_map,
+                user_id=user_id,
+                channel=channel,
+                conv_id=conv_id,
+                metrics=metrics,
+                errors=errors,
+            )
 
-                    entity = Entity(
-                        id=str(uuid4()),
-                        name=entity_dict["name"],
-                        type=entity_dict["type"],
-                        description=entity_dict.get("description"),
-                        salience=entity_dict.get("confidence", 0.5),
-                    )
-                    entities_to_store.append(entity)
-                    # Store with lowercase key for case-insensitive lookup
-                    entity_map[entity_dict["name"].lower()] = entity.id
-                except Exception as e:
-                    logger.warning(f"Failed to prepare entity {entity_dict.get('name')}: {e}")
-                    metrics.storage_errors += 1
-                    errors.append(f"entity_prep:{conv_id}:{e}")
-
-            # Batch store all entities
+            # Batch store only the genuinely new entities
             try:
-                entity_count = _batch_store_entities(
+                stored_count = _batch_store_entities(
                     session, entities_to_store, conv_id, user_id, channel
                 )
-                metrics.entities_stored += entity_count
+                metrics.entities_stored += stored_count
+                entity_count = stored_count + entities_reused
             except Exception as e:
                 logger.warning(f"Batch entity storage failed for {conv_id}: {e}")
                 metrics.storage_errors += 1
                 errors.append(f"entity_batch:{conv_id}:{e}")
-                entity_count = 0
+                entity_count = entities_reused
 
             fact_count = 0
             skipped_duplicates = 0
@@ -760,6 +983,37 @@ async def consolidate_episodic_to_semantic(
                         logger.warning(f"Skipping fact with missing claim: {fact_dict}")
                         continue
 
+                    # === Layer 0: LLM-supplied refinement ===
+                    # If extraction marked this claim as refining a known fact, supersede
+                    # directly via the existing PREFER_NEW path and skip the rest of the
+                    # pipeline. Validates the target fact is in scope before acting.
+                    refines_id = fact_dict.get("refines_fact_id")
+                    if refines_id:
+                        target = memory.semantic.get_fact_by_id(refines_id, user_id)
+                        target_channel = (target or {}).get("channel")
+                        in_scope = bool(target) and target_channel in (channel, "_global")
+                        if in_scope:
+                            _handle_contradiction(
+                                memory, session, fact_dict,
+                                type('Result', (), {
+                                    'has_contradiction': True,
+                                    'contradicting_fact_id': refines_id,
+                                    'resolution': 'prefer_new',
+                                    'reason': 'llm_refinement',
+                                })(),
+                                user_id, channel,
+                            )
+                            fact_count += 1
+                            metrics.facts_stored += 1
+                            metrics.facts_superseded_by_refine += 1
+                            logger.info(f"Refined fact {refines_id} via llm_refinement: {claim[:50]}...")
+                            continue
+                        else:
+                            logger.debug(
+                                f"refines_fact_id {refines_id} not in scope; "
+                                f"falling through to standard pipeline"
+                            )
+
                     # === Layer 1: Fast Gate (no LLM) ===
 
                     # 1a. Exact hash duplicate check
@@ -770,7 +1024,7 @@ async def consolidate_episodic_to_semantic(
                         continue
 
                     # Generate embedding early (needed for layers 1b + 2)
-                    claim_embedding = embedder.embed(claim)
+                    claim_embedding = embedder.embed_single(claim)
 
                     # 1b. Semantic duplicate check (cosine > threshold)
                     if _is_semantic_duplicate(
@@ -978,8 +1232,17 @@ async def consolidate_episodic_to_semantic(
                     continue
 
                 try:
+                    self_scope_entities, self_scope_facts = _build_scope_context(
+                        memory=memory,
+                        text=content,
+                        user_id=user_id,
+                        channel=self_channel,
+                    )
                     result = await extraction_service.check_relevance_and_extract_assistant(
-                        content, source_turn_id=turn_id,
+                        content,
+                        source_turn_id=turn_id,
+                        known_entities=self_scope_entities,
+                        known_facts=self_scope_facts,
                     )
                 except Exception as e:
                     logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
@@ -998,21 +1261,18 @@ async def consolidate_episodic_to_semantic(
                 metrics.assistant_entities_extracted += len(result.entities)
                 metrics.assistant_facts_extracted += len(result.facts)
 
-                # Store entities
+                # Resolve entities against the self-channel store before storing
                 entity_map: Dict[str, str] = {}
-                entities_to_store: List[Entity] = []
-                for ent in result.entities:
-                    if not ent.get("name") or not ent.get("type"):
-                        continue
-                    entity = Entity(
-                        id=str(uuid4()),
-                        name=ent["name"],
-                        type=ent["type"],
-                        description=ent.get("description"),
-                        salience=ent.get("confidence", 0.5),
-                    )
-                    entities_to_store.append(entity)
-                    entity_map[ent["name"].lower()] = entity.id
+                entities_to_store, _reused, _ = _resolve_and_prepare_entities(
+                    memory=memory,
+                    extracted_entities=result.entities,
+                    entity_map=entity_map,
+                    user_id=user_id,
+                    channel=self_channel,
+                    conv_id=conv_id,
+                    metrics=metrics,
+                    errors=errors,
+                )
 
                 if entities_to_store:
                     try:

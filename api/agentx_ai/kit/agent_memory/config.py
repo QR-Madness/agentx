@@ -260,27 +260,32 @@ def save_memory_settings(settings_dict: Dict[str, Any]) -> None:
     Args:
         settings_dict: Dictionary of settings to save
     """
-    # Ensure data directory exists
-    MEMORY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    global _runtime_settings, _settings_cache_time
 
-    # Load existing settings if any
-    existing = {}
-    if MEMORY_SETTINGS_PATH.exists():
-        try:
-            with open(MEMORY_SETTINGS_PATH, "r") as f:
-                existing = json.load(f)
-        except Exception:
-            existing = {}
+    # Route trajectory_compression_* keys to ConfigManager (they don't live in Settings)
+    settings_dict = _apply_trajectory_compression_settings(settings_dict)
 
-    # Merge new settings
-    existing.update(settings_dict)
+    if settings_dict:
+        # Ensure data directory exists
+        MEMORY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write back
-    with open(MEMORY_SETTINGS_PATH, "w") as f:
-        json.dump(existing, f, indent=2)
+        # Load existing settings if any
+        existing = {}
+        if MEMORY_SETTINGS_PATH.exists():
+            try:
+                with open(MEMORY_SETTINGS_PATH, "r") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+
+        # Merge new settings
+        existing.update(settings_dict)
+
+        # Write back
+        with open(MEMORY_SETTINGS_PATH, "w") as f:
+            json.dump(existing, f, indent=2)
 
     # Clear cached settings so next get_settings() reloads immediately
-    global _runtime_settings, _settings_cache_time
     _runtime_settings = None
     _settings_cache_time = 0.0
 
@@ -345,7 +350,47 @@ def get_consolidation_settings() -> Dict[str, Any]:
         # Entity/relationship types (read-only display)
         "entity_types": settings.entity_types,
         "relationship_types": settings.relationship_types,
+
+        # Trajectory compression (stored in ConfigManager, surfaced here for the UI)
+        **_get_trajectory_compression_settings(),
     }
+
+
+_TRAJECTORY_COMPRESSION_KEYS: Dict[str, Any] = {
+    # ui_key: (config_path, default)
+    "trajectory_compression_enabled": ("trajectory_compression.enabled", True),
+    "trajectory_compression_model": ("trajectory_compression.model", "anthropic:claude-haiku-4-5-20251001"),
+    "trajectory_compression_temperature": ("trajectory_compression.temperature", 0.2),
+    "trajectory_compression_max_tokens": ("trajectory_compression.max_tokens", 1500),
+    "trajectory_compression_threshold_ratio": ("trajectory_compression.threshold_ratio", 0.75),
+    "trajectory_compression_preserve_recent_rounds": ("trajectory_compression.preserve_recent_rounds", 2),
+}
+
+
+def _get_trajectory_compression_settings() -> Dict[str, Any]:
+    """Read trajectory-compression keys from ConfigManager for the UI."""
+    from agentx_ai.config import get_config_manager
+    cfg = get_config_manager()
+    return {
+        ui_key: cfg.get(path, default)
+        for ui_key, (path, default) in _TRAJECTORY_COMPRESSION_KEYS.items()
+    }
+
+
+def _apply_trajectory_compression_settings(settings_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pull any trajectory_compression_* keys out of settings_dict and write them
+    to ConfigManager. Returns the remaining dict (other keys untouched).
+    """
+    if not any(k in settings_dict for k in _TRAJECTORY_COMPRESSION_KEYS):
+        return settings_dict
+    from agentx_ai.config import get_config_manager
+    cfg = get_config_manager()
+    remaining = dict(settings_dict)
+    for ui_key, (path, _default) in _TRAJECTORY_COMPRESSION_KEYS.items():
+        if ui_key in remaining:
+            cfg.set(path, remaining.pop(ui_key))
+    return remaining
 
 
 def get_recall_settings() -> Dict[str, Any]:

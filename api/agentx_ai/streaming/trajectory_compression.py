@@ -183,7 +183,7 @@ def compress_trajectory(
         "enabled": cfg_mgr.get("trajectory_compression.enabled", True),
         "threshold_ratio": cfg_mgr.get("trajectory_compression.threshold_ratio", 0.75),
         "preserve_recent_rounds": cfg_mgr.get("trajectory_compression.preserve_recent_rounds", 2),
-        "model": cfg_mgr.get("trajectory_compression.model", "claude-3-5-haiku-latest"),
+        "model": cfg_mgr.get("trajectory_compression.model", "anthropic:claude-haiku-4-5-20251001"),
         "temperature": cfg_mgr.get("trajectory_compression.temperature", 0.2),
         "max_tokens": cfg_mgr.get("trajectory_compression.max_tokens", 1500),
         "max_knowledge_chars": cfg_mgr.get("trajectory_compression.max_knowledge_chars", 3000),

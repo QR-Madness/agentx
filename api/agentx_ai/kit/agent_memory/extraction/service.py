@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel
 
@@ -465,10 +465,57 @@ class ExtractionService:
 
         return facts
 
+    @staticmethod
+    def _render_scope_context(
+        known_entities: Optional[List[Dict[str, Any]]],
+        known_facts: Optional[List[Dict[str, Any]]],
+        max_entities: int = 8,
+        max_facts: int = 12,
+    ) -> tuple[str, str]:
+        """
+        Render scope context for stateful extraction prompts.
+
+        Returns (known_entities_block, known_facts_block). Either may be the
+        literal string "(none)" when no items are supplied — the prompt template
+        substitutes both variables unconditionally.
+        """
+        if not known_entities:
+            entities_block = "(none)"
+        else:
+            lines = []
+            for e in known_entities[:max_entities]:
+                aliases = e.get("aliases") or []
+                alias_str = f" aliases={aliases}" if aliases else ""
+                desc = (e.get("description") or "").strip()
+                desc_str = f' desc="{desc}"' if desc else ""
+                lines.append(
+                    f'- id={e.get("id")} name="{e.get("name")}" '
+                    f'type={e.get("type")}{alias_str}{desc_str}'
+                )
+            entities_block = "\n".join(lines)
+
+        if not known_facts:
+            facts_block = "(none)"
+        else:
+            lines = []
+            for f in known_facts[:max_facts]:
+                temporal = f.get("temporal_context") or "current"
+                conf = f.get("confidence")
+                conf_str = f" confidence={conf:.2f}" if isinstance(conf, (int, float)) else ""
+                lines.append(
+                    f'- id={f.get("id")} "{f.get("claim")}" '
+                    f"(temporal={temporal}{conf_str})"
+                )
+            facts_block = "\n".join(lines)
+
+        return entities_block, facts_block
+
     async def check_relevance_and_extract(
         self,
         text: str,
         source_turn_id: Optional[str] = None,
+        known_entities: Optional[List[Dict[str, Any]]] = None,
+        known_facts: Optional[List[Dict[str, Any]]] = None,
     ) -> CombinedExtractionResult:
         """
         Combined relevance check and extraction in a single LLM call.
@@ -508,8 +555,16 @@ class ExtractionService:
                 error=str(e),
             )
 
-        # Build prompt using the combined relevance+extraction template
-        prompt = loader.get("extraction.combined_with_relevance", text=text)
+        # Build prompt using the combined relevance+extraction template.
+        # Pass scope context so the LLM can mark mentions as existing_entity_id
+        # and emit refines_fact_id when a claim sharpens a known fact.
+        entities_block, facts_block = self._render_scope_context(known_entities, known_facts)
+        prompt = loader.get(
+            "extraction.combined_with_relevance",
+            text=text,
+            known_entities=entities_block,
+            known_facts=facts_block,
+        )
 
         messages = [
             Message(role=MessageRole.USER, content=prompt),
@@ -585,6 +640,8 @@ class ExtractionService:
         self,
         text: str,
         source_turn_id: Optional[str] = None,
+        known_entities: Optional[List[Dict[str, Any]]] = None,
+        known_facts: Optional[List[Dict[str, Any]]] = None,
     ) -> CombinedExtractionResult:
         """
         Extract self-knowledge from an assistant response.
@@ -620,7 +677,13 @@ class ExtractionService:
                 error=str(e),
             )
 
-        prompt = loader.get("extraction.assistant_self", text=text)
+        entities_block, facts_block = self._render_scope_context(known_entities, known_facts)
+        prompt = loader.get(
+            "extraction.assistant_self",
+            text=text,
+            known_entities=entities_block,
+            known_facts=facts_block,
+        )
         messages = [Message(role=MessageRole.USER, content=prompt)]
 
         try:
