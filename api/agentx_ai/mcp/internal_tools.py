@@ -438,13 +438,13 @@ def recall_user_history(
         }
 
     try:
-        from ..kit.agent_memory.memory.interface import get_agent_memory
+        from ..kit.memory_utils import get_agent_memory
     except Exception as e:
         return {"error": f"Memory system unavailable: {e}", "success": False}
 
     memory = get_agent_memory(
         user_id=ctx.user_id,
-        channel=ctx.channel,
+        channel=ctx.channel or "_default",
         agent_id=ctx.agent_id,
     )
     if memory is None:

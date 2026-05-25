@@ -9,13 +9,12 @@ summarises the findings. The most recent N rounds stay intact.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..providers.base import Message, MessageRole
+from ..utils.async_bridge import run_coro_sync
 
 logger = logging.getLogger(__name__)
 
@@ -133,17 +132,7 @@ def _generate_knowledge_block(
                 max_tokens=config.get("max_tokens", 1500),
             )
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, _call())
-                result = future.result(timeout=30)
-        else:
-            result = asyncio.run(_call())
+        result = run_coro_sync(_call())
 
         return result.content.strip() if result and result.content else None
 

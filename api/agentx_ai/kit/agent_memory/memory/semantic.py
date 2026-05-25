@@ -381,10 +381,10 @@ class SemanticMemory:
 
             # Log to audit if available
             if self._audit_logger:
-                self._audit_logger.log_operation(
+                self._audit_logger.log_write(
                     operation="supersede",
                     memory_type="semantic",
-                    item_id=new_fact.id,
+                    record_ids=[new_fact.id],
                     user_id=user_id,
                     channel=channel,
                     metadata={

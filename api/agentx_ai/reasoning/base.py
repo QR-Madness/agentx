@@ -124,7 +124,7 @@ class ReasoningStrategy(ABC):
         pass
     
     @abstractmethod
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,

@@ -9,7 +9,7 @@ import logging
 import secrets
 import threading
 from datetime import datetime, timezone
-from typing import ClassVar, Optional, TypedDict
+from typing import ClassVar, Optional, TypedDict, cast
 
 import bcrypt
 from sqlalchemy import text
@@ -221,7 +221,7 @@ class AuthService:
         try:
             redis = self._get_redis()
             session_key = f"{self.SESSION_PREFIX}{token}"
-            deleted = redis.delete(session_key)
+            deleted = cast(int, redis.delete(session_key))
 
             if deleted:
                 logger.info("Session invalidated")
@@ -245,7 +245,7 @@ class AuthService:
             redis = self._get_redis()
             session_key = f"{self.SESSION_PREFIX}{token}"
 
-            data = redis.get(session_key)
+            data = cast(Optional[bytes], redis.get(session_key))
             if not data:
                 return None
 

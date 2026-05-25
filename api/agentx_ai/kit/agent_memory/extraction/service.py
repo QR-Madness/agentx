@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from ....providers.base import Message, MessageRole
 from ....providers.registry import get_registry
+from ....utils.async_bridge import run_coro_sync
 from ....agent.output_parser import validate_json_output, parse_output, extract_yes_no_answer
 from ....prompts.loader import get_prompt_loader
 from ..config import get_settings
@@ -105,6 +106,9 @@ class ExtractionService:
 
     def __init__(self):
         self._registry = None
+        # Optional settings override (used by tests). When None, settings are
+        # resolved live via get_settings() so runtime updates propagate.
+        self._settings: Any = None
 
     @property
     def registry(self):
@@ -117,7 +121,10 @@ class ExtractionService:
     def settings(self):
         # Resolve every access so runtime updates via save_memory_settings()
         # propagate without restarting the service. get_settings() has its own
-        # TTL cache so this stays cheap.
+        # TTL cache so this stays cheap. An explicit override (self._settings)
+        # short-circuits this, which is how tests inject mock settings.
+        if self._settings is not None:
+            return self._settings
         return get_settings()
 
     def _get_provider_for_stage(self, stage: str) -> Tuple[Any, str, float, int]:
@@ -978,12 +985,12 @@ class ExtractionService:
 
     def extract_entities(self, text: str) -> list[dict[str, Any]]:
         """Extract only entities from text."""
-        result = self.extract_all(text)
+        result = run_coro_sync(self.extract_all(text))
         return result.entities
 
     def extract_facts(self, text: str) -> list[dict[str, Any]]:
         """Extract only facts from text."""
-        result = self.extract_all(text)
+        result = run_coro_sync(self.extract_all(text))
         return result.facts
 
     def extract_relationships(
@@ -1008,7 +1015,7 @@ class ExtractionService:
 
         # For relationship extraction with known entities,
         # we still do combined extraction but focus on relationships
-        result = self.extract_all(text)
+        result = run_coro_sync(self.extract_all(text))
         return result.relationships
 
     def _get_default_system_prompt(self) -> str:

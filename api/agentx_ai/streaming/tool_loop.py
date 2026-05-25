@@ -193,6 +193,10 @@ async def streaming_tool_loop(
         # its full raw content (rather than the LLM-facing storage hint).
         delegation_raw: dict[str, dict[str, Any]] = {}
         for tc in delegation_calls:
+            # delegation_calls is only populated when alloy_executor is set;
+            # this guard narrows the Optional for the type checker.
+            if alloy_executor is None:
+                continue
             args = tc.arguments or {}
             target = args.get("agent_id", "")
             task = args.get("task", "")

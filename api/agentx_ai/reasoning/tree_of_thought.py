@@ -106,7 +106,7 @@ class TreeOfThought(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -132,11 +132,11 @@ class TreeOfThought(ReasoningStrategy):
         total_tokens = 0
 
         if self.tot_config.search_method == "bfs":
-            all_nodes, steps, total_tokens = self._bfs_search(root, task, context)
+            all_nodes, steps, total_tokens = await self._bfs_search(root, task, context)
         elif self.tot_config.search_method == "dfs":
-            all_nodes, steps, total_tokens = self._dfs_search(root, task, context)
+            all_nodes, steps, total_tokens = await self._dfs_search(root, task, context)
         else:  # beam search
-            all_nodes, steps, total_tokens = self._beam_search(root, task, context)
+            all_nodes, steps, total_tokens = await self._beam_search(root, task, context)
         
         # Find the best terminal node
         terminal_nodes = [n for n in all_nodes if n.is_terminal and not n.is_pruned]
@@ -171,7 +171,7 @@ class TreeOfThought(ReasoningStrategy):
             raw_trace=[{"tree": self._serialize_tree(root)}],
         )
     
-    def _bfs_search(
+    async def _bfs_search(
         self,
         root: TreeNode,
         task: str,
@@ -196,12 +196,12 @@ class TreeOfThought(ReasoningStrategy):
                     continue
 
                 # Generate children
-                children, tokens = self._expand_node(node, task, context)
+                children, tokens = await self._expand_node(node, task, context)
                 total_tokens += tokens
 
                 # Evaluate and add children
                 for child in children:
-                    child.score, eval_tokens = self._evaluate_node(child, task, context)
+                    child.score, eval_tokens = await self._evaluate_node(child, task, context)
                     total_tokens += eval_tokens
 
                     step_num += 1
@@ -232,7 +232,7 @@ class TreeOfThought(ReasoningStrategy):
 
         return all_nodes, steps, total_tokens
     
-    def _dfs_search(
+    async def _dfs_search(
         self,
         root: TreeNode,
         task: str,
@@ -244,17 +244,17 @@ class TreeOfThought(ReasoningStrategy):
         total_tokens = 0
         step_num = [0]  # Use list for closure
 
-        def explore(node: TreeNode, depth: int):
+        async def explore(node: TreeNode, depth: int):
             nonlocal total_tokens
             if depth >= self.tot_config.max_depth or node.is_pruned:
                 node.is_terminal = True
                 return
 
-            children, tokens = self._expand_node(node, task, context)
+            children, tokens = await self._expand_node(node, task, context)
             total_tokens += tokens
 
             for child in children:
-                child.score, eval_tokens = self._evaluate_node(child, task, context)
+                child.score, eval_tokens = await self._evaluate_node(child, task, context)
                 total_tokens += eval_tokens
 
                 step_num[0] += 1
@@ -274,12 +274,12 @@ class TreeOfThought(ReasoningStrategy):
                 if child.score < self.tot_config.pruning_threshold:
                     child.is_pruned = True
                 else:
-                    explore(child, depth + 1)
+                    await explore(child, depth + 1)
 
-        explore(root, 0)
+        await explore(root, 0)
         return all_nodes, steps, total_tokens
     
-    def _beam_search(
+    async def _beam_search(
         self,
         root: TreeNode,
         task: str,
@@ -300,11 +300,11 @@ class TreeOfThought(ReasoningStrategy):
             candidates = []
 
             for node in beam:
-                children, tokens = self._expand_node(node, task, context)
+                children, tokens = await self._expand_node(node, task, context)
                 total_tokens += tokens
 
                 for child in children:
-                    child.score, eval_tokens = self._evaluate_node(child, task, context)
+                    child.score, eval_tokens = await self._evaluate_node(child, task, context)
                     total_tokens += eval_tokens
 
                     step_num += 1
@@ -336,7 +336,7 @@ class TreeOfThought(ReasoningStrategy):
 
         return all_nodes, steps, total_tokens
     
-    def _expand_node(
+    async def _expand_node(
         self,
         node: TreeNode,
         task: str,
@@ -372,7 +372,7 @@ class TreeOfThought(ReasoningStrategy):
             messages = messages[:1] + context + messages[1:]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=0.9,  # Higher temperature for diversity
@@ -405,7 +405,7 @@ class TreeOfThought(ReasoningStrategy):
         # Limit to branching factor
         return children[:self.tot_config.branching_factor], tokens
     
-    def _evaluate_node(
+    async def _evaluate_node(
         self,
         node: TreeNode,
         task: str,
@@ -429,7 +429,7 @@ class TreeOfThought(ReasoningStrategy):
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=0.0,

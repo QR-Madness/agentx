@@ -430,8 +430,7 @@ class PlanExecutor:
             # Check if ALL dependencies of this step have failed
             all_deps_failed = all(
                 plan.steps[d].completed
-                and plan.steps[d].result
-                and plan.steps[d].result.startswith("[FAILED")
+                and (plan.steps[d].result or "").startswith("[FAILED")
                 for d in step.dependencies
                 if 0 <= d < len(plan.steps)
             )

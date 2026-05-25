@@ -8,8 +8,6 @@ The Agent class orchestrates all AgentX capabilities:
 - Context and memory management
 """
 
-import asyncio
-import concurrent.futures
 import json
 import logging
 import time
@@ -29,6 +27,7 @@ from ..drafting import DraftingStrategy
 from ..drafting.speculative import SpeculativeDecoder, SpeculativeConfig
 from ..kit.memory_utils import get_agent_memory
 from ..kit.agent_memory.models import Turn
+from ..utils.async_bridge import run_coro_sync
 from .tool_output_compressor import get_compressor
 from .tool_output_storage import store_tool_output
 
@@ -221,8 +220,11 @@ class Agent:
             from ..mcp import get_mcp_manager
             self._mcp_client = get_mcp_manager()
             
-            # Wire memory-based tool usage recording if memory is available
-            if self.memory:
+            # Wire memory-based tool usage recording if memory is available.
+            # Capture a narrowed local so the closure doesn't re-read the
+            # Optional `self.memory` property (which pyright can't narrow).
+            memory = self.memory
+            if memory:
                 def record_tool_usage(
                     tool_name: str,
                     tool_input: dict,
@@ -232,7 +234,7 @@ class Agent:
                     error_message: str | None,
                 ) -> None:
                     try:
-                        self.memory.record_tool_usage(
+                        memory.record_tool_usage(
                             tool_name=tool_name,
                             tool_input=tool_input,
                             tool_output=tool_output,
@@ -325,10 +327,23 @@ class Agent:
         text, keyed by tool_call_id so the provider can match call → result.
         """
         results: list[Message] = []
-        
+
+        mcp = self.mcp_client
+        if mcp is None:
+            # Tools are disabled; surface a result per call rather than crashing.
+            return [
+                Message(
+                    role=MessageRole.TOOL,
+                    content=json.dumps({"error": "Tools are not enabled"}),
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                )
+                for tc in tool_calls
+            ]
+
         for tc in tool_calls:
             # Find which server owns this tool
-            tool_info = self.mcp_client.tool_executor.find_tool(tc.name)
+            tool_info = mcp.tool_executor.find_tool(tc.name)
             if not tool_info:
                 results.append(Message(
                     role=MessageRole.TOOL,
@@ -339,7 +354,7 @@ class Agent:
                 continue
             
             try:
-                tool_result = self.mcp_client.call_tool_sync(
+                tool_result = mcp.call_tool_sync(
                     tool_info.server_name,
                     tc.name,
                     tc.arguments,
@@ -588,17 +603,7 @@ class Agent:
                     prompt_override=_pcfg.get("planner.prompt_override", ""),
                 )
                 # plan() is async — bridge to sync context
-                coro = planner.plan(task, context, memory=self.memory)
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-                if loop and loop.is_running():
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        future = pool.submit(asyncio.run, coro)
-                        plan = future.result(timeout=30)
-                else:
-                    plan = asyncio.run(coro)
+                plan = run_coro_sync(planner.plan(task, context, memory=self.memory))
                 trace.append({
                     "phase": "planning",
                     "steps": len(plan.steps) if plan else 0,
@@ -682,10 +687,14 @@ class Agent:
                     reasoning_context = self._context_manager.inject_memory(context, memory_bundle)
 
                 if strategy == "auto":
-                    reasoning_result = self.reasoning.reason(task, reasoning_context)
+                    reasoning_result = run_coro_sync(
+                        self.reasoning.reason(task, reasoning_context)
+                    )
                 else:
-                    reasoning_result = self.reasoning.reason(
-                        task, reasoning_context, strategy=strategy
+                    reasoning_result = run_coro_sync(
+                        self.reasoning.reason(
+                            task, reasoning_context, strategy=strategy
+                        )
                     )
 
                 trace.append({

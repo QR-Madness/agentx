@@ -31,6 +31,12 @@ from .utils.responses import (
 logger = logging.getLogger(__name__)
 
 
+def _iso_or_str(value: Any) -> str:
+    """Format a timestamp-ish value as ISO-8601 when possible, else as a string."""
+    isoformat = getattr(value, "isoformat", None)
+    return str(isoformat()) if callable(isoformat) else str(value or "")
+
+
 @lazy_singleton
 def get_translation_kit():
     """Get or create TranslationKit instance lazily."""
@@ -536,8 +542,9 @@ async def providers_models(request):
         try:
             provider = registry.get_provider(provider_name)
 
-            if hasattr(provider, 'fetch_models'):
-                await asyncio.wait_for(provider.fetch_models(), timeout=FETCH_TIMEOUT)
+            fetch_models = getattr(provider, 'fetch_models', None)
+            if callable(fetch_models):
+                await asyncio.wait_for(cast(Any, fetch_models()), timeout=FETCH_TIMEOUT)
 
             result = []
             for model_name in provider.list_models():
@@ -804,12 +811,14 @@ async def agent_chat_stream(request):
         if agent_profile and agent_profile.prompt_profile_id:
             config_kwargs["prompt_profile_id"] = agent_profile.prompt_profile_id
 
-        # Temperature: request > profile > default
-        effective_temperature = resolve_with_priority(
+        # Temperature: request > profile > default. The 0.7 fallback guarantees
+        # a non-None result; cast tells the checker so (and preserves 0.0, which
+        # `or 0.7` would wrongly override).
+        effective_temperature = cast(float, resolve_with_priority(
             temperature,
             agent_profile.temperature if agent_profile else None,
             0.7,
-        )
+        ))
 
         # Phase 18.2: per-profile tool gating (allow/block lists carried into AgentConfig)
         if agent_profile is not None:
@@ -1091,7 +1100,7 @@ async def agent_chat_stream(request):
                     ],
                     'relevant_turns': [
                         {
-                            'timestamp': t.get('timestamp').isoformat() if hasattr(t.get('timestamp'), 'isoformat') else str(t.get('timestamp', '')),
+                            'timestamp': _iso_or_str(t.get('timestamp')),
                             'role': t.get('role', 'unknown'),
                             'content': (t.get('content') or '')[:200],
                         }
@@ -1304,6 +1313,11 @@ async def agent_chat_stream(request):
 
                 def _store_turns():
                     try:
+                        # Capture a narrowed local; the closure can't narrow the
+                        # Optional agent.memory property across calls.
+                        mem = agent.memory
+                        if mem is None:
+                            return
                         from .kit.agent_memory.models import Turn
                         from .kit.agent_memory.connections import get_postgres_session
                         from sqlalchemy import text as sa_text
@@ -1329,7 +1343,7 @@ async def agent_chat_stream(request):
                             content=message,
                             index=idx,
                         )
-                        agent.memory.store_turn(user_turn)
+                        mem.store_turn(user_turn)
                         idx += 1
 
                         # Store tool call/result turns
@@ -1367,7 +1381,7 @@ async def agent_chat_stream(request):
                                     index=idx,
                                     metadata=tr_metadata,
                                 )
-                            agent.memory.store_turn(turn)
+                            mem.store_turn(turn)
                             idx += 1
 
                         # Store assistant turn with thinking in metadata.
@@ -1403,7 +1417,7 @@ async def agent_chat_stream(request):
                                 metadata=asst_metadata,
                                 agent_id=getattr(agent_profile, "agent_id", None),
                             )
-                            agent.memory.store_turn(assistant_turn)
+                            mem.store_turn(assistant_turn)
                             logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")
                         else:
                             logger.debug(f"Skipped empty assistant turn for conversation {conv_id}")
@@ -4043,7 +4057,7 @@ def _parse_workflow_payload(data: dict):
         supervisor_agent_id=data["supervisor_agent_id"],
         members=members,
         routes=routes,
-        shared_channel=data.get("shared_channel"),
+        shared_channel=data.get("shared_channel") or "",
         canvas=data.get("canvas") or {},
     )
 

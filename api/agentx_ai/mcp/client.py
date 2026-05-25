@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 
 from mcp import ClientSession
+from pydantic import AnyUrl
 
 from .server_registry import ServerConfig, ServerRegistry, TransportType
 from .tool_executor import ToolExecutor, ToolInfo, ToolResult
@@ -213,7 +214,7 @@ class MCPClientManager:
                 session = await stack.enter_async_context(
                     self._stdio_transport.connect(
                         name=config.name,
-                        command=config.command,
+                        command=config.require_command(),
                         args=config.args,
                         env=config.resolve_env(),
                     )
@@ -222,7 +223,7 @@ class MCPClientManager:
                 session = await stack.enter_async_context(
                     self._sse_transport.connect(
                         name=config.name,
-                        url=config.url,
+                        url=config.require_url(),
                         headers=config.resolve_headers(),
                     )
                 )
@@ -230,7 +231,7 @@ class MCPClientManager:
                 session = await stack.enter_async_context(
                     self._streamable_http_transport.connect(
                         name=config.name,
-                        url=config.url,
+                        url=config.require_url(),
                         headers=config.resolve_headers(),
                     )
                 )
@@ -301,7 +302,7 @@ class MCPClientManager:
         """Connect via stdio transport."""
         async with self._stdio_transport.connect(
             name=config.name,
-            command=config.command,
+            command=config.require_command(),
             args=config.args,
             env=config.resolve_env(),
         ) as session:
@@ -316,7 +317,7 @@ class MCPClientManager:
         """Connect via SSE transport."""
         async with self._sse_transport.connect(
             name=config.name,
-            url=config.url,
+            url=config.require_url(),
             headers=config.resolve_headers(),
         ) as session:
             connection = await self._setup_connection(session, config)
@@ -330,7 +331,7 @@ class MCPClientManager:
         """Connect via Streamable HTTP transport."""
         async with self._streamable_http_transport.connect(
             name=config.name,
-            url=config.url,
+            url=config.require_url(),
             headers=config.resolve_headers(),
         ) as session:
             connection = await self._setup_connection(session, config)
@@ -442,11 +443,11 @@ class MCPClientManager:
             return {"error": f"Server '{server_name}' is not connected"}
         
         try:
-            result = await connection.session.read_resource(uri)
+            result = await connection.session.read_resource(AnyUrl(uri))
             return {
                 "uri": uri,
                 "contents": [
-                    {"text": content.text if hasattr(content, 'text') else str(content)}
+                    {"text": getattr(content, "text") if hasattr(content, "text") else str(content)}
                     for content in result.contents
                 ],
             }

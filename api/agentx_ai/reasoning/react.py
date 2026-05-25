@@ -176,7 +176,7 @@ class ReActAgent(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -207,7 +207,7 @@ class ReActAgent(ReasoningStrategy):
 
             # Get model response (thought + action)
             try:
-                result = provider.complete(
+                result = await provider.complete(
                     messages,
                     model_id,
                     temperature=kwargs.get("temperature", 0.7),

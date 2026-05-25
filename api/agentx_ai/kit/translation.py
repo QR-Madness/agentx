@@ -102,7 +102,7 @@ class TranslationKit:
 
         # Get predicted class
         predictions = torch.softmax(outputs.logits, dim=1)
-        predicted_label_id = torch.argmax(predictions, dim=1).item()
+        predicted_label_id = int(torch.argmax(predictions, dim=1).item())
         confidence = predictions[0][predicted_label_id].item()
 
         # Use the model's internal config to get the correct label

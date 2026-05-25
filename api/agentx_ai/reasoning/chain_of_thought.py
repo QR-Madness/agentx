@@ -111,7 +111,7 @@ class ChainOfThought(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -132,7 +132,7 @@ class ChainOfThought(ReasoningStrategy):
         logger.info(f"CoT reasoning ({self.cot_config.mode}): {task[:50]}...")
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=kwargs.get("temperature", 0.7),

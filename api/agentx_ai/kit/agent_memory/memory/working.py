@@ -1,6 +1,6 @@
 """Working memory - fast, ephemeral memory for current session state using Redis."""
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 import json
 from datetime import datetime, timezone
 
@@ -140,8 +140,8 @@ class WorkingMemory:
         keys: list[str] = []
         cursor: int = 0
         while True:
-            result = self.redis.scan(cursor, match=pattern, count=100)
-            cursor = int(result[0])  # type: ignore[arg-type]
+            result = cast(tuple, self.redis.scan(cursor, match=pattern, count=100))
+            cursor = int(result[0])
             batch = result[1]
             if isinstance(batch, list):
                 keys.extend(str(k) for k in batch)
@@ -166,8 +166,8 @@ class WorkingMemory:
         pattern = f"{self.session_key}:*"
         cursor: int = 0
         while True:
-            result = self.redis.scan(cursor, match=pattern, count=100)
-            cursor = int(result[0])  # type: ignore[arg-type]
+            result = cast(tuple, self.redis.scan(cursor, match=pattern, count=100))
+            cursor = int(result[0])
             keys = result[1]
             if keys and isinstance(keys, list):
                 key_strs = [str(k) for k in keys]

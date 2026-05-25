@@ -62,7 +62,19 @@ class ServerConfig:
             if not self.url:
                 raise ValueError(f"Server '{self.name}': {self.transport.value} transport requires 'url'")
         return True
-    
+
+    def require_command(self) -> str:
+        """Return the stdio command, raising if it is not configured."""
+        if not self.command:
+            raise ValueError(f"Server '{self.name}': stdio transport requires 'command'")
+        return self.command
+
+    def require_url(self) -> str:
+        """Return the transport url, raising if it is not configured."""
+        if not self.url:
+            raise ValueError(f"Server '{self.name}': {self.transport.value} transport requires 'url'")
+        return self.url
+
     def resolve_env(self) -> dict[str, str]:
         """Resolve environment variables (e.g., ${GITHUB_TOKEN} -> actual value)."""
         return self._resolve_vars(self.env)

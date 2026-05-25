@@ -1,3 +1,7 @@
+# pyright: reportAttributeAccessIssue=false
+# Django's BaseCommand.style exposes color methods (SUCCESS, ERROR, WARNING,
+# ...) that django-stubs does not type; suppress those false positives for this
+# operational management command.
 """
 Management command to warm up embedding models.
 

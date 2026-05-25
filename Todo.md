@@ -392,6 +392,20 @@ Currently our model selection and selector are a very solid foundation but are j
   - Add inline help in `MemorySettingsPanels.tsx` explaining what the "Combined Extraction" stage does and when it overrides the separate Relevance + Extraction calls.
   - Add a "Reset to default" affordance for the model field (matching the existing pattern on `extraction_system_prompt`).
 
+### 18.10: Plan Executor + Streaming Reliability
+
+> Three major bugs surfaced after 18.6 lands. Group them here because the fixes overlap (streaming lifecycle + plan step rendering share the same conversation-tab state).
+
+- [ ] Plan executor hangs on final step
+  - The executor loops infinitely on the last step instead of terminating. Need to audit the completion / loop-exit condition in the planner runner and confirm the terminal step actually flips plan status to `completed` (or `failed`) and releases the streaming generator.
+- [ ] New-conversation chat freeze → dedicated streaming background jobs
+  - Creating a new conversation can wedge the chat. Move streaming off the request thread into a background job (queue + job id) and have the UI subscribe/poll for chunks. Conversation creation should never block on stream startup.
+  - Needs: job model (id, conversation_id, status, cursor), producer endpoint that enqueues + returns job id immediately, consumer endpoint (SSE or polling) keyed by job id, client refactor to attach the active tab to a job rather than a live POST.
+- [ ] Plan UI cleanup
+  - Cannot tell which step a given message belongs to once the plan scrolls.
+  - Cannot see overall progress without scrolling back to the top.
+  - Wants: sticky progress header (current step / total, status pill), per-message step affinity badge, collapsible step groups so completed steps fold away.
+
 ---
 
 ## Backlog (Future Enhancements)

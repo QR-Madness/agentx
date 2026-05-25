@@ -7,7 +7,7 @@ State tracking is best-effort — execution continues even if Redis is unavailab
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class PlanStateStore:
         """Read full plan state."""
         try:
             client = _get_redis_client()
-            data = client.hgetall(self._key(plan_id))
+            data = cast(Optional[dict], client.hgetall(self._key(plan_id)))
             return data if data else None
         except Exception as e:
             logger.warning(f"Failed to read plan state: {e}")

@@ -341,7 +341,7 @@ def _handle_user_correction(
         new_fact.embedding = embedder.embed_single(new_fact.claim)
 
         # Supersede via semantic memory
-        memory._semantic.supersede_fact(
+        memory.semantic.supersede_fact(
             original_fact_id=original_fact['id'],
             new_fact=new_fact,
             user_id=user_id,
@@ -392,7 +392,7 @@ def _handle_contradiction(
             embedder = get_embedder()
             new_fact.embedding = embedder.embed_single(new_fact.claim)
 
-            memory._semantic.supersede_fact(
+            memory.semantic.supersede_fact(
                 original_fact_id=contradiction.contradicting_fact_id,
                 new_fact=new_fact,
                 user_id=user_id,

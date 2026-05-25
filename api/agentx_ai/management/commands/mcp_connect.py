@@ -1,3 +1,7 @@
+# pyright: reportAttributeAccessIssue=false
+# Django's BaseCommand.style exposes color methods (SUCCESS, ERROR, ...) that
+# django-stubs does not type; suppress those false positives for this
+# operational management command.
 """
 Management command to connect to configured MCP servers.
 

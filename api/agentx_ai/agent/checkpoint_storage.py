@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def add_checkpoint(
 def list_checkpoints(conversation_id: str) -> list[dict[str, Any]]:
     """Return checkpoints for a conversation, oldest first. Empty on errors."""
     try:
-        raw = _redis().lrange(_key(conversation_id), 0, -1) or []
+        raw = cast(list, _redis().lrange(_key(conversation_id), 0, -1) or [])
     except Exception as e:  # pragma: no cover
         logger.debug(f"checkpoint read failed: {e}")
         return []

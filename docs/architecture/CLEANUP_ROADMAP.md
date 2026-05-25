@@ -215,16 +215,22 @@ through the request → agent → memory path. Large, product-level change.
 
 ## Type-check baseline (guardrail)
 
-The cleanup pass reduced pyright from **169 → ~127** errors. A baseline guardrail
-(`scripts/check_pyright_baseline.py`, wired into `task check:types:python`) fails
-CI if the count *rises* above the recorded baseline, so the residual
-Optional/`Any` debt (items 2 and 3) can only shrink. When an item above lands,
-lower the baseline in `api/.pyright-baseline` to lock in the gain.
+Two passes reduced pyright from **169 → 4** errors. A baseline guardrail
+(`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
+fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
+the debt can only shrink. When an item above lands, lower the baseline to lock
+in the gain.
+
+The remaining **4** are documented false positives (left in the baseline):
+`apps.py` Django `default_auto_field` override idiom, and pydantic
+`AgentProfile(...)` constructions (`agent/profiles.py`, `tests.py`) where pyright
+does not recognize `Field(None, ...)` positional defaults.
 
 ---
 
-## Already done (behavior-preserving cleanup pass)
+## Already done
 
+### Pass 1 — behavior-preserving cleanup
 - **Bug:** `recall.py` provider imports used the wrong relative depth *and*
   called the async `complete()` without awaiting — HyDE and self-query were
   silently broken since inception. Fixed + regression test.
@@ -239,3 +245,33 @@ lower the baseline in `api/.pyright-baseline` to lock in the gain.
   LM Studio timeout default reference.
 - Exception/logging hygiene in `connections.py`, `providers/base.py`.
 - ruff `7 → 0`.
+
+### Pass 2 — type-debt burndown (this pass; pyright 93 → 4)
+The dominant "type debt" turned out to be the **same un-awaited-async bug class**
+as recall/job_run, plus false positives — not loose `dict` typing.
+- **Bug:** the whole reasoning subsystem (CoT/ToT/ReAct/Reflection +
+  orchestrator) was sync and called the async `provider.complete()` without
+  awaiting, so `Agent.run()` reasoning **silently always returned `status=FAILED`**
+  (swallowed by the orchestrator's broad `except`). Made reasoning **async-native**
+  (item ~2/3/7) and bridged at the one sync caller; added AsyncMock regression
+  tests. `ReasoningStatus.FAILED` enum fixed.
+- **Bug:** `extraction/service.py` `extract_entities/facts/relationships` had the
+  same un-awaited `extract_all` — bridged.
+- **Bug:** `consolidation/jobs.py` used `memory._semantic` (no such attr →
+  `AttributeError`); corrected to `.semantic`.
+- **Bug:** `mcp/internal_tools.py` imported `get_agent_memory` from the wrong
+  module (always failed → "Memory system unavailable"); fixed.
+- **Bug:** `semantic.py` supersede called `audit_logger.log_operation` (no such
+  method); corrected to `log_write`.
+- **Item 7 (async bridge):** consolidated the duplicated sync→async bridges into
+  `agentx_ai/utils/async_bridge.run_coro_sync` (used by reasoning bridge,
+  recall, trajectory compression, extraction wrappers, planner bridge).
+- **Item 3 (lazy-None):** narrowed `Optional` access in `agent/core.py`,
+  `plan_executor.py`, `streaming/tool_loop.py`, `views.py`, `mcp/client.py`.
+- False positives: Django `self.style` (per-file pragma on 3 management
+  commands), `ExtractionService._settings` test seam (now a real override hook —
+  the test mocks were previously ignored), redis `ResponseT` casts.
+
+Still deferred: **item 1 (god-function decomposition)**, item 4 (DI), item 5
+(memory decoupling), item 6 (provider lifecycle), item 8 (timeout sentinel),
+item 9 (exception hierarchy), items 10–12.

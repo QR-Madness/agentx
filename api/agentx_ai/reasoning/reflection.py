@@ -103,7 +103,7 @@ class ReflectiveReasoner(ReasoningStrategy):
             self._registry = get_registry()
         return self._registry
     
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -135,7 +135,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         initial_messages = self._build_initial_prompt(task, context)
 
         try:
-            initial_result = provider.complete(
+            initial_result = await provider.complete(
                 initial_messages,
                 model_id,
                 temperature=kwargs.get("temperature", 0.7),
@@ -167,7 +167,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         # Iterate: critique and revise
         for revision_num in range(self.ref_config.max_revisions):
             # Step 2: Critique
-            critique, critique_score, critique_tokens = self._critique(
+            critique, critique_score, critique_tokens = await self._critique(
                 task, current_response, ref_provider, ref_model_id
             )
             total_tokens += critique_tokens
@@ -194,7 +194,7 @@ class ReflectiveReasoner(ReasoningStrategy):
             previous_score = critique_score
 
             # Step 3: Revise
-            revised_response, revision_tokens = self._revise(
+            revised_response, revision_tokens = await self._revise(
                 task, current_response, critique, provider, model_id
             )
             total_tokens += revision_tokens
@@ -273,7 +273,7 @@ class ReflectiveReasoner(ReasoningStrategy):
 
         return messages
     
-    def _critique(
+    async def _critique(
         self,
         task: str,
         response: str,
@@ -297,7 +297,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=0.3,  # Lower temperature for more consistent critique
@@ -314,7 +314,7 @@ class ReflectiveReasoner(ReasoningStrategy):
 
         return result.content, score, tokens
 
-    def _revise(
+    async def _revise(
         self,
         task: str,
         response: str,
@@ -340,7 +340,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         ]
 
         try:
-            result = provider.complete(
+            result = await provider.complete(
                 messages,
                 model_id,
                 temperature=0.7,

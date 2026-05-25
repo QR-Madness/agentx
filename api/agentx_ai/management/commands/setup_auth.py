@@ -1,3 +1,7 @@
+# pyright: reportAttributeAccessIssue=false
+# Django's BaseCommand.style exposes color methods (SUCCESS, ERROR, WARNING,
+# NOTICE, ...) that django-stubs does not type; suppress those false positives
+# for this operational management command.
 """
 Management command to set up AgentX authentication.
 

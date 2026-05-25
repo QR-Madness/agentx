@@ -30,7 +30,9 @@ class JobDefinition:
     """Definition of a consolidation job."""
 
     name: str
-    func: Callable[[], Dict[str, Any]]
+    # Jobs may be sync or async, and some accept an optional progress_callback;
+    # dispatch is resolved at runtime via inspect, so keep the type permissive.
+    func: Callable[..., Any]
     interval_minutes: int
     description: str
 
@@ -312,10 +314,11 @@ class JobRegistry:
 
         try:
             # Build a progress callback scoped to this job
-            progress_cb = None
+            progress_cb: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None
             if progress:
-                def progress_cb(stage: str, details: Optional[Dict[str, Any]] = None) -> None:
+                def _emit(stage: str, details: Optional[Dict[str, Any]] = None) -> None:
                     progress.emit(name, stage, details)
+                progress_cb = _emit
 
             # Handle both sync and async job functions
             if inspect.iscoroutinefunction(job_def.func):

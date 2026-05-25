@@ -12,8 +12,6 @@ Each technique can be enabled/disabled via config settings.
 Comprehensive debug logging shows exactly what's happening.
 """
 
-import asyncio
-import concurrent.futures
 import logging
 import re
 import time
@@ -22,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from ..config import get_settings
 from ..models import MemoryBundle
+from ....utils.async_bridge import run_coro_sync as _run_coro_sync
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
@@ -29,25 +28,6 @@ if TYPE_CHECKING:
     from .interface import AgentMemory
 
 logger = logging.getLogger(__name__)
-
-
-def _run_coro_sync(coro: Any, timeout: float = 30.0) -> Any:
-    """Run an async coroutine from RecallLayer's synchronous context.
-
-    ``provider.complete()`` is async, but RecallLayer is synchronous. Mirror the
-    bridge used in ``agent/core.py``: if an event loop is already running,
-    execute in a dedicated thread; otherwise run the coroutine directly.
-    """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, coro)
-            return future.result(timeout=timeout)
-    return asyncio.run(coro)
 
 
 @dataclass

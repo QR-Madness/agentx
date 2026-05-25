@@ -2376,3 +2376,98 @@ class FactVerificationPipelineTest(TestCase):
 
 
 # Phase 11.8+ tests moved to tests_memory.py
+
+
+class ReasoningAsyncRegressionTest(TestCase):
+    """Regression: the reasoning strategies and orchestrator were sync methods
+    that called the async ``provider.complete()`` without awaiting it, then read
+    ``.content``/``.usage`` on the resulting coroutine. The orchestrator's broad
+    ``except`` swallowed the ``AttributeError``, so CoT/ToT/ReAct/Reflection
+    silently always returned ``status=FAILED``.
+
+    These tests use an ``AsyncMock`` provider so the coroutine path is real: if a
+    strategy fails to await, ``complete`` is never awaited (await_count 0) and
+    the result is FAILED. Asserting it was awaited + not-FAILED locks the fix."""
+
+    def _fake_registry(self):
+        from agentx_ai.providers.base import CompletionResult
+
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=CompletionResult(
+            content="1. First approach\n2. Second approach\nThe answer is 42. Score: 0.8",
+            finish_reason="stop",
+            usage={"total_tokens": 10},
+            model="model-x",
+        ))
+        registry = MagicMock()
+        registry.get_provider_for_model.return_value = (provider, "model-x")
+        return registry, provider
+
+    def test_chain_of_thought_awaits_provider(self) -> None:
+        from agentx_ai.reasoning.base import ReasoningStatus
+        from agentx_ai.reasoning.chain_of_thought import ChainOfThought, CoTConfig
+
+        strategy = ChainOfThought(CoTConfig(model="model-x"))
+        registry, provider = self._fake_registry()
+        strategy._registry = registry
+
+        result = asyncio.run(strategy.reason("What is 6 times 7?"))
+
+        self.assertEqual(result.status, ReasoningStatus.COMPLETE)
+        self.assertGreaterEqual(provider.complete.await_count, 1)
+
+    def test_reflection_awaits_provider(self) -> None:
+        from agentx_ai.reasoning.base import ReasoningStatus
+        from agentx_ai.reasoning.reflection import ReflectiveReasoner, ReflectionConfig
+
+        strategy = ReflectiveReasoner(ReflectionConfig(model="model-x", max_revisions=1))
+        registry, provider = self._fake_registry()
+        strategy._registry = registry
+
+        result = asyncio.run(strategy.reason("Write an intro."))
+
+        self.assertEqual(result.status, ReasoningStatus.COMPLETE)
+        self.assertGreaterEqual(provider.complete.await_count, 1)
+
+    def test_tree_of_thought_awaits_provider(self) -> None:
+        from agentx_ai.reasoning.base import ReasoningStatus
+        from agentx_ai.reasoning.tree_of_thought import TreeOfThought, ToTConfig
+
+        strategy = TreeOfThought(ToTConfig(model="model-x", max_depth=1, branching_factor=2))
+        registry, provider = self._fake_registry()
+        strategy._registry = registry
+
+        result = asyncio.run(strategy.reason("Plan a launch."))
+
+        # ToT always returns COMPLETE absent an exception; the regression is that
+        # the provider is actually awaited rather than the coroutine path failing.
+        self.assertEqual(result.status, ReasoningStatus.COMPLETE)
+        self.assertGreaterEqual(provider.complete.await_count, 1)
+
+    def test_react_awaits_provider(self) -> None:
+        from agentx_ai.reasoning.base import ReasoningStatus
+        from agentx_ai.reasoning.react import ReActAgent, ReActConfig
+
+        strategy = ReActAgent(ReActConfig(model="model-x", max_iterations=1))
+        registry, provider = self._fake_registry()
+        strategy._registry = registry
+
+        result = asyncio.run(strategy.reason("Capital of France?"))
+
+        self.assertNotEqual(result.status, ReasoningStatus.FAILED)
+        self.assertGreaterEqual(provider.complete.await_count, 1)
+
+    def test_orchestrator_awaits_strategy(self) -> None:
+        from agentx_ai.reasoning.base import ReasoningStatus
+        from agentx_ai.reasoning.orchestrator import ReasoningOrchestrator, OrchestratorConfig
+
+        registry, provider = self._fake_registry()
+        orchestrator = ReasoningOrchestrator(OrchestratorConfig())
+
+        # The orchestrator builds the strategy internally; patch the module-level
+        # get_registry the ChainOfThought strategy resolves at call time.
+        with patch("agentx_ai.reasoning.chain_of_thought.get_registry", return_value=registry):
+            result = asyncio.run(orchestrator.reason("What is 6 times 7?", strategy="cot"))
+
+        self.assertEqual(result.status, ReasoningStatus.COMPLETE)
+        self.assertGreaterEqual(provider.complete.await_count, 1)

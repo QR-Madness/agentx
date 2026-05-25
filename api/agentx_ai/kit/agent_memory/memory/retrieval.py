@@ -6,7 +6,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING, cast
 
 from ..models import MemoryBundle
 from ..embeddings import get_embedder
@@ -251,8 +251,8 @@ class MemoryRetriever:
             # Use SCAN to find matching keys (safer than KEYS for production)
             cursor: int = 0
             while True:
-                result = redis.scan(cursor, match=pattern, count=100)
-                cursor = int(result[0])  # type: ignore[arg-type]
+                result = cast(tuple, redis.scan(cursor, match=pattern, count=100))
+                cursor = int(result[0])
                 keys = result[1]
                 if keys and isinstance(keys, list):
                     redis.delete(*keys)
@@ -697,7 +697,7 @@ class MemoryRetriever:
                     "current": 1.2,   # Prefer active facts
                     "past": 0.7,      # Demote but don't exclude
                     "future": 1.0,    # Neutral
-                }.get(temporal_context, 1.0)  # None = neutral
+                }.get(temporal_context or "", 1.0)  # None/unknown = neutral
 
                 fact["final_score"] = (
                     weights.semantic_facts * similarity * confidence * salience * temporal_boost

@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from ..providers.base import Message
-from .base import ReasoningResult, ReasoningStrategy
+from .base import ReasoningResult, ReasoningStatus, ReasoningStrategy
 from .chain_of_thought import ChainOfThought, CoTConfig
 from .tree_of_thought import TreeOfThought, ToTConfig
 from .react import ReActAgent, ReActConfig, Tool
@@ -116,7 +116,7 @@ class ReasoningOrchestrator:
         
         return self._strategies[key]
     
-    def reason(
+    async def reason(
         self,
         task: str,
         context: Optional[list[Message]] = None,
@@ -155,32 +155,35 @@ class ReasoningOrchestrator:
         # Get and execute strategy
         try:
             reasoning_strategy = self._get_strategy(strategy, model)
-            result = reasoning_strategy.reason(task, context, **kwargs)
+            result = await reasoning_strategy.reason(task, context, **kwargs)
 
             # Check for failure and fallback (safely handle status)
             status_value = getattr(result.status, 'value', str(result.status))
             if status_value == "failed" and self.config.enable_fallback:
                 logger.warning(f"Strategy {strategy} failed, trying fallback")
                 fallback = self._get_strategy(self.config.fallback_strategy, model)
-                result = fallback.reason(task, context, **kwargs)
+                result = await fallback.reason(task, context, **kwargs)
 
             return result
 
         except Exception as e:
-            logger.error(f"Reasoning failed: {e}")
+            # Top-level guard for genuine provider/runtime failures. With
+            # strategies now awaited, this no longer masks the un-awaited
+            # coroutine bug that previously made every call fall through here.
+            logger.error(f"Reasoning failed: {e}", exc_info=True)
 
             if self.config.enable_fallback:
                 logger.info("Attempting fallback strategy")
                 try:
                     fallback = self._get_strategy(self.config.fallback_strategy, model)
-                    return fallback.reason(task, context, **kwargs)
+                    return await fallback.reason(task, context, **kwargs)
                 except Exception as e2:
                     logger.error(f"Fallback also failed: {e2}")
 
             return ReasoningResult(
                 answer="Unable to complete reasoning due to an error.",
                 strategy=strategy,
-                status="failed",
+                status=ReasoningStatus.FAILED,
             )
     
     def _classify_task(self, task: str) -> TaskType:
