@@ -109,19 +109,21 @@ Extract a `GoalMemory` sub-module mirroring `SemanticMemory`/`EpisodicMemory`.
 
 ---
 
-## 6. Provider resource lifecycle
+## 6. Provider resource lifecycle — ✅ provider half done (Pass 3)
 
-**Problem.** OpenAI, Anthropic, and Vercel providers create HTTP/SDK clients
-(`AsyncOpenAI`/`AsyncAnthropic`) that are never closed; OpenRouter and LM Studio
-already create-and-close per request. Long-running processes accumulate
-connection pools.
+**Problem.** OpenAI/Anthropic providers created `AsyncOpenAI`/`AsyncAnthropic`
+clients that were never closed; OpenRouter/Vercel/LM Studio already close per
+request. `ProviderRegistry.reload()` evicted cached providers without closing
+them → leaked pools on every config change.
 
-**Shape.** Add an `async close()` to `ModelProvider`, implement it in each
-provider, and give the registry ownership of the lifecycle (close on shutdown).
-While here: add Neo4j retry/backoff and a unified `health_check()` across the
-three stores (`kit/agent_memory/connections.py`).
+**Done (Pass 3).** Added default `async close()` to `ModelProvider`; implemented
+it on OpenAI/Anthropic (close + reset the cached client); added
+`ProviderRegistry.aclose()` and made `reload()` close evicted providers (bridged
+via `utils/async_bridge.run_coro_sync`).
 
-**Risk:** medium — touches connection management. **Effort:** ~1 day.
+**Still deferred.** Neo4j retry/backoff and a unified `health_check()` across the
+three stores (`kit/agent_memory/connections.py`) — the memory-store half of this
+item. **Effort:** ~0.5 day.
 
 ---
 
@@ -140,32 +142,37 @@ it; longer term, make the sync recall/compression paths async-native.
 
 ---
 
-## 8. LM Studio timeout sentinel
+## 8. LM Studio timeout sentinel — ✅ done (Pass 3)
 
-**Problem.** `providers/lmstudio_provider.py` treats a configured timeout equal
-to `ProviderConfig`'s default (60.0) as "unset" and bumps it to 300.0. An
-*explicit* 60.0 is therefore indistinguishable from unset. (The cleanup pass
-made this reference the dataclass default instead of a magic literal, but the
-ambiguity remains.)
+**Problem.** `providers/lmstudio_provider.py` treated a configured timeout equal
+to `ProviderConfig`'s default (60.0) as "unset" and bumped it to 300.0, so an
+*explicit* 60.0 was indistinguishable from unset.
 
-**Shape.** Make `ProviderConfig.timeout` an `Optional[float] = None` sentinel so
-"unset" is explicit, and update all providers. Cross-provider change.
-
-**Risk:** low–medium (touches every provider). **Effort:** ~0.5 day.
+**Done (Pass 3).** `ProviderConfig.timeout` is now `Optional[float] = None`.
+LM Studio bumps only `None` → 300.0; cloud providers resolve `None` → 60.0 at the
+client-build site; the YAML loader passes `None` when unset. An explicit value
+(including 60.0) is honored everywhere.
 
 ---
 
-## 9. Custom exception hierarchy + Result types
+## 9. Custom exception hierarchy + Result types — partial (Pass 3 scoped slice)
 
 **Problem.** Broad `except Exception` blocks remain across consolidation and the
-agent core. `mcp/tool_executor.py` `discover_tools()` returns `[]` on failure,
-indistinguishable from "no tools available".
+agent core. `mcp/tool_executor.py` `discover_tools()` and `mcp/client.py`
+resource discovery returned `[]` on failure, indistinguishable from "no
+tools/resources available".
 
-**Shape.** Introduce `AgentError` / `MemoryError` / `ToolExecutionError`, catch
-specifically, and give tool discovery a Result type (or raise) so callers can
-tell "empty" from "failed".
+**Done (Pass 3, scoped).** Discovery failures are now observable without changing
+return types: `ToolExecutor.get_discovery_error()` /
+`MCPClientManager.get_resource_discovery_error()` record the last failure (cleared
+on a successful discovery), logged at `error`/`warning`, and surfaced on
+`/api/mcp/servers` as `tool_discovery_error` / `resource_discovery_error` so the
+client can tell "failed" from "0".
 
-**Risk:** medium — changes error propagation. **Effort:** ~1 day.
+**Still deferred.** The `AgentError`/`MemoryError`/`ToolExecutionError` hierarchy
+and tightening the broad excepts across `agent/core.py` (many are *intentionally*
+defensive best-effort memory swallows) / consolidation. Judgment-heavy and
+sprawling — its own pass. **Effort:** ~1 day.
 
 ---
 
@@ -184,19 +191,17 @@ to today's values. `rounds_to_text()` would need `config` threaded in.
 
 ---
 
-## 11. LM Studio message conversion divergence
+## 11. LM Studio message conversion divergence — ✅ done (Pass 3)
 
-**Problem.** `providers/lmstudio_provider._convert_messages` diverges from the
-shared `convert_messages_to_openai_format` (now used by OpenAI/OpenRouter/
-Vercel): it omits the `tool_calls` passthrough on assistant messages. This may
-drop prior tool calls in multi-turn tool conversations against LM Studio.
+**Problem.** `providers/lmstudio_provider._convert_messages` omitted the
+`tool_calls` passthrough on assistant messages that the shared
+`convert_messages_to_openai_format` (used by OpenAI/OpenRouter/Vercel) includes,
+dropping prior tool calls in multi-turn tool conversations against LM Studio.
 
-**Shape.** Confirm whether the omission is intentional (LM Studio quirk) or a
-latent bug; if a bug, switch LM Studio to the shared helper. Not done in the
-cleanup pass because it would change LM Studio request payloads.
-
-**Risk:** low, but behavior-affecting for LM Studio tool use. **Effort:** ~2h
-incl. verification against a live LM Studio instance.
+**Done (Pass 3).** Confirmed it was a latent bug (not an LM Studio quirk) and
+switched `_convert_messages` to delegate to the shared helper. **Still needs
+verification against a live LM Studio instance** (the change alters request
+payloads); unit-covered for the `tool_calls` passthrough in the meantime.
 
 ---
 
@@ -215,7 +220,7 @@ through the request → agent → memory path. Large, product-level change.
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors. A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Pass 3 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -272,6 +277,25 @@ as recall/job_run, plus false positives — not loose `dict` typing.
   commands), `ExtractionService._settings` test seam (now a real override hook —
   the test mocks were previously ignored), redis `ResponseT` casts.
 
-Still deferred: **item 1 (god-function decomposition)**, item 4 (DI), item 5
-(memory decoupling), item 6 (provider lifecycle), item 8 (timeout sentinel),
-item 9 (exception hierarchy), items 10–12.
+### Pass 3 — robustness / correctness (provider + MCP edge)
+Continued the bug-hunting trend on the provider/MCP boundary; no pyright movement
+(the 4 are documented false positives), ruff stays 0.
+- **Bug (item 11):** LM Studio `_convert_messages` dropped assistant `tool_calls`,
+  breaking multi-turn tool use — switched to the shared
+  `convert_messages_to_openai_format`. *Live LM Studio verification still pending.*
+- **Item 6 (provider half):** added `ModelProvider.close()` (default no-op),
+  real impls on OpenAI/Anthropic (close + reset cached client),
+  `ProviderRegistry.aclose()`, and close-on-`reload()` (bridged via
+  `run_coro_sync`) so config reloads stop leaking connection pools.
+- **Item 8:** `ProviderConfig.timeout` → `Optional[float] = None` sentinel; each
+  provider resolves its own default. An explicit `60.0` is no longer mistaken for
+  "unset" against LM Studio.
+- **Item 9 (scoped slice):** tool/resource discovery failures are now recorded
+  (`get_discovery_error` / `get_resource_discovery_error`) and surfaced on
+  `/api/mcp/servers`, distinguishing "failed" from "0 tools/resources".
+- Added `ProviderRobustnessTest` + `ToolDiscoveryErrorTest` (9 tests).
+
+Still deferred: **item 1 (god-function decomposition; needs a consolidation
+integration-test backfill first — `recall()` is already decomposed)**, item 4
+(DI), item 5 (memory decoupling), item 6 (memory-store retry/health half), item 9
+(exception hierarchy + broad-except tightening), item 10, item 12.

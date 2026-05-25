@@ -108,7 +108,7 @@ class AnthropicProvider(ModelProvider):
 
             client_kwargs: dict[str, Any] = {
                 "api_key": self.config.api_key,
-                "timeout": self.config.timeout,
+                "timeout": self.config.timeout or 60.0,
                 "max_retries": self.config.max_retries,
             }
             if self.config.base_url:
@@ -375,3 +375,13 @@ class AnthropicProvider(ModelProvider):
                 "status": "unhealthy",
                 "error": str(e),
             }
+
+    async def close(self) -> None:
+        """Close the cached AsyncAnthropic client and reset it for re-creation."""
+        if self._client is not None:
+            try:
+                await self._client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Anthropic client: {e}")
+            finally:
+                self._client = None

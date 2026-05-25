@@ -20,6 +20,7 @@ from .base import (
     StreamChunk,
     ToolCall,
     accumulate_tool_call_delta,
+    convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
 )
@@ -54,14 +55,9 @@ class LMStudioProvider(ModelProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.base_url = config.base_url or self.DEFAULT_BASE_URL
-        # When the caller left timeout at ProviderConfig's default, use LM
-        # Studio's longer default (local models can be slow). Reference the
-        # dataclass default rather than a hardcoded 60.0 so the two stay in
-        # sync. Known limitation: an explicit timeout equal to the default is
-        # indistinguishable from "unset" (a real unset sentinel is tracked in
-        # the cleanup roadmap).
-        _default_timeout = ProviderConfig.__dataclass_fields__["timeout"].default
-        self._timeout = self.DEFAULT_TIMEOUT if config.timeout == _default_timeout else config.timeout
+        # Unset timeout (None) → LM Studio's longer default (local models can be
+        # slow). An explicit value (including 60.0) is honored as given.
+        self._timeout = self.DEFAULT_TIMEOUT if config.timeout is None else config.timeout
         self._available_models: Optional[list[dict[str, Any]]] = None
         self._api_key = config.api_key or "lm-studio"
 
@@ -91,19 +87,13 @@ class LMStudioProvider(ModelProvider):
         )
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Convert internal Message objects to OpenAI format."""
-        result = []
-        for msg in messages:
-            message_dict: dict[str, Any] = {
-                "role": msg.role.value,
-                "content": msg.content,
-            }
-            if msg.name:
-                message_dict["name"] = msg.name
-            if msg.tool_call_id:
-                message_dict["tool_call_id"] = msg.tool_call_id
-            result.append(message_dict)
-        return result
+        """Convert internal Message objects to OpenAI format.
+
+        Delegates to the shared converter so assistant ``tool_calls`` are passed
+        through — the previous bespoke copy dropped them, breaking multi-turn
+        tool use against LM Studio (the model never saw its own prior calls).
+        """
+        return convert_messages_to_openai_format(messages)
 
     @staticmethod
     def _parse_sse_data(event_str: str) -> Optional[dict[str, Any]]:

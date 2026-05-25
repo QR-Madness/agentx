@@ -76,7 +76,7 @@ class VercelProvider(ModelProvider):
         return AsyncOpenAI(
             api_key=self.config.api_key,
             base_url=self.config.base_url or VERCEL_GATEWAY_BASE_URL,
-            timeout=self.config.timeout,
+            timeout=self.config.timeout or 60.0,
             max_retries=self.config.max_retries,
         )
 

@@ -750,6 +750,116 @@ class ProviderBaseTest(TestCase):
         self.assertEqual(result.finish_reason, "stop")
 
 
+class ProviderRobustnessTest(TestCase):
+    """Pass 3 robustness fixes: tool_calls passthrough, timeout sentinel, lifecycle."""
+
+    def test_converter_includes_assistant_tool_calls(self) -> None:
+        """Shared converter passes assistant tool_calls through (WS1)."""
+        from agentx_ai.providers.base import convert_messages_to_openai_format
+
+        tool_calls = [{"id": "c1", "type": "function",
+                       "function": {"name": "calc", "arguments": "{}"}}]
+        msg = Message(role=MessageRole.ASSISTANT, content="", tool_calls=tool_calls)
+        out = convert_messages_to_openai_format([msg])
+        self.assertEqual(out[0]["tool_calls"], tool_calls)
+
+    def test_lmstudio_convert_messages_keeps_tool_calls(self) -> None:
+        """LM Studio now delegates to the shared converter (regression for the drop)."""
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig())
+        tool_calls = [{"id": "c1", "type": "function",
+                       "function": {"name": "calc", "arguments": "{}"}}]
+        msg = Message(role=MessageRole.ASSISTANT, content="", tool_calls=tool_calls)
+        converted = provider._convert_messages([msg])
+        self.assertEqual(converted[0]["tool_calls"], tool_calls)
+
+    def test_provider_config_timeout_defaults_none(self) -> None:
+        """Unset timeout is None so providers can apply their own default (WS3)."""
+        from agentx_ai.providers.base import ProviderConfig
+
+        self.assertIsNone(ProviderConfig().timeout)
+
+    def test_lmstudio_unset_timeout_uses_long_default(self) -> None:
+        """LM Studio bumps an unset (None) timeout to its long default."""
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig())
+        self.assertEqual(provider._timeout, LMStudioProvider.DEFAULT_TIMEOUT)
+
+    def test_lmstudio_explicit_timeout_is_honored(self) -> None:
+        """An explicit 60.0 is no longer mistaken for 'unset' (the bug this fixes)."""
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig(timeout=60.0))
+        self.assertEqual(provider._timeout, 60.0)
+
+    def test_openai_provider_close_resets_client(self) -> None:
+        """close() closes the cached client and resets it for re-creation (WS2)."""
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.openai_provider import OpenAIProvider
+
+        provider = OpenAIProvider(ProviderConfig(api_key="sk-test"))
+        fake_client = MagicMock()
+        fake_client.close = AsyncMock()
+        provider._client = fake_client
+
+        asyncio.run(provider.close())
+        fake_client.close.assert_awaited_once()
+        self.assertIsNone(provider._client)
+
+    def test_registry_aclose_closes_cached_providers(self) -> None:
+        """Registry.aclose() closes every cached provider and clears the cache (WS2)."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        registry = ProviderRegistry()
+        fake = MagicMock()
+        fake.close = AsyncMock()
+        registry._providers["fake"] = fake
+
+        asyncio.run(registry.aclose())
+        fake.close.assert_awaited_once()
+        self.assertEqual(registry._providers, {})
+
+    def test_registry_reload_closes_evicted_providers(self) -> None:
+        """reload() closes evicted providers before clearing (no leaked pools)."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        registry = ProviderRegistry()
+        fake = MagicMock()
+        fake.close = AsyncMock()
+        registry._providers["fake"] = fake
+
+        registry.reload()
+        fake.close.assert_awaited_once()
+        self.assertNotIn("fake", registry._providers)
+
+
+class ToolDiscoveryErrorTest(TestCase):
+    """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""
+
+    def test_discovery_failure_recorded_and_cleared(self) -> None:
+        from agentx_ai.mcp.tool_executor import ToolExecutor
+
+        executor = ToolExecutor()
+        failing = MagicMock()
+        failing.list_tools = AsyncMock(side_effect=RuntimeError("boom"))
+
+        tools = asyncio.run(executor.discover_tools(failing, "srv"))
+        self.assertEqual(tools, [])
+        self.assertEqual(executor.get_discovery_error("srv"), "boom")
+
+        # A subsequent successful (but empty) discovery clears the error.
+        ok = MagicMock()
+        ok.list_tools = AsyncMock(return_value=MagicMock(tools=[]))
+        tools = asyncio.run(executor.discover_tools(ok, "srv"))
+        self.assertEqual(tools, [])
+        self.assertIsNone(executor.get_discovery_error("srv"))
+
+
 # =============================================================================
 # Phase 11.3: Extraction Pipeline Tests
 # =============================================================================

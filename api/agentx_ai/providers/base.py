@@ -193,7 +193,9 @@ class ProviderConfig:
     """Configuration for a model provider."""
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-    timeout: float = 60.0
+    # None means "unset" — each provider applies its own default (cloud: 60s,
+    # LM Studio: 300s). An explicit value is always honored as-is.
+    timeout: Optional[float] = None
     max_retries: int = 3
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -308,3 +310,13 @@ class ModelProvider(ABC):
             Health status dict with 'status' and optional details
         """
         return {"status": "unknown", "message": "Health check not implemented"}
+
+    async def close(self) -> None:
+        """
+        Release any long-lived resources (HTTP/SDK clients).
+
+        Default is a no-op: providers that create a fresh client per request
+        close it themselves. Providers holding a cached client (OpenAI,
+        Anthropic) override this to close and reset it.
+        """
+        return None

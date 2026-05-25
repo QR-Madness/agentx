@@ -80,7 +80,16 @@ class ToolExecutor:
     
     def __init__(self):
         self._tool_cache: dict[str, list[ToolInfo]] = {}  # server_name -> tools
+        # server_name -> last discovery error message. Lets callers tell
+        # "discovery failed" apart from "server genuinely has no tools" (both
+        # otherwise surface as an empty list).
+        self._discovery_errors: dict[str, str] = {}
         self._usage_recorder: Optional[ToolUsageRecorder] = None
+
+    def get_discovery_error(self, server_name: str) -> Optional[str]:
+        """Return the last tool-discovery error for a server, or None if the
+        most recent discovery succeeded (an empty tool list is a success)."""
+        return self._discovery_errors.get(server_name)
     
     def set_usage_recorder(self, recorder: ToolUsageRecorder) -> None:
         """
@@ -108,15 +117,19 @@ class ToolExecutor:
                 for tool in result.tools
             ]
             
-            # Cache the tools
+            # Cache the tools; clear any prior discovery error for this server.
             self._tool_cache[server_name] = tools
-            
+            self._discovery_errors.pop(server_name, None)
+
             logger.info(f"Discovered {len(tools)} tools from server '{server_name}'")
             for tool in tools:
                 logger.debug(f"  - {tool.name}: {tool.description[:50]}...")
-            
+
             return tools
         except Exception as e:
+            # Record the failure so callers can distinguish it from a server
+            # that legitimately exposes zero tools.
+            self._discovery_errors[server_name] = str(e)
             logger.error(f"Failed to discover tools from '{server_name}': {e}")
             return []
     

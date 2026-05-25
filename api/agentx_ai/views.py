@@ -240,8 +240,17 @@ def language_detect(request):
     })
 
 
-def _serialize_server(config, connection) -> dict:
-    """Build the full client-facing server payload (config + live connection state)."""
+def _serialize_server(
+    config,
+    connection,
+    tool_discovery_error: str | None = None,
+    resource_discovery_error: str | None = None,
+) -> dict:
+    """Build the full client-facing server payload (config + live connection state).
+
+    ``*_discovery_error`` distinguish "discovery failed" from "0 tools/resources"
+    — an empty list with no error means the server genuinely exposes none.
+    """
     return {
         "name": config.name,
         "transport": config.transport.value,
@@ -263,6 +272,8 @@ def _serialize_server(config, connection) -> dict:
         "tools": [t.name for t in connection.tools] if connection else [],
         "tools_count": len(connection.tools) if connection else 0,
         "resources_count": len(connection.resources) if connection else 0,
+        "tool_discovery_error": tool_discovery_error,
+        "resource_discovery_error": resource_discovery_error,
     }
 
 
@@ -278,7 +289,12 @@ def mcp_servers(request):
         return _mcp_server_create(request, manager)
 
     servers = [
-        _serialize_server(config, manager.get_connection(config.name))
+        _serialize_server(
+            config,
+            manager.get_connection(config.name),
+            tool_discovery_error=manager.tool_executor.get_discovery_error(config.name),
+            resource_discovery_error=manager.get_resource_discovery_error(config.name),
+        )
         for config in manager.registry.list()
     ]
     return JsonResponse({"servers": servers})

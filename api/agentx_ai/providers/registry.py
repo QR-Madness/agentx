@@ -133,7 +133,8 @@ class ProviderRegistry:
                     provider_data.get("api_key_env", f"{provider_name.upper()}_API_KEY")
                 ),
                 base_url=provider_data.get("base_url"),
-                timeout=provider_data.get("timeout", 60.0),
+                # Unset → None so each provider applies its own default.
+                timeout=provider_data.get("timeout"),
                 max_retries=provider_data.get("max_retries", 3),
             )
         
@@ -249,6 +250,19 @@ class ProviderRegistry:
 
         return results
 
+    async def aclose(self) -> None:
+        """Close all cached provider instances, releasing their HTTP/SDK clients.
+
+        Safe to call multiple times. Individual close failures are logged and
+        do not abort the rest.
+        """
+        for name, provider in list(self._providers.items()):
+            try:
+                await provider.close()
+            except Exception as e:
+                logger.warning(f"Error closing provider '{name}': {e}")
+        self._providers.clear()
+
     def reload(self) -> None:
         """
         Reload configuration and clear cached providers.
@@ -257,8 +271,15 @@ class ProviderRegistry:
         Running requests will continue using old providers;
         new requests will use the updated configuration.
         """
-        # Clear cached provider instances
-        self._providers.clear()
+        # Close + clear cached provider instances so evicted clients (OpenAI/
+        # Anthropic hold a long-lived AsyncOpenAI/AsyncAnthropic) don't leak
+        # their connection pools. reload() is sync, so bridge the async close.
+        from ..utils.async_bridge import run_coro_sync
+        try:
+            run_coro_sync(self.aclose())
+        except Exception as e:
+            logger.warning(f"Error closing providers during reload: {e}")
+            self._providers.clear()
         self._provider_configs.clear()
 
         # Reload config from ConfigManager

@@ -67,7 +67,7 @@ class OpenAIProvider(ModelProvider):
             self._client = AsyncOpenAI(
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
-                timeout=self.config.timeout,
+                timeout=self.config.timeout or 60.0,
                 max_retries=self.config.max_retries,
             )
         return self._client
@@ -259,3 +259,13 @@ class OpenAIProvider(ModelProvider):
                 "status": "unhealthy",
                 "error": str(e),
             }
+
+    async def close(self) -> None:
+        """Close the cached AsyncOpenAI client and reset it for re-creation."""
+        if self._client is not None:
+            try:
+                await self._client.close()
+            except Exception as e:
+                logger.warning(f"Error closing OpenAI client: {e}")
+            finally:
+                self._client = None

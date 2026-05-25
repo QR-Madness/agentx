@@ -101,7 +101,10 @@ class MCPClientManager:
         self._sse_transport = SSETransport()
         self._streamable_http_transport = StreamableHTTPTransport()
         self._active_connections: dict[str, ServerConnection] = {}
-        
+        # server_name -> last resource-discovery error. Distinguishes "discovery
+        # failed" from "server exposes no resources" (both yield an empty list).
+        self._resource_discovery_errors: dict[str, str] = {}
+
         # Persistent connection state
         self._exit_stacks: dict[str, AsyncExitStack] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -388,11 +391,19 @@ class MCPClientManager:
                 )
                 for res in result.resources
             ]
+            self._resource_discovery_errors.pop(server_name, None)
             logger.info(f"Discovered {len(resources)} resources from '{server_name}'")
             return resources
         except Exception as e:
-            logger.debug(f"Failed to discover resources from '{server_name}': {e}")
+            # Record the failure so it's distinguishable from "no resources".
+            self._resource_discovery_errors[server_name] = str(e)
+            logger.warning(f"Failed to discover resources from '{server_name}': {e}")
             return []
+
+    def get_resource_discovery_error(self, server_name: str) -> str | None:
+        """Return the last resource-discovery error for a server, or None if the
+        most recent discovery succeeded (an empty resource list is a success)."""
+        return self._resource_discovery_errors.get(server_name)
     
     async def call_tool(
         self,
