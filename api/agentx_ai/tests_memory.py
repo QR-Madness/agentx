@@ -17,7 +17,7 @@ import json
 import re
 from datetime import datetime, timezone
 from unittest import skipUnless
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from django.test import TestCase
@@ -3006,3 +3006,49 @@ class ExtractionServiceScopeContextWiringTest(TestCase):
         self.assertIn("ent-self-1", prompt)
         self.assertIn("(none)", prompt)  # facts block
         self.assertNotIn("{known_entities}", prompt)
+
+
+class RecallProviderImportTest(TestCase):
+    """Regression for two compounding bugs that silently disabled the HyDE and
+    self-query recall techniques (both wrapped in try/except, so failures were
+    swallowed):
+
+    1. recall.py imported providers at the wrong relative depth
+       (`...providers` -> nonexistent `kit.providers` instead of
+       `....providers` -> `agentx_ai.providers`) -> ImportError.
+    2. `provider.complete()` is async but was called without awaiting, then
+       `.content` was accessed on the coroutine -> AttributeError.
+
+    The provider stub uses AsyncMock so `complete` is a real coroutine; a wrong
+    import depth or a missing await would surface as the empty fallback instead
+    of the provider's response."""
+
+    def _make_recall(self) -> RecallLayer:
+        return RecallLayer(memory=MagicMock(), base_retriever=MagicMock())
+
+    def _patch_registry(self, content: str):
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=MagicMock(content=content))
+        registry = MagicMock()
+        registry.get_provider_for_model.return_value = (provider, "model-x")
+        return patch(
+            "agentx_ai.providers.registry.get_registry", return_value=registry
+        ), provider
+
+    def test_hyde_import_resolves_and_calls_provider(self) -> None:
+        recall = self._make_recall()
+        patcher, provider = self._patch_registry("  Paris is the capital of France.  ")
+        with patcher:
+            result = recall._generate_hypothetical("What is the capital of France?")
+        # Wrong import depth would raise ImportError -> except -> "".
+        self.assertEqual(result, "Paris is the capital of France.")
+        provider.complete.assert_called_once()
+
+    def test_self_query_import_resolves_and_calls_provider(self) -> None:
+        recall = self._make_recall()
+        patcher, provider = self._patch_registry('{"keywords": ["python"]}')
+        with patcher:
+            filters = recall._extract_filters("things about python")
+        # Wrong import depth would raise ImportError -> except -> {}.
+        self.assertEqual(filters, {"keywords": ["python"]})
+        provider.complete.assert_called_once()

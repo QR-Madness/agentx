@@ -5,7 +5,6 @@ Vercel AI Gateway provides a unified API to 100+ LLM models through an
 OpenAI-compatible interface with automatic fallbacks and high availability.
 """
 
-import json
 import logging
 import time
 from typing import Any, AsyncIterator, Optional
@@ -19,10 +18,11 @@ from .base import (
     ModelProvider,
     ProviderConfig,
     StreamChunk,
-    ToolCall,
     accumulate_tool_call_delta,
+    convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
+    parse_openai_tool_calls,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,40 +80,6 @@ class VercelProvider(ModelProvider):
             max_retries=self.config.max_retries,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Convert internal Message objects to OpenAI format."""
-        result = []
-        for msg in messages:
-            m: dict[str, Any] = {
-                "role": msg.role.value,
-                "content": msg.content,
-            }
-            if msg.name:
-                m["name"] = msg.name
-            if msg.tool_call_id:
-                m["tool_call_id"] = msg.tool_call_id
-            if msg.tool_calls:
-                m["tool_calls"] = msg.tool_calls
-            result.append(m)
-        return result
-
-    def _parse_tool_calls(self, tool_calls: Any) -> list[ToolCall]:
-        """Parse OpenAI tool calls into internal format."""
-        result = []
-        for tc in tool_calls:
-            args = tc.function.arguments
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    args = {"raw": args}
-            result.append(ToolCall(
-                id=tc.id,
-                name=tc.function.name,
-                arguments=args,
-            ))
-        return result
-
     async def _fetch_models_if_stale(self) -> None:
         """Fetch model catalog from Vercel AI Gateway if cache is stale."""
         now = time.time()
@@ -155,7 +121,7 @@ class VercelProvider(ModelProvider):
         """Generate a completion using Vercel AI Gateway API."""
         request_params: dict[str, Any] = {
             "model": model,
-            "messages": self._convert_messages(messages),
+            "messages": convert_messages_to_openai_format(messages),
             "temperature": temperature,
         }
 
@@ -182,7 +148,7 @@ class VercelProvider(ModelProvider):
         choice = response.choices[0]
         tool_calls = None
         if choice.message.tool_calls:
-            tool_calls = self._parse_tool_calls(choice.message.tool_calls)
+            tool_calls = parse_openai_tool_calls(choice.message.tool_calls)
 
         usage = None
         if response.usage:
@@ -216,7 +182,7 @@ class VercelProvider(ModelProvider):
         """Stream a completion using Vercel AI Gateway API."""
         request_params: dict[str, Any] = {
             "model": model,
-            "messages": self._convert_messages(messages),
+            "messages": convert_messages_to_openai_format(messages),
             "temperature": temperature,
             "stream": True,
         }

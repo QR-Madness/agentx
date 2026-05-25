@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from typing import Any, cast
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
@@ -153,7 +154,7 @@ def _get_storage_metrics() -> dict:
     # Redis memory usage
     try:
         redis_client = RedisConnection.get_client()
-        info = redis_client.info("memory")
+        info = cast(dict, redis_client.info("memory"))
         if "used_memory" in info:
             storage["redis_memory_mb"] = round(info["used_memory"] / 1024 / 1024, 2)
     except Exception:
@@ -1046,7 +1047,6 @@ async def agent_chat_stream(request):
             # how full its context window is, so it can self-pace (wrap up,
             # checkpoint, summarize) before automatic compression kicks in.
             try:
-                from .streaming.helpers import estimate_tokens
                 used_tokens = estimate_tokens(messages)
                 pct = (used_tokens / context_window * 100.0) if context_window else 0.0
                 budget_line = (
@@ -1292,7 +1292,7 @@ async def agent_chat_stream(request):
             await asyncio.sleep(STREAM_CLOSE_DELAY)
 
             # Explicit stream close signal for frontend
-            yield f"event: close\ndata: {{}}\n\n"
+            yield "event: close\ndata: {}\n\n"
             logger.debug("Close event sent, stream should terminate now")
 
             # Store turns in memory in a background thread so the response closes immediately
@@ -1596,7 +1596,7 @@ def tool_outputs_detail(request, storage_key: str):
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
 
-    from .agent.tool_output_storage import get_tool_output, get_tool_output_content, delete_tool_output
+    from .agent.tool_output_storage import get_tool_output, delete_tool_output
 
     if request.method == 'GET':
         metadata_only = request.GET.get('metadata_only', 'false').lower() == 'true'
@@ -1987,6 +1987,8 @@ def prompts_template_detail(request, template_id):
             updates['description'] = data['description']
 
         updated = manager.update_template(template_id, updates)
+        if updated is None:
+            return json_error("Template not found", status=404)
 
         return JsonResponse({
             "template": {
@@ -2333,7 +2335,7 @@ def conversations_list(request):
     channel = request.GET.get("channel")
 
     try:
-        pg_conn = PostgresConnection.get_engine().raw_connection()
+        pg_conn: Any = PostgresConnection.get_engine().raw_connection()
         try:
             with pg_conn.cursor() as cursor:
                 # Build query: group by conversation_id, get summary fields
@@ -2425,7 +2427,7 @@ def conversations_messages(request, conversation_id):
     from .kit.agent_memory.connections import PostgresConnection
 
     try:
-        pg_conn = PostgresConnection.get_engine().raw_connection()
+        pg_conn: Any = PostgresConnection.get_engine().raw_connection()
         try:
             with pg_conn.cursor() as cursor:
                 cursor.execute("""
@@ -2520,7 +2522,7 @@ def memory_conversation_delete(request, conversation_id):
 
         # Delete from PostgreSQL
         try:
-            pg_conn = PostgresConnection.get_engine().raw_connection()
+            pg_conn: Any = PostgresConnection.get_engine().raw_connection()
             try:
                 with pg_conn.cursor() as cursor:
                     cursor.execute(
@@ -2538,7 +2540,7 @@ def memory_conversation_delete(request, conversation_id):
         try:
             redis_client = RedisConnection.get_client()
             pattern = f"working:*:*:{conversation_id}"
-            keys = redis_client.keys(pattern)
+            keys = cast(list, redis_client.keys(pattern))
             if keys:
                 deleted_counts["redis_keys"] = len(keys)
                 redis_client.delete(*keys)
@@ -2658,7 +2660,7 @@ def memory_channel_delete(request, name):
 
         # Delete from PostgreSQL
         try:
-            pg_conn = PostgresConnection.get_engine().raw_connection()
+            pg_conn: Any = PostgresConnection.get_engine().raw_connection()
             try:
                 with pg_conn.cursor() as cursor:
                     cursor.execute(
@@ -2689,7 +2691,7 @@ def memory_channel_delete(request, name):
         try:
             redis_client = RedisConnection.get_client()
             pattern = f"working:*:{name}:*"
-            keys = redis_client.keys(pattern)
+            keys = cast(list, redis_client.keys(pattern))
             if keys:
                 deleted_counts["redis_keys"] = len(keys)
                 redis_client.delete(*keys)
@@ -3312,7 +3314,7 @@ def job_detail(request, job_name):
 
 
 @csrf_exempt
-def job_run(request, job_name):
+async def job_run(request, job_name):
     """
     POST /api/jobs/{name}/run - Manually trigger a job.
 
@@ -3328,7 +3330,9 @@ def job_run(request, job_name):
         from .kit.agent_memory.consolidation import JobRegistry
 
         registry = JobRegistry.get_instance()
-        result = registry.run_job(job_name)
+        # run_job is async; this view was previously sync and never awaited it,
+        # so the endpoint always failed on `.get` against the coroutine.
+        result = await registry.run_job(job_name)
 
         status_code = 200 if result.get("success") else 400
         return JsonResponse(result, status=status_code)
@@ -3662,10 +3666,10 @@ def config_update(request):
 
     # Update providers
     providers = data.get("providers", {})
-    for provider, settings in providers.items():
+    for provider, provider_settings in providers.items():
         if provider not in ("lmstudio", "anthropic", "openai", "openrouter", "vercel"):
             continue  # Skip unknown providers
-        for key, value in settings.items():
+        for key, value in provider_settings.items():
             if value is not None:
                 config.set(f"providers.{provider}.{key}", value)
                 updated_keys.append(f"providers.{provider}.{key}")
@@ -3686,11 +3690,11 @@ def config_update(request):
 
     # Update context limits (only lmstudio provider-level + per-model overrides)
     context_limits_data = data.get("context_limits", {})
-    for key_or_provider, settings in context_limits_data.items():
-        if isinstance(settings, dict):
+    for key_or_provider, limit_settings in context_limits_data.items():
+        if isinstance(limit_settings, dict):
             # Only allow lmstudio provider-level; "models" goes through as sub-dict
             if key_or_provider in ("lmstudio", "models"):
-                for key, value in settings.items():
+                for key, value in limit_settings.items():
                     if value is not None:
                         config.set(f"context_limits.{key_or_provider}.{key}", value)
                         updated_keys.append(f"context_limits.{key_or_provider}.{key}")

@@ -169,7 +169,7 @@ def method_not_allowed(allowed: list[str]) -> JsonResponse:
 
 def parse_json_body(
     request: HttpRequest,
-) -> Tuple[Optional[dict], Optional[JsonResponse]]:
+) -> Tuple[dict, Optional[JsonResponse]]:
     """
     Parse JSON body from request with error handling.
 
@@ -187,7 +187,10 @@ def parse_json_body(
 
     Returns:
         Tuple of (parsed_data, None) on success
-        Tuple of (None, error_response) on failure
+        Tuple of ({}, error_response) on failure — callers always ``return
+        error`` before touching data, so the empty dict is never observed; it
+        exists so the success-path type is a plain ``dict`` (no Optional) and
+        callers can use ``data.get(...)`` without per-site None narrowing.
 
     Usage:
         data, error = parse_json_body(request)
@@ -198,12 +201,12 @@ def parse_json_body(
     try:
         content = request.body.decode("utf-8")
         if not content:
-            return None, json_error("No content provided")
+            return {}, json_error("No content provided")
         return json.loads(content), None
     except json.JSONDecodeError as e:
-        return None, json_error(f"Invalid JSON: {str(e)}")
+        return {}, json_error(f"Invalid JSON: {str(e)}")
     except UnicodeDecodeError as e:
-        return None, json_error(f"Invalid encoding: {str(e)}")
+        return {}, json_error(f"Invalid encoding: {str(e)}")
 
 
 def require_field(

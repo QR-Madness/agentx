@@ -29,7 +29,7 @@ def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
             params = {**request_params, "tools": f"<{len(tools)} tools: {', '.join(names)}>"}
     try:
         dumped = json.dumps(params, indent=2, default=str)
-    except Exception:
+    except (TypeError, ValueError):
         dumped = str(params)
     logger.info(f"[DEBUG LLM REQUEST] {provider_name}:\n{dumped}")
 
@@ -109,6 +109,48 @@ def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCa
             arguments=args,
         ))
     return completed
+
+
+def convert_messages_to_openai_format(messages: list["Message"]) -> list[dict[str, Any]]:
+    """Convert internal Message objects to the OpenAI chat format.
+
+    Shared by the OpenAI-compatible providers (OpenAI, OpenRouter, Vercel).
+    """
+    result: list[dict[str, Any]] = []
+    for msg in messages:
+        m: dict[str, Any] = {
+            "role": msg.role.value,
+            "content": msg.content,
+        }
+        if msg.name:
+            m["name"] = msg.name
+        if msg.tool_call_id:
+            m["tool_call_id"] = msg.tool_call_id
+        if msg.tool_calls:
+            m["tool_calls"] = msg.tool_calls
+        result.append(m)
+    return result
+
+
+def parse_openai_tool_calls(tool_calls: Any) -> list[ToolCall]:
+    """Parse OpenAI SDK tool calls into internal ToolCall objects.
+
+    Shared by the OpenAI-compatible providers (OpenAI, OpenRouter, Vercel).
+    """
+    result: list[ToolCall] = []
+    for tc in tool_calls:
+        args = tc.function.arguments
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {"raw": args}
+        result.append(ToolCall(
+            id=tc.id,
+            name=tc.function.name,
+            arguments=args,
+        ))
+    return result
 
 
 class StreamChunk(BaseModel):
@@ -258,7 +300,7 @@ class ModelProvider(ABC):
         """
         pass
     
-    def health_check(self) -> dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """
         Check if the provider is healthy and reachable.
 

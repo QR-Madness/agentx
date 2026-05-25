@@ -570,11 +570,13 @@ class Agent:
             except Exception as e:
                 logger.warning(f"Failed to retrieve memories for task: {e}")
 
+        # Bound before the try so the except handler can reference it safely
+        # even if planning never ran.
+        plan = None
         try:
             self.status = AgentStatus.PLANNING
 
             # Step 1: Planning (if enabled)
-            plan = None
             from ..config import get_config_manager
             _pcfg = get_config_manager()
             if self.config.enable_planning and _pcfg.get("planner.enabled", True):

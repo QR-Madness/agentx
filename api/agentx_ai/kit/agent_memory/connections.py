@@ -1,6 +1,7 @@
 """Database connection management for Neo4j, PostgreSQL, and Redis."""
 
 import atexit
+import logging
 import threading
 from contextlib import contextmanager
 from typing import ClassVar, Generator, Optional
@@ -10,6 +11,8 @@ from sqlalchemy import create_engine, Engine
 from sqlalchemy.orm import sessionmaker, Session as SQLSession
 
 from .config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -36,7 +39,7 @@ class Neo4jConnection:
                         settings.neo4j_uri,
                         auth=(settings.neo4j_user, settings.neo4j_password),
                         connection_timeout=settings.connection_timeout,
-                        max_connection_lifetime=300,
+                        max_connection_lifetime=settings.neo4j_max_connection_lifetime,
                         connection_acquisition_timeout=settings.connection_timeout,
                         # Suppress warnings about missing labels/properties (expected for empty DB)
                         notifications_min_severity=NotificationMinimumSeverity.OFF,
@@ -79,8 +82,8 @@ class PostgresConnection:
                 if cls._engine is None:
                     cls._engine = create_engine(
                         settings.postgres_uri,
-                        pool_size=10,
-                        max_overflow=20,
+                        pool_size=settings.postgres_pool_size,
+                        max_overflow=settings.postgres_pool_max_overflow,
                         connect_args={"connect_timeout": settings.connection_timeout}
                     )
         return cls._engine  # type: ignore[return-value]
@@ -162,22 +165,22 @@ def close_all_connections():
         try:
             Neo4jConnection.close()
             results.put("neo4j")
-        except Exception:
-            pass
-    
+        except Exception as e:
+            logger.warning(f"Failed to close Neo4j connection on shutdown: {e}", exc_info=True)
+
     def _close_postgres():
         try:
             PostgresConnection.close()
             results.put("postgres")
-        except Exception:
-            pass
-    
+        except Exception as e:
+            logger.warning(f"Failed to close PostgreSQL connection on shutdown: {e}", exc_info=True)
+
     def _close_redis():
         try:
             RedisConnection.close()
             results.put("redis")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to close Redis connection on shutdown: {e}", exc_info=True)
     
     # Close connections in parallel with daemon threads
     threads = []
@@ -206,7 +209,8 @@ def get_redis_client() -> Optional[redis.Redis]:
         # Test connection with a ping
         client.ping()
         return client
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Redis unavailable, returning None: {e}")
         return None
 
 

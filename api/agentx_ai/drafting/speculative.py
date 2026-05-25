@@ -107,7 +107,9 @@ class SpeculativeDecoder(DraftingStrategy):
         # Build up the response
         generated_content = ""
         current_messages = list(messages)
-        
+
+        # Bound so stages_completed resolves to 0 if max_iterations is 0.
+        iteration = -1
         for iteration in range(self.spec_config.max_iterations):
             # Step 1: Draft phase
             draft_start = time.time()

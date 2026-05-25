@@ -85,6 +85,19 @@ class Entity(BaseModel):
     def _coerce_dt(cls, v: Any) -> Any:
         return _coerce_datetime(v)
 
+    @staticmethod
+    def compute_embedding_text(name: str, description: Optional[str], type_: str) -> str:
+        """Canonical text used to embed an entity: ``"{name}: {description or type}"``.
+
+        Shared by upsert and update paths so the embedding input stays
+        consistent regardless of which code path (re-)embeds the entity.
+        """
+        return f"{name}: {description or type_}"
+
+    def embedding_text(self) -> str:
+        """Canonical embedding text for this entity instance."""
+        return self.compute_embedding_text(self.name, self.description, self.type)
+
 
 class Fact(BaseModel):
     """Represents a factual claim or piece of knowledge."""

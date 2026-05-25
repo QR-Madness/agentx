@@ -596,6 +596,12 @@ tasks:
     cmds:
       - uv run pyright api/agentx_ai/
 
+  check:types:python:baseline:
+    desc: "Fail if pyright errors rise above api/.pyright-baseline"
+    silent: true
+    cmds:
+      - uv run python scripts/check_pyright_baseline.py
+
   check:types:client:
     desc: "Type check TypeScript code"
     dir: client

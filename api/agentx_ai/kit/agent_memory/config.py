@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # Connection timeouts (seconds)
     connection_timeout: int = 5
 
+    # Connection pooling
+    neo4j_max_connection_lifetime: int = 300  # seconds before a pooled conn is recycled
+    postgres_pool_size: int = 10
+    postgres_pool_max_overflow: int = 20
+
     # Embeddings
     embedding_provider: str = "local"  # "openai" or "local"
     embedding_model: str = "text-embedding-3-small"  # for OpenAI
@@ -83,6 +88,12 @@ class Settings(BaseSettings):
     recall_enable_query_expansion: bool = True  # Question→statement (recommended)
     recall_enable_hyde: bool = False  # Hypothetical doc embedding (expensive LLM call)
     recall_enable_self_query: bool = False  # LLM filter extraction (expensive LLM call)
+
+    # --- General Recall Settings ---
+    # Minimum fact confidence applied to RecallLayer vector searches. Kept
+    # separate from fact_confidence_threshold (0.7) so recall can surface
+    # lower-confidence facts that ranking will still order appropriately.
+    recall_min_confidence: float = 0.5
 
     # --- Hybrid Search Settings ---
     recall_hybrid_bm25_weight: float = 0.3  # BM25 contribution to RRF
@@ -408,6 +419,9 @@ def get_recall_settings() -> Dict[str, Any]:
         "recall_enable_query_expansion": settings.recall_enable_query_expansion,
         "recall_enable_hyde": settings.recall_enable_hyde,
         "recall_enable_self_query": settings.recall_enable_self_query,
+
+        # General recall settings
+        "recall_min_confidence": settings.recall_min_confidence,
 
         # Hybrid search settings
         "recall_hybrid_bm25_weight": settings.recall_hybrid_bm25_weight,

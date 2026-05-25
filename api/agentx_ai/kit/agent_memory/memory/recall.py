@@ -12,6 +12,8 @@ Each technique can be enabled/disabled via config settings.
 Comprehensive debug logging shows exactly what's happening.
 """
 
+import asyncio
+import concurrent.futures
 import logging
 import re
 import time
@@ -27,6 +29,25 @@ if TYPE_CHECKING:
     from .interface import AgentMemory
 
 logger = logging.getLogger(__name__)
+
+
+def _run_coro_sync(coro: Any, timeout: float = 30.0) -> Any:
+    """Run an async coroutine from RecallLayer's synchronous context.
+
+    ``provider.complete()`` is async, but RecallLayer is synchronous. Mirror the
+    bridge used in ``agent/core.py``: if an event loop is already running,
+    execute in a dedicated thread; otherwise run the coroutine directly.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result(timeout=timeout)
+    return asyncio.run(coro)
 
 
 @dataclass
@@ -673,7 +694,7 @@ class RecallLayer:
                 user_id=user_id,
                 channel=channel,
                 top_k=top_k,
-                min_confidence=0.5,
+                min_confidence=self._settings.recall_min_confidence,
             )
             logger.debug(
                 f"[RecallLayer:Expansion] Variant \"{variant[:30]}...\" found {len(results)} facts"
@@ -813,7 +834,7 @@ class RecallLayer:
             user_id=user_id,
             channel=channel,
             top_k=top_k,
-            min_confidence=0.5,
+            min_confidence=settings.recall_min_confidence,
         )
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -832,14 +853,14 @@ class RecallLayer:
         settings = self._settings
 
         try:
-            from ...providers.registry import get_registry
+            from ....providers.registry import get_registry
 
             registry = get_registry()
             provider, model_id = registry.get_provider_for_model(
                 settings.recall_hyde_model
             )
 
-            from ...providers.base import Message, MessageRole
+            from ....providers.base import Message, MessageRole
 
             messages = [
                 Message(
@@ -857,11 +878,13 @@ class RecallLayer:
                 ),
             ]
 
-            result = provider.complete(
-                messages,
-                model_id,
-                temperature=settings.recall_hyde_temperature,
-                max_tokens=settings.recall_hyde_max_tokens,
+            result = _run_coro_sync(
+                provider.complete(
+                    messages,
+                    model_id,
+                    temperature=settings.recall_hyde_temperature,
+                    max_tokens=settings.recall_hyde_max_tokens,
+                )
             )
 
             return result.content.strip()
@@ -901,18 +924,17 @@ class RecallLayer:
 
         logger.debug(f"[RecallLayer:SelfQuery] Extracted filters: {filters}")
 
-        # Apply filters to retrieval
-        time_window = filters.get("time_window_hours")
+        # Apply filters to retrieval. NOTE: time_window_hours is extracted by
+        # the LLM but not yet applied here — only keyword filtering is wired up.
         keywords = filters.get("keywords", [])
 
-        # Get base results with time filter
         embedding = self.memory.embedder.embed_single(query)
         results = self.memory.semantic.vector_search_facts(
             query_embedding=embedding,
             user_id=user_id,
             channel=channels[0] if channels else self.memory.channel,
             top_k=top_k * 2,  # Over-fetch to allow filtering
-            min_confidence=0.5,
+            min_confidence=self._settings.recall_min_confidence,
         )
 
         # Filter by keywords if present
@@ -943,14 +965,14 @@ class RecallLayer:
         settings = self._settings
 
         try:
-            from ...providers.registry import get_registry
+            from ....providers.registry import get_registry
 
             registry = get_registry()
             provider, model_id = registry.get_provider_for_model(
                 settings.recall_self_query_model
             )
 
-            from ...providers.base import Message, MessageRole
+            from ....providers.base import Message, MessageRole
 
             messages = [
                 Message(
@@ -972,11 +994,13 @@ class RecallLayer:
                 ),
             ]
 
-            result = provider.complete(
-                messages,
-                model_id,
-                temperature=settings.recall_self_query_temperature,
-                max_tokens=settings.recall_self_query_max_tokens,
+            result = _run_coro_sync(
+                provider.complete(
+                    messages,
+                    model_id,
+                    temperature=settings.recall_self_query_temperature,
+                    max_tokens=settings.recall_self_query_max_tokens,
+                )
             )
 
             # Parse JSON response

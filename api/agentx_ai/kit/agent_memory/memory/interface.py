@@ -26,6 +26,7 @@ from .procedural import ProceduralMemory
 from .working import WorkingMemory
 from .retrieval import MemoryRetriever, RetrievalWeights
 from .recall import RecallLayer
+from .query_utils import get_channel_filter_cypher
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +261,7 @@ class AgentMemory:
 
         try:
             if entity.embedding is None:
-                text = f"{entity.name}: {entity.description or entity.type}"
-                entity.embedding = self.embedder.embed_single(text)
+                entity.embedding = self.embedder.embed_single(entity.embedding_text())
 
             result = self.semantic.upsert_entity(entity, user_id=self.user_id, channel=self.channel)
 
@@ -403,7 +403,7 @@ class AgentMemory:
             new_name = name if name is not None else current.get("name", "")
             new_desc = description if description is not None else current.get("description")
             new_type = type if type is not None else current.get("type", "")
-            text = f"{new_name}: {new_desc or new_type}"
+            text = Entity.compute_embedding_text(new_name, new_desc, new_type)
             embedding = self.embedder.embed_single(text)
 
         updated = self.semantic.update_entity(
@@ -545,10 +545,7 @@ class AgentMemory:
         """
         with Neo4jConnection.session() as session:
             # Build channel filter
-            if self.channel and self.channel != "_global":
-                channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
-            else:
-                channel_filter = "AND g.channel = '_global'"
+            channel_filter = get_channel_filter_cypher(self.channel)
 
             result = session.run(f"""
                 MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal {{id: $goal_id}})
@@ -591,10 +588,7 @@ class AgentMemory:
         try:
             with Neo4jConnection.session() as session:
                 # Build channel filter to respect access boundaries
-                if self.channel and self.channel != "_global":
-                    channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
-                else:
-                    channel_filter = "AND g.channel = '_global'"
+                channel_filter = get_channel_filter_cypher(self.channel)
 
                 # SECURITY: Verify user owns the goal via HAS_GOAL relationship
                 query_result = session.run(f"""

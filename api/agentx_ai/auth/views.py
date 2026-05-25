@@ -3,7 +3,6 @@
 import logging
 from datetime import datetime, timezone, timedelta
 from django.conf import settings
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from ..utils.responses import json_error, json_success, parse_json_body, require_methods

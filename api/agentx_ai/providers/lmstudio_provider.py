@@ -54,7 +54,14 @@ class LMStudioProvider(ModelProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.base_url = config.base_url or self.DEFAULT_BASE_URL
-        self._timeout = config.timeout if config.timeout != 60.0 else self.DEFAULT_TIMEOUT
+        # When the caller left timeout at ProviderConfig's default, use LM
+        # Studio's longer default (local models can be slow). Reference the
+        # dataclass default rather than a hardcoded 60.0 so the two stay in
+        # sync. Known limitation: an explicit timeout equal to the default is
+        # indistinguishable from "unset" (a real unset sentinel is tracked in
+        # the cleanup roadmap).
+        _default_timeout = ProviderConfig.__dataclass_fields__["timeout"].default
+        self._timeout = self.DEFAULT_TIMEOUT if config.timeout == _default_timeout else config.timeout
         self._available_models: Optional[list[dict[str, Any]]] = None
         self._api_key = config.api_key or "lm-studio"
 
