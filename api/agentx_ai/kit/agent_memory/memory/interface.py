@@ -24,9 +24,9 @@ from .episodic import EpisodicMemory
 from .semantic import SemanticMemory
 from .procedural import ProceduralMemory
 from .working import WorkingMemory
+from .goal import GoalMemory
 from .retrieval import MemoryRetriever, RetrievalWeights
 from .recall import RecallLayer
-from .query_utils import get_channel_filter_cypher
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,7 @@ class AgentMemory:
         self.episodic = EpisodicMemory(audit_logger=self._audit_logger)
         self.semantic = SemanticMemory(audit_logger=self._audit_logger)
         self.procedural = ProceduralMemory(audit_logger=self._audit_logger)
+        self.goal = GoalMemory(audit_logger=self._audit_logger)
         self.working = WorkingMemory(
             user_id,
             conversation_id,
@@ -473,65 +474,17 @@ class AgentMemory:
         Returns:
             Created Goal object
         """
-        start_time = time.perf_counter()
-        success = True
-        error_msg = None
-
-        try:
-            if goal.embedding is None:
-                goal.embedding = self.embedder.embed_single(goal.description)
-
-            with Neo4jConnection.session() as session:
-                session.run("""
-                    MERGE (u:User {id: $user_id})
-                    CREATE (g:Goal {
-                        id: $goal_id,
-                        description: $description,
-                        status: $status,
-                        priority: $priority,
-                        channel: $channel,
-                        created_at: datetime(),
-                        embedding: $embedding
-                    })
-                    MERGE (u)-[:HAS_GOAL]->(g)
-                """,
-                    user_id=self.user_id,
-                    goal_id=goal.id,
-                    description=goal.description,
-                    status=goal.status,
-                    priority=goal.priority,
-                    channel=self.channel,
-                    embedding=goal.embedding
-                )
-                if goal.parent_goal_id:
-                    session.run("""
-                        MATCH (child:Goal {id: $child_id})
-                        MATCH (parent:Goal {id: $parent_id})
-                        MERGE (child)-[:SUBGOAL_OF]->(parent)
-                    """,
-                        child_id=goal.id,
-                        parent_id=goal.parent_goal_id,
-                    )
-            return goal
-        except Exception as e:
-            success = False
-            error_msg = str(e)
-            raise
-        finally:
-            latency_ms = int((time.perf_counter() - start_time) * 1000)
-            self._audit_logger.log_write(
-                operation=OperationType.STORE.value,
-                memory_type=MemoryType.SEMANTIC.value,
-                user_id=self.user_id,
-                session_id=self.session_id,
-                conversation_id=self.conversation_id,
-                channel=self.channel,
-                record_ids=[goal.id],
-                latency_ms=latency_ms,
-                success=success,
-                error_message=error_msg,
-                metadata={"goal_status": goal.status, "goal_priority": goal.priority},
-            )
+        # Embedding is a cross-cutting concern owned by the facade (mirrors how
+        # entities are embedded outside SemanticMemory); storage lives in GoalMemory.
+        if goal.embedding is None:
+            goal.embedding = self.embedder.embed_single(goal.description)
+        return self.goal.add_goal(
+            goal,
+            user_id=self.user_id,
+            channel=self.channel,
+            session_id=self.session_id,
+            conversation_id=self.conversation_id,
+        )
 
     def get_goal(self, goal_id: str) -> Optional[Goal]:
         """
@@ -543,25 +496,7 @@ class AgentMemory:
         Returns:
             Goal object if found and accessible, None otherwise
         """
-        with Neo4jConnection.session() as session:
-            # Build channel filter
-            channel_filter = get_channel_filter_cypher(self.channel)
-
-            result = session.run(f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal {{id: $goal_id}})
-                WHERE true {channel_filter}
-                OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
-                RETURN g, parent.id AS parent_goal_id
-            """, goal_id=goal_id, user_id=self.user_id, channel=self.channel)
-
-            record = result.single()
-            if not record or not record["g"]:
-                return None
-
-            goal_data = dict(record["g"])
-            if record["parent_goal_id"]:
-                goal_data["parent_goal_id"] = record["parent_goal_id"]
-            return Goal(**goal_data)
+        return self.goal.get_goal(goal_id, user_id=self.user_id, channel=self.channel)
 
     def complete_goal(
         self,
@@ -580,53 +515,15 @@ class AgentMemory:
         Returns:
             True if goal was found and updated, False otherwise
         """
-        start_time = time.perf_counter()
-        success = True
-        error_msg = None
-        updated = False
-
-        try:
-            with Neo4jConnection.session() as session:
-                # Build channel filter to respect access boundaries
-                channel_filter = get_channel_filter_cypher(self.channel)
-
-                # SECURITY: Verify user owns the goal via HAS_GOAL relationship
-                query_result = session.run(f"""
-                    MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal {{id: $goal_id}})
-                    WHERE true {channel_filter}
-                    SET g.status = $status,
-                        g.completed_at = datetime(),
-                        g.result = $result
-                    RETURN g.id AS updated_id
-                """,
-                    user_id=self.user_id,
-                    goal_id=goal_id,
-                    status=status,
-                    result=result,
-                    channel=self.channel
-                )
-                record = query_result.single()
-                updated = record is not None and record["updated_id"] is not None
-                return updated
-        except Exception as e:
-            success = False
-            error_msg = str(e)
-            raise
-        finally:
-            latency_ms = int((time.perf_counter() - start_time) * 1000)
-            self._audit_logger.log_write(
-                operation=OperationType.UPDATE.value,
-                memory_type=MemoryType.SEMANTIC.value,
-                user_id=self.user_id,
-                session_id=self.session_id,
-                conversation_id=self.conversation_id,
-                channel=self.channel,
-                record_ids=[goal_id] if updated else None,
-                latency_ms=latency_ms,
-                success=success,
-                error_message=error_msg,
-                metadata={"new_status": status, "goal_found": updated},
-            )
+        return self.goal.complete_goal(
+            goal_id,
+            user_id=self.user_id,
+            status=status,
+            result=result,
+            channel=self.channel,
+            session_id=self.session_id,
+            conversation_id=self.conversation_id,
+        )
 
     def record_tool_usage(
         self,
@@ -834,28 +731,7 @@ class AgentMemory:
         Returns:
             List of active Goal objects
         """
-        with Neo4jConnection.session() as session:
-            # Build channel filter
-            if self.channel and self.channel != "_global":
-                channel_filter = "AND (g.channel = $channel OR g.channel = '_global')"
-            else:
-                channel_filter = "AND g.channel = '_global'"
-
-            result = session.run(f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal)
-                WHERE g.status = 'active' {channel_filter}
-                OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
-                RETURN g, parent
-                ORDER BY g.priority DESC
-            """, user_id=self.user_id, channel=self.channel)
-
-            goals = []
-            for record in result:
-                goal_data = dict(record["g"])
-                if record["parent"]:
-                    goal_data["parent"] = dict(record["parent"])
-                goals.append(Goal(**goal_data))
-            return goals
+        return self.goal.get_active_goals(user_id=self.user_id, channel=self.channel)
 
     def get_user_context(self) -> Dict[str, Any]:
         """

@@ -860,6 +860,86 @@ class ToolDiscoveryErrorTest(TestCase):
         self.assertIsNone(executor.get_discovery_error("srv"))
 
 
+class MemoryRecorderTest(TestCase):
+    """MemoryRecorder translates agent lifecycle events into memory writes (Pass 4)."""
+
+    def _recorder(self):
+        from agentx_ai.agent.hooks import MemoryRecorder
+        mem = MagicMock()
+        return MemoryRecorder(mem), mem
+
+    def test_task_complete_reflects_and_completes_goal(self) -> None:
+        from agentx_ai.agent.hooks import TaskOutcome
+        rec, mem = self._recorder()
+        rec.on_task_complete(TaskOutcome(
+            task_id="t1", task="do x", status="complete", answer="done", goal_id="g1",
+        ))
+        self.assertEqual(mem.reflect.call_args[0][0]["status"], "complete")
+        mem.complete_goal.assert_called_once_with("g1", status="completed", result="done")
+
+    def test_task_complete_cancelled_abandons_goal(self) -> None:
+        from agentx_ai.agent.hooks import TaskOutcome
+        rec, mem = self._recorder()
+        rec.on_task_complete(TaskOutcome(
+            task_id="t1", task="do x", status="complete", answer="[CANCELLED]", goal_id="g1",
+        ))
+        self.assertEqual(mem.complete_goal.call_args.kwargs["status"], "abandoned")
+
+    def test_task_complete_without_goal_skips_complete_goal(self) -> None:
+        from agentx_ai.agent.hooks import TaskOutcome
+        rec, mem = self._recorder()
+        rec.on_task_complete(TaskOutcome(task_id="t1", task="x", status="complete"))
+        mem.complete_goal.assert_not_called()
+
+    def test_task_error_reflects_failed_and_abandons_goal(self) -> None:
+        from agentx_ai.agent.hooks import TaskOutcome
+        rec, mem = self._recorder()
+        rec.on_task_error(TaskOutcome(
+            task_id="t1", task="x", status="failed", error="boom", goal_id="g1",
+        ))
+        self.assertEqual(mem.reflect.call_args[0][0]["status"], "failed")
+        self.assertEqual(mem.complete_goal.call_args.kwargs["status"], "abandoned")
+        self.assertIn("boom", mem.complete_goal.call_args.kwargs["result"])
+
+    def test_on_turn_and_tool_and_goal_delegate(self) -> None:
+        from agentx_ai.kit.agent_memory.models import Turn
+        rec, mem = self._recorder()
+        turn = Turn(conversation_id="c1", index=0, role="user", content="hi")
+        rec.on_turn(turn)
+        mem.store_turn.assert_called_once_with(turn)
+        rec.on_tool_use("calc", {"a": 1}, "2", True, 5, None)
+        self.assertEqual(mem.record_tool_usage.call_args.kwargs["tool_name"], "calc")
+        rec.on_goal_complete("g2", "completed", "r")
+        mem.complete_goal.assert_called_with("g2", status="completed", result="r")
+
+    def test_reflect_failure_does_not_block_goal_completion(self) -> None:
+        """Per-op fault isolation is preserved: a failed reflect still lets the goal complete."""
+        from agentx_ai.agent.hooks import TaskOutcome
+        rec, mem = self._recorder()
+        mem.reflect.side_effect = RuntimeError("reflect down")
+        rec.on_task_complete(TaskOutcome(
+            task_id="t1", task="x", status="complete", answer="a", goal_id="g1",
+        ))  # must not raise
+        mem.complete_goal.assert_called_once()
+
+
+class AgentHookDispatchTest(TestCase):
+    """Agent._dispatch isolates a broken subscriber (Pass 4)."""
+
+    def test_dispatch_swallows_subscriber_errors(self) -> None:
+        from agentx_ai.agent.core import Agent, AgentConfig
+        from agentx_ai.agent.hooks import AgentHooks
+
+        class BrokenHook(AgentHooks):
+            def on_turn(self, turn) -> None:
+                raise RuntimeError("subscriber boom")
+
+        agent = Agent(AgentConfig(enable_memory=False, enable_tools=False))
+        agent._hooks = [BrokenHook()]
+        # Must not propagate the subscriber's error.
+        agent._dispatch("on_turn", object())
+
+
 # =============================================================================
 # Phase 11.3: Extraction Pipeline Tests
 # =============================================================================

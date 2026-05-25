@@ -27,6 +27,7 @@ from ..drafting import DraftingStrategy
 from ..drafting.speculative import SpeculativeDecoder, SpeculativeConfig
 from ..kit.memory_utils import get_agent_memory
 from ..kit.agent_memory.models import Turn
+from .hooks import AgentHooks, MemoryRecorder, TaskOutcome
 from ..utils.async_bridge import run_coro_sync
 from .tool_output_compressor import get_compressor
 from .tool_output_storage import store_tool_output
@@ -153,7 +154,9 @@ class Agent:
         self._session_manager = None
         self._memory = None
         self._mcp_client = None
-        
+        # Lifecycle subscribers (built lazily once memory resolves)
+        self._hooks: Optional[list[AgentHooks]] = None
+
         # Runtime state
         self._current_task_id: Optional[str] = None
         self._cancel_requested = False
@@ -212,7 +215,26 @@ class Agent:
             if self._memory is None:
                 logger.warning("Memory system unavailable, agent will operate without persistent memory")
         return self._memory
-    
+
+    @property
+    def hooks(self) -> list[AgentHooks]:
+        """Agent lifecycle subscribers. Built once; registers a MemoryRecorder
+        when memory is available so write-backs route through the hook seam."""
+        if self._hooks is None:
+            self._hooks = []
+            mem = self.memory
+            if mem is not None:
+                self._hooks.append(MemoryRecorder(mem))
+        return self._hooks
+
+    def _dispatch(self, event: str, *args: Any) -> None:
+        """Fire a lifecycle event to all hooks, isolating subscriber failures."""
+        for hook in self.hooks:
+            try:
+                getattr(hook, event)(*args)
+            except Exception as e:
+                logger.warning(f"Agent hook {type(hook).__name__}.{event} failed: {e}")
+
     @property
     def mcp_client(self):
         """Lazy-load the MCP client manager using the global singleton."""
@@ -220,32 +242,13 @@ class Agent:
             from ..mcp import get_mcp_manager
             self._mcp_client = get_mcp_manager()
             
-            # Wire memory-based tool usage recording if memory is available.
-            # Capture a narrowed local so the closure doesn't re-read the
-            # Optional `self.memory` property (which pyright can't narrow).
-            memory = self.memory
-            if memory:
-                def record_tool_usage(
-                    tool_name: str,
-                    tool_input: dict,
-                    tool_output,
-                    success: bool,
-                    latency_ms: int,
-                    error_message: str | None,
-                ) -> None:
-                    try:
-                        memory.record_tool_usage(
-                            tool_name=tool_name,
-                            tool_input=tool_input,
-                            tool_output=tool_output,
-                            success=success,
-                            latency_ms=latency_ms,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to record tool usage in memory: {e}")
-                
-                self._mcp_client.tool_executor.set_usage_recorder(record_tool_usage)
-        
+            # Route tool-usage recording through the hook seam (MemoryRecorder
+            # subscribes when memory is available).
+            if self.hooks:
+                self._mcp_client.tool_executor.set_usage_recorder(
+                    lambda *a: self._dispatch("on_tool_use", *a)
+                )
+
         return self._mcp_client
     
     # ──────────────────────────────────────────────
@@ -630,30 +633,17 @@ class Agent:
 
                 trace.append({"phase": "plan_execution", "steps": len(plan.steps)})
 
-                if self.memory:
-                    try:
-                        self.memory.reflect({
-                            "task_id": task_id,
-                            "task": task[:200],
-                            "status": "complete",
-                            "total_tokens": total_tokens,
-                            "total_time_ms": total_time,
-                            "reasoning_steps": 0,
-                            "tools_used": tools_used,
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to trigger memory reflection: {e}")
-
-                if self.memory and plan.goal_id:
-                    try:
-                        goal_status = "abandoned" if answer == "[CANCELLED]" else "completed"
-                        self.memory.complete_goal(
-                            plan.goal_id,
-                            status=goal_status,
-                            result=answer[:500] if answer else None,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to complete goal: {e}")
+                self._dispatch("on_task_complete", TaskOutcome(
+                    task_id=task_id,
+                    task=task,
+                    status="complete",
+                    answer=answer,
+                    total_tokens=total_tokens,
+                    total_time_ms=total_time,
+                    reasoning_steps=0,
+                    tools_used=tools_used,
+                    goal_id=plan.goal_id,
+                ))
 
                 return AgentResult(
                     task_id=task_id,
@@ -758,32 +748,18 @@ class Agent:
             total_time = (time.time() - start_time) * 1000
             self.status = AgentStatus.COMPLETE
             
-            # Trigger memory reflection after task completion
-            if self.memory:
-                try:
-                    self.memory.reflect({
-                        "task_id": task_id,
-                        "task": task[:200],
-                        "status": "complete",
-                        "total_tokens": total_tokens,
-                        "total_time_ms": total_time,
-                        "reasoning_steps": reasoning_steps,
-                        "tools_used": tools_used,
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to trigger memory reflection: {e}")
+            self._dispatch("on_task_complete", TaskOutcome(
+                task_id=task_id,
+                task=task,
+                status="complete",
+                answer=answer,
+                total_tokens=total_tokens,
+                total_time_ms=total_time,
+                reasoning_steps=reasoning_steps,
+                tools_used=tools_used,
+                goal_id=plan.goal_id if plan else None,
+            ))
 
-            # Complete goal in memory if one was created
-            if self.memory and plan and plan.goal_id:
-                try:
-                    self.memory.complete_goal(
-                        plan.goal_id,
-                        status="completed",
-                        result=answer[:500] if answer else None,
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to complete goal: {e}")
-            
             return AgentResult(
                 task_id=task_id,
                 status=AgentStatus.COMPLETE,
@@ -800,30 +776,15 @@ class Agent:
         except Exception as e:
             logger.error(f"Agent task {task_id} failed: {e}")
             self.status = AgentStatus.FAILED
-            
-            # Trigger reflection for failed tasks too
-            if self.memory:
-                try:
-                    self.memory.reflect({
-                        "task_id": task_id,
-                        "task": task[:200],
-                        "status": "failed",
-                        "error": str(e),
-                    })
-                except Exception as reflect_error:
-                    logger.warning(f"Failed to trigger memory reflection: {reflect_error}")
 
-            # Mark goal as abandoned on failure
-            if self.memory and plan and plan.goal_id:
-                try:
-                    self.memory.complete_goal(
-                        plan.goal_id,
-                        status="abandoned",
-                        result=f"Task failed: {str(e)[:400]}",
-                    )
-                except Exception as goal_error:
-                    logger.warning(f"Failed to update goal status: {goal_error}")
-            
+            self._dispatch("on_task_error", TaskOutcome(
+                task_id=task_id,
+                task=task,
+                status="failed",
+                error=str(e),
+                goal_id=plan.goal_id if plan else None,
+            ))
+
             return AgentResult(
                 task_id=task_id,
                 status=AgentStatus.FAILED,
@@ -900,17 +861,14 @@ class Agent:
         session.add_message(user_message)
 
         # Store user turn in memory (full message)
-        if self.memory:
+        if self.hooks:
             user_turn = Turn(
                 conversation_id=conversation_id,
                 index=len(session.get_messages()) - 1,
                 role="user",
                 content=message,
             )
-            try:
-                self.memory.store_turn(user_turn)
-            except Exception as e:
-                logger.warning(f"Failed to store user turn in memory: {e}")
+            self._dispatch("on_turn", user_turn)
 
         # Get context from session (excluding current message for the prompt)
         context = session.get_messages()[:-1]
@@ -991,7 +949,7 @@ class Agent:
                 total_time = (time.time() - start_time) * 1000
 
                 # Store assistant turn in memory
-                if self.memory:
+                if self.hooks:
                     assistant_turn = Turn(
                         conversation_id=conversation_id,
                         index=len(session.get_messages()) - 1,
@@ -1004,10 +962,7 @@ class Agent:
                             "task_id": task_id,
                         }
                     )
-                    try:
-                        self.memory.store_turn(assistant_turn)
-                    except Exception as e:
-                        logger.warning(f"Failed to store assistant turn in memory: {e}")
+                    self._dispatch("on_turn", assistant_turn)
 
                 return AgentResult(
                     task_id=task_id,
@@ -1028,7 +983,7 @@ class Agent:
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=result.answer))
 
                 # Store assistant turn in memory
-                if self.memory:
+                if self.hooks:
                     assistant_turn = Turn(
                         conversation_id=conversation_id,
                         index=len(session.get_messages()) - 1,
@@ -1043,10 +998,7 @@ class Agent:
                             "tools_used": result.tools_used,
                         }
                     )
-                    try:
-                        self.memory.store_turn(assistant_turn)
-                    except Exception as e:
-                        logger.warning(f"Failed to store assistant turn in memory: {e}")
+                    self._dispatch("on_turn", assistant_turn)
 
                 return result
 

@@ -171,6 +171,72 @@ class GoalAccessControlTest(TestCase):
             self.assertEqual(kwargs["channel"], "project-X")
 
 
+class GoalMemoryTest(TestCase):
+    """GoalMemory sub-module storage (Pass 4 — extracted from interface.py)."""
+
+    def test_add_goal_creates_node_and_has_goal_relationship(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+        from agentx_ai.kit.agent_memory.models import Goal
+
+        mock_session = create_mock_neo4j_session()
+        mock_session.run.return_value = MagicMock()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            GoalMemory(audit_logger=None).add_goal(
+                Goal(description="ship it", embedding=[0.1, 0.2]),
+                user_id="user-A", channel="_global",
+            )
+            create_query = mock_session.run.call_args_list[0][0][0]
+            self.assertIn("CREATE (g:Goal", create_query)
+            self.assertIn(":HAS_GOAL", create_query)
+
+    def test_add_goal_links_subgoal(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+        from agentx_ai.kit.agent_memory.models import Goal
+
+        mock_session = create_mock_neo4j_session()
+        mock_session.run.return_value = MagicMock()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            GoalMemory(audit_logger=None).add_goal(
+                Goal(description="subtask", parent_goal_id="parent-1", embedding=[0.0]),
+                user_id="user-A", channel="_global",
+            )
+            queries = [c[0][0] for c in mock_session.run.call_args_list]
+            self.assertTrue(any("SUBGOAL_OF" in q for q in queries))
+
+    def test_get_active_goals_orders_by_priority_and_filters_channel(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+
+        mock_session = create_mock_neo4j_session()
+        record = {
+            "g": {"id": "g1", "description": "d", "status": "active",
+                  "priority": 3, "channel": "proj"},
+            "parent": None,
+        }
+        mock_session.run.return_value = [record]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            goals = GoalMemory().get_active_goals(user_id="user-A", channel="proj")
+            query = mock_session.run.call_args[0][0]
+            self.assertIn("ORDER BY g.priority DESC", query)
+            self.assertEqual(mock_session.run.call_args[1]["channel"], "proj")
+            self.assertEqual(len(goals), 1)
+
+    def test_get_goal_returns_none_when_missing(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+
+        mock_session = create_mock_neo4j_session()
+        mock_result = MagicMock()
+        mock_result.single.return_value = None
+        mock_session.run.return_value = mock_result
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            self.assertIsNone(
+                GoalMemory().get_goal("missing", user_id="user-A", channel="_global")
+            )
+
+
 class EntityTypeValidationTest(TestCase):
     """Test entity type whitelist validation."""
 

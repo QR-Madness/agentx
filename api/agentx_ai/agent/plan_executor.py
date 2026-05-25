@@ -50,13 +50,12 @@ class PlanExecutor:
         result: Optional[str] = None,
     ) -> None:
         """Update the memory goal linked to a subtask, if one exists."""
-        memory = getattr(self.agent, "memory", None)
-        if not memory or not subtask.goal_id:
+        if not subtask.goal_id:
             return
-        try:
-            memory.complete_goal(subtask.goal_id, status=status, result=result)
-        except Exception as e:
-            logger.warning(f"Failed to complete subgoal {subtask.goal_id}: {e}")
+        # Route through the agent's hook seam (MemoryRecorder subscribes). This
+        # is a goal-state update only — not a task-completion event, so it does
+        # not trigger reflection.
+        self.agent._dispatch("on_goal_complete", subtask.goal_id, status, result)
 
     # ------------------------------------------------------------------
     # Synchronous execution (for Agent.run)

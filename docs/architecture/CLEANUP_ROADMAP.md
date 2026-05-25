@@ -94,18 +94,23 @@ to the global. No behavior change in production; large testability win.
 
 ---
 
-## 5. Memory decoupling
+## 5. Memory decoupling — ✅ done (Pass 4)
 
-**Problem.** Memory calls are scattered through `Agent.run()`/`Agent.chat()`
+**Problem.** Memory calls were scattered through `Agent.run()`/`Agent.chat()`
 (`agent/core.py`), each wrapped in its own try/except. Goal operations in
-`kit/agent_memory/memory/interface.py` bypass the sub-modules and hit Neo4j
-directly, so they cannot be mocked independently.
+`kit/agent_memory/memory/interface.py` bypassed the sub-modules and hit Neo4j
+directly, so they couldn't be mocked independently.
 
-**Shape.** Introduce an `AgentHooks`/`MemoryRecorder` seam (on_task_start /
-on_task_complete / on_error) so the agent emits events and memory subscribes.
-Extract a `GoalMemory` sub-module mirroring `SemanticMemory`/`EpisodicMemory`.
-
-**Risk:** medium. **Effort:** ~1–1.5 days.
+**Done (Pass 4).** New `agent/hooks.py` (`TaskOutcome`, `AgentHooks` base,
+`MemoryRecorder`): the agent now emits `on_task_complete`/`on_task_error`/
+`on_turn`/`on_tool_use`/`on_goal_complete` via a single `Agent._dispatch` (which
+isolates subscriber failures) and `MemoryRecorder` subscribes — the ~7 scattered
+write blocks moved out of `core.py`/`plan_executor.py`. `remember()` stays a
+direct call (it's a retrieval, not a lifecycle event). New
+`kit/agent_memory/memory/goal.py` (`GoalMemory`) holds the goal Cypher mirroring
+`SemanticMemory`; the facade delegates (embedding stays facade-side). Goal-test
+gaps backfilled; `GoalAccessControlTest` still green (proves the security Cypher
+survived the move). Behavior-parity refactor — no pyright movement (4), ruff 0.
 
 ---
 
@@ -220,7 +225,7 @@ through the request → agent → memory path. Large, product-level change.
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors (Pass 3 held at 4). A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Passes 3–4 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -295,7 +300,20 @@ Continued the bug-hunting trend on the provider/MCP boundary; no pyright movemen
   `/api/mcp/servers`, distinguishing "failed" from "0 tools/resources".
 - Added `ProviderRobustnessTest` + `ToolDiscoveryErrorTest` (9 tests).
 
+### Pass 4 — memory decoupling (roadmap item 5)
+Structural step toward multi-agent: the agent no longer calls memory inline.
+Behavior-parity refactor; pyright stays 4, ruff 0.
+- **AgentHooks seam:** `agent/hooks.py` (`TaskOutcome`, `AgentHooks`,
+  `MemoryRecorder`). `Agent._dispatch` fires lifecycle events to subscribers and
+  isolates a broken subscriber; `MemoryRecorder` owns the per-op best-effort
+  guards. Removed the duplicated `reflect`/`complete_goal`/`store_turn`/
+  tool-usage blocks from `core.py` and `plan_executor.py`.
+- **GoalMemory sub-module:** `kit/agent_memory/memory/goal.py`; the four goal
+  methods on `AgentMemory` are now thin delegators (embedding stays facade-side).
+- Tests: `MemoryRecorderTest`, `AgentHookDispatchTest`, `GoalMemoryTest` (+ the
+  existing `GoalAccessControlTest` still green).
+
 Still deferred: **item 1 (god-function decomposition; needs a consolidation
 integration-test backfill first — `recall()` is already decomposed)**, item 4
-(DI), item 5 (memory decoupling), item 6 (memory-store retry/health half), item 9
-(exception hierarchy + broad-except tightening), item 10, item 12.
+(DI), item 6 (memory-store retry/health half), item 9 (exception hierarchy +
+broad-except tightening), item 10, item 12.
