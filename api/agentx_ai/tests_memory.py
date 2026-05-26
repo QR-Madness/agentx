@@ -3311,3 +3311,83 @@ class RecallProviderImportTest(TestCase):
         # Wrong import depth would raise ImportError -> except -> {}.
         self.assertEqual(filters, {"keywords": ["python"]})
         provider.complete.assert_called_once()
+
+
+class Neo4jRetryTest(TestCase):
+    """with_neo4j_retry backs off transient Neo4j errors (roadmap item 6)."""
+
+    def test_retries_transient_then_succeeds(self) -> None:
+        from neo4j.exceptions import TransientError
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=[TransientError("failover"), "ok"])
+        result = with_neo4j_retry(fn, retries=3, base_delay=0.0)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(fn.call_count, 2)
+
+    def test_persistent_transient_error_surfaces(self) -> None:
+        from neo4j.exceptions import ServiceUnavailable
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=ServiceUnavailable("down"))
+        with self.assertRaises(ServiceUnavailable):
+            with_neo4j_retry(fn, retries=3, base_delay=0.0)
+        self.assertEqual(fn.call_count, 3)
+
+    def test_non_transient_error_not_retried(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=ValueError("bad query"))
+        with self.assertRaises(ValueError):
+            with_neo4j_retry(fn, retries=3, base_delay=0.0)
+        self.assertEqual(fn.call_count, 1)
+
+
+class ConnectionHealthCheckTest(TestCase):
+    """Per-manager health_check() + check_memory_health delegation (item 6)."""
+
+    def test_neo4j_health_check_healthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+
+        with patch.object(Neo4jConnection, "session") as sess:
+            sess.return_value = create_mock_neo4j_session()
+            result = Neo4jConnection.health_check()
+        self.assertEqual(result["status"], "healthy")
+        self.assertIsNone(result["error"])
+
+    def test_neo4j_health_check_unhealthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+
+        with patch.object(Neo4jConnection, "session", side_effect=RuntimeError("no driver")):
+            result = Neo4jConnection.health_check()
+        self.assertEqual(result["status"], "unhealthy")
+        self.assertIn("no driver", result["error"])
+
+    def test_redis_health_check_healthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import RedisConnection
+
+        client = MagicMock()
+        with patch.object(RedisConnection, "get_client", return_value=client):
+            result = RedisConnection.health_check()
+        client.ping.assert_called_once()
+        self.assertEqual(result["status"], "healthy")
+
+    def test_check_memory_health_delegates(self) -> None:
+        from agentx_ai.kit import memory_utils
+        from agentx_ai.kit.agent_memory.connections import (
+            Neo4jConnection, PostgresConnection, RedisConnection,
+        )
+
+        with patch.object(Neo4jConnection, "health_check",
+                          return_value={"status": "healthy", "error": None}), \
+             patch.object(PostgresConnection, "health_check",
+                          return_value={"status": "unhealthy", "error": "boom"}), \
+             patch.object(RedisConnection, "health_check",
+                          return_value={"status": "healthy", "error": None}):
+            health = memory_utils.check_memory_health()
+
+        self.assertEqual(health["neo4j"]["status"], "healthy")
+        self.assertEqual(health["postgres"]["status"], "unhealthy")
+        self.assertEqual(health["postgres"]["error"], "boom")
+        self.assertEqual(health["redis"]["status"], "healthy")
