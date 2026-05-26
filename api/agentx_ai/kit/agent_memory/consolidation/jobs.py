@@ -1,7 +1,8 @@
 """Background consolidation jobs for memory processing."""
 
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 import logging
 import json
@@ -755,12 +756,623 @@ def _build_scope_context(
     return entities, facts
 
 
+# --- Consolidation pipeline: per-stage helpers + coordinator ---------------
+#
+# `consolidate_episodic_to_semantic` below is a thin coordinator. The work of a
+# single conversation is split across the helpers in this section so each stage
+# is independently testable. All helpers share the open Neo4j ``session`` and
+# mutate the passed-in ``metrics`` / ``errors`` in place (mirroring the existing
+# ``_resolve_and_prepare_entities`` convention) — this keeps the decomposition a
+# pure relocation of the original god-function's behavior.
+
+
+@dataclass
+class _ConvExtraction:
+    """Result of relevance-filtering + extracting one conversation's user turns."""
+    relevant_turns: List[Dict[str, Any]] = field(default_factory=list)
+    entities: List[Dict[str, Any]] = field(default_factory=list)
+    facts: List[Dict[str, Any]] = field(default_factory=list)
+    relationships: List[Dict[str, Any]] = field(default_factory=list)
+    corrections_applied: int = 0
+    extraction_failed: bool = False
+
+
+@dataclass
+class _FactStoreResult:
+    """Outcome of running the fact verification pipeline for one conversation."""
+    stored_fact_ids: List[str] = field(default_factory=list)
+    fact_count: int = 0
+    skipped_duplicates: int = 0
+    contradictions_found: int = 0
+    skipped_contradictions: int = 0
+
+
+def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
+    """Discover conversations with unconsolidated user turns.
+
+    Returns ``(records, total_in_neo4j)`` where ``records`` are the
+    conversations needing processing (limit 10) and ``total_in_neo4j`` is the
+    count seen by the debug census query.
+    """
+    # First, check what conversations exist at all (for debugging)
+    debug_result = session.run("""
+        MATCH (c:Conversation)
+        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
+        RETURN c.id AS id, c.consolidated AS consolidated, count(t) AS turn_count
+        LIMIT 20
+    """)
+    conversations_found = list(debug_result)
+    logger.info(f"Consolidation: Found {len(conversations_found)} conversations in Neo4j")
+    for conv in conversations_found:
+        logger.debug(f"  - {conv['id']}: {conv['turn_count']} turns, consolidated={conv['consolidated']}")
+
+    # Get recent conversations not yet processed, including user info
+    # Only extract from user turns (not assistant/system/tool responses)
+    result = session.run("""
+        MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
+        WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
+          AND t.role = 'user'
+        OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+        WITH c, u, collect(t) AS turns
+        ORDER BY c.started_at DESC
+        LIMIT 10
+        RETURN c.id AS conversation_id,
+               coalesce(u.id, 'default') AS user_id,
+               coalesce(c.channel, '_default') AS channel,
+               [t IN turns | {content: t.content}] AS turns
+    """)
+
+    records = list(result)
+    logger.info(f"Consolidation: {len(records)} conversations need processing")
+    return records, len(conversations_found)
+
+
+async def _extract_from_conversation(
+    turns, memory, session, extraction_service, user_id, channel,
+    conv_id, metrics, errors,
+) -> _ConvExtraction:
+    """Apply correction detection + combined relevance/extraction over a
+    conversation's user turns, accumulating entities/facts/relationships."""
+    out = _ConvExtraction()
+
+    relevance_start = time.perf_counter()
+    for turn in turns:
+        content = turn['content']
+        metrics.turns_total += 1
+
+        # Check for user corrections first (before relevance filter)
+        if settings.correction_detection_enabled:
+            correction = await extraction_service.check_correction(content)
+            metrics.correction_calls += 1
+            if correction.is_correction:
+                if _handle_user_correction(memory, session, correction, user_id, channel):
+                    out.corrections_applied += 1
+                    metrics.corrections_applied += 1
+                # Still extract from the turn - it may have new info
+
+        # Build scope context so the LLM can mark mentions with
+        # existing_entity_id and emit refines_fact_id when applicable.
+        scope_entities, scope_facts = _build_scope_context(
+            memory=memory,
+            text=content,
+            user_id=user_id,
+            channel=channel,
+        )
+
+        # Combined relevance + extraction in a single LLM call (~75% fewer calls)
+        combined_result = await extraction_service.check_relevance_and_extract(
+            content,
+            known_entities=scope_entities,
+            known_facts=scope_facts,
+        )
+        metrics.extraction_calls += 1
+        metrics.total_tokens_used += combined_result.tokens_used
+
+        # Track extraction failures - don't mark conversation as consolidated
+        if not combined_result.success:
+            out.extraction_failed = True
+            logger.warning(f"Extraction failed for turn in {conv_id}: {combined_result.error}")
+            continue  # Skip this turn but continue with others
+
+        if combined_result.is_relevant:
+            out.relevant_turns.append(turn)
+            metrics.turns_relevant += 1
+            out.entities.extend(combined_result.entities)
+            out.facts.extend(combined_result.facts)
+            out.relationships.extend(combined_result.relationships)
+            metrics.entities_extracted += len(combined_result.entities)
+            metrics.facts_extracted += len(combined_result.facts)
+            metrics.relationships_extracted += len(combined_result.relationships)
+        else:
+            if combined_result.reason == "heuristic_skip":
+                metrics.turns_skipped_heuristic += 1
+            else:
+                metrics.turns_skipped_llm += 1
+            logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({combined_result.reason})")
+    metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
+
+    return out
+
+
+def _store_conversation_entities(
+    session, memory, extracted_entities, entity_map,
+    user_id, channel, conv_id, metrics, errors,
+) -> int:
+    """Resolve extracted entities against existing ones and batch-store the new
+    ones. Fills ``entity_map`` (lowercase name -> id) and returns the count."""
+    entities_to_store, entities_reused, entity_count = _resolve_and_prepare_entities(
+        memory=memory,
+        extracted_entities=extracted_entities,
+        entity_map=entity_map,
+        user_id=user_id,
+        channel=channel,
+        conv_id=conv_id,
+        metrics=metrics,
+        errors=errors,
+    )
+
+    # Batch store only the genuinely new entities
+    try:
+        stored_count = _batch_store_entities(
+            session, entities_to_store, conv_id, user_id, channel
+        )
+        metrics.entities_stored += stored_count
+        entity_count = stored_count + entities_reused
+    except Exception as e:
+        logger.warning(f"Batch entity storage failed for {conv_id}: {e}")
+        metrics.storage_errors += 1
+        errors.append(f"entity_batch:{conv_id}:{e}")
+        entity_count = entities_reused
+
+    return entity_count
+
+
+async def _store_facts_with_verification(
+    session, memory, extraction_service, extracted_facts, entity_map,
+    user_id, channel, conv_id, metrics, errors,
+) -> _FactStoreResult:
+    """Run the four-layer fact pipeline (LLM-refine → hash gate → semantic gate
+    → contradiction candidates → temporal/LLM adjudication → store) over the
+    extracted facts. Returns the stored fact ids plus per-conversation counters."""
+    res = _FactStoreResult()
+
+    # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
+    # Collect fact IDs for batch DERIVED_FROM relationship creation
+    embedder = get_embedder()
+
+    for fact_dict in extracted_facts:
+        try:
+            # Validate required fields
+            claim = fact_dict.get("claim")
+            if not claim:
+                logger.warning(f"Skipping fact with missing claim: {fact_dict}")
+                continue
+
+            # === Layer 0: LLM-supplied refinement ===
+            # If extraction marked this claim as refining a known fact, supersede
+            # directly via the existing PREFER_NEW path and skip the rest of the
+            # pipeline. Validates the target fact is in scope before acting.
+            refines_id = fact_dict.get("refines_fact_id")
+            if refines_id:
+                target = memory.semantic.get_fact_by_id(refines_id, user_id)
+                target_channel = (target or {}).get("channel")
+                in_scope = bool(target) and target_channel in (channel, "_global")
+                if in_scope:
+                    _handle_contradiction(
+                        memory, session, fact_dict,
+                        type('Result', (), {
+                            'has_contradiction': True,
+                            'contradicting_fact_id': refines_id,
+                            'resolution': 'prefer_new',
+                            'reason': 'llm_refinement',
+                        })(),
+                        user_id, channel,
+                    )
+                    res.fact_count += 1
+                    metrics.facts_stored += 1
+                    metrics.facts_superseded_by_refine += 1
+                    logger.info(f"Refined fact {refines_id} via llm_refinement: {claim[:50]}...")
+                    continue
+                else:
+                    logger.debug(
+                        f"refines_fact_id {refines_id} not in scope; "
+                        f"falling through to standard pipeline"
+                    )
+
+            # === Layer 1: Fast Gate (no LLM) ===
+
+            # 1a. Exact hash duplicate check
+            if _is_duplicate_fact(session, claim, user_id, channel):
+                res.skipped_duplicates += 1
+                metrics.duplicates_skipped += 1
+                logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
+                continue
+
+            # Generate embedding early (needed for layers 1b + 2)
+            claim_embedding = embedder.embed_single(claim)
+
+            # 1b. Semantic duplicate check (cosine > threshold)
+            if _is_semantic_duplicate(
+                session, claim_embedding, user_id, channel,
+                threshold=settings.semantic_duplicate_threshold,
+            ):
+                res.skipped_duplicates += 1
+                metrics.duplicates_skipped += 1
+                metrics.semantic_duplicates_skipped += 1
+                logger.debug(f"Skipping semantic duplicate: {claim[:50]}...")
+                continue
+
+            # === Layer 2: Semantic Search for Contradiction Candidates (no LLM) ===
+            if settings.contradiction_detection_enabled:
+                entity_names = fact_dict.get("entity_names", [])
+                candidates = _get_contradiction_candidates(
+                    session, claim, claim_embedding, entity_names,
+                    user_id, channel,
+                    similarity_threshold=settings.contradiction_similarity_threshold,
+                    max_candidates=settings.contradiction_max_candidates,
+                )
+                metrics.contradiction_candidates_found += len(candidates)
+
+                # === Layer 3: LLM Adjudication (only if candidates found) ===
+                if candidates:
+                    # Check for temporal progressions first (no LLM needed)
+                    temporal_resolved = False
+                    for candidate in candidates:
+                        if _is_temporal_progression(fact_dict, candidate):
+                            # Auto-supersede without LLM call
+                            _handle_contradiction(
+                                memory, session, fact_dict,
+                                type('Result', (), {
+                                    'has_contradiction': True,
+                                    'contradicting_fact_id': candidate['id'],
+                                    'resolution': 'prefer_new',
+                                    'reason': 'temporal_progression',
+                                })(),
+                                user_id, channel,
+                            )
+                            res.contradictions_found += 1
+                            metrics.contradictions_found += 1
+                            metrics.contradictions_resolved += 1
+                            metrics.temporal_progressions_resolved += 1
+                            res.fact_count += 1
+                            metrics.facts_stored += 1
+                            temporal_resolved = True
+                            logger.info(f"Auto-resolved temporal progression: {claim[:50]}...")
+                            break
+
+                    if temporal_resolved:
+                        continue
+
+                    # LLM contradiction check against candidates
+                    contradiction = await extraction_service.check_contradictions(
+                        claim, candidates,
+                        new_temporal=fact_dict.get("temporal_context"),
+                        new_confidence=fact_dict.get("confidence"),
+                    )
+                    metrics.contradiction_calls += 1
+                    if contradiction.has_contradiction:
+                        res.contradictions_found += 1
+                        metrics.contradictions_found += 1
+                        action = _handle_contradiction(
+                            memory, session, fact_dict, contradiction, user_id, channel
+                        )
+                        if action == "skipped":
+                            res.skipped_contradictions += 1
+                            continue
+                        elif action == "superseded":
+                            res.fact_count += 1
+                            metrics.facts_stored += 1
+                            metrics.contradictions_resolved += 1
+                            continue
+
+            # Link fact to mentioned entities (case-insensitive lookup)
+            entity_ids = [
+                entity_map[name.lower()]
+                for name in fact_dict.get("entity_names", [])
+                if name.lower() in entity_map
+            ]
+
+            fact = memory.learn_fact(
+                claim=claim,
+                source="extraction",
+                confidence=fact_dict.get("confidence", 0.7),
+                source_turn_id=fact_dict.get("source_turn_id"),
+                entity_ids=entity_ids if entity_ids else None,
+                temporal_context=fact_dict.get("temporal_context"),
+            )
+            res.fact_count += 1
+            metrics.facts_stored += 1
+            res.stored_fact_ids.append(fact.id)
+
+        except Exception as e:
+            logger.warning(f"Failed to store fact: {e}")
+            metrics.storage_errors += 1
+            errors.append(f"fact:{conv_id}:{e}")
+
+    return res
+
+
+def _link_facts_and_relationships(
+    session, conv_id, stored_fact_ids, extracted_relationships,
+    entity_map, metrics, errors,
+) -> int:
+    """Batch-create DERIVED_FROM edges for stored facts and batch-store the
+    extracted relationships. Returns the relationship count."""
+    # Batch create DERIVED_FROM relationships for all stored facts
+    if stored_fact_ids:
+        try:
+            session.run("""
+                UNWIND $fact_ids AS fid
+                MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: fid})
+                MERGE (f)-[:DERIVED_FROM]->(c)
+            """, conv_id=conv_id, fact_ids=stored_fact_ids)
+        except Exception as e:
+            logger.warning(f"Batch DERIVED_FROM creation failed: {e}")
+
+    # Batch store relationships using UNWIND
+    try:
+        rel_count = _batch_store_relationships(
+            session, extracted_relationships, entity_map
+        )
+        metrics.relationships_stored += rel_count
+    except Exception as e:
+        logger.warning(f"Batch relationship storage failed for {conv_id}: {e}")
+        metrics.storage_errors += 1
+        errors.append(f"relationship_batch:{conv_id}:{e}")
+        rel_count = 0
+
+    return rel_count
+
+
+async def _consolidate_user_conversation(
+    record, conv_idx, total, session, memory_cache,
+    extraction_service, metrics, errors, progress_callback,
+) -> None:
+    """Consolidate one user conversation: extract → store entities → verify and
+    store facts → link relationships → mark consolidated."""
+    conv_id = record["conversation_id"]
+    user_id = record["user_id"]
+    channel = record["channel"]
+    turns = record["turns"]
+
+    metrics.conversation_id = conv_id  # Track current conversation
+    metrics.user_id = user_id
+    metrics.channel = channel
+
+    if progress_callback:
+        progress_callback("processing", {
+            "conversation": f"{conv_idx + 1} of {total}",
+            "conversation_id": conv_id,
+            "turns": len(turns),
+        })
+
+    # Get or create memory instance for this user/channel
+    cache_key = f"{user_id}:{channel}"
+    if cache_key not in memory_cache:
+        memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
+    memory = memory_cache[cache_key]
+
+    # Filter turns by relevance and extract entities/facts
+    extracted = await _extract_from_conversation(
+        turns, memory, session, extraction_service, user_id, channel,
+        conv_id, metrics, errors,
+    )
+
+    if not extracted.relevant_turns:
+        logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
+        # Only mark as consolidated if extraction didn't fail
+        if not extracted.extraction_failed:
+            session.run("""
+                MATCH (c:Conversation {id: $conv_id})
+                SET c.consolidated = datetime()
+            """, conv_id=conv_id)
+        else:
+            logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
+        return
+
+    logger.debug(
+        f"Combined extraction result: {len(extracted.entities)} entities, "
+        f"{len(extracted.facts)} facts, {len(extracted.relationships)} relationships"
+    )
+
+    # Use lowercase keys for case-insensitive matching with relationships
+    entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
+
+    # Prepare entities for batch storage
+    storage_start = time.perf_counter()
+
+    if progress_callback:
+        progress_callback("storing", {
+            "conversation": f"{conv_idx + 1} of {total}",
+            "entities": len(extracted.entities),
+            "facts": len(extracted.facts),
+            "relationships": len(extracted.relationships),
+        })
+
+    entity_count = _store_conversation_entities(
+        session, memory, extracted.entities, entity_map,
+        user_id, channel, conv_id, metrics, errors,
+    )
+
+    # Store facts via AgentMemory interface (three-layer verification pipeline)
+    fact_result = await _store_facts_with_verification(
+        session, memory, extraction_service, extracted.facts, entity_map,
+        user_id, channel, conv_id, metrics, errors,
+    )
+
+    rel_count = _link_facts_and_relationships(
+        session, conv_id, fact_result.stored_fact_ids, extracted.relationships,
+        entity_map, metrics, errors,
+    )
+
+    # Track storage latency
+    metrics.storage_latency_ms += int((time.perf_counter() - storage_start) * 1000)
+
+    # Log consolidation results
+    extras = []
+    if fact_result.skipped_duplicates > 0:
+        extras.append(f"{fact_result.skipped_duplicates} duplicates")
+    if extracted.corrections_applied > 0:
+        extras.append(f"{extracted.corrections_applied} corrections")
+    if fact_result.contradictions_found > 0:
+        extras.append(
+            f"{fact_result.contradictions_found} contradictions "
+            f"({fact_result.skipped_contradictions} skipped)"
+        )
+    extras_msg = f" [{', '.join(extras)}]" if extras else ""
+    logger.info(
+        f"Consolidated conversation {conv_id}: "
+        f"{entity_count} entities, {fact_result.fact_count} facts, {rel_count} relationships{extras_msg}"
+    )
+
+    # Only mark as consolidated if extraction succeeded
+    # This ensures failed conversations will be retried
+    if not extracted.extraction_failed:
+        session.run("""
+            MATCH (c:Conversation {id: $conv_id})
+            SET c.consolidated = datetime()
+        """, conv_id=conv_id)
+    else:
+        logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
+
+
+async def _consolidate_assistant_conversation(
+    record, session, self_memory_cache, extraction_service, metrics, errors,
+) -> None:
+    """Extract assistant self-knowledge from one conversation into the agent's
+    ``_self_{agent_id}`` channel and mark it self-consolidated."""
+    conv_id = record["conversation_id"]
+    user_id = record["user_id"]
+    agent_id = record["agent_id"]
+    self_channel = f"_self_{agent_id}"
+    a_turns = record["turns"]
+
+    # Get or create memory for this agent's self-channel
+    cache_key = f"{user_id}:{self_channel}"
+    if cache_key not in self_memory_cache:
+        from ..memory.interface import AgentMemory as _AM
+        self_memory_cache[cache_key] = _AM(
+            user_id=user_id, channel=self_channel, agent_id=agent_id,
+        )
+    memory = self_memory_cache[cache_key]
+
+    self_extraction_failed = False
+
+    for turn in a_turns:
+        content = turn["content"]
+        turn_id = turn.get("id")
+        metrics.assistant_turns_total += 1
+
+        # Skip short responses (greetings, acknowledgments)
+        if len(content.strip()) < 100:
+            continue
+
+        try:
+            self_scope_entities, self_scope_facts = _build_scope_context(
+                memory=memory,
+                text=content,
+                user_id=user_id,
+                channel=self_channel,
+            )
+            result = await extraction_service.check_relevance_and_extract_assistant(
+                content,
+                source_turn_id=turn_id,
+                known_entities=self_scope_entities,
+                known_facts=self_scope_facts,
+            )
+        except Exception as e:
+            logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
+            self_extraction_failed = True
+            errors.append(f"assistant_extraction:{conv_id}:{e}")
+            continue
+
+        if not result.success:
+            self_extraction_failed = True
+            continue
+
+        if not result.is_relevant:
+            continue
+
+        metrics.assistant_turns_relevant += 1
+        metrics.assistant_entities_extracted += len(result.entities)
+        metrics.assistant_facts_extracted += len(result.facts)
+
+        # Resolve entities against the self-channel store before storing
+        entity_map: Dict[str, str] = {}
+        entities_to_store, _reused, _ = _resolve_and_prepare_entities(
+            memory=memory,
+            extracted_entities=result.entities,
+            entity_map=entity_map,
+            user_id=user_id,
+            channel=self_channel,
+            conv_id=conv_id,
+            metrics=metrics,
+            errors=errors,
+        )
+
+        if entities_to_store:
+            try:
+                _batch_store_entities(
+                    session, entities_to_store, conv_id, user_id, self_channel,
+                )
+            except Exception as e:
+                logger.warning(f"Self-extraction entity storage failed: {e}")
+                errors.append(f"self_entity:{conv_id}:{e}")
+
+        # Store facts with self_extraction source
+        for fact_dict in result.facts:
+            claim = fact_dict.get("claim")
+            if not claim:
+                continue
+            if _is_duplicate_fact(session, claim, user_id, self_channel):
+                continue
+
+            entity_ids = [
+                entity_map[n.lower()]
+                for n in fact_dict.get("entity_names", [])
+                if n.lower() in entity_map
+            ]
+
+            try:
+                memory.learn_fact(
+                    claim=claim,
+                    source="self_extraction",
+                    confidence=fact_dict.get("confidence", 0.7),
+                    source_turn_id=fact_dict.get("source_turn_id"),
+                    entity_ids=entity_ids if entity_ids else None,
+                )
+                metrics.assistant_facts_stored += 1
+            except Exception as e:
+                logger.warning(f"Self-extraction fact storage failed: {e}")
+                errors.append(f"self_fact:{conv_id}:{e}")
+
+        # Store relationships
+        if result.relationships:
+            try:
+                _batch_store_relationships(
+                    session, result.relationships, entity_map,
+                )
+            except Exception as e:
+                logger.warning(f"Self-extraction relationship storage failed: {e}")
+
+    # Mark conversation as self-consolidated
+    if not self_extraction_failed:
+        session.run("""
+            MATCH (c:Conversation {id: $conv_id})
+            SET c.self_consolidated = datetime()
+        """, conv_id=conv_id)
+
+
 async def consolidate_episodic_to_semantic(
     progress_callback: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
+
+    Thin coordinator over the ``_consolidate_*`` helpers above: it discovers
+    pending conversations, runs the user-turn pipeline (Phase 1) and the
+    assistant self-knowledge pipeline (Phase 2), then finalizes metrics.
 
     Args:
         progress_callback: Optional callback(stage, details) for progress reporting.
@@ -781,398 +1393,25 @@ async def consolidate_episodic_to_semantic(
     )
     errors: List[str] = []
 
+    # =========================================================================
+    # Phase 1: User-turn consolidation into semantic memory
+    # =========================================================================
     with Neo4jConnection.session() as session:
-        # First, check what conversations exist at all (for debugging)
-        debug_result = session.run("""
-            MATCH (c:Conversation)
-            OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
-            RETURN c.id AS id, c.consolidated AS consolidated, count(t) AS turn_count
-            LIMIT 20
-        """)
-        conversations_found = list(debug_result)
-        logger.info(f"Consolidation: Found {len(conversations_found)} conversations in Neo4j")
-        for conv in conversations_found:
-            logger.debug(f"  - {conv['id']}: {conv['turn_count']} turns, consolidated={conv['consolidated']}")
-
-        # Get recent conversations not yet processed, including user info
-        # Only extract from user turns (not assistant/system/tool responses)
-        result = session.run("""
-            MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
-              AND t.role = 'user'
-            OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
-            WITH c, u, collect(t) AS turns
-            ORDER BY c.started_at DESC
-            LIMIT 10
-            RETURN c.id AS conversation_id,
-                   coalesce(u.id, 'default') AS user_id,
-                   coalesce(c.channel, '_default') AS channel,
-                   [t IN turns | {content: t.content}] AS turns
-        """)
-
-        records = list(result)
-        logger.info(f"Consolidation: {len(records)} conversations need processing")
+        records, total_in_neo4j = _fetch_pending_conversations(session)
 
         if progress_callback:
             progress_callback("discovery", {
                 "conversations_found": len(records),
-                "total_in_neo4j": len(conversations_found),
+                "total_in_neo4j": total_in_neo4j,
             })
 
+        extraction_service = get_extraction_service()
         for conv_idx, record in enumerate(records):
-            conv_id = record["conversation_id"]
-            user_id = record["user_id"]
-            channel = record["channel"]
-            turns = record["turns"]
-
-            metrics.conversation_id = conv_id  # Track current conversation
-            metrics.user_id = user_id
-            metrics.channel = channel
-
-            if progress_callback:
-                progress_callback("processing", {
-                    "conversation": f"{conv_idx + 1} of {len(records)}",
-                    "conversation_id": conv_id,
-                    "turns": len(turns),
-                })
-
-            # Get or create memory instance for this user/channel
-            cache_key = f"{user_id}:{channel}"
-            if cache_key not in memory_cache:
-                memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
-            memory = memory_cache[cache_key]
-
-            # Filter turns by relevance and extract entities/facts
-            extraction_service = get_extraction_service()
-            relevant_turns = []
-            corrections_applied = 0
-            extraction_failed = False  # Track if any extraction call failed
-
-            # Accumulated results from combined extraction
-            extracted_entities: List[Dict[str, Any]] = []
-            extracted_facts: List[Dict[str, Any]] = []
-            extracted_relationships: List[Dict[str, Any]] = []
-
-            relevance_start = time.perf_counter()
-            for turn in turns:
-                content = turn['content']
-                metrics.turns_total += 1
-
-                # Check for user corrections first (before relevance filter)
-                if settings.correction_detection_enabled:
-                    correction = await extraction_service.check_correction(content)
-                    metrics.correction_calls += 1
-                    if correction.is_correction:
-                        if _handle_user_correction(memory, session, correction, user_id, channel):
-                            corrections_applied += 1
-                            metrics.corrections_applied += 1
-                        # Still extract from the turn - it may have new info
-
-                # Build scope context so the LLM can mark mentions with
-                # existing_entity_id and emit refines_fact_id when applicable.
-                scope_entities, scope_facts = _build_scope_context(
-                    memory=memory,
-                    text=content,
-                    user_id=user_id,
-                    channel=channel,
-                )
-
-                # Combined relevance + extraction in a single LLM call (~75% fewer calls)
-                combined_result = await extraction_service.check_relevance_and_extract(
-                    content,
-                    known_entities=scope_entities,
-                    known_facts=scope_facts,
-                )
-                metrics.extraction_calls += 1
-                metrics.total_tokens_used += combined_result.tokens_used
-
-                # Track extraction failures - don't mark conversation as consolidated
-                if not combined_result.success:
-                    extraction_failed = True
-                    logger.warning(f"Extraction failed for turn in {conv_id}: {combined_result.error}")
-                    continue  # Skip this turn but continue with others
-
-                if combined_result.is_relevant:
-                    relevant_turns.append(turn)
-                    metrics.turns_relevant += 1
-                    extracted_entities.extend(combined_result.entities)
-                    extracted_facts.extend(combined_result.facts)
-                    extracted_relationships.extend(combined_result.relationships)
-                    metrics.entities_extracted += len(combined_result.entities)
-                    metrics.facts_extracted += len(combined_result.facts)
-                    metrics.relationships_extracted += len(combined_result.relationships)
-                else:
-                    if combined_result.reason == "heuristic_skip":
-                        metrics.turns_skipped_heuristic += 1
-                    else:
-                        metrics.turns_skipped_llm += 1
-                    logger.debug(f"Skipping irrelevant turn: {content[:50]}... ({combined_result.reason})")
-            metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
-
-            if not relevant_turns:
-                logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
-                # Only mark as consolidated if extraction didn't fail
-                if not extraction_failed:
-                    session.run("""
-                        MATCH (c:Conversation {id: $conv_id})
-                        SET c.consolidated = datetime()
-                    """, conv_id=conv_id)
-                else:
-                    logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
-                continue
-
-            logger.debug(
-                f"Combined extraction result: {len(extracted_entities)} entities, "
-                f"{len(extracted_facts)} facts, {len(extracted_relationships)} relationships"
+            await _consolidate_user_conversation(
+                record, conv_idx, len(records), session,
+                memory_cache, extraction_service, metrics, errors,
+                progress_callback,
             )
-
-            # Use lowercase keys for case-insensitive matching with relationships
-            entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
-
-            # Prepare entities for batch storage
-            storage_start = time.perf_counter()
-
-            if progress_callback:
-                progress_callback("storing", {
-                    "conversation": f"{conv_idx + 1} of {len(records)}",
-                    "entities": len(extracted_entities),
-                    "facts": len(extracted_facts),
-                    "relationships": len(extracted_relationships),
-                })
-
-            entities_to_store, entities_reused, entity_count = _resolve_and_prepare_entities(
-                memory=memory,
-                extracted_entities=extracted_entities,
-                entity_map=entity_map,
-                user_id=user_id,
-                channel=channel,
-                conv_id=conv_id,
-                metrics=metrics,
-                errors=errors,
-            )
-
-            # Batch store only the genuinely new entities
-            try:
-                stored_count = _batch_store_entities(
-                    session, entities_to_store, conv_id, user_id, channel
-                )
-                metrics.entities_stored += stored_count
-                entity_count = stored_count + entities_reused
-            except Exception as e:
-                logger.warning(f"Batch entity storage failed for {conv_id}: {e}")
-                metrics.storage_errors += 1
-                errors.append(f"entity_batch:{conv_id}:{e}")
-                entity_count = entities_reused
-
-            fact_count = 0
-            skipped_duplicates = 0
-            contradictions_found = 0
-            skipped_contradictions = 0
-
-            # Store facts via AgentMemory interface
-            # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
-            # Collect fact IDs for batch DERIVED_FROM relationship creation
-            stored_fact_ids: List[str] = []
-            embedder = get_embedder()
-
-            for fact_dict in extracted_facts:
-                try:
-                    # Validate required fields
-                    claim = fact_dict.get("claim")
-                    if not claim:
-                        logger.warning(f"Skipping fact with missing claim: {fact_dict}")
-                        continue
-
-                    # === Layer 0: LLM-supplied refinement ===
-                    # If extraction marked this claim as refining a known fact, supersede
-                    # directly via the existing PREFER_NEW path and skip the rest of the
-                    # pipeline. Validates the target fact is in scope before acting.
-                    refines_id = fact_dict.get("refines_fact_id")
-                    if refines_id:
-                        target = memory.semantic.get_fact_by_id(refines_id, user_id)
-                        target_channel = (target or {}).get("channel")
-                        in_scope = bool(target) and target_channel in (channel, "_global")
-                        if in_scope:
-                            _handle_contradiction(
-                                memory, session, fact_dict,
-                                type('Result', (), {
-                                    'has_contradiction': True,
-                                    'contradicting_fact_id': refines_id,
-                                    'resolution': 'prefer_new',
-                                    'reason': 'llm_refinement',
-                                })(),
-                                user_id, channel,
-                            )
-                            fact_count += 1
-                            metrics.facts_stored += 1
-                            metrics.facts_superseded_by_refine += 1
-                            logger.info(f"Refined fact {refines_id} via llm_refinement: {claim[:50]}...")
-                            continue
-                        else:
-                            logger.debug(
-                                f"refines_fact_id {refines_id} not in scope; "
-                                f"falling through to standard pipeline"
-                            )
-
-                    # === Layer 1: Fast Gate (no LLM) ===
-
-                    # 1a. Exact hash duplicate check
-                    if _is_duplicate_fact(session, claim, user_id, channel):
-                        skipped_duplicates += 1
-                        metrics.duplicates_skipped += 1
-                        logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
-                        continue
-
-                    # Generate embedding early (needed for layers 1b + 2)
-                    claim_embedding = embedder.embed_single(claim)
-
-                    # 1b. Semantic duplicate check (cosine > threshold)
-                    if _is_semantic_duplicate(
-                        session, claim_embedding, user_id, channel,
-                        threshold=settings.semantic_duplicate_threshold,
-                    ):
-                        skipped_duplicates += 1
-                        metrics.duplicates_skipped += 1
-                        metrics.semantic_duplicates_skipped += 1
-                        logger.debug(f"Skipping semantic duplicate: {claim[:50]}...")
-                        continue
-
-                    # === Layer 2: Semantic Search for Contradiction Candidates (no LLM) ===
-                    if settings.contradiction_detection_enabled:
-                        entity_names = fact_dict.get("entity_names", [])
-                        candidates = _get_contradiction_candidates(
-                            session, claim, claim_embedding, entity_names,
-                            user_id, channel,
-                            similarity_threshold=settings.contradiction_similarity_threshold,
-                            max_candidates=settings.contradiction_max_candidates,
-                        )
-                        metrics.contradiction_candidates_found += len(candidates)
-
-                        # === Layer 3: LLM Adjudication (only if candidates found) ===
-                        if candidates:
-                            # Check for temporal progressions first (no LLM needed)
-                            temporal_resolved = False
-                            for candidate in candidates:
-                                if _is_temporal_progression(fact_dict, candidate):
-                                    # Auto-supersede without LLM call
-                                    _handle_contradiction(
-                                        memory, session, fact_dict,
-                                        type('Result', (), {
-                                            'has_contradiction': True,
-                                            'contradicting_fact_id': candidate['id'],
-                                            'resolution': 'prefer_new',
-                                            'reason': 'temporal_progression',
-                                        })(),
-                                        user_id, channel,
-                                    )
-                                    contradictions_found += 1
-                                    metrics.contradictions_found += 1
-                                    metrics.contradictions_resolved += 1
-                                    metrics.temporal_progressions_resolved += 1
-                                    fact_count += 1
-                                    metrics.facts_stored += 1
-                                    temporal_resolved = True
-                                    logger.info(f"Auto-resolved temporal progression: {claim[:50]}...")
-                                    break
-
-                            if temporal_resolved:
-                                continue
-
-                            # LLM contradiction check against candidates
-                            contradiction = await extraction_service.check_contradictions(
-                                claim, candidates,
-                                new_temporal=fact_dict.get("temporal_context"),
-                                new_confidence=fact_dict.get("confidence"),
-                            )
-                            metrics.contradiction_calls += 1
-                            if contradiction.has_contradiction:
-                                contradictions_found += 1
-                                metrics.contradictions_found += 1
-                                action = _handle_contradiction(
-                                    memory, session, fact_dict, contradiction, user_id, channel
-                                )
-                                if action == "skipped":
-                                    skipped_contradictions += 1
-                                    continue
-                                elif action == "superseded":
-                                    fact_count += 1
-                                    metrics.facts_stored += 1
-                                    metrics.contradictions_resolved += 1
-                                    continue
-
-                    # Link fact to mentioned entities (case-insensitive lookup)
-                    entity_ids = [
-                        entity_map[name.lower()]
-                        for name in fact_dict.get("entity_names", [])
-                        if name.lower() in entity_map
-                    ]
-
-                    fact = memory.learn_fact(
-                        claim=claim,
-                        source="extraction",
-                        confidence=fact_dict.get("confidence", 0.7),
-                        source_turn_id=fact_dict.get("source_turn_id"),
-                        entity_ids=entity_ids if entity_ids else None,
-                        temporal_context=fact_dict.get("temporal_context"),
-                    )
-                    fact_count += 1
-                    metrics.facts_stored += 1
-                    stored_fact_ids.append(fact.id)
-
-                except Exception as e:
-                    logger.warning(f"Failed to store fact: {e}")
-                    metrics.storage_errors += 1
-                    errors.append(f"fact:{conv_id}:{e}")
-
-            # Batch create DERIVED_FROM relationships for all stored facts
-            if stored_fact_ids:
-                try:
-                    session.run("""
-                        UNWIND $fact_ids AS fid
-                        MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: fid})
-                        MERGE (f)-[:DERIVED_FROM]->(c)
-                    """, conv_id=conv_id, fact_ids=stored_fact_ids)
-                except Exception as e:
-                    logger.warning(f"Batch DERIVED_FROM creation failed: {e}")
-
-            # Batch store relationships using UNWIND
-            try:
-                rel_count = _batch_store_relationships(
-                    session, extracted_relationships, entity_map
-                )
-                metrics.relationships_stored += rel_count
-            except Exception as e:
-                logger.warning(f"Batch relationship storage failed for {conv_id}: {e}")
-                metrics.storage_errors += 1
-                errors.append(f"relationship_batch:{conv_id}:{e}")
-                rel_count = 0
-
-            # Track storage latency
-            metrics.storage_latency_ms += int((time.perf_counter() - storage_start) * 1000)
-
-            # Log consolidation results
-            extras = []
-            if skipped_duplicates > 0:
-                extras.append(f"{skipped_duplicates} duplicates")
-            if corrections_applied > 0:
-                extras.append(f"{corrections_applied} corrections")
-            if contradictions_found > 0:
-                extras.append(f"{contradictions_found} contradictions ({skipped_contradictions} skipped)")
-            extras_msg = f" [{', '.join(extras)}]" if extras else ""
-            logger.info(
-                f"Consolidated conversation {conv_id}: "
-                f"{entity_count} entities, {fact_count} facts, {rel_count} relationships{extras_msg}"
-            )
-
-            # Only mark as consolidated if extraction succeeded
-            # This ensures failed conversations will be retried
-            if not extraction_failed:
-                session.run("""
-                    MATCH (c:Conversation {id: $conv_id})
-                    SET c.consolidated = datetime()
-                """, conv_id=conv_id)
-            else:
-                logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
 
     # Clean up memory cache to release resources
     memory_cache.clear()
@@ -1205,126 +1444,9 @@ async def consolidate_episodic_to_semantic(
         extraction_service = get_extraction_service()
 
         for record in assistant_records:
-            conv_id = record["conversation_id"]
-            user_id = record["user_id"]
-            agent_id = record["agent_id"]
-            self_channel = f"_self_{agent_id}"
-            a_turns = record["turns"]
-
-            # Get or create memory for this agent's self-channel
-            cache_key = f"{user_id}:{self_channel}"
-            if cache_key not in self_memory_cache:
-                from ..memory.interface import AgentMemory as _AM
-                self_memory_cache[cache_key] = _AM(
-                    user_id=user_id, channel=self_channel, agent_id=agent_id,
-                )
-            memory = self_memory_cache[cache_key]
-
-            self_extraction_failed = False
-
-            for turn in a_turns:
-                content = turn["content"]
-                turn_id = turn.get("id")
-                metrics.assistant_turns_total += 1
-
-                # Skip short responses (greetings, acknowledgments)
-                if len(content.strip()) < 100:
-                    continue
-
-                try:
-                    self_scope_entities, self_scope_facts = _build_scope_context(
-                        memory=memory,
-                        text=content,
-                        user_id=user_id,
-                        channel=self_channel,
-                    )
-                    result = await extraction_service.check_relevance_and_extract_assistant(
-                        content,
-                        source_turn_id=turn_id,
-                        known_entities=self_scope_entities,
-                        known_facts=self_scope_facts,
-                    )
-                except Exception as e:
-                    logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
-                    self_extraction_failed = True
-                    errors.append(f"assistant_extraction:{conv_id}:{e}")
-                    continue
-
-                if not result.success:
-                    self_extraction_failed = True
-                    continue
-
-                if not result.is_relevant:
-                    continue
-
-                metrics.assistant_turns_relevant += 1
-                metrics.assistant_entities_extracted += len(result.entities)
-                metrics.assistant_facts_extracted += len(result.facts)
-
-                # Resolve entities against the self-channel store before storing
-                entity_map: Dict[str, str] = {}
-                entities_to_store, _reused, _ = _resolve_and_prepare_entities(
-                    memory=memory,
-                    extracted_entities=result.entities,
-                    entity_map=entity_map,
-                    user_id=user_id,
-                    channel=self_channel,
-                    conv_id=conv_id,
-                    metrics=metrics,
-                    errors=errors,
-                )
-
-                if entities_to_store:
-                    try:
-                        _batch_store_entities(
-                            session, entities_to_store, conv_id, user_id, self_channel,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Self-extraction entity storage failed: {e}")
-                        errors.append(f"self_entity:{conv_id}:{e}")
-
-                # Store facts with self_extraction source
-                for fact_dict in result.facts:
-                    claim = fact_dict.get("claim")
-                    if not claim:
-                        continue
-                    if _is_duplicate_fact(session, claim, user_id, self_channel):
-                        continue
-
-                    entity_ids = [
-                        entity_map[n.lower()]
-                        for n in fact_dict.get("entity_names", [])
-                        if n.lower() in entity_map
-                    ]
-
-                    try:
-                        memory.learn_fact(
-                            claim=claim,
-                            source="self_extraction",
-                            confidence=fact_dict.get("confidence", 0.7),
-                            source_turn_id=fact_dict.get("source_turn_id"),
-                            entity_ids=entity_ids if entity_ids else None,
-                        )
-                        metrics.assistant_facts_stored += 1
-                    except Exception as e:
-                        logger.warning(f"Self-extraction fact storage failed: {e}")
-                        errors.append(f"self_fact:{conv_id}:{e}")
-
-                # Store relationships
-                if result.relationships:
-                    try:
-                        _batch_store_relationships(
-                            session, result.relationships, entity_map,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Self-extraction relationship storage failed: {e}")
-
-            # Mark conversation as self-consolidated
-            if not self_extraction_failed:
-                session.run("""
-                    MATCH (c:Conversation {id: $conv_id})
-                    SET c.self_consolidated = datetime()
-                """, conv_id=conv_id)
+            await _consolidate_assistant_conversation(
+                record, session, self_memory_cache, extraction_service, metrics, errors,
+            )
 
         if assistant_records:
             logger.info(

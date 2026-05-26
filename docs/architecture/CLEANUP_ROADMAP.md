@@ -21,29 +21,32 @@ features and burn down the residual type-checker debt.
 
 ---
 
-## 1. Decompose god functions
+## 1. Decompose god functions — ✅ consolidation done (Pass 5)
 
 **Problem.** A few functions mix many responsibilities, which hurts testability
 and makes the control flow hard to follow.
 
-- `consolidate_episodic_to_semantic()` — **~614 lines**, `kit/agent_memory/
-  consolidation/jobs.py:758`. Does extraction, validation, contradiction
-  checking, entity resolution, fact/relationship linking, storage, and metrics
-  in one body.
-  - **Shape:** split into `_extract_from_conversation` → `_validate_and_verify`
-    → `_resolve_and_store_entities` → `_link_facts_and_relationships`, with the
-    top-level function as a thin coordinator. The private helpers
-    (`_handle_contradiction`, `_resolve_and_prepare_entities`, etc.) already
-    exist and show the seams.
+**Done (Pass 5).** `consolidate_episodic_to_semantic()` (was **614 lines**,
+`kit/agent_memory/consolidation/jobs.py`) is now a ~125-line thin coordinator
+over per-stage helpers: `_fetch_pending_conversations`,
+`_extract_from_conversation` (→ `_ConvExtraction`), `_store_conversation_entities`,
+`_store_facts_with_verification` (→ `_FactStoreResult`),
+`_link_facts_and_relationships`, plus `_consolidate_user_conversation` /
+`_consolidate_assistant_conversation` for the two phases. Helpers share the open
+Neo4j session and mutate `metrics`/`errors` in place (the existing
+`_resolve_and_prepare_entities` convention) — a pure relocation. Backfilled
+`ConsolidationPipelineTest` (5 behavior-pinning tests written **before** the
+refactor) proves parity; the brittle source-grep test was repointed at the
+helper that now owns the defensive try/except. pyright held at 4, ruff 0.
+
+**Still deferred.**
 - `streaming_tool_loop()` — `streaming/tool_loop.py`, ~250 lines. Extract chunk
   processing, tool execution, and compression steps.
-- `RecallLayer.recall()` — `kit/agent_memory/memory/recall.py`. Orchestrates 5
-  techniques inline; extract a `_run_all_techniques` helper.
+- `RecallLayer.recall()` — `kit/agent_memory/memory/recall.py`. Already
+  decomposed in an earlier pass (orchestrates 5 techniques via helpers).
 
-**Risk:** medium — pure refactor, but consolidation is central and under-tested
-at the integration level. Land behind the existing `tests_memory` suite plus new
-unit tests for each extracted helper.
-**Effort:** ~1–1.5 days.
+**Risk:** medium — pure refactor. **Effort:** ~0.5 day for the remaining
+`streaming_tool_loop()`.
 
 ---
 
@@ -225,7 +228,7 @@ through the request → agent → memory path. Large, product-level change.
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors (Passes 3–4 held at 4). A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Passes 3–5 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -313,7 +316,22 @@ Behavior-parity refactor; pyright stays 4, ruff 0.
 - Tests: `MemoryRecorderTest`, `AgentHookDispatchTest`, `GoalMemoryTest` (+ the
   existing `GoalAccessControlTest` still green).
 
-Still deferred: **item 1 (god-function decomposition; needs a consolidation
-integration-test backfill first — `recall()` is already decomposed)**, item 4
-(DI), item 6 (memory-store retry/health half), item 9 (exception hierarchy +
+### Pass 5 — consolidation god-function decomposition (roadmap item 1)
+Largest remaining readability debt; behavior-parity refactor (pyright 4, ruff 0).
+- **Test-first:** new `ConsolidationPipelineTest` (5 tests) drives
+  `consolidate_episodic_to_semantic` end-to-end against mocked Neo4j/extraction/
+  memory and pins the observable contract (storage calls, `consolidated` /
+  `self_consolidated` flags, metrics, return dict). Written + green **before** the
+  refactor so the relocation is provably behavior-preserving.
+- **Decomposition:** the 614-line function → ~125-line coordinator over
+  `_fetch_pending_conversations`, `_extract_from_conversation`,
+  `_store_conversation_entities`, `_store_facts_with_verification`,
+  `_link_facts_and_relationships`, `_consolidate_user_conversation`,
+  `_consolidate_assistant_conversation` (+ `_ConvExtraction` / `_FactStoreResult`
+  dataclasses). Helpers share the session and mutate `metrics`/`errors` in place.
+- Repointed the brittle `inspect.getsource` test at the helper that now owns the
+  per-fact try/except.
+
+Still deferred: item 1's remaining `streaming_tool_loop()` split, item 4 (DI),
+item 6 (memory-store retry/health half), item 9 (exception hierarchy +
 broad-except tightening), item 10, item 12.
