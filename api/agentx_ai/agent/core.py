@@ -142,12 +142,13 @@ class Agent:
         result = await agent.run("Analyze the codebase and suggest improvements")
     """
     
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: AgentConfig, *, registry: Optional[ProviderRegistry] = None):
         self.config = config
         self.status = AgentStatus.IDLE
-        
-        # Core components (lazy-loaded)
-        self._registry: Optional[ProviderRegistry] = None
+
+        # Core components (lazy-loaded). An injected registry takes precedence;
+        # the `registry` property falls back to get_registry() when None.
+        self._registry: Optional[ProviderRegistry] = registry
         self._reasoning: Optional[ReasoningOrchestrator] = None
         self._drafting: Optional[DraftingStrategy] = None
         self._context_manager = None

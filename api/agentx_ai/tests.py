@@ -838,6 +838,71 @@ class ProviderRobustnessTest(TestCase):
         self.assertNotIn("fake", registry._providers)
 
 
+class DependencyInjectionTest(TestCase):
+    """The registry/config singletons are injectable (roadmap item 4)."""
+
+    def test_agent_uses_injected_registry(self) -> None:
+        """Agent(config, registry=fake) uses the injected registry, not the global."""
+        from agentx_ai.agent.core import Agent, AgentConfig
+        from agentx_ai.providers import registry as registry_mod
+
+        fake = MagicMock()
+        with patch.object(registry_mod, "get_registry") as global_getter:
+            agent = Agent(AgentConfig(), registry=fake)
+            self.assertIs(agent.registry, fake)
+            global_getter.assert_not_called()
+
+    def test_agent_falls_back_to_global_registry(self) -> None:
+        """Without injection, Agent.registry resolves via get_registry()."""
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        fake = MagicMock()
+        with patch("agentx_ai.agent.core.get_registry", return_value=fake) as getter:
+            agent = Agent(AgentConfig())
+            self.assertIs(agent.registry, fake)
+            getter.assert_called_once()
+
+    def test_set_and_reset_registry(self) -> None:
+        """set_registry injects the global; reset_registry rebuilds on next access."""
+        from agentx_ai.providers.registry import (
+            ProviderRegistry, get_registry, set_registry, reset_registry,
+        )
+
+        fake = MagicMock(spec=ProviderRegistry)
+        set_registry(fake)
+        try:
+            self.assertIs(get_registry(), fake)
+        finally:
+            reset_registry()
+        # After reset, a fresh real instance is built (not the fake)
+        self.assertIsInstance(get_registry(), ProviderRegistry)
+        self.assertIsNot(get_registry(), fake)
+
+    def test_set_and_reset_config_manager(self) -> None:
+        """set_config_manager injects the global; reset rebuilds on next access."""
+        from agentx_ai.config import (
+            ConfigManager, get_config_manager, set_config_manager, reset_config_manager,
+        )
+
+        fake = MagicMock(spec=ConfigManager)
+        set_config_manager(fake)
+        try:
+            self.assertIs(get_config_manager(), fake)
+        finally:
+            reset_config_manager()
+        self.assertIsInstance(get_config_manager(), ConfigManager)
+
+    def test_registry_uses_injected_config_manager(self) -> None:
+        """ProviderRegistry(config_manager=fake) reads provider config from it."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        fake_cm = MagicMock()
+        fake_cm.get_provider_value.return_value = None  # no providers configured
+        ProviderRegistry(config_manager=fake_cm)
+        # _load_default_config probes the injected manager, not the global
+        self.assertTrue(fake_cm.get_provider_value.called)
+
+
 class ToolDiscoveryErrorTest(TestCase):
     """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""
 

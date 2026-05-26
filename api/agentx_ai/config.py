@@ -273,6 +273,23 @@ def get_config_manager() -> ConfigManager:
         return _config_manager
 
 
+def set_config_manager(manager: Optional[ConfigManager]) -> None:
+    """Inject the global ConfigManager (or `None` to clear).
+
+    Dependency-injection seam: lets tests swap in a fake manager instead of
+    patching the module global. Production code keeps calling
+    `get_config_manager()`.
+    """
+    global _config_manager
+    with _config_lock:
+        _config_manager = manager
+
+
+def reset_config_manager() -> None:
+    """Clear the global ConfigManager so the next access rebuilds it."""
+    set_config_manager(None)
+
+
 def reload_config() -> None:
     """Reload the global config from disk."""
     manager = get_config_manager()
