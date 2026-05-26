@@ -2359,6 +2359,111 @@ class TrajectoryCompressionTest(TestCase):
         self.assertIn("val_0", text)
 
 
+class StreamingToolLoopTest(TestCase):
+    """Behavior-pinning tests for streaming_tool_loop (roadmap item 1 tail).
+
+    Drive the loop against a fake provider/agent and assert the observable SSE
+    event stream + ToolLoopResult accumulation, so the decomposition into
+    per-stage helpers is provably behavior-preserving.
+    """
+
+    class _FakeProvider:
+        """Yields a pre-scripted list of chunks per stream() call."""
+        def __init__(self, rounds):
+            self._rounds = rounds
+            self._call = 0
+
+        async def stream(self, messages, model_id, **kwargs):
+            chunks = self._rounds[self._call]
+            self._call += 1
+            for c in chunks:
+                yield c
+
+    class _FakeAgent:
+        def __init__(self):
+            self._active_alloy_executor = None
+            self.executed = []
+
+        def _execute_tool_calls(self, calls, task_context=""):
+            from agentx_ai.providers.base import Message, MessageRole
+            self.executed.append(list(calls))
+            return [
+                Message(role=MessageRole.TOOL, content=f"result-{tc.name}",
+                        tool_call_id=tc.id, name=tc.name)
+                for tc in calls
+            ]
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    def _run(self, provider, agent, messages, tools, **kwargs):
+        from agentx_ai.streaming.tool_loop import streaming_tool_loop, ToolLoopResult
+        result = ToolLoopResult()
+        with patch("agentx_ai.streaming.tool_loop.compress_trajectory", return_value=False), \
+             patch("agentx_ai.streaming.tool_loop.estimate_tokens", return_value=10):
+            events = asyncio.run(self._drain(streaming_tool_loop(
+                provider, "fake:model", messages, tools, agent,
+                result=result, **kwargs,
+            )))
+        return events, result
+
+    @staticmethod
+    def _events_of(events, name):
+        return [e for e in events if e.startswith(f"event: {name}\n")]
+
+    def test_plain_completion(self) -> None:
+        """One content chunk, no tool calls → chunk event, final_content set, loop ends."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([[StreamChunk(content="hello")]])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(provider, agent, messages, None)
+
+        self.assertEqual(len(self._events_of(events, "chunk")), 1)
+        self.assertEqual(self._events_of(events, "tool_call"), [])
+        self.assertEqual(result.content, "hello")
+        self.assertEqual(result.final_content, "hello")
+        self.assertEqual(agent.executed, [])
+
+    def test_empty_completion_fallback(self) -> None:
+        """An empty first completion emits the explicit fallback chunk."""
+        provider = self._FakeProvider([[]])  # stream yields nothing
+        agent = self._FakeAgent()
+        events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.content, "[empty response from model]")
+        self.assertEqual(result.final_content, "[empty response from model]")
+        chunk_events = self._events_of(events, "chunk")
+        self.assertEqual(len(chunk_events), 1)
+        self.assertIn("[empty response from model]", chunk_events[0])
+
+    def test_one_tool_round_then_completion(self) -> None:
+        """A tool round emits tool_call + tool_result, extends messages, then completes."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "x"})])],
+            [StreamChunk(content="final answer")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"type": "function", "function": {"name": "search"}}],
+        )
+
+        self.assertEqual(len(self._events_of(events, "tool_call")), 1)
+        self.assertEqual(len(self._events_of(events, "tool_result")), 1)
+        self.assertEqual(result.tools_used, ["search"])
+        self.assertEqual(result.final_content, "final answer")
+        # messages now carries the assistant tool_calls msg + the tool result
+        roles = [m.role for m in messages]
+        self.assertIn(MessageRole.ASSISTANT, roles)
+        self.assertIn(MessageRole.TOOL, roles)
+        self.assertEqual(len(agent.executed), 1)
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 
