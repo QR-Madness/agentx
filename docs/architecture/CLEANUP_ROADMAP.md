@@ -21,7 +21,7 @@ features and burn down the residual type-checker debt.
 
 ---
 
-## 1. Decompose god functions — ✅ consolidation done (Pass 5)
+## 1. Decompose god functions — ✅ done (Pass 5 + Pass 6)
 
 **Problem.** A few functions mix many responsibilities, which hurts testability
 and makes the control flow hard to follow.
@@ -39,14 +39,14 @@ Neo4j session and mutate `metrics`/`errors` in place (the existing
 refactor) proves parity; the brittle source-grep test was repointed at the
 helper that now owns the defensive try/except. pyright held at 4, ruff 0.
 
-**Still deferred.**
-- `streaming_tool_loop()` — `streaming/tool_loop.py`, ~250 lines. Extract chunk
-  processing, tool execution, and compression steps.
-- `RecallLayer.recall()` — `kit/agent_memory/memory/recall.py`. Already
-  decomposed in an earlier pass (orchestrates 5 techniques via helpers).
+**Done (Pass 6).** `streaming_tool_loop()` (`streaming/tool_loop.py`, ~250 lines)
+split into a thin coordinator over `_prepare_round_context`,
+`_partition_tool_calls`, `_run_delegations`, `_execute_and_emit_tools`
+(messages/result mutated in place). Behavior-pinned first by `StreamingToolLoopTest`.
+`RecallLayer.recall()` was already decomposed in an earlier pass. All three
+god-functions are now decomposed.
 
-**Risk:** medium — pure refactor. **Effort:** ~0.5 day for the remaining
-`streaming_tool_loop()`.
+**Risk:** medium — pure refactor. Complete.
 
 ---
 
@@ -84,16 +84,18 @@ re-check. Pairs naturally with item 5.
 
 ---
 
-## 4. Dependency injection for singletons
+## 4. Dependency injection for singletons — ✅ done (Pass 6)
 
 **Problem.** `providers/registry.py` (`get_registry`) and `config.py`
 (`get_config_manager`) are process-global singletons. Tests must patch globals,
 and isolation between tests is fragile.
 
-**Shape.** Accept an optional instance in constructors / call sites, defaulting
-to the global. No behavior change in production; large testability win.
-
-**Risk:** low–medium. **Effort:** ~0.5 day.
+**Done (Pass 6).** `Agent(config, *, registry=None)` and
+`ProviderRegistry(config_path=None, config_manager=None)` accept injected
+instances (used in `_load_default_config` + `reload()`), defaulting to the
+global. Added `set_registry`/`reset_registry` and `set_config_manager`/
+`reset_config_manager` seams so tests swap a fake instead of patching the global.
+No production behavior change (`DependencyInjectionTest`).
 
 ---
 
@@ -129,9 +131,14 @@ it on OpenAI/Anthropic (close + reset the cached client); added
 `ProviderRegistry.aclose()` and made `reload()` close evicted providers (bridged
 via `utils/async_bridge.run_coro_sync`).
 
-**Still deferred.** Neo4j retry/backoff and a unified `health_check()` across the
-three stores (`kit/agent_memory/connections.py`) — the memory-store half of this
-item. **Effort:** ~0.5 day.
+**Done (Pass 6, memory-store half).** Added `health_check()` classmethods to
+`Neo4jConnection`/`PostgresConnection`/`RedisConnection` (single source of truth
+for per-store liveness); `kit/memory_utils.check_memory_health()` now delegates
+to them (keeping its parallel-thread + timeout orchestration). Added
+`with_neo4j_retry(fn, *, retries, base_delay)` — exponential backoff on transient
+errors (`ServiceUnavailable`/`SessionExpired`/`TransientError`). Migrating the
+~10 existing `Neo4jConnection.session()` call sites onto it is incremental/
+out-of-scope. (`Neo4jRetryTest`, `ConnectionHealthCheckTest`.)
 
 ---
 
@@ -213,22 +220,19 @@ payloads); unit-covered for the `tool_calls` passthrough in the meantime.
 
 ---
 
-## 12. Multi-user auth
+## 12. Multi-user auth — ❌ dropped (not pursued)
 
-**Problem.** `views.py` hardcodes `DEFAULT_USER_ID = "default"` (the inline TODO
-notes "Replace with actual auth when multi-user is implemented"). The memory
-subsystem already scopes by `user_id`, so the data layer is mostly ready.
-
-**Shape.** Wire real authentication and propagate the authenticated user id
-through the request → agent → memory path. Large, product-level change.
-
-**Risk:** high (cross-cutting). **Effort:** multi-day, own initiative.
+Removed from the cleanup scope by decision: multi-user auth is a **product
+feature**, not debt cleanup. `views.py` keeps `DEFAULT_USER_ID = "default"`, and
+the 7 `401` endpoint-test failures remain the expected baseline (they assert an
+auth layer that intentionally does not exist). If multi-user is ever built, it's
+its own product initiative — not tracked here.
 
 ---
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors (Passes 3–5 held at 4). A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Passes 3–6 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -332,6 +336,20 @@ Largest remaining readability debt; behavior-parity refactor (pyright 4, ruff 0)
 - Repointed the brittle `inspect.getsource` test at the helper that now owns the
   per-fact try/except.
 
-Still deferred: item 1's remaining `streaming_tool_loop()` split, item 4 (DI),
-item 6 (memory-store retry/health half), item 9 (exception hierarchy +
-broad-except tightening), item 10, item 12.
+### Pass 6 — finish the cleanup (items 4, 6, and the item-1 tail)
+Three independently-committed steps; pyright held at 4, ruff 0 throughout.
+- **Item 4 (DI):** `Agent(config, *, registry=None)` and
+  `ProviderRegistry(config_manager=None)` accept injected instances; added
+  `set_/reset_registry` and `set_/reset_config_manager` test seams. Defaults to
+  the globals (no production change). `DependencyInjectionTest`.
+- **Item 6 (memory-store half):** per-manager `health_check()` classmethods with
+  `check_memory_health()` delegating; `with_neo4j_retry()` exponential-backoff
+  helper for transient Neo4j errors. `Neo4jRetryTest`, `ConnectionHealthCheckTest`.
+- **Item 1 tail:** `streaming_tool_loop()` decomposed into a coordinator over
+  `_prepare_round_context` / `_partition_tool_calls` / `_run_delegations` /
+  `_execute_and_emit_tools`; pinned first by `StreamingToolLoopTest`.
+- Dropped **item 12** (multi-user auth — a product feature, not cleanup).
+
+Still deferred: **item 9** (exception hierarchy + broad-except tightening) — the
+sole remaining cleanup item, intentionally left for its own dedicated pass.
+Item 10 (streaming constants → ConfigManager) stays optional/low-value.
