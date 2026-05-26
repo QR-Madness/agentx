@@ -172,6 +172,12 @@ tasks:
     cmds:
       - uv run python manage.py makemigrations
 
+  eval:consolidation:
+    desc: "Consolidation quality eval — DEV ONLY, wipes memory data (e.g. task eval:consolidation -- --wipe --model openrouter:minimax/minimax-m2.7)"
+    dir: api
+    cmds:
+      - uv run python manage.py eval_consolidation {{.CLI_ARGS}}
+
 # ============================================================================
 # CLIENT
 # ============================================================================

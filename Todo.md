@@ -343,6 +343,11 @@ Currently our model selection and selector are a very solid foundation but are j
 - [x] Prompt updates (`prompts/system_prompts.yaml`): `{known_entities}` / `{known_facts}` placeholders, `existing_entity_id` / `refines_fact_id` in JSON schema, literal-`null` guidance for `temporal_context`, `"User <verb> ..."` claim convention, explicit negation/canonicalization/dedup rules, and worked few-shot examples for both `combined_with_relevance` and `assistant_self`.
 - [x] `ConsolidationMetrics`: new `entities_reused` and `facts_superseded_by_refine` counters.
 - [x] Tests in `tests_memory.py` (20 new): `NameCandidateExtractionTest`, `RenderScopeContextTest`, `EntityResolutionTest`, `RefinesFactIdSupersedureTest`, `ExtractionServiceScopeContextWiringTest`. Full memory suite still green (180 tests, 29 docker-gated skips).
+- [x] E2E consolidation quality eval harness: `manage.py eval_consolidation` (`task eval:consolidation`). Seeds graded cases (L1 single-fact → L5 multi-turn / multi-entity / temporal / negation / refinement) into isolated `_eval_*` channels, runs the real consolidation pipeline against live Neo4j + a configured LLM (`--model`, e.g. `openrouter:minimax/minimax-m2.7`), and scores extracted facts/entities vs expectations. For prompt tuning + extraction regression-checking. Requires a STERILE dev instance (`--wipe`) since consolidation is global.
+- [ ] Eval harness follow-ups (deferred):
+  - [ ] Procedural-memory eval cases — exercise tool-usage/strategy learning (`ProceduralMemory.record_invocation`, strategy extraction). Procedural extraction has been deferred repeatedly; the harness is structured to add these cases once that path is exercised by consolidation.
+  - [ ] Snapshot/restore instead of `--wipe`, once memory export/import lands (see Backlog) — so the eval can run without destroying dev data.
+  - [ ] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt comparison over time.
 - [ ] Follow-ups (deferred): one-shot Neo4j cleanup script to dedupe entities created before this fix; cross-channel entity unification; replace the regex correction patterns at `extraction/service.py:84` with an LLM-only path.
 
 ### 18.8: Wave 2 Fixes
@@ -428,7 +433,7 @@ Currently our model selection and selector are a very solid foundation but are j
 - [ ] Voice input/output
 - [ ] Offline mode with cached models
 - [ ] Cross-encoder reranking model for retrieval quality
-- [ ] Memory export/import (JSON/SQLite backup)
+- [ ] Memory export/import (JSON/SQLite backup) — also unblocks snapshot/restore for the consolidation eval harness (18.6) so it needn't `--wipe` a dev cluster
 - [ ] Advanced memory visualization (interactive graph, embedding clusters)
 - [ ] Streaming memory retrieval during chat
 - [ ] Conversation sharing (read-only shareable links)
