@@ -161,3 +161,16 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     margin-bottom: 4px;
   }
 </style>
+
+<script>
+  // Scroll the active nav item into view *within the sidebar* (never the window),
+  // so deep pages don't open with their entry hidden below the fold.
+  const sidebar = document.querySelector<HTMLElement>('[data-docs-sidebar]');
+  const active = sidebar?.querySelector<HTMLElement>('[aria-current="page"]');
+  if (sidebar && active) {
+    const s = sidebar.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    const delta = a.top - s.top - (sidebar.clientHeight / 2 - a.height / 2);
+    sidebar.scrollTop += delta; // browser clamps to [0, maxScroll]
+  }
+</script>

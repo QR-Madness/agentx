@@ -225,6 +225,9 @@ const isHome = currentSlug === '';
 </style>
 
 <script>
+  // Click-to-zoom overlay for diagrams (mermaid SVGs) and content images.
+  import '../scripts/image-zoom.js';
+
   // Mobile drawer: hamburger opens the sidebar; backdrop / Esc / link-click closes it.
   const sidebar = document.querySelector<HTMLElement>('[data-docs-sidebar]');
   const openBtn = document.querySelector<HTMLButtonElement>('[data-drawer-open]');
