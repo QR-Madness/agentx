@@ -19,6 +19,7 @@ from typing import Any, AsyncGenerator
 from mcp import ClientSession
 from pydantic import AnyUrl
 
+from ..exceptions import MCPServerNotFoundError, MCPTransportError
 from .server_registry import ServerConfig, ServerRegistry, TransportType
 from .tool_executor import ToolExecutor, ToolInfo, ToolResult
 from .internal_tools import (
@@ -162,7 +163,7 @@ class MCPClientManager:
         
         config = self.registry.get(name)
         if not config:
-            raise ValueError(f"Server '{name}' not found in registry")
+            raise MCPServerNotFoundError(f"Server '{name}' not found in registry", server=name)
         
         return self._run_async(self._connect_persistent(config))
     
@@ -239,8 +240,8 @@ class MCPClientManager:
                     )
                 )
             else:
-                raise ValueError(f"Unsupported transport: {config.transport}")
-            
+                raise MCPTransportError(f"Unsupported transport: {config.transport}")
+
             connection = await self._setup_connection(session, config)
             self._exit_stacks[config.name] = stack
             return connection
@@ -283,7 +284,7 @@ class MCPClientManager:
         if isinstance(config, str):
             resolved = self.registry.get(config)
             if not resolved:
-                raise ValueError(f"Server '{config}' not found in registry")
+                raise MCPServerNotFoundError(f"Server '{config}' not found in registry", server=config)
             config = resolved
         
         config.validate()
@@ -298,8 +299,8 @@ class MCPClientManager:
             async with self._connect_streamable_http(config) as connection:
                 yield connection
         else:
-            raise ValueError(f"Unsupported transport: {config.transport}")
-    
+            raise MCPTransportError(f"Unsupported transport: {config.transport}")
+
     @asynccontextmanager
     async def _connect_stdio(self, config: ServerConfig) -> AsyncGenerator[ServerConnection, None]:
         """Connect via stdio transport."""

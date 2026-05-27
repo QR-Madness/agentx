@@ -11,7 +11,8 @@ import yaml
 from pydantic import BaseModel
 
 from .base import ModelProvider, ProviderConfig
-from ..config import get_config_manager
+from ..config import ConfigManager, get_config_manager
+from ..exceptions import ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -39,21 +40,27 @@ class ProviderRegistry:
     providing a unified interface to get providers and models.
     """
     
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(
+        self,
+        config_path: Optional[Path] = None,
+        config_manager: Optional[ConfigManager] = None,
+    ):
         self._providers: dict[str, ModelProvider] = {}
         self._model_configs: dict[str, ModelConfig] = {}
         self._provider_configs: dict[str, ProviderConfig] = {}
-        
+        # Injectable ConfigManager (defaults to the global singleton on use).
+        self._config_manager = config_manager
+
         # Load configuration if provided
         if config_path and config_path.exists():
             self.load_config(config_path)
         else:
             # Load from default location or environment
             self._load_default_config()
-    
+
     def _load_default_config(self) -> None:
         """Load configuration from ConfigManager with environment variable fallback."""
-        config = get_config_manager()
+        config = self._config_manager or get_config_manager()
 
         # LM Studio (local, OpenAI-compatible) - primary local provider
         lmstudio_url = config.get_provider_value(
@@ -159,9 +166,10 @@ class ProviderRegistry:
             return self._providers[name]
 
         if name not in self._provider_configs:
-            raise ValueError(
+            raise ModelNotFoundError(
                 f"Provider '{name}' not configured. "
-                f"Configure it in Settings or set {name.upper()}_BASE_URL / {name.upper()}_API_KEY."
+                f"Configure it in Settings or set {name.upper()}_BASE_URL / {name.upper()}_API_KEY.",
+                provider=name,
             )
 
         config = self._provider_configs[name]
@@ -182,7 +190,7 @@ class ProviderRegistry:
             from .vercel_provider import VercelProvider
             provider = VercelProvider(config)
         else:
-            raise ValueError(f"Unknown provider: {name}")
+            raise ModelNotFoundError(f"Unknown provider: {name}", provider=name)
 
         self._providers[name] = provider
         return provider
@@ -216,9 +224,11 @@ class ProviderRegistry:
 
         if provider_name not in self._provider_configs:
             available = ", ".join(self._provider_configs.keys()) if self._provider_configs else "none"
-            raise ValueError(
+            raise ModelNotFoundError(
                 f"Provider '{provider_name}' not configured. "
-                f"Available providers: {available}"
+                f"Available providers: {available}",
+                model=model,
+                provider=provider_name,
             )
 
         return self.get_provider(provider_name), model_id
@@ -282,9 +292,8 @@ class ProviderRegistry:
             self._providers.clear()
         self._provider_configs.clear()
 
-        # Reload config from ConfigManager
-        from ..config import reload_config
-        reload_config()
+        # Reload config from the (possibly injected) ConfigManager
+        (self._config_manager or get_config_manager()).reload()
 
         # Re-read provider configs
         self._load_default_config()
@@ -302,6 +311,21 @@ def get_registry() -> ProviderRegistry:
     if _registry is None:
         _registry = ProviderRegistry()
     return _registry
+
+
+def set_registry(registry: Optional[ProviderRegistry]) -> None:
+    """Inject the global provider registry (or `None` to clear).
+
+    Dependency-injection seam: lets tests swap in a fake registry instead of
+    patching the module global. Production code keeps calling `get_registry()`.
+    """
+    global _registry
+    _registry = registry
+
+
+def reset_registry() -> None:
+    """Clear the global provider registry so the next access rebuilds it."""
+    set_registry(None)
 
 
 def get_provider(name: str) -> ModelProvider:

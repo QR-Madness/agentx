@@ -21,29 +21,32 @@ features and burn down the residual type-checker debt.
 
 ---
 
-## 1. Decompose god functions
+## 1. Decompose god functions — ✅ done (Pass 5 + Pass 6)
 
 **Problem.** A few functions mix many responsibilities, which hurts testability
 and makes the control flow hard to follow.
 
-- `consolidate_episodic_to_semantic()` — **~614 lines**, `kit/agent_memory/
-  consolidation/jobs.py:758`. Does extraction, validation, contradiction
-  checking, entity resolution, fact/relationship linking, storage, and metrics
-  in one body.
-  - **Shape:** split into `_extract_from_conversation` → `_validate_and_verify`
-    → `_resolve_and_store_entities` → `_link_facts_and_relationships`, with the
-    top-level function as a thin coordinator. The private helpers
-    (`_handle_contradiction`, `_resolve_and_prepare_entities`, etc.) already
-    exist and show the seams.
-- `streaming_tool_loop()` — `streaming/tool_loop.py`, ~250 lines. Extract chunk
-  processing, tool execution, and compression steps.
-- `RecallLayer.recall()` — `kit/agent_memory/memory/recall.py`. Orchestrates 5
-  techniques inline; extract a `_run_all_techniques` helper.
+**Done (Pass 5).** `consolidate_episodic_to_semantic()` (was **614 lines**,
+`kit/agent_memory/consolidation/jobs.py`) is now a ~125-line thin coordinator
+over per-stage helpers: `_fetch_pending_conversations`,
+`_extract_from_conversation` (→ `_ConvExtraction`), `_store_conversation_entities`,
+`_store_facts_with_verification` (→ `_FactStoreResult`),
+`_link_facts_and_relationships`, plus `_consolidate_user_conversation` /
+`_consolidate_assistant_conversation` for the two phases. Helpers share the open
+Neo4j session and mutate `metrics`/`errors` in place (the existing
+`_resolve_and_prepare_entities` convention) — a pure relocation. Backfilled
+`ConsolidationPipelineTest` (5 behavior-pinning tests written **before** the
+refactor) proves parity; the brittle source-grep test was repointed at the
+helper that now owns the defensive try/except. pyright held at 4, ruff 0.
 
-**Risk:** medium — pure refactor, but consolidation is central and under-tested
-at the integration level. Land behind the existing `tests_memory` suite plus new
-unit tests for each extracted helper.
-**Effort:** ~1–1.5 days.
+**Done (Pass 6).** `streaming_tool_loop()` (`streaming/tool_loop.py`, ~250 lines)
+split into a thin coordinator over `_prepare_round_context`,
+`_partition_tool_calls`, `_run_delegations`, `_execute_and_emit_tools`
+(messages/result mutated in place). Behavior-pinned first by `StreamingToolLoopTest`.
+`RecallLayer.recall()` was already decomposed in an earlier pass. All three
+god-functions are now decomposed.
+
+**Risk:** medium — pure refactor. Complete.
 
 ---
 
@@ -81,16 +84,18 @@ re-check. Pairs naturally with item 5.
 
 ---
 
-## 4. Dependency injection for singletons
+## 4. Dependency injection for singletons — ✅ done (Pass 6)
 
 **Problem.** `providers/registry.py` (`get_registry`) and `config.py`
 (`get_config_manager`) are process-global singletons. Tests must patch globals,
 and isolation between tests is fragile.
 
-**Shape.** Accept an optional instance in constructors / call sites, defaulting
-to the global. No behavior change in production; large testability win.
-
-**Risk:** low–medium. **Effort:** ~0.5 day.
+**Done (Pass 6).** `Agent(config, *, registry=None)` and
+`ProviderRegistry(config_path=None, config_manager=None)` accept injected
+instances (used in `_load_default_config` + `reload()`), defaulting to the
+global. Added `set_registry`/`reset_registry` and `set_config_manager`/
+`reset_config_manager` seams so tests swap a fake instead of patching the global.
+No production behavior change (`DependencyInjectionTest`).
 
 ---
 
@@ -126,9 +131,14 @@ it on OpenAI/Anthropic (close + reset the cached client); added
 `ProviderRegistry.aclose()` and made `reload()` close evicted providers (bridged
 via `utils/async_bridge.run_coro_sync`).
 
-**Still deferred.** Neo4j retry/backoff and a unified `health_check()` across the
-three stores (`kit/agent_memory/connections.py`) — the memory-store half of this
-item. **Effort:** ~0.5 day.
+**Done (Pass 6, memory-store half).** Added `health_check()` classmethods to
+`Neo4jConnection`/`PostgresConnection`/`RedisConnection` (single source of truth
+for per-store liveness); `kit/memory_utils.check_memory_health()` now delegates
+to them (keeping its parallel-thread + timeout orchestration). Added
+`with_neo4j_retry(fn, *, retries, base_delay)` — exponential backoff on transient
+errors (`ServiceUnavailable`/`SessionExpired`/`TransientError`). Migrating the
+~10 existing `Neo4jConnection.session()` call sites onto it is incremental/
+out-of-scope. (`Neo4jRetryTest`, `ConnectionHealthCheckTest`.)
 
 ---
 
@@ -160,7 +170,7 @@ client-build site; the YAML loader passes `None` when unset. An explicit value
 
 ---
 
-## 9. Custom exception hierarchy + Result types — partial (Pass 3 scoped slice)
+## 9. Custom exception hierarchy + Result types — ✅ done (Pass 3 slice + Pass 7)
 
 **Problem.** Broad `except Exception` blocks remain across consolidation and the
 agent core. `mcp/tool_executor.py` `discover_tools()` and `mcp/client.py`
@@ -174,10 +184,26 @@ on a successful discovery), logged at `error`/`warning`, and surfaced on
 `/api/mcp/servers` as `tool_discovery_error` / `resource_discovery_error` so the
 client can tell "failed" from "0".
 
-**Still deferred.** The `AgentError`/`MemoryError`/`ToolExecutionError` hierarchy
-and tightening the broad excepts across `agent/core.py` (many are *intentionally*
-defensive best-effort memory swallows) / consolidation. Judgment-heavy and
-sprawling — its own pass. **Effort:** ~1 day.
+**Done (Pass 7).** Introduced `agentx_ai/exceptions.py` — `AgentXError` root
+(with an `http_status` boundary mapping) over `ConfigError`,
+`ProviderError`/`ModelNotFoundError`/`ProviderUnavailableError`,
+`MCPError`/`MCPServerNotFoundError`/`MCPTransportError`, `ToolExecutionError`,
+and `MemoryStoreError` (named to avoid shadowing the builtin `MemoryError`).
+Adopted **boundaries-only**: the provider-resolution raises in
+`providers/registry.py` and the server-not-found / unsupported-transport raises
+in `mcp/client.py` now raise the typed errors, and `utils/responses.error_response`
+maps them to the right HTTP status at the views boundary (`mcp_connect`,
+prompt-enhance). Each leaf that replaces a `raise ValueError` also inherits
+`ValueError`, so the swap is behavior-preserving for every existing
+`except ValueError`.
+
+**Deliberately not done.** The ~255 broad `except Exception` blocks were **left
+as-is** — the overwhelming majority are intentional best-effort swallows (memory
+writes, telemetry, model-list fallbacks, per-item consolidation resilience);
+mechanically converting them is net-negative. Generic input-validation
+`ValueError`s (profiles/prompts/translation) and `server_registry` transport-
+validation raises also stay `ValueError` (correctly mapped to 400). `ToolResult`
+remains the Result type for tool execution.
 
 ---
 
@@ -210,22 +236,19 @@ payloads); unit-covered for the `tool_calls` passthrough in the meantime.
 
 ---
 
-## 12. Multi-user auth
+## 12. Multi-user auth — ❌ dropped (not pursued)
 
-**Problem.** `views.py` hardcodes `DEFAULT_USER_ID = "default"` (the inline TODO
-notes "Replace with actual auth when multi-user is implemented"). The memory
-subsystem already scopes by `user_id`, so the data layer is mostly ready.
-
-**Shape.** Wire real authentication and propagate the authenticated user id
-through the request → agent → memory path. Large, product-level change.
-
-**Risk:** high (cross-cutting). **Effort:** multi-day, own initiative.
+Removed from the cleanup scope by decision: multi-user auth is a **product
+feature**, not debt cleanup. `views.py` keeps `DEFAULT_USER_ID = "default"`, and
+the 7 `401` endpoint-test failures remain the expected baseline (they assert an
+auth layer that intentionally does not exist). If multi-user is ever built, it's
+its own product initiative — not tracked here.
 
 ---
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors (Passes 3–4 held at 4). A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Passes 3–7 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -313,7 +336,54 @@ Behavior-parity refactor; pyright stays 4, ruff 0.
 - Tests: `MemoryRecorderTest`, `AgentHookDispatchTest`, `GoalMemoryTest` (+ the
   existing `GoalAccessControlTest` still green).
 
-Still deferred: **item 1 (god-function decomposition; needs a consolidation
-integration-test backfill first — `recall()` is already decomposed)**, item 4
-(DI), item 6 (memory-store retry/health half), item 9 (exception hierarchy +
-broad-except tightening), item 10, item 12.
+### Pass 5 — consolidation god-function decomposition (roadmap item 1)
+Largest remaining readability debt; behavior-parity refactor (pyright 4, ruff 0).
+- **Test-first:** new `ConsolidationPipelineTest` (5 tests) drives
+  `consolidate_episodic_to_semantic` end-to-end against mocked Neo4j/extraction/
+  memory and pins the observable contract (storage calls, `consolidated` /
+  `self_consolidated` flags, metrics, return dict). Written + green **before** the
+  refactor so the relocation is provably behavior-preserving.
+- **Decomposition:** the 614-line function → ~125-line coordinator over
+  `_fetch_pending_conversations`, `_extract_from_conversation`,
+  `_store_conversation_entities`, `_store_facts_with_verification`,
+  `_link_facts_and_relationships`, `_consolidate_user_conversation`,
+  `_consolidate_assistant_conversation` (+ `_ConvExtraction` / `_FactStoreResult`
+  dataclasses). Helpers share the session and mutate `metrics`/`errors` in place.
+- Repointed the brittle `inspect.getsource` test at the helper that now owns the
+  per-fact try/except.
+
+### Pass 6 — finish the cleanup (items 4, 6, and the item-1 tail)
+Three independently-committed steps; pyright held at 4, ruff 0 throughout.
+- **Item 4 (DI):** `Agent(config, *, registry=None)` and
+  `ProviderRegistry(config_manager=None)` accept injected instances; added
+  `set_/reset_registry` and `set_/reset_config_manager` test seams. Defaults to
+  the globals (no production change). `DependencyInjectionTest`.
+- **Item 6 (memory-store half):** per-manager `health_check()` classmethods with
+  `check_memory_health()` delegating; `with_neo4j_retry()` exponential-backoff
+  helper for transient Neo4j errors. `Neo4jRetryTest`, `ConnectionHealthCheckTest`.
+- **Item 1 tail:** `streaming_tool_loop()` decomposed into a coordinator over
+  `_prepare_round_context` / `_partition_tool_calls` / `_run_delegations` /
+  `_execute_and_emit_tools`; pinned first by `StreamingToolLoopTest`.
+- Dropped **item 12** (multi-user auth — a product feature, not cleanup).
+
+### Pass 7 — exception hierarchy + boundary adoption (roadmap item 9)
+The final cleanup item; behavior-parity (pyright 4, ruff 0). Three
+independently-committed steps.
+- **Hierarchy:** new `agentx_ai/exceptions.py` — `AgentXError` (carrying
+  `http_status`, `message`, `details`) over `ConfigError`, `ProviderError`/
+  `ModelNotFoundError`/`ProviderUnavailableError`, `MCPError`/
+  `MCPServerNotFoundError`/`MCPTransportError`, `ToolExecutionError`,
+  `MemoryStoreError`. Leaf types that replace a `raise ValueError` also inherit
+  `ValueError` (back-compat) so the raise-site swaps are behavior-preserving.
+- **Adoption (boundaries-only):** provider-resolution raises (`registry.py`) →
+  `ModelNotFoundError`; MCP server-not-found / unsupported-transport
+  (`mcp/client.py`) → `MCPServerNotFoundError` / `MCPTransportError`.
+- **Boundary mapper:** `utils.responses.error_response(exc)` maps `http_status`
+  to the HTTP code; wired into `mcp_connect` + prompt-enhance ahead of their
+  `except ValueError` clauses (transport→400, model-not-found→404 instead of
+  collapsing to 404/500). `ExceptionHierarchyTest` (9 tests).
+- The ~255 best-effort `except Exception` swallows were intentionally retained.
+
+**The roadmap's cleanup items are now complete.** Only **item 10** (streaming
+constants → ConfigManager) remains, and it stays optional/low-value (a clean
+single source of truth today; do it only if runtime hot-reload is wanted).

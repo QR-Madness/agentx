@@ -3,11 +3,13 @@
 import atexit
 import logging
 import threading
+import time
 from contextlib import contextmanager
-from typing import ClassVar, Generator, Optional
+from typing import Callable, ClassVar, Generator, Optional, TypeVar
 import redis
 from neo4j import GraphDatabase, Driver, Session, NotificationMinimumSeverity
-from sqlalchemy import create_engine, Engine
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.orm import sessionmaker, Session as SQLSession
 
 from .config import get_settings
@@ -20,6 +22,45 @@ settings = get_settings()
 _neo4j_lock = threading.RLock()
 _postgres_lock = threading.RLock()
 _redis_lock = threading.RLock()
+
+# Transient Neo4j errors worth retrying with backoff.
+_NEO4J_TRANSIENT_ERRORS = (ServiceUnavailable, SessionExpired, TransientError)
+
+T = TypeVar("T")
+
+
+def with_neo4j_retry(
+    fn: Callable[[], T],
+    *,
+    retries: int = 3,
+    base_delay: float = 0.1,
+) -> T:
+    """Run `fn`, retrying transient Neo4j errors with exponential backoff.
+
+    Retries on ServiceUnavailable / SessionExpired / TransientError (cluster
+    failover, leader election, dropped connections). Non-transient errors
+    propagate immediately. After `retries` attempts the last error is re-raised.
+
+    `fn` should be self-contained (open its own session) so each attempt starts
+    clean. For simple one-shot queries prefer `Neo4jConnection.execute_query`,
+    which uses the driver's own managed retry.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(retries):
+        try:
+            return fn()
+        except _NEO4J_TRANSIENT_ERRORS as e:
+            last_exc = e
+            if attempt == retries - 1:
+                break
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                f"Transient Neo4j error (attempt {attempt + 1}/{retries}), "
+                f"retrying in {delay:.2f}s: {e}"
+            )
+            time.sleep(delay)
+    assert last_exc is not None  # only reached after a transient failure
+    raise last_exc
 
 
 # Neo4j Connection Manager
@@ -56,6 +97,21 @@ class Neo4jConnection:
             yield session
         finally:
             session.close()
+
+    @classmethod
+    def health_check(cls) -> dict:
+        """Probe Neo4j connectivity. Returns {"status", "error"}.
+
+        A single fast probe (no retry/backoff) so callers with their own timeout
+        budget get a prompt liveness answer. For operational queries that should
+        survive a cluster failover, wrap the session work in `with_neo4j_retry`.
+        """
+        try:
+            with cls.session() as session:
+                session.run("RETURN 1").consume()
+            return {"status": "healthy", "error": None}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)}
 
     @classmethod
     def close(cls):
@@ -102,6 +158,16 @@ class PostgresConnection:
         return cls._session_factory  # type: ignore[return-value]
 
     @classmethod
+    def health_check(cls) -> dict:
+        """Probe PostgreSQL connectivity. Returns {"status", "error"}."""
+        try:
+            with get_postgres_session() as session:
+                session.execute(text("SELECT 1"))
+            return {"status": "healthy", "error": None}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)}
+
+    @classmethod
     def close(cls) -> None:
         """Close the engine and dispose connections."""
         with _postgres_lock:
@@ -145,6 +211,15 @@ class RedisConnection:
                         socket_connect_timeout=settings.connection_timeout
                     )
         return cls._client  # type: ignore[return-value]
+
+    @classmethod
+    def health_check(cls) -> dict:
+        """Probe Redis connectivity. Returns {"status", "error"}."""
+        try:
+            cls.get_client().ping()
+            return {"status": "healthy", "error": None}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)}
 
     @classmethod
     def close(cls) -> None:

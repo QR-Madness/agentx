@@ -838,6 +838,184 @@ class ProviderRobustnessTest(TestCase):
         self.assertNotIn("fake", registry._providers)
 
 
+class DependencyInjectionTest(TestCase):
+    """The registry/config singletons are injectable (roadmap item 4)."""
+
+    def test_agent_uses_injected_registry(self) -> None:
+        """Agent(config, registry=fake) uses the injected registry, not the global."""
+        from agentx_ai.agent.core import Agent, AgentConfig
+        from agentx_ai.providers import registry as registry_mod
+
+        fake = MagicMock()
+        with patch.object(registry_mod, "get_registry") as global_getter:
+            agent = Agent(AgentConfig(), registry=fake)
+            self.assertIs(agent.registry, fake)
+            global_getter.assert_not_called()
+
+    def test_agent_falls_back_to_global_registry(self) -> None:
+        """Without injection, Agent.registry resolves via get_registry()."""
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        fake = MagicMock()
+        with patch("agentx_ai.agent.core.get_registry", return_value=fake) as getter:
+            agent = Agent(AgentConfig())
+            self.assertIs(agent.registry, fake)
+            getter.assert_called_once()
+
+    def test_set_and_reset_registry(self) -> None:
+        """set_registry injects the global; reset_registry rebuilds on next access."""
+        from agentx_ai.providers.registry import (
+            ProviderRegistry, get_registry, set_registry, reset_registry,
+        )
+
+        fake = MagicMock(spec=ProviderRegistry)
+        set_registry(fake)
+        try:
+            self.assertIs(get_registry(), fake)
+        finally:
+            reset_registry()
+        # After reset, a fresh real instance is built (not the fake)
+        self.assertIsInstance(get_registry(), ProviderRegistry)
+        self.assertIsNot(get_registry(), fake)
+
+    def test_set_and_reset_config_manager(self) -> None:
+        """set_config_manager injects the global; reset rebuilds on next access."""
+        from agentx_ai.config import (
+            ConfigManager, get_config_manager, set_config_manager, reset_config_manager,
+        )
+
+        fake = MagicMock(spec=ConfigManager)
+        set_config_manager(fake)
+        try:
+            self.assertIs(get_config_manager(), fake)
+        finally:
+            reset_config_manager()
+        self.assertIsInstance(get_config_manager(), ConfigManager)
+
+    def test_registry_uses_injected_config_manager(self) -> None:
+        """ProviderRegistry(config_manager=fake) reads provider config from it."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        fake_cm = MagicMock()
+        fake_cm.get_provider_value.return_value = None  # no providers configured
+        ProviderRegistry(config_manager=fake_cm)
+        # _load_default_config probes the injected manager, not the global
+        self.assertTrue(fake_cm.get_provider_value.called)
+
+
+class ExceptionHierarchyTest(TestCase):
+    """The AgentX exception hierarchy (roadmap item 9)."""
+
+    def test_all_errors_are_agentx_and_builtin_exceptions(self) -> None:
+        from agentx_ai.exceptions import (
+            AgentXError, ConfigError, ProviderError, ModelNotFoundError,
+            ProviderUnavailableError, MCPError, MCPServerNotFoundError,
+            MCPTransportError, ToolExecutionError, MemoryStoreError,
+        )
+
+        for cls in (
+            ConfigError, ProviderError, ModelNotFoundError, ProviderUnavailableError,
+            MCPError, MCPServerNotFoundError, MCPTransportError, ToolExecutionError,
+            MemoryStoreError,
+        ):
+            self.assertTrue(issubclass(cls, AgentXError), cls.__name__)
+            self.assertTrue(issubclass(cls, Exception), cls.__name__)
+
+    def test_back_compat_value_error_inheritance(self) -> None:
+        """Leaf errors replacing a raise ValueError are still ValueErrors."""
+        from agentx_ai.exceptions import (
+            ModelNotFoundError, MCPServerNotFoundError, MCPTransportError,
+        )
+
+        for cls in (ModelNotFoundError, MCPServerNotFoundError, MCPTransportError):
+            self.assertTrue(issubclass(cls, ValueError), cls.__name__)
+            with self.assertRaises(ValueError):
+                raise cls("boom")
+
+    def test_http_status_mapping(self) -> None:
+        from agentx_ai.exceptions import (
+            AgentXError, ConfigError, ProviderError, ModelNotFoundError,
+            ProviderUnavailableError, MCPError, MCPServerNotFoundError,
+            MCPTransportError, ToolExecutionError, MemoryStoreError,
+        )
+
+        self.assertEqual(AgentXError.http_status, 500)
+        self.assertEqual(ConfigError.http_status, 500)
+        self.assertEqual(ProviderError.http_status, 502)
+        self.assertEqual(ModelNotFoundError.http_status, 404)
+        self.assertEqual(ProviderUnavailableError.http_status, 502)
+        self.assertEqual(MCPError.http_status, 503)
+        self.assertEqual(MCPServerNotFoundError.http_status, 404)
+        self.assertEqual(MCPTransportError.http_status, 400)
+        self.assertEqual(ToolExecutionError.http_status, 500)
+        self.assertEqual(MemoryStoreError.http_status, 503)
+
+    def test_message_and_details_round_trip(self) -> None:
+        from agentx_ai.exceptions import ModelNotFoundError
+
+        err = ModelNotFoundError("no such model", model="ghost:x", provider="ghost")
+        self.assertEqual(str(err), "no such model")
+        self.assertEqual(err.message, "no such model")
+        self.assertEqual(err.details, {"model": "ghost:x", "provider": "ghost"})
+
+    def test_memory_store_error_is_not_builtin(self) -> None:
+        """MemoryStoreError must not shadow the builtin MemoryError."""
+        from agentx_ai.exceptions import MemoryStoreError
+
+        self.assertIsNot(MemoryStoreError, MemoryError)
+        self.assertFalse(issubclass(MemoryStoreError, MemoryError))
+
+    def test_registry_raises_model_not_found(self) -> None:
+        """Provider resolution failures raise ModelNotFoundError (still a ValueError)."""
+        from agentx_ai.exceptions import ModelNotFoundError
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        fake_cm = MagicMock()
+        fake_cm.get_provider_value.return_value = None  # no providers configured
+        reg = ProviderRegistry(config_manager=fake_cm)
+
+        with self.assertRaises(ModelNotFoundError):
+            reg.get_provider_for_model("ghost:model-x")
+        # Back-compat: existing `except ValueError` boundaries still catch it.
+        with self.assertRaises(ValueError):
+            reg.get_provider_for_model("ghost:model-x")
+
+    def test_mcp_unknown_server_raises_typed_error(self) -> None:
+        """Connecting an unregistered MCP server raises MCPServerNotFoundError."""
+        from agentx_ai.exceptions import MCPServerNotFoundError
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerRegistry
+
+        manager = MCPClientManager(registry=ServerRegistry())
+        with self.assertRaises(MCPServerNotFoundError):
+            manager.connect("does-not-exist")
+        # Back-compat with the prior ValueError contract.
+        with self.assertRaises(ValueError):
+            manager.connect("does-not-exist")
+
+    def test_error_response_maps_status(self) -> None:
+        """error_response uses the exception's http_status, 500 for plain errors."""
+        from agentx_ai.exceptions import (
+            ModelNotFoundError, ProviderUnavailableError, MCPTransportError,
+        )
+        from agentx_ai.utils.responses import error_response
+
+        self.assertEqual(error_response(ModelNotFoundError("x")).status_code, 404)
+        self.assertEqual(error_response(ProviderUnavailableError("x")).status_code, 502)
+        self.assertEqual(error_response(MCPTransportError("x")).status_code, 400)
+        self.assertEqual(error_response(ValueError("x")).status_code, 500)
+
+    def test_error_response_message_body(self) -> None:
+        from agentx_ai.exceptions import ModelNotFoundError
+        from agentx_ai.utils.responses import error_response
+
+        resp = error_response(ModelNotFoundError("no model"))
+        self.assertEqual(json.loads(resp.content)["error"], "no model")
+        # Empty message falls back to the class name rather than "".
+        resp2 = error_response(ModelNotFoundError())
+        self.assertEqual(json.loads(resp2.content)["error"], "ModelNotFoundError")
+
+
 class ToolDiscoveryErrorTest(TestCase):
     """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""
 
@@ -2292,6 +2470,111 @@ class TrajectoryCompressionTest(TestCase):
         self.assertIn("tool_0", text)
         self.assertIn("tool_1", text)
         self.assertIn("val_0", text)
+
+
+class StreamingToolLoopTest(TestCase):
+    """Behavior-pinning tests for streaming_tool_loop (roadmap item 1 tail).
+
+    Drive the loop against a fake provider/agent and assert the observable SSE
+    event stream + ToolLoopResult accumulation, so the decomposition into
+    per-stage helpers is provably behavior-preserving.
+    """
+
+    class _FakeProvider:
+        """Yields a pre-scripted list of chunks per stream() call."""
+        def __init__(self, rounds):
+            self._rounds = rounds
+            self._call = 0
+
+        async def stream(self, messages, model_id, **kwargs):
+            chunks = self._rounds[self._call]
+            self._call += 1
+            for c in chunks:
+                yield c
+
+    class _FakeAgent:
+        def __init__(self):
+            self._active_alloy_executor = None
+            self.executed = []
+
+        def _execute_tool_calls(self, calls, task_context=""):
+            from agentx_ai.providers.base import Message, MessageRole
+            self.executed.append(list(calls))
+            return [
+                Message(role=MessageRole.TOOL, content=f"result-{tc.name}",
+                        tool_call_id=tc.id, name=tc.name)
+                for tc in calls
+            ]
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    def _run(self, provider, agent, messages, tools, **kwargs):
+        from agentx_ai.streaming.tool_loop import streaming_tool_loop, ToolLoopResult
+        result = ToolLoopResult()
+        with patch("agentx_ai.streaming.tool_loop.compress_trajectory", return_value=False), \
+             patch("agentx_ai.streaming.tool_loop.estimate_tokens", return_value=10):
+            events = asyncio.run(self._drain(streaming_tool_loop(
+                provider, "fake:model", messages, tools, agent,
+                result=result, **kwargs,
+            )))
+        return events, result
+
+    @staticmethod
+    def _events_of(events, name):
+        return [e for e in events if e.startswith(f"event: {name}\n")]
+
+    def test_plain_completion(self) -> None:
+        """One content chunk, no tool calls → chunk event, final_content set, loop ends."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([[StreamChunk(content="hello")]])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(provider, agent, messages, None)
+
+        self.assertEqual(len(self._events_of(events, "chunk")), 1)
+        self.assertEqual(self._events_of(events, "tool_call"), [])
+        self.assertEqual(result.content, "hello")
+        self.assertEqual(result.final_content, "hello")
+        self.assertEqual(agent.executed, [])
+
+    def test_empty_completion_fallback(self) -> None:
+        """An empty first completion emits the explicit fallback chunk."""
+        provider = self._FakeProvider([[]])  # stream yields nothing
+        agent = self._FakeAgent()
+        events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.content, "[empty response from model]")
+        self.assertEqual(result.final_content, "[empty response from model]")
+        chunk_events = self._events_of(events, "chunk")
+        self.assertEqual(len(chunk_events), 1)
+        self.assertIn("[empty response from model]", chunk_events[0])
+
+    def test_one_tool_round_then_completion(self) -> None:
+        """A tool round emits tool_call + tool_result, extends messages, then completes."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "x"})])],
+            [StreamChunk(content="final answer")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"type": "function", "function": {"name": "search"}}],
+        )
+
+        self.assertEqual(len(self._events_of(events, "tool_call")), 1)
+        self.assertEqual(len(self._events_of(events, "tool_result")), 1)
+        self.assertEqual(result.tools_used, ["search"])
+        self.assertEqual(result.final_content, "final answer")
+        # messages now carries the assistant tool_calls msg + the tool result
+        roles = [m.role for m in messages]
+        self.assertIn(MessageRole.ASSISTANT, roles)
+        self.assertIn(MessageRole.TOOL, roles)
+        self.assertEqual(len(agent.executed), 1)
 
 
 class ContextGateTest(TestCase):

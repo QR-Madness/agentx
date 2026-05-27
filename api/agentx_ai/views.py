@@ -21,7 +21,9 @@ from .streaming import (
     resolve_with_priority,
 )
 from .utils.decorators import lazy_singleton
+from .exceptions import AgentXError
 from .utils.responses import (
+    error_response,
     json_error,
     json_success,
     parse_json_body,
@@ -477,6 +479,10 @@ def mcp_connect(request):
             "tools_count": len(connection.tools),
             "resources_count": len(connection.resources),
         })
+    except AgentXError as e:
+        # Typed boundary errors carry the right status (server-not-found 404,
+        # unsupported transport 400). Must precede the ValueError fallback.
+        return error_response(e)
     except ValueError as e:
         return json_error(str(e), status=404)
     except Exception as e:
@@ -2202,6 +2208,10 @@ Guidelines:
             "model": model_id,
         })
 
+    except AgentXError as e:
+        # e.g. ModelNotFoundError -> 404 instead of a blanket 500.
+        logger.warning(f"Prompt enhancement provider error: {e}")
+        return error_response(e)
     except ValueError as e:
         logger.warning(f"Prompt enhancement provider error: {e}")
         return JsonResponse({'error': f'Provider error: {str(e)}'}, status=500)

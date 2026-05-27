@@ -61,52 +61,42 @@ def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = 
 def check_memory_health() -> dict:
     """
     Check health of memory system connections with timeouts.
-    
+
+    Probes run in parallel daemon threads (bounded by HEALTH_CHECK_TIMEOUT) and
+    delegate to each connection manager's `health_check()` — the single source
+    of truth for per-store liveness.
+
     Returns:
         Dict with status of each connection (neo4j, postgres, redis)
     """
-    from sqlalchemy import text
     import queue
-    
+    from .agent_memory.connections import (
+        Neo4jConnection, PostgresConnection, RedisConnection,
+    )
+
     health = {
         "neo4j": {"status": "unknown", "error": None},
         "postgres": {"status": "unknown", "error": None},
         "redis": {"status": "unknown", "error": None},
     }
-    
+
     results = queue.Queue()
-    
-    def _check_neo4j():
-        try:
-            from .agent_memory.connections import Neo4jConnection
-            with Neo4jConnection.session() as session:
-                session.run("RETURN 1").consume()
-            results.put(("neo4j", "healthy", None))
-        except Exception as e:
-            results.put(("neo4j", "unhealthy", str(e)))
-    
-    def _check_postgres():
-        try:
-            from .agent_memory.connections import get_postgres_session
-            with get_postgres_session() as session:
-                session.execute(text("SELECT 1"))
-            results.put(("postgres", "healthy", None))
-        except Exception as e:
-            results.put(("postgres", "unhealthy", str(e)))
-    
-    def _check_redis():
-        try:
-            from .agent_memory.connections import RedisConnection
-            client = RedisConnection.get_client()
-            client.ping()
-            results.put(("redis", "healthy", None))
-        except Exception as e:
-            results.put(("redis", "unhealthy", str(e)))
-    
+
+    # name -> connection manager whose health_check() to call
+    probes = {
+        "neo4j": Neo4jConnection,
+        "postgres": PostgresConnection,
+        "redis": RedisConnection,
+    }
+
+    def _probe(name, manager):
+        result = manager.health_check()
+        results.put((name, result["status"], result["error"]))
+
     # Start daemon threads for each check
     threads = []
-    for check_fn in [_check_neo4j, _check_postgres, _check_redis]:
-        t = threading.Thread(target=check_fn, daemon=True)
+    for name, manager in probes.items():
+        t = threading.Thread(target=_probe, args=(name, manager), daemon=True)
         t.start()
         threads.append(t)
     

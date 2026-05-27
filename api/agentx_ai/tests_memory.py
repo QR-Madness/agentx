@@ -519,13 +519,18 @@ class ConsolidationTimestampTest(TestCase):
         # This prevents infinite retry loops
         pass  # Actual test requires integration testing
 
-    def test_timestamp_in_finally_block(self) -> None:
-        """Verify timestamp setting pattern uses finally block."""
+    def test_fact_storage_handles_errors_gracefully(self) -> None:
+        """The fact-storage stage guards each fact with try/except.
 
-        # Get source and verify the pattern
-        source = inspect.getsource(consolidation_jobs_module.consolidate_episodic_to_semantic)
+        Post-decomposition (roadmap item 1) the per-fact defensive handling
+        lives in the extracted `_store_facts_with_verification` helper rather
+        than inline in the coordinator, so introspect the helper that owns it.
+        """
+        source = inspect.getsource(
+            consolidation_jobs_module._store_facts_with_verification
+        )
 
-        # The function should handle errors gracefully
+        # Each fact must be stored best-effort so one failure can't abort the batch
         self.assertIn("try", source)
         self.assertIn("except", source)
 
@@ -716,6 +721,194 @@ class ConsolidationJobMetricsTest(TestCase):
             result = manage_audit_partitions()
 
             self.assertIsInstance(result, dict)
+
+
+class ConsolidationPipelineTest(TestCase):
+    """Behavior-pinning tests for consolidate_episodic_to_semantic().
+
+    These drive the whole job against a mocked Neo4j session + extraction
+    service + memory and assert the externally-observable contract — which
+    storage calls fire, when the ``consolidated``/``self_consolidated`` flags
+    get set, and the shape of the returned metrics. They exist so the
+    god-function decomposition (roadmap item 1) is provably behavior-preserving:
+    a pure relocation must keep every assertion here green.
+    """
+
+    def _make_session(self, user_records, assistant_records):
+        """Mock Neo4j session that routes the discovery queries by content."""
+        session = create_mock_neo4j_session()
+
+        def _run(query, **params):
+            res = MagicMock()
+            if "self_consolidated IS NULL" in query:
+                res.__iter__ = MagicMock(return_value=iter(list(assistant_records)))
+            elif "c.consolidated IS NULL" in query:
+                res.__iter__ = MagicMock(return_value=iter(list(user_records)))
+            else:
+                res.__iter__ = MagicMock(return_value=iter([]))
+            return res
+
+        session.run.side_effect = _run
+        return session
+
+    @staticmethod
+    def _ran(session, needle):
+        """True if any session.run() call's Cypher contained `needle`."""
+        return any(
+            needle in (call.args[0] if call.args else "")
+            for call in session.run.call_args_list
+        )
+
+    @staticmethod
+    def _combined(*, success=True, is_relevant=True, entities=None, facts=None,
+                  relationships=None, reason=""):
+        r = MagicMock()
+        r.success = success
+        r.is_relevant = is_relevant
+        r.entities = entities or []
+        r.facts = facts or []
+        r.relationships = relationships or []
+        r.tokens_used = 5
+        r.reason = reason
+        return r
+
+    def _run_job(self, *, user_records=(), assistant_records=(),
+                 combined=None, assistant_combined=None, is_duplicate=False):
+        """Run consolidation with all sub-helpers patched; return (result, session, memory)."""
+        session = self._make_session(user_records, assistant_records)
+
+        memory = MagicMock()
+        fact_obj = MagicMock()
+        fact_obj.id = "fact-1"
+        memory.learn_fact.return_value = fact_obj
+        memory.semantic.get_fact_by_id.return_value = None
+
+        ext = MagicMock()
+        ext.check_correction = AsyncMock(return_value=MagicMock(is_correction=False))
+        ext.check_relevance_and_extract = AsyncMock(
+            return_value=combined if combined is not None else self._combined()
+        )
+        ext.check_relevance_and_extract_assistant = AsyncMock(
+            return_value=(assistant_combined if assistant_combined is not None
+                          else self._combined(is_relevant=False))
+        )
+        ext.check_contradictions = AsyncMock(
+            return_value=MagicMock(has_contradiction=False)
+        )
+
+        def _resolve(*, memory, extracted_entities, entity_map, user_id,
+                     channel, conv_id, metrics, errors):
+            for e in extracted_entities:
+                entity_map[str(e.get("name", "")).lower()] = "ent-1"
+            return (list(extracted_entities), 0, len(extracted_entities))
+
+        mod = consolidation_jobs_module
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+                   return_value=session), \
+             patch.object(mod, 'get_extraction_service', return_value=ext), \
+             patch.object(mod, 'get_embedder', return_value=MagicMock()), \
+             patch.object(mod, '_get_memory_for_user', return_value=memory), \
+             patch('agentx_ai.kit.agent_memory.memory.interface.AgentMemory',
+                   return_value=memory), \
+             patch.object(mod, '_build_scope_context', return_value=([], [])), \
+             patch.object(mod, '_resolve_and_prepare_entities', side_effect=_resolve), \
+             patch.object(mod, '_batch_store_entities', return_value=1), \
+             patch.object(mod, '_batch_store_relationships', return_value=0), \
+             patch.object(mod, '_is_duplicate_fact', return_value=is_duplicate), \
+             patch.object(mod, '_is_semantic_duplicate', return_value=False), \
+             patch.object(mod, '_get_contradiction_candidates', return_value=[]):
+            result = asyncio.run(consolidate_episodic_to_semantic())
+
+        return result, session, memory
+
+    @staticmethod
+    def _user_record():
+        return {
+            "conversation_id": "conv-1",
+            "user_id": "default",
+            "channel": "_default",
+            "turns": [{"content": "Acme Corp raised a Series A funding round."}],
+        }
+
+    @staticmethod
+    def _assistant_record():
+        return {
+            "conversation_id": "conv-2",
+            "user_id": "default",
+            "agent_id": "bold-cosmic-falcon",
+            "turns": [{
+                "content": "I am most effective when given explicit constraints "
+                           "up front, and I tend to over-explain when uncertain.",
+                "id": "turn-a1",
+            }],
+        }
+
+    def test_happy_path_stores_and_marks_consolidated(self) -> None:
+        """A relevant turn → entity + fact stored and conversation marked consolidated."""
+        combined = self._combined(
+            entities=[{"name": "Acme", "type": "organization"}],
+            facts=[{"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []}],
+        )
+        result, session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined,
+        )
+
+        memory.learn_fact.assert_called_once()
+        self.assertTrue(self._ran(session, "SET c.consolidated"))
+        self.assertEqual(result["facts"], 1)
+        self.assertEqual(result["entities"], 1)
+        self.assertGreaterEqual(result["items_processed"], 1)
+
+    def test_extraction_failure_skips_consolidated_mark(self) -> None:
+        """A failed extraction must NOT mark the conversation consolidated (retry guarantee)."""
+        combined = self._combined(success=False, is_relevant=False)
+        result, session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined,
+        )
+
+        memory.learn_fact.assert_not_called()
+        self.assertFalse(self._ran(session, "SET c.consolidated"))
+
+    def test_no_relevant_turns_marks_consolidated(self) -> None:
+        """No relevant turns (but no failure) → still marked consolidated, nothing stored."""
+        combined = self._combined(success=True, is_relevant=False, reason="heuristic_skip")
+        result, session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined,
+        )
+
+        memory.learn_fact.assert_not_called()
+        self.assertTrue(self._ran(session, "SET c.consolidated"))
+
+    def test_hash_duplicate_fact_skipped(self) -> None:
+        """A hash-duplicate fact is skipped and counted, but the conversation still consolidates."""
+        combined = self._combined(
+            facts=[{"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []}],
+        )
+        result, session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined, is_duplicate=True,
+        )
+
+        memory.learn_fact.assert_not_called()
+        self.assertEqual(result["metrics"]["duplicates_skipped"], 1)
+        self.assertTrue(self._ran(session, "SET c.consolidated"))
+
+    def test_assistant_phase_stores_self_facts(self) -> None:
+        """An assistant turn with an agent_id → self-fact stored and self_consolidated set."""
+        assistant_combined = self._combined(
+            entities=[],
+            facts=[{"claim": "Assistant works best with explicit constraints",
+                    "confidence": 0.8, "entity_names": []}],
+        )
+        result, session, memory = self._run_job(
+            assistant_records=[self._assistant_record()],
+            assistant_combined=assistant_combined,
+        )
+
+        memory.learn_fact.assert_called_once()
+        _, kwargs = memory.learn_fact.call_args
+        self.assertEqual(kwargs.get("source"), "self_extraction")
+        self.assertTrue(self._ran(session, "SET c.self_consolidated"))
+        self.assertEqual(result["metrics"]["assistant_facts_stored"], 1)
 
 
 class EntityNameNormalizationTest(TestCase):
@@ -3118,3 +3311,83 @@ class RecallProviderImportTest(TestCase):
         # Wrong import depth would raise ImportError -> except -> {}.
         self.assertEqual(filters, {"keywords": ["python"]})
         provider.complete.assert_called_once()
+
+
+class Neo4jRetryTest(TestCase):
+    """with_neo4j_retry backs off transient Neo4j errors (roadmap item 6)."""
+
+    def test_retries_transient_then_succeeds(self) -> None:
+        from neo4j.exceptions import TransientError
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=[TransientError("failover"), "ok"])
+        result = with_neo4j_retry(fn, retries=3, base_delay=0.0)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(fn.call_count, 2)
+
+    def test_persistent_transient_error_surfaces(self) -> None:
+        from neo4j.exceptions import ServiceUnavailable
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=ServiceUnavailable("down"))
+        with self.assertRaises(ServiceUnavailable):
+            with_neo4j_retry(fn, retries=3, base_delay=0.0)
+        self.assertEqual(fn.call_count, 3)
+
+    def test_non_transient_error_not_retried(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import with_neo4j_retry
+
+        fn = MagicMock(side_effect=ValueError("bad query"))
+        with self.assertRaises(ValueError):
+            with_neo4j_retry(fn, retries=3, base_delay=0.0)
+        self.assertEqual(fn.call_count, 1)
+
+
+class ConnectionHealthCheckTest(TestCase):
+    """Per-manager health_check() + check_memory_health delegation (item 6)."""
+
+    def test_neo4j_health_check_healthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+
+        with patch.object(Neo4jConnection, "session") as sess:
+            sess.return_value = create_mock_neo4j_session()
+            result = Neo4jConnection.health_check()
+        self.assertEqual(result["status"], "healthy")
+        self.assertIsNone(result["error"])
+
+    def test_neo4j_health_check_unhealthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+
+        with patch.object(Neo4jConnection, "session", side_effect=RuntimeError("no driver")):
+            result = Neo4jConnection.health_check()
+        self.assertEqual(result["status"], "unhealthy")
+        self.assertIn("no driver", result["error"])
+
+    def test_redis_health_check_healthy(self) -> None:
+        from agentx_ai.kit.agent_memory.connections import RedisConnection
+
+        client = MagicMock()
+        with patch.object(RedisConnection, "get_client", return_value=client):
+            result = RedisConnection.health_check()
+        client.ping.assert_called_once()
+        self.assertEqual(result["status"], "healthy")
+
+    def test_check_memory_health_delegates(self) -> None:
+        from agentx_ai.kit import memory_utils
+        from agentx_ai.kit.agent_memory.connections import (
+            Neo4jConnection, PostgresConnection, RedisConnection,
+        )
+
+        with patch.object(Neo4jConnection, "health_check",
+                          return_value={"status": "healthy", "error": None}), \
+             patch.object(PostgresConnection, "health_check",
+                          return_value={"status": "unhealthy", "error": "boom"}), \
+             patch.object(RedisConnection, "health_check",
+                          return_value={"status": "healthy", "error": None}):
+            health = memory_utils.check_memory_health()
+
+        self.assertEqual(health["neo4j"]["status"], "healthy")
+        self.assertEqual(health["postgres"]["status"], "unhealthy")
+        self.assertEqual(health["postgres"]["error"], "boom")
+        self.assertEqual(health["redis"]["status"], "healthy")
