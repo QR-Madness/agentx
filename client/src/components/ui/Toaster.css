@@ -1,0 +1,94 @@
+/* Toaster — fixed bottom-right stack of glass toasts. */
+
+.toaster {
+  position: fixed;
+  bottom: var(--space-xl, 24px);
+  right: var(--space-xl, 24px);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 12px);
+  width: min(380px, calc(100vw - 2 * var(--space-lg, 16px)));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md, 12px);
+  padding: var(--space-md, 12px) var(--space-lg, 16px);
+  border-radius: 12px;
+  background: var(--glass-layer-2);
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  /* Left accent rail keyed to severity. */
+  border-left: 3px solid var(--toast-accent, var(--feedback-info));
+}
+
+.toast--error { --toast-accent: var(--feedback-error); }
+.toast--warning { --toast-accent: var(--feedback-warning); }
+.toast--success { --toast-accent: var(--feedback-success); }
+.toast--info { --toast-accent: var(--feedback-info); }
+
+.toast__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  color: var(--toast-accent, var(--feedback-info));
+}
+
+.toast__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.toast__message {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.toast__dismiss {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary, var(--text-secondary));
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toast__dismiss:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .toaster {
+    left: var(--space-md, 12px);
+    right: var(--space-md, 12px);
+    bottom: var(--space-md, 12px);
+    width: auto;
+  }
+}

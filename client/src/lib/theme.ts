@@ -73,11 +73,27 @@ const LIGHT_PRIMITIVES = {
   slate400: '#94a3b8',
 };
 
+/**
+ * Spacing scale — theme-independent, spread into every theme's variables so the
+ * tokens exist regardless of the active theme. Replaces the magic-number
+ * paddings/gaps scattered across component CSS (use `var(--space-lg)` etc.).
+ */
+const SPACING_TOKENS = {
+  '--space-xs': '4px',
+  '--space-sm': '8px',
+  '--space-md': '12px',
+  '--space-lg': '16px',
+  '--space-xl': '24px',
+  '--space-2xl': '32px',
+  '--space-3xl': '40px',
+} as const;
+
 export const COSMIC_THEME: ThemeDefinition = {
   name: 'cosmic',
   displayName: 'Cosmic Dark',
   isDark: true,
   variables: {
+    ...SPACING_TOKENS,
     // === Semantic Surface Tokens ===
     '--surface-base': COSMIC_PRIMITIVES.space,
     '--surface-raised': COSMIC_PRIMITIVES.card,
@@ -195,6 +211,7 @@ export const LIGHT_THEME: ThemeDefinition = {
   displayName: 'Light',
   isDark: false,
   variables: {
+    ...SPACING_TOKENS,
     // === Semantic Surface Tokens ===
     '--surface-base': LIGHT_PRIMITIVES.white,
     '--surface-raised': LIGHT_PRIMITIVES.gray50,

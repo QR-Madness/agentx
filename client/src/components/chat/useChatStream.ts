@@ -10,6 +10,7 @@
 
 import { useCallback, useReducer, useRef } from 'react';
 import { api, type ChatRequest } from '../../lib/api';
+import { useNotify } from '../../contexts/NotificationContext';
 import {
   type ActiveDelegation,
   type ContextInfo,
@@ -73,6 +74,7 @@ function extractThinking(content: string): string | null {
 
 export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
+  const { notifyError } = useNotify();
   const abortRef = useRef<{ abort: () => void } | null>(null);
 
   // Caller passes a fresh opts literal every render, so capture it in a ref
@@ -414,9 +416,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           timestamp: new Date().toISOString(),
         };
         optsRef.current.appendMessage(msg);
+
+        // Also raise a toast so the failure is visible even when the chat is
+        // scrolled away or the user has switched tabs.
+        notifyError(error);
       },
     });
-  }, [flushLiveContent, reset]);
+  }, [flushLiveContent, reset, notifyError]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

@@ -433,6 +433,23 @@ Currently our model selection and selector are a very solid foundation but are j
   - Cannot see overall progress without scrolling back to the top.
   - Wants: sticky progress header (current step / total, status pill), per-message step affinity badge, collapsible step groups so completed steps fold away.
 
+### 18.11: Client Error Contract + Foundation Cleanup
+
+> Follow-on to the backend typed-error pass (cleanup item 9: `AgentXError` hierarchy → HTTP mapper at the views boundary). The client previously discarded the backend's `{"error": "..."}` message (threw `"API request failed: <statusText>"`) and had no consistent way to show failures.
+
+- [x] Error contract end-to-end — `ApiError` gained a status-derived `kind` (`bad_request`/`auth`/`not_found`/`upstream`/`unavailable`/`network`/`server`); `request()` now surfaces the backend message and wraps `fetch` rejections as `network`. Added `toApiError()` / `apiErrorMessage()` / `classifyStatus()` / `isApiError()` helpers in `lib/api.ts`.
+- [x] Streaming errors — `streamChat` parses non-2xx stream POSTs (auth/typed errors before any SSE event) through the same path; `useChatStream.onError` raises a toast in addition to the inline assistant message.
+- [x] Toast system — `NotificationContext` (`notify`/`notifyError`/`notifySuccess`) + `ui/Toaster` portal, mounted in `App.tsx`. Routed previously-silent catches (history delete/restore, background-chat enqueue) and modal save/delete errors (`apiErrorMessage`, since `ApiError` is a plain object, not an `Error`).
+- [x] `useApi<T>` hook factory in `lib/hooks.ts` — collapsed the duplicated `data/loading/error/refresh` block across the read hooks (health, providers, MCP tools, agent status, memory channels/entities/facts/strategies/stats, jobs).
+- [x] `ErrorBoundary` around the routed page tree; UI primitives `Badge`/`Card`/`Input`/`Textarea`/`SectionHeader`; `--space-*` spacing scale added to both themes in `lib/theme.ts`.
+
+#### Deferred — "full grade-match" client refactor (not started)
+- [ ] Split the god components: `SettingsPanel.tsx` (~996), `MemoryPanel.tsx` (~933), `MemorySettingsPanels.tsx` (~894) using the composable `unified-settings`/`unified-profile-editor` section pattern.
+- [ ] Split the monolithic `lib/api.ts` (~2,400 lines, ~89 methods) into domain clients (auth/MCP/prompts/memory/agent) behind a facade; extract inline response types to `types.ts`; move streaming to its own module.
+- [ ] Split `ConversationContext` (~599 lines) into tab / message / history concerns.
+- [ ] Stand up a client test harness (Vitest) — currently zero client tests; needed before the splits above can be done safely.
+- [ ] Adopt the new primitives repo-wide (replace ad-hoc `.stat-badge`/`.active-badge`, `.card`, raw inputs, `.section-title` blocks) and migrate magic-number spacing to `--space-*`.
+
 ---
 
 ## Backlog (Future Enhancements)

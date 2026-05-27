@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
+import { useNotify } from '../../contexts/NotificationContext';
 import './ConversationHistoryDropdown.css';
 
 interface ConversationHistoryDropdownProps {
@@ -22,6 +23,7 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     serverConversations, isLoadingHistory, restoreConversation, refreshHistory,
     deleteConversation, deleteServerConversation,
   } = useConversation();
+  const { notifyError } = useNotify();
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -176,8 +178,8 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     setDeletingId(conversationId);
     try {
       await deleteServerConversation(conversationId);
-    } catch {
-      // Delete failed silently
+    } catch (err) {
+      notifyError(err, 'Failed to delete conversation');
     } finally {
       setDeletingId(null);
     }
@@ -189,8 +191,8 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     try {
       await restoreConversation(conversationId);
       onClose();
-    } catch {
-      // Restore failed silently
+    } catch (err) {
+      notifyError(err, 'Failed to restore conversation');
     } finally {
       setRestoringId(null);
     }

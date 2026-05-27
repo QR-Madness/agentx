@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
-import { api, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
+import { api, apiErrorMessage, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
 import { PromptLibraryModal } from './PromptLibraryModal';
 import { ModelSelector } from '../common/ModelSelector';
 import './ProfileEditorModal.css';
@@ -159,7 +159,7 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
 
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile');
+      setError(apiErrorMessage(err) || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -184,7 +184,7 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
         setError('Failed to delete profile');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete profile');
+      setError(apiErrorMessage(err) || 'Failed to delete profile');
     } finally {
       setDeleting(false);
     }

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
+import { apiErrorMessage } from '../../lib/api';
 import type {
   AgentProfile,
   AlloyWorkflow,
@@ -343,7 +344,7 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
         isEditing
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save workflow.');
+      setError(apiErrorMessage(e) || 'Failed to save workflow.');
     } finally {
       setSaving(false);
     }

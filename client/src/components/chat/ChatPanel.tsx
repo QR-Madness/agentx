@@ -24,6 +24,7 @@ import { ThinkingBubble } from './ThinkingBubble';
 import { MessageBubble } from './MessageBubble';
 import { AgentSelectorDropdown } from './AgentSelectorDropdown';
 import { useConversation } from '../../contexts/ConversationContext';
+import { useNotify } from '../../contexts/NotificationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import {
@@ -68,6 +69,7 @@ export function ChatPanel() {
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
+  const { notifyError } = useNotify();
 
   // When a workflow is selected, the supervisor profile takes over.
   // Otherwise, the tab's per-tab profile (or the global active profile) is used.
@@ -229,6 +231,7 @@ export function ChatPanel() {
       setHasUnreadBgJobs(true);
     } catch (err) {
       console.error('Failed to enqueue background chat:', err);
+      notifyError(err, 'Failed to queue background message');
     }
   };
 

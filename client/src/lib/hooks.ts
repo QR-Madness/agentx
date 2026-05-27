@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   api,
+  toApiError,
   HealthResponse,
   ProviderInfo,
   MCPServer,
@@ -17,65 +18,90 @@ import {
   MemoryFact,
   MemoryFactPatch,
   MemoryEntityPatch,
-  MemoryStrategy,
   MemoryStats,
   EntityGraph,
-  JobStatus,
-  JobHistory,
-  WorkerStatus,
   ConsolidateResult,
   ConsolidationSettings,
   RecallSettings,
 } from './api';
 
-export function useHealth(includeMemory = true, includeStorage = true) {
-  const [data, setData] = useState<HealthResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export interface UseApiOptions {
+  /** When false, the call is never fired and loading settles to false. */
+  enabled?: boolean;
+  /** Fetch automatically on mount / when deps change (default true). */
+  immediate?: boolean;
+  /** Side-effect for errors (e.g. raise a toast); error is still returned. */
+  onError?: (error: ApiError) => void;
+}
+
+export interface UseApiResult<T> {
+  data: T | null;
+  loading: boolean;
+  error: ApiError | null;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Generic data-fetching hook — the shared `data / loading / error / refresh`
+ * machinery that the read hooks below all need. Errors are normalized through
+ * `toApiError`, so callers always get a structured {@link ApiError}.
+ *
+ * `call` is read through a ref so it may close over fresh values each render
+ * without changing `refresh`'s identity; pass the values it depends on in
+ * `deps` to drive re-fetching.
+ */
+export function useApi<T>(
+  call: () => Promise<T>,
+  deps: readonly unknown[] = [],
+  opts: UseApiOptions = {}
+): UseApiResult<T> {
+  const { enabled = true, immediate = true } = opts;
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(enabled && immediate);
   const [error, setError] = useState<ApiError | null>(null);
 
+  const callRef = useRef(call);
+  callRef.current = call;
+  const onErrorRef = useRef(opts.onError);
+  onErrorRef.current = opts.onError;
+
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await api.health(includeMemory, includeStorage);
-      setData(result);
+      setData(await callRef.current());
     } catch (err) {
-      setError(err as ApiError);
+      const apiErr = toApiError(err);
+      setError(apiErr);
+      onErrorRef.current?.(apiErr);
     } finally {
       setLoading(false);
     }
-  }, [includeMemory, includeStorage]);
+  // deps intentionally spread to re-bind refresh when inputs change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, ...deps]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (immediate && enabled) refresh();
+  }, [refresh, immediate, enabled]);
 
   return { data, loading, error, refresh };
 }
 
+export function useHealth(includeMemory = true, includeStorage = true) {
+  return useApi<HealthResponse>(
+    () => api.health(includeMemory, includeStorage),
+    [includeMemory, includeStorage]
+  );
+}
+
 export function useProviders() {
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listProviders();
-      setProviders(result.providers || []);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { providers, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<{ providers: ProviderInfo[] }>(
+    () => api.listProviders(),
+    []
+  );
+  return { providers: data?.providers ?? [], loading, error, refresh };
 }
 
 export function useMCPServers() {
@@ -157,80 +183,29 @@ export function useMCPServers() {
 }
 
 export function useMCPTools() {
-  const [tools, setTools] = useState<MCPTool[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listMCPTools();
-      setTools(result.tools || []);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { tools, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<{ tools: MCPTool[] }>(
+    () => api.listMCPTools(),
+    []
+  );
+  return { tools: data?.tools ?? [], loading, error, refresh };
 }
 
 export function useAgentStatus() {
-  const [status, setStatus] = useState<{ status: string; active_sessions: number } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.getAgentStatus();
-      setStatus(result);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { status, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<{ status: string; active_sessions: number }>(
+    () => api.getAgentStatus(),
+    []
+  );
+  return { status: data, loading, error, refresh };
 }
 
 // === Memory Hooks ===
 
 export function useMemoryChannels() {
-  const [channels, setChannels] = useState<MemoryChannel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listMemoryChannels();
-      setChannels(result.channels || []);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { channels, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<{ channels: MemoryChannel[] }>(
+    () => api.listMemoryChannels(),
+    []
+  );
+  return { channels: data?.channels ?? [], loading, error, refresh };
 }
 
 export function useMemoryEntities(
@@ -239,66 +214,33 @@ export function useMemoryEntities(
   search?: string,
   type?: string
 ) {
-  const [entities, setEntities] = useState<MemoryEntity[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasNext, setHasNext] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listMemoryEntities({
-        channel,
-        page,
-        search: search || undefined,
-        type: type || undefined
-      });
-      setEntities(result.entities || []);
-      setTotal(result.total || 0);
-      setHasNext(result.has_next || false);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [channel, page, search, type]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { entities, total, hasNext, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi(
+    () => api.listMemoryEntities({
+      channel,
+      page,
+      search: search || undefined,
+      type: type || undefined,
+    }),
+    [channel, page, search, type]
+  );
+  return {
+    entities: data?.entities ?? [],
+    total: data?.total ?? 0,
+    hasNext: data?.has_next ?? false,
+    loading,
+    error,
+    refresh,
+  };
 }
 
 export function useEntityGraph(entityId: string | null) {
-  const [graph, setGraph] = useState<EntityGraph | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    if (!entityId) {
-      setGraph(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.getEntityGraph(entityId);
-      setGraph(result);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [entityId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { graph, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<EntityGraph>(
+    () => api.getEntityGraph(entityId as string),
+    [entityId],
+    { enabled: !!entityId }
+  );
+  // Mirror the prior behavior of clearing the graph when no entity is selected.
+  return { graph: entityId ? data : null, loading, error, refresh };
 }
 
 export function useMemoryFacts(
@@ -307,91 +249,46 @@ export function useMemoryFacts(
   minConfidence?: number,
   search?: string
 ) {
-  const [facts, setFacts] = useState<MemoryFact[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasNext, setHasNext] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listMemoryFacts({
-        channel,
-        page,
-        min_confidence: minConfidence,
-        search: search || undefined
-      });
-      setFacts(result.facts || []);
-      setTotal(result.total || 0);
-      setHasNext(result.has_next || false);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [channel, page, minConfidence, search]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { facts, total, hasNext, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi(
+    () => api.listMemoryFacts({
+      channel,
+      page,
+      min_confidence: minConfidence,
+      search: search || undefined,
+    }),
+    [channel, page, minConfidence, search]
+  );
+  return {
+    facts: data?.facts ?? [],
+    total: data?.total ?? 0,
+    hasNext: data?.has_next ?? false,
+    loading,
+    error,
+    refresh,
+  };
 }
 
 export function useMemoryStrategies(channel: string, page: number) {
-  const [strategies, setStrategies] = useState<MemoryStrategy[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasNext, setHasNext] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listMemoryStrategies({ channel, page });
-      setStrategies(result.strategies || []);
-      setTotal(result.total || 0);
-      setHasNext(result.has_next || false);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [channel, page]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { strategies, total, hasNext, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi(
+    () => api.listMemoryStrategies({ channel, page }),
+    [channel, page]
+  );
+  return {
+    strategies: data?.strategies ?? [],
+    total: data?.total ?? 0,
+    hasNext: data?.has_next ?? false,
+    loading,
+    error,
+    refresh,
+  };
 }
 
 export function useMemoryStats() {
-  const [stats, setStats] = useState<MemoryStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.getMemoryStats();
-      setStats(result);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { stats, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi<MemoryStats>(
+    () => api.getMemoryStats(),
+    []
+  );
+  return { stats: data, loading, error, refresh };
 }
 
 // === Memory Mutation Hooks ===
@@ -488,58 +385,17 @@ export function useDeleteMemoryEntity() {
 // === Job Hooks ===
 
 export function useJobs() {
-  const [jobs, setJobs] = useState<JobStatus[]>([]);
-  const [worker, setWorker] = useState<WorkerStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.listJobs();
-      setJobs(result.jobs);
-      setWorker(result.worker);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { jobs, worker, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi(() => api.listJobs(), []);
+  return { jobs: data?.jobs ?? [], worker: data?.worker ?? null, loading, error, refresh };
 }
 
 export function useJob(name: string) {
-  const [job, setJob] = useState<JobStatus | null>(null);
-  const [history, setHistory] = useState<JobHistory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const refresh = useCallback(async () => {
-    if (!name) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.getJob(name);
-      setJob(result.job);
-      setHistory(result.history);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, [name]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { job, history, loading, error, refresh };
+  const { data, loading, error, refresh } = useApi(
+    () => api.getJob(name),
+    [name],
+    { enabled: !!name }
+  );
+  return { job: data?.job ?? null, history: data?.history ?? [], loading, error, refresh };
 }
 
 export function useConsolidate() {

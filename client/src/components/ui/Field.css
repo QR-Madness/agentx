@@ -1,0 +1,8 @@
+/* Field — error state for Input/Textarea. Base styling comes from the global
+   input/textarea rules in styles/base.css; this only adds the invalid state. */
+
+.ax-field--error,
+.ax-field--error:focus {
+  border-color: var(--feedback-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--feedback-error) 18%, transparent);
+}
