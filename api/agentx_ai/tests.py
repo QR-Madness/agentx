@@ -993,6 +993,28 @@ class ExceptionHierarchyTest(TestCase):
         with self.assertRaises(ValueError):
             manager.connect("does-not-exist")
 
+    def test_error_response_maps_status(self) -> None:
+        """error_response uses the exception's http_status, 500 for plain errors."""
+        from agentx_ai.exceptions import (
+            ModelNotFoundError, ProviderUnavailableError, MCPTransportError,
+        )
+        from agentx_ai.utils.responses import error_response
+
+        self.assertEqual(error_response(ModelNotFoundError("x")).status_code, 404)
+        self.assertEqual(error_response(ProviderUnavailableError("x")).status_code, 502)
+        self.assertEqual(error_response(MCPTransportError("x")).status_code, 400)
+        self.assertEqual(error_response(ValueError("x")).status_code, 500)
+
+    def test_error_response_message_body(self) -> None:
+        from agentx_ai.exceptions import ModelNotFoundError
+        from agentx_ai.utils.responses import error_response
+
+        resp = error_response(ModelNotFoundError("no model"))
+        self.assertEqual(json.loads(resp.content)["error"], "no model")
+        # Empty message falls back to the class name rather than "".
+        resp2 = error_response(ModelNotFoundError())
+        self.assertEqual(json.loads(resp2.content)["error"], "ModelNotFoundError")
+
 
 class ToolDiscoveryErrorTest(TestCase):
     """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""

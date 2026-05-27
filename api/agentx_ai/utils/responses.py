@@ -125,6 +125,21 @@ def json_error(
     return JsonResponse(data, status=status)
 
 
+def error_response(exc: Exception) -> JsonResponse:
+    """
+    Map an exception to a standardized JSON error response.
+
+    Domain errors (``agentx_ai.exceptions.AgentXError`` and subclasses) carry an
+    ``http_status`` that selects the HTTP status (e.g. ModelNotFoundError -> 404,
+    ProviderUnavailableError -> 502, MCPError -> 503). Anything else falls back to
+    500. Use at API boundaries via an ``except AgentXError`` clause placed before
+    the generic ``except ValueError`` / ``except Exception`` handlers.
+    """
+    status = getattr(exc, "http_status", 500)
+    message = str(exc) or exc.__class__.__name__
+    return json_error(message, status=status)
+
+
 def json_success(
     data: dict[str, Any],
     status: int = 200,
