@@ -468,14 +468,13 @@
 
 .provider-card {
   padding: var(--space-xl);
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 0.25s, box-shadow 0.25s;
 }
 
+/* Accent the border/glow on hover (no transform — a lift gets clipped by the
+   scrolling content area). */
 .provider-card:hover {
-  transform: translateY(-2px);
   border-color: var(--accent-tint-medium);
-  box-shadow: var(--border-glow-medium);
+  box-shadow: var(--shadow-md), var(--border-glow-medium);
 }
 
 .provider-header {

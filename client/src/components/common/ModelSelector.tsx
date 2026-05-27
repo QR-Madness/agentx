@@ -5,7 +5,7 @@
  * Supports optional "System default" option and compact mode for settings forms.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import { api, type ModelInfo } from '../../lib/api';
 import './ModelSelector.css';
@@ -124,12 +124,18 @@ export function ModelSelector({
     }
   }, [loading, value, models, providers, lockedProvider]);
 
-  // Notify parent when provider changes
+  // Notify parent when provider changes. The callback is held in a ref so an
+  // inline `onProviderChange` (new identity each render) can't retrigger this
+  // effect — otherwise a parent that setState's in the handler loops forever.
+  const onProviderChangeRef = useRef(onProviderChange);
   useEffect(() => {
-    if (selectedProvider && onProviderChange) {
-      onProviderChange(selectedProvider);
+    onProviderChangeRef.current = onProviderChange;
+  });
+  useEffect(() => {
+    if (selectedProvider) {
+      onProviderChangeRef.current?.(selectedProvider);
     }
-  }, [selectedProvider, onProviderChange]);
+  }, [selectedProvider]);
 
   const filtered = useMemo(() => {
     let result = selectedProvider ? models.filter((m) => m.provider === selectedProvider) : [];
