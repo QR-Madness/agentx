@@ -1,6 +1,5 @@
 /**
  * AppearanceSection — Theme and visual customization
- * Extracted from SettingsPanel.tsx lines 850-923
  */
 
 import {

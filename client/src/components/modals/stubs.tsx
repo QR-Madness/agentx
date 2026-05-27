@@ -4,8 +4,7 @@
 
 import { useState } from 'react';
 import { CheckCircle, XCircle, Copy, Check } from 'lucide-react';
-import { SettingsPanel } from '../panels/SettingsPanel';
-import { MemoryPanel } from '../panels/MemoryPanel';
+import { MemoryPanel } from '../memory/MemoryPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
@@ -16,14 +15,6 @@ export { ProfileEditorModal } from './ProfileEditorModal';
 
 interface ModalContentProps {
   onClose: () => void;
-}
-
-export function SettingsModalContent({ onClose: _onClose }: ModalContentProps) {
-  return (
-    <div className="modal-content-wrapper">
-      <SettingsPanel />
-    </div>
-  );
 }
 
 export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {

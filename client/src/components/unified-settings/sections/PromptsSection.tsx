@@ -1,6 +1,5 @@
 /**
  * PromptsSection — Prompt enhancement configuration
- * Extracted from SettingsPanel.tsx lines 656-805
  */
 
 import { useState, useEffect } from 'react';

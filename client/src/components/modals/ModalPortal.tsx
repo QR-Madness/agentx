@@ -16,7 +16,6 @@ type ModalComponentProps = Record<string, unknown> & { onClose: () => void };
  * Keys added here become valid `component` values for openModal().
  */
 const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<ModalComponentProps>>> = {
-  settings: lazy(() => import('./stubs').then(m => ({ default: m.SettingsModalContent }))),
   unifiedSettings: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedSettingsModalContent }))),
   memory: lazy(() => import('./stubs').then(m => ({ default: m.MemoryModalContent }))),
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
