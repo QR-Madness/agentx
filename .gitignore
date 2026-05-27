@@ -43,9 +43,6 @@ data/
 # Database backups
 backups/
 
-# MkDocs build output
-site/
-
 # Django
 *.log
 db.sqlite3

@@ -1,0 +1,24 @@
+---
+// Bare hub landing page. The polished design (hero, hub modules) is owned by a later
+// design pass — this is an intentional minimal placeholder that links into the docs.
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { site } from '../config/site';
+---
+
+<BaseLayout>
+  <main
+    class="mx-auto flex min-h-screen max-w-(--layout-content-max) flex-col items-center justify-center gap-6 px-4 text-center"
+  >
+    <h1 class="text-4xl font-bold tracking-tight text-text">{site.name}</h1>
+    <p class="max-w-prose text-lg text-text-muted">{site.description}</p>
+    <a
+      href="/docs"
+      class="rounded-card bg-accent px-5 py-2.5 font-medium text-accent-fg transition-colors hover:bg-accent-hover"
+    >
+      Read the docs →
+    </a>
+    <p class="text-sm text-text-muted">
+      <a href={site.repoUrl} target="_blank" rel="noopener" class="hover:text-text">GitHub ↗</a>
+    </p>
+  </main>
+</BaseLayout>

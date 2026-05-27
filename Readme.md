@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="icon.svg" alt="AgentX Logo" width="120" height="120">
-
-# AgentX
+<a href="https://agentx.thejpnet.net/docs">
+  <img src="AgentX-Logo-v3-banner.png" alt="AgentX — The Glassbox AI Framework" width="720">
+</a>
 
 **An AI Agent Platform for Extreme Customization**
 
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=for-the-badge&logo=github)](https://QR-Madness.github.io/agentx/)
+[![Get Started](https://img.shields.io/badge/Get_Started-Read_the_Docs-6366f1?style=for-the-badge&logo=astro&logoColor=white)](https://agentx.thejpnet.net/docs/getting-started/quickstart)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=for-the-badge)]()
 
@@ -46,7 +46,9 @@ task dev
 
 <div align="center">
 
-### **[📚 View Full Documentation →](https://QR-Madness.github.io/agentx/)**
+### **[📚 Explore the AgentX Docs →](https://agentx.thejpnet.net/docs)**
+
+New here? Start with the **[Quick Start guide](https://agentx.thejpnet.net/docs/getting-started/quickstart)** to get up and running in minutes.
 
 </div>
 
@@ -109,6 +111,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**[Documentation](https://QR-Madness.github.io/agentx/)** · **[Issues](https://github.com/QR-Madness/agentx/issues)** · **[Discussions](https://github.com/QR-Madness/agentx/discussions)**
+**[Documentation](https://agentx.thejpnet.net/docs)** · **[Issues](https://github.com/QR-Madness/agentx/issues)** · **[Discussions](https://github.com/QR-Madness/agentx/discussions)**
 
 </div>

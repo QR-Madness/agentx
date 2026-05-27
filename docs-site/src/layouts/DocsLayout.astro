@@ -1,0 +1,45 @@
+---
+import type { MarkdownHeading } from 'astro';
+import BaseLayout from './BaseLayout.astro';
+import Header from '../components/layout/Header.astro';
+import Footer from '../components/layout/Footer.astro';
+import Sidebar from '../components/layout/Sidebar.astro';
+import MobileNav from '../components/layout/MobileNav.astro';
+import TableOfContents from '../components/layout/TableOfContents.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  currentSlug: string;
+  headings: MarkdownHeading[];
+}
+
+const { title, description, currentSlug, headings } = Astro.props;
+---
+
+<BaseLayout title={title} description={description}>
+  <Header />
+  <MobileNav currentSlug={currentSlug} />
+
+  <div class="mx-auto flex w-full max-w-[88rem] gap-8 px-4">
+    <aside class="hidden w-(--layout-sidebar-width) shrink-0 py-8 lg:block">
+      <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2">
+        <Sidebar currentSlug={currentSlug} />
+      </div>
+    </aside>
+
+    <main class="min-w-0 flex-1 py-8">
+      <article class="prose">
+        <slot />
+      </article>
+    </main>
+
+    <aside class="hidden w-(--layout-toc-width) shrink-0 py-8 xl:block">
+      <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+        <TableOfContents headings={headings} />
+      </div>
+    </aside>
+  </div>
+
+  <Footer />
+</BaseLayout>

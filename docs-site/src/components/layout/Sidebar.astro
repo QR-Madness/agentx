@@ -1,0 +1,23 @@
+---
+import { nav, isGroup } from '../../config/nav';
+import SidebarGroup from './SidebarGroup.astro';
+import SidebarLink from './SidebarLink.astro';
+
+interface Props {
+  currentSlug: string;
+}
+
+const { currentSlug } = Astro.props;
+---
+
+<nav aria-label="Documentation" class="flex flex-col gap-1">
+  {
+    nav.map((entry) =>
+      isGroup(entry) ? (
+        <SidebarGroup label={entry.label} items={entry.items} currentSlug={currentSlug} />
+      ) : (
+        <SidebarLink label={entry.label} slug={entry.slug} currentSlug={currentSlug} />
+      )
+    )
+  }
+</nav>

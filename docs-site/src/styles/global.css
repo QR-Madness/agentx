@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/* ============================================================================
+ * DESIGN TOKEN LAYER — the single source of truth for the entire site.
+ *
+ * Every color, font, radius, and key spacing value lives here. Components and
+ * prose styles below consume these tokens only; nothing hardcodes a raw value.
+ * A redesign happens by editing this block — not by touching components.
+ *
+ * NOTE: these are neutral, legible defaults for the content/infra pass. A later
+ * design pass overhauls the values here without changing the structure.
+ * ========================================================================== */
+@theme {
+  /* Surfaces — indigo-tinted cosmic dark */
+  --color-bg: #0b0d12;
+  --color-surface: #12151c;
+  --color-surface-2: #1a1e27;
+  --color-border: #262b36;
+  --color-code-bg: #0e1117;
+
+  /* Text */
+  --color-text: #e6e8ee;
+  --color-text-muted: #9aa3b2;
+
+  /* Brand accent — indigo */
+  --color-accent: #6366f1;        /* indigo-500 */
+  --color-accent-hover: #818cf8;  /* indigo-400 */
+  --color-accent-subtle: #1e1b4b; /* indigo-950 */
+  --color-accent-fg: #ffffff;     /* text on an accent fill */
+
+  /* Admonition accents */
+  --color-note: var(--color-accent);
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Shape */
+  --radius-card: 0.75rem;
+  --radius-sm: 0.375rem;
+
+  /* Layout */
+  --layout-sidebar-width: 17rem;
+  --layout-toc-width: 14rem;
+  --layout-content-max: 52rem;
+}
+
+/* ============================================================================
+ * BASE
+ * ========================================================================== */
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+/* Honour scroll-margin so anchored headings aren't hidden under sticky headers. */
+:target {
+  scroll-margin-top: 5rem;
+}
+
+/* ============================================================================
+ * PROSE — styling for rendered Markdown content (custom, token-driven).
+ * Scoped to `.prose` so it never leaks into layout chrome.
+ * ========================================================================== */
+.prose {
+  color: var(--color-text);
+  line-height: 1.7;
+  font-size: 1rem;
+  max-width: var(--layout-content-max);
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  color: var(--color-text);
+  font-weight: 650;
+  line-height: 1.25;
+  scroll-margin-top: 5rem;
+}
+.prose h1 { font-size: 2rem; margin: 0 0 1.25rem; }
+.prose h2 {
+  font-size: 1.5rem;
+  margin: 2.5rem 0 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.prose h3 { font-size: 1.2rem; margin: 2rem 0 0.75rem; }
+.prose h4 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+
+.prose p,
+.prose ul,
+.prose ol {
+  margin: 0 0 1.1rem;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.4rem;
+}
+.prose li { margin: 0.3rem 0; }
+.prose li::marker { color: var(--color-text-muted); }
+
+.prose strong { color: var(--color-text); font-weight: 650; }
+
+.prose blockquote {
+  margin: 1.25rem 0;
+  padding: 0.25rem 1rem;
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-muted);
+}
+
+.prose hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Inline code */
+.prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.35rem;
+}
+
+/* Shiki code blocks (.astro-code) — align background with the token palette. */
+.prose pre.astro-code {
+  background: var(--color-code-bg) !important;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1rem 1.1rem;
+  margin: 0 0 1.25rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.prose pre.astro-code code {
+  font-family: var(--font-mono);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+/* Tables */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+.prose tr:nth-child(even) td {
+  background: var(--color-surface);
+}
+
+.prose img {
+  max-width: 100%;
+  border-radius: var(--radius-card);
+}
+
+/* ============================================================================
+ * ADMONITIONS — produced by remark-admonitions as <aside class="admonition …">.
+ * The left border + title color key off the per-type token.
+ * ========================================================================== */
+.admonition {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--admonition-accent, var(--color-note));
+  border-radius: var(--radius-sm);
+}
+.admonition > :last-child { margin-bottom: 0; }
+.admonition-title {
+  margin: 0 0 0.4rem;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--admonition-accent, var(--color-note));
+}
+.admonition-note { --admonition-accent: var(--color-note); }
+.admonition-warning { --admonition-accent: var(--color-warning); }
+.admonition-danger { --admonition-accent: var(--color-danger); }
+.admonition-tip,
+.admonition-info { --admonition-accent: var(--color-accent); }
+
+/* ============================================================================
+ * MERMAID — astro-mermaid renders into <pre class="mermaid">. Keep it free of
+ * code-block chrome and let the diagram center itself.
+ * ========================================================================== */
+.prose pre.mermaid {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 1.5rem 0;
+  text-align: center;
+  overflow-x: auto;
+}

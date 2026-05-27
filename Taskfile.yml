@@ -444,20 +444,35 @@ tasks:
 # DOCUMENTATION
 # ============================================================================
 
-  docs:serve:
-    desc: "Serve docs locally with live reload (port 8000)"
+  docs:install:
+    desc: "Install docs site dependencies (Astro)"
+    dir: docs-site
     cmds:
-      - uv run mkdocs serve
+      - bun install
+
+  docs:serve:
+    desc: "Serve the Astro docs site locally with HMR (port 4321)"
+    dir: docs-site
+    cmds:
+      - bun run dev
 
   docs:build:
-    desc: "Build static documentation site"
+    desc: "Build the static documentation site (output: docs-site/dist)"
+    dir: docs-site
     cmds:
-      - uv run mkdocs build
+      - bun run build
+
+  docs:preview:
+    desc: "Preview the production docs build locally"
+    dir: docs-site
+    cmds:
+      - bun run preview
 
   docs:deploy:
-    desc: "Deploy docs to GitHub Pages"
+    desc: "Deploy the docs site to Vercel (production) — requires the Vercel CLI + login"
+    dir: docs-site
     cmds:
-      - uv run mkdocs gh-deploy --force
+      - bunx vercel --prod
 
 # ============================================================================
 # CLEANUP & RESET
