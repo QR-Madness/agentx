@@ -10,25 +10,20 @@ import {
   Check,
 } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
+import { Card, SectionHeader } from '../../ui';
 
 export default function AppearanceSection() {
   const { preference, setTheme, isDark } = useTheme();
 
   return (
     <div className="settings-section fade-in">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">
-            <Palette size={20} className="section-title-icon" />
-            Appearance
-          </h2>
-          <p className="section-description">
-            Customize the look and feel of AgentX
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<Palette size={20} />}
+        title="Appearance"
+        description="Customize the look and feel of AgentX"
+      />
 
-      <div className="card">
+      <Card>
         <h3 className="subsection-title">Theme</h3>
         <p className="subsection-description">
           Choose your preferred color scheme
@@ -83,7 +78,7 @@ export default function AppearanceSection() {
             Currently using: <strong>{isDark ? 'Cosmic Dark' : 'Light'}</strong>
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

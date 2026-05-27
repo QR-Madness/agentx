@@ -1,6 +1,7 @@
 // ─── Pagination ────────────────────────────────────────────────────────────
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '../ui';
 
 export function Pagination({
   page, hasNext, onPageChange,
@@ -11,13 +12,13 @@ export function Pagination({
 }) {
   return (
     <div className="pagination">
-      <button className="button-ghost" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+      <Button variant="ghost" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
         <ChevronLeft size={16} />Previous
-      </button>
+      </Button>
       <span className="page-info">Page {page}</span>
-      <button className="button-ghost" disabled={!hasNext} onClick={() => onPageChange(page + 1)}>
+      <Button variant="ghost" disabled={!hasNext} onClick={() => onPageChange(page + 1)}>
         Next<ChevronRight size={16} />
-      </button>
+      </Button>
     </div>
   );
 }

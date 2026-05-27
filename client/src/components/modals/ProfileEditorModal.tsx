@@ -22,6 +22,7 @@ import { api, apiErrorMessage, type AgentProfile, type AgentProfileCreate, type 
 import { PromptLibraryModal } from './PromptLibraryModal';
 import { ModelSelector } from '../common/ModelSelector';
 import './ProfileEditorModal.css';
+import { Button } from '../ui';
 
 const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Automatically select based on task' },
@@ -248,9 +249,9 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
             </div>
             <h2>Loading Profile...</h2>
           </div>
-          <button className="button-ghost close-btn" onClick={onClose}>
+          <Button variant="ghost" className="close-btn" onClick={onClose}>
             <X size={20} />
-          </button>
+          </Button>
         </div>
         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
           <RefreshCw size={32} className="spin" style={{ marginBottom: '1rem' }} />
@@ -269,9 +270,9 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
           </div>
           <h2>{isEditing ? 'Edit Profile' : 'Create Profile'}</h2>
         </div>
-        <button className="button-ghost close-btn" onClick={onClose}>
+        <Button variant="ghost" className="close-btn" onClick={onClose}>
           <X size={20} />
-        </button>
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -399,31 +400,31 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
                   {baseTemplate.hasModifications && (
                     <span className="modified-badge">Modified</span>
                   )}
-                  <button
+                  <Button
                     type="button"
-                    className="button-secondary button-small"
+                    variant="secondary" className="button-small"
                     onClick={handleSelectBaseTemplate}
                   >
                     Change
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="button-ghost button-small"
+                    variant="ghost" className="button-small"
                     onClick={() => setBaseTemplateId('')}
                     title="Remove base template"
                   >
                     <X size={14} />
-                  </button>
+                  </Button>
                 </div>
               ) : (
-                <button
+                <Button
                   type="button"
-                  className="button-secondary"
+                  variant="secondary"
                   onClick={handleSelectBaseTemplate}
                 >
                   <Library size={14} />
                   Select Base Template
-                </button>
+                </Button>
               )}
             </div>
             <span className="form-hint">Optional template for base agent instructions</span>
@@ -521,13 +522,13 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
             </button>
           )}
           <div className="form-actions-right">
-            <button type="button" className="button-secondary" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
-            </button>
-            <button type="submit" className="button-primary" disabled={saving || deleting}>
+            </Button>
+            <Button type="submit" variant="primary" disabled={saving || deleting}>
               <Save size={16} />
               {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Profile'}
-            </button>
+            </Button>
           </div>
         </div>
       </form>

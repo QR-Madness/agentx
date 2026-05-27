@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useServer } from '../contexts/ServerContext';
 import { ServerSelector } from '../components/ServerSelector';
 import './AuthPage.css';
+import { Button } from '../components/ui';
 
 const LOGIN_USERNAME = 'root';
 
@@ -225,9 +226,9 @@ export function AuthPage() {
             </div>
           )}
 
-          <button
+          <Button
             type="submit"
-            className="auth-submit button-primary"
+            variant="primary" className="auth-submit"
             disabled={isSubmitting}
           >
             {isSubmitting
@@ -235,7 +236,7 @@ export function AuthPage() {
               : setupRequired
                 ? 'Set Password'
                 : 'Sign In'}
-          </button>
+          </Button>
         </form>
         )}
 

@@ -26,6 +26,7 @@ import {
 import { useServer } from '../contexts/ServerContext';
 import { useConversation } from '../contexts/ConversationContext';
 import './DashboardPage.css';
+import { Button } from '../components/ui';
 
 export function DashboardPage() {
   const { activeServer } = useServer();
@@ -69,9 +70,9 @@ export function DashboardPage() {
           </div>
           <span className="banner-url">{activeServer?.url}</span>
         </div>
-        <button className="button-ghost" onClick={refreshHealth}>
+        <Button variant="ghost" onClick={refreshHealth}>
           <RefreshCw size={16} />
-        </button>
+        </Button>
       </div>
 
       {/* Server Maintenance Schedules  */}

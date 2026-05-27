@@ -7,6 +7,7 @@ import { useAgentProfile } from '../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../lib/avatars';
 import type { PageId } from '../layouts/TopBar';
 import './StartPage.css';
+import { Button } from '../components/ui';
 
 interface StartPageProps {
   onNavigate: (page: PageId) => void;
@@ -37,20 +38,20 @@ export function StartPage({ onNavigate }: StartPageProps) {
           How can I assist you today?
         </p>
         <div className="start-actions">
-          <button
-            className="start-cta button-primary"
+          <Button
+            variant="primary" className="start-cta"
             onClick={handleNewConversation}
           >
             <MessageSquarePlus size={18} />
             <span>New Conversation</span>
-          </button>
-          <button
-            className="start-cta-secondary button-secondary"
+          </Button>
+          <Button
+            variant="secondary" className="start-cta-secondary"
             onClick={handleOpenDashboard}
           >
             <LayoutDashboard size={18} />
             <span>Open Dashboard</span>
-          </button>
+          </Button>
         </div>
       </div>
     </div>

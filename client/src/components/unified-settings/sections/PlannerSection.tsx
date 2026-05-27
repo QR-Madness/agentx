@@ -10,10 +10,10 @@ import {
   ListTree,
   RefreshCw,
   Save,
-  Check,
-  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useNotify } from '../../../contexts/NotificationContext';
+import { Button, SectionHeader } from '../../ui';
 import { ModelSelector } from '../../common/ModelSelector';
 
 type ComplexityThreshold = 'simple' | 'moderate' | 'complex';
@@ -37,10 +37,10 @@ const DEFAULT_SETTINGS: PlannerSettings = {
 };
 
 export default function PlannerSection() {
+  const { notifyError, notifySuccess } = useNotify();
   const [settings, setSettings] = useState<PlannerSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     void fetchSettings();
@@ -60,7 +60,7 @@ export default function PlannerSection() {
         complexity_threshold: (p.complexity_threshold as ComplexityThreshold) || 'moderate',
       });
     } catch (error) {
-      console.error('Failed to fetch planner settings:', error);
+      notifyError(error, 'Failed to load planner settings');
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,6 @@ export default function PlannerSection() {
 
   const handleSave = async () => {
     setSaving(true);
-    setMessage(null);
     try {
       await api.updateConfig({
         planner: {
@@ -81,11 +80,9 @@ export default function PlannerSection() {
           complexity_threshold: settings.complexity_threshold,
         },
       });
-      setMessage({ type: 'success', text: 'Planner settings saved' });
-      setTimeout(() => setMessage(null), 3000);
+      notifySuccess('Planner settings saved', 'Task Planner');
     } catch (error) {
-      console.error('Failed to save planner settings:', error);
-      setMessage({ type: 'error', text: 'Failed to save planner settings' });
+      notifyError(error, 'Failed to save planner settings');
     } finally {
       setSaving(false);
     }
@@ -93,17 +90,11 @@ export default function PlannerSection() {
 
   return (
     <div className="settings-section fade-in">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">
-            <ListTree size={20} className="section-title-icon" />
-            Task Planner
-          </h2>
-          <p className="section-description">
-            Configure how the agent decomposes complex tasks into subtasks before execution.
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<ListTree size={20} />}
+        title="Task Planner"
+        description="Configure how the agent decomposes complex tasks into subtasks before execution."
+      />
 
       {loading ? (
         <div className="loading-state">
@@ -219,29 +210,10 @@ export default function PlannerSection() {
           </div>
 
           <div className="setting-actions">
-            <button
-              className="button-primary"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <>
-                  <RefreshCw size={16} className="spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save size={16} />
-                  Save Settings
-                </>
-              )}
-            </button>
-            {message && (
-              <span className={`save-message ${message.type}`}>
-                {message.type === 'success' ? <Check size={14} /> : <AlertTriangle size={14} />}
-                {message.text}
-              </span>
-            )}
+            <Button variant="primary" onClick={handleSave} loading={saving}>
+              <Save size={16} />
+              {saving ? 'Saving...' : 'Save Settings'}
+            </Button>
           </div>
         </div>
       )}

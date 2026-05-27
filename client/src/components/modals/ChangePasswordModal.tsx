@@ -11,6 +11,7 @@ import { Lock, Eye, EyeOff, AlertCircle, CheckCircle, KeyRound } from 'lucide-re
 import { useAuth } from '../../contexts/AuthContext';
 // Reuse the existing auth-* class library (input wrapper, error pill, etc.).
 import '../../pages/AuthPage.css';
+import { Button } from '../ui';
 
 interface ChangePasswordModalProps {
   onClose: () => void;
@@ -129,21 +130,21 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-          <button
+          <Button
             type="button"
-            className="button-secondary"
+            variant="secondary"
             onClick={onClose}
             disabled={submitting}
           >
             Close
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="button-primary"
+            variant="primary"
             disabled={submitting || success || !oldPassword || !newPassword || !confirmPassword}
           >
             {submitting ? 'Changing…' : 'Change Password'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

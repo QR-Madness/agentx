@@ -11,6 +11,7 @@ import {
 import {postTranslation} from '../../models/translation';
 import {nllb200Languages} from '../../data/nllb200Languages';
 import '../../styles/TranslationPanel.css';
+import { Button } from '../ui';
 
 export const TranslationPanel: React.FC = () => {
     const [sourceText, setSourceText] = useState('');
@@ -97,8 +98,8 @@ export const TranslationPanel: React.FC = () => {
 
                 {/* Translate Button (between panels) */}
                 <div className="translate-action">
-                    <button
-                        className="translate-button button-primary"
+                    <Button
+                        variant="primary" className="translate-button"
                         onClick={handleTranslate}
                         disabled={!sourceText.trim() || isTranslating}
                     >
@@ -113,7 +114,7 @@ export const TranslationPanel: React.FC = () => {
                                 Translate
                             </>
                         )}
-                    </button>
+                    </Button>
                 </div>
 
                 {/* Translation Panel */}
@@ -121,10 +122,10 @@ export const TranslationPanel: React.FC = () => {
                     <div className="panel-header">
                         <span className="panel-title">Translation</span>
                         {translatedText && (
-                            <button className="button-ghost" onClick={handleCopy}>
+                            <Button variant="ghost" onClick={handleCopy}>
                                 <Copy size={14} />
                                 {copied ? 'Copied!' : 'Copy'}
-                            </button>
+                            </Button>
                         )}
                     </div>
                     <textarea
@@ -175,8 +176,8 @@ export const TranslationPanel: React.FC = () => {
 
             {/* Actions */}
             <div className="translation-actions">
-                <button
-                    className="button-secondary"
+                <Button
+                    variant="secondary"
                     onClick={() => {
                         setSourceText('');
                         setTranslatedText('');
@@ -184,7 +185,7 @@ export const TranslationPanel: React.FC = () => {
                 >
                     <Trash2 size={16} />
                     Clear All
-                </button>
+                </Button>
             </div>
         </div>
     </div>);

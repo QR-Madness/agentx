@@ -6,6 +6,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import type { VersionInfo } from '../lib/api';
 import { CLIENT_VERSION, CLIENT_PROTOCOL_VERSION, compareSemver } from '../lib/api';
 import './VersionMismatchPage.css';
+import { Button } from '../components/ui';
 
 interface VersionMismatchPageProps {
   versionInfo: VersionInfo | null;
@@ -67,10 +68,10 @@ export function VersionMismatchPage({ versionInfo, onRetry }: VersionMismatchPag
         </div>
 
         <div className="version-mismatch-actions">
-          <button onClick={onRetry} className="button-primary version-retry-btn">
+          <Button onClick={onRetry} variant="primary" className="version-retry-btn">
             <RefreshCw size={18} />
             <span>Retry Connection</span>
-          </button>
+          </Button>
         </div>
 
         <p className="version-mismatch-hint">

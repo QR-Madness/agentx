@@ -4,23 +4,18 @@
  */
 
 import { Database } from 'lucide-react';
+import { Card, SectionHeader } from '../../ui';
 
 export default function MemoryOverviewSection() {
   return (
     <div className="settings-section fade-in">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">
-            <Database size={20} className="section-title-icon" />
-            Memory & Storage
-          </h2>
-          <p className="section-description">
-            Configure agent memory and data retention
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<Database size={20} />}
+        title="Memory & Storage"
+        description="Configure agent memory and data retention"
+      />
 
-      <div className="memory-info card">
+      <Card className="memory-info">
         <div className="info-row">
           <span className="info-label">Session Storage</span>
           <span className="info-value">Local (Browser)</span>
@@ -33,7 +28,7 @@ export default function MemoryOverviewSection() {
           <span className="info-label">Cache</span>
           <span className="info-value">Redis</span>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

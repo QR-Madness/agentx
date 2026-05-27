@@ -355,6 +355,34 @@ select {
   color: var(--cosmic-violet);
 }
 
+/* Section header (title + description, optional trailing actions).
+   Generic fallback for the `<div className="section-header">` pattern; the
+   `ui/SectionHeader` primitive (.ax-section-header) is the preferred markup. */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-lg, 16px);
+}
+
+.section-description {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Centered empty/placeholder state inside a card. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md, 12px);
+  padding: var(--space-3xl, 40px);
+  text-align: center;
+  color: var(--text-muted);
+}
+
 /* === Status Indicators === */
 .status-dot {
   width: 8px;

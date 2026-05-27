@@ -7,13 +7,14 @@ import {
   Sparkles,
   RefreshCw,
   Save,
-  Check,
-  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useNotify } from '../../../contexts/NotificationContext';
+import { Button, SectionHeader } from '../../ui';
 import { ModelSelector } from '../../common/ModelSelector';
 
 export default function PromptsSection() {
+  const { notifyError, notifySuccess } = useNotify();
   const [promptEnhanceSettings, setPromptEnhanceSettings] = useState<{
     enabled: boolean;
     model: string;
@@ -30,10 +31,6 @@ export default function PromptsSection() {
 
   const [loadingPromptSettings, setLoadingPromptSettings] = useState(false);
   const [savingPromptSettings, setSavingPromptSettings] = useState(false);
-  const [promptSettingsMessage, setPromptSettingsMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
 
   // Fetch prompt enhancement settings on mount
   useEffect(() => {
@@ -59,7 +56,7 @@ export default function PromptsSection() {
         system_prompt: promptConfig.system_prompt || '',
       });
     } catch (error) {
-      console.error('Failed to fetch prompt settings:', error);
+      notifyError(error, 'Failed to load prompt settings');
     } finally {
       setLoadingPromptSettings(false);
     }
@@ -67,8 +64,6 @@ export default function PromptsSection() {
 
   const handleSavePromptSettings = async () => {
     setSavingPromptSettings(true);
-    setPromptSettingsMessage(null);
-
     try {
       // Save all prompt enhancement settings at once
       await api.updateConfig({
@@ -81,11 +76,9 @@ export default function PromptsSection() {
         },
       });
 
-      setPromptSettingsMessage({ type: 'success', text: 'Prompt settings saved' });
-      setTimeout(() => setPromptSettingsMessage(null), 3000);
+      notifySuccess('Prompt settings saved', 'Prompt Enhancement');
     } catch (error) {
-      console.error('Failed to save prompt settings:', error);
-      setPromptSettingsMessage({ type: 'error', text: 'Failed to save prompt settings' });
+      notifyError(error, 'Failed to save prompt settings');
     } finally {
       setSavingPromptSettings(false);
     }
@@ -93,17 +86,11 @@ export default function PromptsSection() {
 
   return (
     <div className="settings-section fade-in">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">
-            <Sparkles size={20} className="section-title-icon" />
-            Prompt Enhancement
-          </h2>
-          <p className="section-description">
-            Configure AI-powered prompt enhancement for better results
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<Sparkles size={20} />}
+        title="Prompt Enhancement"
+        description="Configure AI-powered prompt enhancement for better results"
+      />
 
       {loadingPromptSettings ? (
         <div className="loading-state">
@@ -212,29 +199,10 @@ export default function PromptsSection() {
 
           {/* Save button */}
           <div className="setting-actions">
-            <button
-              className="button-primary"
-              onClick={handleSavePromptSettings}
-              disabled={savingPromptSettings}
-            >
-              {savingPromptSettings ? (
-                <>
-                  <RefreshCw size={16} className="spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save size={16} />
-                  Save Settings
-                </>
-              )}
-            </button>
-            {promptSettingsMessage && (
-              <span className={`save-message ${promptSettingsMessage.type}`}>
-                {promptSettingsMessage.type === 'success' ? <Check size={14} /> : <AlertTriangle size={14} />}
-                {promptSettingsMessage.text}
-              </span>
-            )}
+            <Button variant="primary" onClick={handleSavePromptSettings} loading={savingPromptSettings}>
+              <Save size={16} />
+              {savingPromptSettings ? 'Saving...' : 'Save Settings'}
+            </Button>
           </div>
         </div>
       )}

@@ -27,6 +27,7 @@ import { MemoryGraphView } from './MemoryGraphView';
 import { Pagination } from './Pagination';
 import type { MemorySection } from './types';
 import '../../styles/MemoryPanel.css';
+import { Button } from '../ui';
 
 export const MemoryPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState<MemorySection>('entities');
@@ -117,8 +118,8 @@ export const MemoryPanel: React.FC = () => {
             <span>Memory Explorer</span>
           </h1>
           <div className="header-actions">
-            <button
-              className="button-primary consolidate-button"
+            <Button
+              variant="primary" className="consolidate-button"
               onClick={handleConsolidate}
               disabled={consolidating}
               title="Run consolidation to extract entities and facts"
@@ -126,10 +127,10 @@ export const MemoryPanel: React.FC = () => {
               {consolidating
                 ? <><RefreshCw size={16} className="spin" /> Consolidating...</>
                 : <><Zap size={16} /> Consolidate Now</>}
-            </button>
-            <button className="button-ghost" onClick={refreshStats} disabled={statsLoading}>
+            </Button>
+            <Button variant="ghost" onClick={refreshStats} disabled={statsLoading}>
               <RefreshCw size={18} className={statsLoading ? 'spin' : ''} />
-            </button>
+            </Button>
           </div>
         </div>
         <p className="page-subtitle">Browse and inspect stored memories</p>

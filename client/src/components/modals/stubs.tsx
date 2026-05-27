@@ -9,6 +9,7 @@ import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
+import { Button } from '../ui';
 
 // Re-export ProfileEditorModal for the modal registry
 export { ProfileEditorModal } from './ProfileEditorModal';
@@ -73,9 +74,9 @@ export function StubModal({ onClose }: ModalContentProps) {
       <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
         This panel will be implemented in a future phase.
       </p>
-      <button className="button-secondary" onClick={onClose}>
+      <Button variant="secondary" onClick={onClose}>
         Close
-      </button>
+      </Button>
     </div>
   );
 }
@@ -143,9 +144,9 @@ export function ToolOutputDrawer({
             {copied ? <Check size={14} /> : <Copy size={14} />}
             <span>{copied ? 'Copied!' : 'Copy'}</span>
           </button>
-          <button className="button-secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
       <div className="tool-output-content">

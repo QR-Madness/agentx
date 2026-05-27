@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useJobs, useJob } from '../lib/hooks';
 import { api, JobStatus } from '../lib/api';
+import { Button } from './ui';
 
 // Format duration for display
 function formatDuration(ms: number): string {
@@ -114,16 +115,16 @@ function JobRow({ job, onRefresh }: { job: JobStatus; onRefresh: () => void }) {
           {(job.success_rate * 100).toFixed(0)}%
         </span>
         <div className="job-actions">
-          <button
-            className="button-ghost job-action-btn"
+          <Button
+            variant="ghost" className="job-action-btn"
             onClick={handleRun}
             disabled={running || job.status === 'running'}
             title="Run now"
           >
             {running ? <RefreshCw size={14} className="spin" /> : <Play size={14} />}
-          </button>
-          <button
-            className="button-ghost job-action-btn"
+          </Button>
+          <Button
+            variant="ghost" className="job-action-btn"
             onClick={handleToggle}
             disabled={toggling}
             title={job.status === 'disabled' ? 'Enable' : 'Disable'}
@@ -135,7 +136,7 @@ function JobRow({ job, onRefresh }: { job: JobStatus; onRefresh: () => void }) {
             ) : (
               <Pause size={14} />
             )}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -218,9 +219,9 @@ export const JobsPanel: React.FC = () => {
       <div className="jobs-panel-error">
         <AlertCircle size={24} />
         <p>Failed to load jobs: {error.message}</p>
-        <button className="button-secondary" onClick={refresh}>
+        <Button variant="secondary" onClick={refresh}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -232,9 +233,9 @@ export const JobsPanel: React.FC = () => {
           <Clock size={18} />
           <span>Background Jobs</span>
         </div>
-        <button className="button-ghost" onClick={refresh} title="Refresh">
+        <Button variant="ghost" onClick={refresh} title="Refresh">
           <RefreshCw size={16} />
-        </button>
+        </Button>
       </div>
 
       {worker && (

@@ -3,11 +3,12 @@ import {
   Layers,
   Server,
   RefreshCw,
-  Check,
   AlertTriangle,
   Save,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useNotify } from '../../../contexts/NotificationContext';
+import { Button, Card, Badge, SectionHeader, Input } from '../../ui';
 
 interface ContextLimits {
   lmstudio: { context_window: number; max_output_tokens: number };
@@ -15,10 +16,10 @@ interface ContextLimits {
 }
 
 export default function ModelsSection() {
+  const { notifyError, notifySuccess } = useNotify();
   const [contextLimits, setContextLimits] = useState<ContextLimits | null>(null);
   const [loadingContextLimits, setLoadingContextLimits] = useState(false);
   const [savingContextLimits, setSavingContextLimits] = useState(false);
-  const [contextLimitsMessage, setContextLimitsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     fetchContextLimits();
@@ -30,7 +31,7 @@ export default function ModelsSection() {
       const limits = await api.getContextLimits();
       setContextLimits(limits);
     } catch (error) {
-      console.error('Failed to fetch context limits:', error);
+      notifyError(error, 'Failed to load context limits');
     } finally {
       setLoadingContextLimits(false);
     }
@@ -48,15 +49,11 @@ export default function ModelsSection() {
     if (!contextLimits) return;
 
     setSavingContextLimits(true);
-    setContextLimitsMessage(null);
-
     try {
       await api.updateContextLimits(contextLimits);
-      setContextLimitsMessage({ type: 'success', text: 'Context limits saved' });
-      setTimeout(() => setContextLimitsMessage(null), 3000);
+      notifySuccess('Context limits saved', 'Models');
     } catch (error) {
-      console.error('Failed to save context limits:', error);
-      setContextLimitsMessage({ type: 'error', text: 'Failed to save context limits' });
+      notifyError(error, 'Failed to save context limits');
     } finally {
       setSavingContextLimits(false);
     }
@@ -64,45 +61,31 @@ export default function ModelsSection() {
 
   return (
     <div className="settings-section fade-in">
-      <div className="section-header">
-        <div>
-          <h2 className="section-title">
-            <Layers size={20} className="section-title-icon" />
-            Model Context Limits
-          </h2>
-          <p className="section-description">
-            Configure context window and output token limits for local models (LM Studio)
-          </p>
-        </div>
-        <button
-          className="button-primary"
-          onClick={handleSaveContextLimits}
-          disabled={savingContextLimits || !contextLimits}
-        >
-          {savingContextLimits ? (
-            <RefreshCw size={16} className="spin" />
-          ) : (
+      <SectionHeader
+        icon={<Layers size={20} />}
+        title="Model Context Limits"
+        description="Configure context window and output token limits for local models (LM Studio)"
+        actions={
+          <Button
+            variant="primary"
+            onClick={handleSaveContextLimits}
+            loading={savingContextLimits}
+            disabled={savingContextLimits || !contextLimits}
+          >
             <Save size={16} />
-          )}
-          Save Limits
-        </button>
-      </div>
-
-      {contextLimitsMessage && (
-        <div className={`config-message ${contextLimitsMessage.type}`}>
-          {contextLimitsMessage.type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
-          <span>{contextLimitsMessage.text}</span>
-        </div>
-      )}
+            Save Limits
+          </Button>
+        }
+      />
 
       {loadingContextLimits ? (
-        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-          <RefreshCw size={24} className="spin" style={{ marginBottom: '0.5rem' }} />
+        <Card className="empty-state">
+          <RefreshCw size={24} className="spin" />
           <p>Loading context limits...</p>
-        </div>
+        </Card>
       ) : contextLimits ? (
         <div className="providers-list">
-          <div className="provider-card card">
+          <Card className="provider-card">
             <div className="provider-header">
               <div className="provider-info">
                 <div className="provider-icon local">
@@ -111,7 +94,7 @@ export default function ModelsSection() {
                 <div>
                   <h3 className="provider-name">
                     LM Studio
-                    <span className="provider-badge local">Local</span>
+                    <Badge variant="neutral" size="sm">Local</Badge>
                   </h3>
                   <p className="provider-description">
                     Hardware limits for local models (API providers use their own per-model capabilities)
@@ -121,8 +104,9 @@ export default function ModelsSection() {
             </div>
             <div className="context-limits-form">
               <div className="form-group">
-                <label>Context Window (tokens)</label>
-                <input
+                <label htmlFor="ctx-window">Context Window (tokens)</label>
+                <Input
+                  id="ctx-window"
                   type="number"
                   value={contextLimits.lmstudio.context_window}
                   onChange={(e) => handleContextLimitChange('context_window', parseInt(e.target.value) || 0)}
@@ -135,8 +119,9 @@ export default function ModelsSection() {
                 </span>
               </div>
               <div className="form-group">
-                <label>Max Output Tokens</label>
-                <input
+                <label htmlFor="ctx-output">Max Output Tokens</label>
+                <Input
+                  id="ctx-output"
                   type="number"
                   value={contextLimits.lmstudio.max_output_tokens}
                   onChange={(e) => handleContextLimitChange('max_output_tokens', parseInt(e.target.value) || 0)}
@@ -149,17 +134,17 @@ export default function ModelsSection() {
                 </span>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
       ) : (
-        <div className="empty-state card">
+        <Card className="empty-state">
           <AlertTriangle size={32} />
           <p>Failed to load context limits</p>
-          <button className="button-secondary" onClick={fetchContextLimits}>
+          <Button variant="secondary" onClick={fetchContextLimits}>
             <RefreshCw size={16} />
             Retry
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
     </div>
   );

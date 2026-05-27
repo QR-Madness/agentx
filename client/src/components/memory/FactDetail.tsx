@@ -5,6 +5,7 @@ import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle } from 
 import { useUpdateMemoryFact, useDeleteMemoryFact } from '../../lib/hooks';
 import type { MemoryFact } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
+import { Button } from '../ui';
 
 export function FactDetail({
   fact, onClose, onDeleted, onUpdated,
@@ -55,7 +56,7 @@ export function FactDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>{editMode ? 'Edit Fact' : 'Fact Detail'}</h3>
-        <button className="button-ghost" onClick={onClose}><X size={18} /></button>
+        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
       </div>
 
       {editMode ? (
@@ -86,10 +87,10 @@ export function FactDetail({
             </select>
           </div>
           <div className="edit-actions">
-            <button className="button-primary" onClick={handleSave} disabled={saving}>
+            <Button variant="primary" onClick={handleSave} disabled={saving}>
               {saving ? <><RefreshCw size={14} className="spin" /> Saving...</> : <><Check size={14} /> Save</>}
-            </button>
-            <button className="button-ghost" onClick={() => setEditMode(false)} disabled={saving}>Cancel</button>
+            </Button>
+            <Button variant="ghost" onClick={() => setEditMode(false)} disabled={saving}>Cancel</Button>
           </div>
         </div>
       ) : (
@@ -117,22 +118,22 @@ export function FactDetail({
           </div>
 
           <div className="detail-actions">
-            <button className="button-secondary" onClick={() => setEditMode(true)}>
+            <Button variant="secondary" onClick={() => setEditMode(true)}>
               <Edit2 size={14} /> Edit
-            </button>
-            <button className="button-secondary danger" onClick={() => setDeleteConfirm(true)} disabled={deleting}>
+            </Button>
+            <Button variant="danger" onClick={() => setDeleteConfirm(true)} disabled={deleting}>
               <Trash2 size={14} /> Delete
-            </button>
+            </Button>
           </div>
 
           {deleteConfirm && (
             <div className="delete-confirm">
               <AlertTriangle size={14} />
               <span>Delete this fact?</span>
-              <button className="button-secondary danger" onClick={handleDelete} disabled={deleting}>
+              <Button variant="danger" onClick={handleDelete} disabled={deleting}>
                 {deleting ? 'Deleting...' : <><Check size={14} /> Confirm</>}
-              </button>
-              <button className="button-ghost" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+              </Button>
+              <Button variant="ghost" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             </div>
           )}
         </>

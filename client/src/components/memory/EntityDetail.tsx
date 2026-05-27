@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, X, Edit2, Trash2, Check, AlertTriangle } from 'lucide-react';
 import { useEntityGraph, useUpdateMemoryEntity, useDeleteMemoryEntity } from '../../lib/hooks';
+import { Button } from '../ui';
 
 export function EntityDetail({
   entityId, onClose, onDeleted, onRefreshList,
@@ -57,7 +58,7 @@ export function EntityDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>Entity Details</h3>
-        <button className="button-ghost" onClick={onClose}><X size={18} /></button>
+        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
       </div>
       <div className="memory-loading"><RefreshCw size={24} className="spin" /><p>Loading...</p></div>
     </div>
@@ -67,7 +68,7 @@ export function EntityDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>Entity Details</h3>
-        <button className="button-ghost" onClick={onClose}><X size={18} /></button>
+        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
       </div>
       <div className="memory-error"><p>Failed to load entity details</p></div>
     </div>
@@ -79,7 +80,7 @@ export function EntityDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>{editMode ? 'Edit Entity' : entity.name}</h3>
-        <button className="button-ghost" onClick={onClose}><X size={18} /></button>
+        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
       </div>
 
       {editMode ? (
@@ -101,10 +102,10 @@ export function EntityDetail({
             <input value={editAliases} onChange={e => setEditAliases(e.target.value)} placeholder="alias1, alias2" />
           </div>
           <div className="edit-actions">
-            <button className="button-primary" onClick={handleSave} disabled={saving}>
+            <Button variant="primary" onClick={handleSave} disabled={saving}>
               {saving ? <><RefreshCw size={14} className="spin" /> Saving...</> : <><Check size={14} /> Save</>}
-            </button>
-            <button className="button-ghost" onClick={() => setEditMode(false)} disabled={saving}>Cancel</button>
+            </Button>
+            <Button variant="ghost" onClick={() => setEditMode(false)} disabled={saving}>Cancel</Button>
           </div>
         </div>
       ) : (
@@ -132,22 +133,22 @@ export function EntityDetail({
           </div>
 
           <div className="detail-actions">
-            <button className="button-secondary" onClick={() => setEditMode(true)}>
+            <Button variant="secondary" onClick={() => setEditMode(true)}>
               <Edit2 size={14} /> Edit
-            </button>
-            <button className="button-secondary danger" onClick={() => setDeleteConfirm(true)} disabled={deleting}>
+            </Button>
+            <Button variant="danger" onClick={() => setDeleteConfirm(true)} disabled={deleting}>
               <Trash2 size={14} /> Delete
-            </button>
+            </Button>
           </div>
 
           {deleteConfirm && (
             <div className="delete-confirm">
               <AlertTriangle size={14} />
               <span>Delete this entity?</span>
-              <button className="button-secondary danger" onClick={handleDelete} disabled={deleting}>
+              <Button variant="danger" onClick={handleDelete} disabled={deleting}>
                 {deleting ? 'Deleting...' : <><Check size={14} /> Confirm</>}
-              </button>
-              <button className="button-ghost" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+              </Button>
+              <Button variant="ghost" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             </div>
           )}
 

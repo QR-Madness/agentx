@@ -4,6 +4,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import type { MemoryStrategy } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
+import { Button } from '../ui';
 
 export function StrategyDetail({
   strategy, onClose,
@@ -15,7 +16,7 @@ export function StrategyDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>Strategy</h3>
-        <button className="button-ghost" onClick={onClose}><X size={18} /></button>
+        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
       </div>
 
       <p className="fact-claim-full">{strategy.description}</p>
