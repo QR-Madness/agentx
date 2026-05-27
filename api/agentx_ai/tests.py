@@ -903,6 +903,69 @@ class DependencyInjectionTest(TestCase):
         self.assertTrue(fake_cm.get_provider_value.called)
 
 
+class ExceptionHierarchyTest(TestCase):
+    """The AgentX exception hierarchy (roadmap item 9)."""
+
+    def test_all_errors_are_agentx_and_builtin_exceptions(self) -> None:
+        from agentx_ai.exceptions import (
+            AgentXError, ConfigError, ProviderError, ModelNotFoundError,
+            ProviderUnavailableError, MCPError, MCPServerNotFoundError,
+            MCPTransportError, ToolExecutionError, MemoryStoreError,
+        )
+
+        for cls in (
+            ConfigError, ProviderError, ModelNotFoundError, ProviderUnavailableError,
+            MCPError, MCPServerNotFoundError, MCPTransportError, ToolExecutionError,
+            MemoryStoreError,
+        ):
+            self.assertTrue(issubclass(cls, AgentXError), cls.__name__)
+            self.assertTrue(issubclass(cls, Exception), cls.__name__)
+
+    def test_back_compat_value_error_inheritance(self) -> None:
+        """Leaf errors replacing a raise ValueError are still ValueErrors."""
+        from agentx_ai.exceptions import (
+            ModelNotFoundError, MCPServerNotFoundError, MCPTransportError,
+        )
+
+        for cls in (ModelNotFoundError, MCPServerNotFoundError, MCPTransportError):
+            self.assertTrue(issubclass(cls, ValueError), cls.__name__)
+            with self.assertRaises(ValueError):
+                raise cls("boom")
+
+    def test_http_status_mapping(self) -> None:
+        from agentx_ai.exceptions import (
+            AgentXError, ConfigError, ProviderError, ModelNotFoundError,
+            ProviderUnavailableError, MCPError, MCPServerNotFoundError,
+            MCPTransportError, ToolExecutionError, MemoryStoreError,
+        )
+
+        self.assertEqual(AgentXError.http_status, 500)
+        self.assertEqual(ConfigError.http_status, 500)
+        self.assertEqual(ProviderError.http_status, 502)
+        self.assertEqual(ModelNotFoundError.http_status, 404)
+        self.assertEqual(ProviderUnavailableError.http_status, 502)
+        self.assertEqual(MCPError.http_status, 503)
+        self.assertEqual(MCPServerNotFoundError.http_status, 404)
+        self.assertEqual(MCPTransportError.http_status, 400)
+        self.assertEqual(ToolExecutionError.http_status, 500)
+        self.assertEqual(MemoryStoreError.http_status, 503)
+
+    def test_message_and_details_round_trip(self) -> None:
+        from agentx_ai.exceptions import ModelNotFoundError
+
+        err = ModelNotFoundError("no such model", model="ghost:x", provider="ghost")
+        self.assertEqual(str(err), "no such model")
+        self.assertEqual(err.message, "no such model")
+        self.assertEqual(err.details, {"model": "ghost:x", "provider": "ghost"})
+
+    def test_memory_store_error_is_not_builtin(self) -> None:
+        """MemoryStoreError must not shadow the builtin MemoryError."""
+        from agentx_ai.exceptions import MemoryStoreError
+
+        self.assertIsNot(MemoryStoreError, MemoryError)
+        self.assertFalse(issubclass(MemoryStoreError, MemoryError))
+
+
 class ToolDiscoveryErrorTest(TestCase):
     """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""
 
