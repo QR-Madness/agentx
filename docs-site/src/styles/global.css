@@ -141,6 +141,62 @@ a:hover {
   background: transparent;
 }
 
+/* Glassbox card — soft inner highlight, subtle border. */
+.ax-glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0) 60%),
+    var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  position: relative;
+}
+.ax-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 35%);
+  mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+  -webkit-mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+/* Hover-lift used on link cards. */
+.ax-lift {
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.ax-lift:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-2);
+}
+
+/* Hairline grid backgrounds — used behind hero / system-map sections. */
+.ax-grid-bg {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+.ax-grid-bg-fine {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Live-dot pulse (hero trace console). */
+@keyframes ax-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+
 /* ============================================================================
  * PROSE — styling for rendered Markdown content (ported from prose.css).
  * Scoped to `.ax-prose` so it never leaks into layout chrome. Maps to the
@@ -306,19 +362,28 @@ a:hover {
 }
 
 /* ── Lists ───────────────────────────────────────────────────────────── */
+/* Note: no `display:grid` here — it would blockify the <li>s and strip their
+ * markers. Tailwind's preflight also resets list-style, so set it explicitly. */
 .ax-prose ul,
 .ax-prose ol {
   margin: 0;
-  padding-left: 1.25em;
-  display: grid;
-  gap: 0.35em;
+  padding-left: 1.5em;
+}
+.ax-prose ul {
+  list-style: disc;
+}
+.ax-prose ol {
+  list-style: decimal;
+}
+.ax-prose li {
+  margin: 0.3em 0;
 }
 .ax-prose li::marker {
   color: var(--color-text-dim);
 }
 .ax-prose li > ul,
 .ax-prose li > ol {
-  margin-top: 0.35em;
+  margin-top: 0.3em;
 }
 
 /* ── Tables ─────────────────────────────────────────────────────────── */
@@ -417,6 +482,34 @@ a:hover {
 .ax-prose .mermaid svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Loading placeholder — astro-mermaid renders diagrams client-side and ships a
+ * shimmer skeleton, but its dark variant is gated on [data-theme="dark"], which
+ * we never set (dark-only, autoTheme:false). Override with a token-driven dark
+ * shimmer. Higher specificity than the injected `pre.mermaid:not([data-processed])`
+ * so it wins without !important; font-size:0 hides the raw source text while loading. */
+.ax-prose pre.mermaid:not([data-processed]) {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-surface-2) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: ax-shimmer 1.6s ease-in-out infinite;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  min-height: 200px;
+  font-size: 0;
+}
+@keyframes ax-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ============================================================================

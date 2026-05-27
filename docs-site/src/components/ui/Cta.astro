@@ -1,0 +1,63 @@
+---
+// Call-to-action button. `solid` = indigo fill, `ghost` = bordered. Optional
+// trailing icon via the `icon` slot. External hrefs open in a new tab.
+interface Props {
+  kind?: 'solid' | 'ghost';
+  href?: string;
+}
+const { kind = 'solid', href = '#' } = Astro.props;
+const external = href.startsWith('http');
+const hasIcon = Astro.slots.has('icon');
+---
+
+<a
+  href={href}
+  class:list={['cta', kind]}
+  {...external ? { target: '_blank', rel: 'noopener' } : {}}
+>
+  <slot />
+  {hasIcon && (
+    <span class="cta-icon">
+      <slot name="icon" />
+    </span>
+  )}
+</a>
+
+<style>
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    font-size: 14px;
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .cta.solid {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-color: var(--color-accent);
+  }
+  .cta.solid:hover {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+  }
+  .cta.ghost {
+    background: transparent;
+    color: var(--color-text);
+    border-color: var(--color-border-2);
+  }
+  .cta.ghost:hover {
+    border-color: var(--color-text-dim);
+    color: var(--color-text-strong);
+  }
+  .cta-icon {
+    display: inline-flex;
+    opacity: 0.85;
+  }
+</style>

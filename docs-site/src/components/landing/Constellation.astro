@@ -1,0 +1,165 @@
+---
+// System-map constellation: the X badge at the center of a ring of 8 subsystem
+// nodes. Pure SVG (viewBox 0..720) + %-positioned HTML labels sized in container
+// query units, so the whole figure scales proportionally with its container —
+// no JS sizing needed (the mock used useIsMobile to pick 320/520/720).
+import { FEATURES } from '../../config/landing';
+
+const S = 720;
+const cx = S / 2;
+const cy = S / 2;
+const ring = S * 0.41;
+const labelOffset = S * 0.05;
+const N = FEATURES.length;
+const pct = (v: number) => (v / S) * 100;
+
+const guideRings = [0.17, 0.25, 0.33, 0.41, 0.48];
+
+const nodes = FEATURES.map((f, i) => {
+  const a = -Math.PI / 2 + i * ((2 * Math.PI) / N);
+  const x = cx + Math.cos(a) * ring;
+  const y = cy + Math.sin(a) * ring;
+  const lx = cx + Math.cos(a) * (ring + labelOffset);
+  const ly = cy + Math.sin(a) * (ring + labelOffset);
+  const dx = Math.cos(a);
+  const align = dx > 0.3 ? 'left' : dx < -0.3 ? 'right' : 'center';
+  const translate = align === 'left' ? '0, -50%' : align === 'right' ? '-100%, -50%' : '-50%, -50%';
+  const t = 0.55 + (i % 3) * 0.12;
+  const tx = cx + (x - cx) * t;
+  const ty = cy + (y - cy) * t;
+  return { ...f, x, y, lx, ly, align, translate, tx, ty };
+});
+---
+
+<div class="constellation">
+  <svg viewBox={`0 0 ${S} ${S}`} xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      {
+        nodes.map((n) => (
+          <radialGradient id={`g-${n.key}`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" style={`stop-color:${n.color}`} stop-opacity="0.40" />
+            <stop offset="60%" style={`stop-color:${n.color}`} stop-opacity="0.08" />
+            <stop offset="100%" style={`stop-color:${n.color}`} stop-opacity="0" />
+          </radialGradient>
+        ))
+      }
+      <radialGradient id="g-center" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#6366f1" stop-opacity="0.45" />
+        <stop offset="60%" stop-color="#6366f1" stop-opacity="0.10" />
+        <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+
+    {/* concentric guide rings */}
+    {
+      guideRings.map((r, i) => (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={S * r}
+          fill="none"
+          stroke="rgba(255,255,255,0.06)"
+          stroke-dasharray={i === 3 ? '0' : '2 6'}
+          stroke-width="1"
+        />
+      ))
+    }
+
+    {/* center glow */}
+    <circle cx={cx} cy={cy} r={S * 0.3} fill="url(#g-center)" />
+
+    {/* spokes */}
+    {
+      nodes.map((n) => (
+        <line x1={cx} y1={cy} x2={n.x} y2={n.y} style={`stroke:${n.color}`} stroke-opacity="0.32" stroke-width="1" />
+      ))
+    }
+
+    {/* node glows */}
+    {nodes.map((n) => <circle cx={n.x} cy={n.y} r={S * 0.058} fill={`url(#g-${n.key})`} />)}
+
+    {/* node cores */}
+    {
+      nodes.map((n) => (
+        <g>
+          <circle cx={n.x} cy={n.y} r="8" style={`fill:var(--color-bg-2);stroke:${n.color}`} stroke-width="1.5" />
+          <circle cx={n.x} cy={n.y} r="3" style={`fill:${n.color}`} />
+        </g>
+      ))
+    }
+
+    {/* travel dots along spokes */}
+    {nodes.map((n) => <circle cx={n.tx} cy={n.ty} r="2" style={`fill:${n.color}`} opacity="0.7" />)}
+  </svg>
+
+  {/* center badge — real logo */}
+  <img class="badge" src="/AgentX-Logo-v3-badge.png" alt="AgentX" />
+
+  {/* node labels (HTML, %-positioned, cqw-sized → scale with the container) */}
+  {
+    nodes.map((n) => (
+      <div
+        class="label"
+        style={`left:${pct(n.lx)}%;top:${pct(n.ly)}%;transform:translate(${n.translate});text-align:${n.align}`}
+      >
+        <div class="label-name">{n.label}</div>
+        <div class="ax-mono label-tag" style={`color:${n.color}`}>
+          {n.tag}
+        </div>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .constellation {
+    position: relative;
+    width: min(720px, 100%);
+    aspect-ratio: 1;
+    container-type: inline-size;
+  }
+  .constellation svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .badge {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 22%;
+    height: 22%;
+    transform: translate(-50%, -50%);
+    border-radius: 22%;
+    filter: drop-shadow(0 0 32px rgba(99, 102, 241, 0.45));
+  }
+  .label {
+    position: absolute;
+    pointer-events: none;
+  }
+  .label-name {
+    font-family: var(--font-display);
+    font-size: 2.08cqw;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-text-strong);
+    white-space: nowrap;
+  }
+  .label-tag {
+    margin-top: 0.4cqw;
+    font-size: 1.53cqw;
+    white-space: nowrap;
+  }
+
+  /* Below the stack breakpoint the figure can get small; keep labels legible. */
+  @media (max-width: 720px) {
+    .label-name {
+      font-size: 11px;
+    }
+    .label-tag {
+      font-size: 9px;
+    }
+  }
+</style>

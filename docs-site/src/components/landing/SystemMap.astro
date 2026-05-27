@@ -1,0 +1,163 @@
+---
+import { FEATURES } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+import Dot from '../ui/Dot.astro';
+import ArrowRight from '../icons/ArrowRight.astro';
+import Constellation from './Constellation.astro';
+---
+
+<section class="systemmap">
+  <div class="wash" aria-hidden="true"></div>
+  <div class="ax-grid-bg grid-wash" aria-hidden="true"></div>
+
+  <div class="grid">
+    <div class="copy">
+      <MonoTag>§ system map</MonoTag>
+      <h2 class="ax-wordmark title">
+        Eight subsystems.<br />
+        <span class="title-muted">One agent loop.</span>
+      </h2>
+      <p class="para">
+        Every component sits behind a small, explicit interface. Reasoning picks the strategy.
+        Drafting picks the candidate. The provider picks the model. Memory picks what to remember.
+        The agent loop binds them.
+      </p>
+      <p class="para">
+        Swap any one out without touching the rest — the surface contracts don't move.
+      </p>
+
+      <div class="chips">
+        {
+          FEATURES.map((f) => (
+            <span class="chip">
+              <Dot color={f.color} size={5} />
+              {f.label}
+            </span>
+          ))
+        }
+      </div>
+
+      <a class="arch-link" href="/docs/architecture/overview">
+        Architecture overview <ArrowRight size={12} />
+      </a>
+    </div>
+
+    <div class="map">
+      <Constellation />
+    </div>
+  </div>
+</section>
+
+<style>
+  .systemmap {
+    position: relative;
+    padding: 96px 48px;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .wash {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(45% 60% at 50% 50%, rgba(99, 102, 241, 0.16), transparent 75%),
+      radial-gradient(30% 40% at 18% 70%, rgba(34, 211, 238, 0.07), transparent 75%),
+      radial-gradient(30% 40% at 82% 30%, rgba(244, 63, 94, 0.06), transparent 75%);
+  }
+  .grid-wash {
+    position: absolute;
+    inset: 0;
+    opacity: 0.5;
+    mask-image: radial-gradient(60% 70% at 50% 50%, black 30%, transparent 85%);
+    -webkit-mask-image: radial-gradient(60% 70% at 50% 50%, black 30%, transparent 85%);
+  }
+
+  .grid {
+    position: relative;
+    max-width: 1280px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 680px);
+    gap: 64px;
+    align-items: center;
+  }
+
+  .title {
+    font-size: clamp(40px, 5vw, 56px);
+    margin: 12px 0 18px;
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+  }
+  .title-muted {
+    color: var(--color-text-muted);
+  }
+  .para {
+    font-size: 17px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    margin: 0 0 24px;
+    max-width: 460px;
+    text-wrap: pretty;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+
+  .arch-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-text);
+    padding: 10px 14px;
+    border: 1px solid var(--color-border-2);
+    border-radius: 8px;
+  }
+  .arch-link:hover {
+    color: var(--color-text-strong);
+    border-color: var(--color-text-dim);
+  }
+
+  .map {
+    justify-self: end;
+    width: 100%;
+  }
+
+  @media (max-width: 1024px) {
+    .grid {
+      grid-template-columns: 1fr;
+      gap: 40px;
+    }
+    .map {
+      justify-self: center;
+      max-width: 520px;
+    }
+  }
+  @media (max-width: 720px) {
+    .systemmap {
+      padding: 56px 18px;
+    }
+    .para {
+      font-size: 15px;
+    }
+  }
+</style>

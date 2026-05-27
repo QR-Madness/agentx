@@ -1,0 +1,130 @@
+---
+import { FEATURES } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+import Dot from '../ui/Dot.astro';
+import ArrowRight from '../icons/ArrowRight.astro';
+---
+
+<section class="rail">
+  <div class="inner">
+    <div class="head">
+      <h2 class="ax-wordmark title">Subsystems</h2>
+      <MonoTag>§ what's in the box</MonoTag>
+    </div>
+
+    <div class="grid">
+      {
+        FEATURES.map((f, i) => (
+          <a class="card" href={f.href}>
+            <div class="card-top">
+              <div class="card-no">
+                <Dot color={f.color} size={7} />
+                <MonoTag color={f.color}>{String(i + 1).padStart(2, '0')}</MonoTag>
+              </div>
+              <ArrowRight size={12} />
+            </div>
+            <div class="card-label">{f.label}</div>
+            <p class="card-desc">{f.desc}</p>
+            <div class="card-tag">
+              <MonoTag color={f.color}>{f.tag}</MonoTag>
+            </div>
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .rail {
+    padding: 16px 48px 80px;
+  }
+  .inner {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .title {
+    font-size: 32px;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .card {
+    background: var(--color-surface);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 180px;
+    transition: background 0.15s ease;
+    color: var(--color-text);
+  }
+  .card:hover {
+    background: var(--color-surface-2);
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--color-text-dim);
+  }
+  .card-no {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-label {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-text-strong);
+  }
+  .card-desc {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+  .card-tag {
+    margin-top: auto;
+    opacity: 0.85;
+  }
+
+  @media (max-width: 1024px) {
+    .grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 720px) {
+    .rail {
+      padding: 8px 18px 56px;
+    }
+    .grid {
+      grid-template-columns: 1fr;
+    }
+    .card {
+      min-height: auto;
+      padding: 18px;
+    }
+    .title {
+      font-size: 24px;
+    }
+  }
+</style>

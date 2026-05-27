@@ -1,0 +1,291 @@
+---
+// The hero's glassbox "Alloy" trace console: a window chrome, the alloy roster
+// (3 delegating agents), and a static run trace. Data from config/landing.ts.
+import { ALLOY, TRACE } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+
+const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
+---
+
+<div class="console ax-glass">
+  <div class="header-bar">
+    <div class="header-left">
+      <div class="lights">
+        <span></span><span></span><span></span>
+      </div>
+      <MonoTag class="run-label">agent · trace · run_aef91</MonoTag>
+    </div>
+    <span class="live">
+      <span class="live-dot"></span>
+      <MonoTag color="var(--color-ok)">live</MonoTag>
+    </span>
+  </div>
+
+  <div class="roster">
+    <div class="roster-head">
+      <div class="roster-title">
+        <span class="ax-mono" style="color:var(--color-text-strong);letter-spacing:0.14em">ALLOY</span>
+        <span class="ax-mono" style="color:var(--color-text-dim)">3 agents · plan ⇢ delegate ⇢ merge</span>
+      </div>
+      <span class="ax-mono" style="color:var(--color-text-dim)">inspector →</span>
+    </div>
+    <div class="roster-rows">
+      {
+        ALLOY.map((a) => (
+          <div class="ax-alloy-row">
+            <span class="alloy-role">
+              <span class="alloy-dot" style={`--c:${a.color}`} />
+              <span style={`color:${a.color};font-weight:500`}>{a.role}</span>
+            </span>
+            <span style="color:var(--color-text)">@{a.id}</span>
+            <span class="alloy-profile">{a.profile}</span>
+            <span class="alloy-model">{a.model}</span>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="ax-trace-header">
+      <span class="ax-mono" style="color:var(--color-text-dim)">t</span>
+      <span class="ax-mono" style="color:var(--color-text-dim)">agent</span>
+      <span class="ax-mono" style="color:var(--color-text-dim)">kind</span>
+      <span class="ax-mono" style="color:var(--color-text-dim)">event</span>
+    </div>
+    {
+      TRACE.map((line) => {
+        const c = colorByRole[line.r] ?? 'var(--color-text)';
+        return (
+          <div class="ax-trace-row">
+            <span class="trace-t">{line.t}s</span>
+            <span class="trace-agent">
+              <span class="trace-dot" style={`--c:${c}`} />
+              <span class="trace-role" style={`color:${c}`}>
+                {line.r}
+              </span>
+            </span>
+            <span class="trace-kind">{line.k}</span>
+            <span class="trace-event">
+              <span style="color:var(--color-text-strong)">{line.l}</span>
+              <span class="trace-msg">{line.m}</span>
+            </span>
+          </div>
+        );
+      })
+    }
+    <div class="idle">
+      <span class="idle-dot"></span>
+      <MonoTag>alloy idle · awaiting next task</MonoTag>
+    </div>
+  </div>
+</div>
+
+<style>
+  .console {
+    padding: 0;
+    overflow: hidden;
+    box-shadow:
+      0 30px 80px -30px rgba(0, 0, 0, 0.6),
+      0 0 0 1px var(--color-border);
+  }
+
+  .header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in oklab, var(--color-surface-2) 70%, transparent);
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lights {
+    display: flex;
+    gap: 6px;
+  }
+  .lights span {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #3a3f4b;
+  }
+  .run-label {
+    margin-left: 8px;
+  }
+  .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-ok);
+    box-shadow: 0 0 8px var(--color-ok);
+  }
+
+  /* Roster */
+  .roster {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in oklab, var(--color-surface) 80%, transparent);
+  }
+  .roster-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .roster-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .roster-rows {
+    display: grid;
+    gap: 6px;
+  }
+  .ax-alloy-row {
+    display: grid;
+    grid-template-columns: 108px 1fr 1fr 90px;
+    gap: 12px;
+    align-items: center;
+    padding: 6px 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .alloy-role {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .alloy-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+  }
+  .alloy-profile {
+    color: var(--color-text-muted);
+  }
+  .alloy-model {
+    color: var(--color-text-dim);
+    text-align: right;
+  }
+
+  /* Trace body */
+  .body {
+    padding: 14px 16px 4px;
+    background: var(--color-code-bg);
+  }
+  .ax-trace-header {
+    display: grid;
+    grid-template-columns: 44px 108px 72px 1fr;
+    gap: 12px;
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed var(--color-border);
+  }
+  .ax-trace-row {
+    display: grid;
+    grid-template-columns: 44px 108px 72px 1fr;
+    gap: 12px;
+    align-items: baseline;
+    padding: 4px 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .trace-t {
+    color: var(--color-text-dim);
+  }
+  .trace-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+  .trace-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+    flex: 0 0 auto;
+  }
+  .trace-role {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .trace-kind {
+    color: var(--color-text-muted);
+    background: color-mix(in oklab, var(--color-surface-2) 90%, transparent);
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    display: inline-block;
+    width: fit-content;
+    letter-spacing: 0.02em;
+  }
+  .trace-msg {
+    color: var(--color-text-muted);
+    margin-left: 10px;
+  }
+  .idle {
+    padding: 10px 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .idle-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--c-agent);
+    box-shadow: 0 0 10px var(--c-agent);
+    animation: ax-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* ≤720px — simplify to a single-column stack */
+  @media (max-width: 720px) {
+    .ax-trace-header {
+      display: none;
+    }
+    .ax-trace-row {
+      grid-template-columns: 1fr;
+      gap: 4px;
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--color-border);
+    }
+    .trace-t,
+    .trace-agent,
+    .trace-kind {
+      display: inline-flex;
+      margin-right: 8px;
+    }
+    .trace-event {
+      display: block;
+      margin-top: 2px;
+    }
+    .trace-msg {
+      margin-left: 0;
+      display: block;
+    }
+    .ax-alloy-row {
+      grid-template-columns: auto 1fr;
+      row-gap: 2px;
+    }
+    .alloy-profile,
+    .alloy-model {
+      grid-column: 1 / -1;
+      text-align: left;
+    }
+  }
+</style>

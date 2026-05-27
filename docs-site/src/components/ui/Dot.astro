@@ -1,0 +1,23 @@
+---
+// Glowing status/accent dot.
+interface Props {
+  color?: string;
+  size?: number;
+}
+const { color = 'var(--color-accent)', size = 6 } = Astro.props;
+---
+
+<span class="dot" style={`--dot:${color};--dot-size:${size}px`} aria-hidden="true"></span>
+
+<style>
+  .dot {
+    display: inline-block;
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: 999px;
+    background: var(--dot);
+    box-shadow: 0 0 8px var(--dot);
+    vertical-align: middle;
+    flex: 0 0 auto;
+  }
+</style>

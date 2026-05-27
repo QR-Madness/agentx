@@ -1,0 +1,166 @@
+---
+import { LIFECYCLE, STORES } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+import Dot from '../ui/Dot.astro';
+---
+
+<section class="lifecycle">
+  <div class="grid">
+    {/* Request lifecycle */}
+    <div class="ax-glass card">
+      <MonoTag>§ request lifecycle</MonoTag>
+      <h3 class="ax-wordmark card-title">One POST. The whole loop.</h3>
+      <div class="rows">
+        {
+          LIFECYCLE.map((s) => (
+            <div class="row">
+              <span class="ax-mono row-k" style={`color:${s.c}`}>
+                {s.k}
+              </span>
+              <Dot color={s.c} size={8} />
+              <div class="row-text">
+                <span class="row-name">{s.l}</span>
+                <span class="row-detail">{s.t}</span>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+
+    {/* Data layer */}
+    <div class="ax-glass card">
+      <MonoTag>§ data layer</MonoTag>
+      <h3 class="ax-wordmark card-title">Three stores. One memory API.</h3>
+      <div class="stores">
+        {
+          STORES.map((db) => (
+            <div class="store" style={`border-left-color:${db.c}`}>
+              <div class="store-name">{db.n}</div>
+              <div class="store-desc">{db.d}</div>
+            </div>
+          ))
+        }
+      </div>
+      <div class="code-chip">
+        <span class="code-comment"># everything wired up by:</span><br />
+        <span class="code-cmd">task dev</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .lifecycle {
+    padding: 80px 48px;
+  }
+  .grid {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 14px;
+  }
+  .card {
+    padding: 28px;
+  }
+  .card-title {
+    font-size: 24px;
+    margin: 8px 0 18px;
+    font-weight: 600;
+  }
+
+  /* Lifecycle rows */
+  .rows {
+    display: grid;
+    gap: 8px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 32px 36px 1fr;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+  }
+  .row-text {
+    min-width: 0;
+  }
+  .row-name {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    color: var(--color-text-strong);
+  }
+  .row-detail {
+    color: var(--color-text-muted);
+    font-size: 13px;
+    margin-left: 12px;
+  }
+
+  /* Data layer */
+  .stores {
+    display: grid;
+    gap: 12px;
+  }
+  .store {
+    padding: 16px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 8px;
+  }
+  .store-name {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-strong);
+  }
+  .store-desc {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+  }
+  .code-chip {
+    margin-top: 18px;
+    padding: 14px;
+    background: var(--color-code-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+  }
+  .code-comment {
+    color: var(--color-text-dim);
+  }
+  .code-cmd {
+    color: var(--c-drafting);
+  }
+
+  @media (max-width: 720px) {
+    .lifecycle {
+      padding: 48px 18px;
+    }
+    .grid {
+      grid-template-columns: 1fr;
+    }
+    .card {
+      padding: 20px;
+    }
+    .row {
+      grid-template-columns: 28px 24px 1fr;
+      gap: 10px;
+      padding: 9px 10px;
+    }
+    .row-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .row-detail {
+      margin-left: 0;
+    }
+  }
+</style>

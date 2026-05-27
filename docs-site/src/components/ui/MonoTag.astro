@@ -1,0 +1,13 @@
+---
+// Small uppercase mono label. `.ax-mono` (global) carries the type treatment;
+// `color` overrides the default muted color.
+interface Props {
+  color?: string;
+  class?: string;
+}
+const { color, class: className } = Astro.props;
+---
+
+<span class:list={['ax-mono', className]} style={color ? `color:${color}` : undefined}>
+  <slot />
+</span>

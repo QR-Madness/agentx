@@ -1,0 +1,65 @@
+---
+import { site } from '../../config/site';
+import Wordmark from '../ui/Wordmark.astro';
+
+const year = new Date().getFullYear();
+---
+
+<footer class="footer">
+  <div class="left">
+    <Wordmark size={20} />
+    <span class="meta">· MIT · © {year}</span>
+  </div>
+  <div class="links">
+    <a href={site.repoUrl} target="_blank" rel="noopener">GitHub</a>
+    <a href="/docs">Docs</a>
+    <a href="/docs/roadmap">Roadmap</a>
+    <a href="/docs/api/endpoints">API</a>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    margin-top: 80px;
+    padding: 32px 48px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .meta {
+    color: var(--color-text-dim);
+  }
+  .links {
+    display: flex;
+    gap: 20px;
+  }
+  .links a {
+    color: var(--color-text-muted);
+  }
+  .links a:hover {
+    color: var(--color-text);
+  }
+
+  @media (max-width: 720px) {
+    .footer {
+      padding: 24px 18px;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+      text-align: left;
+    }
+    .links {
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+  }
+</style>

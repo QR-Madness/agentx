@@ -1,0 +1,36 @@
+---
+// AgentX wordmark — the badge logo paired with the type-set name.
+interface Props {
+  size?: number;
+  withLogo?: boolean;
+  weight?: number;
+}
+const { size = 56, withLogo = true, weight = 800 } = Astro.props;
+---
+
+<span class="wordmark" style={`--wm-size:${size}px;--wm-weight:${weight}`}>
+  {
+    withLogo && (
+      <img
+        src="/AgentX-Logo-v3-badge.png"
+        alt=""
+        width={size}
+        height={size}
+        style={`border-radius:${size * 0.22}px`}
+      />
+    )
+  }
+  <span class="ax-wordmark wm-text">AgentX</span>
+</span>
+
+<style>
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--wm-size) * 0.28);
+  }
+  .wm-text {
+    font-size: calc(var(--wm-size) * 0.78);
+    font-weight: var(--wm-weight);
+  }
+</style>
