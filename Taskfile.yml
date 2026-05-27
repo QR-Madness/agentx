@@ -225,6 +225,18 @@ tasks:
     cmds:
       - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest -v2
 
+  test:client:
+    desc: "Run client tests (Vitest)"
+    dir: client
+    cmds:
+      - bun run vitest run
+
+  test:client:watch:
+    desc: "Run client tests in watch mode (Vitest)"
+    dir: client
+    cmds:
+      - bun run vitest
+
 # ============================================================================
 # DATABASE SERVICES (Docker)
 # ============================================================================

@@ -66,6 +66,13 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - `ServerContext` provides app-wide server state; `lib/api.ts` is the typed API client; `lib/hooks.ts` has React data hooks
 - `AgentProfileContext` manages agent profiles (name, model, temperature, reasoning strategy, memory channel)
 - Cosmic dark theme with glassmorphism effects and Lucide-react icons
+- API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)` (`lib/api.ts`). Surface failures with `useNotify().notifyError(err)` (toasts via `contexts/NotificationContext` + `ui/Toaster`); keep inline errors for form-field validation. Read hooks are built on the `useApi<T>` factory in `lib/hooks.ts`.
+
+#### Styling (Tailwind v4 + design tokens)
+
+- **Tailwind v4** is enabled via `@tailwindcss/vite` (`vite.config.ts`). The CSS entry `src/App.css` imports only the `theme` + `utilities` layers — **Preflight is intentionally disabled** so it doesn't clobber the resets/element styles in `styles/base.css` (which is imported into the `base` layer; utilities out-rank it, per-component CSS files imported unlayered out-rank utilities).
+- **Design tokens** live in `lib/theme.ts` and are injected at runtime by `ThemeProvider` as CSS vars (`--surface-base`, `--text-primary`, …). `App.css` bridges them into Tailwind via `@theme inline` so utilities follow theme switches. Use the **semantic utilities**, not raw palette colors: `bg-surface-base|raised|overlay|sunken|hover`, `text-fg|fg-secondary|fg-muted|fg-inverse`, `border-line|line-strong`, `text-accent|bg-accent(-secondary|-tertiary)`, feedback `text-error|success|warning|info`. Spacing tokens `--space-*` exist for hand-written CSS (Tailwind's default spacing scale handles utilities). Brand shadows stay as `var(--shadow-md)` (not bridged — name collision).
+- **Components**: prefer Tailwind utilities for new/shared UI; keep per-feature CSS files for complex panels. Shared primitives in `components/ui/` (Button, Badge, Card, Input/Textarea, SectionHeader, Dialog, DropdownMenu, Tooltip, …) follow the shadcn pattern — CVA + `cn()` (`lib/utils.ts`), exported from `components/ui/index.ts`. Radix enter/exit animations come from `tw-animate-css`.
 
 ## Development Commands
 

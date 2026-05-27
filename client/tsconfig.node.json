@@ -1,6 +1,12 @@
 {
   "compilerOptions": {
     "composite": true,
+    // Emit declarations only (composite requires emit). This avoids producing a
+    // vite.config.js — which Vite would resolve *before* vite.config.ts and
+    // silently shadow the real config (this once disabled the Tailwind plugin).
+    // The resulting vite.config.d.ts is gitignored and does not affect resolution.
+    "emitDeclarationOnly": true,
+    "outDir": "./node_modules/.tmp/tsconfig-node",
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",

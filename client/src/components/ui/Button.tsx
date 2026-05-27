@@ -8,8 +8,11 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
 
 const buttonVariants = cva(
-  // Base styles - use existing CSS classes
-  'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+  // Layout/interaction utilities; the brand skin (gradient, shimmer, hover glow)
+  // comes from the variant's global class below. Now that Tailwind is enabled
+  // and base.css sits in the `base` layer, the size utilities (in `utilities`)
+  // correctly out-rank the class's padding, so the `size` prop is effective.
+  'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2',
   {
     variants: {
       variant: {
@@ -19,9 +22,10 @@ const buttonVariants = cva(
         danger: 'button-secondary danger',
       },
       size: {
+        // `md` keeps each variant class's native padding (the established look).
         sm: 'px-3 py-1.5 text-sm rounded-lg min-h-[36px]',
-        md: 'px-4 py-2.5 text-sm rounded-[10px] min-h-[40px]',
-        lg: 'px-6 py-3 text-base rounded-[10px] min-h-[44px]',
+        md: '',
+        lg: 'px-6 py-3 text-base min-h-[44px]',
         icon: 'p-2 rounded-lg min-h-[36px] min-w-[36px]',
       },
     },

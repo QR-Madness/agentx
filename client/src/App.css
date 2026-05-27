@@ -1,5 +1,65 @@
 /* === AgentX Design System ===
- * CSS variables are applied dynamically by ThemeProvider.
- * Base styles (resets, components, animations) are in styles/base.css.
+ * CSS variables are applied dynamically by ThemeProvider (see lib/theme.ts).
+ * Base styles (resets, component classes, animations) live in styles/base.css.
+ *
+ * Tailwind v4 is enabled via the @tailwindcss/vite plugin. We import only the
+ * `theme` and `utilities` layers (NOT Preflight) so Tailwind's reset does not
+ * clobber the hand-written resets/element styles in base.css — and, critically,
+ * does not strip list markers from react-markdown output. Explicit layer order
+ * makes utilities out-rank base element styles, while per-component CSS
+ * (imported unlayered) still wins over utilities — the precedence we want.
  */
-@import './styles/base.css';
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/* Radix enter/exit utilities (animate-in, fade-in-0, zoom-in-95, slide-in-*) —
+ * v4 port of tailwindcss-animate, used by the ui/ primitives. */
+@import "tw-animate-css";
+@import './styles/base.css' layer(base);
+
+/* The @tailwindcss/vite plugin scans the Vite module graph; explicitly register
+ * the shared primitive library so its utilities are generated even before every
+ * primitive is imported by app code. */
+@source "./components/ui";
+
+/* Bridge the runtime design tokens into Tailwind's theme so utilities like
+ * `bg-surface-raised`, `text-fg-muted`, `border-line`, `text-error` resolve to
+ * the live CSS vars — and therefore follow theme switches (cosmic ↔ light)
+ * automatically. `inline` emits `var(--surface-base)` directly rather than
+ * baking a static value. Prefer these semantic utilities over raw palette
+ * colors in app code. */
+@theme inline {
+  /* Surfaces (backgrounds) → bg-surface-base, bg-surface-raised, … */
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+
+  /* Foreground / text → text-fg, text-fg-secondary, text-fg-muted, text-fg-inverse
+   * (named `fg` to avoid the awkward `text-text-*`). */
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-inverse: var(--text-inverse);
+
+  /* Borders → border-line, border-line-strong, border-line-interactive */
+  --color-line: var(--border-default);
+  --color-line-strong: var(--border-emphasis);
+  --color-line-interactive: var(--border-interactive);
+
+  /* Accents → text-accent / bg-accent, …-secondary, …-tertiary */
+  --color-accent: var(--accent-primary);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-accent-tertiary: var(--accent-tertiary);
+
+  /* Feedback → text-success / bg-error / … (short, unambiguous) */
+  --color-success: var(--feedback-success);
+  --color-warning: var(--feedback-warning);
+  --color-error: var(--feedback-error);
+  --color-info: var(--feedback-info);
+  --color-inactive: var(--feedback-inactive);
+}
+/* Note: brand shadows stay as plain `var(--shadow-md)` in CSS — they are NOT
+ * bridged because our runtime tokens (`--shadow-sm/md/lg`) share Tailwind's
+ * shadow namespace, so a `@theme` mapping would be self-referential. */
