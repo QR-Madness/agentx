@@ -11,11 +11,35 @@ interface Props {
 const { label, items, currentSlug } = Astro.props;
 ---
 
-<div class="mt-5 first:mt-0">
-  <p class="px-3 pb-1 text-xs font-semibold tracking-wide text-text-muted uppercase">
-    {label}
-  </p>
-  <div class="flex flex-col gap-0.5">
-    {items.map((item) => <SidebarLink label={item.label} slug={item.slug} currentSlug={currentSlug} />)}
+<div class="group">
+  <p class="ax-mono group-label">{label}</p>
+  <div class="group-items">
+    {
+      items.map((item) => (
+        <SidebarLink
+          label={item.label}
+          slug={item.slug}
+          currentSlug={currentSlug}
+          color={item.color}
+        />
+      ))
+    }
   </div>
 </div>
+
+<style>
+  .group {
+    margin-bottom: 18px;
+  }
+  .group-label {
+    padding: 6px 14px;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    color: var(--color-text-dim);
+  }
+  .group-items {
+    display: grid;
+    gap: 1px;
+    margin-top: 4px;
+  }
+</style>

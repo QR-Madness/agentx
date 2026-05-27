@@ -1,0 +1,259 @@
+---
+// Docs search. The trigger matches the design's "Search docs ⌘K" box; the modal is
+// backed by Pagefind, which indexes the built site (dist/pagefind/) at build time.
+//
+// Pagefind only exists after `bun run build` (which runs `pagefind --site dist`), so
+// search is live under `bun run preview` and in production. In `astro dev` the index
+// is absent and the modal shows a graceful "build to enable" notice.
+---
+
+<div class="search">
+  <button type="button" class="search-trigger" data-search-open aria-haspopup="dialog">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
+      <path d="m11 11 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+    </svg>
+    <span class="search-trigger-label">Search docs</span>
+    <span class="ax-mono search-kbd">⌘K</span>
+  </button>
+
+  <dialog class="search-dialog" data-search-dialog aria-label="Search documentation">
+    <div class="search-panel">
+      <div class="search-input-row">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
+          <path d="m11 11 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+        </svg>
+        <input
+          type="search"
+          class="search-input"
+          placeholder="Search the docs…"
+          autocomplete="off"
+          spellcheck="false"
+          data-search-input
+        />
+        <span class="ax-mono search-esc">esc</span>
+      </div>
+      <div class="search-results" data-search-results>
+        <p class="search-hint" data-search-hint>Type to search the documentation.</p>
+      </div>
+    </div>
+  </dialog>
+</div>
+
+<style>
+  .search-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .search-trigger:hover {
+    border-color: var(--color-border-2);
+    color: var(--color-text);
+  }
+  .search-trigger-label {
+    flex: 1;
+    text-align: left;
+    font-size: 13px;
+  }
+  .search-kbd {
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+  }
+
+  .search-dialog {
+    margin: 0 auto;
+    margin-top: 12vh;
+    width: min(92vw, 560px);
+    padding: 0;
+    border: 1px solid var(--color-border-2);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+  }
+  .search-dialog::backdrop {
+    background: rgba(7, 8, 12, 0.6);
+    backdrop-filter: blur(3px);
+  }
+
+  .search-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+  .search-input {
+    flex: 1;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    outline: none;
+  }
+  .search-input::placeholder {
+    color: var(--color-text-dim);
+  }
+  .search-input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+  .search-esc {
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+  }
+
+  .search-results {
+    max-height: 56vh;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .search-hint {
+    margin: 0;
+    padding: 16px;
+    font-size: 13px;
+    color: var(--color-text-dim);
+    text-align: center;
+  }
+
+  .search-result {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .search-result:hover,
+  .search-result:focus-visible {
+    background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+    outline: none;
+  }
+  .search-result-title {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-strong);
+  }
+  .search-result-excerpt {
+    margin-top: 2px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+  .search-result-excerpt :global(mark) {
+    background: transparent;
+    color: var(--color-accent-hover);
+    font-weight: 600;
+  }
+</style>
+
+<script>
+  type PagefindResult = { data: () => Promise<PagefindData> };
+  type PagefindData = {
+    url: string;
+    excerpt: string;
+    meta?: { title?: string };
+  };
+  type Pagefind = {
+    search: (q: string) => Promise<{ results: PagefindResult[] }>;
+    init?: () => void;
+  };
+
+  const dialog = document.querySelector<HTMLDialogElement>('[data-search-dialog]');
+  const trigger = document.querySelector<HTMLButtonElement>('[data-search-open]');
+  const input = document.querySelector<HTMLInputElement>('[data-search-input]');
+  const resultsEl = document.querySelector<HTMLElement>('[data-search-results]');
+
+  if (dialog && trigger && input && resultsEl) {
+    let pagefind: Pagefind | null = null;
+    let loadError = false;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+
+    async function ensurePagefind(): Promise<Pagefind | null> {
+      if (pagefind || loadError) return pagefind;
+      try {
+        // Absolute runtime path — kept out of Vite's static analysis.
+        const path = '/pagefind/pagefind.js';
+        const mod = (await import(/* @vite-ignore */ path)) as Pagefind;
+        mod.init?.();
+        pagefind = mod;
+      } catch {
+        loadError = true;
+      }
+      return pagefind;
+    }
+
+    function setHint(text: string) {
+      resultsEl!.innerHTML = `<p class="search-hint">${text}</p>`;
+    }
+
+    async function runSearch(query: string) {
+      const q = query.trim();
+      if (!q) {
+        setHint('Type to search the documentation.');
+        return;
+      }
+      const pf = await ensurePagefind();
+      if (!pf) {
+        setHint('Search is available in the production build.');
+        return;
+      }
+      const search = await pf.search(q);
+      if (!search.results.length) {
+        setHint(`No results for “${q}”.`);
+        return;
+      }
+      const data = await Promise.all(search.results.slice(0, 8).map((r) => r.data()));
+      resultsEl!.innerHTML = data
+        .map(
+          (d) =>
+            `<a class="search-result" href="${d.url}">` +
+            `<div class="search-result-title">${d.meta?.title ?? d.url}</div>` +
+            `<div class="search-result-excerpt">${d.excerpt}</div></a>`
+        )
+        .join('');
+    }
+
+    function openDialog() {
+      if (!dialog!.open) dialog!.showModal();
+      input!.value = '';
+      setHint('Type to search the documentation.');
+      input!.focus();
+      void ensurePagefind();
+    }
+
+    trigger.addEventListener('click', openDialog);
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openDialog();
+      }
+    });
+
+    input.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => void runSearch(input.value), 160);
+    });
+
+    // Click on the backdrop (outside the panel) closes the dialog.
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+  }
+</script>

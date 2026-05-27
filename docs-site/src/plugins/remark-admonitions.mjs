@@ -54,8 +54,8 @@ function transform(node) {
       result.push({
         type: 'html',
         value:
-          `<aside class="admonition admonition-${adm.type}">` +
-          `<p class="admonition-title">${escapeHtml(adm.title)}</p>`,
+          `<aside class="ax-admon" data-kind="${escapeHtml(adm.type)}">` +
+          `<p class="ax-admon-title">${escapeHtml(adm.title)}</p>`,
       });
       if (adm.bodyChildren.length) {
         result.push({ type: 'paragraph', children: adm.bodyChildren });

@@ -1,29 +1,55 @@
 ---
 import { getCollection, render } from 'astro:content';
+import { execSync } from 'node:child_process';
 import DocsLayout from '../../layouts/DocsLayout.astro';
-import { labelForSlug } from '../../config/nav';
+import { labelForSlug, editUrlForSlug, contentPathForSlug } from '../../config/nav';
 
 export async function getStaticPaths() {
+  // Last git commit date (YYYY-MM-DD) for a docs file, or undefined if unavailable.
+  // Defined inline: Astro runs getStaticPaths in an isolated scope that can't see
+  // frontmatter-level helpers.
+  const lastEditedFor = (slug: string): string | undefined => {
+    try {
+      const path = contentPathForSlug(slug);
+      const iso = execSync(`git log -1 --format=%cI -- "${path}"`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      return iso ? iso.slice(0, 10) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const entries = await getCollection('docs');
   return entries.map((entry) => {
     // The glob loader's `id` is the file path without extension (e.g. "features/chat").
     // The root index becomes /docs (an undefined rest param).
     const isHome = entry.id === 'index' || entry.id === '';
+    const docSlug = isHome ? '' : entry.id;
     return {
       params: { slug: isHome ? undefined : entry.id },
-      props: { entry, docSlug: isHome ? '' : entry.id },
+      props: { entry, docSlug, lastEdited: lastEditedFor(docSlug) },
     };
   });
 }
 
-const { entry, docSlug } = Astro.props;
+const { entry, docSlug, lastEdited } = Astro.props;
 const { Content, headings } = await render(entry);
 
 const title =
   labelForSlug(docSlug) ?? headings.find((h) => h.depth === 1)?.text ?? entry.id;
 const description = entry.data.description;
+const editUrl = editUrlForSlug(docSlug);
 ---
 
-<DocsLayout title={title} description={description} currentSlug={docSlug} headings={headings}>
+<DocsLayout
+  title={title}
+  description={description}
+  currentSlug={docSlug}
+  headings={headings}
+  editUrl={editUrl}
+  lastEdited={lastEdited}
+>
   <Content />
 </DocsLayout>

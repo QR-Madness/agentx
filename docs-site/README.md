@@ -4,21 +4,25 @@ This is the **AgentX project hub**: an Astro static site with a bare landing pag
 the documentation under `/docs`. It replaced a MkDocs/Material site. This document is written for
 the **design pass** — the structure exists; the visuals are deliberately minimal and waiting for you.
 
-> **Your job (design pass):** make it beautiful. The architecture was built so you can do
-> **rapid, large-scale visual overhauls from a single token file** without touching content,
-> routing, or logic. Read "Design system" and "Rules of the road" first.
+> **Status:** the **docs** design pass is **done** — the "claude design" handoff (cosmic-dark + indigo,
+> Geist typefaces, `.ax-*` convention) is implemented across the token layer, prose, and docs chrome.
+> The **landing page** (`src/pages/index.astro`) is still a blank canvas awaiting its own pass.
+> The architecture still supports **rapid overhauls from a single token file** — read "Design system" first.
 
 ---
 
-## TL;DR for the design pass
+## TL;DR
 
 - **Every color, font, radius, and key dimension lives in one file:** [`src/styles/global.css`](src/styles/global.css).
   Reskinning the whole site = editing the `@theme` block there. Don't hardcode visual values anywhere else.
 - **Markdown content is sacred** — `src/content/docs/**/*.md` was migrated as-is. Style it via the
-  `.prose` rules in `global.css`; do **not** edit content files to achieve a look.
+  `.ax-prose` rules in `global.css`; do **not** edit content files to achieve a look.
 - **Landing page (`src/pages/index.astro`) is a blank canvas** — intentionally bare. Build the real hero/hub here.
-- **Dark-only right now.** No theme toggle. Fonts (`Inter`, `JetBrains Mono`) are *named* in tokens
-  but **not actually loaded** — they fall back to system fonts until you add the webfonts.
+- **Dark-only.** No theme toggle. Fonts are **Geist / Geist Mono**, loaded via `<link>` in `BaseLayout.astro`.
+- **Class convention:** chrome and prose use the design's `.ax-*` prefix (e.g. `.ax-prose`, `.ax-admon`,
+  `.ax-toc`, `.ax-docs-sidebar`). Future handoffs in the same convention drop in cleanly.
+- **Search is Pagefind** — indexed at build (`bun run build` runs `pagefind --site dist`); live under
+  `preview`/prod, inert in `astro dev`.
 - After editing any remark/rehype plugin, **`rm -rf .astro dist` before rebuilding** (Astro caches parsed content).
 
 ---
@@ -31,7 +35,9 @@ the **design pass** — the structure exists; the visuals are deliberately minim
 | Styling | **Tailwind CSS v4** via `@tailwindcss/vite` (CSS-first `@theme`, no `tailwind.config.js`) |
 | Markdown | `.md` content collection; **MDX** integration available for future interactive pages |
 | Code highlighting | **Shiki** (`github-dark` theme), built into Astro |
-| Diagrams | **astro-mermaid** (client-side render, dark theme) |
+| Heading anchors | **rehype-slug** + **rehype-autolink-headings** (hover `#` on h2–h4) |
+| Diagrams | **astro-mermaid** (client-side, cosmic-dark `themeVariables` in `astro.config.mjs`) |
+| Search | **Pagefind** (static index built into `dist/pagefind/`; ⌘K modal in `Search.astro`) |
 | Package manager | **bun** |
 | Deploy | **Vercel** (static), custom domain `agentx.thejpnet.net` |
 
@@ -44,33 +50,33 @@ Commands (from `docs-site/`): `bun install` · `bun run dev` (→ http://localho
 
 ```
 docs-site/
-├─ astro.config.mjs          Integrations (mermaid→mdx), Shiki theme, remark plugin wiring, site URL
+├─ astro.config.mjs          Integrations (mermaid→mdx), Shiki, remark+rehype wiring, mermaid theme, site URL
 ├─ src/
-│  ├─ styles/global.css      ★ THE TOKEN LAYER — all design decisions live here
+│  ├─ styles/global.css      ★ THE TOKEN LAYER + .ax-prose / .ax-admon / .ax-toc / docs @media
 │  ├─ config/
 │  │  ├─ site.ts             Site metadata (name, description, repo, docsBasePath, copyright)
-│  │  └─ nav.ts              ★ Docs sidebar structure (ported from old mkdocs.yml nav) + helpers
+│  │  └─ nav.ts              ★ Docs sidebar structure + helpers (slugToHref, groupForSlug, editUrlForSlug…)
 │  ├─ content.config.ts      `docs` collection: glob loader over content/docs
 │  ├─ content/docs/          ★ 27 migrated markdown files (untouched) — the actual docs content
 │  ├─ layouts/
-│  │  ├─ BaseLayout.astro    <html> shell, <head>, imports global.css — used by every page
-│  │  └─ DocsLayout.astro    Docs chrome: Header + MobileNav + (Sidebar | article.prose | TOC) + Footer
-│  ├─ components/layout/
-│  │  ├─ Header.astro        Sticky top bar (brand + Docs/GitHub links)
-│  │  ├─ Sidebar.astro       Renders nav.ts → groups + links
-│  │  ├─ SidebarGroup.astro  A labeled section of sidebar links
-│  │  ├─ SidebarLink.astro   One link; resolves /docs/<slug>; active-state highlight
-│  │  ├─ TableOfContents.astro  Right-rail "On this page" from heading data (depth 2–3)
-│  │  ├─ MobileNav.astro     <details> disclosure wrapping Sidebar for < lg screens
-│  │  └─ Footer.astro        Copyright + repo link
+│  │  ├─ BaseLayout.astro    <html> shell, <head>, global.css + Geist <link> — used by every page
+│  │  └─ DocsLayout.astro    Docs shell: mobile top bar + drawer, breadcrumb, (Sidebar | article | TOC), article footer
+│  ├─ components/
+│  │  ├─ icons/GitHubGlyph.astro   GitHub mark (currentColor)
+│  │  └─ layout/
+│  │     ├─ Sidebar.astro          Brand + GitHub pill + Search + nav (sticky/drawer)
+│  │     ├─ SidebarGroup.astro     Mono-uppercase group label + links
+│  │     ├─ SidebarLink.astro      One link; color dot (subsystems) + active pill
+│  │     ├─ Search.astro           ⌘K box + Pagefind-backed modal
+│  │     └─ TableOfContents.astro  Right rail "On this page" (scroll-spy) + source/issue links
 │  ├─ pages/
-│  │  ├─ index.astro         ★ Bare landing at /  (your hero/hub goes here)
-│  │  ├─ docs/[...slug].astro Renders every docs entry under /docs (id "index" → /docs)
+│  │  ├─ index.astro         ★ Bare landing at /  (the next design pass's hero/hub)
+│  │  ├─ docs/[...slug].astro Renders docs under /docs; computes last-edited (git) + edit URL
 │  │  └─ 404.astro           Custom not-found
 │  └─ plugins/
 │     ├─ remark-rewrite-md-links.mjs  Internal *.md links → /docs/... routes
-│     └─ remark-admonitions.mjs       MkDocs `!!! type "title"` → <aside class="admonition …">
-└─ public/favicon.svg
+│     └─ remark-admonitions.mjs       MkDocs `!!! type "title"` → <aside class="ax-admon" data-kind="…">
+└─ public/                   favicon.svg · favicon.ico · AgentX-Logo-v3-badge.png · (pagefind/ at build)
 ```
 
 ---
@@ -80,59 +86,52 @@ docs-site/
 ### The token layer — `src/styles/global.css`
 
 Tailwind v4 reads design tokens from a CSS `@theme { … }` block. **Defining a variable there both
-sets the value and generates the matching utility class.** Current tokens (neutral indigo-on-dark
-defaults — change freely):
+sets the value and generates the matching utility class.** Current tokens (cosmic-dark + indigo, from
+the "claude design" handoff):
 
-| Token | Value | Generated utilities | Used for |
-|---|---|---|---|
-| `--color-bg` | `#0b0d12` | `bg-bg`, `text-bg`… | page background |
-| `--color-surface` | `#12151c` | `bg-surface`… | cards, table stripes |
-| `--color-surface-2` | `#1a1e27` | `bg-surface-2`… | hover, inline-code bg, table headers |
-| `--color-border` | `#262b36` | `border-border`… | all hairlines |
-| `--color-code-bg` | `#0e1117` | `bg-code-bg`… | code block background (Shiki override) |
-| `--color-text` | `#e6e8ee` | `text-text`… | body text |
-| `--color-text-muted` | `#9aa3b2` | `text-text-muted`… | secondary text, nav idle |
-| `--color-accent` | `#6366f1` (indigo-500) | `bg-accent`, `text-accent`… | brand, links, active states |
-| `--color-accent-hover` | `#818cf8` | `bg-accent-hover`… | hover |
-| `--color-accent-subtle` | `#1e1b4b` | `bg-accent-subtle`… | active sidebar pill |
-| `--color-accent-fg` | `#ffffff` | `text-accent-fg`… | text on an accent fill |
-| `--color-note` / `--color-warning` / `--color-danger` | accent / `#f59e0b` / `#ef4444` | — | admonition accents |
-| `--font-sans` / `--font-mono` | Inter… / JetBrains Mono… | `font-sans` / `font-mono` | typography (see fonts note) |
-| `--radius-card` / `--radius-sm` | `0.75rem` / `0.375rem` | `rounded-card` / `rounded-sm` | shape |
-| `--layout-sidebar-width` / `--layout-toc-width` / `--layout-content-max` | `17rem` / `14rem` / `52rem` | *(none — see below)* | layout dimensions |
+| Token group | Tokens | Notes |
+|---|---|---|
+| Surfaces | `--color-bg` `#07080c` (deepest) · `--color-bg-2` `#0b0d12` (page) · `--color-surface` `#11141c` · `--color-surface-2` `#181c27` · `--color-surface-3` `#222633` · `--color-code-bg` `#0a0d14` | `bg-*`/`text-*` utilities |
+| Borders | `--color-border` `#262b38` · `--color-border-2` `#343a4c` | `border-*` |
+| Text | `--color-text` `#e6e8ee` · `--color-text-strong` `#ffffff` · `--color-text-muted` `#8b94a5` · `--color-text-dim` `#5a6478` | body / headings / secondary / faint |
+| Accent | `--color-accent` `#6366f1` · `--color-accent-hover` `#818cf8` · `--color-accent-subtle` `#1e1b4b` · `--color-accent-fg` `#fff` | brand, links, active states |
+| Status | `--color-ok` `#10b981` · `--color-warning` `#f59e0b` · `--color-danger` `#ef4444` | — |
+| Subsystem accents | `--c-agent` `--c-reasoning` `--c-drafting` `--c-mcp` `--c-providers` `--c-prompts` `--c-memory` `--c-translation` | dots/tags only; **plain vars** (no utilities), used via `var(--c-*)` — see nav.ts Features color dots & admonition `note` accent |
+| Type | `--font-sans` / `--font-display` (Geist) · `--font-mono` (Geist Mono) | `font-sans` / `font-display` / `font-mono` |
+| Shape | `--radius-card` `0.75rem` · `--radius-sm` `0.375rem` · `--radius-pill` `999px` | `rounded-card` / `-sm` / `-pill` |
+| Layout | `--layout-sidebar-width` `17rem` · `--layout-toc-width` `14rem` · `--layout-docs-max` `90rem` · `--layout-article-max` `47.5rem` · `--layout-content-max` `72rem` | *(no utilities — see below)* |
 
 **Two mechanics to know:**
 
 1. **`--color-*`, `--font-*`, `--radius-*` are Tailwind "namespaces"** → they auto-generate
-   `bg-*`/`text-*`/`border-*`, `font-*`, `rounded-*`. `--layout-*` is **not** a namespace, so it
-   generates no utilities; those are referenced as arbitrary CSS-var utilities, e.g.
-   `w-(--layout-sidebar-width)`, `max-w-(--layout-content-max)`. Use this same pattern if you add
-   non-namespaced tokens.
+   `bg-*`/`text-*`/`border-*`, `font-*`, `rounded-*`. `--layout-*` and `--c-*` are **not** namespaces,
+   so they generate no utilities; reference them as arbitrary CSS-var utilities
+   (`w-(--layout-sidebar-width)`) or via `var(--c-agent)` in scoped component styles.
 2. The token names produce a few **awkward utilities** (`bg-bg`, `text-text`). If that bothers you,
-   rename the tokens (e.g. `--color-base`, `--color-fg`) — just update the consuming components too.
-   Grep is your friend; usages are shallow.
+   rename the tokens — just update the consuming components too. Grep is your friend; usages are shallow.
 
 Below the `@theme` block, `global.css` also contains the **`.prose` rules** (styling for rendered
 markdown), **`.admonition` rules**, and **`.mermaid` rules** — all written in plain CSS that reads
 `var(--token)`. This is where most of the "docs look" lives. Restyle headings, tables, code blocks,
 callouts, etc. here.
 
-### Fonts (action needed)
+### Fonts
 
-`--font-sans`/`--font-mono` reference **Inter** and **JetBrains Mono**, but **no webfont is loaded** —
-they currently fall back to `system-ui` / `ui-monospace`. To actually use them, add the fonts
-(e.g. `@fontsource-variable/inter`, imported once in `BaseLayout` or `global.css`) — or pick your
-own and update the two tokens. One place to change.
+`--font-sans`/`--font-display` are **Geist** and `--font-mono` is **Geist Mono**, loaded via a Google
+Fonts `<link>` in `BaseLayout.astro` (with `preconnect`). To swap typefaces: change the `<link>` and
+the three font tokens — one place each.
 
 ### Layout & components
 
-- **`DocsLayout.astro`** owns the docs page frame: a centered `max-w-[88rem]` flex row of
-  `Sidebar | main(article.prose) | TableOfContents`, with a sticky `Header` and a `Footer`. Sidebar
-  hides below `lg`; TOC hides below `xl`; `MobileNav` (a `<details>`) covers small screens.
-- Components are intentionally **small and single-purpose** so you can restructure freely. Sidebar
-  is split Sidebar → SidebarGroup → SidebarLink; swap the markup/classes without touching nav data.
-- **Active states / routing helpers** live in `nav.ts` (`slugToHref`, `labelForSlug`, `isGroup`) —
-  reuse them; don't hand-roll URL logic.
+- **`DocsLayout.astro`** owns the docs page frame: a centered `--layout-docs-max` flex row of
+  `Sidebar | main(article.ax-prose) | TableOfContents` (no top header/footer — brand lives in the
+  sidebar). The sidebar is sticky full-height; the TOC hides ≤1024px; ≤720px a sticky mobile top bar
+  + hamburger drives a slide-in sidebar drawer (vanilla `<script>` in the layout). Breadcrumb sits
+  above the article; an edit-link + last-edited line below it.
+- Components are intentionally **small and single-purpose**. Sidebar is split Sidebar → SidebarGroup →
+  SidebarLink; swap markup/classes without touching nav data.
+- **Routing/breadcrumb helpers** live in `nav.ts` (`slugToHref`, `labelForSlug`, `groupForSlug`,
+  `isGroup`, `editUrlForSlug`, `sourceUrlForSlug`) — reuse them; don't hand-roll URL logic.
 
 ### Special content rendering
 
@@ -140,12 +139,14 @@ own and update the two tokens. One place to change.
   colors; we override only the *background* to `--color-code-bg` (`!important`, because Shiki sets an
   inline bg). To change the syntax theme entirely, edit `markdown.shikiConfig.theme` in
   `astro.config.mjs` (single or dual themes supported).
-- **Admonitions:** rendered as `<aside class="admonition admonition-{note|warning|danger|…}">` with a
-  `<p class="admonition-title">`. Per-type accent is driven by `--admonition-accent` set per class in
-  `global.css`. Add new types by adding a `.admonition-<type>` rule.
-- **Mermaid:** `astro-mermaid` turns ` ```mermaid ` fences into `<pre class="mermaid">` rendered
-  client-side with `theme: 'dark'`. To match diagram colors to the brand, pass `mermaidConfig`
-  (theme variables) to the integration in `astro.config.mjs`. Style the container via `.prose pre.mermaid`.
+- **Admonitions:** rendered by `remark-admonitions.mjs` as `<aside class="ax-admon" data-kind="{note|tip|info|warning|danger}">`
+  with a `<p class="ax-admon-title">`. Per-kind accent + tint are set per `[data-kind]` in `global.css`
+  (`note`→`--c-agent`, `tip`→`--color-ok`, `warning`/`danger`→status). Add a kind by adding a `[data-kind="…"]` rule.
+- **Mermaid:** `astro-mermaid` renders ` ```mermaid ` fences client-side. Themed via `theme: 'base'`
+  + a full cosmic-dark `themeVariables` object in `astro.config.mjs` (`autoTheme: false`, since the
+  site is dark-only). Container styled via `.ax-prose .mermaid`.
+- **Heading anchors:** `rehype-autolink-headings` appends a hover `#` link (`a.anchor`) to h2–h4
+  (h1's is hidden in CSS). Styled in the `.ax-prose` heading rules.
 
 ---
 
@@ -167,7 +168,7 @@ own and update the two tokens. One place to change.
    utilities (`bg-surface`, `text-accent`, `rounded-card`) or `var(--token)`. This is what makes a
    one-file redesign possible — preserve it.
 2. **Don't edit content for styling.** `src/content/docs/**` is migrated as-is and may be re-synced
-   from `../docs`. Achieve looks via `.prose`/components, not by touching markdown.
+   from `../docs`. Achieve looks via `.ax-prose`/components, not by touching markdown.
 3. **Keep components small and composable.** Prefer adding/splitting a component over growing one.
 4. **MDX is available** if you need a bespoke interactive page, but the docs themselves should stay `.md`.
 
@@ -182,18 +183,18 @@ own and update the two tokens. One place to change.
   `remark-admonitions.mjs`). It also affects how titles/strings appear in output.
 - **No `curl` in some sandboxes** — for smoke-testing the preview server use Node's built-in `fetch`.
 - Tailwind v4 has **no config file**; don't look for `tailwind.config.js`. Everything is `@theme` + CSS.
+- **Pagefind index only exists after a build.** `bun run build` runs `pagefind --site dist`; the ⌘K
+  modal is live under `bun run preview`/prod but inert in `astro dev` (shows a graceful notice).
 
 ---
 
 ## What's intentionally unfinished (good first targets)
 
-- **Landing page** (`pages/index.astro`): currently a centered title + button. This is the hub hero —
-  design it fully. The site is meant to grow into a project hub (docs are one large module).
+- **Landing page** (`pages/index.astro`): still a bare centered title + button. This is the hub hero —
+  the next design pass owns it. The design handoff's `landing.jsx` / `system-map.jsx` (in the zip)
+  are the reference. The site is meant to grow into a project hub (docs are one large module).
 - **Theme**: dark-only. If a light theme is wanted, introduce theming (e.g. tokens under
-  `:root` / `[data-theme="light"]`) plus a toggle — the token layer is structured to make this a
-  localized change.
-- **Webfonts**: load Inter / JetBrains Mono (or your picks) — see Fonts note.
-- **Header/Footer/TOC/Sidebar** styling is functional but plain — all open for visual treatment.
+  `:root` / `[data-theme="light"]`) plus a toggle — the token layer is structured to localize this.
 
-Brand reference: logo/banner assets live at repo root (`AgentX-Logo-v3-banner.png`, `…-badge.png`);
-primary accent is indigo (`#6366f1`); aesthetic direction is "glassbox / cosmic dark."
+Brand reference: logo/banner assets at repo root (`AgentX-Logo-v3-banner.png`, `…-badge.png`); badge
+also in `public/`. Primary accent is indigo (`#6366f1`); direction is "glassbox / cosmic dark", Geist type.

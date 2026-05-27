@@ -1,45 +1,263 @@
 ---
 import type { MarkdownHeading } from 'astro';
 import BaseLayout from './BaseLayout.astro';
-import Header from '../components/layout/Header.astro';
-import Footer from '../components/layout/Footer.astro';
 import Sidebar from '../components/layout/Sidebar.astro';
-import MobileNav from '../components/layout/MobileNav.astro';
 import TableOfContents from '../components/layout/TableOfContents.astro';
+import GitHubGlyph from '../components/icons/GitHubGlyph.astro';
+import { groupForSlug, labelForSlug } from '../config/nav';
+import { site } from '../config/site';
 
 interface Props {
   title?: string;
   description?: string;
   currentSlug: string;
   headings: MarkdownHeading[];
+  editUrl: string;
+  lastEdited?: string;
 }
 
-const { title, description, currentSlug, headings } = Astro.props;
+const { title, description, currentSlug, headings, editUrl, lastEdited } = Astro.props;
+
+const group = groupForSlug(currentSlug);
+const pageLabel = labelForSlug(currentSlug) ?? title;
+const isHome = currentSlug === '';
 ---
 
 <BaseLayout title={title} description={description}>
-  <Header />
-  <MobileNav currentSlug={currentSlug} />
-
-  <div class="mx-auto flex w-full max-w-[88rem] gap-8 px-4">
-    <aside class="hidden w-(--layout-sidebar-width) shrink-0 py-8 lg:block">
-      <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2">
-        <Sidebar currentSlug={currentSlug} />
-      </div>
-    </aside>
-
-    <main class="min-w-0 flex-1 py-8">
-      <article class="prose">
-        <slot />
-      </article>
-    </main>
-
-    <aside class="hidden w-(--layout-toc-width) shrink-0 py-8 xl:block">
-      <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
-        <TableOfContents headings={headings} />
-      </div>
-    </aside>
+  {/* Mobile-only top bar */}
+  <div class="ax-docs-topbar">
+    <a href="/" class="topbar-brand">
+      <img src="/AgentX-Logo-v3-badge.png" alt="" width="26" height="26" class="topbar-badge" />
+      <span class="ax-wordmark topbar-name">AgentX</span>
+      <span class="ax-mono topbar-tag">docs</span>
+    </a>
+    <button type="button" class="topbar-menu" data-drawer-open aria-label="Open navigation">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+      </svg>
+      Menu
+    </button>
   </div>
 
-  <Footer />
+  <div class="ax-docs-layout">
+    <Sidebar currentSlug={currentSlug} />
+
+    <main>
+      <div class="article-shell">
+        <nav class="ax-prose-breadcrumb" aria-label="Breadcrumb">
+          <div class="crumbs">
+            <a href={site.docsBasePath}>Docs</a>
+            {group && (
+              <>
+                <span class="sep">/</span>
+                <span class="crumb-group">{group}</span>
+              </>
+            )}
+            {!isHome && pageLabel && (
+              <>
+                <span class="sep">/</span>
+                <span class="crumb-current">{pageLabel}</span>
+              </>
+            )}
+          </div>
+          <a href={editUrl} target="_blank" rel="noopener" class="edit-link">
+            <GitHubGlyph size={12} /> edit
+          </a>
+        </nav>
+
+        <article class="ax-prose" data-pagefind-body>
+          <slot />
+        </article>
+
+        <footer class="article-footer">
+          <a href={editUrl} target="_blank" rel="noopener" class="edit-link">
+            <GitHubGlyph size={12} /> Edit this page
+          </a>
+          {lastEdited && <span class="last-edited">last edited {lastEdited} · {site.repoName} · master</span>}
+        </footer>
+      </div>
+    </main>
+
+    <aside class="ax-docs-toc ax-scroll">
+      <TableOfContents headings={headings} currentSlug={currentSlug} />
+    </aside>
+  </div>
 </BaseLayout>
+
+<style>
+  .ax-docs-layout {
+    display: flex;
+    align-items: flex-start;
+    max-width: var(--layout-docs-max);
+    margin: 0 auto;
+  }
+
+  main {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 48px 56px 96px;
+    max-width: calc(100% - var(--layout-sidebar-width) - var(--layout-toc-width));
+  }
+  .article-shell {
+    max-width: var(--layout-article-max);
+    margin: 0 auto;
+  }
+
+  .ax-docs-toc {
+    width: var(--layout-toc-width);
+    flex: 0 0 var(--layout-toc-width);
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px 16px 48px 24px;
+  }
+
+  /* Breadcrumb */
+  .ax-prose-breadcrumb {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 28px;
+  }
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+  }
+  .crumbs a,
+  .crumb-group {
+    color: var(--color-text-muted);
+  }
+  .crumb-current {
+    color: var(--color-text-strong);
+  }
+  .sep {
+    color: var(--color-text-dim);
+  }
+
+  .edit-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    letter-spacing: 0.06em;
+  }
+  .edit-link:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-2);
+  }
+
+  .article-footer {
+    margin-top: 56px;
+    padding-top: 28px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .last-edited {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--color-text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  /* Mobile top bar (shown ≤720px via global.css) */
+  .ax-docs-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in oklab, var(--color-bg-2) 94%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  .topbar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-text);
+  }
+  .topbar-badge {
+    border-radius: 6px;
+  }
+  .topbar-name {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .topbar-tag {
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 10px;
+  }
+  .topbar-menu {
+    appearance: none;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+</style>
+
+<script>
+  // Mobile drawer: hamburger opens the sidebar; backdrop / Esc / link-click closes it.
+  const sidebar = document.querySelector<HTMLElement>('[data-docs-sidebar]');
+  const openBtn = document.querySelector<HTMLButtonElement>('[data-drawer-open]');
+  const closeBtn = document.querySelector<HTMLButtonElement>('[data-drawer-close]');
+
+  if (sidebar && openBtn) {
+    let backdrop: HTMLElement | null = null;
+
+    const close = () => {
+      sidebar.dataset.open = 'false';
+      document.body.style.overflow = '';
+      backdrop?.remove();
+      backdrop = null;
+    };
+
+    const open = () => {
+      sidebar.dataset.open = 'true';
+      document.body.style.overflow = 'hidden';
+      backdrop = document.createElement('div');
+      backdrop.className = 'ax-drawer-backdrop';
+      backdrop.addEventListener('click', close);
+      document.body.appendChild(backdrop);
+    };
+
+    openBtn.addEventListener('click', open);
+    closeBtn?.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sidebar.dataset.open === 'true') close();
+    });
+    // Close when a nav link inside the drawer is followed.
+    sidebar.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('a') && sidebar.dataset.open === 'true') close();
+    });
+  }
+</script>

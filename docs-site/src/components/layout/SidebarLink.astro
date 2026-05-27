@@ -5,9 +5,10 @@ interface Props {
   label: string;
   slug: string;
   currentSlug: string;
+  color?: string;
 }
 
-const { label, slug, currentSlug } = Astro.props;
+const { label, slug, currentSlug, color } = Astro.props;
 const href = slugToHref(slug);
 const isActive = slug === currentSlug;
 ---
@@ -15,12 +16,55 @@ const isActive = slug === currentSlug;
 <a
   href={href}
   aria-current={isActive ? 'page' : undefined}
-  class:list={[
-    'block rounded-sm px-3 py-1.5 text-sm transition-colors',
-    isActive
-      ? 'bg-accent-subtle text-accent font-medium'
-      : 'text-text-muted hover:bg-surface-2 hover:text-text',
-  ]}
+  class:list={['sidebar-link', { active: isActive }]}
 >
-  {label}
+  {color && <span class="dot" style={`--dot:${color}`} aria-hidden="true"></span>}
+  <span class="label">{label}</span>
 </a>
+
+<style>
+  .sidebar-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px 6px 14px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--color-text-muted);
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .sidebar-link:hover {
+    color: var(--color-text);
+    background: color-mix(in oklab, var(--color-surface) 70%, transparent);
+  }
+  .sidebar-link.active {
+    color: var(--color-text-strong);
+    background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  }
+  .sidebar-link.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--color-accent);
+  }
+  .dot {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--dot);
+    box-shadow: 0 0 6px var(--dot);
+  }
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

@@ -3,48 +3,72 @@
 /* ============================================================================
  * DESIGN TOKEN LAYER — the single source of truth for the entire site.
  *
- * Every color, font, radius, and key spacing value lives here. Components and
- * prose styles below consume these tokens only; nothing hardcodes a raw value.
- * A redesign happens by editing this block — not by touching components.
+ * Every color, font, radius, and key dimension lives here as a Tailwind v4
+ * `@theme` variable. Components and prose styles below consume these tokens
+ * only; nothing hardcodes a raw value. A redesign happens by editing this
+ * block — not by touching components.
  *
- * NOTE: these are neutral, legible defaults for the content/infra pass. A later
- * design pass overhauls the values here without changing the structure.
+ * Values ported from the "claude design" handoff (theme.css): a cosmic-dark
+ * base with an indigo brand and per-subsystem semantic accents. Fonts are
+ * Geist / Geist Mono, loaded via <link> in BaseLayout.astro.
  * ========================================================================== */
 @theme {
-  /* Surfaces — indigo-tinted cosmic dark */
-  --color-bg: #0b0d12;
-  --color-surface: #12151c;
-  --color-surface-2: #1a1e27;
-  --color-border: #262b36;
-  --color-code-bg: #0e1117;
+  /* Surfaces — cosmic dark, indigo-tinted */
+  --color-bg: #07080c;        /* deepest */
+  --color-bg-2: #0b0d12;      /* page bg */
+  --color-surface: #11141c;
+  --color-surface-2: #181c27;
+  --color-surface-3: #222633;
+  --color-border: #262b38;
+  --color-border-2: #343a4c;
+  --color-code-bg: #0a0d14;
 
   /* Text */
   --color-text: #e6e8ee;
-  --color-text-muted: #9aa3b2;
+  --color-text-strong: #ffffff;
+  --color-text-muted: #8b94a5;
+  --color-text-dim: #5a6478;
 
-  /* Brand accent — indigo */
-  --color-accent: #6366f1;        /* indigo-500 */
-  --color-accent-hover: #818cf8;  /* indigo-400 */
-  --color-accent-subtle: #1e1b4b; /* indigo-950 */
-  --color-accent-fg: #ffffff;     /* text on an accent fill */
+  /* Brand accent — indigo ("agent / orchestration") */
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-subtle: #1e1b4b;
+  --color-accent-fg: #ffffff;
 
-  /* Admonition accents */
-  --color-note: var(--color-accent);
+  /* Semantic subsystem accents — used as small tags / dots / underlines,
+     never as full backgrounds. Not in a Tailwind namespace, so they emit as
+     plain vars (referenced via var(--c-*)). */
+  --c-agent: #818cf8;       /* indigo-400  — agent core   */
+  --c-reasoning: #c084fc;   /* purple-400  — reasoning    */
+  --c-drafting: #fb923c;    /* orange-400  — drafting     */
+  --c-mcp: #f43f5e;         /* rose-500    — MCP / tools  */
+  --c-providers: #fbbf24;   /* amber-400   — providers    */
+  --c-prompts: #2dd4bf;     /* teal-400    — prompts      */
+  --c-memory: #22d3ee;      /* cyan-400    — memory       */
+  --c-translation: #34d399; /* emerald-400 — translation  */
+
+  /* Status colors */
+  --color-ok: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
 
   /* Typography */
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: "Geist", system-ui, -apple-system, sans-serif;
+  --font-display: "Geist", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 
   /* Shape */
   --radius-card: 0.75rem;
   --radius-sm: 0.375rem;
+  --radius-pill: 999px;
 
-  /* Layout */
+  /* Layout dimensions (referenced via arbitrary utilities, e.g.
+     w-(--layout-sidebar-width), or via var() in components). */
   --layout-sidebar-width: 17rem;
   --layout-toc-width: 14rem;
-  --layout-content-max: 52rem;
+  --layout-docs-max: 90rem;       /* the docs 3-column shell (~1440px) */
+  --layout-article-max: 47.5rem;  /* the article column (~760px)       */
+  --layout-content-max: 72rem;    /* generic centered content          */
 }
 
 /* ============================================================================
@@ -59,9 +83,12 @@ html {
 }
 
 body {
-  background: var(--color-bg);
+  background: var(--color-bg-2);
   color: var(--color-text);
   font-family: var(--font-sans);
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -74,158 +101,529 @@ a:hover {
   color: var(--color-accent-hover);
 }
 
-/* Honour scroll-margin so anchored headings aren't hidden under sticky headers. */
+/* Honour scroll-margin so anchored headings aren't hidden under sticky chrome. */
 :target {
   scroll-margin-top: 5rem;
 }
 
 /* ============================================================================
- * PROSE — styling for rendered Markdown content (custom, token-driven).
- * Scoped to `.prose` so it never leaks into layout chrome.
+ * SHARED HELPERS — small utilities from the design system, reused by chrome.
  * ========================================================================== */
-.prose {
-  color: var(--color-text);
-  line-height: 1.7;
-  font-size: 1rem;
-  max-width: var(--layout-content-max);
-}
 
-.prose h1,
-.prose h2,
-.prose h3,
-.prose h4 {
-  color: var(--color-text);
-  font-weight: 650;
-  line-height: 1.25;
-  scroll-margin-top: 5rem;
-}
-.prose h1 { font-size: 2rem; margin: 0 0 1.25rem; }
-.prose h2 {
-  font-size: 1.5rem;
-  margin: 2.5rem 0 1rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--color-border);
-}
-.prose h3 { font-size: 1.2rem; margin: 2rem 0 0.75rem; }
-.prose h4 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
-
-.prose p,
-.prose ul,
-.prose ol {
-  margin: 0 0 1.1rem;
-}
-
-.prose ul,
-.prose ol {
-  padding-left: 1.4rem;
-}
-.prose li { margin: 0.3rem 0; }
-.prose li::marker { color: var(--color-text-muted); }
-
-.prose strong { color: var(--color-text); font-weight: 650; }
-
-.prose blockquote {
-  margin: 1.25rem 0;
-  padding: 0.25rem 1rem;
-  border-left: 3px solid var(--color-accent);
+/* Small uppercase mono label used throughout the chrome. */
+.ax-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--color-text-muted);
 }
 
-.prose hr {
-  margin: 2rem 0;
-  border: 0;
-  border-top: 1px solid var(--color-border);
+/* Display wordmark. */
+.ax-wordmark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--color-text-strong);
+  line-height: 0.95;
 }
 
-/* Inline code */
-.prose :not(pre) > code {
+/* Scrollbars inside scrollable rails. */
+.ax-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.ax-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-2);
+  border-radius: 4px;
+}
+.ax-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================================
+ * PROSE — styling for rendered Markdown content (ported from prose.css).
+ * Scoped to `.ax-prose` so it never leaks into layout chrome. Maps to the
+ * elements emitted by the Markdown pipeline: h1..h4, p, ul/ol, blockquote,
+ * pre/code, table, hr, a, kbd, .mermaid, and rehype-autolink `a.anchor`.
+ * ========================================================================== */
+.ax-prose {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  line-height: 1.7;
+  font-size: 16px;
+  text-wrap: pretty;
+  max-width: 100%;
+}
+
+.ax-prose > * + * {
+  margin-top: 1.15em;
+}
+.ax-prose > h2,
+.ax-prose > h3 {
+  margin-top: 2.2em;
+}
+.ax-prose > h2 + *,
+.ax-prose > h3 + * {
+  margin-top: 0.6em;
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────── */
+.ax-prose h1 {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--color-text-strong);
+  margin: 0 0 0.4em;
+  text-wrap: balance;
+}
+.ax-prose h2 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--color-text-strong);
+  padding-top: 0.4em;
+  position: relative;
+  scroll-margin-top: 5rem;
+}
+.ax-prose h2::before {
+  content: "§";
+  position: absolute;
+  left: -1.1em;
+  top: 0.45em;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.ax-prose h3 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--color-text-strong);
+  scroll-margin-top: 5rem;
+}
+.ax-prose h4 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-strong);
+  letter-spacing: -0.005em;
+  scroll-margin-top: 5rem;
+}
+
+/* anchor links on headings (rehype-autolink-headings, behavior: append) */
+.ax-prose h1 a.anchor {
+  display: none; /* the page title needs no self-link */
+}
+.ax-prose h2 a.anchor,
+.ax-prose h3 a.anchor,
+.ax-prose h4 a.anchor {
+  color: var(--color-text-dim);
+  margin-left: 0.4em;
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.ax-prose h2:hover a.anchor,
+.ax-prose h3:hover a.anchor,
+.ax-prose h4:hover a.anchor {
+  opacity: 1;
+}
+
+/* ── Body text ────────────────────────────────────────────────────────── */
+.ax-prose p {
+  margin: 0;
+  color: var(--color-text);
+}
+.ax-prose .lede {
+  font-size: 18px;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  margin-top: 0.6em;
+  max-width: 60ch;
+}
+
+.ax-prose strong {
+  color: var(--color-text-strong);
+  font-weight: 600;
+}
+.ax-prose em {
+  font-style: italic;
+  color: var(--color-text);
+}
+
+.ax-prose a:not(.anchor) {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-accent-hover) 35%, transparent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.15s ease;
+}
+.ax-prose a:not(.anchor):hover {
+  text-decoration-color: var(--color-accent-hover);
+}
+
+/* ── Inline code & code blocks ────────────────────────────────────────── */
+.ax-prose :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.875em;
+  padding: 0.12em 0.4em;
+  border-radius: 4px;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 0.1rem 0.35rem;
+  color: var(--color-text-strong);
 }
-
 /* Shiki code blocks (.astro-code) — align background with the token palette. */
-.prose pre.astro-code {
+.ax-prose pre {
+  margin: 1.5em 0 0;
+  padding: 18px 20px;
   background: var(--color-code-bg) !important;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  padding: 1rem 1.1rem;
-  margin: 0 0 1.25rem;
-  overflow-x: auto;
-  font-size: 0.875rem;
-  line-height: 1.6;
-}
-.prose pre.astro-code code {
+  overflow: auto;
   font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text);
+}
+.ax-prose pre code {
   background: transparent;
   border: 0;
   padding: 0;
+  color: inherit;
+  font-family: var(--font-mono);
 }
 
-/* Tables */
-.prose table {
+/* ── Lists ───────────────────────────────────────────────────────────── */
+.ax-prose ul,
+.ax-prose ol {
+  margin: 0;
+  padding-left: 1.25em;
+  display: grid;
+  gap: 0.35em;
+}
+.ax-prose li::marker {
+  color: var(--color-text-dim);
+}
+.ax-prose li > ul,
+.ax-prose li > ol {
+  margin-top: 0.35em;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────── */
+.ax-prose table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0 0 1.25rem;
-  font-size: 0.92rem;
-}
-.prose th,
-.prose td {
+  margin-top: 1.5em;
+  font-size: 13.5px;
+  font-family: var(--font-sans);
   border: 1px solid var(--color-border);
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  display: block;
+  overflow-x: auto;
+}
+.ax-prose thead {
+  background: color-mix(in oklab, var(--color-surface-2) 75%, transparent);
+}
+.ax-prose th {
   text-align: left;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.ax-prose td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
   vertical-align: top;
+  color: var(--color-text);
 }
-.prose th {
-  background: var(--color-surface-2);
-  font-weight: 600;
+.ax-prose tbody tr:last-child td {
+  border-bottom: 0;
 }
-.prose tr:nth-child(even) td {
-  background: var(--color-surface);
+.ax-prose tbody tr:hover td {
+  background: color-mix(in oklab, var(--color-surface) 60%, transparent);
+}
+.ax-prose td code {
+  font-size: 12.5px;
 }
 
-.prose img {
+.ax-prose img {
   max-width: 100%;
   border-radius: var(--radius-card);
 }
 
-/* ============================================================================
- * ADMONITIONS — produced by remark-admonitions as <aside class="admonition …">.
- * The left border + title color key off the per-type token.
- * ========================================================================== */
-.admonition {
-  margin: 1.25rem 0;
-  padding: 0.85rem 1rem;
-  background: var(--color-surface);
+/* ── Blockquote ───────────────────────────────────────────────────────── */
+.ax-prose blockquote {
+  margin: 0;
+  padding: 14px 16px 14px 18px;
+  border-left: 3px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 7%, var(--color-surface));
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  color: var(--color-text);
+  font-size: 14.5px;
+}
+.ax-prose blockquote > p {
+  margin: 0;
+}
+.ax-prose blockquote > p + p {
+  margin-top: 0.6em;
+}
+
+/* ── HR ──────────────────────────────────────────────────────────────── */
+.ax-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2em 0;
+}
+
+/* ── Keyboard shortcut ────────────────────────────────────────────────── */
+.ax-prose kbd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-2);
+  border-bottom-width: 2px;
+  background: var(--color-surface-2);
+  color: var(--color-text-strong);
+}
+
+/* ── Mermaid diagrams ────────────────────────────────────────────────── */
+.ax-prose .mermaid {
+  margin-top: 1.5em;
+  padding: 24px;
+  background: var(--color-code-bg);
   border: 1px solid var(--color-border);
-  border-left: 4px solid var(--admonition-accent, var(--color-note));
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-card);
+  text-align: center;
 }
-.admonition > :last-child { margin-bottom: 0; }
-.admonition-title {
-  margin: 0 0 0.4rem;
-  font-weight: 650;
-  font-size: 0.95rem;
-  color: var(--admonition-accent, var(--color-note));
+.ax-prose .mermaid svg {
+  max-width: 100%;
+  height: auto;
 }
-.admonition-note { --admonition-accent: var(--color-note); }
-.admonition-warning { --admonition-accent: var(--color-warning); }
-.admonition-danger { --admonition-accent: var(--color-danger); }
-.admonition-tip,
-.admonition-info { --admonition-accent: var(--color-accent); }
 
 /* ============================================================================
- * MERMAID — astro-mermaid renders into <pre class="mermaid">. Keep it free of
- * code-block chrome and let the diagram center itself.
+ * ADMONITIONS — emitted by remark-admonitions as
+ * <aside class="ax-admon" data-kind="…"><p class="ax-admon-title">…</p>…</aside>
  * ========================================================================== */
-.prose pre.mermaid {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  margin: 1.5rem 0;
-  text-align: center;
-  overflow-x: auto;
+.ax-admon {
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-left-width: 3px;
+  border-left-color: var(--color-accent);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  margin-top: 1.5em;
+}
+.ax-admon[data-kind="note"] {
+  border-left-color: var(--c-agent);
+  background: color-mix(in oklab, var(--c-agent) 6%, var(--color-surface));
+}
+.ax-admon[data-kind="tip"] {
+  border-left-color: var(--color-ok);
+  background: color-mix(in oklab, var(--color-ok) 6%, var(--color-surface));
+}
+.ax-admon[data-kind="info"] {
+  border-left-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 6%, var(--color-surface));
+}
+.ax-admon[data-kind="warning"] {
+  border-left-color: var(--color-warning);
+  background: color-mix(in oklab, var(--color-warning) 8%, var(--color-surface));
+}
+.ax-admon[data-kind="danger"] {
+  border-left-color: var(--color-danger);
+  background: color-mix(in oklab, var(--color-danger) 7%, var(--color-surface));
+}
+.ax-admon-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+  margin: 0 0 6px;
+  color: var(--color-accent);
+}
+.ax-admon[data-kind="note"] .ax-admon-title {
+  color: var(--c-agent);
+}
+.ax-admon[data-kind="tip"] .ax-admon-title {
+  color: var(--color-ok);
+}
+.ax-admon[data-kind="info"] .ax-admon-title {
+  color: var(--color-accent);
+}
+.ax-admon[data-kind="warning"] .ax-admon-title {
+  color: var(--color-warning);
+}
+.ax-admon[data-kind="danger"] .ax-admon-title {
+  color: var(--color-danger);
+}
+.ax-admon p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.ax-admon p + p {
+  margin-top: 0.6em;
+}
+
+/* ============================================================================
+ * TOC (right rail)
+ * ========================================================================== */
+.ax-toc {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 4px;
+}
+.ax-toc a {
+  display: block;
+  padding: 4px 0 4px 10px;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+.ax-toc a:hover {
+  color: var(--color-text);
+}
+.ax-toc a.active {
+  color: var(--color-text-strong);
+  border-left-color: var(--color-accent);
+}
+.ax-toc a.depth-3 {
+  padding-left: 22px;
+  font-size: 12.5px;
+}
+
+/* ============================================================================
+ * DOCS CHROME — sidebar, top bar, drawer (ported from docs.jsx + mobile.css).
+ * Layout is driven by component markup; these classes carry the structural
+ * pieces that responsive rules below hook into.
+ * ========================================================================== */
+.ax-docs-sidebar-close {
+  display: none;
+}
+.ax-docs-topbar {
+  display: none;
+}
+.ax-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 8, 12, 0.7);
+  backdrop-filter: blur(2px);
+  z-index: 55;
+}
+
+/* ── Tablet ≤ 1024px — drop the right TOC, widen the main column ───────── */
+@media (max-width: 1024px) {
+  .ax-docs-layout .ax-docs-toc {
+    display: none !important;
+  }
+  .ax-docs-layout main {
+    max-width: calc(100% - var(--layout-sidebar-width)) !important;
+    padding: 36px 32px 80px !important;
+  }
+}
+
+/* ── Mobile ≤ 720px — single column, drawer chrome ─────────────────────── */
+@media (max-width: 720px) {
+  .ax-docs-layout {
+    flex-direction: column !important;
+  }
+  .ax-docs-layout main {
+    max-width: 100% !important;
+    padding: 16px 18px 64px !important;
+  }
+  .ax-docs-layout main > div {
+    max-width: 100% !important;
+  }
+
+  /* Mobile docs top bar (hamburger) shows */
+  .ax-docs-topbar {
+    display: flex !important;
+  }
+
+  /* Sidebar becomes a slide-in drawer */
+  .ax-docs-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    height: 100vh !important;
+    width: min(86vw, 320px) !important;
+    flex: none !important;
+    z-index: 60 !important;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    border-right: 1px solid var(--color-border) !important;
+    box-shadow: 12px 0 40px -8px rgba(0, 0, 0, 0.6);
+  }
+  .ax-docs-sidebar[data-open="true"] {
+    transform: translateX(0);
+  }
+  .ax-docs-sidebar[data-open="true"] .ax-docs-sidebar-close {
+    display: inline-flex !important;
+  }
+
+  /* Article scaling */
+  .ax-prose h1 {
+    font-size: 30px !important;
+    letter-spacing: -0.02em !important;
+  }
+  .ax-prose .lede {
+    font-size: 16px !important;
+  }
+  .ax-prose h2 {
+    font-size: 22px !important;
+  }
+  .ax-prose h2::before {
+    /* the floating § marker collides with the left edge on mobile */
+    position: static !important;
+    margin-right: 0.4em;
+  }
+  .ax-prose h3 {
+    font-size: 17px !important;
+  }
+  .ax-prose pre {
+    padding: 14px 14px !important;
+    font-size: 12.5px !important;
+  }
+  .ax-prose table {
+    font-size: 12.5px !important;
+  }
+  .ax-prose th,
+  .ax-prose td {
+    padding: 8px 10px !important;
+  }
+  .ax-prose .mermaid {
+    padding: 12px !important;
+    overflow-x: auto;
+  }
+  .ax-prose .mermaid svg {
+    min-width: 600px; /* let user pan, don't squish into illegibility */
+  }
+
+  /* Breadcrumb wraps */
+  .ax-prose-breadcrumb {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px;
+  }
 }
