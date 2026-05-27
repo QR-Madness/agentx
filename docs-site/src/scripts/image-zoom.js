@@ -246,6 +246,11 @@
   // Add hover affordance + hint chip to a candidate element.
   function decorate(el) {
     if (el.__axZoomDecorated) return;
+    // Mermaid diagrams render client-side, and astro-mermaid reads the diagram
+    // source from this element's textContent. Appending our hint before the SVG
+    // exists would corrupt that source (a "Parse error on line N"). Wait until the
+    // diagram has rendered — the observer re-attempts once the SVG is injected.
+    if (el.classList.contains("mermaid") && !el.querySelector("svg")) return;
     el.__axZoomDecorated = true;
     el.classList.add("ax-zoom-affordance");
     const hint = document.createElement("span");
@@ -275,6 +280,12 @@
   function observe() {
     const mo = new MutationObserver(muts => {
       for (const m of muts) {
+        // A container whose content just changed — e.g. astro-mermaid setting
+        // innerHTML on a pre.mermaid once its SVG is ready. Re-attempt decoration
+        // (the SVG now exists, so the source has already been captured).
+        if (m.target && m.target.nodeType === 1 && m.target.matches && m.target.matches(SELECTOR)) {
+          decorate(m.target);
+        }
         m.addedNodes.forEach(n => {
           if (n.nodeType !== 1) return;
           if (n.matches && n.matches(SELECTOR)) decorate(n);
