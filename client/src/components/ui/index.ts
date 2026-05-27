@@ -14,6 +14,7 @@ export * from './Label';
 export * from './Popover';
 export * from './SectionHeader';
 export * from './Select';
+export * from './Slider';
 export * from './Switch';
 export * from './Tooltip';
 export * from './Toaster';

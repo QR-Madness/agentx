@@ -4,6 +4,7 @@ import { Switch } from './Switch';
 import { Checkbox } from './Checkbox';
 import { Label } from './Label';
 import { Select, SelectTrigger, SelectValue } from './Select';
+import { Slider } from './Slider';
 
 describe('Switch', () => {
   it('renders a switch reflecting checked state', () => {
@@ -41,5 +42,14 @@ describe('Select', () => {
       </Select>
     );
     expect(screen.getByText('Pick a model')).toBeInTheDocument();
+  });
+});
+
+describe('Slider', () => {
+  it('renders a slider reflecting its value', () => {
+    render(<Slider value={[0.3]} min={0} max={1} step={0.1} aria-label="weight" />);
+    const slider = screen.getByRole('slider', { name: 'weight' });
+    expect(slider).toBeInTheDocument();
+    expect(slider).toHaveAttribute('aria-valuenow', '0.3');
   });
 });
