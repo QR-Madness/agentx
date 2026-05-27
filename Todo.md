@@ -195,6 +195,28 @@
 - [ ] Add `AgentParticipant` Neo4j node and `PARTICIPATED_IN` relationship
 - [ ] Migration job: backfill from existing `Conversation.agent_id` properties
 
+### 16.6 Ambassador Agent (dual-presentation layer) — deferred sub-phase
+
+> **Concept**: A customizable "ambassador" agent that mediates the human↔agent
+> exchange as a *second presentation layer* alongside the chat UI — enriching
+> communication with zero flow-disruption. Not a thin voice feature; a relay.
+
+- [ ] Activation toggle for the ambassador (per-conversation or global).
+- [ ] **Outbound (you → agent)**: capture continuous dictation while recording;
+      on manual stop, convert the captured speech into a drafted message you
+      **review/edit before send** (never auto-sends).
+- [ ] Relay arbitrary additional inputs you attach alongside the dictated
+      message — file inputs remain available (reuse the existing input path).
+- [ ] **Inbound (agent → you)**: when an agent's final message lands, the
+      ambassador produces a spoken/condensed **briefing** of the message plus any
+      key elements sent with it (attachments, tool artifacts, citations).
+- [ ] Customizable ambassador behavior (verbosity, persona, what to summarize vs.
+      read verbatim, which key elements to surface).
+- [ ] Zero UI flow-disruption: the ambassador augments, never blocks, the chat
+      UI — design it as a parallel channel, not a modal step.
+- Design later as its own sub-phase; sits naturally on the Alloy/multi-agent
+  track (an ambassador is a specialist role mediating the conversation).
+
 ### Design Notes
 
 - `agent_id` (Docker-style, e.g., "bold-cosmic-falcon") = formal routing identifier

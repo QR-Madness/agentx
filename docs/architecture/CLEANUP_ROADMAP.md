@@ -170,7 +170,7 @@ client-build site; the YAML loader passes `None` when unset. An explicit value
 
 ---
 
-## 9. Custom exception hierarchy + Result types — partial (Pass 3 scoped slice)
+## 9. Custom exception hierarchy + Result types — ✅ done (Pass 3 slice + Pass 7)
 
 **Problem.** Broad `except Exception` blocks remain across consolidation and the
 agent core. `mcp/tool_executor.py` `discover_tools()` and `mcp/client.py`
@@ -184,10 +184,26 @@ on a successful discovery), logged at `error`/`warning`, and surfaced on
 `/api/mcp/servers` as `tool_discovery_error` / `resource_discovery_error` so the
 client can tell "failed" from "0".
 
-**Still deferred.** The `AgentError`/`MemoryError`/`ToolExecutionError` hierarchy
-and tightening the broad excepts across `agent/core.py` (many are *intentionally*
-defensive best-effort memory swallows) / consolidation. Judgment-heavy and
-sprawling — its own pass. **Effort:** ~1 day.
+**Done (Pass 7).** Introduced `agentx_ai/exceptions.py` — `AgentXError` root
+(with an `http_status` boundary mapping) over `ConfigError`,
+`ProviderError`/`ModelNotFoundError`/`ProviderUnavailableError`,
+`MCPError`/`MCPServerNotFoundError`/`MCPTransportError`, `ToolExecutionError`,
+and `MemoryStoreError` (named to avoid shadowing the builtin `MemoryError`).
+Adopted **boundaries-only**: the provider-resolution raises in
+`providers/registry.py` and the server-not-found / unsupported-transport raises
+in `mcp/client.py` now raise the typed errors, and `utils/responses.error_response`
+maps them to the right HTTP status at the views boundary (`mcp_connect`,
+prompt-enhance). Each leaf that replaces a `raise ValueError` also inherits
+`ValueError`, so the swap is behavior-preserving for every existing
+`except ValueError`.
+
+**Deliberately not done.** The ~255 broad `except Exception` blocks were **left
+as-is** — the overwhelming majority are intentional best-effort swallows (memory
+writes, telemetry, model-list fallbacks, per-item consolidation resilience);
+mechanically converting them is net-negative. Generic input-validation
+`ValueError`s (profiles/prompts/translation) and `server_registry` transport-
+validation raises also stay `ValueError` (correctly mapped to 400). `ToolResult`
+remains the Result type for tool execution.
 
 ---
 
@@ -232,7 +248,7 @@ its own product initiative — not tracked here.
 
 ## Type-check baseline (guardrail)
 
-Two passes reduced pyright from **169 → 4** errors (Passes 3–6 held at 4). A baseline guardrail
+Two passes reduced pyright from **169 → 4** errors (Passes 3–7 held at 4). A baseline guardrail
 (`scripts/check_pyright_baseline.py`, run via `task check:types:python:baseline`)
 fails CI if the count *rises* above `api/.pyright-baseline` (currently **4**), so
 the debt can only shrink. When an item above lands, lower the baseline to lock
@@ -350,6 +366,24 @@ Three independently-committed steps; pyright held at 4, ruff 0 throughout.
   `_execute_and_emit_tools`; pinned first by `StreamingToolLoopTest`.
 - Dropped **item 12** (multi-user auth — a product feature, not cleanup).
 
-Still deferred: **item 9** (exception hierarchy + broad-except tightening) — the
-sole remaining cleanup item, intentionally left for its own dedicated pass.
-Item 10 (streaming constants → ConfigManager) stays optional/low-value.
+### Pass 7 — exception hierarchy + boundary adoption (roadmap item 9)
+The final cleanup item; behavior-parity (pyright 4, ruff 0). Three
+independently-committed steps.
+- **Hierarchy:** new `agentx_ai/exceptions.py` — `AgentXError` (carrying
+  `http_status`, `message`, `details`) over `ConfigError`, `ProviderError`/
+  `ModelNotFoundError`/`ProviderUnavailableError`, `MCPError`/
+  `MCPServerNotFoundError`/`MCPTransportError`, `ToolExecutionError`,
+  `MemoryStoreError`. Leaf types that replace a `raise ValueError` also inherit
+  `ValueError` (back-compat) so the raise-site swaps are behavior-preserving.
+- **Adoption (boundaries-only):** provider-resolution raises (`registry.py`) →
+  `ModelNotFoundError`; MCP server-not-found / unsupported-transport
+  (`mcp/client.py`) → `MCPServerNotFoundError` / `MCPTransportError`.
+- **Boundary mapper:** `utils.responses.error_response(exc)` maps `http_status`
+  to the HTTP code; wired into `mcp_connect` + prompt-enhance ahead of their
+  `except ValueError` clauses (transport→400, model-not-found→404 instead of
+  collapsing to 404/500). `ExceptionHierarchyTest` (9 tests).
+- The ~255 best-effort `except Exception` swallows were intentionally retained.
+
+**The roadmap's cleanup items are now complete.** Only **item 10** (streaming
+constants → ConfigManager) remains, and it stays optional/low-value (a clean
+single source of truth today; do it only if runtime hot-reload is wanted).
