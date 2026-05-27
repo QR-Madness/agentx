@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from .base import ModelProvider, ProviderConfig
 from ..config import ConfigManager, get_config_manager
+from ..exceptions import ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -165,9 +166,10 @@ class ProviderRegistry:
             return self._providers[name]
 
         if name not in self._provider_configs:
-            raise ValueError(
+            raise ModelNotFoundError(
                 f"Provider '{name}' not configured. "
-                f"Configure it in Settings or set {name.upper()}_BASE_URL / {name.upper()}_API_KEY."
+                f"Configure it in Settings or set {name.upper()}_BASE_URL / {name.upper()}_API_KEY.",
+                provider=name,
             )
 
         config = self._provider_configs[name]
@@ -188,7 +190,7 @@ class ProviderRegistry:
             from .vercel_provider import VercelProvider
             provider = VercelProvider(config)
         else:
-            raise ValueError(f"Unknown provider: {name}")
+            raise ModelNotFoundError(f"Unknown provider: {name}", provider=name)
 
         self._providers[name] = provider
         return provider
@@ -222,9 +224,11 @@ class ProviderRegistry:
 
         if provider_name not in self._provider_configs:
             available = ", ".join(self._provider_configs.keys()) if self._provider_configs else "none"
-            raise ValueError(
+            raise ModelNotFoundError(
                 f"Provider '{provider_name}' not configured. "
-                f"Available providers: {available}"
+                f"Available providers: {available}",
+                model=model,
+                provider=provider_name,
             )
 
         return self.get_provider(provider_name), model_id

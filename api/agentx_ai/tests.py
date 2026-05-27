@@ -965,6 +965,34 @@ class ExceptionHierarchyTest(TestCase):
         self.assertIsNot(MemoryStoreError, MemoryError)
         self.assertFalse(issubclass(MemoryStoreError, MemoryError))
 
+    def test_registry_raises_model_not_found(self) -> None:
+        """Provider resolution failures raise ModelNotFoundError (still a ValueError)."""
+        from agentx_ai.exceptions import ModelNotFoundError
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        fake_cm = MagicMock()
+        fake_cm.get_provider_value.return_value = None  # no providers configured
+        reg = ProviderRegistry(config_manager=fake_cm)
+
+        with self.assertRaises(ModelNotFoundError):
+            reg.get_provider_for_model("ghost:model-x")
+        # Back-compat: existing `except ValueError` boundaries still catch it.
+        with self.assertRaises(ValueError):
+            reg.get_provider_for_model("ghost:model-x")
+
+    def test_mcp_unknown_server_raises_typed_error(self) -> None:
+        """Connecting an unregistered MCP server raises MCPServerNotFoundError."""
+        from agentx_ai.exceptions import MCPServerNotFoundError
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerRegistry
+
+        manager = MCPClientManager(registry=ServerRegistry())
+        with self.assertRaises(MCPServerNotFoundError):
+            manager.connect("does-not-exist")
+        # Back-compat with the prior ValueError contract.
+        with self.assertRaises(ValueError):
+            manager.connect("does-not-exist")
+
 
 class ToolDiscoveryErrorTest(TestCase):
     """Tool/resource discovery failures are distinguishable from 'none' (WS4)."""
