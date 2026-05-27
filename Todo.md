@@ -443,11 +443,13 @@ Currently our model selection and selector are a very solid foundation but are j
 - [x] `useApi<T>` hook factory in `lib/hooks.ts` — collapsed the duplicated `data/loading/error/refresh` block across the read hooks (health, providers, MCP tools, agent status, memory channels/entities/facts/strategies/stats, jobs).
 - [x] `ErrorBoundary` around the routed page tree; UI primitives `Badge`/`Card`/`Input`/`Textarea`/`SectionHeader`; `--space-*` spacing scale added to both themes in `lib/theme.ts`.
 
-#### Deferred — "full grade-match" client refactor (not started)
-- [ ] Split the god components: `SettingsPanel.tsx` (~996), `MemoryPanel.tsx` (~933), `MemorySettingsPanels.tsx` (~894) using the composable `unified-settings`/`unified-profile-editor` section pattern.
-- [ ] Split the monolithic `lib/api.ts` (~2,400 lines, ~89 methods) into domain clients (auth/MCP/prompts/memory/agent) behind a facade; extract inline response types to `types.ts`; move streaming to its own module.
+#### "full grade-match" client refactor
+- [x] Stand up a client test harness (Vitest + Testing Library + jsdom) — `task test:client`; config in `vite.config.ts`, setup in `src/test/setup.ts`. (Prereq for the splits below.)
+- [x] Tailwind v4 enabled (`@tailwindcss/vite`, Preflight off, runtime tokens bridged via `@theme inline`) + expanded `ui/` primitives (Select/Popover/Switch/Checkbox/Label).
+- [x] God components, first pass: `SettingsPanel.tsx` (~996) was already superseded by `unified-settings/` and its modal key never opened — **deleted as dead code** (+ `SettingsPanel.css`, `SettingsModalContent`, the `settings` registry key). `MemoryPanel.tsx` (~933) split in place into `components/memory/` (orchestrator + list views + detail panels + graph + pagination + `formatTimestamp`), with render tests; standalone Memory Explorer modal unchanged.
+- [ ] God components, remaining: `MemorySettingsPanels.tsx` (~894) decomposition.
+- [x] Split the monolithic `lib/api.ts` (2,497 lines, 89 methods) → `lib/api/` folder: `types.ts` (DTOs), `errors.ts`, `version.ts`, `core.ts` (request layer + stream registry), 17 domain modules (`health`/`auth`/`providers`/`mcp`/`agent`/`relay`/`toolOutput`/`translation`/`prompts`/`promptTemplates`/`profiles`/`alloy`/`config`/`memory`/`jobs`/`history`/`streaming`), and `index.ts` facade that spreads them into `api` + re-exports the full public surface. Import specifier `'.../lib/api'` unchanged (folder barrel) → zero consumer changes. `facade.test.ts` guards 89-method parity.
 - [ ] Split `ConversationContext` (~599 lines) into tab / message / history concerns.
-- [ ] Stand up a client test harness (Vitest) — currently zero client tests; needed before the splits above can be done safely.
 - [ ] Adopt the new primitives repo-wide (replace ad-hoc `.stat-badge`/`.active-badge`, `.card`, raw inputs, `.section-title` blocks) and migrate magic-number spacing to `--space-*`.
 
 ---

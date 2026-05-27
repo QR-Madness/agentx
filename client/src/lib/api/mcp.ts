@@ -1,0 +1,66 @@
+import { request as apiRequest } from './core';
+import type { MCPServer, MCPServerConfigInput, MCPTool } from './types';
+
+export const mcpApi = {
+  // === MCP ===
+
+  async listMCPServers(): Promise<{ servers: MCPServer[] }> {
+    return apiRequest('/api/mcp/servers');
+  },
+
+  async listMCPTools(): Promise<{ tools: MCPTool[] }> {
+    return apiRequest('/api/mcp/tools');
+  },
+
+  async listMCPResources(): Promise<{ resources: unknown[] }> {
+    return apiRequest('/api/mcp/resources');
+  },
+
+  async connectMCPServer(server: string): Promise<{ status: string; server: string; tools_count: number; resources_count: number }> {
+    return apiRequest('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify({ server }),
+    });
+  },
+
+  async connectAllMCPServers(): Promise<{ results: Record<string, { status: string; error?: string }> }> {
+    return apiRequest('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify({ all: true }),
+    });
+  },
+
+  async disconnectMCPServer(server: string): Promise<{ status: string; server: string }> {
+    return apiRequest('/api/mcp/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ server }),
+    });
+  },
+
+  async createMCPServer(name: string, config: MCPServerConfigInput): Promise<{ status: string; server: MCPServer }> {
+    return apiRequest('/api/mcp/servers', {
+      method: 'POST',
+      body: JSON.stringify({ name, config }),
+    });
+  },
+
+  async updateMCPServer(name: string, config: MCPServerConfigInput, rename?: string): Promise<{ status: string; server: MCPServer }> {
+    return apiRequest(`/api/mcp/servers/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(rename && rename !== name ? { config, rename } : { config }),
+    });
+  },
+
+  async deleteMCPServer(name: string): Promise<{ status: string; server: string }> {
+    return apiRequest(`/api/mcp/servers/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async validateMCPServer(name: string, config: MCPServerConfigInput): Promise<{ valid: boolean; errors: string[] }> {
+    return apiRequest('/api/mcp/servers/validate', {
+      method: 'POST',
+      body: JSON.stringify({ name, config }),
+    });
+  },
+};

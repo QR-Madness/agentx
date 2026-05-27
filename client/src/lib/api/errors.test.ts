@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyStatus, isApiError, toApiError, apiErrorMessage, type ApiError } from './api';
+import { classifyStatus, isApiError, toApiError, apiErrorMessage, type ApiError } from './errors';
 
 describe('classifyStatus', () => {
   it('maps statuses to their coarse kind', () => {
