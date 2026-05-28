@@ -2,6 +2,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import { Copy, Check } from 'lucide-react';
@@ -26,7 +27,11 @@ const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className 
     <div className={`message-content-markdown ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeHighlight]}
+        // rehype-raw must run first so raw HTML (e.g. `<br/>` inside table
+        // cells — the only way GFM tables express line breaks) is parsed into
+        // the tree while the math-* element nodes from remark-math survive;
+        // rehype-katex then renders those, highlight runs last on code.
+        rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
         components={{
           // Custom code block rendering with copy button
           pre({ children, ...props }) {

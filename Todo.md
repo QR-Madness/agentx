@@ -377,15 +377,15 @@ Currently our model selection and selector are a very solid foundation but are j
 - [x] Chats cannot render equations.
   - Wired `remark-math` + `rehype-katex` (KaTeX) into `MessageContent.tsx` and import `katex/dist/katex.min.css`; added theme overrides (inherit color, scrollable `.katex-display`) in `MessageContent.css`. Inline `$…$` and block `$$…$$` now render.
 - [x] ~~Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.~~ — fixed (confirmed).
-- [ ] Models render `<br/>` in table cells (e.g. bullet-point lists inside a cell) but it doesn't break the line.
-  - `MessageContent.tsx` uses `react-markdown` without `rehype-raw`, so raw HTML like `<br/>` is dropped instead of becoming a line break. Fix: add `rehype-raw` — but mind the plugin interaction with the new `rehype-katex`/`rehype-highlight` (rehype-raw can mangle math nodes; needs correct ordering or `passThrough` for math element types). Verify equations + code highlighting still render after adding it. Consider `rehype-sanitize` given raw HTML from model output is an XSS surface.
+- [x] Models render `<br/>` in table cells (e.g. bullet-point lists inside a cell) but it doesn't break the line.
+  - Added `rehype-raw` to `MessageContent.tsx` with order `[rehypeRaw, rehypeKatex, rehypeHighlight]` so raw HTML renders while the math nodes survive. Added `MessageContent.test.tsx` locking the contract (`<br>` in a cell + KaTeX + code highlighting). `rehype-sanitize` left as a follow-up (XSS surface; local single-user app, and a sanitize schema would have to whitelist the KaTeX/`hljs-*` classes).
 - [x] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
   - Root cause: orphan `tool_result` rows (no paired `tool_call`) map to `type: 'tool_result'`, which had no entry in `messageRegistry` → fell through to `UnknownBubble`. Added `bubbles/ToolResultBubble.tsx` (reuses `ToolExecutionBlock`) and registered it.
 - [x] ~~Fix consolidation bug~~ — already fixed. The `Neo.ClientError.Statement.TypeError` ("Can't coerce `List{Double…}`") came from passing a nested `List[List[float]]` to `db.index.vector.queryNodes`. Consolidation now uses `embedder.embed_single()` which returns a flat `List[float]` (`embeddings.py:120`), matching the working `semantic.py` query; warning text reworded. Verify on a live instance via `task eval:consolidation`.
 - [x] Cached servers for the 'Connect' page cannot be edited or deleted.
   - `ServerSelector.tsx` now renders per-row edit (inline form) + delete (inline confirm) actions wired to the existing `updateServerConfig`/`deleteServer` context methods; styles added to `AuthPage.css`.
-- [ ] MCP tools should auto-connect on server restart if they were connected at shutdown.
-  - Today MCP connections are established on demand and lost on restart. Persist which servers were connected (or an `auto_connect` flag per server in `mcp_servers.json` / `ServerConfig`) and reconnect them at startup (e.g. from `AppConfig.ready` in `apps.py`, mirroring the background chat-worker boot), best-effort so a dead server doesn't block startup.
+- [x] MCP tools should auto-connect on server restart if they were connected at shutdown.
+  - Added a persisted `auto_connect` flag to `ServerConfig` (distinct from `auto_reconnect`), set true on connect / false on disconnect in `mcp_connect`/`mcp_disconnect` (incl. the `all` bulk paths) and saved to `mcp_servers.json`. New `MCPClientManager.connect_persisted()` restores flagged servers from `apps.py` `ready()` on a best-effort daemon thread. Flag surfaced in `_serialize_server` + preserved through the Toolkit guided/raw/`toConfigInput` editors so edits don't clobber it. Tests: round-trip + `connect_persisted` targeting (`MCPServerRegistryTest`).
 
 ### 18.9: Memory Tuning
 
@@ -491,6 +491,7 @@ Currently our model selection and selector are a very solid foundation but are j
 - [ ] Mobile-responsive breakpoints and touch-friendly gestures
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 - [ ] Message injection into delegated tasks (agent interdiction tools)
+- [ ] Custom window chrome — frameless Tauri window with our own title bar + window controls (minimize / maximize / close) and a drag region, styled to the cosmic theme. **Windows + Linux first; macOS later** (traffic-light insets + native fullscreen need separate handling). Touches `client/src-tauri/tauri.conf.json` (`decorations: false`) + a top-of-app titlebar component using the Tauri window API.
 
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation

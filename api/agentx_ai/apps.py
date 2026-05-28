@@ -26,3 +26,22 @@ class AgentxAiConfig(AppConfig):
             start_worker()
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Background chat worker failed to start: {exc}")
+
+        # Restore MCP servers that were connected when the API last shut down
+        # (auto_connect=True). Best-effort on a daemon thread so a slow or dead
+        # server can't block startup; connect_persisted logs and skips failures.
+        try:
+            import threading
+
+            def _reconnect_mcp() -> None:
+                try:
+                    from .mcp import get_mcp_manager
+                    get_mcp_manager().connect_persisted()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"MCP auto-connect on startup failed: {exc}")
+
+            threading.Thread(
+                target=_reconnect_mcp, name="mcp-auto-connect", daemon=True
+            ).start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Could not launch MCP auto-connect thread: {exc}")

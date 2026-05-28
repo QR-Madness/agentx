@@ -265,6 +265,7 @@ def _serialize_server(
         "headers": dict(config.headers),
         "timeout": config.timeout,
         "auto_reconnect": config.auto_reconnect,
+        "auto_connect": config.auto_connect,
         "tags": list(config.tags),
         "groups": list(config.groups),
         "allowed_agent_ids": (
@@ -452,6 +453,27 @@ def mcp_resources(request):
     })
 
 
+def _set_mcp_auto_connect(manager, names, value: bool) -> None:
+    """Persist the auto_connect flag for one or more servers (best-effort).
+
+    Records the user's desired-connected state so servers connected at
+    shutdown are restored on the next API start. Persistence failures (no
+    config path, read-only fs) are logged but never block connect/disconnect.
+    """
+    changed = False
+    for name in names:
+        config = manager.registry.get(name)
+        if config is not None and config.auto_connect != value:
+            config.auto_connect = value
+            changed = True
+    if not changed:
+        return
+    try:
+        manager.registry.save_to_file()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not persist MCP auto_connect state: {e}")
+
+
 @csrf_exempt
 def mcp_connect(request):
     """Connect to one or all configured MCP servers."""
@@ -468,13 +490,16 @@ def mcp_connect(request):
     
     if connect_all:
         results = manager.connect_all()
+        connected = [n for n, r in results.items() if r.get("status") == "connected"]
+        _set_mcp_auto_connect(manager, connected, True)
         return JsonResponse({"results": results})
-    
+
     if not server_name:
         return json_error("Provide 'server' name or 'all': true", status=400)
-    
+
     try:
         connection = manager.connect(server_name)
+        _set_mcp_auto_connect(manager, [server_name], True)
         return JsonResponse({
             "status": "connected",
             "server": server_name,
@@ -507,16 +532,19 @@ def mcp_disconnect(request):
     disconnect_all = data.get("all", False)
     
     if disconnect_all:
+        all_names = [c.name for c in manager.registry.list()]
         manager.disconnect_all()
+        _set_mcp_auto_connect(manager, all_names, False)
         return JsonResponse({"status": "disconnected_all"})
-    
+
     if not server_name:
         return json_error("Provide 'server' name or 'all': true", status=400)
-    
+
     disconnected = manager.disconnect(server_name)
     if not disconnected:
         return json_error(f"Server '{server_name}' is not connected", status=404)
-    
+
+    _set_mcp_auto_connect(manager, [server_name], False)
     return JsonResponse({"status": "disconnected", "server": server_name})
 
 

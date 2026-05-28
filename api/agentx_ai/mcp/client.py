@@ -197,6 +197,30 @@ class MCPClientManager:
                 results[config.name] = {"status": "error", "error": str(e)}
         return results
     
+    def connect_persisted(self) -> dict[str, dict[str, str]]:
+        """
+        Connect to servers marked auto_connect=True (sync-safe, best-effort).
+
+        Used at API startup to restore servers that were connected when the
+        process last shut down. A failure on one server (e.g. unresolved env
+        var, dead command) is logged and skipped — it never blocks the others.
+
+        Returns:
+            Dict of server_name → {"status": "connected"} or {"status": "error", "error": "..."}
+        """
+        results: dict[str, dict[str, str]] = {}
+        for config in self.registry.list():
+            if not getattr(config, "auto_connect", False):
+                continue
+            try:
+                self.connect(config.name)
+                results[config.name] = {"status": "connected"}
+                logger.info(f"Auto-connected MCP server '{config.name}' on startup")
+            except Exception as e:
+                logger.warning(f"Auto-connect failed for '{config.name}': {e}")
+                results[config.name] = {"status": "error", "error": str(e)}
+        return results
+
     def disconnect_all(self) -> None:
         """Disconnect all active connections (sync-safe)."""
         names = list(self._active_connections.keys())

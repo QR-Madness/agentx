@@ -269,18 +269,55 @@ class MCPServerRegistryTest(TestCase):
     def test_env_resolution(self) -> None:
         """Test environment variable resolution in server config."""
         os.environ["TEST_TOKEN"] = "my-secret-token"
-        
+
         config = ServerConfig(
             name="test",
             transport=TransportType.STDIO,
             command="echo",
             env={"TOKEN": "${TEST_TOKEN}"},
         )
-        
+
         resolved = config.resolve_env()
         self.assertEqual(resolved["TOKEN"], "my-secret-token")
-        
+
         del os.environ["TEST_TOKEN"]
+
+    def test_auto_connect_round_trips(self) -> None:
+        """auto_connect defaults False and survives from_dict/_server_to_dict."""
+        default = ServerConfig(name="s", transport=TransportType.STDIO, command="echo")
+        self.assertFalse(default.auto_connect)
+
+        loaded = ServerConfig.from_dict(
+            "s", {"transport": "stdio", "command": "echo", "auto_connect": True}
+        )
+        self.assertTrue(loaded.auto_connect)
+
+        # Round-trips through serialization (and is omitted when False/default).
+        self.assertTrue(ServerRegistry._server_to_dict(loaded).get("auto_connect"))
+        self.assertNotIn("auto_connect", ServerRegistry._server_to_dict(default))
+
+    def test_connect_persisted_only_targets_flagged_servers(self) -> None:
+        """connect_persisted attempts auto_connect servers and skips the rest."""
+        from .mcp.client import MCPClientManager
+
+        registry = ServerRegistry()
+        registry.register(ServerConfig(
+            name="wanted", transport=TransportType.STDIO, command="echo",
+            auto_connect=True,
+        ))
+        registry.register(ServerConfig(
+            name="skipped", transport=TransportType.STDIO, command="echo",
+            auto_connect=False,
+        ))
+
+        manager = MCPClientManager(registry)
+        attempted: list[str] = []
+        manager.connect = lambda name: attempted.append(name)  # type: ignore[method-assign]
+
+        results = manager.connect_persisted()
+        self.assertEqual(attempted, ["wanted"])
+        self.assertEqual(results["wanted"]["status"], "connected")
+        self.assertNotIn("skipped", results)
 
 
 # =============================================================================
