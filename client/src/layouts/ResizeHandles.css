@@ -1,0 +1,30 @@
+/* === Frameless resize grips === */
+.resize-handles {
+  position: fixed;
+  inset: 0;
+  z-index: 10000; /* above the strip + drag region, below modals' backdrops */
+  pointer-events: none;
+}
+
+.resize-handle {
+  position: fixed;
+  pointer-events: auto;
+}
+
+/* Edge thickness / corner size */
+:root {
+  --rh-edge: 5px;
+  --rh-corner: 12px;
+}
+
+/* Edges */
+.rh-n { top: 0; left: 0; right: 0; height: var(--rh-edge); cursor: ns-resize; }
+.rh-s { bottom: 0; left: 0; right: 0; height: var(--rh-edge); cursor: ns-resize; }
+.rh-w { top: 0; bottom: 0; left: 0; width: var(--rh-edge); cursor: ew-resize; }
+.rh-e { top: 0; bottom: 0; right: 0; width: var(--rh-edge); cursor: ew-resize; }
+
+/* Corners (sit above edges) */
+.rh-nw { top: 0; left: 0; width: var(--rh-corner); height: var(--rh-corner); cursor: nwse-resize; }
+.rh-ne { top: 0; right: 0; width: var(--rh-corner); height: var(--rh-corner); cursor: nesw-resize; }
+.rh-sw { bottom: 0; left: 0; width: var(--rh-corner); height: var(--rh-corner); cursor: nesw-resize; }
+.rh-se { bottom: 0; right: 0; width: var(--rh-corner); height: var(--rh-corner); cursor: nwse-resize; }

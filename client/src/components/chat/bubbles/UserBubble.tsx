@@ -8,6 +8,9 @@ export function UserBubble({ message, onEdit }: BubbleProps<'user'>) {
         <User size={16} />
       </div>
       <div className="message-body">
+        <div className="user-header">
+          <span className="user-name">You</span>
+        </div>
         <div className="message-text">{message.content}</div>
         <div className="message-meta">
           <span className="message-time">

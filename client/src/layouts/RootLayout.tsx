@@ -12,6 +12,8 @@ import { VersionMismatchPage } from '../pages/VersionMismatchPage';
 import { useConversation } from '../contexts/ConversationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useModal } from '../contexts/ModalContext';
+import { useUIChrome } from '../contexts/UIChromeContext';
+import { CommandPalette } from '../components/common/CommandPalette';
 import './RootLayout.css';
 
 export function RootLayout() {
@@ -25,9 +27,11 @@ export function RootLayout() {
   } = useAuth();
   const [activePage, setActivePage] = useState<PageId>('start');
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const rafRef = useRef<number | null>(null);
   const { addTab, closeTab, activeTabId } = useConversation();
   const { openModal } = useModal();
+  const { focusMode } = useUIChrome();
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -57,13 +61,28 @@ export function RootLayout() {
         });
       } else if (e.key === 'k') {
         e.preventDefault();
-        // Command palette — placeholder for future implementation
+        setPaletteOpen(prev => !prev);
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [addTab, closeTab, activeTabId, openModal, connectionState, authRequired, isAuthenticated]);
+
+  // Let the titlebar strip's ⌘K button open the palette without prop-drilling.
+  useEffect(() => {
+    const onToggle = () => setPaletteOpen(prev => !prev);
+    const onNavigate = (e: Event) => {
+      const page = (e as CustomEvent<PageId>).detail;
+      if (page) setActivePage(page);
+    };
+    window.addEventListener('agentx:toggle-command-palette', onToggle);
+    window.addEventListener('agentx:navigate', onNavigate as EventListener);
+    return () => {
+      window.removeEventListener('agentx:toggle-command-palette', onToggle);
+      window.removeEventListener('agentx:navigate', onNavigate as EventListener);
+    };
+  }, []);
 
   // Track cursor position for reactive gradient
   useEffect(() => {
@@ -122,13 +141,19 @@ export function RootLayout() {
 
   return (
     <div
-      className="root-layout"
+      className={`root-layout${focusMode ? ' focus-mode' : ''}`}
       style={{
         '--cursor-x': `${cursorPos.x}%`,
         '--cursor-y': `${cursorPos.y}%`,
       } as React.CSSProperties}
     >
       <TopBar activePage={activePage} onPageChange={setActivePage} />
+
+      <CommandPalette
+        isOpen={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={setActivePage}
+      />
 
       <main className="page-content">
         {/* All pages always mounted to preserve state; visibility toggled via CSS */}

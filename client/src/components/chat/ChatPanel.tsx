@@ -16,6 +16,8 @@ import {
   Crown,
   Box,
   Database,
+  DatabaseZap,
+  Cpu,
   X,
 } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -39,6 +41,7 @@ import {
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/ModelSelector';
+import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
 
 export function ChatPanel() {
@@ -49,6 +52,7 @@ export function ChatPanel() {
     setStreaming,
     setSessionId,
     setTabContextInfo,
+    setActiveTabModel,
     updateTab,
     restoreConversation,
   } = useConversation();
@@ -74,6 +78,7 @@ export function ChatPanel() {
   const [input, setInput] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
   // `isPinned` tracks whether the user is scrolled to (or near) the bottom
   // of the message list. We auto-scroll only when pinned — so streaming
   // doesn't yank the viewport away from a user reading older messages.
@@ -83,6 +88,14 @@ export function ChatPanel() {
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
   // When armed (via Relay), the next send routes to the background queue.
   const [bgArmed, setBgArmed] = useState(false);
+  // Inline composer chips: effective model + whether the memory toggle is
+  // still changeable (locks once the conversation has started).
+  const effectiveModel = activeTab?.modelOverride || tabProfile?.defaultModel || '';
+  const modelLabel = effectiveModel
+    ? effectiveModel.split(/[:/]/).pop() || effectiveModel
+    : 'Default model';
+  const canToggleMemory =
+    !!activeTab && activeTab.messages.length === 0 && !activeTab.sessionId;
   const useMemory = !(activeTab?.noMemorization ?? false);
   const setNoMemorization = useCallback(
     (next: boolean) => {
@@ -257,6 +270,7 @@ export function ChatPanel() {
       message: messageText,
       session_id: activeTab.sessionId || undefined,
       agent_profile_id: tabProfile?.id,
+      model: activeTab.modelOverride || undefined,
       use_memory: useMemory,
       workflow_id: activeTab.workflowId || undefined,
     });
@@ -271,6 +285,7 @@ export function ChatPanel() {
         message: messageText,
         session_id: activeTab.sessionId || undefined,
         agent_profile_id: tabProfile?.id,
+        model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
         workflow_id: activeTab.workflowId || undefined,
       });
@@ -435,6 +450,7 @@ export function ChatPanel() {
           </div>
         )}
 
+        <div className="chat-thread">
         {groupedItems.map((item) => {
           if (item.kind === 'stepGroup') {
             return (
@@ -469,7 +485,7 @@ export function ChatPanel() {
           const AvatarIcon = getAvatarIcon(tabProfile?.avatar);
           return (
           <div className="message-bubble assistant">
-            <div className="message-avatar">
+            <div className="message-avatar assistant-avatar">
               <AvatarIcon size={16} />
             </div>
             <div className="message-body">
@@ -499,6 +515,7 @@ export function ChatPanel() {
         })()}
 
         <div ref={messagesEndRef} />
+        </div>
 
         {/* Jump-to-latest affordance — visible only when the user has
             scrolled away from the bottom. Clicking re-pins and follows
@@ -555,6 +572,33 @@ export function ChatPanel() {
             onClose={() => setShowAgentSelector(false)}
             anchorRef={profileButtonRef}
           />
+
+          {/* Inline model chip — per-conversation model override */}
+          <button
+            className={`composer-chip ${activeTab?.modelOverride ? 'active' : ''}`}
+            onClick={() => setShowModelPicker(true)}
+            title={activeTab?.modelOverride ? 'Model (overridden for this chat)' : 'Model (from profile) — click to override'}
+          >
+            <Cpu size={12} />
+            <span>{modelLabel}</span>
+          </button>
+
+          {/* Memory toggle chip — locks once the conversation has started */}
+          <button
+            className={`composer-chip ${activeTab?.noMemorization ? 'warn' : ''}`}
+            onClick={() => canToggleMemory && setNoMemorization(!(activeTab?.noMemorization ?? false))}
+            disabled={!canToggleMemory}
+            title={
+              activeTab?.noMemorization
+                ? 'No Memorization is on — this chat is ephemeral'
+                : canToggleMemory
+                  ? 'Memorization on — click to make this chat ephemeral'
+                  : 'Memorization locked once the conversation has started'
+            }
+          >
+            {activeTab?.noMemorization ? <DatabaseZap size={12} /> : <Database size={12} />}
+            <span>{activeTab?.noMemorization ? 'No memory' : 'Memory'}</span>
+          </button>
         </div>
         <div className="input-container">
           <button
@@ -574,15 +618,6 @@ export function ChatPanel() {
             isOpen={showRelay}
             onClose={() => setShowRelay(false)}
             anchorRef={relayButtonRef}
-            noMemorization={activeTab?.noMemorization ?? false}
-            onToggleNoMemorization={() =>
-              setNoMemorization(!(activeTab?.noMemorization ?? false))
-            }
-            canToggleNoMemorization={
-              !!activeTab &&
-              activeTab.messages.length === 0 &&
-              !activeTab.sessionId
-            }
             canEnhance={!!input.trim() && !isTyping}
             onEnhance={handleEnhancePrompt}
             isEnhancing={isEnhancing}
@@ -628,6 +663,14 @@ export function ChatPanel() {
           </span>
         </div>
       </div>
+
+      <ModelPickerModal
+        isOpen={showModelPicker}
+        onClose={() => setShowModelPicker(false)}
+        value={activeTab?.modelOverride || ''}
+        onChange={(modelId) => setActiveTabModel(modelId || null)}
+        showDefault
+      />
     </div>
   );
 }

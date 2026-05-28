@@ -1,0 +1,114 @@
+/* === CommandPalette (⌘K) === */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  animation: cmdk-fade 0.12s ease;
+}
+
+@keyframes cmdk-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cmdk-panel {
+  width: min(560px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-overlay, #1a2035);
+  border: 1px solid var(--border-line, var(--border-color));
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg, 0 24px 60px rgba(0, 0, 0, 0.5));
+  overflow: hidden;
+  animation: cmdk-rise 0.14s ease;
+}
+
+@keyframes cmdk-rise {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cmdk-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cmdk-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.cmdk-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  outline: none;
+}
+
+.cmdk-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cmdk-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.cmdk-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.cmdk-item.selected {
+  background: var(--surface-hover, rgba(139, 92, 246, 0.12));
+  color: var(--text-primary);
+}
+
+.cmdk-item-icon {
+  display: flex;
+  color: var(--cosmic-violet, #8b5cf6);
+  flex-shrink: 0;
+}
+
+.cmdk-item-label {
+  flex: 1;
+  font-size: 14px;
+}
+
+.cmdk-item-hint {
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: var(--bg-void, rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 2px 6px;
+}

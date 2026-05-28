@@ -22,16 +22,22 @@ import {
   MoreHorizontal,
   BrainCircuit,
   ListChecks,
+  Command,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useUIChrome } from '../contexts/UIChromeContext';
 import { useConsolidationStatus } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
 import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
 import { ConversationTabBar } from './ConversationTabBar';
+import { WindowControls } from './WindowControls';
+import { showWindowControls, isMac } from '../lib/platform';
 import './TopBar.css';
 
 export type PageId = 'start' | 'dashboard' | 'agentx';
@@ -57,6 +63,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
     p => p.status === 'running',
   ).length;
   const { authRequired, isAuthenticated, logout } = useAuth();
+  const { focusMode, toggleFocusMode } = useUIChrome();
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
@@ -70,7 +77,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const openOverflow = useCallback(() => {
     if (!overflowButtonRef.current) return;
     const rect = overflowButtonRef.current.getBoundingClientRect();
-    const itemCount = 3 + (authRequired && isAuthenticated ? 2 : 0);
+    const itemCount = 5 + (authRequired && isAuthenticated ? 2 : 0);
     const estHeight = itemCount * 44 + 16;
     const wouldOverflow = rect.bottom + estHeight + 8 > window.innerHeight;
     const top = wouldOverflow ? Math.max(8, rect.top - estHeight - 6) : rect.bottom + 4;
@@ -163,7 +170,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   };
 
   return (
-    <header className="top-bar">
+    <header
+      className={`top-bar${isMac ? ' top-bar--mac' : ''}${focusMode ? ' top-bar--focus' : ''}`}
+      data-tauri-drag-region
+    >
       {/* Left: Brain icon (opens active agents) + Logo (edit profile) */}
       <div className="top-bar-left">
         <button
@@ -204,14 +214,14 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         ))}
       </nav>
 
-      {/* Center: Conversation tabs (visible only on AgentX page) */}
-      <div className="top-bar-center">
+      {/* Center: Conversation tabs (visible only on AgentX page) + drag area */}
+      <div className="top-bar-center" data-tauri-drag-region>
         <ConversationTabBar visible={activePage === 'agentx'} />
       </div>
 
-      {/* Right: Toolbar icons */}
+      {/* Right: live indicators + ⌘K + Focus + Workspace menu + window controls */}
       <div className="top-bar-right">
-        {/* Consolidation lightning with dropdown menu */}
+        {/* Consolidation lightning — pulses as a live indicator when active */}
         <div className="consolidation-trigger-container">
           <button
             ref={lightningButtonRef}
@@ -230,81 +240,47 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           />
         </div>
 
-        {/* Secondary icons — hidden on small screens, exposed via overflow menu */}
-        <button
-          className="toolbar-icon toolbar-secondary"
-          onClick={openTranslation}
-          title="Translation"
-        >
-          <Languages size={18} />
-        </button>
-        <button
-          className="toolbar-icon toolbar-secondary"
-          onClick={openTools}
-          title="Tools"
-        >
-          <Wrench size={18} />
-        </button>
-        <button
-          className={`toolbar-icon toolbar-secondary toolbar-icon-plans ${activePlanCount > 0 ? 'building' : ''}`}
-          onClick={openPlans}
-          title={activePlanCount > 0 ? `${activePlanCount} plan${activePlanCount > 1 ? 's' : ''} in progress` : 'Plans'}
-        >
-          <ListChecks size={18} />
-          {activePlanCount > 0 && (
+        {/* Plans: live indicator only while plans are running */}
+        {activePlanCount > 0 && (
+          <button
+            className="toolbar-icon toolbar-icon-plans building"
+            onClick={openPlans}
+            title={`${activePlanCount} plan${activePlanCount > 1 ? 's' : ''} in progress`}
+          >
+            <ListChecks size={18} />
             <span className="toolbar-icon-badge">{activePlanCount}</span>
-          )}
-        </button>
+          </button>
+        )}
+
+        {/* Command palette */}
         <button
-          className="toolbar-icon toolbar-secondary"
-          onClick={openMemory}
-          title="Memory"
+          className="toolbar-icon toolbar-cmdk"
+          onClick={() => window.dispatchEvent(new CustomEvent('agentx:toggle-command-palette'))}
+          title="Command palette (⌘K)"
         >
-          <Database size={18} />
+          <Command size={18} />
         </button>
 
+        {/* Focus / Zen mode */}
         <button
-          className="toolbar-icon toolbar-secondary"
-          onClick={openSettings}
-          title="Settings"
+          className={`toolbar-icon toolbar-focus ${focusMode ? 'active' : ''}`}
+          onClick={toggleFocusMode}
+          title={focusMode ? 'Exit focus mode' : 'Focus mode'}
         >
-          <Settings size={18} />
+          {focusMode ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
 
-        {/* Overflow button — only visible on small screens */}
+        {/* Workspace menu — canonical home for all secondary tools */}
         <button
           ref={overflowButtonRef}
-          className={`toolbar-icon toolbar-overflow-trigger ${showOverflow ? 'active' : ''}`}
+          className={`toolbar-icon toolbar-workspace-trigger ${showOverflow ? 'active' : ''}`}
           onClick={() => (showOverflow ? closeOverflow() : openOverflow())}
-          title="More options"
+          title="Workspace"
         >
           <MoreHorizontal size={18} />
         </button>
 
-        {authRequired && isAuthenticated && (
-          <>
-            <span className="topbar-divider toolbar-secondary" />
-            <button
-              className="toolbar-icon toolbar-secondary"
-              onClick={() => openModal({
-                id: 'change-password',
-                type: 'modal',
-                component: 'changePassword',
-                size: 'sm',
-              })}
-              title="Change password"
-            >
-              <KeyRound size={18} />
-            </button>
-            <button
-              className="toolbar-icon toolbar-icon--danger toolbar-secondary"
-              onClick={handleLogout}
-              title="Sign out"
-            >
-              <LogOut size={18} />
-            </button>
-          </>
-        )}
+        {showWindowControls && <WindowControls />}
       </div>
 
       {/* Overflow dropdown — portal-rendered below the overflow button */}

@@ -35,6 +35,13 @@ export function useTabSettings({ activeTabId, updateTab }: UseTabSettingsArgs) {
     updateTab(activeTabId, { workflowId });
   }, [activeTabId, updateTab]);
 
+  // Set a per-conversation model override for the active tab (null = inherit
+  // the profile's model). Passed as `model` on the next stream request.
+  const setActiveTabModel = useCallback((model: string | null) => {
+    if (!activeTabId) return;
+    updateTab(activeTabId, { modelOverride: model });
+  }, [activeTabId, updateTab]);
+
   const setTabContextInfo = useCallback(
     (tabId: string, info: { window: number; used: number } | null) => {
       updateTab(tabId, {
@@ -51,6 +58,7 @@ export function useTabSettings({ activeTabId, updateTab }: UseTabSettingsArgs) {
     setActiveTabProfile,
     setTabWorkflow,
     setActiveTabWorkflow,
+    setActiveTabModel,
     setTabContextInfo,
   };
 }

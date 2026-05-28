@@ -14,8 +14,38 @@ interface MessageContentProps {
   className?: string;
 }
 
+/**
+ * Convert LaTeX bracket delimiters to the dollar form `remark-math` understands.
+ * Many models emit `\( ... \)` (inline) and `\[ ... \]` (display) instead of
+ * `$ ... $` / `$$ ... $$`, which would otherwise render as plain text.
+ *
+ * Fenced code blocks and inline code spans are protected so we never rewrite
+ * literal backslashes inside code samples.
+ *
+ * Also escapes currency-style `$` (a `$` directly before a digit, e.g. "$20")
+ * to `\$` so remark-math doesn't treat it as a math delimiter — an unescaped
+ * stray `$` collides with real `$...$` math and splits expressions, producing
+ * KaTeX "Expected EOF, got '}'" errors.
+ */
+export function normalizeMathDelimiters(src: string): string {
+  // Split on (and keep) fenced code blocks and inline code; odd-indexed
+  // segments are the captured code spans and are left untouched.
+  const segments = src.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  return segments
+    .map((seg, i) => {
+      if (i % 2 === 1) return seg;
+      return seg
+        .replace(/\\\[([\s\S]+?)\\\]/g, (_m, body) => `$$${body.trim()}$$`)
+        .replace(/\\\(([\s\S]+?)\\\)/g, (_m, body) => `$${body.trim()}$`)
+        // Escape currency $ (not already escaped, not part of $$).
+        .replace(/(?<![\\$])\$(?=\d)/g, '\\$');
+    })
+    .join('');
+}
+
 const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className = '' }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
+  const normalized = React.useMemo(() => normalizeMathDelimiters(content), [content]);
 
   const handleCopyCode = async (code: string) => {
     await navigator.clipboard.writeText(code);
@@ -31,7 +61,15 @@ const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className 
         // cells — the only way GFM tables express line breaks) is parsed into
         // the tree while the math-* element nodes from remark-math survive;
         // rehype-katex then renders those, highlight runs last on code.
-        rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
+        //
+        // KaTeX runs non-strict and never throws: a malformed expression (or a
+        // stray `$` from currency colliding with delimiters) renders its source
+        // in a muted error colour instead of blanking the whole message red.
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeKatex, { throwOnError: false, strict: false, errorColor: 'var(--text-error, #f87171)' }],
+          rehypeHighlight,
+        ]}
         components={{
           // Custom code block rendering with copy button
           pre({ children, ...props }) {
@@ -96,7 +134,7 @@ const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className 
           },
         }}
       >
-        {content}
+        {normalized}
       </ReactMarkdown>
     </div>
   );

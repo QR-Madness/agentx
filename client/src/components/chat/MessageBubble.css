@@ -2,11 +2,12 @@
  * MessageBubble styles — Unified styling for all message types
  */
 
-/* Base bubble structure */
+/* Base bubble structure — flat full-width rows on the seamless canvas.
+   Horizontal padding comes from the .chat-thread reading column. */
 .message-bubble {
   display: flex;
   gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 0;
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -48,23 +49,28 @@
   min-width: 0;
 }
 
-/* User message */
-.message-bubble.user {
-  flex-direction: row-reverse;
-}
-
+/* User message — full-width left-aligned row (no bubble), subtle tint block */
 .message-bubble.user .message-body {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+}
+
+.user-header {
+  margin-bottom: 0.35rem;
+}
+
+.user-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .message-bubble.user .message-text {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
+  background: var(--chat-user-tint);
+  color: var(--text-primary);
   padding: 0.625rem 0.875rem;
-  border-radius: 16px 16px 4px 16px;
-  max-width: 80%;
+  border-radius: 10px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -107,12 +113,11 @@
   color: var(--text-secondary);
 }
 
-/* Assistant message */
+/* Assistant message — borderless, sits directly on the canvas (no grey card) */
 .message-bubble.assistant .message-body {
-  background: var(--bg-tertiary);
-  border-radius: 4px 16px 16px 16px;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .assistant-header {

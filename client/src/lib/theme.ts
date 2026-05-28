@@ -179,6 +179,10 @@ export const COSMIC_THEME: ThemeDefinition = {
     '--border-color': 'rgba(139, 92, 246, 0.15)',
     '--border-glow': 'rgba(139, 92, 246, 0.3)',
 
+    // Immersive chat surfaces (flat-row canvas + floating composer)
+    '--chat-user-tint': 'rgba(139, 92, 246, 0.10)',
+    '--composer-bg': 'rgba(17, 24, 39, 0.72)',
+
     // Accent Colors (legacy)
     '--cosmic-purple': COSMIC_PRIMITIVES.purple500,
     '--cosmic-violet': COSMIC_PRIMITIVES.violet500,
@@ -296,6 +300,10 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--bg-hover': 'rgba(124, 58, 237, 0.06)',
     '--border-color': LIGHT_PRIMITIVES.gray300,
     '--border-glow': LIGHT_PRIMITIVES.gray400,
+
+    // Immersive chat surfaces (flat-row canvas + floating composer)
+    '--chat-user-tint': 'rgba(124, 58, 237, 0.08)',
+    '--composer-bg': 'rgba(255, 255, 255, 0.78)',
 
     // Accent Colors (legacy) - slightly darker for light bg
     '--cosmic-purple': LIGHT_PRIMITIVES.purple600,

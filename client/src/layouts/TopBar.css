@@ -238,9 +238,9 @@
   flex-shrink: 0;
 }
 
-/* === Overflow Menu === */
-.toolbar-overflow-trigger {
-  display: none; /* hidden on desktop */
+/* === Workspace Menu (canonical home for secondary tools, all viewports) === */
+.toolbar-workspace-trigger {
+  display: flex;
 }
 
 .toolbar-overflow-backdrop {
@@ -331,11 +331,7 @@
     top: 0;
   }
 
-  /* Show overflow trigger, hide secondary icons */
-  .toolbar-overflow-trigger {
-    display: flex;
-  }
-
+  /* Hide secondary chrome (e.g. the logo button) to save room on mobile */
   .toolbar-secondary {
     display: none !important;
   }
@@ -380,4 +376,32 @@
   .toolbar-icon-plans.building {
     animation: none;
   }
+}
+
+/* === Frameless drag region ===
+   The strip itself (and the empty center area) drags the window via Tauri's
+   data-tauri-drag-region. Make the empty areas feel grabbable and prevent text
+   selection while dragging. Interactive children remain clickable since Tauri
+   only starts a drag when the event target carries the attribute. */
+.top-bar[data-tauri-drag-region],
+.top-bar-center[data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* === Focus / Zen mode — slim the strip to the essentials === */
+.top-bar--focus .top-bar-nav,
+.top-bar--focus .top-bar-center,
+.top-bar--focus .consolidation-trigger-container,
+.top-bar--focus .toolbar-icon-plans,
+.top-bar--focus .toolbar-cmdk,
+.top-bar--focus .toolbar-workspace-trigger {
+  display: none;
+}
+
+/* The center flex-spacer is hidden in focus mode, so pin the remaining
+   right-cluster controls (focus toggle + window controls) to the corner. */
+.top-bar--focus .top-bar-right {
+  margin-left: auto;
 }

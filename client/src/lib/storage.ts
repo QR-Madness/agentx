@@ -377,6 +377,10 @@ export interface ConversationTab {
   createdAt: string;
   lastMessageAt: string;
   noMemorization?: boolean;
+  // Per-conversation model override (e.g. "openrouter:anthropic/claude-..."),
+  // chosen from the composer's inline model chip. Falls back to the profile's
+  // model when unset. Sent as `model` on the stream request.
+  modelOverride?: string | null;
   // Latest context-window usage from the most recent stream on this tab.
   // Not persisted — would mislead if rehydrated stale.
   contextInfo?: { window: number; used: number; updatedAt: number };
@@ -419,6 +423,7 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
     ...t,
     workflowId: t.workflowId ?? null,
     noMemorization: t.noMemorization ?? false,
+    modelOverride: t.modelOverride ?? null,
   }));
 }
 

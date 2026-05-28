@@ -1,0 +1,30 @@
+/* === Frameless window controls (Windows/Linux) === */
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin-left: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 32px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.window-control:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.window-control--close:hover {
+  background: #e81123;
+  color: #fff;
+}

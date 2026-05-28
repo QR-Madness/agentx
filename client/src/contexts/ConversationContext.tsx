@@ -44,6 +44,9 @@ interface ConversationContextValue {
   setTabWorkflow: (tabId: string, workflowId: string | null) => void;
   setActiveTabWorkflow: (workflowId: string | null) => void;
 
+  // Per-tab model override (null = inherit the profile's model)
+  setActiveTabModel: (model: string | null) => void;
+
   // Per-tab context-window usage indicator
   setTabContextInfo: (tabId: string, info: { window: number; used: number } | null) => void;
 
@@ -119,6 +122,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setActiveTabProfile: settings.setActiveTabProfile,
         setTabWorkflow: settings.setTabWorkflow,
         setActiveTabWorkflow: settings.setActiveTabWorkflow,
+        setActiveTabModel: settings.setActiveTabModel,
         setTabContextInfo: settings.setTabContextInfo,
         serverConversations: history.serverConversations,
         isLoadingHistory: history.isLoadingHistory,

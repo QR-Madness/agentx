@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
-  Database,
   Inbox,
   Mic,
   Paperclip,
@@ -22,9 +21,6 @@ interface RelayMenuProps {
   isOpen: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLButtonElement | null>;
-  noMemorization: boolean;
-  onToggleNoMemorization: () => void;
-  canToggleNoMemorization: boolean;
   canEnhance: boolean;
   onEnhance: () => void;
   isEnhancing: boolean;
@@ -38,9 +34,6 @@ export function RelayMenu({
   isOpen,
   onClose,
   anchorRef,
-  noMemorization,
-  onToggleNoMemorization,
-  canToggleNoMemorization,
   canEnhance,
   onEnhance,
   isEnhancing,
@@ -177,33 +170,6 @@ export function RelayMenu({
               Rewrite the current draft using the prompt enhancer.
             </span>
           </div>
-        </button>
-      </div>
-
-      <div className="relay-section">
-        <div className="relay-section-title">Memory</div>
-        <button
-          className={`relay-item toggle ${noMemorization ? 'on' : ''}`}
-          onClick={onToggleNoMemorization}
-          disabled={!canToggleNoMemorization}
-          title={
-            canToggleNoMemorization
-              ? undefined
-              : 'No Memorization can only be set on a new conversation.'
-          }
-        >
-          <Database size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">No Memorization</span>
-            <span className="relay-item-hint">
-              {!canToggleNoMemorization
-                ? 'Locked — start a new conversation to change this.'
-                : noMemorization
-                  ? 'Turns in this conversation will not be stored.'
-                  : 'Memory is on — turns will be stored and recalled.'}
-            </span>
-          </div>
-          <span className="relay-toggle-pill">{noMemorization ? 'ON' : 'OFF'}</span>
         </button>
       </div>
 

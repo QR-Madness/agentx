@@ -4,6 +4,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
 import { ConversationProvider } from './contexts/ConversationContext';
 import { PlansProvider } from './contexts/PlansContext';
+import { UIChromeProvider } from './contexts/UIChromeContext';
 import { AgentProfileProvider } from './contexts/AgentProfileContext';
 import { AlloyWorkflowProvider } from './contexts/AlloyWorkflowContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -12,6 +13,8 @@ import { Toaster } from './components/ui/Toaster';
 import { ModalPortal } from './components/modals/ModalPortal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RootLayout } from './layouts/RootLayout';
+import { ResizeHandles } from './layouts/ResizeHandles';
+import { showWindowControls } from './lib/platform';
 import './App.css';
 
 function App() {
@@ -26,11 +29,14 @@ function App() {
                   <ConversationProvider>
                     <PlansProvider>
                       <ModalProvider>
-                        <ErrorBoundary>
-                          <RootLayout />
-                        </ErrorBoundary>
-                        <ModalPortal />
-                        <Toaster />
+                        <UIChromeProvider>
+                          <ErrorBoundary>
+                            <RootLayout />
+                          </ErrorBoundary>
+                          <ModalPortal />
+                          <Toaster />
+                          {showWindowControls && <ResizeHandles />}
+                        </UIChromeProvider>
                       </ModalProvider>
                     </PlansProvider>
                   </ConversationProvider>
