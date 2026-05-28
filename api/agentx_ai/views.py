@@ -1134,6 +1134,7 @@ async def agent_chat_stream(request):
                 'model_display_name': model_id,
                 'profile_name': prompt_profile_name,
                 'agent_name': agent_name or 'AgentX',
+                'agent_id': getattr(agent_profile, 'agent_id', None),
                 'context_window': context_window,
                 'max_output_tokens': max_output_tokens,
             }
@@ -1395,6 +1396,7 @@ async def agent_chat_stream(request):
                 'session_id': conv_id,
                 'profile_name': prompt_profile_name,
                 'agent_name': agent_name or 'AgentX',
+                'agent_id': getattr(agent_profile, 'agent_id', None),
                 'model': model_id,
                 'provider': provider.name,
                 # Token counts (actual from provider, or estimated)
@@ -2712,7 +2714,7 @@ def conversations_messages(request, conversation_id):
         try:
             with pg_conn.cursor() as cursor:
                 cursor.execute("""
-                    SELECT role, content, timestamp, turn_index, metadata, model
+                    SELECT role, content, timestamp, turn_index, metadata, model, agent_id
                     FROM conversation_logs
                     WHERE conversation_id = %s
                     ORDER BY turn_index ASC
@@ -2723,9 +2725,20 @@ def conversations_messages(request, conversation_id):
                 if not rows:
                     return json_error("Conversation not found", status=404)
 
+                # Resolve agent_id -> current display name once (profiles are
+                # cached in-process). Renamed profiles surface their new name.
+                from .agent.profiles import get_profile_manager
+                agent_names: dict[str, str] = {}
+                try:
+                    for p in get_profile_manager().list_profiles():
+                        if getattr(p, "agent_id", None):
+                            agent_names[p.agent_id] = p.name
+                except Exception:
+                    pass  # attribution is best-effort; fall back to agent_id
+
                 messages = []
                 for row in rows:
-                    role, content, timestamp, turn_index, metadata, model = row
+                    role, content, timestamp, turn_index, metadata, model, agent_id = row
                     msg = {
                         "role": role,
                         "content": content,
@@ -2737,6 +2750,10 @@ def conversations_messages(request, conversation_id):
                     if model:
                         msg["metadata"] = msg.get("metadata", {})
                         msg["metadata"]["model"] = model
+                    if agent_id:
+                        msg["metadata"] = msg.get("metadata", {})
+                        msg["metadata"]["agent_id"] = agent_id
+                        msg["metadata"]["agent_name"] = agent_names.get(agent_id, agent_id)
                     messages.append(msg)
 
                 return JsonResponse({

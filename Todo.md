@@ -118,7 +118,7 @@
 - [ ] Parallel subtask execution (independent subtasks could run concurrently)
 - [ ] Per-subtask reasoning strategy selection (use `_select_strategy` per subtask type)
 - [ ] Subtask-level goal tracking (create subgoals via `parent_goal_id`)
-- [ ] Plan cancellation mid-execution (check `_cancel_requested` between subtasks)
+- [x] Plan cancellation mid-execution — shipped. `PlanExecutor` checks `state.is_cancel_requested(plan_id)` between subtasks (`plan_executor.py:84,163`) and marks the plan `cancelled`; `POST /api/agent/plans/cancel` sets the flag.
 - [ ] Plan resumption from Redis state after disconnect
 
 ---
@@ -161,13 +161,15 @@
 - [ ] Tool-output sharing across agents (specialist's raw tool outputs visible to supervisor, not just final text)
 - [ ] Per-workflow tool isolation (specialist inherits a *subset* of supervisor tools, not all)
 
-### 16.1 Message Attribution
+### 16.1 Message Attribution — shipped 2026-05-28
 
-- [ ] Add `agent_id` field to `Turn` model (agent_memory/models.py)
-- [ ] Add `agent_id` column to `conversation_logs` PostgreSQL table
-- [ ] Set `Message.name = agent_profile.agent_id` on assistant messages in views.py
-- [ ] Include `agent_id` in SSE `start` and `done` events
-- [ ] Store `agent_id` on turns in background turn storage
+- [x] `agent_id` field on `Turn` model (`agent_memory/models.py:59`)
+- [x] `agent_id` column on `conversation_logs` (migration `0003_turn_agent_id.sql` + `postgres_builder.sql`; index `idx_logs_agent`)
+- [x] Persist per-turn attribution: `EpisodicMemory.store_turn_log` writes `turn.agent_id` (PG, source of truth); `store_turn` stamps the Neo4j **Turn node** `agent_id` (was conversation-level only → mis-attributed specialists). Assistant turns set `agent_id` in the streaming store (`views.py:_store_turns`) **and** the non-streaming/background path (`Agent.chat`, `core.py`). User/tool turns stay NULL.
+- [x] Include `agent_id` in SSE `start` + `done` events (alongside existing `agent_name`)
+- [x] Restore path: `conversations_messages` selects `agent_id`, resolves it to the current profile name via `ProfileManager`, and returns both `agent_id`+`agent_name` in metadata; client `mapServerMessages` maps `agent_name` → `AssistantMessage.agentName` (rendered by `AssistantBubble`). Historical rows (NULL) fall back to the generic name.
+- Tests: `TurnAgentAttributionTest` (backend round-trip), `mapServerMessages` attribution cases (client).
+- Deferred: backfill of historical rows; `Message.name` provider-schema wiring (not needed — attribution rides metadata, not the provider message).
 
 ### 16.2 Explicit Agent Routing
 

@@ -615,6 +615,8 @@ GET /api/conversations/{conversation_id}/messages
 }
 ```
 
+**Response (messages):** each message carries `role`, `content`, `timestamp`, `turn_index`, and a `metadata` object. For assistant turns produced under a known agent profile, `metadata.agent_id` (Docker-style id) and `metadata.agent_name` (resolved display name) attribute the message — used to reconstruct multi-agent transcripts on reload. Absent on historical/unattributed turns.
+
 ---
 
 ## Prompts

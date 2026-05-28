@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS conversation_logs (
     token_count INTEGER,
     model VARCHAR(100),
     channel VARCHAR(100) NOT NULL DEFAULT '_global',
+    agent_id VARCHAR(100),  -- Docker-style id of the producing agent (assistant turns; Phase 16)
     metadata JSONB DEFAULT '{}',
     embedding vector(1024),  -- bge-m3 uses 1024 dims (OpenAI uses 1536)
 
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS conversation_logs (
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON conversation_logs USING BRIN (timestamp);
 CREATE INDEX IF NOT EXISTS idx_logs_conversation ON conversation_logs (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_logs_channel ON conversation_logs (channel);
+CREATE INDEX IF NOT EXISTS idx_logs_agent ON conversation_logs (agent_id);
 CREATE INDEX IF NOT EXISTS idx_logs_embedding ON conversation_logs USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
