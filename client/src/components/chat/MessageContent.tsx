@@ -1,8 +1,11 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
 import { Copy, Check } from 'lucide-react';
+import 'katex/dist/katex.min.css';
 import './MessageContent.css';
 
 interface MessageContentProps {
@@ -22,8 +25,8 @@ const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className 
   return (
     <div className={`message-content-markdown ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex, rehypeHighlight]}
         components={{
           // Custom code block rendering with copy button
           pre({ children, ...props }) {

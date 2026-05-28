@@ -9,7 +9,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Server, ChevronDown, ChevronUp, Plus, X } from 'lucide-react';
+import { Server, ChevronDown, ChevronUp, Plus, X, Pencil, Trash2, Check } from 'lucide-react';
 import { useServer } from '../contexts/ServerContext';
 import '../pages/AuthPage.css';
 
@@ -21,7 +21,7 @@ interface ServerSelectorProps {
 }
 
 export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch }: ServerSelectorProps) {
-  const { servers, activeServer, switchServer, addNewServer } = useServer();
+  const { servers, activeServer, switchServer, addNewServer, updateServerConfig, deleteServer } = useServer();
   const [open, setOpen] = useState(defaultOpen);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -29,6 +29,13 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newGatewayToken, setNewGatewayToken] = useState('');
+
+  // Per-row edit + delete-confirm state (keyed by server id).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editGatewayToken, setEditGatewayToken] = useState('');
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const openDropdown = useCallback(() => {
     if (disabled || !triggerRef.current) return;
@@ -84,6 +91,38 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
     closeDropdown();
   };
 
+  const handleEditStart = (id: string) => {
+    const server = servers.find(s => s.id === id);
+    if (!server) return;
+    setConfirmingDeleteId(null);
+    setEditingId(id);
+    setEditName(server.name);
+    setEditUrl(server.url);
+    setEditGatewayToken(server.gatewayToken ?? '');
+  };
+
+  const handleEditCancel = () => {
+    setEditingId(null);
+    setEditName('');
+    setEditUrl('');
+    setEditGatewayToken('');
+  };
+
+  const handleEditSave = () => {
+    if (!editingId || !editName.trim() || !editUrl.trim()) return;
+    updateServerConfig(editingId, {
+      name: editName.trim(),
+      url: editUrl.trim(),
+      gatewayToken: editGatewayToken.trim() || undefined,
+    });
+    handleEditCancel();
+  };
+
+  const handleDelete = (id: string) => {
+    deleteServer(id);
+    setConfirmingDeleteId(null);
+  };
+
   return (
     <div className={`auth-server-selector${disabled ? ' auth-server-selector--disabled' : ''}`}>
       <label className="auth-server-label">
@@ -120,22 +159,113 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
             zIndex: 9999,
           }}
         >
-          {servers.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              role="option"
-              aria-selected={s.id === activeServer?.id}
-              className={`auth-server-option${s.id === activeServer?.id ? ' auth-server-option--active' : ''}`}
-              onClick={() => handleSelect(s.id)}
-            >
-              <Server size={14} />
-              <span className="auth-server-option-info">
-                <span className="auth-server-option-name">{s.name}</span>
-                <span className="auth-server-option-url">{s.url}</span>
-              </span>
-            </button>
-          ))}
+          {servers.map(s => {
+            if (editingId === s.id) {
+              return (
+                <div key={s.id} className="auth-server-add-form auth-server-edit-form">
+                  <input
+                    type="text"
+                    className="auth-server-add-input"
+                    placeholder="Server name"
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    autoFocus
+                  />
+                  <input
+                    type="text"
+                    className="auth-server-add-input"
+                    placeholder="URL (e.g. http://localhost:12319)"
+                    value={editUrl}
+                    onChange={e => setEditUrl(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleEditSave()}
+                  />
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    className="auth-server-add-input"
+                    placeholder="Gateway token (optional)"
+                    value={editGatewayToken}
+                    onChange={e => setEditGatewayToken(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleEditSave()}
+                  />
+                  <div className="auth-server-add-actions">
+                    <button type="button" className="auth-server-add-cancel" onClick={handleEditCancel}>
+                      <X size={13} /> Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-server-add-confirm"
+                      onClick={handleEditSave}
+                      disabled={!editName.trim() || !editUrl.trim()}
+                    >
+                      <Check size={13} /> Save
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={s.id}
+                className={`auth-server-option${s.id === activeServer?.id ? ' auth-server-option--active' : ''}`}
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={s.id === activeServer?.id}
+                  className="auth-server-option-select"
+                  onClick={() => handleSelect(s.id)}
+                >
+                  <Server size={14} />
+                  <span className="auth-server-option-info">
+                    <span className="auth-server-option-name">{s.name}</span>
+                    <span className="auth-server-option-url">{s.url}</span>
+                  </span>
+                </button>
+
+                {confirmingDeleteId === s.id ? (
+                  <div className="auth-server-option-actions">
+                    <button
+                      type="button"
+                      className="auth-server-action-btn auth-server-action-btn--danger"
+                      title="Confirm delete"
+                      onClick={() => handleDelete(s.id)}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-server-action-btn"
+                      title="Cancel"
+                      onClick={() => setConfirmingDeleteId(null)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="auth-server-option-actions">
+                    <button
+                      type="button"
+                      className="auth-server-action-btn"
+                      title="Edit server"
+                      onClick={() => handleEditStart(s.id)}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-server-action-btn auth-server-action-btn--danger"
+                      title="Delete server"
+                      onClick={() => setConfirmingDeleteId(s.id)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {showAddForm ? (
             <div className="auth-server-add-form">

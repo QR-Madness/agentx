@@ -259,3 +259,17 @@
   text-decoration: line-through;
   opacity: 0.7;
 }
+
+/* KaTeX math (remark-math + rehype-katex) — inherit theme color, keep wide
+   display equations scrollable instead of overflowing the bubble. */
+.message-content-markdown .katex {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.message-content-markdown .katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25em;
+}

@@ -374,11 +374,15 @@ Currently our model selection and selector are a very solid foundation but are j
 
 ### 18.8: Wave 2 Fixes
 
-- [ ] Chats cannot render equations.
+- [x] Chats cannot render equations.
+  - Wired `remark-math` + `rehype-katex` (KaTeX) into `MessageContent.tsx` and import `katex/dist/katex.min.css`; added theme overrides (inherit color, scrollable `.katex-display`) in `MessageContent.css`. Inline `$…$` and block `$$…$$` now render.
 - [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
-- [ ] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
-- [ ] Fix consolidation bug: [API] DEBUG 2026-05-07 01:10:36,474 jobs Semantic duplicate check failed (index may not exist): {neo4j_code: Neo.ClientError.Statement.TypeError} {message: Can't coerce `List{Double(-6.041204e-02)...
-- [ ] Cached servers for the 'Connect' page cannot be edited or deleted.
+  - Investigated: live preview renders through the same `MessageContent` (`ChatPanel.tsx:367`) with no batching/memo/key bug — each chunk re-parses cleanly. The stall is inherent incomplete-markdown parsing (remark-gfm holds a partial table until its structure resolves, then snaps); the final persisted render is correct. Needs a live model stream to reproduce + verify a fix; deferred rather than risk destabilizing the streaming path with an unverified change.
+- [x] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
+  - Root cause: orphan `tool_result` rows (no paired `tool_call`) map to `type: 'tool_result'`, which had no entry in `messageRegistry` → fell through to `UnknownBubble`. Added `bubbles/ToolResultBubble.tsx` (reuses `ToolExecutionBlock`) and registered it.
+- [x] ~~Fix consolidation bug~~ — already fixed. The `Neo.ClientError.Statement.TypeError` ("Can't coerce `List{Double…}`") came from passing a nested `List[List[float]]` to `db.index.vector.queryNodes`. Consolidation now uses `embedder.embed_single()` which returns a flat `List[float]` (`embeddings.py:120`), matching the working `semantic.py` query; warning text reworded. Verify on a live instance via `task eval:consolidation`.
+- [x] Cached servers for the 'Connect' page cannot be edited or deleted.
+  - `ServerSelector.tsx` now renders per-row edit (inline form) + delete (inline confirm) actions wired to the existing `updateServerConfig`/`deleteServer` context methods; styles added to `AuthPage.css`.
 
 ### 18.9: Memory Tuning
 
@@ -423,15 +427,13 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Three major bugs surfaced after 18.6 lands. Group them here because the fixes overlap (streaming lifecycle + plan step rendering share the same conversation-tab state).
 
-- [ ] Plan executor hangs on final step
-  - The executor loops infinitely on the last step instead of terminating. Need to audit the completion / loop-exit condition in the planner runner and confirm the terminal step actually flips plan status to `completed` (or `failed`) and releases the streaming generator.
-- [ ] New-conversation chat freeze → dedicated streaming background jobs
-  - Creating a new conversation can wedge the chat. Move streaming off the request thread into a background job (queue + job id) and have the UI subscribe/poll for chunks. Conversation creation should never block on stream startup.
-  - Needs: job model (id, conversation_id, status, cursor), producer endpoint that enqueues + returns job id immediately, consumer endpoint (SSE or polling) keyed by job id, client refactor to attach the active tab to a job rather than a live POST.
-- [ ] Plan UI cleanup
-  - Cannot tell which step a given message belongs to once the plan scrolls.
-  - Cannot see overall progress without scrolling back to the top.
-  - Wants: sticky progress header (current step / total, status pill), per-message step affinity badge, collapsible step groups so completed steps fold away.
+- [x] ~~Plan executor hangs on final step~~ — already resolved. `_handle_failure` marks the failed subtask `completed=True` and skips dependents (`plan_executor.py:418,437`); the loop has a deadlock guard (`:168-170`) and synthesis is a single streaming call (`:466-484`). No infinite-loop path remains. Verify on a live plan run.
+- [x] ~~New-conversation chat freeze~~ — resolved by prior streaming-background-job work. Verify a new conversation starts streaming without freezing on a live instance.
+- [ ] Plans UI redesign — "Plans in Progress" drawer + in-chat step annotation
+  - **Problem:** the current plan card gets "left in the dust" at the top of the chat once it scrolls; you can't tell which step a given message belongs to, or see overall progress without scrolling back up.
+  - **1. "Plans in Progress" drawer.** Replace the scroll-away plan card with a dedicated drawer/affordance (toolbar entry, like the other right-side drawers). While a plan is active its trigger shows an animated construction-stripe pattern (diagonal hazard stripes, subtle marquee motion) so the user feels "work is underway." Collapsed = compact status; expanded = a creative live view of the plan (step list with status pills, current-step emphasis, progress bar/ring, elapsed time, per-step result previews). **Design for N concurrent plans** — the drawer lists multiple running plans (each its own collapsible block), not a single hard-coded card. Honor `prefers-reduced-motion` (freeze the stripe animation).
+  - **2. In-chat step annotation.** Each step's message in the conversation is clearly labeled + styled so the user isn't confused about which step produced what — e.g. a per-message step-affinity badge ("Step 2/5 · <title>"), visual grouping, and optionally collapsible step groups so completed steps fold away. Should read cleanly when a plan conversation is reopened (ties into the restored-message mapping).
+  - Data is already available: SSE `plan_start`/`subtask_start`/`subtask_complete`/`subtask_failed`/`plan_complete` events + `PlanStateStore` (Redis) per active plan; `plan_execution` message type + `PlanExecutionBubble` already exist client-side to build on.
 
 ### 18.11: Client Error Contract + Foundation Cleanup
 
@@ -528,6 +530,10 @@ Currently our model selection and selector are a very solid foundation but are j
 **Query Embedding Caching**
 - Every `remember()` call generates embedding even for identical queries
 - Fix: Add MRU cache for frequent query embeddings with TTL
+
+**Embedding Request Queue / Serialization**
+- Embeddings (`EmbeddingProvider.embed`/`embed_single`, `kit/agent_memory/embeddings.py`) are generated ad-hoc on whatever thread calls them — chat recall, consolidation jobs, strategy/entity indexing — with no coordination. The local sentence-transformers model isn't safe to call concurrently, and the remote (OpenAI) path can be rate-limited; bursts can collide or get dropped.
+- Fix: route all embedding requests through a proper queue/serializer so requests are reliably served — single worker (or bounded pool) draining a queue, with batching of pending texts where possible, backpressure, and a shared path for both local and remote providers. Pairs naturally with the Query Embedding Caching item above.
 
 ---
 
