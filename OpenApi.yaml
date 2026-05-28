@@ -1874,6 +1874,123 @@ paths:
               schema:
                 $ref: '#/components/schemas/MemoryStats'
 
+  /memory/checkpoints:
+    get:
+      tags: [Memory]
+      operationId: memoryCheckpointsList
+      summary: List model-authored checkpoints for a conversation
+      parameters:
+        - name: conversation_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Checkpoints (oldest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  checkpoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        summary:
+                          type: string
+                        decisions:
+                          type: array
+                          items:
+                            type: string
+                        next_step:
+                          type: string
+                        created_at:
+                          type: string
+        '400':
+          description: conversation_id missing
+    delete:
+      tags: [Memory]
+      operationId: memoryCheckpointsClear
+      summary: Clear checkpoints for a conversation
+      parameters:
+        - name: conversation_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cleared count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleared:
+                    type: integer
+        '400':
+          description: conversation_id missing
+
+  /memory/user-history:
+    post:
+      tags: [Memory]
+      operationId: memoryUserHistory
+      summary: Browse the user's past turns + top facts
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topic:
+                  type: string
+                limit:
+                  type: integer
+                channel:
+                  type: string
+      responses:
+        '200':
+          description: User history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic:
+                    type: string
+                    nullable: true
+                  turn_count:
+                    type: integer
+                  user_turns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: string
+                        conversation_id:
+                          type: string
+                        content:
+                          type: string
+                  facts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        claim:
+                          type: string
+                        confidence:
+                          type: number
+        '500':
+          description: Recall failed
+        '503':
+          description: Memory system unavailable
+
   /memory/consolidate:
     post:
       tags: [Memory]

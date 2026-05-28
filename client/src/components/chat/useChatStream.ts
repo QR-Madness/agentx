@@ -56,6 +56,8 @@ interface UseChatStreamOpts {
   onRunChanged?: (runId: string | null) => void;
   /** Re-attach found no live run (TTL expired) — caller restores from history. */
   onRunMissing?: () => void;
+  /** Fired when the agent autonomously saves a `checkpoint` mid-stream. */
+  onCheckpointSaved?: () => void;
 }
 
 interface UseChatStreamApi {
@@ -220,6 +222,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             durationMs: data.duration_ms,
           },
         });
+        if (handle.toolName === 'checkpoint' && data.success) {
+          optsRef.current.onCheckpointSaved?.();
+        }
         activeToolCallsRef.current.delete(data.tool_call_id);
         dispatch({ type: 'tool_call_resolved', toolCallId: data.tool_call_id });
       },

@@ -963,6 +963,8 @@ When `delete_memories` is true, also deletes all entities, facts, and strategies
 | `/api/memory/entities/{entity_id}` | GET | Single entity detail |
 | `/api/memory/facts/{fact_id}` | GET | Single fact detail |
 | `/api/memory/consolidate/stream` | GET | Consolidation progress via SSE |
+| `/api/memory/checkpoints` | GET/DELETE | List or clear a conversation's model-authored checkpoints (`?conversation_id=`) |
+| `/api/memory/user-history` | POST | Browse the user's past turns + top facts (`{topic?, limit?, channel?}`) |
 
 ---
 

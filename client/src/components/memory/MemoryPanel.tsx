@@ -9,7 +9,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Database, Users, FileText, Zap, Search, RefreshCw,
-  ChevronRight, X, Clock, GitBranch
+  ChevronRight, X, Clock, GitBranch, History
 } from 'lucide-react';
 import {
   useMemoryEntities, useMemoryFacts, useMemoryStrategies,
@@ -24,6 +24,7 @@ import { EntityDetail } from './EntityDetail';
 import { FactDetail } from './FactDetail';
 import { StrategyDetail } from './StrategyDetail';
 import { MemoryGraphView } from './MemoryGraphView';
+import { UserHistoryTab } from './UserHistoryTab';
 import { Pagination } from './Pagination';
 import type { MemorySection } from './types';
 import '../../styles/MemoryPanel.css';
@@ -78,6 +79,7 @@ export const MemoryPanel: React.FC = () => {
     { id: 'facts' as const, label: 'Facts', icon: <FileText size={18} /> },
     { id: 'strategies' as const, label: 'Strategies', icon: <Zap size={18} /> },
     { id: 'graph' as const, label: 'Graph', icon: <GitBranch size={18} /> },
+    { id: 'user-history' as const, label: 'User History', icon: <History size={18} /> },
     { id: 'jobs' as const, label: 'Jobs', icon: <Clock size={18} /> },
   ];
 
@@ -172,6 +174,8 @@ export const MemoryPanel: React.FC = () => {
             <div className="memory-list-container card"><JobsPanel /></div>
           ) : activeSection === 'graph' ? (
             <div className="memory-list-container card full-height"><MemoryGraphView /></div>
+          ) : activeSection === 'user-history' ? (
+            <UserHistoryTab />
           ) : (
             <div className={`memory-split${selectedId ? ' detail-open' : ''}`}>
               {/* Left: filters + list + pagination */}

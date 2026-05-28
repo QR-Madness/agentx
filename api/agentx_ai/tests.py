@@ -3040,6 +3040,53 @@ class PlanStatusEndpointTest(MockRedisTestBase):
         self.assertEqual(data["subtasks"][0]["status"], "running")
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class CheckpointEndpointTest(MockRedisTestBase):
+    """GET/DELETE /api/memory/checkpoints — Redis-backed checkpoint store."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from django.test import Client
+        self.client = Client()
+
+    def test_get_lists_checkpoints(self):
+        import json
+        from agentx_ai.agent.checkpoint_storage import add_checkpoint
+
+        # add_checkpoint serializes via rpush; capture what it stored and feed
+        # it back through lrange so the round-trip is exercised.
+        add_checkpoint("conv-1", "Did the thing", ["chose X"], "do Y next")
+        stored = self.mock_redis.rpush.call_args[0][1]
+        self.mock_redis.lrange.return_value = [stored]
+
+        resp = self.client.get("/api/memory/checkpoints?conversation_id=conv-1")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["checkpoints"][0]["summary"], "Did the thing")
+        self.assertEqual(data["checkpoints"][0]["decisions"], ["chose X"])
+        self.assertEqual(data["checkpoints"][0]["next_step"], "do Y next")
+        # sanity: the captured payload is valid JSON
+        json.loads(stored)
+
+    def test_get_requires_conversation_id(self):
+        resp = self.client.get("/api/memory/checkpoints")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_clears_checkpoints(self):
+        self.mock_redis.llen.return_value = 3
+        resp = self.client.delete("/api/memory/checkpoints?conversation_id=conv-1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["cleared"], 3)
+        self.mock_redis.delete.assert_called_once()
+
+    def test_get_empty_after_clear(self):
+        self.mock_redis.lrange.return_value = []
+        resp = self.client.get("/api/memory/checkpoints?conversation_id=conv-1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["count"], 0)
+
+
 class ChatRunStoreTest(MockRedisTestBase):
     """Detached chat-run state store + tail entry paths (Redis mocked)."""
 

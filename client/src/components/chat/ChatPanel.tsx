@@ -28,6 +28,7 @@ import { MessageBubble } from './MessageBubble';
 import { StepGroup } from './StepGroup';
 import { groupMessagesBySteps } from './groupMessagesBySteps';
 import { AgentSelectorDropdown } from './AgentSelectorDropdown';
+import { CheckpointsBadge } from './CheckpointsBadge';
 import { useConversation } from '../../contexts/ConversationContext';
 import { usePlans } from '../../contexts/PlansContext';
 import { useNotify } from '../../contexts/NotificationContext';
@@ -86,6 +87,9 @@ export function ChatPanel() {
   const contextInfo = activeTab?.contextInfo ?? null;
   const [showRelay, setShowRelay] = useState(false);
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
+  // Bumped each time the agent saves a checkpoint mid-stream; the badge
+  // watches this to refetch + flash.
+  const [checkpointSignal, setCheckpointSignal] = useState(0);
   // When armed (via Relay), the next send routes to the background queue.
   const [bgArmed, setBgArmed] = useState(false);
   // Inline composer chips: effective model + whether the memory toggle is
@@ -130,6 +134,7 @@ export function ChatPanel() {
       // finished conversation from server history.
       if (activeTab?.sessionId) restoreConversation(activeTab.sessionId).catch(() => {});
     },
+    onCheckpointSaved: () => setCheckpointSignal(n => n + 1),
   });
 
   const isTyping = stream.state.phase === 'streaming';
@@ -427,6 +432,10 @@ export function ChatPanel() {
               </span>
             </div>
           )}
+          <CheckpointsBadge
+            conversationId={activeTab.sessionId}
+            flashSignal={checkpointSignal}
+          />
         </div>
       </div>
 

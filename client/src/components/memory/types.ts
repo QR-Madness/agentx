@@ -1,1 +1,1 @@
-export type MemorySection = 'entities' | 'facts' | 'strategies' | 'graph' | 'jobs';
+export type MemorySection = 'entities' | 'facts' | 'strategies' | 'graph' | 'jobs' | 'user-history';

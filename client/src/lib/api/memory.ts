@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { EntitiesResponse, EntityGraph, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse } from './types';
+import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
 
 export const memoryApi = {
   // === Memory Explorer ===
@@ -87,6 +87,27 @@ export const memoryApi = {
   async deleteMemoryEntity(entityId: string): Promise<{ deleted: boolean }> {
     return apiRequest(`/api/memory/entities/${encodeURIComponent(entityId)}`, {
       method: 'DELETE',
+    });
+  },
+
+  // === Checkpoints (model-authored conversation anchors) ===
+
+  async getCheckpoints(conversationId: string): Promise<CheckpointsResponse> {
+    return apiRequest(`/api/memory/checkpoints?conversation_id=${encodeURIComponent(conversationId)}`);
+  },
+
+  async clearCheckpoints(conversationId: string): Promise<{ cleared: number }> {
+    return apiRequest(`/api/memory/checkpoints?conversation_id=${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // === User history (manual recall browse) ===
+
+  async getUserHistory(params: { topic?: string; limit?: number; channel?: string } = {}): Promise<UserHistoryResponse> {
+    return apiRequest('/api/memory/user-history', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
   },
 };

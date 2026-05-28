@@ -212,7 +212,8 @@ Base URL: `http://localhost:12319/api/`
 | `/api/memory/facts` | GET | List facts (filter: `?channel=`, `?entity_id=`) |
 | `/api/memory/strategies` | GET | List procedural strategies |
 | `/api/memory/stats` | GET | Memory system statistics |
-| `/api/memory/recall` | POST | Recall relevant memories for a query |
+| `/api/memory/checkpoints` | GET/DELETE | List or clear a conversation's model-authored checkpoints (`?conversation_id=`) |
+| `/api/memory/user-history` | POST | Browse the user's past turns + top facts (`{topic?, limit?, channel?}`) |
 | `/api/memory/recall-settings` | GET/POST | Get or update recall layer settings |
 | `/api/memory/consolidate` | POST | Trigger manual consolidation |
 | `/api/memory/reset` | POST | Reset memory data (with confirmation) |

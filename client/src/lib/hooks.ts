@@ -19,6 +19,7 @@ import {
   MemoryFactPatch,
   MemoryEntityPatch,
   MemoryStats,
+  CheckpointsResponse,
   EntityGraph,
   ConsolidateResult,
   ConsolidationSettings,
@@ -289,6 +290,21 @@ export function useMemoryStats() {
     []
   );
   return { stats: data, loading, error, refresh };
+}
+
+export function useCheckpoints(conversationId: string | null | undefined) {
+  const { data, loading, error, refresh } = useApi<CheckpointsResponse>(
+    () => api.getCheckpoints(conversationId as string),
+    [conversationId],
+    { enabled: !!conversationId },
+  );
+  return {
+    checkpoints: data?.checkpoints ?? [],
+    count: data?.count ?? 0,
+    loading,
+    error,
+    refresh,
+  };
 }
 
 // === Memory Mutation Hooks ===

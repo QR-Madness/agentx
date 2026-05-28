@@ -1576,6 +1576,12 @@
   color: var(--text-secondary);
 }
 
+.setting-reset-inline {
+  align-self: flex-start;
+  gap: 4px;
+  font-size: 12px;
+}
+
 .setting-row.checkbox {
   flex-direction: row;
   align-items: center;

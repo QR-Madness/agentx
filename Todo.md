@@ -414,18 +414,16 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Backend ships in 18.9; these are the client-side surfaces needed to make the new functionality discoverable.
 
-- [ ] Checkpoints sidebar/badge in the conversation pane
-  - Show a small badge with the live checkpoint count for the active conversation (read from `agent/checkpoint_storage.py` via a new `GET /api/memory/checkpoints?conversation_id=` endpoint).
-  - Click opens a panel listing each checkpoint's summary, decisions, next step, and `created_at`. Provide a "Clear" button (calls `DELETE /api/memory/checkpoints?conversation_id=`).
-  - Toolkit gating: surface `checkpoint` in the per-profile tool allowlist UI so users can opt agents in/out.
-- [ ] Recall view for `recall_user_history`
-  - When the tool is invoked mid-stream, render its result as a collapsible "User history recall" card in the chat (similar treatment to existing tool result cards) instead of raw JSON.
-  - Memory drawer: add a "User History" tab that calls the same tool with no topic to give a manual browse experience.
-  - Toolkit gating entry alongside `checkpoint`.
-  - When the model autonomously calls `checkpoint`, flash the new entry in the sidebar so the user notices the anchor was saved.
-- [ ] Combined Extraction settings polish
-  - Add inline help in `MemorySettingsPanels.tsx` explaining what the "Combined Extraction" stage does and when it overrides the separate Relevance + Extraction calls.
-  - Add a "Reset to default" affordance for the model field (matching the existing pattern on `extraction_system_prompt`).
+- [x] Checkpoints sidebar/badge in the conversation pane
+  - New `GET/DELETE /api/memory/checkpoints?conversation_id=` (`views.memory_checkpoints` + `clear_checkpoints()` in `agent/checkpoint_storage.py`); `CheckpointEndpointTest`. Client: `Checkpoint`/`CheckpointsResponse` DTOs, `api.getCheckpoints`/`clearCheckpoints`, `useCheckpoints(conversationId)` hook.
+  - `components/chat/CheckpointsBadge.tsx` (+ `.css`): count badge in the chat header keyed on `activeTab.sessionId`, opening a `DropdownPortal` popover listing each checkpoint's summary/decisions/next-step/`created_at` (reuses `formatTimestamp`) with a Clear button (toast + refetch). Hidden when count is 0.
+  - Flash on autonomous save: `useChatStream` gained an `onCheckpointSaved` callback (fired when a `checkpoint` `tool_result` lands); `ChatPanel` bumps a `checkpointSignal` → badge refetches + pulses (animation gated by `prefers-reduced-motion`).
+- [x] Recall view for `recall_user_history`
+  - In-chat: `ToolExecutionBlock` special-cases `recall_user_history`, parsing the JSON result into a collapsible "User history recall" card (falls back to the generic block on parse failure / `success:false`).
+  - Memory drawer: new "User History" section (`components/memory/UserHistoryTab.tsx`) backed by a new `POST /api/memory/user-history` endpoint (the tool itself needs an active chat `ContextVar`, so the manual browse uses an HTTP twin). Shared presentation in `components/memory/UserHistoryView.tsx` (+ `.css`) used by both surfaces.
+- [-] Toolkit gating for `checkpoint`/`recall_user_history` — **deferred**: no per-profile internal-tool allowlist UI exists (Toolkit "Access" gates whole MCP servers; profile editor has only a single `enableTools` toggle). Backend `allowed_tools`/`blocked_tools` on `AgentProfile` remain unsurfaced — building that surface is its own task.
+- [x] Combined Extraction settings polish
+  - `ConsolidationSettingsPanel.tsx`: expanded the section description to explain the single-pass merge (~75% fewer calls) and that setting a model overrides the separate Relevance + Extraction stages; added a "Reset to default" button on the model field (clears `combined_extraction_model`).
 
 ### 18.10: Plan Executor + Streaming Reliability
 

@@ -679,6 +679,40 @@ export interface MemoryStats {
   unavailable?: boolean;  // Set when databases are offline
 }
 
+// === Checkpoints (model-authored conversation anchors) ===
+
+export interface Checkpoint {
+  summary: string;
+  decisions: string[];
+  next_step: string;
+  created_at: string;
+}
+
+export interface CheckpointsResponse {
+  checkpoints: Checkpoint[];
+  count: number;
+}
+
+// === User history (manual recall browse) ===
+
+export interface UserHistoryTurn {
+  timestamp: string;
+  conversation_id: string | null;
+  content: string;
+}
+
+export interface UserHistoryFact {
+  claim: string;
+  confidence: number;
+}
+
+export interface UserHistoryResponse {
+  topic: string | null;
+  turn_count: number;
+  user_turns: UserHistoryTurn[];
+  facts: UserHistoryFact[];
+}
+
 // === Job Types ===
 
 export interface JobStatus {

@@ -3300,6 +3300,111 @@ def memory_strategies(request):
 
 
 @csrf_exempt
+def memory_checkpoints(request):
+    """
+    GET    /api/memory/checkpoints?conversation_id=<id> - List model-authored
+           checkpoints for a conversation (oldest first).
+    DELETE /api/memory/checkpoints?conversation_id=<id> - Clear them.
+
+    Checkpoints are short anchors the agent writes via the `checkpoint` tool;
+    they live in Redis (7-day TTL) and are re-injected into the system prompt
+    each turn. See `agent/checkpoint_storage.py`.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    conversation_id = request.GET.get('conversation_id')
+    if not conversation_id:
+        return JsonResponse({"error": "conversation_id required"}, status=400)
+
+    from .agent.checkpoint_storage import clear_checkpoints, list_checkpoints
+
+    if request.method == 'GET':
+        items = list_checkpoints(conversation_id)
+        return JsonResponse({"checkpoints": items, "count": len(items)})
+
+    if request.method == 'DELETE':
+        cleared = clear_checkpoints(conversation_id)
+        return JsonResponse({"cleared": cleared})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+def memory_user_history(request):
+    """
+    POST /api/memory/user-history - Manual browse of the user's past turns.
+
+    Body: {"topic"?: str, "limit"?: int, "channel"?: str}
+
+    Mirrors the `recall_user_history` internal tool for a UI-driven browse
+    (the tool itself needs an active chat context). Returns deduped past
+    user-authored turns plus top facts.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'POST':
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        data = {}
+
+    topic = (data.get("topic") or "").strip()
+    channel = data.get("channel") or "_default"
+    try:
+        limit = max(1, min(int(data.get("limit") or 10), 30))
+    except (ValueError, TypeError):
+        limit = 10
+
+    from .kit.memory_utils import get_agent_memory
+
+    memory = get_agent_memory(user_id=DEFAULT_USER_ID, channel=channel)
+    if memory is None:
+        return JsonResponse({"error": "Memory system unavailable"}, status=503)
+
+    query = topic or "user background, preferences, goals"
+    try:
+        bundle = memory.remember(query=query, top_k=limit * 2)
+    except Exception as e:
+        logger.error(f"user-history recall failed: {e}")
+        return JsonResponse({"error": f"Recall failed: {e}"}, status=500)
+
+    user_turns: list[dict] = []
+    seen: set = set()
+    for t in (getattr(bundle, "relevant_turns", None) or []):
+        if t.get("role") != "user":
+            continue
+        key = (t.get("conversation_id"), t.get("timestamp"))
+        if key in seen:
+            continue
+        seen.add(key)
+        user_turns.append({
+            "timestamp": str(t.get("timestamp")),
+            "conversation_id": t.get("conversation_id"),
+            "content": (t.get("content") or "")[:600],
+        })
+        if len(user_turns) >= limit:
+            break
+
+    facts = [
+        {
+            "claim": (f.get("claim") if isinstance(f, dict) else getattr(f, "claim", "")) or "",
+            "confidence": (f.get("confidence") if isinstance(f, dict) else getattr(f, "confidence", 0.0)) or 0.0,
+        }
+        for f in (getattr(bundle, "facts", None) or [])[:10]
+    ]
+
+    return JsonResponse({
+        "topic": topic or None,
+        "user_turns": user_turns,
+        "facts": facts,
+        "turn_count": len(user_turns),
+    })
+
+
+@csrf_exempt
 def memory_stats(request):
     """
     GET /api/memory/stats - Get memory statistics.

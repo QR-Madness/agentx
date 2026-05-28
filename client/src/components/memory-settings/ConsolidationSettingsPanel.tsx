@@ -272,7 +272,15 @@ export function ConsolidationSettingsPanel({
 
       <SettingsSection
         title="Combined Extraction"
-        description="Single-pass relevance + extraction. Handles ~75% of consolidation traffic when enabled."
+        description={
+          <>
+            Merges the separate <strong>Relevance Filter</strong> and{' '}
+            <strong>Extraction</strong> calls into a single LLM pass — roughly
+            75% fewer calls during consolidation. When a model is set here it{' '}
+            <strong>overrides</strong> those two stages for the turns it handles;
+            leave it empty to fall back to running them separately.
+          </>
+        }
       >
         <div className="settings-grid">
           <div className="setting-row">
@@ -283,6 +291,17 @@ export function ConsolidationSettingsPanel({
               showDefault={false}
               compact
             />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="setting-reset-inline"
+              onClick={() => handleChange('combined_extraction_model', '')}
+              disabled={!localSettings.combined_extraction_model}
+              title="Reset to default (run Relevance + Extraction separately)"
+            >
+              <RotateCcw size={13} />
+              <span>Reset to default</span>
+            </Button>
           </div>
           <SliderField
             label="Temperature"

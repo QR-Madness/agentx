@@ -12,7 +12,32 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useModal } from '../../contexts/ModalContext';
+import { UserHistoryView } from '../memory/UserHistoryView';
+import type { UserHistoryFact, UserHistoryTurn } from '../../lib/api';
 import './ToolExecutionBlock.css';
+
+/**
+ * Parse a `recall_user_history` tool result into turns + facts, or null when
+ * the payload isn't the expected success shape (so we fall back to the generic
+ * tool display).
+ */
+function parseUserHistory(content: string): {
+  turns: UserHistoryTurn[];
+  facts: UserHistoryFact[];
+  topic: string | null;
+} | null {
+  try {
+    const data = JSON.parse(content);
+    if (!data || data.success === false || !Array.isArray(data.user_turns)) return null;
+    return {
+      turns: data.user_turns as UserHistoryTurn[],
+      facts: Array.isArray(data.facts) ? (data.facts as UserHistoryFact[]) : [],
+      topic: data.topic ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export interface ToolExecutionBlockProps {
   toolName: string;
@@ -54,6 +79,47 @@ export function ToolExecutionBlock({
   const [expanded, setExpanded] = useState(false);
   const { openModal } = useModal();
   const statusInfo = STATUS_CONFIG[status];
+
+  // Render `recall_user_history` results as a readable card rather than a raw
+  // JSON blob. Falls through to the generic block on parse failure.
+  const userHistory =
+    toolName === 'recall_user_history' && status === 'completed' && result?.content
+      ? parseUserHistory(result.content)
+      : null;
+
+  if (userHistory) {
+    return (
+      <div className="tool-execution-block status-completed tool-recall-card">
+        <div className="tool-execution-header" onClick={() => setExpanded(!expanded)}>
+          <div className="tool-execution-icon">
+            <CheckCircle size={14} />
+          </div>
+          <div className="tool-execution-info">
+            <span className="tool-execution-name">User history recall</span>
+            {!expanded && (
+              <span className="tool-execution-preview">
+                ({userHistory.turns.length} message{userHistory.turns.length === 1 ? '' : 's'}
+                {userHistory.facts.length ? `, ${userHistory.facts.length} facts` : ''})
+              </span>
+            )}
+          </div>
+          <button className="tool-execution-toggle">
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+        {expanded && (
+          <div className="tool-execution-details">
+            <UserHistoryView
+              turns={userHistory.turns}
+              facts={userHistory.facts}
+              topic={userHistory.topic}
+              compact
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const argCount = Object.keys(args).length;
   const argsPreview =

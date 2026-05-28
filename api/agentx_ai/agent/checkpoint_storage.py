@@ -73,6 +73,18 @@ def list_checkpoints(conversation_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def clear_checkpoints(conversation_id: str) -> int:
+    """Delete all checkpoints for a conversation. Returns the prior count."""
+    try:
+        client = _redis()
+        count = int(client.llen(_key(conversation_id)) or 0)
+        client.delete(_key(conversation_id))
+        return count
+    except Exception as e:  # pragma: no cover — Redis offline
+        logger.warning(f"Failed to clear checkpoints: {e}")
+        return 0
+
+
 def render_checkpoints_block(conversation_id: str) -> str:
     """Render checkpoints as a system-prompt block, or "" if none."""
     items = list_checkpoints(conversation_id)
