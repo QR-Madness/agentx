@@ -376,13 +376,16 @@ Currently our model selection and selector are a very solid foundation but are j
 
 - [x] Chats cannot render equations.
   - Wired `remark-math` + `rehype-katex` (KaTeX) into `MessageContent.tsx` and import `katex/dist/katex.min.css`; added theme overrides (inherit color, scrollable `.katex-display`) in `MessageContent.css`. Inline `$…$` and block `$$…$$` now render.
-- [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
-  - Investigated: live preview renders through the same `MessageContent` (`ChatPanel.tsx:367`) with no batching/memo/key bug — each chunk re-parses cleanly. The stall is inherent incomplete-markdown parsing (remark-gfm holds a partial table until its structure resolves, then snaps); the final persisted render is correct. Needs a live model stream to reproduce + verify a fix; deferred rather than risk destabilizing the streaming path with an unverified change.
+- [x] ~~Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.~~ — fixed (confirmed).
+- [ ] Models render `<br/>` in table cells (e.g. bullet-point lists inside a cell) but it doesn't break the line.
+  - `MessageContent.tsx` uses `react-markdown` without `rehype-raw`, so raw HTML like `<br/>` is dropped instead of becoming a line break. Fix: add `rehype-raw` — but mind the plugin interaction with the new `rehype-katex`/`rehype-highlight` (rehype-raw can mangle math nodes; needs correct ordering or `passThrough` for math element types). Verify equations + code highlighting still render after adding it. Consider `rehype-sanitize` given raw HTML from model output is an XSS surface.
 - [x] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
   - Root cause: orphan `tool_result` rows (no paired `tool_call`) map to `type: 'tool_result'`, which had no entry in `messageRegistry` → fell through to `UnknownBubble`. Added `bubbles/ToolResultBubble.tsx` (reuses `ToolExecutionBlock`) and registered it.
 - [x] ~~Fix consolidation bug~~ — already fixed. The `Neo.ClientError.Statement.TypeError` ("Can't coerce `List{Double…}`") came from passing a nested `List[List[float]]` to `db.index.vector.queryNodes`. Consolidation now uses `embedder.embed_single()` which returns a flat `List[float]` (`embeddings.py:120`), matching the working `semantic.py` query; warning text reworded. Verify on a live instance via `task eval:consolidation`.
 - [x] Cached servers for the 'Connect' page cannot be edited or deleted.
   - `ServerSelector.tsx` now renders per-row edit (inline form) + delete (inline confirm) actions wired to the existing `updateServerConfig`/`deleteServer` context methods; styles added to `AuthPage.css`.
+- [ ] MCP tools should auto-connect on server restart if they were connected at shutdown.
+  - Today MCP connections are established on demand and lost on restart. Persist which servers were connected (or an `auto_connect` flag per server in `mcp_servers.json` / `ServerConfig`) and reconnect them at startup (e.g. from `AppConfig.ready` in `apps.py`, mirroring the background chat-worker boot), best-effort so a dead server doesn't block startup.
 
 ### 18.9: Memory Tuning
 
@@ -429,6 +432,9 @@ Currently our model selection and selector are a very solid foundation but are j
 
 - [x] ~~Plan executor hangs on final step~~ — already resolved. `_handle_failure` marks the failed subtask `completed=True` and skips dependents (`plan_executor.py:418,437`); the loop has a deadlock guard (`:168-170`) and synthesis is a single streaming call (`:466-484`). No infinite-loop path remains. Verify on a live plan run.
 - [x] ~~New-conversation chat freeze~~ — resolved by prior streaming-background-job work. Verify a new conversation starts streaming without freezing on a live instance.
+- [x] Output token-budget overshoot → provider 400 ("requested ~262183 tokens, max 262144"), hit during Alloy plan execution.
+  - Root cause: `agent_chat_stream` adaptive budget (`views.py`) set `adaptive_max_tokens = min(max_output_tokens, context_window − input − buffer)`. OpenRouter reports `max_output_tokens == context_window` for some models, so this requested ~the whole window as output (259K) with zero slack, and `estimate_tokens` never counted the tool-schema tokens (the "1473 of tool input") → request landed 39 over.
+  - Fix: clamp a capability-reported output cap to `MAX_OUTPUT_TOKENS_CEILING` (32768; explicit per-model overrides still win) and reserve estimated tool-schema tokens in the input budget. New constant in `streaming/constants.py`. Verified: reported scenario now caps output at 32768 (total ~35K ≪ 262144).
 - [ ] Plans UI redesign — "Plans in Progress" drawer + in-chat step annotation
   - **Problem:** the current plan card gets "left in the dust" at the top of the chat once it scrolls; you can't tell which step a given message belongs to, or see overall progress without scrolling back up.
   - **1. "Plans in Progress" drawer.** Replace the scroll-away plan card with a dedicated drawer/affordance (toolbar entry, like the other right-side drawers). While a plan is active its trigger shows an animated construction-stripe pattern (diagonal hazard stripes, subtle marquee motion) so the user feels "work is underway." Collapsed = compact status; expanded = a creative live view of the plan (step list with status pills, current-step emphasis, progress bar/ring, elapsed time, per-step result previews). **Design for N concurrent plans** — the drawer lists multiple running plans (each its own collapsible block), not a single hard-coded card. Honor `prefers-reduced-motion` (freeze the stripe animation).

@@ -10,9 +10,16 @@ They can be moved to ConfigManager for hot-reloading if needed.
 CHAR_TO_TOKEN_RATIO = 4
 
 # Context management
-CONTEXT_BUFFER_TOKENS = 2000  # Reserve for tool definitions & system overhead
+CONTEXT_BUFFER_TOKENS = 2000  # Reserve for system overhead + token-estimate drift
 MIN_OUTPUT_TOKENS = 2048  # Minimum output allocation to avoid truncation
 MAX_INPUT_TOKENS = 32000  # Safety cap for input context
+# Ceiling on a single response's output budget. Some providers (notably
+# OpenRouter) report max_output_tokens == the full context window; honoring
+# that verbatim makes us request ~the whole window as output, leaving no slack
+# for input-estimate drift and triggering provider 400s ("requested N tokens").
+# Capping keeps the adaptive budget sane. An explicit per-model override
+# (context-limits config) still wins over this ceiling.
+MAX_OUTPUT_TOKENS_CEILING = 32768
 CONTEXT_WARNING_THRESHOLD = 0.8  # Warn when usage exceeds 80% of window
 
 # Tool result truncation

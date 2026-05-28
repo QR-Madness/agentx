@@ -11,10 +11,12 @@ from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
 from .streaming import (
+    CHAR_TO_TOKEN_RATIO,
     CONTEXT_BUFFER_TOKENS,
     CONTEXT_WARNING_THRESHOLD,
     DEFAULT_MAX_TOOL_ROUNDS,
     MAX_INPUT_TOKENS,
+    MAX_OUTPUT_TOKENS_CEILING,
     MIN_OUTPUT_TOKENS,
     STREAM_CLOSE_DELAY,
     estimate_tokens,
@@ -1067,7 +1069,11 @@ async def agent_chat_stream(request):
             caps = provider.get_capabilities(model_id)
             overrides = get_context_limit_overrides(model_id, provider.name)
             context_window = overrides.get("context_window") or caps.context_window
-            max_output_tokens = overrides.get("max_output_tokens") or caps.max_output_tokens or 4096
+            # An explicit per-model override is authoritative (user set it on
+            # purpose); a capability-reported value gets clamped below to the
+            # ceiling, since some providers report max_output == context_window.
+            max_output_override = overrides.get("max_output_tokens")
+            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
 
             logger.info(
                 f"Using context limits for {provider.name}/{model_id}: "
@@ -1134,19 +1140,39 @@ async def agent_chat_stream(request):
             else:
                 logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
-            # Calculate adaptive max_tokens based on context usage
+            # Calculate adaptive max_tokens based on context usage.
+            # Account for tool-schema tokens too: estimate_tokens() only sees
+            # message content, but the provider also counts the serialized tool
+            # definitions toward the prompt (this was the uncounted overhead
+            # that pushed requests over the window). Reserve them explicitly.
             estimated_input = estimate_tokens(messages)
-            available_for_output = context_window - estimated_input - CONTEXT_BUFFER_TOKENS
+            estimated_tool_tokens = (
+                len(json.dumps(tools)) // CHAR_TO_TOKEN_RATIO if tools else 0
+            )
+            available_for_output = (
+                context_window - estimated_input - estimated_tool_tokens - CONTEXT_BUFFER_TOKENS
+            )
 
-            # Use the smaller of: configured max_output or available space (but at least minimum)
+            # Clamp the capability-reported output cap to a sane ceiling so a
+            # model advertising max_output == context_window can't make us
+            # request ~the whole window as output (no slack → provider 400).
+            # An explicit override is trusted as-is.
+            output_cap = (
+                max_output_tokens
+                if max_output_override
+                else min(max_output_tokens, MAX_OUTPUT_TOKENS_CEILING)
+            )
+
+            # Use the smaller of: capped max_output or available space (but at least minimum)
             adaptive_max_tokens = max(
-                min(max_output_tokens, available_for_output),
+                min(output_cap, available_for_output),
                 MIN_OUTPUT_TOKENS
             )
 
             logger.debug(
                 f"Adaptive max_tokens: {adaptive_max_tokens} "
                 f"(context_window={context_window}, estimated_input={estimated_input}, "
+                f"tool_tokens={estimated_tool_tokens}, output_cap={output_cap}, "
                 f"max_output={max_output_tokens}, available={available_for_output})"
             )
 
