@@ -1,0 +1,243 @@
+/**
+ * PlansPanel (drawer) styles — amber accent (#f59e0b) to match the in-chat
+ * PlanExecutionBlock. Reuses .plan-subtasks / .subtask-* from
+ * PlanExecutionBlock.css for the step rows.
+ */
+
+.plans-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.plans-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  color: #f59e0b;
+}
+
+.plans-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.plans-panel-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.plans-panel-empty p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.plans-panel-empty span {
+  font-size: 0.8125rem;
+  max-width: 18rem;
+  line-height: 1.5;
+}
+
+.plans-panel-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.plans-panel-section {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  padding: 0.5rem 0.25rem 0.125rem;
+}
+
+/* Plan block */
+.plan-block {
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid #f59e0b;
+  overflow: hidden;
+}
+
+.plan-block.completed { border-left-color: #22c55e; }
+.plan-block.failed { border-left-color: #ef4444; }
+.plan-block.cancelled,
+.plan-block.stale { border-left-color: #94a3b8; }
+
+.plan-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.plan-block-header:hover {
+  background: var(--bg-hover);
+}
+
+.plan-block-toggle,
+.plan-block-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.plan-block-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+}
+
+.plan-block-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.plan-block-task {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-block-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.plan-block-tab {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.plan-block-complexity {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #f59e0b;
+}
+
+.plan-block-elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.plan-block-body {
+  padding: 0.625rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.plan-block-progress-text {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.plan-block-empty {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Step rows become clickable jump targets */
+.plan-step-jump {
+  position: relative;
+  list-style: none;
+  cursor: pointer;
+}
+
+.plan-step-jump .subtask-item {
+  cursor: pointer;
+}
+
+.plan-step-jump:hover .subtask-item {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.plan-step-jump-icon {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.plan-step-jump:hover .plan-step-jump-icon {
+  opacity: 1;
+}
+
+.plan-block-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.plan-block-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.plan-block-action:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.plan-block-action--danger:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}

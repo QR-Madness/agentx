@@ -3,7 +3,7 @@
  * Consumes active tab from ConversationContext and handles messaging
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Send,
   Bot,
@@ -22,8 +22,11 @@ import { RelayMenu } from './relay/RelayMenu';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageBubble } from './MessageBubble';
+import { StepGroup } from './StepGroup';
+import { groupMessagesBySteps } from './groupMessagesBySteps';
 import { AgentSelectorDropdown } from './AgentSelectorDropdown';
 import { useConversation } from '../../contexts/ConversationContext';
+import { usePlans } from '../../contexts/PlansContext';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../../lib/avatars';
@@ -49,6 +52,7 @@ export function ChatPanel() {
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
+  const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
 
   // When a workflow is selected, the supervisor profile takes over.
@@ -98,6 +102,9 @@ export function ChatPanel() {
     onContextInfo: (info) => {
       if (activeTab) setTabContextInfo(activeTab.id, info);
     },
+    tabId: activeTab?.id,
+    tabTitle: activeTab?.title,
+    plans: { upsertPlan, patchPlan },
   });
 
   const isTyping = stream.state.phase === 'streaming';
@@ -278,6 +285,49 @@ export function ChatPanel() {
     }
   };
 
+  // Group messages by plan subtask so each step's output renders under a
+  // collapsible "Step k/n" header. Memoized on the message array.
+  const tabMessages = activeTab?.messages;
+  const groupedItems = useMemo(
+    () => groupMessagesBySteps(tabMessages ?? []),
+    [tabMessages],
+  );
+  // planId → whether the plan is still running (drives default-collapse).
+  const planRunningById = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const m of tabMessages ?? []) {
+      if (m.type === 'plan_execution') map.set(m.planId, m.status === 'running');
+    }
+    return map;
+  }, [tabMessages]);
+
+  // Listen for "jump to step" from the Plans drawer: scroll to the step group
+  // (or plan card), expand it, and flash it.
+  const activeTabId = activeTab?.id;
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId: string; planId: string; subtaskId?: number }>).detail;
+      if (!detail || detail.tabId !== activeTabId) return;
+      const selector =
+        detail.subtaskId != null
+          ? `[data-step-anchor="${CSS.escape(`${detail.planId}:${detail.subtaskId}`)}"]`
+          : `[data-plan-anchor="${CSS.escape(detail.planId)}"]`;
+      // Defer one frame so a freshly-switched tab has rendered.
+      requestAnimationFrame(() => {
+        const el = container.querySelector<HTMLElement>(selector);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('flash-target');
+        setIsPinned(false);
+        setTimeout(() => el.classList.remove('flash-target'), 1500);
+      });
+    };
+    window.addEventListener('agentx:jump-to-step', handler);
+    return () => window.removeEventListener('agentx:jump-to-step', handler);
+  }, [activeTabId]);
+
   if (!activeTab) {
     return (
       <div className="chat-panel-empty">
@@ -337,9 +387,32 @@ export function ChatPanel() {
           </div>
         )}
 
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
-        ))}
+        {groupedItems.map((item) => {
+          if (item.kind === 'stepGroup') {
+            return (
+              <StepGroup
+                key={item.key}
+                step={item.step}
+                messages={item.messages}
+                agentName={agentName}
+                avatarId={tabProfile?.avatar}
+                defaultCollapsed={!planRunningById.get(item.step.planId)}
+              />
+            );
+          }
+          const { message } = item;
+          // The plan_execution card is the jump target for plan-level focus.
+          if (message.type === 'plan_execution') {
+            return (
+              <div key={message.id} data-plan-anchor={message.planId}>
+                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
+              </div>
+            );
+          }
+          return (
+            <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
+          );
+        })}
 
         {/* Streaming message or typing indicator. Suppress the empty-state
             spinner while a delegation card is actively streaming — the card

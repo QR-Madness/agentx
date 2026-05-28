@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from agentx_ai.agent.tool_output_chunker import (
     _cosine_similarity,
@@ -2981,3 +2981,60 @@ class ReasoningAsyncRegressionTest(TestCase):
 
         self.assertEqual(result.status, ReasoningStatus.COMPLETE)
         self.assertGreaterEqual(provider.complete.await_count, 1)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class PlanStatusEndpointTest(MockRedisTestBase):
+    """GET /api/agent/plans/<id>/status — Redis-backed plan state read."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from django.test import Client
+        self.client = Client()
+
+    def test_returns_parsed_state_when_present(self):
+        self.mock_redis.hgetall.return_value = {
+            "status": "complete",
+            "task": "Build a thing",
+            "complexity": "moderate",
+            "subtask_count": "2",
+            "completed_count": "2",
+            "subtask:0:status": "complete",
+            "subtask:0:description": "first",
+            "subtask:1:status": "complete",
+            "subtask:1:description": "second",
+        }
+        resp = self.client.get("/api/agent/plans/abc123/status?session_id=sess-1")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["found"])
+        self.assertEqual(data["status"], "complete")
+        self.assertEqual(data["subtask_count"], 2)
+        self.assertEqual(data["completed_count"], 2)
+        self.assertEqual(len(data["subtasks"]), 2)
+        self.assertEqual(data["subtasks"][0]["id"], 0)
+        self.assertEqual(data["subtasks"][1]["description"], "second")
+
+    def test_returns_not_found_when_expired(self):
+        self.mock_redis.hgetall.return_value = {}
+        resp = self.client.get("/api/agent/plans/gone/status?session_id=sess-1")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["found"])
+
+    def test_requires_session_id(self):
+        resp = self.client.get("/api/agent/plans/abc123/status")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_decodes_bytes_from_redis(self):
+        self.mock_redis.hgetall.return_value = {
+            b"status": b"active",
+            b"subtask_count": b"1",
+            b"completed_count": b"0",
+            b"subtask:0:status": b"running",
+        }
+        resp = self.client.get("/api/agent/plans/b/status?session_id=s")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "active")
+        self.assertEqual(data["subtasks"][0]["status"], "running")

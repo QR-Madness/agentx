@@ -71,21 +71,27 @@ export const streamingApi = {
         subtask_id: number;
         description: string;
         type: string;
-        progress: number;
+        progress: { completed: number; total: number };
       }) => void;
       onSubtaskComplete?: (data: {
         plan_id: string;
         subtask_id: number;
         result_preview: string;
-        progress: number;
+        progress: { completed: number; total: number };
       }) => void;
       onSubtaskFailed?: (data: {
         plan_id: string;
         subtask_id: number;
         error: string;
-        progress: number;
+        progress: { completed: number; total: number };
       }) => void;
       onPlanComplete?: (data: {
+        plan_id: string;
+        subtask_count: number;
+        completed_count: number;
+        total_time_ms: number;
+      }) => void;
+      onPlanCancelled?: (data: {
         plan_id: string;
         subtask_count: number;
         completed_count: number;
@@ -190,6 +196,9 @@ export const streamingApi = {
                       break;
                     case 'plan_complete':
                       callbacks.onPlanComplete?.(data);
+                      break;
+                    case 'plan_cancelled':
+                      callbacks.onPlanCancelled?.(data);
                       break;
                     case 'delegation_start':
                       callbacks.onDelegationStart?.(data);

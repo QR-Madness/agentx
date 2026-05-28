@@ -417,6 +417,16 @@ POST /api/agent/plans/cancel
 
 Requests cancellation of the agent's active plan execution.
 
+### Plan Status
+
+```
+GET /api/agent/plans/{plan_id}/status?session_id=<sid>
+```
+
+Reads the Redis-tracked state of a plan (status, completed count, per-subtask
+state) so a client can reconcile a persisted "running" plan after a reload.
+Returns `{ "found": false }` with HTTP 200 when the state has expired (1h TTL).
+
 ---
 
 ## Background Chat

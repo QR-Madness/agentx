@@ -18,6 +18,7 @@ type ModalComponentProps = Record<string, unknown> & { onClose: () => void };
 const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<ModalComponentProps>>> = {
   unifiedSettings: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedSettingsModalContent }))),
   memory: lazy(() => import('./stubs').then(m => ({ default: m.MemoryModalContent }))),
+  plans: lazy(() => import('./stubs').then(m => ({ default: m.PlansModalContent }))),
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
   translation: lazy(() => import('./stubs').then(m => ({ default: m.TranslationModalContent }))),
   profileEditor: lazy(() => import('./stubs').then(m => ({ default: m.ProfileEditorModal }))),

@@ -34,8 +34,8 @@ describe('api facade', () => {
     expect(typeof (api as Record<string, unknown>)[method]).toBe('function');
   });
 
-  it('exposes exactly 89 methods (no drops or duplicates from the split)', () => {
-    expect(Object.keys(api)).toHaveLength(89);
+  it('exposes exactly 91 methods (no drops or duplicates from the split)', () => {
+    expect(Object.keys(api)).toHaveLength(91);
   });
 
   it('exposes only functions', () => {

@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
 import { ConversationProvider } from './contexts/ConversationContext';
+import { PlansProvider } from './contexts/PlansContext';
 import { AgentProfileProvider } from './contexts/AgentProfileContext';
 import { AlloyWorkflowProvider } from './contexts/AlloyWorkflowContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -23,13 +24,15 @@ function App() {
               <AgentProfileProvider>
                 <AlloyWorkflowProvider>
                   <ConversationProvider>
-                    <ModalProvider>
-                      <ErrorBoundary>
-                        <RootLayout />
-                      </ErrorBoundary>
-                      <ModalPortal />
-                      <Toaster />
-                    </ModalProvider>
+                    <PlansProvider>
+                      <ModalProvider>
+                        <ErrorBoundary>
+                          <RootLayout />
+                        </ErrorBoundary>
+                        <ModalPortal />
+                        <Toaster />
+                      </ModalProvider>
+                    </PlansProvider>
                   </ConversationProvider>
                 </AlloyWorkflowProvider>
               </AgentProfileProvider>

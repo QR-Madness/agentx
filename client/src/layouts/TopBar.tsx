@@ -21,10 +21,12 @@ import {
   KeyRound,
   MoreHorizontal,
   BrainCircuit,
+  ListChecks,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
+import { usePlans } from '../contexts/PlansContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useConsolidationStatus } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
@@ -48,7 +50,12 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { openModal } = useModal();
   const { tabs } = useConversation();
+  const { livePlans } = usePlans();
   const consolidation = useConsolidationStatus();
+
+  const activePlanCount = Array.from(livePlans.values()).filter(
+    p => p.status === 'running',
+  ).length;
   const { authRequired, isAuthenticated, logout } = useAuth();
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
@@ -108,6 +115,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       id: 'memory-drawer',
       type: 'drawer',
       component: 'memory',
+      position: 'right',
+      size: 'xxl',
+    });
+  };
+
+  const openPlans = () => {
+    openModal({
+      id: 'plans-drawer',
+      type: 'drawer',
+      component: 'plans',
       position: 'right',
       size: 'xxl',
     });
@@ -229,6 +246,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           <Wrench size={18} />
         </button>
         <button
+          className={`toolbar-icon toolbar-secondary toolbar-icon-plans ${activePlanCount > 0 ? 'building' : ''}`}
+          onClick={openPlans}
+          title={activePlanCount > 0 ? `${activePlanCount} plan${activePlanCount > 1 ? 's' : ''} in progress` : 'Plans'}
+        >
+          <ListChecks size={18} />
+          {activePlanCount > 0 && (
+            <span className="toolbar-icon-badge">{activePlanCount}</span>
+          )}
+        </button>
+        <button
           className="toolbar-icon toolbar-secondary"
           onClick={openMemory}
           title="Memory"
@@ -299,6 +326,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTools(); }}>
               <Wrench size={16} />
               <span>Tools</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openPlans(); }}>
+              <ListChecks size={16} />
+              <span>Plans{activePlanCount > 0 ? ` (${activePlanCount})` : ''}</span>
             </button>
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openMemory(); }}>
               <Database size={16} />

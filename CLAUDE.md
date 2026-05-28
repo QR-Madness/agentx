@@ -235,6 +235,7 @@ Additional endpoint groups (added since v0.18 — see `urls.py` for the full set
 | `/api/prompts/templates*`, `/api/prompts/enhance` | GET/POST/PUT/DELETE | Prompt template CRUD + LLM prompt enhancer |
 | `/api/conversations`, `/api/conversations/{id}/messages` | GET | Conversation history |
 | `/api/agent/plans/cancel` | POST | Cancel active plan execution |
+| `/api/agent/plans/{plan_id}/status` | GET | Read Redis-tracked plan state (`?session_id=`); `{found:false}` on TTL expiry |
 
 ## Environment Configuration
 

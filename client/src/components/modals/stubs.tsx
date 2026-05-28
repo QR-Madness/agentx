@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { CheckCircle, XCircle, Copy, Check } from 'lucide-react';
 import { MemoryPanel } from '../memory/MemoryPanel';
+import { PlansPanel } from '../plans/PlansPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
@@ -22,6 +23,14 @@ export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
       <MemoryPanel />
+    </div>
+  );
+}
+
+export function PlansModalContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <PlansPanel />
     </div>
   );
 }

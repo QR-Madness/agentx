@@ -693,6 +693,63 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /agent/plans/{plan_id}/status:
+    get:
+      tags: [Agent]
+      operationId: agentPlanStatus
+      summary: Read Redis-tracked plan execution state
+      description: >
+        Returns the live state of a plan from Redis (1h TTL) so a client can
+        reconcile a persisted "running" plan after a reload. Returns
+        `{ "found": false }` with HTTP 200 when the state has expired, rather
+        than 404.
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Plan state (or not-found marker)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  found:
+                    type: boolean
+                  plan_id:
+                    type: string
+                  session_id:
+                    type: string
+                  status:
+                    type: string
+                  task:
+                    type: string
+                  complexity:
+                    type: string
+                  subtask_count:
+                    type: integer
+                    nullable: true
+                  completed_count:
+                    type: integer
+                    nullable: true
+                  cancel_requested:
+                    type: boolean
+                  subtasks:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '400':
+          description: Missing session_id
+
   /chat/background:
     get:
       tags: [Background Chat]

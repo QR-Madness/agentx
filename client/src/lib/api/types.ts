@@ -195,6 +195,29 @@ export interface ChatResponse {
   tokens_used?: number;
 }
 
+/** Per-subtask slice of a plan's Redis-tracked state. */
+export interface PlanStatusSubtask {
+  id: number;
+  status: string;
+  description?: string;
+  result?: string;
+  error?: string;
+}
+
+/** Response of GET /api/agent/plans/{id}/status. `found: false` on TTL expiry. */
+export interface PlanStatusResponse {
+  found: boolean;
+  plan_id: string;
+  session_id: string;
+  status?: string;
+  task?: string;
+  complexity?: string;
+  subtask_count?: number;
+  completed_count?: number;
+  cancel_requested?: boolean;
+  subtasks?: PlanStatusSubtask[];
+}
+
 export interface BackgroundChatRequest {
   message: string;
   session_id?: string;

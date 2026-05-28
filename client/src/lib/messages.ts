@@ -14,10 +14,26 @@ export type MessageType =
   | 'delegation'
   | 'error';
 
+/**
+ * Subtask affinity stamped onto messages produced while a plan subtask was
+ * executing, so the transcript can badge + group them by step. Rides on the
+ * message itself, so it persists to localStorage for free.
+ */
+export interface PlanStepRef {
+  planId: string;
+  subtaskId: number;
+  /** 1-based for display ("Step 2/5"). */
+  subtaskIndex: number;
+  subtaskCount: number;
+  subtaskTitle: string;
+}
+
 interface BaseMessage {
   id: string;
   timestamp: string;
   type: MessageType;
+  /** Set when this message was produced inside a plan subtask. */
+  planStep?: PlanStepRef;
 }
 
 export interface UserMessage extends BaseMessage {
@@ -91,7 +107,7 @@ export interface PlanExecutionMessage extends BaseMessage {
   task: string;
   complexity: string;
   subtaskCount: number;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
   subtasks: PlanSubtask[];
   totalTimeMs?: number;
   completedCount?: number;

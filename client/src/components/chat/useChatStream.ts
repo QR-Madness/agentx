@@ -25,11 +25,19 @@ import {
   type DelegationToolEvent,
   type MemoryInjectionMessage,
   type PlanExecutionMessage,
+  type PlanStepRef,
   type PlanSubtask,
   type ToolCallMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
+import type { PlanRecord } from '../../contexts/PlansContext';
+
+/** Mutators from PlansContext, plumbed in so the global registry tracks plans. */
+interface PlansSink {
+  upsertPlan: (record: PlanRecord) => void;
+  patchPlan: (planId: string, patch: Partial<PlanRecord>) => void;
+}
 
 interface UseChatStreamOpts {
   appendMessage: (m: ConversationMessage) => void;
@@ -38,6 +46,11 @@ interface UseChatStreamOpts {
   resolveAgentName?: (agentId: string) => string | undefined;
   onSessionId?: (id: string) => void;
   onContextInfo?: (info: ContextInfo) => void;
+  /** Owning conversation tab — stamped on global plan records. */
+  tabId?: string;
+  tabTitle?: string;
+  /** Global plan registry sink (drawer + toolbar indicator). */
+  plans?: PlansSink;
 }
 
 interface UseChatStreamApi {
@@ -79,8 +92,12 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   // the source of truth for renders; these refs only serve the callbacks.
   const liveContentRef = useRef('');
   const activeToolCallsRef = useRef<Map<string, { messageId: string; toolName: string }>>(new Map());
-  const activePlanRef = useRef<{ messageId: string; subtasks: PlanSubtask[] } | null>(null);
+  const activePlanRef = useRef<{ messageId: string; planId: string; subtasks: PlanSubtask[] } | null>(null);
   const activeDelegationsRef = useRef<Map<string, ActiveDelegation>>(new Map());
+  // Subtask affinity stamped onto messages produced inside the current step.
+  // Set on subtask_start, cleared on subtask_complete/failed and plan end —
+  // so synthesis content (streamed after the last subtask) stays untagged.
+  const currentStepRef = useRef<PlanStepRef | null>(null);
 
   // Helper: flush in-flight supervisor tokens as an intermediate
   // AssistantMessage, then clear the buffer. Always clears — no
@@ -100,6 +117,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       thinking: thinking ?? undefined,
       timestamp: new Date().toISOString(),
       agentName: optsRef.current.agentName,
+      planStep: currentStepRef.current ?? undefined,
     };
     optsRef.current.appendMessage(msg);
   }, []);
@@ -109,6 +127,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     activeToolCallsRef.current = new Map();
     activePlanRef.current = null;
     activeDelegationsRef.current = new Map();
+    currentStepRef.current = null;
     dispatch({ type: 'send_started' });
   }, []);
 
@@ -161,6 +180,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           toolCallId: data.tool_call_id,
           arguments: data.arguments,
           status: 'running',
+          planStep: currentStepRef.current ?? undefined,
         };
         optsRef.current.appendMessage(msg);
       },
@@ -182,7 +202,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
 
       onPlanStart: (data) => {
         const messageId = createMessageId();
-        activePlanRef.current = { messageId, subtasks: [] };
+        activePlanRef.current = { messageId, planId: data.plan_id, subtasks: [] };
+        currentStepRef.current = null;
         dispatch({ type: 'plan_started', messageId });
         const msg: PlanExecutionMessage = {
           id: messageId,
@@ -196,13 +217,26 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           subtasks: [],
         };
         optsRef.current.appendMessage(msg);
+        optsRef.current.plans?.upsertPlan({
+          planId: data.plan_id,
+          tabId: optsRef.current.tabId ?? 'unknown',
+          tabTitle: optsRef.current.tabTitle,
+          task: data.task,
+          complexity: data.complexity,
+          status: 'running',
+          subtaskCount: data.subtask_count,
+          completedCount: 0,
+          subtasks: [],
+          startedAt: msg.timestamp,
+        });
       },
 
       onSubtaskStart: (data) => {
         // Each subtask runs its own streaming_tool_loop, so any supervisor
         // text left over from the previous subtask must be flushed before
         // the next round of chunks begins — otherwise preambles from
-        // every subtask concatenate into one bubble.
+        // every subtask concatenate into one bubble. Flush happens under the
+        // *previous* step's affinity, so set currentStepRef afterward.
         flushLiveContent();
         const plan = activePlanRef.current;
         if (!plan) return;
@@ -217,12 +251,24 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             status: 'running',
           });
         }
+        currentStepRef.current = {
+          planId: plan.planId,
+          subtaskId: data.subtask_id,
+          subtaskIndex: data.subtask_id + 1,
+          subtaskCount: data.progress?.total ?? plan.subtasks.length,
+          subtaskTitle: data.description,
+        };
         const subtasks = [...plan.subtasks];
         dispatch({ type: 'plan_subtasks_updated', subtasks });
         optsRef.current.updateMessage(plan.messageId, { subtasks });
+        optsRef.current.plans?.patchPlan(plan.planId, { subtasks });
       },
 
       onSubtaskComplete: (data) => {
+        // Flush this subtask's narration as its own (still step-tagged) bubble
+        // before clearing affinity, so synthesis output stays unannotated.
+        flushLiveContent();
+        currentStepRef.current = null;
         const plan = activePlanRef.current;
         if (!plan) return;
         const target = plan.subtasks.find(s => s.subtaskId === data.subtask_id);
@@ -234,9 +280,12 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         const completedCount = subtasks.filter(s => s.status === 'completed').length;
         dispatch({ type: 'plan_subtasks_updated', subtasks });
         optsRef.current.updateMessage(plan.messageId, { subtasks, completedCount });
+        optsRef.current.plans?.patchPlan(plan.planId, { subtasks, completedCount });
       },
 
       onSubtaskFailed: (data) => {
+        flushLiveContent();
+        currentStepRef.current = null;
         const plan = activePlanRef.current;
         if (!plan) return;
         const target = plan.subtasks.find(s => s.subtaskId === data.subtask_id);
@@ -247,13 +296,39 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         const subtasks = [...plan.subtasks];
         dispatch({ type: 'plan_subtasks_updated', subtasks });
         optsRef.current.updateMessage(plan.messageId, { subtasks });
+        optsRef.current.plans?.patchPlan(plan.planId, { subtasks });
       },
 
       onPlanComplete: (data) => {
+        currentStepRef.current = null;
+        const plan = activePlanRef.current;
+        if (!plan) return;
+        const status = data.completed_count === data.subtask_count ? 'completed' : 'failed';
+        optsRef.current.updateMessage(plan.messageId, {
+          status,
+          completedCount: data.completed_count,
+          totalTimeMs: data.total_time_ms,
+        });
+        optsRef.current.plans?.patchPlan(plan.planId, {
+          status,
+          completedCount: data.completed_count,
+          totalTimeMs: data.total_time_ms,
+        });
+        activePlanRef.current = null;
+        dispatch({ type: 'plan_finished' });
+      },
+
+      onPlanCancelled: (data) => {
+        currentStepRef.current = null;
         const plan = activePlanRef.current;
         if (!plan) return;
         optsRef.current.updateMessage(plan.messageId, {
-          status: data.completed_count === data.subtask_count ? 'completed' : 'failed',
+          status: 'cancelled',
+          completedCount: data.completed_count,
+          totalTimeMs: data.total_time_ms,
+        });
+        optsRef.current.plans?.patchPlan(plan.planId, {
+          status: 'cancelled',
           completedCount: data.completed_count,
           totalTimeMs: data.total_time_ms,
         });
@@ -395,7 +470,11 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       onError: (error) => {
         liveContentRef.current = '';
         activeToolCallsRef.current = new Map();
+        if (activePlanRef.current) {
+          optsRef.current.plans?.patchPlan(activePlanRef.current.planId, { status: 'failed' });
+        }
         activePlanRef.current = null;
+        currentStepRef.current = null;
         activeDelegationsRef.current = new Map();
         dispatch({ type: 'stream_ended' });
 
@@ -419,7 +498,11 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     abortRef.current = null;
     liveContentRef.current = '';
     activeToolCallsRef.current = new Map();
+    if (activePlanRef.current) {
+      optsRef.current.plans?.patchPlan(activePlanRef.current.planId, { status: 'cancelled' });
+    }
     activePlanRef.current = null;
+    currentStepRef.current = null;
     activeDelegationsRef.current = new Map();
     dispatch({ type: 'stream_ended' });
   }, []);

@@ -1210,6 +1210,7 @@ async def agent_chat_stream(request):
             max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
             total_tokens_input = 0
             total_tokens_output = 0
+            plan_summary = None  # Set on the plan-execution path; persisted on the assistant turn
 
             # Hard limit for context to prevent corruption (leave room for output)
             max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
@@ -1281,6 +1282,46 @@ async def agent_chat_stream(request):
                 full_content = executor.full_content
                 total_tokens_input = executor.total_tokens_in
                 total_tokens_output = executor.total_tokens_out
+
+                # Snapshot the plan so the in-chat plan card can be reconstructed
+                # on conversation restore (subtask-level turns aren't persisted;
+                # this summary is the durable record of the run).
+                def _subtask_status(result: str | None) -> str:
+                    if not result:
+                        return "completed"
+                    if result.startswith("[FAILED"):
+                        return "failed"
+                    if result.startswith("[SKIPPED"):
+                        return "skipped"
+                    if result.startswith("[ABANDONED"):
+                        return "skipped"
+                    return "completed"
+
+                plan_summary = {
+                    "plan_id": executor.plan_id,
+                    "task": plan.task,
+                    "complexity": plan.complexity.value,
+                    "subtask_count": len(plan.steps),
+                    "completed_count": sum(
+                        1 for s in plan.steps
+                        if s.result and not s.result.startswith("[FAILED")
+                        and not s.result.startswith("[SKIPPED")
+                        and not s.result.startswith("[ABANDONED")
+                    ),
+                    "subtasks": [
+                        {
+                            "id": s.id,
+                            "description": s.description,
+                            "type": s.type.value,
+                            "status": _subtask_status(s.result),
+                            "result_preview": (s.result or "")[:200]
+                            if not (s.result or "").startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
+                            else "",
+                            "error": s.result if (s.result or "").startswith("[FAILED") else None,
+                        }
+                        for s in plan.steps
+                    ],
+                }
 
             else:
                 # Standard single-pass path (simple tasks)
@@ -1481,6 +1522,8 @@ async def agent_chat_stream(request):
                                 asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
                             if parsed.thinking:
                                 asst_metadata["thinking"] = parsed.thinking
+                            if plan_summary is not None:
+                                asst_metadata["plan"] = plan_summary
 
                             assistant_turn = Turn(
                                 id=asst_turn_id,
@@ -1562,6 +1605,63 @@ def agent_plan_cancel(request):
         "session_id": session_id,
         "plan_id": plan_id,
         "cancel_requested": requested,
+    })
+
+
+def agent_plan_status(request, plan_id):
+    """
+    GET /api/agent/plans/<plan_id>/status?session_id=<sid>
+
+    Read the Redis-tracked state of a plan so the client can reconcile a
+    persisted "running" plan after a reload (the 1h TTL key is the source of
+    truth). Returns ``{"found": false}`` with 200 when the key has expired,
+    rather than 404, so the caller can branch without exception handling.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    session_id = request.GET.get("session_id")
+    if not session_id:
+        return JsonResponse({"error": "session_id required"}, status=400)
+
+    from .agent.plan_state import PlanStateStore
+
+    store = PlanStateStore(session_id)
+    raw = store.get_status(plan_id)
+    if not raw:
+        return JsonResponse({"found": False, "plan_id": plan_id, "session_id": session_id})
+
+    def _s(v):
+        return v.decode() if isinstance(v, bytes) else v
+
+    data = {_s(k): _s(v) for k, v in raw.items()}
+
+    # Collect per-subtask fields (subtask:{id}:status|description|result|error).
+    subtasks: dict[int, dict] = {}
+    for key, value in data.items():
+        if not key.startswith("subtask:"):
+            continue
+        _, sid, field = key.split(":", 2)
+        entry = subtasks.setdefault(int(sid), {"id": int(sid)})
+        entry[field] = value
+
+    def _int(key):
+        try:
+            return int(data[key])
+        except (KeyError, ValueError, TypeError):
+            return None
+
+    return JsonResponse({
+        "found": True,
+        "plan_id": plan_id,
+        "session_id": session_id,
+        "status": data.get("status"),
+        "task": data.get("task"),
+        "complexity": data.get("complexity"),
+        "subtask_count": _int("subtask_count"),
+        "completed_count": _int("completed_count"),
+        "cancel_requested": data.get("cancel_requested") == "1",
+        "subtasks": [subtasks[k] for k in sorted(subtasks)],
     })
 
 

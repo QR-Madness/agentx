@@ -7,7 +7,7 @@
  * delegation card with full specialist output).
  */
 
-import type { ConversationMessage } from '../../lib/messages';
+import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
 import type { ServerMessage } from '../../lib/api';
 
@@ -44,6 +44,52 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
     }
 
     if (m.role === 'assistant') {
+      // Reconstruct the plan-execution card (if this turn was a plan
+      // synthesis). Subtask-level turns aren't persisted server-side, so this
+      // summary on the synthesis turn is the durable record of the run; it
+      // renders just before the synthesized answer, as the user saw it live.
+      const planMeta = m.metadata?.plan as
+        | {
+            plan_id: string;
+            task: string;
+            complexity: string;
+            subtask_count: number;
+            completed_count?: number;
+            subtasks?: Array<{
+              id: number;
+              description: string;
+              type?: string;
+              status?: string;
+              result_preview?: string;
+              error?: string | null;
+            }>;
+          }
+        | undefined;
+      if (planMeta?.plan_id) {
+        const subtasks = (planMeta.subtasks ?? []).map(s => ({
+          subtaskId: s.id,
+          description: s.description,
+          subtaskType: s.type ?? '',
+          status: (s.status as PlanSubtask['status']) ?? 'completed',
+          resultPreview: s.result_preview || undefined,
+          error: s.error ?? undefined,
+        }));
+        const completedCount =
+          planMeta.completed_count ?? subtasks.filter(s => s.status === 'completed').length;
+        out.push({
+          id: createMessageId(),
+          timestamp: m.timestamp || new Date().toISOString(),
+          type: 'plan_execution',
+          planId: planMeta.plan_id,
+          task: planMeta.task,
+          complexity: planMeta.complexity,
+          subtaskCount: planMeta.subtask_count,
+          status: completedCount >= planMeta.subtask_count ? 'completed' : 'failed',
+          subtasks,
+          completedCount,
+        });
+      }
+
       // Render whatever was persisted, even if empty — silently dropping
       // legacy rows hides messages from conversations stored before the
       // write-side empty-skip landed. New empty rows are blocked at

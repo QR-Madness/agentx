@@ -340,3 +340,44 @@
     display: none !important;
   }
 }
+
+/* Plans indicator — animated construction (hazard) stripes while a plan runs */
+.toolbar-icon-plans.building {
+  color: #f59e0b;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(245, 158, 11, 0.28) 0,
+    rgba(245, 158, 11, 0.28) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  background-size: 200% 200%;
+  animation: plansStripeMarch 1.2s linear infinite;
+}
+
+@keyframes plansStripeMarch {
+  from { background-position: 0 0; }
+  to { background-position: 34px 0; }
+}
+
+.toolbar-icon-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #1a1206;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-icon-plans.building {
+    animation: none;
+  }
+}

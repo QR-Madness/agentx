@@ -89,6 +89,12 @@
   color: #ef4444;
 }
 
+.plan-status-badge.cancelled,
+.plan-status-badge.stale {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+}
+
 .plan-toggle {
   background: none;
   border: none;
@@ -195,6 +201,11 @@
 
 .subtask-item.skipped {
   opacity: 0.5;
+}
+
+.subtask-item.current {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.06);
 }
 
 .subtask-status-icon {
