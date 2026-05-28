@@ -147,12 +147,31 @@ def _run_job(job: Dict[str, Any]) -> None:
 
     try:
         from ..agent import Agent, AgentConfig
+        from ..agent.profiles import get_profile_manager
+        from ..streaming.helpers import resolve_with_priority
 
         config_kwargs: Dict[str, Any] = {
             "enable_memory": job.get("use_memory") != "0",
         }
-        if job.get("model"):
-            config_kwargs["default_model"] = job["model"]
+
+        # Resolve the agent profile so the job runs on the same model/prompt
+        # profile as a foreground send would — otherwise it falls back to the
+        # global default model (e.g. LM Studio), which is rarely intended.
+        agent_profile = None
+        agent_profile_id = job.get("agent_profile_id") or None
+        if agent_profile_id:
+            agent_profile = get_profile_manager().get_profile(agent_profile_id)
+
+        resolved_model = resolve_with_priority(
+            job.get("model") or None,
+            agent_profile.default_model if agent_profile else None,
+        )
+        if resolved_model:
+            config_kwargs["default_model"] = resolved_model
+        if agent_profile and agent_profile.prompt_profile_id:
+            config_kwargs["prompt_profile_id"] = agent_profile.prompt_profile_id
+        if agent_profile and agent_profile.agent_id:
+            config_kwargs["agent_id"] = agent_profile.agent_id
 
         agent = Agent(AgentConfig(**config_kwargs))
         result = agent.chat(

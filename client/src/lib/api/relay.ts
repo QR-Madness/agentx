@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { BackgroundChatJob, BackgroundChatRequest } from './types';
+import type { ActiveChatRun, BackgroundChatJob, BackgroundChatRequest } from './types';
 
 export const relayApi = {
   // === Background Chat (Relay) ===
@@ -23,5 +23,11 @@ export const relayApi = {
     return apiRequest(`/api/chat/background/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
     });
+  },
+
+  // === Detached Chat Runs (recovery) ===
+
+  async listChatRuns(): Promise<{ runs: ActiveChatRun[] }> {
+    return apiRequest('/api/agent/chat/runs');
   },
 };

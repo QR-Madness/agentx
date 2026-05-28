@@ -97,6 +97,13 @@ carries a `run_id` the client persists so it can re-attach.
 - **Cancel:** `POST /api/agent/chat/runs/{run_id}/cancel` cooperatively stops a run (the
   runner checks the flag at SSE-event boundaries). This is what the chat **Stop** button
   calls; merely closing a tab does not cancel — it only detaches.
+- **Recover:** closing a *conversation tab* drops the `run_id` it held, so the run can't
+  be re-attached from that tab. `GET /api/agent/chat/runs` lists the caller's detached
+  runs (newest first); two surfaces consume it — a **"Live runs"** section in the Relay
+  inbox and a **"Resume Running"** section atop the conversation selector. Both show only
+  runs that are still `running` and **not** owned by an open tab, and clicking **Resume**
+  restores the conversation (or seeds a fresh tab when the run hasn't emitted its
+  `session_id` yet) and re-attaches. Runs are indexed per user.
 
 ## Session Management
 

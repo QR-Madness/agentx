@@ -61,13 +61,22 @@ export function useConversationHistory({
     refreshHistory();
   }, [activeServer, refreshHistory]);
 
-  // Restore a conversation from the server into a new tab
-  const restoreConversation = useCallback(async (conversationId: string) => {
+  // Restore a conversation from the server into a new tab. Returns the tab id
+  // (existing or newly created). `opts.activeRun` bakes a detached run onto the
+  // tab so ChatPanel re-attaches on mount (used by run recovery).
+  const restoreConversation = useCallback(async (
+    conversationId: string,
+    opts?: { activeRun?: { runId: string } },
+  ): Promise<string> => {
     // Check if already open
     const existing = tabs.find(t => t.sessionId === conversationId);
     if (existing) {
+      if (opts?.activeRun) {
+        setTabs(prev => prev.map(t =>
+          t.id === existing.id ? { ...t, activeRun: opts.activeRun } : t));
+      }
       setActiveTabId(existing.id);
-      return;
+      return existing.id;
     }
 
     const response = await api.getConversationMessages(conversationId);
@@ -105,10 +114,12 @@ export function useConversationHistory({
       createdAt: response.messages[0]?.timestamp || now,
       lastMessageAt: response.messages[response.messages.length - 1]?.timestamp || now,
       contextInfo: restoredContextInfo,
+      activeRun: opts?.activeRun,
     };
 
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
+    return newTab.id;
   }, [tabs, setTabs, setActiveTabId]);
 
   // Delete an open tab and its server conversation

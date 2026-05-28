@@ -3093,3 +3093,69 @@ class ChatRunStoreTest(MockRedisTestBase):
         self.assertEqual(len(events), 1)
         self.assertIn("run_missing", events[0])
         self.assertIn("stale", events[0])
+
+    def test_create_indexes_run_with_metadata(self):
+        from agentx_ai.streaming.chat_run import store
+        store.create("run1", user_id="alice", message="hello", session_id="sess1")
+        # State hash carries the recovery metadata...
+        mapping = self.mock_redis.hset.call_args.kwargs["mapping"]
+        self.assertEqual(mapping["user_id"], "alice")
+        self.assertEqual(mapping["message"], "hello")
+        self.assertEqual(mapping["session_id"], "sess1")
+        # ...and the run is added to the per-user index ZSET.
+        self.assertTrue(self.mock_redis.zadd.called)
+        index_key = self.mock_redis.zadd.call_args.args[0]
+        self.assertIn("alice", index_key)
+
+    def test_set_session_backfills_hash(self):
+        from agentx_ai.streaming.chat_run import store
+        store.set_session("run1", "sess-late")
+        self.mock_redis.hset.assert_called_with("chat_run:run1", "session_id", "sess-late")
+
+    def test_list_runs_returns_states_newest_first(self):
+        from agentx_ai.streaming.chat_run import store
+        self.mock_redis.zrevrange.return_value = [b"run2", b"run1"]
+        self.mock_redis.hgetall.side_effect = [
+            {"status": "running", "message": "two", "session_id": "s2",
+             "created_at": "t2", "updated_at": "t2"},
+            {"status": "running", "message": "one", "session_id": "",
+             "created_at": "t1", "updated_at": "t1"},
+        ]
+        runs = store.list_runs("alice")
+        self.assertEqual([r["run_id"] for r in runs], ["run2", "run1"])
+        self.assertEqual(runs[0]["message"], "two")
+        self.assertIsNone(runs[1]["session_id"])  # empty string → None
+
+    def test_list_runs_prunes_stale_index_entries(self):
+        from agentx_ai.streaming.chat_run import store
+        self.mock_redis.zrevrange.return_value = [b"ghost"]
+        self.mock_redis.hgetall.return_value = {}  # state expired
+        runs = store.list_runs("alice")
+        self.assertEqual(runs, [])
+        self.mock_redis.zrem.assert_called_once()
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ChatRunsEndpointTest(MockRedisTestBase):
+    """GET /api/agent/chat/runs — list this user's detached runs."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from django.test import Client
+        self.client = Client()
+
+    def test_lists_runs(self):
+        self.mock_redis.zrevrange.return_value = [b"run1"]
+        self.mock_redis.hgetall.return_value = {
+            "status": "running", "message": "hi", "session_id": "s1",
+            "created_at": "t", "updated_at": "t",
+        }
+        resp = self.client.get("/api/agent/chat/runs")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data["runs"]), 1)
+        self.assertEqual(data["runs"][0]["run_id"], "run1")
+
+    def test_post_rejected(self):
+        resp = self.client.post("/api/agent/chat/runs")
+        self.assertEqual(resp.status_code, 405)

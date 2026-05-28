@@ -691,6 +691,54 @@ paths:
         '400':
           description: Missing run_id
 
+  /agent/chat/runs:
+    get:
+      tags: [Agent]
+      operationId: agentChatRuns
+      summary: List detached chat runs
+      description: >-
+        Lists the caller's detached chat runs (newest first), used by recovery
+        surfaces (Relay inbox, conversation selector) to find runs whose owning
+        tab was closed so they can be re-attached. Runs are indexed per user.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 50
+      responses:
+        '200':
+          description: List of runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        run_id:
+                          type: string
+                        status:
+                          type: string
+                          description: running | done | failed | cancelled
+                        message:
+                          type: string
+                          description: Truncated first-message label
+                        session_id:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+                        updated_at:
+                          type: string
+        '405':
+          description: GET required
+
   /agent/chat/runs/{run_id}/cancel:
     post:
       tags: [Agent]

@@ -4,10 +4,12 @@
  * Renders via portal to escape overflow constraints
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2, Radio } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useNotify } from '../../contexts/NotificationContext';
+import { orphanedRuns } from '../../contexts/conversation/orphanedRuns';
+import { api, type ActiveChatRun } from '../../lib/api';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './ConversationHistoryDropdown.css';
 
@@ -21,21 +23,27 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
   const {
     tabs, activeTabId, switchTab, closeTab,
     serverConversations, isLoadingHistory, restoreConversation, refreshHistory,
-    deleteConversation, deleteServerConversation,
+    deleteConversation, deleteServerConversation, resumeRun,
   } = useConversation();
   const { notifyError } = useNotify();
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [runs, setRuns] = useState<ActiveChatRun[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Refresh history + focus search when opened.
+  // Refresh history + detached runs + focus search when opened. Fetched on open
+  // only (no polling) — the Relay inbox owns the live cadence.
   useEffect(() => {
     if (isOpen) {
       refreshHistory();
+      api.listChatRuns().then(r => setRuns(r.runs)).catch(() => setRuns([]));
       searchRef.current?.focus();
     }
   }, [isOpen, refreshHistory]);
+
+  // Runs still going whose owning tab is closed — offered as "Resume Running".
+  const liveRuns = useMemo(() => orphanedRuns(runs, tabs), [runs, tabs]);
 
   const query = searchQuery.toLowerCase();
 
@@ -44,8 +52,12 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     .filter(tab => tab.title.toLowerCase().includes(query))
     .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
-  // Get session IDs of open tabs to exclude from server history
-  const openSessionIds = new Set(tabs.map(t => t.sessionId).filter(Boolean));
+  // Get session IDs of open tabs + live runs to exclude from server history,
+  // so a running conversation isn't also listed under "Past Conversations".
+  const openSessionIds = new Set([
+    ...tabs.map(t => t.sessionId).filter(Boolean),
+    ...liveRuns.map(r => r.session_id).filter(Boolean),
+  ]);
 
   // Filter server conversations: exclude those already open as tabs
   const pastConversations = serverConversations
@@ -122,7 +134,20 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     }
   };
 
-  const totalCount = filteredTabs.length + pastConversations.length;
+  const handleResume = async (e: React.MouseEvent, run: ActiveChatRun) => {
+    e.stopPropagation();
+    setRestoringId(run.run_id);
+    try {
+      await resumeRun(run);
+      onClose();
+    } catch (err) {
+      notifyError(err, 'Failed to resume run');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const totalCount = filteredTabs.length + pastConversations.length + liveRuns.length;
 
   return (
     <DropdownPortal
@@ -159,6 +184,35 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
       </div>
 
       <div className="history-list">
+        {/* Resume Running Section — runs whose owning tab was closed */}
+        {liveRuns.filter(r => r.message.toLowerCase().includes(query)).length > 0 && (
+          <>
+            <div className="history-section-label">Resume Running</div>
+            {liveRuns
+              .filter(r => r.message.toLowerCase().includes(query))
+              .map(run => (
+                <div
+                  key={run.run_id}
+                  className="history-item history-item-running"
+                  onClick={(e) => handleResume(e, run)}
+                  title="Reopen this run and continue streaming"
+                >
+                  <div className="history-item-icon">
+                    {restoringId === run.run_id
+                      ? <Loader2 size={14} className="spin" />
+                      : <Radio size={14} className="history-running-dot" />}
+                  </div>
+                  <div className="history-item-info">
+                    <span className="history-item-title">
+                      {run.message.slice(0, 60) || 'Running conversation'}
+                    </span>
+                    <span className="history-item-meta">running · {formatDate(run.updated_at)}</span>
+                  </div>
+                </div>
+              ))}
+          </>
+        )}
+
         {/* Open Tabs Section */}
         {filteredTabs.length > 0 && (
           <>

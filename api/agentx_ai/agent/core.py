@@ -495,12 +495,18 @@ class Agent:
         tools_used: list[str] = []
         
         for _ in range(self.config.max_tool_rounds):
-            result = provider.complete(
-                messages,
-                model_id,
-                tools=tools,
-                tool_choice="auto" if tools else None,
-                **kwargs,
+            # Provider.complete is async; bridge it to this sync path (used by
+            # the non-streaming chat + background worker). 10 min covers slow
+            # local models pulling tools.
+            result = run_coro_sync(
+                provider.complete(
+                    messages,
+                    model_id,
+                    tools=tools,
+                    tool_choice="auto" if tools else None,
+                    **kwargs,
+                ),
+                timeout=600.0,
             )
             
             if not result.tool_calls:
@@ -543,7 +549,7 @@ class Agent:
 
         # Exhausted rounds — do one final call without tools
         logger.warning(f"Reached max tool rounds ({self.config.max_tool_rounds})")
-        result = provider.complete(messages, model_id, **kwargs)
+        result = run_coro_sync(provider.complete(messages, model_id, **kwargs), timeout=600.0)
         return result, tools_used
 
     def run(

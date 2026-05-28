@@ -15,11 +15,12 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { ConversationMessage } from '../lib/messages';
 import type { ConversationTab } from '../lib/storage';
-import type { ConversationSummary } from '../lib/api';
+import type { ActiveChatRun, ConversationSummary } from '../lib/api';
 import { useConversationTabs } from './conversation/useConversationTabs';
 import { useTabMessages } from './conversation/useTabMessages';
 import { useTabSettings } from './conversation/useTabSettings';
 import { useConversationHistory } from './conversation/useConversationHistory';
+import { useResumeRun } from './conversation/useResumeRun';
 
 // Re-export for convenience
 export type { ConversationTab } from '../lib/storage';
@@ -49,8 +50,14 @@ interface ConversationContextValue {
   // Server-side conversation history
   serverConversations: ConversationSummary[];
   isLoadingHistory: boolean;
-  restoreConversation: (conversationId: string) => Promise<void>;
+  restoreConversation: (
+    conversationId: string,
+    opts?: { activeRun?: { runId: string } },
+  ) => Promise<string>;
   refreshHistory: () => Promise<void>;
+
+  // Reopen a detached run (recovery surfaces) — restores/seeds a tab + attaches.
+  resumeRun: (run: ActiveChatRun) => Promise<void>;
 
   // Delete conversations (from server)
   deleteConversation: (tabId: string) => Promise<void>;
@@ -91,6 +98,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     closeTab: tabsApi.closeTab,
   });
 
+  const resumeRun = useResumeRun({
+    restoreConversation: history.restoreConversation,
+    addTab: tabsApi.addTab,
+    updateTab: tabsApi.updateTab,
+  });
+
   return (
     <ConversationContext.Provider
       value={{
@@ -111,6 +124,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         isLoadingHistory: history.isLoadingHistory,
         restoreConversation: history.restoreConversation,
         refreshHistory: history.refreshHistory,
+        resumeRun,
         deleteConversation: history.deleteConversation,
         deleteServerConversation: history.deleteServerConversation,
         appendMessage: messages.appendMessage,

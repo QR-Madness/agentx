@@ -1567,7 +1567,12 @@ async def agent_chat_stream(request):
     # no `request` state after parsing, so handing it over as-is is safe.
     from .streaming.chat_run import start_chat_run, tail_chat_run
 
-    run_id = start_chat_run(generate_sse)
+    run_id = start_chat_run(
+        generate_sse,
+        user_id=_bg_user_id(request),
+        message=message,
+        session_id=session_id,
+    )
 
     async def _client_stream():
         # First event tells the client which run to persist + re-attach to.
@@ -1626,6 +1631,28 @@ def agent_chat_run_cancel(request, run_id):
 
     requested = store.request_cancel(run_id)
     return JsonResponse({"run_id": run_id, "cancel_requested": requested})
+
+
+def agent_chat_runs(request):
+    """
+    GET /api/agent/chat/runs — list this user's detached chat runs (newest first).
+
+    Used by recovery surfaces (Relay inbox, conversation selector) to find runs
+    whose owning tab was closed so they can be re-attached. Runs are indexed per
+    user; only the caller's own runs are returned.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    from .streaming.chat_run import store
+
+    try:
+        limit = int(request.GET.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+
+    runs = store.list_runs(_bg_user_id(request), limit=min(max(limit, 1), 50))
+    return JsonResponse({"runs": runs})
 
 
 def agent_status(request):

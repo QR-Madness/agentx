@@ -16,6 +16,7 @@ import {
   Crown,
   Box,
   Database,
+  X,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { RelayMenu } from './relay/RelayMenu';
@@ -80,6 +81,8 @@ export function ChatPanel() {
   const contextInfo = activeTab?.contextInfo ?? null;
   const [showRelay, setShowRelay] = useState(false);
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
+  // When armed (via Relay), the next send routes to the background queue.
+  const [bgArmed, setBgArmed] = useState(false);
   const useMemory = !(activeTab?.noMemorization ?? false);
   const setNoMemorization = useCallback(
     (next: boolean) => {
@@ -312,10 +315,21 @@ export function ChatPanel() {
     }
   };
 
+  // Unified submit: routes to the background queue when armed, else streams.
+  const submit = () => {
+    if (!input.trim()) return;
+    if (bgArmed) {
+      handleSendBackground();
+      setBgArmed(false);
+    } else {
+      handleSend();
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      submit();
     }
   };
 
@@ -503,6 +517,19 @@ export function ChatPanel() {
 
       {/* Input */}
       <div className="chat-panel-input">
+        {bgArmed && (
+          <div className="bg-armed-chip">
+            <Box size={12} />
+            <span>Next message runs in the background</span>
+            <button
+              onClick={() => setBgArmed(false)}
+              aria-label="Cancel background mode"
+              title="Cancel background mode"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
         <div className="input-controls">
           <button
             ref={profileButtonRef}
@@ -559,8 +586,9 @@ export function ChatPanel() {
             canEnhance={!!input.trim() && !isTyping}
             onEnhance={handleEnhancePrompt}
             isEnhancing={isEnhancing}
-            canSendBackground={!!input.trim()}
-            onSendBackground={handleSendBackground}
+            canArmBackground={!!input.trim() || bgArmed}
+            backgroundArmed={bgArmed}
+            onToggleBackground={() => setBgArmed(v => !v)}
             onJobsChanged={() => setHasUnreadBgJobs(false)}
           />
           <textarea
@@ -585,11 +613,12 @@ export function ChatPanel() {
             </button>
           ) : (
             <button
-              className="send-button"
-              onClick={handleSend}
+              className={`send-button ${bgArmed ? 'armed' : ''}`}
+              onClick={submit}
               disabled={!input.trim()}
+              title={bgArmed ? 'Send to background' : 'Send'}
             >
-              <Send size={18} />
+              {bgArmed ? <Box size={18} /> : <Send size={18} />}
             </button>
           )}
         </div>

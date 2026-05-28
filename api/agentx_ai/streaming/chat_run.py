@@ -35,10 +35,13 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 RUN_KEY_PREFIX = "chat_run"
+RUN_INDEX_PREFIX = "chat_run:index"    # per-user ZSET of run_ids for enumeration
 RUN_TTL_SECONDS = 2 * 60 * 60          # 2h — outlives a reasonable reopen window
 EVENTS_MAXLEN = 5000                   # cap buffered events per run
 TAIL_BLOCK_MS = 2000                   # XREAD block timeout while tailing
 STALE_RUNNING_SECONDS = 15 * 60        # a "running" run older than this is orphaned
+MAX_INDEX = 50                         # cap runs retained per user in the index
+MESSAGE_LABEL_MAX = 200                # truncate the stored message used as a label
 
 # Sentinel appended after the generator finishes so the tail knows to stop even
 # though the underlying generator doesn't emit a terminal event itself.
@@ -58,24 +61,73 @@ def _state_key(run_id: str) -> str:
     return f"{RUN_KEY_PREFIX}:{run_id}"
 
 
+def _index_key(user_id: str) -> str:
+    return f"{RUN_INDEX_PREFIX}:{user_id or 'default'}"
+
+
 def _decode(value: Any) -> Any:
     return value.decode("utf-8") if isinstance(value, bytes) else value
+
+
+def _extract_session_id(sse_event: str) -> Optional[str]:
+    """Pull session_id from an SSE event's `data:` JSON line, if present."""
+    for line in sse_event.splitlines():
+        if line.startswith("data:"):
+            try:
+                payload = json.loads(line[len("data:"):].strip())
+            except (ValueError, TypeError):
+                return None
+            sid = payload.get("session_id") if isinstance(payload, dict) else None
+            return sid or None
+    return None
 
 
 class ChatRunStore:
     """Redis-backed state + event buffer for a detached chat run."""
 
-    def create(self, run_id: str) -> None:
+    def create(
+        self,
+        run_id: str,
+        *,
+        user_id: str = "default",
+        message: str = "",
+        session_id: Optional[str] = None,
+    ) -> None:
         try:
             client = _redis()
             now = datetime.now(timezone.utc).isoformat()
             client.hset(
                 _state_key(run_id),
-                mapping={"status": "running", "created_at": now, "updated_at": now},
+                mapping={
+                    "status": "running",
+                    "created_at": now,
+                    "updated_at": now,
+                    "user_id": user_id or "default",
+                    "message": (message or "")[:MESSAGE_LABEL_MAX],
+                    "session_id": session_id or "",
+                },
             )
             client.expire(_state_key(run_id), RUN_TTL_SECONDS)
+            # Index per user so the run is enumerable for recovery surfaces.
+            index_key = _index_key(user_id)
+            score = datetime.now(timezone.utc).timestamp() * 1000
+            client.zadd(index_key, {run_id: score})
+            # Trim to the most-recent MAX_INDEX entries (drop lowest scores).
+            client.zremrangebyrank(index_key, 0, -(MAX_INDEX + 1))
+            client.expire(index_key, RUN_TTL_SECONDS)
         except Exception as e:
             logger.warning(f"chat_run create failed: {e}")
+
+    def set_session(self, run_id: str, session_id: str) -> None:
+        """Backfill the session id once a (new) chat discovers it mid-run."""
+        if not session_id:
+            return
+        try:
+            client = _redis()
+            client.hset(_state_key(run_id), "session_id", session_id)
+            client.expire(_state_key(run_id), RUN_TTL_SECONDS)
+        except Exception as e:
+            logger.warning(f"chat_run set_session failed: {e}")
 
     def append_event(self, run_id: str, sse_event: str) -> None:
         try:
@@ -128,6 +180,38 @@ class ChatRunStore:
         except Exception:
             return False
 
+    def list_runs(self, user_id: str, *, limit: int = MAX_INDEX) -> list[dict]:
+        """Return this user's runs newest-first, pruning stale index entries."""
+        try:
+            client = _redis()
+            index_key = _index_key(user_id)
+            run_ids = [_decode(rid) for rid in client.zrevrange(index_key, 0, max(0, limit - 1))]
+        except Exception as e:
+            logger.warning(f"chat_run list_runs failed: {e}")
+            return []
+
+        runs: list[dict] = []
+        for run_id in run_ids:
+            state = self.get_state(run_id)
+            if not state:
+                # State hash expired/evicted but the index still points at it.
+                try:
+                    client.zrem(index_key, run_id)
+                except Exception:
+                    pass
+                continue
+            runs.append(
+                {
+                    "run_id": run_id,
+                    "status": state.get("status", "running"),
+                    "message": state.get("message", ""),
+                    "session_id": state.get("session_id") or None,
+                    "created_at": state.get("created_at", ""),
+                    "updated_at": state.get("updated_at", ""),
+                }
+            )
+        return runs
+
 
 store = ChatRunStore()
 
@@ -137,10 +221,16 @@ store = ChatRunStore()
 GenFactory = Callable[[], AsyncGenerator[str, None]]
 
 
-def start_chat_run(gen_factory: GenFactory) -> str:
+def start_chat_run(
+    gen_factory: GenFactory,
+    *,
+    user_id: str = "default",
+    message: str = "",
+    session_id: Optional[str] = None,
+) -> str:
     """Create run state and spawn the detached runner thread. Returns run_id."""
     run_id = uuid4().hex[:16]
-    store.create(run_id)
+    store.create(run_id, user_id=user_id, message=message, session_id=session_id)
     threading.Thread(
         target=_drive_run,
         args=(run_id, gen_factory),
@@ -157,9 +247,18 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
     async def _run() -> None:
         gen = gen_factory()
         cancelled = False
+        session_seen = False
         try:
             async for sse_event in gen:
                 store.append_event(run_id, sse_event)
+                # A new chat only learns its session_id mid-run (it rides the
+                # `done` event). Backfill it once so recovery surfaces can reopen
+                # the real conversation rather than seeding a fresh one.
+                if not session_seen and '"session_id"' in sse_event:
+                    sid = _extract_session_id(sse_event)
+                    if sid:
+                        store.set_session(run_id, sid)
+                        session_seen = True
                 if store.is_cancel_requested(run_id):
                     cancelled = True
                     await gen.aclose()

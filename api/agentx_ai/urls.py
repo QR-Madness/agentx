@@ -34,6 +34,7 @@ urlpatterns = [
     path("agent/chat", views.agent_chat, name="agent-chat"),
     path("agent/chat/stream", views.agent_chat_stream, name="agent-chat-stream"),
     path("agent/chat/stream/attach", views.agent_chat_attach, name="agent-chat-attach"),
+    path("agent/chat/runs", views.agent_chat_runs, name="agent-chat-runs"),
     path("agent/chat/runs/<str:run_id>/cancel", views.agent_chat_run_cancel, name="agent-chat-run-cancel"),
     path("chat/background", views.chat_background, name="chat-background"),
     path("chat/background/<str:job_id>", views.chat_background_detail, name="chat-background-detail"),

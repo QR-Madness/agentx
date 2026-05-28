@@ -248,6 +248,16 @@ export interface BackgroundChatJob {
   total_time_ms?: string;
 }
 
+/** A detached chat run (survives tab close); used by recovery surfaces. */
+export interface ActiveChatRun {
+  run_id: string;
+  status: BackgroundChatStatus | string;
+  message: string;
+  session_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // === Conversation History Types ===
 
 export interface ConversationSummary {

@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Database,
   Inbox,
   Mic,
   Paperclip,
+  Play,
+  Radio,
   Send,
   Sparkles,
   X,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
-import type { BackgroundChatJob } from '../../../lib/api';
+import type { ActiveChatRun, BackgroundChatJob } from '../../../lib/api';
+import { useConversation } from '../../../contexts/ConversationContext';
+import { orphanedRuns } from '../../../contexts/conversation/orphanedRuns';
 import { DropdownPortal } from '../../ui/DropdownPortal';
 import './RelayMenu.css';
 
@@ -24,8 +28,9 @@ interface RelayMenuProps {
   canEnhance: boolean;
   onEnhance: () => void;
   isEnhancing: boolean;
-  canSendBackground: boolean;
-  onSendBackground: () => void;
+  canArmBackground: boolean;
+  backgroundArmed: boolean;
+  onToggleBackground: () => void;
   onJobsChanged?: (jobs: BackgroundChatJob[]) => void;
 }
 
@@ -39,16 +44,31 @@ export function RelayMenu({
   canEnhance,
   onEnhance,
   isEnhancing,
-  canSendBackground,
-  onSendBackground,
+  canArmBackground,
+  backgroundArmed,
+  onToggleBackground,
   onJobsChanged,
 }: RelayMenuProps) {
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
+  const [runs, setRuns] = useState<ActiveChatRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const { tabs, resumeRun } = useConversation();
 
-  // Poll background jobs while open — adaptively. A flat interval hammered the
-  // backend even when nothing was in flight; instead we poll quickly only while
-  // a job is queued/running and back off hard once everything has settled.
+  // Runs still going whose owning tab is closed — the recoverable ones.
+  const liveRuns = useMemo(() => orphanedRuns(runs, tabs), [runs, tabs]);
+
+  // Keep the change callback in a ref so the poll effect depends only on
+  // `isOpen`. Otherwise an inline `onJobsChanged` from the parent changes
+  // identity on every render (e.g. during streaming), tearing down and
+  // re-running the effect — which fires an immediate fetch each time and
+  // hammers the backend.
+  const onJobsChangedRef = useRef(onJobsChanged);
+  onJobsChangedRef.current = onJobsChanged;
+
+  // Poll background jobs + detached runs while open — adaptively, on a single
+  // timer. A flat interval hammered the backend even when nothing was in
+  // flight; instead we poll quickly only while something is running and back
+  // off hard once everything has settled.
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -57,11 +77,17 @@ export function RelayMenu({
     const load = async () => {
       try {
         setLoading(true);
-        const { jobs: next } = await api.listBackgroundChats();
+        const [jobsRes, runsRes] = await Promise.all([
+          api.listBackgroundChats(),
+          api.listChatRuns().catch(() => ({ runs: [] as ActiveChatRun[] })),
+        ]);
         if (cancelled) return;
-        setJobs(next);
-        onJobsChanged?.(next);
-        const hasActive = next.some(j => j.status === 'queued' || j.status === 'running');
+        setJobs(jobsRes.jobs);
+        setRuns(runsRes.runs);
+        onJobsChangedRef.current?.(jobsRes.jobs);
+        const hasActive =
+          jobsRes.jobs.some(j => j.status === 'queued' || j.status === 'running') ||
+          runsRes.runs.some(r => r.status === 'running');
         // 3s while work is in flight; 30s idle heartbeat to catch new arrivals.
         timer = setTimeout(load, hasActive ? 3000 : 30000);
       } catch {
@@ -77,7 +103,12 @@ export function RelayMenu({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [isOpen, onJobsChanged]);
+  }, [isOpen]);
+
+  const handleResume = async (run: ActiveChatRun) => {
+    await resumeRun(run);
+    onClose();
+  };
 
   const dismiss = async (jobId: string) => {
     await api.dismissBackgroundChat(jobId);
@@ -109,21 +140,26 @@ export function RelayMenu({
       <div className="relay-section">
         <div className="relay-section-title">Send</div>
         <button
-          className="relay-item"
+          className={`relay-item toggle ${backgroundArmed ? 'on' : ''}`}
           onClick={() => {
-            onSendBackground();
+            onToggleBackground();
             onClose();
           }}
-          disabled={!canSendBackground}
-          title="Run in the background; the result lands in this inbox when done."
+          disabled={!canArmBackground}
+          title="Stage the next message to run in the background; the result lands in this inbox when done."
         >
           <Send size={14} />
           <div className="relay-item-body">
-            <span className="relay-item-label">Send to background</span>
+            <span className="relay-item-label">
+              {backgroundArmed ? 'Background mode armed' : 'Send next to background'}
+            </span>
             <span className="relay-item-hint">
-              Fire-and-forget; surfaces below when complete.
+              {backgroundArmed
+                ? 'Your next message runs in the background. Click to cancel.'
+                : 'Arms the next send — it surfaces below when complete.'}
             </span>
           </div>
+          <span className="relay-toggle-pill">{backgroundArmed ? 'ON' : 'OFF'}</span>
         </button>
         <button
           className={`relay-item ${isEnhancing ? 'active' : ''}`}
@@ -188,6 +224,36 @@ export function RelayMenu({
           </div>
         </button>
       </div>
+
+      {liveRuns.length > 0 && (
+        <div className="relay-section relay-inbox">
+          <div className="relay-section-title">
+            <Radio size={12} />
+            <span>Live runs</span>
+          </div>
+          <ul className="relay-inbox-list">
+            {liveRuns.map(run => (
+              <li key={run.run_id} className="relay-job status-running relay-live-run">
+                <div className="relay-job-main">
+                  <span className="relay-live-dot" aria-hidden />
+                  <span className="relay-job-message" title={run.message}>
+                    {run.message.slice(0, 80) || 'Running conversation'}
+                    {run.message.length > 80 ? '…' : ''}
+                  </span>
+                </div>
+                <button
+                  className="relay-resume-btn"
+                  onClick={() => handleResume(run)}
+                  title="Reopen this run and continue streaming"
+                >
+                  <Play size={12} />
+                  <span>Resume</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="relay-section relay-inbox">
         <div className="relay-section-title">

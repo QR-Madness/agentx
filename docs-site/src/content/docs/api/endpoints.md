@@ -413,6 +413,14 @@ GET /api/agent/chat/stream/attach?run_id=<id>
 
 Replays the buffered SSE events for a detached run from the start, then follows live until completion. A reopened tab uses this to resume an in-flight conversation. Emits a `run_missing` event (instead of replaying) when the run's buffer has expired — the client then restores from conversation history.
 
+### List Detached Runs
+
+```
+GET /api/agent/chat/runs
+```
+
+Lists the caller's detached chat runs (newest first, capped at 50). Recovery surfaces — the Relay inbox and the conversation selector — use this to find runs whose owning tab was closed and offer to re-attach. Runs are indexed per user, so callers only see their own. Each entry: `{run_id, status, message, session_id, created_at, updated_at}`.
+
 ### Cancel a Run
 
 ```

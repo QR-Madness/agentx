@@ -406,6 +406,43 @@
   cursor: not-allowed;
 }
 
+/* Background-armed send: distinct look so it's clear the next send is queued. */
+.send-button.armed {
+  background: var(--surface-overlay, rgba(139, 92, 246, 0.18));
+  color: var(--accent-color, #8b5cf6);
+  border: 1px solid var(--accent-color, #8b5cf6);
+}
+
+/* === Background-armed chip === */
+.bg-armed-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-bottom: 6px;
+  padding: 3px 6px 3px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--accent-color, #8b5cf6);
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.bg-armed-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+}
+
+.bg-armed-chip button:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
 /* === Input Controls === */
 .input-controls {
   display: flex;
