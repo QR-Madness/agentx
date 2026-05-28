@@ -1,7 +1,7 @@
 /* === ActiveAgentsDropdown — Active conversations list === */
 
+/* Positioning is owned by DropdownPortal; this rule covers visuals only. */
 .active-agents-dropdown {
-  position: fixed;
   width: 280px;
   max-height: 400px;
   background: var(--bg-card);
@@ -9,7 +9,6 @@
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  z-index: 200;
   animation: agentsDropdownIn 0.15s ease;
 }
 

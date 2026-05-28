@@ -9,6 +9,7 @@ export * from './Card';
 export * from './Checkbox';
 export * from './Dialog';
 export * from './DropdownMenu';
+export * from './DropdownPortal';
 export * from './Field';
 export * from './Label';
 export * from './Popover';

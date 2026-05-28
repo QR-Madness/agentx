@@ -30,32 +30,12 @@ import { getAvatarIcon } from '../../lib/avatars';
 import {
   type UserMessage,
   createMessageId,
+  stripThinkingTags,
 } from '../../lib/messages';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/ModelSelector';
 import './ChatPanel.css';
-
-// Strip thinking tags from content
-function stripThinkingTags(content: string, isStreaming = false): string {
-  let result = content
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
-    .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
-    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '');
-
-  if (isStreaming) {
-    result = result
-      .replace(/<thinking>[\s\S]*$/gi, '')
-      .replace(/<think>[\s\S]*$/gi, '')
-      .replace(/\[thinking\][\s\S]*$/gi, '')
-      .replace(/\[think\][\s\S]*$/gi, '')
-      .replace(/<internal_monologue>[\s\S]*$/gi, '');
-  }
-
-  return result.replace(/\n{3,}/g, '\n\n').trim();
-}
 
 export function ChatPanel() {
   const {
@@ -88,7 +68,10 @@ export function ChatPanel() {
   const [input, setInput] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
+  // `isPinned` tracks whether the user is scrolled to (or near) the bottom
+  // of the message list. We auto-scroll only when pinned — so streaming
+  // doesn't yank the viewport away from a user reading older messages.
+  const [isPinned, setIsPinned] = useState(true);
   const contextInfo = activeTab?.contextInfo ?? null;
   const [showRelay, setShowRelay] = useState(false);
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
@@ -122,18 +105,37 @@ export function ChatPanel() {
   const activeDelegationCount = stream.state.activeDelegations.size;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const relayButtonRef = useRef<HTMLButtonElement>(null);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setIsPinned(true);
   }, []);
 
+  // Track pin state from the scroll container. We treat "within 24px of the
+  // bottom" as pinned — small enough to feel right, big enough to survive
+  // rounding from content height changes during streaming.
   useEffect(() => {
-    if (autoScroll) {
-      scrollToBottom();
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setIsPinned(distance < 24);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Auto-scroll only while pinned. Streaming chunks update both messages
+  // and liveContent, both of which we want to follow when the user is at
+  // the bottom; when they've scrolled up we leave the viewport alone.
+  useEffect(() => {
+    if (isPinned) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [activeTab?.messages, streamingContent, scrollToBottom, autoScroll]);
+  }, [activeTab?.messages, streamingContent, isPinned]);
 
   // Abort stream when switching tabs
   useEffect(() => {
@@ -327,7 +329,7 @@ export function ChatPanel() {
       )}
 
       {/* Messages */}
-      <div className="chat-panel-messages">
+      <div className="chat-panel-messages" ref={messagesContainerRef}>
         {messages.length === 0 && (
           <div className="chat-panel-welcome">
             <Bot size={32} />
@@ -377,15 +379,19 @@ export function ChatPanel() {
 
         <div ref={messagesEndRef} />
 
-        {/* Auto-scroll toggle */}
-        <button
-          className={`auto-scroll-toggle ${autoScroll ? 'active' : ''}`}
-          onClick={() => setAutoScroll(!autoScroll)}
-          title={autoScroll ? 'Auto-scroll enabled (click to disable)' : 'Click to enable auto-scroll'}
-        >
-          <ChevronDown size={16} />
-          {autoScroll && <span className="auto-indicator">AUTO</span>}
-        </button>
+        {/* Jump-to-latest affordance — visible only when the user has
+            scrolled away from the bottom. Clicking re-pins and follows
+            new messages again. */}
+        {!isPinned && (
+          <button
+            className="auto-scroll-toggle"
+            onClick={() => scrollToBottom('smooth')}
+            title="Jump to latest"
+            aria-label="Jump to latest message"
+          >
+            <ChevronDown size={16} />
+          </button>
+        )}
       </div>
 
       {/* Input */}

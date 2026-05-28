@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box,
   Database,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../../lib/api';
 import type { BackgroundChatJob } from '../../../lib/api';
+import { DropdownPortal } from '../../ui/DropdownPortal';
 import './RelayMenu.css';
 
 interface RelayMenuProps {
@@ -42,33 +43,8 @@ export function RelayMenu({
   onSendBackground,
   onJobsChanged,
 }: RelayMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Close on outside click / Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        menuRef.current?.contains(target) ||
-        anchorRef.current?.contains(target)
-      ) {
-        return;
-      }
-      onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [isOpen, onClose, anchorRef]);
 
   // Poll background jobs while open
   useEffect(() => {
@@ -103,11 +79,16 @@ export function RelayMenu({
     setJobs(prev => prev.filter(j => j.job_id !== jobId));
   };
 
-  if (!isOpen) return null;
-
   return (
+    <DropdownPortal
+      isOpen={isOpen}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      preferredSide="top"
+      align="start"
+      estimatedHeight={520}
+    >
     <div
-      ref={menuRef}
       className="relay-menu"
       role="dialog"
       aria-label="Relay Module"
@@ -246,5 +227,6 @@ export function RelayMenu({
         )}
       </div>
     </div>
+    </DropdownPortal>
   );
 }

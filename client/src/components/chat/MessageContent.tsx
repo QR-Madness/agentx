@@ -10,7 +10,7 @@ interface MessageContentProps {
   className?: string;
 }
 
-export const MessageContent: React.FC<MessageContentProps> = ({ content, className = '' }) => {
+const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className = '' }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
 
   const handleCopyCode = async (code: string) => {
@@ -93,5 +93,11 @@ export const MessageContent: React.FC<MessageContentProps> = ({ content, classNa
     </div>
   );
 };
+
+// Memoized: ReactMarkdown re-parses the AST on every render, which is
+// expensive for any non-trivial message. The component only depends on
+// `content` + `className` props (internal copy state is local), so shallow
+// equality is exactly what we want.
+export const MessageContent = React.memo(MessageContentImpl);
 
 export default MessageContent;

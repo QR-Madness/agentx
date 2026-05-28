@@ -5,7 +5,6 @@ export { MessageActions } from './MessageActions';
 export { ChatPanel } from './ChatPanel';
 export { MessageBubble } from './MessageBubble';
 export { MetadataBar } from './MetadataBar';
-export { ToolCallBlock } from './ToolCallBlock';
 export { ToolResultBlock } from './ToolResultBlock';
 export { ToolExecutionBlock } from './ToolExecutionBlock';
 export { MemoryInjectionBlock } from './MemoryInjectionBlock';

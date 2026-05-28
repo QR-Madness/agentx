@@ -28,6 +28,7 @@ import {
   type PlanSubtask,
   type ToolCallMessage,
   createMessageId,
+  stripThinkingTags,
 } from '../../lib/messages';
 
 interface UseChatStreamOpts {
@@ -43,17 +44,6 @@ interface UseChatStreamApi {
   state: StreamState;
   send: (req: ChatRequest) => void;
   stop: () => void;
-}
-
-function stripThinkingTags(content: string): string {
-  return content
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
-    .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
-    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
 }
 
 function extractThinking(content: string): string | null {

@@ -207,3 +207,33 @@ export function isAgentHandoffMessage(msg: ConversationMessage): msg is AgentHan
 export function isDelegationMessage(msg: ConversationMessage): msg is DelegationMessage {
   return msg.type === 'delegation';
 }
+
+/**
+ * Strip `<thinking>` / `<think>` / `[thinking]` / `<internal_monologue>`
+ * blocks from a model response. With `isStreaming = true`, also strips
+ * still-unclosed opening tags so the live preview doesn't leak the
+ * reasoning content while the model is mid-thought.
+ *
+ * Lives next to the message types because it is consumed by both the
+ * streaming hook ({@link useChatStream}) and the streaming preview in
+ * ChatPanel — keep them on the same regex set.
+ */
+export function stripThinkingTags(content: string, isStreaming = false): string {
+  let result = content
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
+    .replace(/\[think\][\s\S]*?\[\/think\]/gi, '')
+    .replace(/<internal_monologue>[\s\S]*?<\/internal_monologue>/gi, '');
+
+  if (isStreaming) {
+    result = result
+      .replace(/<thinking>[\s\S]*$/gi, '')
+      .replace(/<think>[\s\S]*$/gi, '')
+      .replace(/\[thinking\][\s\S]*$/gi, '')
+      .replace(/\[think\][\s\S]*$/gi, '')
+      .replace(/<internal_monologue>[\s\S]*$/gi, '');
+  }
+
+  return result.replace(/\n{3,}/g, '\n\n').trim();
+}

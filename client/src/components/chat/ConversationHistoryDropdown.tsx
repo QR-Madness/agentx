@@ -5,10 +5,10 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useNotify } from '../../contexts/NotificationContext';
+import { DropdownPortal } from '../ui/DropdownPortal';
 import './ConversationHistoryDropdown.css';
 
 interface ConversationHistoryDropdownProps {
@@ -27,91 +27,15 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [position, setPosition] = useState<{
-    top?: number;
-    bottom?: number;
-    right: number;
-  }>({ top: 0, right: 0 });
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Calculate position based on anchor element. Flip above the anchor when
-  // there isn't enough room below (e.g. mobile, where the TopBar sits at
-  // the bottom of the viewport).
-  useEffect(() => {
-    if (!isOpen || !anchorRef.current) return;
-
-    const updatePosition = () => {
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const estHeight = dropdownRef.current?.offsetHeight ?? 420;
-      const flip = rect.bottom + estHeight + 8 > window.innerHeight;
-      if (flip) {
-        setPosition({
-          bottom: Math.max(8, window.innerHeight - rect.top + 8),
-          right: window.innerWidth - rect.right,
-        });
-      } else {
-        setPosition({
-          top: rect.bottom + 8,
-          right: window.innerWidth - rect.right,
-        });
-      }
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [isOpen, anchorRef]);
-
-  // Refresh history when opened
+  // Refresh history + focus search when opened.
   useEffect(() => {
     if (isOpen) {
       refreshHistory();
+      searchRef.current?.focus();
     }
   }, [isOpen, refreshHistory]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose, anchorRef]);
-
-  // Focus search on open
-  useEffect(() => {
-    if (isOpen && searchRef.current) {
-      searchRef.current.focus();
-    }
-  }, [isOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const query = searchQuery.toLowerCase();
 
@@ -200,16 +124,16 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
 
   const totalCount = filteredTabs.length + pastConversations.length;
 
-  const dropdown = (
-    <div
-      className="history-dropdown-portal"
-      ref={dropdownRef}
-      style={{
-        top: position.top,
-        bottom: position.bottom,
-        right: position.right,
-      }}
+  return (
+    <DropdownPortal
+      isOpen={isOpen}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      preferredSide="bottom"
+      align="end"
+      estimatedHeight={420}
     >
+    <div className="history-dropdown-portal">
       <div className="history-header">
         <Clock size={16} />
         <span>Conversation History</span>
@@ -351,7 +275,6 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
         </span>
       </div>
     </div>
+    </DropdownPortal>
   );
-
-  return createPortal(dropdown, document.body);
 }

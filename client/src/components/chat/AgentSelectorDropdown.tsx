@@ -3,14 +3,13 @@
  * Renders via portal for proper z-index handling
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon, Crown } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useModal } from '../../contexts/ModalContext';
 import { getAvatarIcon } from '../../lib/avatars';
+import { DropdownPortal } from '../ui/DropdownPortal';
 import './AgentSelectorDropdown.css';
 
 interface AgentSelectorDropdownProps {
@@ -24,62 +23,6 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
   const { workflows } = useAlloyWorkflow();
   const { activeTab, setActiveTabWorkflow } = useConversation();
   const { openModal } = useModal();
-  const [position, setPosition] = useState({ bottom: 0, left: 0 });
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Calculate position based on anchor element (opens upward)
-  useEffect(() => {
-    if (!isOpen || !anchorRef.current) return;
-
-    const updatePosition = () => {
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (rect) {
-        setPosition({
-          bottom: window.innerHeight - rect.top + 8,
-          left: rect.left,
-        });
-      }
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [isOpen, anchorRef]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose, anchorRef]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   const handleSelect = (profileId: string) => {
     setActiveProfile(profileId);
@@ -132,12 +75,16 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
     onClose();
   };
 
-  const dropdown = (
-    <div
-      className="agent-selector-dropdown"
-      ref={dropdownRef}
-      style={{ bottom: position.bottom, left: position.left }}
+  return (
+    <DropdownPortal
+      isOpen={isOpen}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      preferredSide="top"
+      align="start"
+      estimatedHeight={540}
     >
+    <div className="agent-selector-dropdown">
       <div className="agent-selector-header">
         <Bot size={14} />
         <span>{activeWorkflow ? 'Supervisor' : 'Select Agent'}</span>
@@ -277,7 +224,6 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
         </button>
       </div>
     </div>
+    </DropdownPortal>
   );
-
-  return createPortal(dropdown, document.body);
 }
