@@ -464,6 +464,7 @@ tasks:
 
   docs:serve:
     desc: "Serve the Astro docs site locally with HMR (port 4321)"
+    aliases: [docs:dev]
     dir: docs-site
     cmds:
       - bun run dev

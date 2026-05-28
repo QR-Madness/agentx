@@ -39,6 +39,7 @@ export const nav: NavEntry[] = [
       { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
       { label: 'Drafting', slug: 'features/drafting', color: 'var(--c-drafting)' },
       { label: 'MCP Client', slug: 'features/mcp', color: 'var(--c-mcp)' },
+      { label: 'Multi-Agent', slug: 'features/multi-agent', color: 'var(--c-agent)' },
       { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
       { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },
       { label: 'Memory', slug: 'features/memory', color: 'var(--c-memory)' },
@@ -57,6 +58,9 @@ export const nav: NavEntry[] = [
     label: 'Deployment',
     items: [
       { label: 'Docker', slug: 'deployment/docker' },
+      { label: 'Production', slug: 'deployment/production' },
+      { label: 'Clusters & Gateway', slug: 'deployment/clusters' },
+      { label: 'Authentication', slug: 'deployment/authentication' },
       { label: 'Database Migration', slug: 'deployment/migration' },
     ],
   },
@@ -65,6 +69,7 @@ export const nav: NavEntry[] = [
     items: [
       { label: 'Setup', slug: 'development/setup' },
       { label: 'Task Commands', slug: 'development/tasks' },
+      { label: 'Mobile (Android)', slug: 'development/mobile' },
       { label: 'Testing', slug: 'development/testing' },
       { label: 'Memory Setup', slug: 'development/memory-setup' },
       { label: 'Contributing', slug: 'development/contributing' },

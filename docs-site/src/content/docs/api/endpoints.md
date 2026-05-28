@@ -421,22 +421,52 @@ Requests cancellation of the agent's active plan execution.
 
 Long-running conversations can be queued and polled instead of streamed.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/chat/background` | POST | Queue a background conversation job → `{job_id}` |
-| `/api/chat/background/{job_id}` | GET | Poll job status and retrieve the result |
+```
+POST /api/chat/background
+GET  /api/chat/background              # list recent jobs (?limit=, max 50)
+GET  /api/chat/background/{job_id}     # fetch one job
+DELETE /api/chat/background/{job_id}   # dismiss from the inbox
+```
+
+**Request (POST):** `message` is required; the rest mirror `/agent/chat`.
+```json
+{
+  "message": "Summarize today's research notes",
+  "session_id": "optional",
+  "agent_profile_id": "optional",
+  "workflow_id": "optional",
+  "model": "optional",
+  "use_memory": true
+}
+```
+
+**Response (POST):** `202 Accepted`
+```json
+{ "job_id": "a1b2c3d4", "status": "queued" }
+```
+
+Poll `GET /api/chat/background/{job_id}` for the job record (status + result once complete);
+`404` if unknown.
 
 ---
 
 ## Tool Outputs
 
-Oversized tool outputs are compressed and stored for later retrieval.
+Oversized tool outputs are compressed and stored for later retrieval (see Context Gating).
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/tool-outputs` | GET | List stored tool outputs |
-| `/api/tool-outputs/{storage_key}` | GET | Retrieve a stored output |
-| `/api/tool-outputs/{storage_key}` | DELETE | Delete a stored output |
+```
+GET    /api/tool-outputs                 # ?pattern=<tool-name-glob> (default *)
+GET    /api/tool-outputs/{storage_key}   # ?offset= &limit= &metadata_only=true
+DELETE /api/tool-outputs/{storage_key}
+```
+
+**Response (list):**
+```json
+{ "outputs": [ { "storage_key": "...", "tool": "...", "size": 18342, "created_at": "..." } ], "count": 1 }
+```
+
+The detail endpoint returns the full content, a paginated slice (`offset`/`limit`), or
+metadata only (`metadata_only=true`). `404` if the key is missing or expired.
 
 ---
 
@@ -444,31 +474,106 @@ Oversized tool outputs are compressed and stored for later retrieval.
 
 Agent profiles define identity plus per-agent settings (model, temperature, prompt, memory channel).
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/agent/profiles` | GET | List profiles |
-| `/api/agent/profiles/{profile_id}` | GET / PATCH / DELETE | Get, update, or delete a profile |
-| `/api/agent/profiles/{profile_id}/set-default` | POST | Mark a profile as the default |
+```
+GET    /api/agent/profiles
+POST   /api/agent/profiles
+GET    /api/agent/profiles/{profile_id}
+PATCH  /api/agent/profiles/{profile_id}
+DELETE /api/agent/profiles/{profile_id}
+POST   /api/agent/profiles/{profile_id}/set-default
+```
+
+**Profile object** (returned by GET/POST):
+```json
+{
+  "id": "default",
+  "name": "AgentX",
+  "agent_id": "bold-cosmic-falcon",
+  "avatar": null,
+  "description": "General-purpose assistant",
+  "default_model": "lmstudio:llama3.2",
+  "temperature": 0.7,
+  "prompt_profile_id": "default",
+  "system_prompt": null,
+  "reasoning_strategy": "auto",
+  "enable_memory": true,
+  "memory_channel": "_global",
+  "enable_tools": true,
+  "allowed_tools": null,
+  "blocked_tools": [],
+  "is_default": true,
+  "created_at": "2026-04-01T12:00:00",
+  "updated_at": "2026-04-01T12:00:00"
+}
+```
+
+`POST` requires `name` (an `id` and `agent_id` are generated if omitted) and returns `201`.
+`PATCH` accepts a partial object; `agent_id` is immutable.
 
 ---
 
 ## Multi-Agent (Agent Alloy)
 
 Supervisor + specialist workflows with delegation over shared memory channels (Phase 16, v1).
+See the [Multi-Agent feature guide](../features/multi-agent.md) for concepts.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/alloy/workflows` | GET / POST | List or create multi-agent workflows |
-| `/api/alloy/workflows/{workflow_id}` | GET / PATCH / DELETE | Get, update, or delete a workflow |
+```
+GET    /api/alloy/workflows
+POST   /api/alloy/workflows
+GET    /api/alloy/workflows/{workflow_id}
+PATCH  /api/alloy/workflows/{workflow_id}
+DELETE /api/alloy/workflows/{workflow_id}
+```
+
+**Workflow object** (responses wrap a single workflow as `{"workflow": {...}}`):
+```json
+{
+  "id": "research-team",
+  "name": "Research Team",
+  "description": "Supervisor delegates lookups to a researcher",
+  "supervisor_agent_id": "bold-cosmic-falcon",
+  "members": [
+    { "agent_id": "bold-cosmic-falcon", "role": "supervisor", "delegation_hint": null },
+    { "agent_id": "calm-lunar-otter", "role": "specialist", "delegation_hint": "web research" }
+  ],
+  "routes": [],
+  "shared_channel": "_alloy_research-team",
+  "canvas": {},
+  "created_at": "2026-04-28T04:18:41",
+  "updated_at": "2026-04-29T03:28:38"
+}
+```
+
+`POST` validates the workflow (kebab-case `id`, exactly one supervisor, known `agent_id`s) and
+returns `201`; `400` on validation failure. To run a workflow, pass `workflow_id` to
+`POST /api/agent/chat/stream`. `DELETE` returns `{"deleted": true}`.
 
 ---
 
 ## Conversations
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/conversations` | GET | List stored conversations |
-| `/api/conversations/{conversation_id}/messages` | GET | Get messages for a conversation |
+```
+GET /api/conversations                          # ?limit= (max 100) &offset= &channel=
+GET /api/conversations/{conversation_id}/messages
+```
+
+**Response (list):** conversations summarized from `conversation_logs`.
+```json
+{
+  "conversations": [
+    {
+      "conversation_id": "…",
+      "created_at": "…",
+      "last_message_at": "…",
+      "message_count": 12,
+      "channel": "_global",
+      "first_user_message": "…",
+      "last_message": "…"
+    }
+  ],
+  "total": 1
+}
+```
 
 ---
 
@@ -973,9 +1078,47 @@ sessions — Phase 17). Run `task auth:setup` to set the root password.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+Authenticated routes expect the session token in the **`X-Auth-Token`** header. See the
+[Authentication guide](../deployment/authentication.md) for the full model.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/api/auth/status` | GET / POST | Whether auth is enabled and setup is complete |
 | `/api/auth/setup` | POST | Set the initial root password |
 | `/api/auth/login` | POST | Log in with the root password → session token |
 | `/api/auth/logout` | POST | Destroy the current session |
 | `/api/auth/session` | GET | Validate the current session |
 | `/api/auth/change-password` | POST | Change the root password |
+
+### Status
+
+`GET /api/auth/status`
+```json
+{ "auth_required": true, "setup_required": false, "auth_bypass_active": false }
+```
+
+### Setup
+
+`POST /api/auth/setup` — only allowed while `setup_required` is true.
+```json
+{ "password": "at-least-8-chars", "confirm_password": "at-least-8-chars" }
+```
+Returns `{"message": "Root password configured successfully"}`; `403` if already set up.
+
+### Login
+
+`POST /api/auth/login`
+```json
+{ "username": "root", "password": "…" }
+```
+**Response:**
+```json
+{ "token": "<url-safe-token>", "expires_at": "2026-05-28T12:34:56+00:00", "username": "root" }
+```
+`401` on bad credentials; `403` if setup is required first.
+
+### Session / Logout / Change Password
+
+- `GET /api/auth/session` → `{ "user_id": 1, "username": "root", "session_created": "…", "last_active": "…" }` (`401` if not authenticated).
+- `POST /api/auth/logout` → `{ "message": "Logged out successfully" }`.
+- `POST /api/auth/change-password` — body `{ "old_password": "…", "new_password": "…" }`; invalidates all *other* sessions; `401` on a wrong old password.

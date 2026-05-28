@@ -41,12 +41,12 @@ Relational database with vector similarity search.
 
 ```bash
 # Connect via psql
-docker exec -it agentx-postgres psql -U agent -d agentx_memory
+docker exec -it agent-postgres psql -U agent -d agent_memory
 
 # Default credentials (from .env)
 # Username: agent
 # Password: changeme
-# Database: agentx_memory
+# Database: agent_memory
 ```
 
 ### Redis
@@ -55,7 +55,7 @@ In-memory cache for working memory and session data.
 
 ```bash
 # Connect via redis-cli
-docker exec -it agentx-redis redis-cli
+docker exec -it agent-redis redis-cli
 ```
 
 ## Docker Compose Commands
@@ -124,10 +124,14 @@ NEO4J_PLUGINS=["apoc"]
 
 # PostgreSQL settings
 POSTGRES_USER=agent
-POSTGRES_DB=agentx_memory
+POSTGRES_DB=agent_memory
 ```
 
 ## Production Considerations
+
+This page covers the **development** database stack. To run the API in a container, expose it
+publicly, run multiple instances, or enable GPU acceleration, see
+[Production](production.md) and [Clusters & Gateway](clusters.md).
 
 ### Security Checklist
 
@@ -141,13 +145,13 @@ POSTGRES_DB=agentx_memory
 
 ```bash
 # Backup Neo4j
-docker exec agentx-neo4j neo4j-admin database dump neo4j --to-path=/backups
+docker exec agent-neo4j neo4j-admin database dump neo4j --to-path=/backups
 
 # Backup PostgreSQL
-docker exec agentx-postgres pg_dump -U agent agentx_memory > backup.sql
+docker exec agent-postgres pg_dump -U agent agent_memory > backup.sql
 
 # Backup Redis
-docker exec agentx-redis redis-cli BGSAVE
+docker exec agent-redis redis-cli BGSAVE
 ```
 
 ### Monitoring

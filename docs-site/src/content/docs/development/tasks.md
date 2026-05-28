@@ -211,7 +211,7 @@ task docs:install
 
 ### Serve Documentation Locally
 ```bash
-task docs:serve
+task docs:serve   # alias: task docs:dev
 ```
 
 Serves the Astro docs site with HMR at [http://localhost:4321](http://localhost:4321).

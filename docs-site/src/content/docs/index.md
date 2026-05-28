@@ -39,6 +39,7 @@ graph TB
 | **Reasoning**   | 4 strategies (CoT, ToT, ReAct, Reflection) with auto-selection      | [Reasoning](features/reasoning.md)     |
 | **Drafting**    | Speculative decoding, multi-stage pipelines, N-best candidates      | [Drafting](features/drafting.md)       |
 | **MCP Client**  | Connect to external tool servers via stdio, SSE, or HTTP            | [MCP](features/mcp.md)                 |
+| **Multi-Agent** | Agent Alloy — supervisor delegates subtasks to specialist agents    | [Multi-Agent](features/multi-agent.md) |
 | **Providers**   | Unified interface for LM Studio, Anthropic, OpenAI, OpenRouter, Vercel | [Providers](features/providers.md)     |
 | **Prompts**     | Profile-based prompt composition with global prompt layer           | [Prompts](features/prompts.md)         |
 | **Memory**      | 4-type persistent memory with recall, extraction, and consolidation | [Memory](features/memory.md)           |
