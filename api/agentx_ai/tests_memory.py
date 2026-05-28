@@ -334,6 +334,46 @@ class EmbeddingStorageFormatTest(TestCase):
         self.assertIsInstance(recovered[0], float)
 
 
+class TurnAgentAttributionTest(TestCase):
+    """Phase 16.1 — store_turn_log persists turn.agent_id into conversation_logs."""
+
+    def _captured_params(self, turn: Turn) -> dict:
+        mock_session = create_mock_postgres_session()
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.get_postgres_session') as mock_pg:
+            mock_pg.return_value = mock_session
+            EpisodicMemory().store_turn_log(turn, channel="_global")
+        # store_turn_log calls session.execute(text(sql), params_dict) — the
+        # bind dict is the second positional arg.
+        return mock_session.execute.call_args.args[1]
+
+    def test_assistant_turn_persists_agent_id(self) -> None:
+        params = self._captured_params(Turn(
+            id="t-asst", conversation_id="conv-1", index=1, role="assistant",
+            content="Hi", timestamp=datetime.now(timezone.utc),
+            agent_id="bold-cosmic-falcon",
+        ))
+        self.assertEqual(params.get("agent_id"), "bold-cosmic-falcon")
+
+    def test_user_turn_persists_null_agent_id(self) -> None:
+        params = self._captured_params(Turn(
+            id="t-user", conversation_id="conv-1", index=0, role="user",
+            content="Hello", timestamp=datetime.now(timezone.utc),
+        ))
+        self.assertIsNone(params.get("agent_id"))
+
+    def test_insert_sql_references_agent_id_column(self) -> None:
+        mock_session = create_mock_postgres_session()
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.get_postgres_session') as mock_pg:
+            mock_pg.return_value = mock_session
+            EpisodicMemory().store_turn_log(
+                Turn(id="t", conversation_id="c", index=0, role="assistant",
+                     content="x", timestamp=datetime.now(timezone.utc), agent_id="a"),
+                channel="_global",
+            )
+        sql = str(mock_session.execute.call_args[0][0])
+        self.assertIn("agent_id", sql)
+
+
 class TurnIndexPassthroughTest(TestCase):
     """Test turn_index passed correctly to tool invocation recording."""
 

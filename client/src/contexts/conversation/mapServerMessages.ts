@@ -105,6 +105,10 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         costEstimate: m.metadata?.cost_estimate as number | undefined,
         costCurrency: m.metadata?.cost_currency as string | undefined,
         latencyMs: m.metadata?.latency_ms as number | undefined,
+        // Multi-agent attribution (Phase 16.1): which agent produced this turn,
+        // resolved to a display name server-side. Falls back to the generic
+        // header name when absent (single-agent or pre-attribution rows).
+        agentName: m.metadata?.agent_name as string | undefined,
       });
       continue;
     }

@@ -963,6 +963,7 @@ class Agent:
                         role="assistant",
                         content=answer,
                         token_count=total_tokens,
+                        agent_id=self.config.agent_id,
                         metadata={
                             "model": model_id,
                             "latency_ms": total_time,
@@ -997,6 +998,7 @@ class Agent:
                         role="assistant",
                         content=result.answer,
                         token_count=result.total_tokens,
+                        agent_id=self.config.agent_id,
                         metadata={
                             "model": result.models_used[0] if result.models_used else self.config.default_model,
                             "latency_ms": result.total_time_ms,

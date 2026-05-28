@@ -58,7 +58,8 @@ class EpisodicMemory:
                     embedding: $embedding,
                     token_count: $token_count,
                     channel: $channel,
-                    user_id: $user_id
+                    user_id: $user_id,
+                    agent_id: $turn_agent_id
                 })
 
                 MERGE (c)-[:HAS_TURN]->(t)
@@ -87,6 +88,7 @@ class EpisodicMemory:
                 user_id=user_id,
                 channel=channel,
                 agent_id=agent_id,
+                turn_agent_id=turn.agent_id,
             )
 
     def store_turn_log(self, turn: Turn, channel: str = "_global") -> None:
@@ -104,15 +106,16 @@ class EpisodicMemory:
             metadata_json = json.dumps(turn.metadata) if turn.metadata else "{}"
             session.execute(text("""
                 INSERT INTO conversation_logs
-                (conversation_id, turn_index, timestamp, role, content, token_count, model, metadata, embedding, channel)
-                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :model, CAST(:metadata AS JSONB), :embedding, :channel)
+                (conversation_id, turn_index, timestamp, role, content, token_count, model, metadata, embedding, channel, agent_id)
+                VALUES (:conv_id, :index, :timestamp, :role, :content, :tokens, :model, CAST(:metadata AS JSONB), :embedding, :channel, :agent_id)
                 ON CONFLICT (conversation_id, turn_index) DO UPDATE
                 SET content = EXCLUDED.content,
                     token_count = EXCLUDED.token_count,
                     model = EXCLUDED.model,
                     metadata = EXCLUDED.metadata,
                     embedding = EXCLUDED.embedding,
-                    channel = EXCLUDED.channel
+                    channel = EXCLUDED.channel,
+                    agent_id = EXCLUDED.agent_id
             """), {
                 "conv_id": turn.conversation_id,
                 "index": turn.index,
@@ -123,7 +126,8 @@ class EpisodicMemory:
                 "model": turn.model,
                 "metadata": metadata_json,
                 "embedding": embedding_json,
-                "channel": channel
+                "channel": channel,
+                "agent_id": turn.agent_id,
             })
 
     def vector_search(

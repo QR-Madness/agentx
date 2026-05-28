@@ -38,6 +38,24 @@ describe('mapServerMessages', () => {
     expect(assistant.tokensOutput).toBe(5);
   });
 
+  it('carries agent attribution (agent_name) onto the assistant message', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: 'delegated answer',
+        metadata: { model: 'm', agent_id: 'bold-cosmic-falcon', agent_name: 'Researcher' },
+      }),
+    ]);
+    expect((out[0] as AssistantMessage).agentName).toBe('Researcher');
+  });
+
+  it('leaves agentName undefined when no attribution metadata is present', () => {
+    const out = mapServerMessages([
+      msg({ role: 'assistant', content: 'plain', metadata: { model: 'm' } }),
+    ]);
+    expect((out[0] as AssistantMessage).agentName).toBeUndefined();
+  });
+
   it('collapses a tool_call + matching tool_result into one tool_call message', () => {
     const out = mapServerMessages([
       msg({ role: 'tool_call', content: '{"q":"x"}', metadata: { tool: 'search', tool_call_id: 'c1' } }),
