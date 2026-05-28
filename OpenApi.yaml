@@ -1,25 +1,78 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: AgentX AI API
   description: >-
-    OpenAPI spec for AgentX AI services. NOTE: this spec currently covers only the core and
-    translation endpoints; full coverage of the ~70 endpoints (agent, memory, MCP, providers,
-    prompts, auth, multi-agent, jobs, config) is tracked separately. See the API reference docs
-    (docs-site) and api/agentx_ai/urls.py for the authoritative endpoint list.
+    REST API for the AgentX AI platform — translation, agents, reasoning, MCP tools, model
+    providers, prompts, multi-agent workflows, persistent memory, background jobs, and config.
+
+
+    Authentication is optional and disabled by default. When `AGENTX_AUTH_ENABLED=true`, every
+    route except the public bootstrap endpoints (`/health`, `/version`, `/auth/login`,
+    `/auth/status`, `/auth/setup`) requires a session token in the `X-Auth-Token` header (see
+    the `SessionToken` security scheme).
+
+
+    Narrative guides live in the documentation site (`docs-site/`); this spec is the
+    machine-readable mirror of `docs-site/src/content/docs/api/endpoints.md`.
   version: 0.20.0
+  license:
+    name: MIT
+    url: https://github.com/QR-Madness/agentx/blob/main/LICENSE
 
 servers:
   - url: http://localhost:12319/api
-    description: Local development server
+    description: Local development server (gateway deployments prepend their public host)
+
+tags:
+  - name: Core
+    description: Health, version, and index.
+  - name: Auth
+    description: Optional single-user session authentication (Phase 17).
+  - name: Translation
+    description: Language detection and NLLB-200 translation.
+  - name: MCP
+    description: Model Context Protocol servers, tools, and resources.
+  - name: Providers
+    description: Model provider registry and health.
+  - name: Agent
+    description: Task execution and conversational chat.
+  - name: Background Chat
+    description: Queued, pollable conversations.
+  - name: Tool Outputs
+    description: Stored oversized tool outputs.
+  - name: Agent Profiles
+    description: Per-agent identity and settings.
+  - name: Multi-Agent
+    description: Agent Alloy supervisor/specialist workflows.
+  - name: Prompts
+    description: Prompt profiles, sections, global prompt, composition.
+  - name: Prompt Templates
+    description: Reusable prompt templates and the prompt enhancer.
+  - name: Conversations
+    description: Stored conversation history.
+  - name: Memory
+    description: Channels, entities, facts, strategies, stats, consolidation, settings.
+  - name: Jobs
+    description: Background consolidation job monitoring.
+  - name: Config
+    description: Runtime configuration.
+
+# Auth is optional and off by default: every operation accepts either no auth or a session
+# token. When AGENTX_AUTH_ENABLED=true the token becomes mandatory on all routes except the
+# public bootstrap endpoints (health, version, auth login/status/setup).
+security:
+  - {}
+  - SessionToken: []
 
 paths:
   /index:
     get:
-      summary: Health check
-      description: Returns a simple hello message to verify API is running
+      tags: [Core]
+      operationId: index
+      summary: Index
       responses:
         '200':
-          description: Successful response
+          description: Greeting
           content:
             application/json:
               schema:
@@ -31,19 +84,496 @@ paths:
 
   /health:
     get:
+      tags: [Core]
+      operationId: health
       summary: Health check
-      description: Returns health status of all services including API, translation models, and optionally memory system connections.
       parameters:
         - name: include_memory
           in: query
-          description: Include memory system health (neo4j, postgres, redis)
           required: false
           schema:
             type: boolean
             default: false
+          description: Include memory system health (neo4j, postgres, redis).
       responses:
         '200':
-          description: Health status response
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /version:
+    get:
+      tags: [Core]
+      operationId: version
+      summary: API + protocol version
+      responses:
+        '200':
+          description: Version info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+
+  /auth/status:
+    get:
+      tags: [Auth]
+      operationId: authStatus
+      summary: Whether auth is enabled and setup is complete
+      responses:
+        '200':
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+    post:
+      tags: [Auth]
+      operationId: authStatusPost
+      summary: Whether auth is enabled and setup is complete (POST form)
+      responses:
+        '200':
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+
+  /auth/setup:
+    post:
+      tags: [Auth]
+      operationId: authSetup
+      summary: Set the initial root password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, confirm_password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                confirm_password:
+                  type: string
+      responses:
+        '200':
+          description: Password configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Setup already completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: authLogin
+      summary: Log in with the root password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: root
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Session token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Initial setup required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: authLogout
+      summary: Destroy the current session
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/session:
+    get:
+      tags: [Auth]
+      operationId: authSession
+      summary: Validate / inspect the current session
+      responses:
+        '200':
+          description: Session info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      operationId: authChangePassword
+      summary: Change the root password (invalidates other sessions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tools/language-detect-20:
+    get:
+      tags: [Translation]
+      operationId: languageDetectGet
+      summary: Detect language (query form)
+      parameters:
+        - name: text
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguageDetectResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Translation]
+      operationId: languageDetect
+      summary: Detect language of text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  example: "Bonjour, comment allez-vous?"
+      responses:
+        '200':
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguageDetectResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /tools/translate:
+    post:
+      tags: [Translation]
+      operationId: translate
+      summary: Translate text (NLLB-200)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, targetLanguage]
+              properties:
+                text:
+                  type: string
+                  example: "Hello, world!"
+                targetLanguage:
+                  type: string
+                  description: NLLB code (e.g. fra_Latn) or ISO 639-1 (e.g. fr).
+                  example: "fra_Latn"
+                sourceLanguage:
+                  type: string
+                  description: Optional; auto-detected if omitted.
+      responses:
+        '200':
+          description: Translation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslateResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /mcp/servers:
+    get:
+      tags: [MCP]
+      operationId: mcpServers
+      summary: List configured MCP servers and status
+      responses:
+        '200':
+          description: Servers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpServer'
+
+  /mcp/servers/validate:
+    post:
+      tags: [MCP]
+      operationId: mcpServerValidate
+      summary: Validate a server config without saving
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /mcp/servers/{name}:
+    get:
+      tags: [MCP]
+      operationId: mcpServerDetail
+      summary: Get one server's config + live status
+      parameters:
+        - $ref: '#/components/parameters/ServerName'
+      responses:
+        '200':
+          description: Server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpServer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /mcp/tools:
+    get:
+      tags: [MCP]
+      operationId: mcpTools
+      summary: List available MCP tools
+      parameters:
+        - name: server
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpTool'
+
+  /mcp/resources:
+    get:
+      tags: [MCP]
+      operationId: mcpResources
+      summary: List available MCP resources
+      parameters:
+        - name: server
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpResource'
+
+  /mcp/connect:
+    post:
+      tags: [MCP]
+      operationId: mcpConnect
+      summary: Connect to one or all MCP servers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server:
+                  type: string
+                all:
+                  type: boolean
+      responses:
+        '200':
+          description: Connection result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /mcp/disconnect:
+    post:
+      tags: [MCP]
+      operationId: mcpDisconnect
+      summary: Disconnect one or all MCP servers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server:
+                  type: string
+                all:
+                  type: boolean
+      responses:
+        '200':
+          description: Disconnection result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /providers:
+    get:
+      tags: [Providers]
+      operationId: providersList
+      summary: List configured providers
+      responses:
+        '200':
+          description: Providers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Provider'
+
+  /providers/models:
+    get:
+      tags: [Providers]
+      operationId: providersModels
+      summary: List available models with capabilities
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Model'
+                  count:
+                    type: integer
+
+  /providers/health:
+    get:
+      tags: [Providers]
+      operationId: providersHealth
+      summary: Health-check all providers
+      responses:
+        '200':
+          description: Provider health
           content:
             application/json:
               schema:
@@ -51,128 +581,2163 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [healthy, degraded, unhealthy]
-                    example: "healthy"
-                  api:
+                    enum: [healthy, degraded]
+                  providers:
                     type: object
-                    properties:
-                      status:
-                        type: string
-                  translation:
-                    type: object
-                    properties:
-                      status:
-                        type: string
-                      models:
-                        type: object
-                  memory:
-                    type: object
-                    description: Only present if include_memory=true
+                    additionalProperties: true
 
-  /tools/language-detect-20:
+  /agent/run:
     post:
-      summary: Detect language (Level I)
-      description: Detects the language of provided text using ML model. Supports ~20 common languages with high accuracy.
+      tags: [Agent]
+      operationId: agentRun
+      summary: Execute a task (planning + reasoning)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - text
+              required: [task]
               properties:
-                text:
+                task:
                   type: string
-                  description: Text to analyze for language detection
-                  example: "Bonjour, comment allez-vous?"
+                reasoning_strategy:
+                  type: string
+                  enum: [auto, cot, tot, react, reflection]
       responses:
         '200':
-          description: Successful language detection
+          description: Task result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunResult'
+
+  /agent/chat:
+    post:
+      tags: [Agent]
+      operationId: agentChat
+      summary: Conversational chat (non-streaming)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/chat/stream:
+    post:
+      tags: [Agent]
+      operationId: agentChatStream
+      summary: Conversational chat (SSE streaming)
+      description: >-
+        Same body as `/agent/chat`, plus an optional `workflow_id` to run an Agent Alloy
+        workflow. Responds with `text/event-stream`. Events: `start`, `memory_context`,
+        `chunk`, `tool_call`, `tool_result`, `done`, `close`, plus `delegation_*` events when a
+        workflow is active. See the Multi-Agent docs for delegation event shapes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ChatRequest'
+                - type: object
+                  properties:
+                    workflow_id:
+                      type: string
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /agent/status:
+    get:
+      tags: [Agent]
+      operationId: agentStatus
+      summary: Current agent status
+      responses:
+        '200':
+          description: Status
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  original:
+                  status:
                     type: string
-                    description: The input text
-                  detected_language:
-                    type: string
-                    description: ISO 639-1 language code
-                    example: "fr"
-                  confidence:
-                    type: number
-                    format: float
-                    description: Confidence score (0-100)
-                    example: 98.5
-        '400':
-          description: Bad request - missing or invalid text
+                    enum: [idle, planning, reasoning, executing, complete, failed, cancelled]
+
+  /agent/plans/cancel:
+    post:
+      tags: [Agent]
+      operationId: agentPlanCancel
+      summary: Cancel the active plan execution
+      responses:
+        '200':
+          description: Cancellation requested
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                additionalProperties: true
 
-  /tools/translate:
+  /chat/background:
+    get:
+      tags: [Background Chat]
+      operationId: backgroundChatList
+      summary: List recent background jobs
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 50
+      responses:
+        '200':
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BackgroundJob'
     post:
-      summary: Translate text
-      description: Translate text to a target language. Supports 200+ languages via NLLB-200 model.
+      tags: [Background Chat]
+      operationId: backgroundChatEnqueue
+      summary: Queue a background conversation
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - text
-                - targetLanguage
+              required: [message]
               properties:
-                text:
+                message:
                   type: string
-                  description: Text to translate
-                  example: "Hello, how are you?"
-                targetLanguage:
+                session_id:
                   type: string
-                  description: Target language code (ISO 639-1 like 'fr' or NLLB format like 'fra_Latn')
-                  example: "fr"
-                sourceLanguage:
+                profile_id:
                   type: string
-                  description: Optional source language code (auto-detected if not provided)
-                  example: "en"
+                agent_profile_id:
+                  type: string
+                workflow_id:
+                  type: string
+                model:
+                  type: string
+                use_memory:
+                  type: boolean
+                  default: true
       responses:
-        '200':
-          description: Successful translation
+        '202':
+          description: Queued
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  original:
+                  job_id:
                     type: string
-                    description: The original input text
-                  translatedText:
+                  status:
                     type: string
-                    description: The translated text
-                    example: "Bonjour, comment allez-vous?"
+                    example: queued
         '400':
-          description: Bad request - missing fields or invalid language code
+          $ref: '#/components/responses/BadRequest'
+
+  /chat/background/{job_id}:
+    get:
+      tags: [Background Chat]
+      operationId: backgroundChatDetail
+      summary: Fetch a background job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '405':
-          description: Method not allowed - only POST requests accepted
+                $ref: '#/components/schemas/BackgroundJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Background Chat]
+      operationId: backgroundChatDismiss
+      summary: Dismiss a background job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Deleted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  /tool-outputs:
+    get:
+      tags: [Tool Outputs]
+      operationId: toolOutputsList
+      summary: List stored tool outputs
+      parameters:
+        - name: pattern
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*"
+      responses:
+        '200':
+          description: Stored outputs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outputs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ToolOutputMeta'
+                  count:
+                    type: integer
+
+  /tool-outputs/{storage_key}:
+    get:
+      tags: [Tool Outputs]
+      operationId: toolOutputDetail
+      summary: Retrieve a stored output
+      parameters:
+        - $ref: '#/components/parameters/StorageKey'
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: metadata_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Output content or metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Tool Outputs]
+      operationId: toolOutputDelete
+      summary: Delete a stored output
+      parameters:
+        - $ref: '#/components/parameters/StorageKey'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /agent/profiles:
+    get:
+      tags: [Agent Profiles]
+      operationId: agentProfilesList
+      summary: List agent profiles
+      responses:
+        '200':
+          description: Profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentProfile'
+    post:
+      tags: [Agent Profiles]
+      operationId: agentProfileCreate
+      summary: Create an agent profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentProfile'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/AgentProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/profiles/{profile_id}:
+    parameters:
+      - $ref: '#/components/parameters/ProfileId'
+    get:
+      tags: [Agent Profiles]
+      operationId: agentProfileDetail
+      summary: Get a profile
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/AgentProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Agent Profiles]
+      operationId: agentProfileUpdate
+      summary: Update a profile (partial; agent_id immutable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentProfile'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/AgentProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Agent Profiles]
+      operationId: agentProfileDelete
+      summary: Delete a profile
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /agent/profiles/{profile_id}/set-default:
+    post:
+      tags: [Agent Profiles]
+      operationId: agentProfileSetDefault
+      summary: Mark a profile as the default
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Default set
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /alloy/workflows:
+    get:
+      tags: [Multi-Agent]
+      operationId: alloyWorkflowsList
+      summary: List multi-agent workflows
+      responses:
+        '200':
+          description: Workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workflow'
+    post:
+      tags: [Multi-Agent]
+      operationId: alloyWorkflowCreate
+      summary: Create a workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow:
+                    $ref: '#/components/schemas/Workflow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /alloy/workflows/{workflow_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Multi-Agent]
+      operationId: alloyWorkflowDetail
+      summary: Get a workflow
+      responses:
+        '200':
+          description: Workflow
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow:
+                    $ref: '#/components/schemas/Workflow'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Multi-Agent]
+      operationId: alloyWorkflowUpdate
+      summary: Update a workflow (partial; id immutable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow:
+                    $ref: '#/components/schemas/Workflow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Multi-Agent]
+      operationId: alloyWorkflowDelete
+      summary: Delete a workflow
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /prompts/profiles:
+    get:
+      tags: [Prompts]
+      operationId: promptsProfiles
+      summary: List prompt profiles
+      responses:
+        '200':
+          description: Prompt profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptProfile'
+
+  /prompts/profiles/{profile_id}:
+    parameters:
+      - $ref: '#/components/parameters/ProfileId'
+    get:
+      tags: [Prompts]
+      operationId: promptsProfileDetail
+      summary: Get a prompt profile with composed preview
+      responses:
+        '200':
+          description: Prompt profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/PromptProfile'
+                  composed_prompt:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Prompts]
+      operationId: promptsProfileUpdate
+      summary: Update a prompt profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptProfile'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /prompts/global:
+    get:
+      tags: [Prompts]
+      operationId: promptsGlobal
+      summary: Get the global prompt
+      responses:
+        '200':
+          description: Global prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  global_prompt:
+                    $ref: '#/components/schemas/GlobalPrompt'
+
+  /prompts/global/update:
+    post:
+      tags: [Prompts]
+      operationId: promptsGlobalUpdate
+      summary: Update the global prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GlobalPrompt'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /prompts/sections:
+    get:
+      tags: [Prompts]
+      operationId: promptsSections
+      summary: List prompt sections
+      responses:
+        '200':
+          description: Sections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptSection'
+
+  /prompts/compose:
+    get:
+      tags: [Prompts]
+      operationId: promptsCompose
+      summary: Preview the composed system prompt
+      parameters:
+        - name: profile_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Composed prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  system_prompt:
+                    type: string
+                  profile_id:
+                    type: string
+
+  /prompts/mcp-tools:
+    get:
+      tags: [Prompts]
+      operationId: promptsMcpTools
+      summary: Auto-generated MCP tools prompt
+      responses:
+        '200':
+          description: MCP tools prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mcp_tools_prompt:
+                    type: string
+                  tools_count:
+                    type: integer
+
+  /prompts/templates:
+    get:
+      tags: [Prompt Templates]
+      operationId: promptsTemplatesList
+      summary: List prompt templates
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [system, user, snippet]
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptTemplate'
+                  total:
+                    type: integer
+    post:
+      tags: [Prompt Templates]
+      operationId: promptsTemplateCreate
+      summary: Create a template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptTemplate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /prompts/templates/tags:
+    get:
+      tags: [Prompt Templates]
+      operationId: promptsTemplatesTags
+      summary: List template tags
+      responses:
+        '200':
+          description: Tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tags:
+                    type: array
+                    items:
+                      type: string
+
+  /prompts/templates/{template_id}:
+    parameters:
+      - $ref: '#/components/parameters/TemplateId'
+    get:
+      tags: [Prompt Templates]
+      operationId: promptsTemplateDetail
+      summary: Get a template
+      responses:
+        '200':
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Prompt Templates]
+      operationId: promptsTemplateUpdate
+      summary: Update a template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptTemplate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Prompt Templates]
+      operationId: promptsTemplateDelete
+      summary: Delete a template
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /prompts/templates/{template_id}/reset:
+    post:
+      tags: [Prompt Templates]
+      operationId: promptsTemplateReset
+      summary: Reset a template to its default
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: Reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /prompts/enhance:
+    post:
+      tags: [Prompt Templates]
+      operationId: promptsEnhance
+      summary: Rewrite / enhance a prompt via the LLM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Enhanced prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /conversations:
+    get:
+      tags: [Conversations]
+      operationId: conversationsList
+      summary: List stored conversations
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - $ref: '#/components/parameters/ChannelQuery'
+      responses:
+        '200':
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  total:
+                    type: integer
+
+  /conversations/{conversation_id}/messages:
+    get:
+      tags: [Conversations]
+      operationId: conversationsMessages
+      summary: Get messages for a conversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+
+  /memory/channels:
+    get:
+      tags: [Memory]
+      operationId: memoryChannels
+      summary: List memory channels
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MemoryChannel'
+    post:
+      tags: [Memory]
+      operationId: memoryChannelCreate
+      summary: Create a channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /memory/channels/{name}:
+    delete:
+      tags: [Memory]
+      operationId: memoryChannelDelete
+      summary: Delete a channel and its data
+      parameters:
+        - $ref: '#/components/parameters/ChannelName'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /memory/conversations/{conversation_id}:
+    delete:
+      tags: [Memory]
+      operationId: memoryConversationDelete
+      summary: Delete a conversation and its turns
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /memory/entities:
+    get:
+      tags: [Memory]
+      operationId: memoryEntities
+      summary: List entities
+      parameters:
+        - $ref: '#/components/parameters/ChannelQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entities (paginated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MemoryEntity'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  has_next:
+                    type: boolean
+
+  /memory/entities/{entity_id}:
+    get:
+      tags: [Memory]
+      operationId: memoryEntityDetail
+      summary: Get one entity
+      parameters:
+        - $ref: '#/components/parameters/EntityId'
+      responses:
+        '200':
+          description: Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryEntity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /memory/entities/{entity_id}/graph:
+    get:
+      tags: [Memory]
+      operationId: memoryEntityGraph
+      summary: Entity relationship graph
+      parameters:
+        - $ref: '#/components/parameters/EntityId'
+        - name: depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2
+            maximum: 3
+      responses:
+        '200':
+          description: Graph
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /memory/facts:
+    get:
+      tags: [Memory]
+      operationId: memoryFacts
+      summary: List facts
+      parameters:
+        - $ref: '#/components/parameters/ChannelQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - name: min_confidence
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Facts (paginated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  facts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Fact'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  has_next:
+                    type: boolean
+
+  /memory/facts/{fact_id}:
+    get:
+      tags: [Memory]
+      operationId: memoryFactDetail
+      summary: Get one fact
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      responses:
+        '200':
+          description: Fact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fact'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /memory/strategies:
+    get:
+      tags: [Memory]
+      operationId: memoryStrategies
+      summary: List procedural strategies
+      parameters:
+        - $ref: '#/components/parameters/ChannelQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Strategies (paginated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strategies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strategy'
+                  total:
+                    type: integer
+
+  /memory/stats:
+    get:
+      tags: [Memory]
+      operationId: memoryStats
+      summary: Memory statistics
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryStats'
+
+  /memory/consolidate:
+    post:
+      tags: [Memory]
+      operationId: memoryConsolidate
+      summary: Trigger the consolidation pipeline
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jobs:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Consolidation result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /memory/consolidate/stream:
+    get:
+      tags: [Memory]
+      operationId: memoryConsolidateStream
+      summary: Consolidation progress (SSE)
+      description: Responds with `text/event-stream` reporting consolidation progress.
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /memory/reset:
+    post:
+      tags: [Memory]
+      operationId: memoryReset
+      summary: Reset consolidation timestamps (optionally delete memories)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                delete_memories:
+                  type: boolean
+      responses:
+        '200':
+          description: Reset result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /memory/settings:
+    get:
+      tags: [Memory]
+      operationId: memorySettingsGet
+      summary: Get consolidation settings
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: [Memory]
+      operationId: memorySettingsUpdate
+      summary: Update consolidation settings (partial)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /memory/recall-settings:
+    get:
+      tags: [Memory]
+      operationId: recallSettingsGet
+      summary: Get recall layer settings
+      responses:
+        '200':
+          description: Recall settings
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: [Memory]
+      operationId: recallSettingsUpdate
+      summary: Update recall layer settings (partial)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /jobs:
+    get:
+      tags: [Jobs]
+      operationId: jobsList
+      summary: List consolidation jobs
+      responses:
+        '200':
+          description: Jobs + worker status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  worker:
+                    type: object
+                    additionalProperties: true
+
+  /jobs/clear-stuck:
+    post:
+      tags: [Jobs]
+      operationId: jobsClearStuck
+      summary: Clear jobs stuck in the running state
+      responses:
+        '200':
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /jobs/{job_name}:
+    get:
+      tags: [Jobs]
+      operationId: jobDetail
+      summary: Job detail with recent history
+      parameters:
+        - $ref: '#/components/parameters/JobName'
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    $ref: '#/components/schemas/Job'
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_name}/run:
+    post:
+      tags: [Jobs]
+      operationId: jobRun
+      summary: Manually run a job
+      parameters:
+        - $ref: '#/components/parameters/JobName'
+      responses:
+        '200':
+          description: Run result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /jobs/{job_name}/toggle:
+    post:
+      tags: [Jobs]
+      operationId: jobToggle
+      summary: Enable / disable a job
+      parameters:
+        - $ref: '#/components/parameters/JobName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /config:
+    get:
+      tags: [Config]
+      operationId: configGet
+      summary: Get runtime configuration (secrets redacted)
+      responses:
+        '200':
+          description: Config
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /config/update:
+    post:
+      tags: [Config]
+      operationId: configUpdate
+      summary: Update runtime configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  updated:
+                    type: array
+                    items:
+                      type: string
+
+  /config/context-limits:
+    get:
+      tags: [Config]
+      operationId: contextLimits
+      summary: Per-model context-window limits
+      responses:
+        '200':
+          description: Context limits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextLimits'
 
 components:
+  securitySchemes:
+    SessionToken:
+      type: apiKey
+      in: header
+      name: X-Auth-Token
+      description: >-
+        Session token from `/auth/login`. Required on non-public routes only when
+        `AGENTX_AUTH_ENABLED=true`.
+
+  parameters:
+    ServerName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    ProfileId:
+      name: profile_id
+      in: path
+      required: true
+      schema:
+        type: string
+    WorkflowId:
+      name: workflow_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TemplateId:
+      name: template_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      schema:
+        type: string
+    EntityId:
+      name: entity_id
+      in: path
+      required: true
+      schema:
+        type: string
+    FactId:
+      name: fact_id
+      in: path
+      required: true
+      schema:
+        type: string
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+    JobName:
+      name: job_name
+      in: path
+      required: true
+      schema:
+        type: string
+    StorageKey:
+      name: storage_key
+      in: path
+      required: true
+      schema:
+        type: string
+    ChannelName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    ChannelQuery:
+      name: channel
+      in: query
+      required: false
+      schema:
+        type: string
+        default: _all
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 1
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
   schemas:
     Error:
       type: object
       properties:
         error:
           type: string
-          description: Error message
           example: "Missing required field: text"
+        status:
+          type: string
+          example: error
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        api:
+          type: object
+          additionalProperties: true
+        translation:
+          type: object
+          additionalProperties: true
+        memory:
+          type: object
+          description: Present only when include_memory=true.
+          additionalProperties: true
+        version:
+          type: string
+        protocol_version:
+          type: integer
+
+    VersionInfo:
+      type: object
+      properties:
+        version:
+          type: string
+          example: "0.20.0"
+        protocol_version:
+          type: integer
+          example: 1
+        min_client_version:
+          type: string
+          example: "0.20.0"
+
+    AuthStatus:
+      type: object
+      properties:
+        auth_required:
+          type: boolean
+        setup_required:
+          type: boolean
+        auth_bypass_active:
+          type: boolean
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        username:
+          type: string
+
+    SessionInfo:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        session_created:
+          type: string
+          format: date-time
+        last_active:
+          type: string
+          format: date-time
+
+    LanguageDetectResult:
+      type: object
+      properties:
+        original:
+          type: string
+        detected_language:
+          type: string
+          description: ISO 639-1 code
+          example: fr
+        confidence:
+          type: number
+          format: float
+          example: 98.5
+
+    TranslateResult:
+      type: object
+      properties:
+        original:
+          type: string
+        translatedText:
+          type: string
+        targetLanguage:
+          type: string
+
+    McpServer:
+      type: object
+      properties:
+        name:
+          type: string
+        transport:
+          type: string
+          enum: [stdio, sse, streamable_http]
+        status:
+          type: string
+        tools:
+          type: array
+          items:
+            type: string
+        tools_count:
+          type: integer
+        resources_count:
+          type: integer
+
+    McpTool:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        server:
+          type: string
+        input_schema:
+          type: object
+          additionalProperties: true
+
+    McpResource:
+      type: object
+      properties:
+        uri:
+          type: string
+        name:
+          type: string
+        server:
+          type: string
+
+    Provider:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          example: configured
+        models:
+          type: array
+          items:
+            type: string
+        error:
+          type: string
+          nullable: true
+
+    Model:
+      type: object
+      properties:
+        name:
+          type: string
+        provider:
+          type: string
+        context_window:
+          type: integer
+        supports_tools:
+          type: boolean
+        supports_vision:
+          type: boolean
+        supports_streaming:
+          type: boolean
+        cost_per_1k_input:
+          type: number
+          format: float
+          nullable: true
+        cost_per_1k_output:
+          type: number
+          format: float
+          nullable: true
+
+    AgentRunResult:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+        answer:
+          type: string
+        plan_steps:
+          type: integer
+        reasoning_steps:
+          type: integer
+        tools_used:
+          type: array
+          items:
+            type: string
+        models_used:
+          type: array
+          items:
+            type: string
+        total_tokens:
+          type: integer
+        total_time_ms:
+          type: number
+          format: float
+
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        session_id:
+          type: string
+        model:
+          type: string
+        profile_id:
+          type: string
+        agent_profile_id:
+          type: string
+        temperature:
+          type: number
+          format: float
+          default: 0.7
+        use_memory:
+          type: boolean
+          default: true
+
+    ChatResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+        response:
+          type: string
+        answer:
+          type: string
+        thinking:
+          type: string
+        has_thinking:
+          type: boolean
+        session_id:
+          type: string
+        reasoning_steps:
+          type: integer
+        total_tokens:
+          type: integer
+        total_time_ms:
+          type: number
+          format: float
+
+    BackgroundJob:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, complete, failed]
+        message:
+          type: string
+        result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ToolOutputMeta:
+      type: object
+      properties:
+        storage_key:
+          type: string
+        tool:
+          type: string
+        size:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    AgentProfile:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        agent_id:
+          type: string
+          description: Immutable Docker-style identifier (read-only after creation).
+        avatar:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        default_model:
+          type: string
+        temperature:
+          type: number
+          format: float
+        prompt_profile_id:
+          type: string
+          nullable: true
+        system_prompt:
+          type: string
+          nullable: true
+        reasoning_strategy:
+          type: string
+        enable_memory:
+          type: boolean
+        memory_channel:
+          type: string
+        enable_tools:
+          type: boolean
+        allowed_tools:
+          type: array
+          nullable: true
+          items:
+            type: string
+        blocked_tools:
+          type: array
+          items:
+            type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Workflow:
+      type: object
+      required: [id, name, supervisor_agent_id, members]
+      properties:
+        id:
+          type: string
+          description: Kebab-case identifier.
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        supervisor_agent_id:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowMember'
+        routes:
+          type: array
+          description: Declarative routing — schema only in v1, not executed.
+          items:
+            $ref: '#/components/schemas/WorkflowRoute'
+        shared_channel:
+          type: string
+          description: Auto-derived as `_alloy_{id}` when blank.
+        canvas:
+          type: object
+          description: Opaque Factory editor state; no backend semantics.
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    WorkflowMember:
+      type: object
+      required: [agent_id, role]
+      properties:
+        agent_id:
+          type: string
+        role:
+          type: string
+          enum: [supervisor, specialist]
+        delegation_hint:
+          type: string
+          nullable: true
+
+    WorkflowRoute:
+      type: object
+      properties:
+        from_agent_id:
+          type: string
+        to_agent_id:
+          type: string
+        when:
+          type: string
+
+    PromptProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptSection'
+
+    PromptSection:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [persona, task, format, constraints, examples, context, custom, system]
+        content:
+          type: string
+        enabled:
+          type: boolean
+        order:
+          type: integer
+
+    GlobalPrompt:
+      type: object
+      properties:
+        content:
+          type: string
+        enabled:
+          type: boolean
+
+    PromptTemplate:
+      type: object
+      required: [name, content]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        content:
+          type: string
+        default_content:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        placeholders:
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+          enum: [system, user, snippet]
+        is_builtin:
+          type: boolean
+        description:
+          type: string
+        has_modifications:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Conversation:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_message_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+        channel:
+          type: string
+        first_user_message:
+          type: string
+        last_message:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        turn_index:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    MemoryChannel:
+      type: object
+      properties:
+        name:
+          type: string
+        is_default:
+          type: boolean
+        item_counts:
+          type: object
+          additionalProperties:
+            type: integer
+
+    MemoryEntity:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        channel:
+          type: string
+        salience:
+          type: number
+          format: float
+        attributes:
+          type: object
+          additionalProperties: true
+
+    Fact:
+      type: object
+      properties:
+        id:
+          type: string
+        claim:
+          type: string
+        confidence:
+          type: number
+          format: float
+        channel:
+          type: string
+        temporal_context:
+          type: string
+          enum: [current, past, future]
+        source_turn_id:
+          type: string
+          nullable: true
+        access_count:
+          type: integer
+
+    Strategy:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        channel:
+          type: string
+        success_rate:
+          type: number
+          format: float
+
+    MemoryStats:
+      type: object
+      properties:
+        totals:
+          type: object
+          additionalProperties:
+            type: integer
+        by_channel:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+
+    Job:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [idle, running, disabled]
+        enabled:
+          type: boolean
+        last_run:
+          type: string
+          format: date-time
+          nullable: true
+        last_duration_ms:
+          type: integer
+        run_count:
+          type: integer
+
+    ContextLimits:
+      type: object
+      description: Resolved context-window limit per configured model.
+      additionalProperties:
+        type: integer

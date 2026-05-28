@@ -172,6 +172,11 @@ tasks:
     cmds:
       - uv run python manage.py makemigrations
 
+  api:spec:lint:
+    desc: "Lint the OpenAPI spec (OpenApi.yaml) with Redocly"
+    cmds:
+      - bunx @redocly/cli@latest lint OpenApi.yaml
+
   eval:consolidation:
     desc: "Consolidation quality eval — DEV ONLY, wipes memory data (e.g. task eval:consolidation -- --wipe --model openrouter:minimax/minimax-m2.7)"
     dir: api

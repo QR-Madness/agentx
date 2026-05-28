@@ -10,7 +10,7 @@ normal chat uses a single agent, and only becomes multi-agent when you attach a 
 ```mermaid
 graph TD
     U[User message] --> S[Supervisor agent]
-    S -->|delegate_to(agent_id, task)| X[AlloyExecutor]
+    S -->|delegate_to| X[AlloyExecutor]
     X --> A[Specialist A]
     X --> B[Specialist B]
     A --> CH[(Shared channel<br/>_alloy_&lt;workflow_id&gt;)]

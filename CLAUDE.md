@@ -152,7 +152,10 @@ task check:types:client # Type check TypeScript
 task check:build        # Verify both API and client build successfully
 task check:build:api    # Verify Python imports and Django configuration
 task check:build:client # Build client web assets (TypeScript + Vite)
+task api:spec:lint       # Lint OpenApi.yaml (full API spec) with Redocly
 ```
+
+The root `OpenApi.yaml` is the machine-readable mirror of the docs-site API reference (`docs-site/src/content/docs/api/endpoints.md`). When endpoints change, update both and run `task api:spec:lint`.
 
 ### Django Commands
 

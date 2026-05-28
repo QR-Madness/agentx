@@ -230,6 +230,14 @@ task docs:deploy
 
 Deploys the docs site to Vercel (requires the Vercel CLI + login).
 
+### Lint the OpenAPI spec
+```bash
+task api:spec:lint
+```
+
+Validates the root `OpenApi.yaml` (the machine-readable mirror of the
+[API reference](../api/endpoints.md)) with Redocly.
+
 ## Utility Commands
 
 ### Default Task
