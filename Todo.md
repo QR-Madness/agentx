@@ -374,11 +374,19 @@ Currently our model selection and selector are a very solid foundation but are j
 
 ### 18.8: Wave 2 Fixes
 
-- [ ] Chats cannot render equations.
-- [ ] Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.
-- [ ] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
-- [ ] Fix consolidation bug: [API] DEBUG 2026-05-07 01:10:36,474 jobs Semantic duplicate check failed (index may not exist): {neo4j_code: Neo.ClientError.Statement.TypeError} {message: Can't coerce `List{Double(-6.041204e-02)...
-- [ ] Cached servers for the 'Connect' page cannot be edited or deleted.
+- [x] Chats cannot render equations.
+  - Wired `remark-math` + `rehype-katex` (KaTeX) into `MessageContent.tsx` and import `katex/dist/katex.min.css`; added theme overrides (inherit color, scrollable `.katex-display`) in `MessageContent.css`. Inline `$…$` and block `$$…$$` now render.
+- [x] ~~Streaming in the UI seems to stop after a table; then emits the remaining chunk of text.~~ — fixed (confirmed).
+- [x] Models render `<br/>` in table cells (e.g. bullet-point lists inside a cell) but it doesn't break the line.
+  - Added `rehype-raw` to `MessageContent.tsx` with order `[rehypeRaw, rehypeKatex, rehypeHighlight]` so raw HTML renders while the math nodes survive. Added `MessageContent.test.tsx` locking the contract (`<br>` in a cell + KaTeX + code highlighting). `rehype-sanitize` left as a follow-up (XSS surface; local single-user app, and a sanitize schema would have to whitelist the KaTeX/`hljs-*` classes).
+- [x] When re-opening a conversation with an agent that executed a plan, the steps' messages show as an error: "Unknown message type" in the UI.
+  - Root cause: orphan `tool_result` rows (no paired `tool_call`) map to `type: 'tool_result'`, which had no entry in `messageRegistry` → fell through to `UnknownBubble`. Added `bubbles/ToolResultBubble.tsx` (reuses `ToolExecutionBlock`) and registered it.
+- [x] ~~Fix consolidation bug~~ — already fixed. The `Neo.ClientError.Statement.TypeError` ("Can't coerce `List{Double…}`") came from passing a nested `List[List[float]]` to `db.index.vector.queryNodes`. Consolidation now uses `embedder.embed_single()` which returns a flat `List[float]` (`embeddings.py:120`), matching the working `semantic.py` query; warning text reworded. Verify on a live instance via `task eval:consolidation`.
+- [x] Cached servers for the 'Connect' page cannot be edited or deleted.
+  - `ServerSelector.tsx` now renders per-row edit (inline form) + delete (inline confirm) actions wired to the existing `updateServerConfig`/`deleteServer` context methods; styles added to `AuthPage.css`.
+- [x] MCP tools should auto-connect on server restart if they were connected at shutdown.
+  - Added a persisted `auto_connect` flag to `ServerConfig` (distinct from `auto_reconnect`), set true on connect / false on disconnect in `mcp_connect`/`mcp_disconnect` (incl. the `all` bulk paths) and saved to `mcp_servers.json`. New `MCPClientManager.connect_persisted()` restores flagged servers from `apps.py` `ready()` on a best-effort daemon thread. Flag surfaced in `_serialize_server` + preserved through the Toolkit guided/raw/`toConfigInput` editors so edits don't clobber it. Tests: round-trip + `connect_persisted` targeting (`MCPServerRegistryTest`).
+  - **Follow-up fix:** the `apps.py` `ready()` startup guard only matched a bare `"uvicorn"` string, but `uv run uvicorn …` gives `argv[0]` as the full binary path → guard returned early, so neither the reconnect *nor the background chat worker* ran under the real launch. Hardened detection (argv[0] basename + asgi/wsgi target). Verified end-to-end: `brave-search` auto-connects on boot.
 
 ### 18.9: Memory Tuning
 
@@ -423,15 +431,16 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Three major bugs surfaced after 18.6 lands. Group them here because the fixes overlap (streaming lifecycle + plan step rendering share the same conversation-tab state).
 
-- [ ] Plan executor hangs on final step
-  - The executor loops infinitely on the last step instead of terminating. Need to audit the completion / loop-exit condition in the planner runner and confirm the terminal step actually flips plan status to `completed` (or `failed`) and releases the streaming generator.
-- [ ] New-conversation chat freeze → dedicated streaming background jobs
-  - Creating a new conversation can wedge the chat. Move streaming off the request thread into a background job (queue + job id) and have the UI subscribe/poll for chunks. Conversation creation should never block on stream startup.
-  - Needs: job model (id, conversation_id, status, cursor), producer endpoint that enqueues + returns job id immediately, consumer endpoint (SSE or polling) keyed by job id, client refactor to attach the active tab to a job rather than a live POST.
-- [ ] Plan UI cleanup
-  - Cannot tell which step a given message belongs to once the plan scrolls.
-  - Cannot see overall progress without scrolling back to the top.
-  - Wants: sticky progress header (current step / total, status pill), per-message step affinity badge, collapsible step groups so completed steps fold away.
+- [x] ~~Plan executor hangs on final step~~ — already resolved. `_handle_failure` marks the failed subtask `completed=True` and skips dependents (`plan_executor.py:418,437`); the loop has a deadlock guard (`:168-170`) and synthesis is a single streaming call (`:466-484`). No infinite-loop path remains. Verify on a live plan run.
+- [x] ~~New-conversation chat freeze~~ — resolved by prior streaming-background-job work. Verify a new conversation starts streaming without freezing on a live instance.
+- [x] Output token-budget overshoot → provider 400 ("requested ~262183 tokens, max 262144"), hit during Alloy plan execution.
+  - Root cause: `agent_chat_stream` adaptive budget (`views.py`) set `adaptive_max_tokens = min(max_output_tokens, context_window − input − buffer)`. OpenRouter reports `max_output_tokens == context_window` for some models, so this requested ~the whole window as output (259K) with zero slack, and `estimate_tokens` never counted the tool-schema tokens (the "1473 of tool input") → request landed 39 over.
+  - Fix: clamp a capability-reported output cap to `MAX_OUTPUT_TOKENS_CEILING` (32768; explicit per-model overrides still win) and reserve estimated tool-schema tokens in the input budget. New constant in `streaming/constants.py`. Verified: reported scenario now caps output at 32768 (total ~35K ≪ 262144).
+- [ ] Plans UI redesign — "Plans in Progress" drawer + in-chat step annotation
+  - **Problem:** the current plan card gets "left in the dust" at the top of the chat once it scrolls; you can't tell which step a given message belongs to, or see overall progress without scrolling back up.
+  - **1. "Plans in Progress" drawer.** Replace the scroll-away plan card with a dedicated drawer/affordance (toolbar entry, like the other right-side drawers). While a plan is active its trigger shows an animated construction-stripe pattern (diagonal hazard stripes, subtle marquee motion) so the user feels "work is underway." Collapsed = compact status; expanded = a creative live view of the plan (step list with status pills, current-step emphasis, progress bar/ring, elapsed time, per-step result previews). **Design for N concurrent plans** — the drawer lists multiple running plans (each its own collapsible block), not a single hard-coded card. Honor `prefers-reduced-motion` (freeze the stripe animation).
+  - **2. In-chat step annotation.** Each step's message in the conversation is clearly labeled + styled so the user isn't confused about which step produced what — e.g. a per-message step-affinity badge ("Step 2/5 · <title>"), visual grouping, and optionally collapsible step groups so completed steps fold away. Should read cleanly when a plan conversation is reopened (ties into the restored-message mapping).
+  - Data is already available: SSE `plan_start`/`subtask_start`/`subtask_complete`/`subtask_failed`/`plan_complete` events + `PlanStateStore` (Redis) per active plan; `plan_execution` message type + `PlanExecutionBubble` already exist client-side to build on.
 
 ### 18.11: Client Error Contract + Foundation Cleanup
 
@@ -483,6 +492,7 @@ Currently our model selection and selector are a very solid foundation but are j
 - [ ] Mobile-responsive breakpoints and touch-friendly gestures
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 - [ ] Message injection into delegated tasks (agent interdiction tools)
+- [ ] Custom window chrome — frameless Tauri window with our own title bar + window controls (minimize / maximize / close) and a drag region, styled to the cosmic theme. **Windows + Linux first; macOS later** (traffic-light insets + native fullscreen need separate handling). Touches `client/src-tauri/tauri.conf.json` (`decorations: false`) + a top-of-app titlebar component using the Tauri window API.
 
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation
@@ -528,6 +538,10 @@ Currently our model selection and selector are a very solid foundation but are j
 **Query Embedding Caching**
 - Every `remember()` call generates embedding even for identical queries
 - Fix: Add MRU cache for frequent query embeddings with TTL
+
+**Embedding Request Queue / Serialization**
+- Embeddings (`EmbeddingProvider.embed`/`embed_single`, `kit/agent_memory/embeddings.py`) are generated ad-hoc on whatever thread calls them — chat recall, consolidation jobs, strategy/entity indexing — with no coordination. The local sentence-transformers model isn't safe to call concurrently, and the remote (OpenAI) path can be rate-limited; bursts can collide or get dropped.
+- Fix: route all embedding requests through a proper queue/serializer so requests are reliably served — single worker (or bounded pool) draining a queue, with batching of pending texts where possible, backpressure, and a shared path for both local and remote providers. Pairs naturally with the Query Embedding Caching item above.
 
 ---
 

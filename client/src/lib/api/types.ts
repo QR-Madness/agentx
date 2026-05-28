@@ -107,6 +107,9 @@ export interface MCPServer {
   headers?: Record<string, string>;
   timeout?: number;
   auto_reconnect?: boolean;
+  // Persisted desired-connected state; auto-managed by connect/disconnect and
+  // restored on API restart. Preserved through edits, not a user form field.
+  auto_connect?: boolean;
   tags?: string[];
   groups?: string[];
   allowed_agent_ids?: string[] | null;
@@ -121,6 +124,9 @@ export interface MCPServerConfigInput {
   headers?: Record<string, string>;
   timeout?: number;
   auto_reconnect?: boolean;
+  // Persisted desired-connected state; auto-managed by connect/disconnect and
+  // restored on API restart. Preserved through edits, not a user form field.
+  auto_connect?: boolean;
   tags?: string[];
   groups?: string[];
   allowed_agent_ids?: string[] | null;

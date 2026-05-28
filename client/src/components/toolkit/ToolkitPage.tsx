@@ -515,6 +515,7 @@ function toConfigInput(s: MCPServer): MCPServerConfigInput {
     headers: s.headers ?? {},
     timeout: s.timeout ?? 30,
     auto_reconnect: s.auto_reconnect ?? true,
+    auto_connect: s.auto_connect ?? false,
     tags: s.tags ?? [],
     groups: s.groups ?? [],
     allowed_agent_ids: s.allowed_agent_ids ?? null,
@@ -532,6 +533,7 @@ function buildRawJson(servers: MCPServer[]): string {
     if (s.headers && Object.keys(s.headers).length) cfg.headers = s.headers;
     if (s.timeout != null && s.timeout !== 30) cfg.timeout = s.timeout;
     if (s.auto_reconnect === false) cfg.auto_reconnect = false;
+    if (s.auto_connect) cfg.auto_connect = true;
     if (s.tags && s.tags.length) cfg.tags = s.tags;
     if (s.groups && s.groups.length) cfg.groups = s.groups;
     if (s.allowed_agent_ids != null) cfg.allowed_agent_ids = s.allowed_agent_ids;

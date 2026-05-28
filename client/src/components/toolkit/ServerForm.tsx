@@ -51,6 +51,9 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
     headers: transport !== 'stdio' ? listToDict(headers) : {},
     timeout: Number.isFinite(timeout) ? timeout : 30,
     auto_reconnect: autoReconnect,
+    // Preserve the auto-managed connected-state flag across edits (not a form
+    // field — it's set/cleared by connect/disconnect).
+    auto_connect: initial?.auto_connect ?? false,
     tags: tags.split(',').map(s => s.trim()).filter(Boolean),
     groups: groups.split(',').map(s => s.trim()).filter(Boolean),
     allowed_agent_ids: whitelistAll ? null : allowedAgents,

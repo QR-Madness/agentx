@@ -41,7 +41,12 @@ class ServerConfig:
     
     # Connection settings
     timeout: float = 30.0
-    auto_reconnect: bool = True
+    auto_reconnect: bool = True  # Reconnect on transient failure (runtime)
+    # Persisted "desired connected" state: set true when the user connects this
+    # server, false when they disconnect. Restored on API restart so tools that
+    # were connected at shutdown come back automatically. Distinct from
+    # auto_reconnect (transient-failure recovery, not boot-time restore).
+    auto_connect: bool = False
 
     # Toolkit metadata (Phase 18.2)
     tags: list[str] = field(default_factory=list)
@@ -112,6 +117,7 @@ class ServerConfig:
             headers=data.get("headers", {}),
             timeout=data.get("timeout", 30.0),
             auto_reconnect=data.get("auto_reconnect", True),
+            auto_connect=data.get("auto_connect", False),
             tags=list(data.get("tags", []) or []),
             groups=list(data.get("groups", []) or []),
             allowed_agent_ids=(
@@ -210,6 +216,8 @@ class ServerRegistry:
             out["timeout"] = config.timeout
         if config.auto_reconnect is not True:
             out["auto_reconnect"] = config.auto_reconnect
+        if config.auto_connect:
+            out["auto_connect"] = config.auto_connect
         if config.tags:
             out["tags"] = list(config.tags)
         if config.groups:

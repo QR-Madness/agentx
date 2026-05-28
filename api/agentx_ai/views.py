@@ -11,10 +11,12 @@ from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
 from .streaming import (
+    CHAR_TO_TOKEN_RATIO,
     CONTEXT_BUFFER_TOKENS,
     CONTEXT_WARNING_THRESHOLD,
     DEFAULT_MAX_TOOL_ROUNDS,
     MAX_INPUT_TOKENS,
+    MAX_OUTPUT_TOKENS_CEILING,
     MIN_OUTPUT_TOKENS,
     STREAM_CLOSE_DELAY,
     estimate_tokens,
@@ -263,6 +265,7 @@ def _serialize_server(
         "headers": dict(config.headers),
         "timeout": config.timeout,
         "auto_reconnect": config.auto_reconnect,
+        "auto_connect": config.auto_connect,
         "tags": list(config.tags),
         "groups": list(config.groups),
         "allowed_agent_ids": (
@@ -450,6 +453,27 @@ def mcp_resources(request):
     })
 
 
+def _set_mcp_auto_connect(manager, names, value: bool) -> None:
+    """Persist the auto_connect flag for one or more servers (best-effort).
+
+    Records the user's desired-connected state so servers connected at
+    shutdown are restored on the next API start. Persistence failures (no
+    config path, read-only fs) are logged but never block connect/disconnect.
+    """
+    changed = False
+    for name in names:
+        config = manager.registry.get(name)
+        if config is not None and config.auto_connect != value:
+            config.auto_connect = value
+            changed = True
+    if not changed:
+        return
+    try:
+        manager.registry.save_to_file()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not persist MCP auto_connect state: {e}")
+
+
 @csrf_exempt
 def mcp_connect(request):
     """Connect to one or all configured MCP servers."""
@@ -466,13 +490,16 @@ def mcp_connect(request):
     
     if connect_all:
         results = manager.connect_all()
+        connected = [n for n, r in results.items() if r.get("status") == "connected"]
+        _set_mcp_auto_connect(manager, connected, True)
         return JsonResponse({"results": results})
-    
+
     if not server_name:
         return json_error("Provide 'server' name or 'all': true", status=400)
-    
+
     try:
         connection = manager.connect(server_name)
+        _set_mcp_auto_connect(manager, [server_name], True)
         return JsonResponse({
             "status": "connected",
             "server": server_name,
@@ -505,16 +532,19 @@ def mcp_disconnect(request):
     disconnect_all = data.get("all", False)
     
     if disconnect_all:
+        all_names = [c.name for c in manager.registry.list()]
         manager.disconnect_all()
+        _set_mcp_auto_connect(manager, all_names, False)
         return JsonResponse({"status": "disconnected_all"})
-    
+
     if not server_name:
         return json_error("Provide 'server' name or 'all': true", status=400)
-    
+
     disconnected = manager.disconnect(server_name)
     if not disconnected:
         return json_error(f"Server '{server_name}' is not connected", status=404)
-    
+
+    _set_mcp_auto_connect(manager, [server_name], False)
     return JsonResponse({"status": "disconnected", "server": server_name})
 
 
@@ -1067,7 +1097,11 @@ async def agent_chat_stream(request):
             caps = provider.get_capabilities(model_id)
             overrides = get_context_limit_overrides(model_id, provider.name)
             context_window = overrides.get("context_window") or caps.context_window
-            max_output_tokens = overrides.get("max_output_tokens") or caps.max_output_tokens or 4096
+            # An explicit per-model override is authoritative (user set it on
+            # purpose); a capability-reported value gets clamped below to the
+            # ceiling, since some providers report max_output == context_window.
+            max_output_override = overrides.get("max_output_tokens")
+            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
 
             logger.info(
                 f"Using context limits for {provider.name}/{model_id}: "
@@ -1134,19 +1168,39 @@ async def agent_chat_stream(request):
             else:
                 logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
-            # Calculate adaptive max_tokens based on context usage
+            # Calculate adaptive max_tokens based on context usage.
+            # Account for tool-schema tokens too: estimate_tokens() only sees
+            # message content, but the provider also counts the serialized tool
+            # definitions toward the prompt (this was the uncounted overhead
+            # that pushed requests over the window). Reserve them explicitly.
             estimated_input = estimate_tokens(messages)
-            available_for_output = context_window - estimated_input - CONTEXT_BUFFER_TOKENS
+            estimated_tool_tokens = (
+                len(json.dumps(tools)) // CHAR_TO_TOKEN_RATIO if tools else 0
+            )
+            available_for_output = (
+                context_window - estimated_input - estimated_tool_tokens - CONTEXT_BUFFER_TOKENS
+            )
 
-            # Use the smaller of: configured max_output or available space (but at least minimum)
+            # Clamp the capability-reported output cap to a sane ceiling so a
+            # model advertising max_output == context_window can't make us
+            # request ~the whole window as output (no slack → provider 400).
+            # An explicit override is trusted as-is.
+            output_cap = (
+                max_output_tokens
+                if max_output_override
+                else min(max_output_tokens, MAX_OUTPUT_TOKENS_CEILING)
+            )
+
+            # Use the smaller of: capped max_output or available space (but at least minimum)
             adaptive_max_tokens = max(
-                min(max_output_tokens, available_for_output),
+                min(output_cap, available_for_output),
                 MIN_OUTPUT_TOKENS
             )
 
             logger.debug(
                 f"Adaptive max_tokens: {adaptive_max_tokens} "
                 f"(context_window={context_window}, estimated_input={estimated_input}, "
+                f"tool_tokens={estimated_tool_tokens}, output_cap={output_cap}, "
                 f"max_output={max_output_tokens}, available={available_for_output})"
             )
 
