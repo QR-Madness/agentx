@@ -640,9 +640,12 @@ paths:
       summary: Conversational chat (SSE streaming)
       description: >-
         Same body as `/agent/chat`, plus an optional `workflow_id` to run an Agent Alloy
-        workflow. Responds with `text/event-stream`. Events: `start`, `memory_context`,
-        `chunk`, `tool_call`, `tool_result`, `done`, `close`, plus `delegation_*` events when a
-        workflow is active. See the Multi-Agent docs for delegation event shapes.
+        workflow. Responds with `text/event-stream`. The run is executed detached
+        server-side and survives client disconnect; the first event is `run_started`
+        (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
+        Events: `run_started`, `start`, `memory_context`, `chunk`, `tool_call`,
+        `tool_result`, `done`, `close`, plus `delegation_*` events when a workflow is
+        active. See the Multi-Agent docs for delegation event shapes.
       requestBody:
         required: true
         content:
@@ -661,6 +664,61 @@ paths:
             text/event-stream:
               schema:
                 type: string
+
+  /agent/chat/stream/attach:
+    get:
+      tags: [Agent]
+      operationId: agentChatAttach
+      summary: Re-attach to a detached chat run
+      description: >-
+        Replays the buffered SSE events for a run from the start, then follows live
+        until completion. Lets a reopened/closed-then-reopened tab resume an in-flight
+        conversation. Emits a `run_missing` event when the run buffer has expired (TTL),
+        signalling the client to restore from conversation history instead.
+      parameters:
+        - name: run_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing run_id
+
+  /agent/chat/runs/{run_id}/cancel:
+    post:
+      tags: [Agent]
+      operationId: agentChatRunCancel
+      summary: Cancel a detached chat run
+      description: >-
+        Cooperative cancel — the detached runner checks the flag at SSE-event
+        boundaries and stops pulling from the provider.
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                  cancel_requested:
+                    type: boolean
+        '405':
+          description: POST required
 
   /agent/status:
     get:

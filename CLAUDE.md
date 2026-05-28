@@ -194,7 +194,9 @@ Base URL: `http://localhost:12319/api/`
 | `/api/providers/health` | GET | Check health of all providers |
 | `/api/agent/run` | POST | Execute a task with the agent |
 | `/api/agent/chat` | POST | Conversational interaction with session |
-| `/api/agent/chat/stream` | POST | Streaming chat via SSE (events: start, chunk, tool_call, tool_result, done, error) |
+| `/api/agent/chat/stream` | POST | Streaming chat via SSE. Runs detached server-side (survives client disconnect); first event `run_started` carries `run_id`. Events: run_started, start, chunk, tool_call, tool_result, done, error, close |
+| `/api/agent/chat/stream/attach` | GET | Re-attach to a detached run (`?run_id=`): replays buffered events + follows live. Emits `run_missing` if the buffer expired |
+| `/api/agent/chat/runs/{run_id}/cancel` | POST | Cooperatively cancel a detached chat run |
 | `/api/agent/status` | GET | Get current agent status |
 | `/api/prompts/profiles` | GET | List all prompt profiles |
 | `/api/prompts/profiles/{id}` | GET | Get profile detail with composed preview |

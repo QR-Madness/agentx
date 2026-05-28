@@ -46,31 +46,36 @@ export function RelayMenu({
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Poll background jobs while open
+  // Poll background jobs while open — adaptively. A flat interval hammered the
+  // backend even when nothing was in flight; instead we poll quickly only while
+  // a job is queued/running and back off hard once everything has settled.
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const load = async () => {
       try {
         setLoading(true);
         const { jobs: next } = await api.listBackgroundChats();
-        if (!cancelled) {
-          setJobs(next);
-          onJobsChanged?.(next);
-        }
+        if (cancelled) return;
+        setJobs(next);
+        onJobsChanged?.(next);
+        const hasActive = next.some(j => j.status === 'queued' || j.status === 'running');
+        // 3s while work is in flight; 30s idle heartbeat to catch new arrivals.
+        timer = setTimeout(load, hasActive ? 3000 : 30000);
       } catch {
-        // ignore — inbox is best-effort
+        // ignore — inbox is best-effort; retry on the idle cadence.
+        if (!cancelled) timer = setTimeout(load, 30000);
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
     load();
-    const id = window.setInterval(load, 4000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      if (timer) clearTimeout(timer);
     };
   }, [isOpen, onJobsChanged]);
 

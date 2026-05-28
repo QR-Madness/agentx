@@ -61,20 +61,42 @@ Flow: task decomposition → reasoning strategy selection → execution → memo
 
 | Event | Data | When |
 |-------|------|------|
-| `start` | `{task_id, model}` | Stream begins |
+| `run_started` | `{run_id}` | First event — identifies the detached run |
+| `start` | `{task_id, model}` | Generation begins |
 | `chunk` | `{content}` | Each token |
 | `tool_call` | `{tool, arguments}` | Tool invocation |
 | `tool_result` | `{tool, content}` | Tool result |
 | `done` | `{task_id, thinking, has_thinking, total_time_ms, session_id}` | Complete |
 | `error` | `{error}` | On failure |
+| `close` | `{}` | Run settled; tail ends |
 
-The streaming endpoint supports the same tool-use loop as the non-streaming endpoint. Memory storage happens in a background thread after the stream closes.
+The streaming endpoint supports the same tool-use loop as the non-streaming endpoint.
 
 ```bash
 curl -N -X POST http://localhost:12319/api/agent/chat/stream \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello!", "model": "llama3.2"}'
 ```
+
+### Detached runs (survive disconnect)
+
+A chat run is **decoupled from the HTTP connection**. When you POST to
+`/api/agent/chat/stream`, the server spawns a detached daemon thread that drives the
+generation to completion — fanning every SSE event into a Redis stream and persisting
+turns at the end — regardless of whether a client is still listening. The HTTP response
+merely *tails* that Redis stream.
+
+This means closing or switching the browser/conversation tab **does not** kill the run:
+generation plays out server-side and the turns are saved. The first event, `run_started`,
+carries a `run_id` the client persists so it can re-attach.
+
+- **Re-attach:** `GET /api/agent/chat/stream/attach?run_id=<id>` replays the buffered
+  events from the start, then follows live until completion. If the run's buffer has
+  expired (2h TTL), it emits `run_missing` and the client restores from conversation
+  history instead.
+- **Cancel:** `POST /api/agent/chat/runs/{run_id}/cancel` cooperatively stops a run (the
+  runner checks the flag at SSE-event boundaries). This is what the chat **Stop** button
+  calls; merely closing a tab does not cancel — it only detaches.
 
 ## Session Management
 

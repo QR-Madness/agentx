@@ -1559,13 +1559,73 @@ async def agent_chat_stream(request):
             except Exception:
                 pass
 
+    # Run the generator detached from this connection: a daemon thread drives
+    # it to completion (persisting turns regardless of whether a client is
+    # listening) while we merely *tail* the resulting Redis event stream. If the
+    # client disconnects (tab close/switch), the run keeps going and can be
+    # re-attached via /api/agent/chat/stream/attach. `generate_sse` references
+    # no `request` state after parsing, so handing it over as-is is safe.
+    from .streaming.chat_run import start_chat_run, tail_chat_run
+
+    run_id = start_chat_run(generate_sse)
+
+    async def _client_stream():
+        # First event tells the client which run to persist + re-attach to.
+        yield f"event: run_started\ndata: {json.dumps({'run_id': run_id})}\n\n"
+        async for ev in tail_chat_run(run_id):
+            yield ev
+
     response = StreamingHttpResponse(
-        generate_sse(),
+        _client_stream(),
         content_type='text/event-stream'
     )
     response['Cache-Control'] = 'no-cache'
     response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
     return response
+
+
+async def agent_chat_attach(request):
+    """
+    GET /api/agent/chat/stream/attach?run_id=<id>
+
+    Re-attach to a detached chat run: replays the buffered event history from
+    the start, then follows live until the run completes. Lets a reopened tab
+    resume an in-flight conversation seamlessly. Emits `run_missing` when the
+    run's buffer has expired (client then restores from history).
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    run_id = request.GET.get("run_id")
+    if not run_id:
+        return JsonResponse({"error": "run_id required"}, status=400)
+
+    from .streaming.chat_run import tail_chat_run
+
+    async def _client_stream():
+        async for ev in tail_chat_run(run_id, last_id="0"):
+            yield ev
+
+    response = StreamingHttpResponse(_client_stream(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+def agent_chat_run_cancel(request, run_id):
+    """
+    POST /api/agent/chat/runs/<run_id>/cancel — cooperatively cancel a run.
+
+    The detached runner checks the flag at SSE-event boundaries and stops
+    pulling from the provider (closes the generator) without a hard interrupt.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    from .streaming.chat_run import store
+
+    requested = store.request_cancel(run_id)
+    return JsonResponse({"run_id": run_id, "cancel_requested": requested})
 
 
 def agent_status(request):

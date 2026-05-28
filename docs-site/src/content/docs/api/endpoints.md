@@ -385,14 +385,18 @@ SSE events in order:
 
 | Event | Data | When |
 |-------|------|------|
-| `start` | `{"task_id": "...", "model": "..."}` | Stream begins |
+| `run_started` | `{"run_id": "..."}` | First event — identifies the detached run for re-attach |
+| `start` | `{"task_id": "...", "model": "..."}` | Generation begins |
 | `chunk` | `{"content": "token text"}` | Each token |
 | `tool_call` | `{"tool": "name", "arguments": {...}}` | Tool invocation starts |
 | `tool_result` | `{"tool": "name", "content": "..."}` | Tool result (truncated to 500 chars) |
-| `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "..."}` | Stream complete |
+| `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "..."}` | Generation complete |
 | `error` | `{"error": "message"}` | On failure |
+| `close` | `{}` | Run settled; tail ends |
 
-The streaming endpoint supports the same tool-use loop as the non-streaming endpoint (up to 10 rounds). Memory storage happens in a background thread after the stream closes.
+The streaming endpoint supports the same tool-use loop as the non-streaming endpoint (up to 10 rounds). Memory storage happens after the stream completes.
+
+**Detached execution.** The run is driven by a server-side daemon thread that fans SSE events into a Redis stream and persists turns on completion — independent of the HTTP connection. Closing or switching the tab does **not** stop the run; it plays to completion and can be re-attached. This is what prevents the in-flight response (and, for a new chat, the whole conversation) from being lost on disconnect.
 
 **Example with curl:**
 ```bash
@@ -400,6 +404,22 @@ curl -N -X POST http://localhost:12319/api/agent/chat/stream \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello!", "model": "llama3.2"}'
 ```
+
+### Re-attach to a Run
+
+```
+GET /api/agent/chat/stream/attach?run_id=<id>
+```
+
+Replays the buffered SSE events for a detached run from the start, then follows live until completion. A reopened tab uses this to resume an in-flight conversation. Emits a `run_missing` event (instead of replaying) when the run's buffer has expired — the client then restores from conversation history.
+
+### Cancel a Run
+
+```
+POST /api/agent/chat/runs/{run_id}/cancel
+```
+
+Cooperatively cancels a detached run; the runner checks the flag at SSE-event boundaries and stops pulling from the provider. Returns `{"run_id": "...", "cancel_requested": bool}`.
 
 ### Agent Status
 

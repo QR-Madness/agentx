@@ -3038,3 +3038,58 @@ class PlanStatusEndpointTest(MockRedisTestBase):
         data = resp.json()
         self.assertEqual(data["status"], "active")
         self.assertEqual(data["subtasks"][0]["status"], "running")
+
+
+class ChatRunStoreTest(MockRedisTestBase):
+    """Detached chat-run state store + tail entry paths (Redis mocked)."""
+
+    def test_create_and_get_state(self):
+        from agentx_ai.streaming.chat_run import store
+        self.mock_redis.hgetall.return_value = {
+            "status": "running",
+            "created_at": "2026-05-28T00:00:00+00:00",
+        }
+        store.create("run1")
+        self.assertTrue(self.mock_redis.hset.called)
+        state = store.get_state("run1")
+        self.assertEqual(state["status"], "running")
+
+    def test_request_cancel_requires_existing_key(self):
+        from agentx_ai.streaming.chat_run import store
+        self.mock_redis.exists.return_value = 0
+        self.assertFalse(store.request_cancel("missing"))
+        self.mock_redis.exists.return_value = 1
+        self.assertTrue(store.request_cancel("run1"))
+
+    def test_is_cancel_requested_decodes_bytes(self):
+        from agentx_ai.streaming.chat_run import store
+        self.mock_redis.hget.return_value = b"1"
+        self.assertTrue(store.is_cancel_requested("run1"))
+        self.mock_redis.hget.return_value = None
+        self.assertFalse(store.is_cancel_requested("run1"))
+
+    def test_tail_emits_run_missing_when_state_absent(self):
+        from agentx_ai.streaming.chat_run import tail_chat_run
+        self.mock_redis.hgetall.return_value = {}
+
+        async def _collect():
+            return [ev async for ev in tail_chat_run("gone")]
+
+        events = asyncio.run(_collect())
+        self.assertEqual(len(events), 1)
+        self.assertIn("run_missing", events[0])
+
+    def test_tail_emits_run_missing_when_stale_running(self):
+        from agentx_ai.streaming.chat_run import tail_chat_run
+        self.mock_redis.hgetall.return_value = {
+            "status": "running",
+            "updated_at": "2000-01-01T00:00:00+00:00",  # ancient → orphaned
+        }
+
+        async def _collect():
+            return [ev async for ev in tail_chat_run("stale")]
+
+        events = asyncio.run(_collect())
+        self.assertEqual(len(events), 1)
+        self.assertIn("run_missing", events[0])
+        self.assertIn("stale", events[0])

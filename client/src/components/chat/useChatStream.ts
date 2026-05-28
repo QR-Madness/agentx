@@ -10,6 +10,7 @@
 
 import { useCallback, useReducer, useRef } from 'react';
 import { api, type ChatRequest } from '../../lib/api';
+import type { StreamCallbacks } from '../../lib/api/streaming';
 import { useNotify } from '../../contexts/NotificationContext';
 import {
   type ActiveDelegation,
@@ -51,12 +52,21 @@ interface UseChatStreamOpts {
   tabTitle?: string;
   /** Global plan registry sink (drawer + toolbar indicator). */
   plans?: PlansSink;
+  /** Fired when the detached run id changes — persist it on the tab (null clears). */
+  onRunChanged?: (runId: string | null) => void;
+  /** Re-attach found no live run (TTL expired) — caller restores from history. */
+  onRunMissing?: () => void;
 }
 
 interface UseChatStreamApi {
   state: StreamState;
   send: (req: ChatRequest) => void;
+  /** Re-attach to an in-flight detached run (replays + follows live). */
+  attach: (runId: string) => void;
+  /** User-initiated cancel: abort + cancel the run server-side. */
   stop: () => void;
+  /** Tab switch / unmount: drop the connection but leave the run running. */
+  detach: () => void;
 }
 
 function extractThinking(content: string): string | null {
@@ -98,6 +108,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   // Set on subtask_start, cleared on subtask_complete/failed and plan end —
   // so synthesis content (streamed after the last subtask) stays untagged.
   const currentStepRef = useRef<PlanStepRef | null>(null);
+  // The detached run currently attached to (for the Stop button's cancel call).
+  const currentRunIdRef = useRef<string | null>(null);
 
   // Helper: flush in-flight supervisor tokens as an intermediate
   // AssistantMessage, then clear the buffer. Always clears — no
@@ -131,11 +143,23 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     dispatch({ type: 'send_started' });
   }, []);
 
-  const send = useCallback((req: ChatRequest) => {
-    abortRef.current?.abort();
-    reset();
+  // Built once and shared by send() and attach() — a re-attach replays the
+  // same event set, so the callback wiring is identical.
+  const buildCallbacks = useCallback((): StreamCallbacks => ({
+      onRunStarted: (data) => {
+        currentRunIdRef.current = data.run_id;
+        optsRef.current.onRunChanged?.(data.run_id);
+      },
 
-    abortRef.current = api.streamChat(req, {
+      onRunMissing: () => {
+        // The run buffer expired (or was orphaned) — let the caller restore
+        // from server history instead of replaying.
+        currentRunIdRef.current = null;
+        optsRef.current.onRunChanged?.(null);
+        dispatch({ type: 'stream_ended' });
+        optsRef.current.onRunMissing?.();
+      },
+
       onChunk: (content) => {
         liveContentRef.current += content;
         dispatch({ type: 'chunk_appended', content });
@@ -440,6 +464,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       onDone: (data) => {
         const finalContent = liveContentRef.current;
         liveContentRef.current = '';
+        currentRunIdRef.current = null;
+        optsRef.current.onRunChanged?.(null);
         dispatch({ type: 'stream_ended' });
 
         const cleanContent = stripThinkingTags(finalContent);
@@ -475,6 +501,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         }
         activePlanRef.current = null;
         currentStepRef.current = null;
+        currentRunIdRef.current = null;
+        optsRef.current.onRunChanged?.(null);
         activeDelegationsRef.current = new Map();
         dispatch({ type: 'stream_ended' });
 
@@ -490,12 +518,50 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         // scrolled away or the user has switched tabs.
         notifyError(error);
       },
-    });
-  }, [flushLiveContent, reset, notifyError]);
+  }), [flushLiveContent, notifyError]);
 
+  const send = useCallback((req: ChatRequest) => {
+    abortRef.current?.abort();
+    reset();
+    currentRunIdRef.current = null;
+    abortRef.current = api.streamChat(req, buildCallbacks());
+  }, [reset, buildCallbacks]);
+
+  const attach = useCallback((runId: string) => {
+    // Reset in-flight state first so a full replay-from-0 rebuilds the live
+    // bubble cleanly. The caller is responsible for truncating the tab's
+    // messages back to the triggering user turn before calling this.
+    abortRef.current?.abort();
+    reset();
+    currentRunIdRef.current = runId;
+    abortRef.current = api.attachChatRun(runId, buildCallbacks());
+  }, [reset, buildCallbacks]);
+
+  // Tab switch / unmount: drop the connection but leave the server run alive
+  // and the activeRun id intact so it can be re-attached. Does NOT mark the
+  // plan cancelled — it really is still running.
+  const detach = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    liveContentRef.current = '';
+    activeToolCallsRef.current = new Map();
+    activePlanRef.current = null;
+    currentStepRef.current = null;
+    activeDelegationsRef.current = new Map();
+    dispatch({ type: 'stream_ended' });
+  }, []);
+
+  // User pressed Stop: abort locally AND cancel the run server-side so it
+  // stops burning tokens; clear the persisted run.
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    const runId = currentRunIdRef.current;
+    if (runId) {
+      api.cancelChatRun(runId).catch(() => { /* best-effort */ });
+    }
+    currentRunIdRef.current = null;
+    optsRef.current.onRunChanged?.(null);
     liveContentRef.current = '';
     activeToolCallsRef.current = new Map();
     if (activePlanRef.current) {
@@ -507,5 +573,5 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     dispatch({ type: 'stream_ended' });
   }, []);
 
-  return { state, send, stop };
+  return { state, send, attach, stop, detach };
 }

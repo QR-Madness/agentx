@@ -46,4 +46,11 @@ export const agentApi = {
       `/api/agent/plans/${encodeURIComponent(planId)}/status?session_id=${encodeURIComponent(sessionId)}`,
     );
   },
+
+  /** Cooperatively cancel a detached chat run (the Stop button when streaming). */
+  async cancelChatRun(runId: string): Promise<{ run_id: string; cancel_requested: boolean }> {
+    return apiRequest(`/api/agent/chat/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: 'POST',
+    });
+  },
 };

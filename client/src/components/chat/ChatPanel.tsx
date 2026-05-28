@@ -49,6 +49,7 @@ export function ChatPanel() {
     setSessionId,
     setTabContextInfo,
     updateTab,
+    restoreConversation,
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
@@ -105,6 +106,14 @@ export function ChatPanel() {
     tabId: activeTab?.id,
     tabTitle: activeTab?.title,
     plans: { upsertPlan, patchPlan },
+    onRunChanged: (runId) => {
+      if (activeTab) updateTab(activeTab.id, { activeRun: runId ? { runId } : undefined });
+    },
+    onRunMissing: () => {
+      // The run's event buffer expired but its turns are persisted — pull the
+      // finished conversation from server history.
+      if (activeTab?.sessionId) restoreConversation(activeTab.sessionId).catch(() => {});
+    },
   });
 
   const isTyping = stream.state.phase === 'streaming';
@@ -144,12 +153,37 @@ export function ChatPanel() {
     }
   }, [activeTab?.messages, streamingContent, isPinned]);
 
-  // Abort stream when switching tabs
+  // Detach (not cancel) the stream when switching tabs / unmounting. The run
+  // keeps executing server-side and is re-attached below when the tab is shown
+  // again — closing/switching a tab must never kill an in-flight conversation.
   useEffect(() => {
     return () => {
-      stream.stop();
+      stream.detach();
     };
-  }, [activeTab?.id, stream.stop]);
+  }, [activeTab?.id, stream.detach]);
+
+  // Resume an in-flight detached run when this tab is shown. Truncate the
+  // transcript back to the triggering user turn first so the replay-from-0
+  // rebuilds the assistant side without duplicating already-rendered messages.
+  const attachedRunRef = useRef<string | null>(null);
+  const activeRunId = activeTab?.activeRun?.runId;
+  useEffect(() => {
+    if (!activeTab || !activeRunId) return;
+    if (isTyping) return;                         // already streaming (e.g. just sent)
+    if (attachedRunRef.current === activeRunId) return;
+    attachedRunRef.current = activeRunId;
+
+    const msgs = activeTab.messages;
+    let lastUser = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].type === 'user') { lastUser = i; break; }
+    }
+    if (lastUser >= 0 && lastUser < msgs.length - 1) {
+      updateTab(activeTab.id, { messages: msgs.slice(0, lastUser + 1) });
+    }
+    stream.attach(activeRunId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.id, activeRunId]);
 
   // Mirror streaming phase into ConversationContext for cross-component awareness
   useEffect(() => {
