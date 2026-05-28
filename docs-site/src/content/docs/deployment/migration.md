@@ -20,12 +20,12 @@ task db:migrate-volumes:redis
 
 Backup:
 ```bash
-task db:backup:postgres
+task db:backup
 ```
 
 Restore:
 ```bash
-task db:restore:postgres BACKUP_FILE=backups/postgres_20231127.sql
+task db:restore BACKUP_FILE=backups/postgres_20231127.sql
 ```
 
 ## Data Directories

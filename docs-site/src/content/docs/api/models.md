@@ -87,7 +87,7 @@ Defined in `agent/core.py`.
 |-------|------|---------|-------------|
 | `name` | string | `"agentx"` | Agent name |
 | `user_id` | string | `null` | User identifier |
-| `default_model` | string | `"llama3.2"` | Default model |
+| `default_model` | string | `"lmstudio:llama3.2"` | Default model (`provider:model` format) |
 | `reasoning_model` | string | `null` | Override for reasoning |
 | `drafting_model` | string | `null` | Override for drafting |
 | `max_iterations` | int | `20` | Max task iterations |

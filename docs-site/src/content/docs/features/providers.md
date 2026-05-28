@@ -9,11 +9,15 @@ graph TD
     R[ProviderRegistry] --> |resolves model → provider| LMS[LM Studio]
     R --> ANT[Anthropic]
     R --> OAI[OpenAI]
+    R --> ORT[OpenRouter]
+    R --> VRC[Vercel AI Gateway]
     R --> |loads| MY[models.yaml]
 
     LMS --> |OpenAI-compatible API| LOCAL[Local Models]
     ANT --> |Anthropic API| CLAUDE[Claude Models]
     OAI --> |OpenAI API| GPT[GPT Models]
+    ORT --> |aggregator API| MANY[100+ models]
+    VRC --> |gateway API| MANY
 ```
 
 `ProviderRegistry` is a lazy singleton that:
@@ -34,6 +38,8 @@ result = await provider.complete(messages, model_id)
 | LM Studio | `LMStudioProvider` | OpenAI-compatible (local) | `LMSTUDIO_BASE_URL` (default: `http://localhost:1234/v1`) |
 | Anthropic | `AnthropicProvider` | Anthropic API | `ANTHROPIC_API_KEY` |
 | OpenAI | `OpenAIProvider` | OpenAI API | `OPENAI_API_KEY` |
+| OpenRouter | `OpenRouterProvider` | OpenAI-compatible aggregator (100+ models) | `OPENROUTER_API_KEY` |
+| Vercel AI Gateway | `VercelProvider` | Cloud aggregator gateway (100+ models) | `AI_GATEWAY_API_KEY` |
 
 All providers support the same interface:
 
@@ -57,40 +63,47 @@ All providers support the same interface:
 
 ## Model Configuration
 
-Models are defined in `providers/models.yaml`:
+Providers (and their default models) are defined in `providers/models.yaml`. The file
+holds **provider configs only** — per-model capabilities are fetched dynamically from each
+provider's API, not hand-listed. Select a model with `provider:model` syntax:
 
 ```yaml
-models:
-  claude-3-5-sonnet-latest:
-    provider: anthropic
-    context_window: 200000
-    supports_tools: true
-    supports_vision: true
-    cost_per_1k_input: 0.003
-    cost_per_1k_output: 0.015
+providers:
+  lmstudio:
+    base_url_env: LMSTUDIO_BASE_URL
+    timeout: 300.0       # local models may be slower
+    max_retries: 1
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    timeout: 60.0
+    max_retries: 3
+  openai:     { api_key_env: OPENAI_API_KEY,     timeout: 60.0, max_retries: 3 }
+  openrouter: { api_key_env: OPENROUTER_API_KEY, timeout: 60.0, max_retries: 3 }
+  vercel:     { api_key_env: AI_GATEWAY_API_KEY, timeout: 60.0, max_retries: 3 }
 
-  llama3.2:
-    provider: lmstudio
-    context_window: 8192
-    supports_tools: true
-    supports_streaming: true
-
+# Default model per use case (provider:model format)
 defaults:
-  chat: null           # Uses DEFAULT_MODEL env var
-  reasoning: null      # Falls back to chat default
-  extraction: null     # Falls back to chat default
+  chat:      anthropic:claude-3-5-sonnet-latest
+  reasoning: anthropic:claude-3-5-sonnet-latest
+  code:      lmstudio:deepseek-coder-v2
+  fast:      anthropic:claude-3-5-haiku-latest
+  local:     lmstudio:llama3.2
 ```
 
-The registry also discovers models dynamically from LM Studio's `/v1/models` endpoint.
+The registry discovers available models dynamically from each provider's API (e.g. LM
+Studio's `/v1/models`). The OpenRouter and Vercel providers additionally extract per-model
+metadata and pricing, surfaced via `providers/pricing.py` for cost estimation.
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `DEFAULT_MODEL` | Default model for chat (default: `"llama3.2"`) |
+| `DEFAULT_MODEL` | Default model for chat (default: `"llama-3.2-1b-instruct"`) |
 | `LMSTUDIO_BASE_URL` | LM Studio API URL |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENAI_API_KEY` | OpenAI API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key (100+ models) |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key (100+ models) |
 | `DEBUG_LOG_LLM_REQUESTS` | Log full request payloads when set to `1`/`true` |
 
 Provider settings can also be set at runtime via `POST /api/config/update`.

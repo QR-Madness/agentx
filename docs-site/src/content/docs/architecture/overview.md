@@ -37,6 +37,8 @@ graph TB
         LMS[LM Studio]
         ANT[Anthropic]
         OAI[OpenAI]
+        ORT[OpenRouter]
+        VRC[Vercel AI Gateway]
     end
 
     subgraph MCP["MCP Client"]
@@ -95,7 +97,7 @@ graph TB
     AC -.-> Spec & Pipe & Cand
     Spec & Pipe & Cand --> PR
 
-    PR --> LMS & ANT & OAI
+    PR --> LMS & ANT & OAI & ORT & VRC
     MCM --> SR --> Transports
 
     MI --> EP & SEM & PROC & WM
@@ -173,6 +175,10 @@ sequenceDiagram
 | Consolidation | `kit/agent_memory/consolidation/worker.py` | Background jobs for memory processing | Background thread |
 | Translation | `kit/translation.py` | NLLB-200 translation + language detection | Lazy singleton |
 | Config | `config.py` | Runtime config persistence to `data/config.json` | Lazy singleton |
+| Auth | `auth/` | Optional session auth (root user, bcrypt, Redis sessions) — Phase 17 | Lazy singleton |
+| Multi-Agent | `alloy/` | Supervisor + specialist workflow orchestration (Agent Alloy) | Per-request |
+| Background | `background/` | Background chat job queue (Redis Streams) + worker | Background thread |
+| Management | `management/` | Django management commands (schema init, migrations, auth setup, warmup) | CLI |
 
 ## Design Decisions
 

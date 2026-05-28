@@ -209,7 +209,7 @@ This copies data from Docker volumes to `./data/` directories.
 
 Automated backup:
 ```bash
-task db:backup:postgres
+task db:backup
 ```
 
 Manual backup:
@@ -219,7 +219,7 @@ docker exec agent-postgres pg_dump -U agent agent_memory > backup.sql
 
 Restore:
 ```bash
-task db:restore:postgres BACKUP_FILE=backup.sql
+task db:restore BACKUP_FILE=backup.sql
 ```
 
 ### Neo4j Backup
@@ -415,7 +415,7 @@ docker-compose ps
 
 Restore from backup:
 ```bash
-task db:restore:postgres BACKUP_FILE=backups/latest.sql
+task db:restore BACKUP_FILE=backups/latest.sql
 ```
 
 ### Disk Space

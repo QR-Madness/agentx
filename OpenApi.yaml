@@ -1,8 +1,12 @@
 openapi: 3.0.0
 info:
   title: AgentX AI API
-  description: API documentation for AgentX AI services - translation, language detection, and agent capabilities
-  version: 1.0.0
+  description: >-
+    OpenAPI spec for AgentX AI services. NOTE: this spec currently covers only the core and
+    translation endpoints; full coverage of the ~70 endpoints (agent, memory, MCP, providers,
+    prompts, auth, multi-agent, jobs, config) is tracked separately. See the API reference docs
+    (docs-site) and api/agentx_ai/urls.py for the authoritative endpoint list.
+  version: 0.20.0
 
 servers:
   - url: http://localhost:12319/api

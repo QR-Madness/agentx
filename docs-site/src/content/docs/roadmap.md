@@ -20,6 +20,10 @@ This document tracks the development history and future direction of AgentX.
 | Phase 12: Documentation | **Partial** | Comprehensive docs refresh |
 | Phase 13: UX Overhaul | Complete | Immersive 3-page app with conversation tabs |
 | Phase 14: Context Gating | Complete | Large tool output compression + retrieval |
+| Phase 15: Plan Execution | **In Progress (~80%)** | Plan state store, executor, streamed progress |
+| Phase 16: Multi-Agent | **In Progress (~30%)** | Agent Alloy v1 — supervisor + specialist delegation |
+| Phase 17: Server Management | **Complete** | Auth, Docker production stack, multi-cluster, version matching |
+| Phase 18: UX + Memory Tuning | **In Progress** | Toolkit, Relay, model metadata, extraction tuning |
 
 ---
 
@@ -439,7 +443,7 @@ Implemented `Session` and `SessionManager`:
 > **Goal**: Comprehensive backend documentation refresh
 
 - Rewrote architecture docs (overview, API layer, memory)
-- Expanded API reference: all 54 endpoints documented with request/response examples
+- Expanded API reference: the full endpoint set documented with request/response examples
 - Comprehensive API models reference (providers, agent, memory, prompts, MCP, SSE)
 - Created 5 new feature docs: reasoning, drafting, MCP, providers, prompts
 - Rewrote/expanded 3 existing feature docs: chat, translation, memory
@@ -545,6 +549,49 @@ Implemented `Session` and `SessionManager`:
 
 #### Test Coverage
 - 8 compression tests, 22 retrieval tests, 8 trajectory tests, 6 read-loop tests, 10 self-memory tests, 13 fact-correction tests
+
+---
+
+### Phase 15: Plan Execution (In Progress, ~80%)
+
+> **Goal**: Execute multi-step plans with persisted state and streamed progress
+
+- `PlanStateStore` + `PlanExecutor` with serialization and resumable state
+- `Agent.run` integration; plan progress streamed via SSE events
+- *Deferred*: parallel subtasks, per-subtask reasoning selection, goal tracking, cancellation/resumption
+
+---
+
+### Phase 16: Multi-Agent Conversations — Agent Alloy (In Progress, ~30%)
+
+> **Goal**: Coordinate multiple agents via a supervisor that delegates to specialists
+> **Shipped**: Agent Alloy v1 (2026-04-27)
+
+- Backend: workflow models, manager, delegation tool, executor, prompts
+- Workflow CRUD endpoints (`/api/alloy/workflows`)
+- Supervisor + specialist delegation over shared memory channels, with streaming
+- *Deferred*: factory canvas UI, declarative routing, loop/checkpoint nodes, async delegation, per-workflow tool isolation, message attribution
+
+---
+
+### Phase 17: Server Management (Complete)
+
+> **Goal**: Make AgentX deployable beyond a single dev machine
+
+- Optional session authentication: single root user, bcrypt password, Redis-backed sessions, gated by `AGENTX_AUTH_ENABLED`
+- Docker production stack (`task prod:*`) and multi-cluster deployment (`task cluster:*`) with an optional Nginx + Cloudflare gateway
+- Client/API version matching via `versions.yaml` (`protocol_version` + `min_client_version`), surfaced by `VersionMismatchPage`
+
+---
+
+### Phase 18: UX Improvements & Memory Tuning (In Progress)
+
+> **Goal**: Polish the client and tune the memory pipeline
+
+- Toolkit (MCP server CRUD + tool browser) and Relay module (background jobs, memory toggle)
+- Model metadata + picker (OpenRouter/Vercel capabilities + pricing); per-tab context and per-turn cost metrics
+- Extraction tuning: entity resolution, fact supersedure, scope context, eval harness
+- Client error contract: `ApiError`, toasts, `useApi` hook, repo-wide UI primitives
 
 ---
 

@@ -9,7 +9,7 @@ Copy `.env.example` to `.env` in the project root. Variables are grouped by subs
 ### Default Model
 
 ```bash
-DEFAULT_MODEL=llama3.2              # Model used for agent chat/reasoning
+DEFAULT_MODEL=llama-3.2-1b-instruct   # Model used for agent chat/reasoning
 ```
 
 ### LM Studio (Local Models)
@@ -25,10 +25,11 @@ HF_TOKEN=                                    # HuggingFace token (gated models)
 ```bash
 ANTHROPIC_API_KEY=                  # Anthropic (Claude models)
 OPENAI_API_KEY=                     # OpenAI (GPT models)
-TOGETHER_API_KEY=                   # Together.ai (hosted open models)
+OPENROUTER_API_KEY=                 # OpenRouter (100+ models, cloud aggregator)
+AI_GATEWAY_API_KEY=                 # Vercel AI Gateway (100+ models)
 ```
 
-All three can also be configured at runtime via the Settings UI or `POST /api/config/update`.
+These can also be configured at runtime via the Settings UI or `POST /api/config/update`.
 
 ### Database Credentials
 
@@ -111,7 +112,9 @@ VITE_API_URL=http://localhost:12319/api   # API URL for Tauri client
   "providers": {
     "lmstudio": { "base_url": null, "timeout": 300 },
     "anthropic": { "api_key": null, "base_url": null },
-    "openai": { "api_key": null, "base_url": null }
+    "openai": { "api_key": null, "base_url": null },
+    "openrouter": { "api_key": null, "base_url": null },
+    "vercel": { "api_key": null, "base_url": null }
   },
   "models": {
     "defaults": { "chat": null, "reasoning": null, "extraction": null },

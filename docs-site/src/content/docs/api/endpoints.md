@@ -127,6 +127,16 @@ Returns configured MCP servers and connection status.
 }
 ```
 
+### Validate / Server Detail
+
+```
+POST /api/mcp/servers/validate
+GET  /api/mcp/servers/{name}
+```
+
+`validate` checks a server config without saving it (`{"server": {...}}`). The detail
+endpoint returns the stored config plus live status for a single server.
+
 ### List Tools
 
 ```
@@ -397,6 +407,69 @@ GET /api/agent/status
 
 Returns current agent status (`idle`, `planning`, `reasoning`, `executing`, `complete`, `failed`, `cancelled`).
 
+### Cancel Plan
+
+```
+POST /api/agent/plans/cancel
+```
+
+Requests cancellation of the agent's active plan execution.
+
+---
+
+## Background Chat
+
+Long-running conversations can be queued and polled instead of streamed.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/chat/background` | POST | Queue a background conversation job → `{job_id}` |
+| `/api/chat/background/{job_id}` | GET | Poll job status and retrieve the result |
+
+---
+
+## Tool Outputs
+
+Oversized tool outputs are compressed and stored for later retrieval.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tool-outputs` | GET | List stored tool outputs |
+| `/api/tool-outputs/{storage_key}` | GET | Retrieve a stored output |
+| `/api/tool-outputs/{storage_key}` | DELETE | Delete a stored output |
+
+---
+
+## Agent Profiles
+
+Agent profiles define identity plus per-agent settings (model, temperature, prompt, memory channel).
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/agent/profiles` | GET | List profiles |
+| `/api/agent/profiles/{profile_id}` | GET / PATCH / DELETE | Get, update, or delete a profile |
+| `/api/agent/profiles/{profile_id}/set-default` | POST | Mark a profile as the default |
+
+---
+
+## Multi-Agent (Agent Alloy)
+
+Supervisor + specialist workflows with delegation over shared memory channels (Phase 16, v1).
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/alloy/workflows` | GET / POST | List or create multi-agent workflows |
+| `/api/alloy/workflows/{workflow_id}` | GET / PATCH / DELETE | Get, update, or delete a workflow |
+
+---
+
+## Conversations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/conversations` | GET | List stored conversations |
+| `/api/conversations/{conversation_id}/messages` | GET | Get messages for a conversation |
+
 ---
 
 ## Prompts
@@ -524,6 +597,18 @@ Returns the auto-generated prompt describing available MCP tools for injection i
   "tools_count": 5
 }
 ```
+
+### Prompt Templates
+
+Reusable prompt snippets with tags, plus an LLM-backed prompt enhancer.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/prompts/templates` | GET / POST | List or create templates |
+| `/api/prompts/templates/tags` | GET | List template tags |
+| `/api/prompts/templates/{template_id}` | GET / PUT / DELETE | Get, update, or delete a template |
+| `/api/prompts/templates/{template_id}/reset` | POST | Reset a template to its default |
+| `/api/prompts/enhance` | POST | Rewrite/enhance a prompt via the LLM |
 
 ---
 
@@ -726,6 +811,14 @@ Clears consolidated timestamps from all conversations, allowing reprocessing.
 
 When `delete_memories` is true, also deletes all entities, facts, and strategies. Useful when extraction logic has changed.
 
+### Detail & Streaming Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/memory/entities/{entity_id}` | GET | Single entity detail |
+| `/api/memory/facts/{fact_id}` | GET | Single fact detail |
+| `/api/memory/consolidate/stream` | GET | Consolidation progress via SSE |
+
 ---
 
 ## Jobs
@@ -815,6 +908,22 @@ Clears jobs stuck in `running` state (e.g., after a crash).
 
 ## Config
 
+### Get Config
+
+```
+GET /api/config
+```
+
+Returns the current runtime configuration with secrets (API keys) redacted.
+
+### Context Limits
+
+```
+GET /api/config/context-limits
+```
+
+Returns the resolved context-window limit per configured model — used by the client for token budgeting.
+
 ### Update Config
 
 ```
@@ -852,10 +961,21 @@ All fields are optional — only provided fields are updated.
 }
 ```
 
-No GET endpoint exists for security — config contains API keys.
+API keys are redacted from `GET /api/config` responses.
 
 ---
 
 ## Authentication
 
-Currently no authentication required (single-user development mode).
+Authentication is **optional** and disabled by default. When `AGENTX_AUTH_ENABLED=true`,
+all `/api/*` routes require a valid session (single root user, bcrypt password, Redis-backed
+sessions — Phase 17). Run `task auth:setup` to set the root password.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/status` | GET / POST | Whether auth is enabled and setup is complete |
+| `/api/auth/setup` | POST | Set the initial root password |
+| `/api/auth/login` | POST | Log in with the root password → session token |
+| `/api/auth/logout` | POST | Destroy the current session |
+| `/api/auth/session` | GET | Validate the current session |
+| `/api/auth/change-password` | POST | Change the root password |

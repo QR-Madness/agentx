@@ -12,7 +12,7 @@ graph TB
         Agent[Agent Core<br/>planner · session · context]
         Reasoning[Reasoning<br/>CoT · ToT · ReAct · Reflection]
         Drafting[Drafting<br/>speculative · pipeline · candidate]
-        Providers[Providers<br/>LM Studio · Anthropic · OpenAI]
+        Providers[Providers<br/>LM Studio · Anthropic · OpenAI · OpenRouter · Vercel]
         MCP[MCP Client<br/>stdio · SSE · HTTP]
         Prompts[Prompt System<br/>profiles · composition]
         Translation[Translation Kit<br/>NLLB-200 · 200+ languages]
@@ -39,7 +39,7 @@ graph TB
 | **Reasoning**   | 4 strategies (CoT, ToT, ReAct, Reflection) with auto-selection      | [Reasoning](features/reasoning.md)     |
 | **Drafting**    | Speculative decoding, multi-stage pipelines, N-best candidates      | [Drafting](features/drafting.md)       |
 | **MCP Client**  | Connect to external tool servers via stdio, SSE, or HTTP            | [MCP](features/mcp.md)                 |
-| **Providers**   | Unified interface for LM Studio, Anthropic, and OpenAI              | [Providers](features/providers.md)     |
+| **Providers**   | Unified interface for LM Studio, Anthropic, OpenAI, OpenRouter, Vercel | [Providers](features/providers.md)     |
 | **Prompts**     | Profile-based prompt composition with global prompt layer           | [Prompts](features/prompts.md)         |
 | **Memory**      | 4-type persistent memory with recall, extraction, and consolidation | [Memory](features/memory.md)           |
 | **Translation** | Two-level detection + NLLB-200 translation for 200+ languages       | [Translation](features/translation.md) |
@@ -69,14 +69,15 @@ graph TB
 
 ## Project Status
 
-**Completed (Phases 1-14):**
+**Completed (Phases 1-14, 17):**
 
-- Django API with 54 endpoints across 8 subsystems
-- Tauri desktop app: 3-page layout, browser-style conversation tabs, drawer panels, agent profiles
+- Django API with 70+ REST endpoints (chat, agent, memory, MCP, providers, prompts, profiles, jobs, auth, multi-agent, config)
+- Tauri desktop app: multi-page layout, browser-style conversation tabs, drawer panels, agent profiles
+- Mobile-ready: Tauri v2 Android target (v0.20.0 — "Mobile-Ready Alpha")
 - Two-level translation system (200+ languages)
 - Database stack (Neo4j, PostgreSQL + pgvector, Redis)
 - MCP client with stdio/SSE/HTTP transports
-- Model provider abstraction (LM Studio, Anthropic, OpenAI)
+- Model provider abstraction (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel AI Gateway)
 - Drafting framework (speculative, pipeline, candidate)
 - Reasoning framework (CoT, ToT, ReAct, Reflection)
 - Agent core with task planning and goal tracking
@@ -84,12 +85,14 @@ graph TB
 - Context gating: task-aware compression, intent-based retrieval, trajectory compression
 - Agent identity: Docker-style IDs, self-memory channels, assistant self-extraction
 - Three-layer fact verification pipeline (hash → semantic → LLM adjudication)
+- Server management (Phase 17): optional session auth, Docker production stack, multi-cluster deploy, client/API version matching
 - 190+ backend tests
 
-**Up Next:**
+**In Progress:**
 
-- Phase 15: Plan execution + memory tuning
-- Phase 16: Multi-agent conversations
+- Phase 15: Plan execution (~80%)
+- Phase 16: Multi-agent conversations — Agent Alloy v1 shipped (supervisor + specialist delegation)
+- Phase 18: UX improvements + memory tuning
 
 See the [Roadmap](roadmap.md) for detailed phase history.
 

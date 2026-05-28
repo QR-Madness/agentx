@@ -45,12 +45,12 @@ task teardown
 
 Stops and removes Docker containers.
 
-### Pre-Launch Check
+### Environment Check
 ```bash
-task pre-launch-check
+task check
 ```
 
-Validates that all required directories and dependencies exist.
+Verifies the development environment is ready (prerequisites, directories, dependencies).
 
 ## API Commands
 
@@ -96,12 +96,19 @@ task client:build
 
 Builds production client bundle.
 
-### Start Production Client
+### Preview Production Build
 ```bash
-task client:start
+task client:preview
 ```
 
-Runs production build (requires `client:build` first).
+Serves the production web build locally (no Tauri packaging).
+
+### Mobile (Android)
+```bash
+task client:android:init    # Bootstrap the Tauri Android project (first time)
+task client:dev:android     # Run on a connected device with hot reload
+task client:build:android   # Build a debug-signed APK
+```
 
 ## Database Management
 
@@ -114,14 +121,14 @@ task db:shell:postgres
 
 Create backup:
 ```bash
-task db:backup:postgres
+task db:backup
 ```
 
 Backups saved to `./backups/postgres_YYYYMMDD_HHMMSS.sql`
 
 Restore from backup:
 ```bash
-task db:restore:postgres BACKUP_FILE=backups/postgres_20231127_120000.sql
+task db:restore BACKUP_FILE=backups/postgres_20231127_120000.sql
 ```
 
 ### Redis
@@ -171,38 +178,57 @@ task test
 
 Runs Django test suite.
 
+### Quick Tests (no model loading)
+```bash
+task test:quick
+```
+
+Runs the subset of tests that don't load translation/embedding models.
+
 ### Run Specific Test
 ```bash
-uv run python api/manage.py test agentx_ai.TranslationKitTest
+uv run python api/manage.py test agentx_ai.tests.TranslationKitTest
 ```
 
 ### Run Single Test Method
 ```bash
-uv run python api/manage.py test agentx_ai.TranslationKitTest.test_translate_to_french
+uv run python api/manage.py test agentx_ai.tests.TranslationKitTest.test_translate_to_french
+```
+
+### Client Tests (Vitest)
+```bash
+task test:client
 ```
 
 ## Documentation
+
+The docs site is an Astro project under `docs-site/`.
+
+### Install Docs Dependencies
+```bash
+task docs:install
+```
 
 ### Serve Documentation Locally
 ```bash
 task docs:serve
 ```
 
-Opens documentation at [http://127.0.0.1:8000](http://127.0.0.1:8000) with live reload.
+Serves the Astro docs site with HMR at [http://localhost:4321](http://localhost:4321).
 
 ### Build Documentation
 ```bash
 task docs:build
 ```
 
-Builds static documentation site to `site/` directory.
+Builds the static site to `docs-site/dist/`. Use `task docs:preview` to preview the build.
 
 ### Deploy Documentation
 ```bash
 task docs:deploy
 ```
 
-Deploys documentation to GitHub Pages (requires git repository setup).
+Deploys the docs site to Vercel (requires the Vercel CLI + login).
 
 ## Utility Commands
 
@@ -215,10 +241,10 @@ Runs sanity check and prompts to start development environment.
 
 ### List All Tasks
 ```bash
-task --list
+task --list-all
 ```
 
-Shows all available tasks with descriptions.
+Shows every available task with descriptions (`task --list` shows only the documented top-level ones).
 
 ### Task Help
 ```bash
@@ -231,9 +257,9 @@ Displays Taskfile help information.
 
 Some tasks automatically run prerequisites:
 
-- `task dev` → runs `task runners` first
-- `task client:start` → runs `task client:build` first
-- `task runners` → runs `task pre-launch-check` first
+- `task dev` → starts Docker services, then runs the API and client concurrently
+- `task setup` → runs `task install`, `task db:init`, and `task check`
+- `task db:full-init` → creates directories, starts containers, then initializes schemas
 
 ## Environment-Specific Tasks
 
@@ -264,7 +290,7 @@ Some tasks accept variables:
 
 ### Postgres Restore
 ```bash
-task db:restore:postgres BACKUP_FILE=path/to/backup.sql
+task db:restore BACKUP_FILE=path/to/backup.sql
 ```
 
 ## Debugging Tasks
@@ -309,6 +335,22 @@ task teardown && task db:clean && task db:init && task runners
 
 !!! warning
     This deletes all data!
+
+## More Task Groups
+
+Run `task --list-all` for the full set (120+ tasks). Other groups worth knowing:
+
+| Group | Examples | Purpose |
+|-------|----------|---------|
+| `mcp:*` | `mcp:servers`, `mcp:tools`, `mcp:resources`, `mcp:health` | Inspect MCP servers/tools (API must be running) |
+| `auth:*` | `auth:setup`, `auth:setup:force`, `auth:check` | Manage the root password (Phase 17 auth) |
+| `prod:*` | `prod:build`, `prod:up`, `prod:down`, `prod:logs`, `prod:shell` | Production Docker stack |
+| `cluster:*` | `cluster:new`, `cluster:up`, `cluster:down`, `cluster:status`, `cluster:list` | Multi-cluster deployment (`CLUSTER=name`) |
+| `models:*` | `models:download`, `models:cache`, `models:clear`, `warmup:embeddings` | HuggingFace model management |
+| `check:*` | `check:static`, `check:types`, `check:build` | Static analysis (lint + types + build) |
+| `lint:*` / `format:*` | `lint:python`, `lint:client`, `format:python`, `format:client` | Lint and format |
+| `logs:*` / `debug:*` | `logs:api`, `logs:docker`, `debug:env`, `debug:ports`, `debug:api` | Logging and diagnostics |
+| `release:*` | `release:build`, `release:check`, `versions:sync` | Build and release |
 
 ## Next Steps
 

@@ -149,10 +149,10 @@ If ports are already in use, modify `docker-compose.yml`:
 If you see errors about missing data directories:
 
 ```bash
-task pre-launch-check
+task db:init
 ```
 
-This will show which directories are missing and how to fix them.
+This creates the local data directories for Neo4j, PostgreSQL, and Redis under `./data/`.
 
 ### Docker Volume Migration
 

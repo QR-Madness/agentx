@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Notices
 
 - The client is cross-platform, thus UI should be highly responsive and use comfortable hit-regions.
-- Following API & Client v.0.18 (see versions.yaml for version), all changes should be migratable for existing platforms.
+- Following API & Client v.0.20 (see versions.yaml for the authoritative version), all changes should be migratable for existing platforms.
 
 
 ## Project Overview
@@ -33,7 +33,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
   ConversationTabs (browser-style)        ├── MCP Client (consume external tool servers)
   Drawers: Settings, Memory, Tools        ├── Reasoning (CoT, ToT, ReAct, Reflection)
   Modals: Translation, Prompt Library     ├── Drafting (speculative, pipeline, candidate)
-     ↕ HTTP                               ├── Model Providers (LM Studio, Anthropic, OpenAI)
+     ↕ HTTP                               ├── Model Providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel)
                                           ├── Context Gating (compression, chunking, retrieval)
                                           ├── Translation Kit (NLLB-200, 200+ languages)
                                           └── Agent Memory (episodic, semantic, procedural, working)
@@ -46,7 +46,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - `kit/translation.py` — `TranslationKit` (NLLB-200 translation) and `LanguageLexicon` (ISO 639 code bridging between Level I detection codes and Level II translation codes)
 - `kit/agent_memory/` — Full memory system with lazy-loaded connections (`interface.py` → `connections.py` → memory implementations). `RecallLayer` provides 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query)
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE). Configure via `mcp_servers.json`
-- `providers/` — Abstract `ModelProvider` with LM Studio, Anthropic, OpenAI implementations. Models defined in `models.yaml`
+- `providers/` — Abstract `ModelProvider` with LM Studio, Anthropic, OpenAI, OpenRouter, and Vercel AI Gateway implementations. Provider configs + default models in `models.yaml` (capabilities fetched dynamically); cost estimation in `pricing.py`
 - `prompts/` — `PromptManager` singleton for profile-based prompt composition. `models.py` defines PromptProfile, PromptSection, GlobalPrompt. Config in `data/system_prompts.yaml`
 - `config.py` — `ConfigManager` singleton for runtime settings. Persists to `data/config.json` with dot-notation access and env var fallback
 - `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
@@ -59,14 +59,14 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 
 ### Key Client Patterns (`client/src/`)
 
-- 3-page layout: Start, Dashboard, AgentX — routed via `RootLayout` + `TopBar`
+- 3 primary pages: Start, Dashboard, AgentX — routed via `RootLayout` + `TopBar`; plus gate pages `AuthPage` (when `AGENTX_AUTH_ENABLED`) and `VersionMismatchPage` (protocol mismatch)
 - Browser-style conversation tabs via `ConversationContext` (add, close, switch, rename, reorder)
 - Former tabs (Settings, Memory, Tools) → right-side drawer panels from toolbar icons
 - Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`)
-- `ServerContext` provides app-wide server state; `lib/api.ts` is the typed API client; `lib/hooks.ts` has React data hooks
+- `ServerContext` provides app-wide server state; `lib/api` is the typed API client (a facade over domain modules in `lib/api/`); `lib/hooks.ts` has React data hooks
 - `AgentProfileContext` manages agent profiles (name, model, temperature, reasoning strategy, memory channel)
 - Cosmic dark theme with glassmorphism effects and Lucide-react icons
-- API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)` (`lib/api.ts`). Surface failures with `useNotify().notifyError(err)` (toasts via `contexts/NotificationContext` + `ui/Toaster`); keep inline errors for form-field validation. Read hooks are built on the `useApi<T>` factory in `lib/hooks.ts`.
+- API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)` (`lib/api`). Surface failures with `useNotify().notifyError(err)` (toasts via `contexts/NotificationContext` + `ui/Toaster`); keep inline errors for form-field validation. Read hooks are built on the `useApi<T>` factory in `lib/hooks.ts`.
 
 #### Styling (Tailwind v4 + design tokens)
 
@@ -216,8 +216,22 @@ Base URL: `http://localhost:12319/api/`
 | `/api/jobs/{id}` | GET | Get job detail |
 | `/api/jobs/{id}/run` | POST | Manually run a job |
 | `/api/jobs/{id}/toggle` | POST | Enable/disable a job |
-| `/api/config` | GET | Get runtime configuration |
+| `/api/config` | GET | Get runtime configuration (secrets redacted) |
 | `/api/config/update` | POST | Update runtime config (`{"key": "dot.path", "value": ...}`) |
+| `/api/config/context-limits` | GET | Per-model context-window limits |
+
+Additional endpoint groups (added since v0.18 — see `urls.py` for the full set):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/{status,setup,login,logout,session,change-password}` | GET/POST | Optional session auth (Phase 17, gated by `AGENTX_AUTH_ENABLED`) |
+| `/api/agent/profiles`, `/api/agent/profiles/{id}` | GET/PATCH/DELETE | Agent profile CRUD; `.../set-default` (POST) |
+| `/api/alloy/workflows`, `/api/alloy/workflows/{id}` | GET/POST/PATCH/DELETE | Multi-agent (Agent Alloy) workflow CRUD |
+| `/api/chat/background`, `/api/chat/background/{job_id}` | POST/GET | Queue + poll background conversations |
+| `/api/tool-outputs`, `/api/tool-outputs/{key}` | GET/DELETE | Stored tool-output retrieval |
+| `/api/prompts/templates*`, `/api/prompts/enhance` | GET/POST/PUT/DELETE | Prompt template CRUD + LLM prompt enhancer |
+| `/api/conversations`, `/api/conversations/{id}/messages` | GET | Conversation history |
+| `/api/agent/plans/cancel` | POST | Cancel active plan execution |
 
 ## Environment Configuration
 
@@ -295,4 +309,4 @@ Each agent profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon"):
 
 ## Project Status
 
-Phases 1-14 complete. Phase 15 (Plan Execution + Memory Tuning) and Phase 16 (Multi-Agent Conversations) not started. See `Todo.md` for detailed tracking.
+Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~30% — Agent Alloy v1 shipped (supervisor + specialist delegation). Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.20.0 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.

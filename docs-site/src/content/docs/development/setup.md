@@ -80,11 +80,13 @@ NEO4J_PASSWORD=changeme
 POSTGRES_PASSWORD=changeme
 
 # Default model (used by agent chat)
-DEFAULT_MODEL=llama3.2
+DEFAULT_MODEL=llama-3.2-1b-instruct
 
 # Provider API keys (optional — only needed for cloud models)
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+AI_GATEWAY_API_KEY=
 
 # Embedding provider: "local" (sentence-transformers) or "openai"
 EMBEDDING_PROVIDER=local
@@ -123,7 +125,7 @@ task test:quick
 curl http://localhost:12319/api/health?include_memory=true
 ```
 
-A healthy response includes `"status": "ok"` with database connection statuses.
+A healthy response includes `"status": "healthy"` with database connection statuses.
 
 ## Common Issues
 
