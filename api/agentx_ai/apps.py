@@ -13,10 +13,20 @@ class AgentxAiConfig(AppConfig):
     def ready(self) -> None:
         # Avoid starting the worker during management commands like migrate,
         # test, or makemigrations — only run under the live server.
+        #
+        # Detection has to handle `uv run uvicorn agentx_api.asgi:application`,
+        # where argv[0] is the *full path* to the uvicorn binary (so a bare
+        # "uvicorn" string never matches). Check the basename of argv[0] and
+        # any asgi/wsgi target, not just exact-string membership.
+        argv = list(getattr(os, "sys").argv)  # type: ignore[attr-defined]
+        prog = os.path.basename(argv[0]) if argv else ""
         run_main = os.environ.get("RUN_MAIN") == "true"
-        is_server = any(
-            arg in ("runserver", "uvicorn", "daphne") for arg in os.sys.argv  # type: ignore[attr-defined]
-        ) or os.environ.get("AGENTX_ENABLE_BG_WORKER") == "1"
+        is_server = (
+            prog in ("uvicorn", "daphne", "gunicorn", "hypercorn")
+            or any(arg in ("runserver", "uvicorn", "daphne") for arg in argv)
+            or any(("asgi" in arg or "wsgi" in arg) for arg in argv[1:])
+            or os.environ.get("AGENTX_ENABLE_BG_WORKER") == "1"
+        )
 
         if not (run_main or is_server):
             return

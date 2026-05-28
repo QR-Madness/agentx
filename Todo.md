@@ -386,6 +386,7 @@ Currently our model selection and selector are a very solid foundation but are j
   - `ServerSelector.tsx` now renders per-row edit (inline form) + delete (inline confirm) actions wired to the existing `updateServerConfig`/`deleteServer` context methods; styles added to `AuthPage.css`.
 - [x] MCP tools should auto-connect on server restart if they were connected at shutdown.
   - Added a persisted `auto_connect` flag to `ServerConfig` (distinct from `auto_reconnect`), set true on connect / false on disconnect in `mcp_connect`/`mcp_disconnect` (incl. the `all` bulk paths) and saved to `mcp_servers.json`. New `MCPClientManager.connect_persisted()` restores flagged servers from `apps.py` `ready()` on a best-effort daemon thread. Flag surfaced in `_serialize_server` + preserved through the Toolkit guided/raw/`toConfigInput` editors so edits don't clobber it. Tests: round-trip + `connect_persisted` targeting (`MCPServerRegistryTest`).
+  - **Follow-up fix:** the `apps.py` `ready()` startup guard only matched a bare `"uvicorn"` string, but `uv run uvicorn …` gives `argv[0]` as the full binary path → guard returned early, so neither the reconnect *nor the background chat worker* ran under the real launch. Hardened detection (argv[0] basename + asgi/wsgi target). Verified end-to-end: `brave-search` auto-connects on boot.
 
 ### 18.9: Memory Tuning
 
