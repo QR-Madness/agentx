@@ -134,7 +134,8 @@ services:
 **Prerequisites** — the NVIDIA Container Toolkit on the host:
 
 ```bash
-nvidia-ctk runtime configure --runtime=docker
+# recommended to run as superuser if non-sudo doesn't work
+sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
