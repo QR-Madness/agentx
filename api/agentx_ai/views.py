@@ -1319,11 +1319,12 @@ async def agent_chat_stream(request):
             planner_temperature = planner_config.get("planner.temperature", 0.3)
             planner_max_tokens = planner_config.get("planner.max_tokens", 1000)
             planner_prompt_override = planner_config.get("planner.prompt_override", "")
+            planner_max_subtasks = planner_config.get("planner.max_subtasks", 6)
             planner_threshold_name = (
-                planner_config.get("planner.complexity_threshold", "moderate") or "moderate"
+                planner_config.get("planner.complexity_threshold", "complex") or "complex"
             ).lower()
             _threshold_rank = {"simple": 0, "moderate": 1, "complex": 2}
-            planner_threshold_rank = _threshold_rank.get(planner_threshold_name, 1)
+            planner_threshold_rank = _threshold_rank.get(planner_threshold_name, 2)
 
             if planner_enabled:
                 planner = TaskPlanner(
@@ -1331,6 +1332,7 @@ async def agent_chat_stream(request):
                     temperature=planner_temperature,
                     max_tokens=planner_max_tokens,
                     prompt_override=planner_prompt_override,
+                    max_subtasks=planner_max_subtasks,
                 )
                 plan = await planner.plan(message, memory=agent.memory if use_memory else None)
             else:
@@ -4132,6 +4134,17 @@ def config_get(request):
             safe_config[key] = safe_value
         else:
             safe_config[key] = value
+
+    # Surface the default decomposition prompt (read-only, not persisted) so the
+    # settings UI can seed the override editor instead of showing a blank box.
+    try:
+        from .prompts.loader import get_prompt_loader
+        default_decompose = get_prompt_loader().get("planner.decompose")
+        planner_cfg = safe_config.get("planner")
+        if isinstance(planner_cfg, dict) and default_decompose:
+            safe_config["planner"] = {**planner_cfg, "decompose_default": default_decompose}
+    except Exception:
+        pass
 
     return JsonResponse(safe_config)
 

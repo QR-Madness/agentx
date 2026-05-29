@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.6** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.8** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -73,6 +73,20 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.6** (proto
 > `PlanStateStore` + `PlanExecutor` (dependency-ordered subtasks, per-subtask trajectory
 > compression, failure skip, synthesis), `Agent.run`/streaming integration, SSE plan events,
 > and mid-execution cancellation. Only the deferred follow-ups below remain.
+
+### 15.8 Fixes — shipped `[v0.21.8]`
+
+- [x] **Executor looped on one subtask** ("step 3 of 9"). `Subtask.id` was used as a list index
+      everywhere but `_parse_plan` set it from the LLM's `SUBTASK N` numbering, so non-contiguous/
+      duplicate numbering made `mark_complete` flip the wrong slot → the running subtask never
+      completed → re-selected forever. Fix: `_normalize_steps` reindexes to `steps[i].id == i` and
+      remaps/sanitizes dependencies; plus a no-progress safety guard in the executor loop.
+- [x] **Over-decomposition** ("giant plans for simple things"). `_assess_complexity` rewritten to
+      require genuine multi-step structure (sequence markers / multiple action clauses / length),
+      not a lone keyword; `planner.decompose` prompt now mandates the fewest subtasks (single-step
+      allowed) with a hard cap; `planner.max_subtasks` (default 6) enforced in `_parse_plan`; default
+      `complexity_threshold` raised to **complex**. Settings now seed the prompt editor with the
+      live default (`/api/config` `planner.decompose_default`) + a Reset-to-default action.
 
 ### 15.7 Deferred Items
 

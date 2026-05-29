@@ -97,7 +97,8 @@ DEFAULT_CONFIG = {
         "temperature": 0.3,
         "max_tokens": 1000,
         "prompt_override": "",               # Empty = use planner.decompose from system_prompts.yaml
-        "complexity_threshold": "moderate",  # "simple" | "moderate" | "complex"
+        "complexity_threshold": "complex",   # "simple" | "moderate" | "complex"
+        "max_subtasks": 6,                   # Hard cap on decomposed subtasks
     },
     "preferences": {
         "default_model": None,

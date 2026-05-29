@@ -33,12 +33,15 @@ const DEFAULT_SETTINGS: PlannerSettings = {
   temperature: 0.3,
   max_tokens: 1000,
   prompt_override: '',
-  complexity_threshold: 'moderate',
+  complexity_threshold: 'complex',
 };
 
 export default function PlannerSection() {
   const { notifyError, notifySuccess } = useNotify();
   const [settings, setSettings] = useState<PlannerSettings>(DEFAULT_SETTINGS);
+  // The built-in decomposition prompt (read-only) used to seed the editor so the
+  // user can customize from the real default instead of a blank box.
+  const [defaultPrompt, setDefaultPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -50,14 +53,20 @@ export default function PlannerSection() {
     setLoading(true);
     try {
       const config = await api.getConfig();
-      const p = (config.planner || {}) as Partial<PlannerSettings> & { model?: string | null };
+      const p = (config.planner || {}) as Partial<PlannerSettings> & {
+        model?: string | null;
+        decompose_default?: string;
+      };
+      const builtinPrompt = p.decompose_default || '';
+      setDefaultPrompt(builtinPrompt);
       setSettings({
         enabled: p.enabled ?? true,
         model: p.model || '',
         temperature: p.temperature ?? 0.3,
         max_tokens: p.max_tokens ?? 1000,
-        prompt_override: p.prompt_override || '',
-        complexity_threshold: (p.complexity_threshold as ComplexityThreshold) || 'moderate',
+        // Seed the editor with the built-in prompt when no override is saved.
+        prompt_override: p.prompt_override || builtinPrompt,
+        complexity_threshold: (p.complexity_threshold as ComplexityThreshold) || 'complex',
       });
     } catch (error) {
       notifyError(error, 'Failed to load planner settings');
@@ -76,7 +85,12 @@ export default function PlannerSection() {
           model: settings.model.trim() ? settings.model : null,
           temperature: settings.temperature,
           max_tokens: settings.max_tokens,
-          prompt_override: settings.prompt_override,
+          // If the editor still matches the built-in prompt, persist empty so the
+          // planner keeps tracking the live default instead of pinning a copy.
+          prompt_override:
+            settings.prompt_override.trim() === defaultPrompt.trim()
+              ? ''
+              : settings.prompt_override,
           complexity_threshold: settings.complexity_threshold,
         },
       });
@@ -197,7 +211,8 @@ export default function PlannerSection() {
             <label className="setting-label">
               <span>Custom Planner Prompt</span>
               <span className="setting-hint">
-                Leave empty to use the default decomposition prompt.
+                Pre-filled with the built-in decomposition prompt — edit it to customize.
+                Leaving it unchanged keeps tracking the default automatically.
               </span>
             </label>
             <textarea
@@ -205,8 +220,16 @@ export default function PlannerSection() {
               value={settings.prompt_override}
               onChange={(e) => setSettings(prev => ({ ...prev, prompt_override: e.target.value }))}
               placeholder="Override the planner's decomposition system prompt..."
-              rows={6}
+              rows={10}
             />
+            <Button
+              variant="ghost"
+              onClick={() => setSettings(prev => ({ ...prev, prompt_override: defaultPrompt }))}
+              disabled={!defaultPrompt || settings.prompt_override.trim() === defaultPrompt.trim()}
+            >
+              <RefreshCw size={14} />
+              Reset to default
+            </Button>
           </div>
 
           <div className="setting-actions">

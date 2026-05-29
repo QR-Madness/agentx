@@ -3667,3 +3667,109 @@ class TranslationInternalToolsTest(TestCase):
             )
         self.assertTrue(tr.success)
         self.assertIn("Hola", tr.content[0]["text"])
+
+
+class TaskPlannerNormalizationTest(TestCase):
+    """Subtask-id normalization + cap (prevents the executor subtask loop)."""
+
+    def _planner(self, **kw):
+        from agentx_ai.agent.planner import TaskPlanner
+
+        return TaskPlanner("openai:gpt-4", **kw)
+
+    def test_reindexes_messy_numbering_and_remaps_deps(self) -> None:
+        planner = self._planner()
+        # LLM numbered non-contiguously (2, 5) with a duplicate and an out-of-range dep.
+        response = (
+            "SUBTASK 2: Research the topic\nTYPE: RESEARCH\nDEPENDS: none\n"
+            "SUBTASK 5: Analyze findings\nTYPE: ANALYSIS\nDEPENDS: 2\n"
+            "SUBTASK 5: Write it up\nTYPE: GENERATION\nDEPENDS: 99\n"
+        )
+        steps = planner._parse_plan(response)
+
+        # Contiguous ids matching list position (the invariant the executor needs).
+        self.assertEqual([s.id for s in steps], list(range(len(steps))))
+        # Dep "2" (old id1) remapped to the reindexed earlier step; junk dep dropped.
+        self.assertEqual(steps[1].dependencies, [0])
+        self.assertEqual(steps[2].dependencies, [])
+
+    def test_executor_loop_terminates(self) -> None:
+        """Simulate the executor's selection loop — must not re-select a subtask."""
+        from agentx_ai.agent.planner import TaskComplexity, TaskPlan
+
+        planner = self._planner()
+        response = (
+            "SUBTASK 2: A\nTYPE: GENERATION\nDEPENDS: none\n"
+            "SUBTASK 5: B\nTYPE: ANALYSIS\nDEPENDS: 2\n"
+            "SUBTASK 5: C\nTYPE: GENERATION\nDEPENDS: 99\n"
+        )
+        steps = planner._parse_plan(response)
+        plan = TaskPlan(task="t", complexity=TaskComplexity.COMPLEX, steps=steps)
+
+        selected, guard = [], 0
+        while not plan.is_complete():
+            guard += 1
+            self.assertLess(guard, 100, "executor loop did not terminate")
+            st = plan.get_next_subtask()
+            self.assertIsNotNone(st)
+            selected.append(st.id)
+            plan.mark_complete(st.id, "done")
+
+        # Every subtask selected exactly once.
+        self.assertEqual(sorted(selected), list(range(len(steps))))
+        self.assertEqual(len(selected), len(set(selected)))
+
+    def test_caps_subtasks(self) -> None:
+        planner = self._planner(max_subtasks=3)
+        response = "".join(
+            f"SUBTASK {i}: step {i}\nTYPE: GENERATION\nDEPENDS: none\n" for i in range(1, 9)
+        )
+        steps = planner._parse_plan(response)
+        self.assertEqual(len(steps), 3)
+        self.assertEqual([s.id for s in steps], [0, 1, 2])
+
+
+class TaskComplexityTest(TestCase):
+    """Conservative complexity assessment — simple asks must not over-plan."""
+
+    def _planner(self):
+        from agentx_ai.agent.planner import TaskPlanner
+
+        return TaskPlanner("openai:gpt-4")
+
+    def test_simple_prompts_stay_simple(self) -> None:
+        from agentx_ai.agent.planner import TaskComplexity
+
+        planner = self._planner()
+        for prompt in [
+            "write a haiku about the sea",
+            "summarize this paragraph",
+            "explain how a for-loop works",
+            "what's the capital of France?",
+            "build a regex for emails",
+            "draft a thank-you note",
+        ]:
+            self.assertEqual(
+                planner._assess_complexity(prompt), TaskComplexity.SIMPLE, prompt
+            )
+
+    def test_multistep_tasks_are_complex(self) -> None:
+        from agentx_ai.agent.planner import TaskComplexity
+
+        planner = self._planner()
+        self.assertEqual(
+            planner._assess_complexity(
+                "Research the top 3 vector DBs, compare their pricing, and write a recommendation"
+            ),
+            TaskComplexity.COMPLEX,
+        )
+        self.assertEqual(
+            planner._assess_complexity("Design a system architecture for a chat app"),
+            TaskComplexity.COMPLEX,
+        )
+        self.assertEqual(
+            planner._assess_complexity(
+                "First, analyze the logs. Then build a dashboard and write a summary."
+            ),
+            TaskComplexity.COMPLEX,
+        )

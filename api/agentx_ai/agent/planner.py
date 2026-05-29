@@ -140,11 +140,13 @@ class TaskPlanner:
         temperature: float = 0.3,
         max_tokens: int = 1000,
         prompt_override: Optional[str] = None,
+        max_subtasks: int = 6,
     ):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.prompt_override = (prompt_override or "").strip() or None
+        self.max_subtasks = max(1, int(max_subtasks)) if max_subtasks else 0
         self._registry = None
     
     @property
@@ -252,32 +254,51 @@ class TaskPlanner:
             return self._create_goal_for_plan(plan, memory)
     
     def _assess_complexity(self, task: str) -> TaskComplexity:
-        """Assess the complexity of a task."""
+        """Assess the complexity of a task.
+
+        Deliberately conservative: a lone keyword ("build", "write a", "summarize")
+        does NOT make a task complex — most such requests are a single step. We only
+        escalate when the task shows genuine multi-step *structure*: explicit sequence
+        markers, several distinct imperatives/deliverables, or substantial length. This
+        prevents the planner from decomposing simple chat requests into giant plans.
+        """
         task_lower = task.lower()
-        
-        # Complex indicators
-        complex_words = [
-            "analyze", "design", "build", "create a system",
-            "implement", "develop", "architecture", "compare multiple",
-            "research and", "plan a", "comprehensive"
+        words = task.split()
+
+        # Explicit multi-step / sequencing language — strong signal of real structure.
+        sequence_markers = [
+            "step by step", "step-by-step", "and then", " then ", "after that",
+            "first,", "firstly", "secondly", "finally,", "followed by",
+            "multiple steps", "each of the following", "for each",
         ]
-        if any(w in task_lower for w in complex_words):
-            return TaskComplexity.COMPLEX
-        
-        # Moderate indicators
-        moderate_words = [
-            "explain how", "summarize", "write a", "draft",
-            "evaluate", "describe in detail", "list and explain"
+        has_sequence = any(m in task_lower for m in sequence_markers)
+
+        # Count distinct imperative/deliverable clauses (rough proxy for "several things").
+        # Split on connectors/sentence boundaries and count clauses that look like asks.
+        clauses = [c for c in re.split(r"[.;,\n]|\band\b|\bthen\b", task_lower) if c.strip()]
+        action_words = (
+            "analyze", "design", "build", "implement", "develop", "create",
+            "compare", "research", "write", "draft", "summarize", "evaluate",
+            "plan", "refactor", "test", "document", "review", "generate",
+        )
+        action_clauses = sum(1 for c in clauses if any(a in c for a in action_words))
+
+        # Architectural / inherently-complex phrasing.
+        complex_phrases = [
+            "create a system", "design a system", "architecture", "comprehensive",
+            "end-to-end", "compare multiple", "research and", "pipeline",
         ]
-        if any(w in task_lower for w in moderate_words):
-            return TaskComplexity.MODERATE
-        
-        # Check length as a proxy for complexity
-        if len(task.split()) > 50:
+        if any(p in task_lower for p in complex_phrases) or len(words) > 60:
             return TaskComplexity.COMPLEX
-        elif len(task.split()) > 20:
+
+        # Genuine multi-step structure → complex enough to decompose.
+        if (has_sequence and action_clauses >= 2) or action_clauses >= 3:
+            return TaskComplexity.COMPLEX
+
+        # Some structure (a couple of distinct asks, or notable length) → moderate.
+        if action_clauses == 2 or len(words) > 40:
             return TaskComplexity.MODERATE
-        
+
         return TaskComplexity.SIMPLE
     
     def _parse_plan(self, response: str) -> list[Subtask]:
@@ -340,9 +361,39 @@ class TaskPlanner:
                 description="Execute the task",
                 type=SubtaskType.GENERATION,
             ))
-        
+            return steps
+
+        return self._normalize_steps(steps)
+
+    def _normalize_steps(self, steps: list[Subtask]) -> list[Subtask]:
+        """Cap subtasks and reindex ids to contiguous list positions.
+
+        Every positional lookup in the plan machinery (``get_next_subtask``,
+        ``mark_complete``, dependency injection/skip) assumes ``steps[i].id == i``.
+        The LLM's ``SUBTASK`` numbering isn't guaranteed to be contiguous, ordered,
+        or unique, so without this the executor can mark the wrong slot complete and
+        loop forever on one step. We reindex by parse order and remap each dependency
+        through the old→new map, dropping self/unknown/forward references.
+        """
+        if self.max_subtasks and len(steps) > self.max_subtasks:
+            logger.info(
+                f"Planner produced {len(steps)} subtasks; capping to {self.max_subtasks}"
+            )
+            steps = steps[: self.max_subtasks]
+
+        old_to_new = {s.id: i for i, s in enumerate(steps)}
+        for new_index, s in enumerate(steps):
+            remapped: list[int] = []
+            for d in s.dependencies:
+                nd = old_to_new.get(d)
+                # Keep only resolvable deps that point at an earlier step.
+                if nd is not None and nd < new_index and nd not in remapped:
+                    remapped.append(nd)
+            s.id = new_index
+            s.dependencies = remapped
+
         return steps
-    
+
     def _create_goal_for_plan(
         self,
         plan: TaskPlan,

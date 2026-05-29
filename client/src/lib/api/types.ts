@@ -569,6 +569,8 @@ export interface ConfigUpdate {
     max_tokens?: number;
     prompt_override?: string;
     complexity_threshold?: 'simple' | 'moderate' | 'complex';
+    /** Read-only: the built-in decomposition prompt, used to seed the editor. */
+    decompose_default?: string;
   };
 }
 

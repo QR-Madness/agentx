@@ -217,6 +217,25 @@ class PlanExecutor:
                     "progress": plan.get_progress(),
                 })
 
+            # Safety net: a selected subtask must always reach a terminal state.
+            # If it somehow didn't, force-fail it so get_next_subtask can't re-select
+            # it forever (defends against the historical id/index mismatch loop).
+            if not subtask.completed:
+                logger.error(
+                    f"Subtask {subtask.id} did not reach a terminal state; "
+                    f"force-failing to prevent a loop."
+                )
+                self._handle_failure(
+                    plan, plan_id, subtask,
+                    RuntimeError("subtask did not complete"),
+                )
+                yield _sse("subtask_failed", {
+                    "plan_id": plan_id,
+                    "subtask_id": subtask.id,
+                    "error": "subtask did not complete",
+                    "progress": plan.get_progress(),
+                })
+
         if cancelled:
             self._abandon_pending_subtasks(plan, plan_id)
             total_time = (time.time() - start_time) * 1000
