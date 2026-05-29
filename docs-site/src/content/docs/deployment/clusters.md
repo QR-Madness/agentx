@@ -141,13 +141,20 @@ sudo systemctl restart docker
 On Windows, use Docker Desktop's WSL2 backend with the GPU driver installed on the Windows host
 (not inside WSL).
 
-No application config changes are needed: the embedding model (BAAI/bge-m3) and the NLLB-200
-translation model auto-detect CUDA. Verify after start-up:
+No application config changes are needed: the app resolves its compute device from
+`AGENTX_DEVICE` (default `auto` → CUDA when available) and moves **both** the embedding model
+(BAAI/bge-m3) and the NLLB-200 translation models onto it. Verify after start-up:
 
 ```bash
 docker compose --env-file clusters/<name>/.env -f docker-compose.gpu.yml \
   --profile production exec api python -c "import torch; print(torch.cuda.is_available())"
+
+# Or via the API — no exec needed:
+curl -s localhost:<API_PORT>/api/health | jq .compute   # {"device":"cuda","cuda_available":true}
 ```
+
+For local-dev GPU (outside Docker) and the Windows CUDA-torch caveat, see
+[GPU Acceleration](../development/gpu.md).
 
 The payoff is a large speedup for local embeddings and translation; GPU VRAM is separate from
 the container's 8G memory reservation.

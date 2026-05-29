@@ -16,6 +16,7 @@ export const nav: NavEntry[] = [
     label: 'Getting Started',
     items: [
       { label: 'Installation', slug: 'getting-started/installation' },
+      { label: 'Windows Setup', slug: 'getting-started/windows' },
       { label: 'Quick Start', slug: 'getting-started/quickstart' },
       { label: 'Configuration', slug: 'getting-started/configuration' },
     ],
@@ -69,6 +70,7 @@ export const nav: NavEntry[] = [
     items: [
       { label: 'Setup', slug: 'development/setup' },
       { label: 'Task Commands', slug: 'development/tasks' },
+      { label: 'GPU Acceleration', slug: 'development/gpu' },
       { label: 'Mobile (Android)', slug: 'development/mobile' },
       { label: 'Testing', slug: 'development/testing' },
       { label: 'Memory Setup', slug: 'development/memory-setup' },

@@ -61,6 +61,23 @@ LOCAL_EMBEDDING_MODEL=BAAI/bge-m3                    # Local model (if provider=
 
 Switching providers changes vector dimensions. If you switch after data exists, reset memory schemas (`task db:init:schemas`) or use `POST /api/memory/reset`.
 
+All embedding calls (chat recall, consolidation, indexing) funnel through a single process-wide queue, so the thread-unsafe local model and the rate-limited remote provider never collide or drop requests; identical queries are served from an in-memory LRU+TTL cache. The defaults are sensible — tune only if needed:
+
+```bash
+EMBEDDING_QUEUE_ENABLED=true        # serialize + batch embed calls
+EMBEDDING_BATCH_MAX_SIZE=32         # max texts coalesced into one compute call
+EMBEDDING_CACHE_ENABLED=true        # cache identical queries
+EMBEDDING_CACHE_TTL_SECONDS=900     # cache entry lifetime
+```
+
+### Compute Device (GPU/CPU)
+
+```bash
+AGENTX_DEVICE=auto    # auto (CUDA if available, else CPU) | cpu | cuda | cuda:0
+```
+
+Selects the device for **both** the local embedding model and the NLLB-200 translation models. `auto` uses CUDA when `torch.cuda.is_available()` is true. Verify the live choice at `GET /api/health` → `compute: {device, cuda_available}`. See [GPU Acceleration](../development/gpu.md) for setup (including the Windows CUDA-torch gotcha).
+
 ### Django / Application
 
 ```bash

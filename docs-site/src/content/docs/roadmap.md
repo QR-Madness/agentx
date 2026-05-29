@@ -20,10 +20,10 @@ This document tracks the development history and future direction of AgentX.
 | Phase 12: Documentation | **Partial** | Comprehensive docs refresh |
 | Phase 13: UX Overhaul | Complete | Immersive 3-page app with conversation tabs |
 | Phase 14: Context Gating | Complete | Large tool output compression + retrieval |
-| Phase 15: Plan Execution | **In Progress (~80%)** | Plan state store, executor, streamed progress |
-| Phase 16: Multi-Agent | **In Progress (~30%)** | Agent Alloy v1 — supervisor + specialist delegation |
+| Phase 15: Plan Execution | **Core Complete** | Plan state store, executor, streamed progress, cancellation (parallelism deferred) |
+| Phase 16: Multi-Agent | **In Progress (~65%)** | Agent Alloy v1 + routing/delegation/@-mentions shipped; Factory UI + ambassador deferred |
 | Phase 17: Server Management | **Complete** | Auth, Docker production stack, multi-cluster, version matching |
-| Phase 18: UX + Memory Tuning | **In Progress** | Toolkit, Relay, model metadata, extraction tuning |
+| Phase 18: UX + Memory Tuning | **In Progress (~90%)** | Toolkit, Relay, model metadata, metrics, extraction tuning, detached runs |
 
 ---
 
@@ -552,25 +552,33 @@ Implemented `Session` and `SessionManager`:
 
 ---
 
-### Phase 15: Plan Execution (In Progress, ~80%)
+### Phase 15: Plan Execution (Core Complete)
 
 > **Goal**: Execute multi-step plans with persisted state and streamed progress
 
-- `PlanStateStore` + `PlanExecutor` with serialization and resumable state
-- `Agent.run` integration; plan progress streamed via SSE events
-- *Deferred*: parallel subtasks, per-subtask reasoning selection, goal tracking, cancellation/resumption
+- `PlanStateStore` (Redis Hash per plan, per-subtask status, best-effort) + `PlanExecutor` with sync + streaming execution, dependency-ordered subtask iteration, per-subtask trajectory compression, failure handling (skip dependents), and a final synthesis step
+- `Subtask`/`TaskPlan` serialization for Redis storage
+- `Agent.run` integration: MODERATE/COMPLEX plans route through the executor; SIMPLE tasks unchanged. Memory reflection + goal completion after execution
+- Streaming endpoint delegates complex tasks to `PlanExecutor.execute_streaming`; SSE events `plan_start`, `subtask_start`, `subtask_complete`, `subtask_failed`, `plan_complete` (reusing `chunk`/`tool_call`/`tool_result` within subtasks)
+- Plan cancellation mid-execution: `POST /api/agent/plans/cancel` sets a flag the executor checks between subtasks; `GET /api/agent/plans/{id}/status` reads Redis-tracked state
+- *Deferred*: parallel subtask execution, per-subtask reasoning-strategy selection, subtask-level subgoals, plan resumption from Redis after disconnect
 
 ---
 
-### Phase 16: Multi-Agent Conversations — Agent Alloy (In Progress, ~30%)
+### Phase 16: Multi-Agent Conversations — Agent Alloy (In Progress, ~65%)
 
 > **Goal**: Coordinate multiple agents via a supervisor that delegates to specialists
-> **Shipped**: Agent Alloy v1 (2026-04-27)
+> **Shipped**: Agent Alloy v1 (2026-04-27) + routing/delegation/@-mention waves (through v0.21.5)
 
-- Backend: workflow models, manager, delegation tool, executor, prompts
-- Workflow CRUD endpoints (`/api/alloy/workflows`)
-- Supervisor + specialist delegation over shared memory channels, with streaming
-- *Deferred*: factory canvas UI, declarative routing, loop/checkpoint nodes, async delegation, per-workflow tool isolation, message attribution
+- **Alloy v1 backend**: workflow models, `WorkflowManager` (YAML CRUD), `delegate_to` tool, `AlloyExecutor`, supervisor prompts. Supervisor + specialist delegation over a shared memory channel (`_alloy_<id>`) with live `delegation_start`/`delegation_chunk`/`delegation_complete` SSE streaming, child-goal wiring, and re-delegation up to `max_delegation_depth`. CRUD endpoints (`/api/alloy/workflows`). Fully opt-in via `workflow_id`
+- **Parallel / fan-out delegation** (supervisor delegates to multiple specialists at once)
+- **Trace / replay UI** (`v0.20.1`): `delegation_complete` carries per-delegation tokens/duration/cost/pricing snapshot (persisted for restored runs); client `AlloyRunTraceModal` groups fan-out into runs with token/cost/wall-clock totals
+- **16.1 Message attribution**: `agent_id` on `Turn` model + `conversation_logs`; per-turn attribution persisted (streaming, non-streaming, background) and restored to display names
+- **16.2 Explicit routing** (`v0.21.2`): `target_agent_id` on the chat-stream request (priority `workflow_id > target_agent_id > agent_profile_id > default`); `Session.participants` hydrated from durable attribution; multi-agent awareness prompt when >1 participant
+- **16.3 Per-agent tool isolation**: `allowed_tools`/`blocked_tools` on the profile enforced in `_get_tools_for_provider`
+- **16.4 Ad-hoc agent-to-agent delegation** (`v0.21.3`): `delegate_to` generalized to non-workflow chats via a workflow-less `AlloyExecutor` mode, gated by `alloy.allow_adhoc_delegation`; depth-limited, no self-delegation
+- **16.5 @-mention routing** (`v0.21.4`/`v0.21.5`): backend `agent/mentions.py` parses `@agent-id`/`@name` to route a turn (token stripped from the model-facing message); `AgentParticipant` Neo4j nodes + `PARTICIPATED_IN` relationships with a backfill migration; client `@`-autocomplete composer
+- *Deferred*: Factory canvas frontend (visual editor), declarative route execution, loop/checkpoint/async-delegation nodes, "user as supervisor" mode, tool-output sharing across agents, per-workflow tool subsetting, and the Ambassador dual-presentation layer (16.6)
 
 ---
 
@@ -584,14 +592,20 @@ Implemented `Session` and `SessionManager`:
 
 ---
 
-### Phase 18: UX Improvements & Memory Tuning (In Progress)
+### Phase 18: UX Improvements & Memory Tuning (In Progress, ~90%)
 
 > **Goal**: Polish the client and tune the memory pipeline
 
-- Toolkit (MCP server CRUD + tool browser) and Relay module (background jobs, memory toggle)
-- Model metadata + picker (OpenRouter/Vercel capabilities + pricing); per-tab context and per-turn cost metrics
-- Extraction tuning: entity resolution, fact supersedure, scope context, eval harness
-- Client error contract: `ApiError`, toasts, `useApi` hook, repo-wide UI primitives
+- **Toolkit** (18.2): full-screen MCP server CRUD + tool browser, guided + raw-JSON editors with validation; tool metadata (tags, groups, `allowed_agent_ids`); per-agent `allowed_tools`/`blocked_tools`
+- **Relay module** (18.3): consolidated chat toolbox popover — background-run inbox (Redis-Streams chat job queue + daemon worker), "No Memorization" toggle, mobile pass
+- **Model metadata + picker** (18.4): full-screen `ModelPickerModal` with provider/capability filters; OpenRouter + Vercel capability/pricing/modality metadata wired through `ModelCapabilities` and `/api/providers/models`
+- **Metrics** (18.5): per-tab context-window bar (persisted + backfilled) and per-turn `$` cost chip via `providers/pricing.estimate_cost` with frozen pricing snapshots (dashboard aggregation UI still pending)
+- **Extraction tuning** (18.6): consolidation entity resolution (name/alias/slug reuse + alias merge), `refines_fact_id` supersedure, scope-context injection of known entities/facts, new metrics, and the `eval_consolidation` quality harness
+- **Wave 2 fixes** (18.8): KaTeX math rendering, raw-HTML in tables, plan-step bubble restore, editable cached servers, MCP auto-connect on restart
+- **Memory tuning** (18.9): user-selected extraction model honored, stop leaking raw past turns at chat start, `recall_user_history` tool, working-memory token-budget header, model-authored `checkpoint` tool + sidebar/badge UI
+- **Plan + streaming reliability** (18.10): output token-budget clamp, "Plans in Progress" drawer + in-chat step annotation, and **detached chat runs** — runs drive a Redis-Streams fan-out on a daemon thread so they survive client disconnect, with `attach`/`cancel`/`runs` endpoints
+- **Client error contract + foundation cleanup** (18.11): `ApiError` with status-derived `kind`, toast system, `useApi` hook factory, Tailwind v4 + `ui/` primitive library, and god-component / `lib/api` / `ConversationContext` splits with a Vitest harness
+- **Wave 3 UX** (18.12): Start-page recents, renamable conversations, improved conversation + agent-profile selectors, splash screen, README trim
 
 ---
 

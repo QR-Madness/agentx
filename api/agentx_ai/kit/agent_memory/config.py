@@ -44,6 +44,20 @@ class Settings(BaseSettings):
     # Local embedding model (if using local)
     local_embedding_model: str = "BAAI/bge-m3"
 
+    # Embedding request queue (serializes all embed calls through one worker so the
+    # thread-unsafe local model and rate-limited remote provider can't collide/drop).
+    embedding_queue_enabled: bool = True
+    embedding_batch_max_size: int = 32      # max texts coalesced into one compute call
+    embedding_batch_window_ms: int = 5      # window to coalesce concurrent requests
+    embedding_request_timeout: float = 30.0  # max wait for a single embed() result
+    embedding_queue_max_size: int = 1024    # bounded queue depth (backpressure)
+    embedding_max_retries: int = 3          # retries on transient (remote) failures
+
+    # Query-embedding cache (identical recall queries skip the queue entirely)
+    embedding_cache_enabled: bool = True
+    embedding_cache_max_size: int = 2048
+    embedding_cache_ttl_seconds: float = 900.0
+
     # Memory settings
     episodic_retention_days: int = 90
     fact_confidence_threshold: float = 0.7
