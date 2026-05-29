@@ -224,9 +224,23 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.8** (proto
   - [ ] Procedural-memory eval cases (tool-usage/strategy learning) — once consolidation exercises that path
   - [ ] Snapshot/restore instead of `--wipe`, once memory export/import lands (see Backlog)
   - [ ] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt comparison
-- [ ] **Extraction cleanup** (18.6): one-shot Neo4j script to dedupe entities created before the
-      resolution fix; cross-channel entity unification; replace the regex correction patterns at
-      `extraction/service.py:84` with an LLM-only path.
+- [x] **Extraction cleanup** (18.6) — shipped. Two changes land together:
+      (a) `python manage.py dedupe_entities` (Django management command, wired via
+      `task db:dedupe:entities[:apply]`) collapses pre-resolution-fix duplicates in
+      Neo4j. Default is dry-run inside an explicit transaction (rollback); `--apply`
+      commits. Survivor pick: salience DESC → access_count DESC → first_seen ASC.
+      `--cross-channel` adds a per-user pass that prefers `_global` survivors to fold
+      duplicates spread across `_default`/`_self_*`/`_alloy_*` (matches recall's
+      `[active_channel, _self_<id>, _global]` lookup order). Uses
+      `apoc.create.relationship` to rewrite incoming/outgoing edges, then a
+      parallel-rel collapse on the survivor.
+      (b) `check_correction()` retires the 10-pattern `CORRECTION_PATTERNS` regex
+      pre-filter in `extraction/service.py` — every gated turn now goes straight to
+      the correction LLM, which already returns `CORRECTION: NO` for non-matches.
+      The cheap `< 10 chars` / `constants.skip_patterns` guard stays purely as a cost
+      gate. Tests in `tests_memory.py::CorrectionDetectionTest` rewritten against a
+      mocked provider; new `DedupeEntitiesAliasMergeTest` covers the alias-merge
+      helper.
 - [ ] **Working-memory follow-ups** (18.9): pin/anchor arbitrary turns, `scratchpad_note` tool,
       `inspect_working_memory`, active-goals header, `forget` tool, cached `user_recap_summary`
       rolling summary.

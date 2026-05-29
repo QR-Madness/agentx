@@ -81,21 +81,6 @@ class CombinedExtractionResult(BaseModel):
     error: Optional[str] = None
 
 
-# Heuristic patterns that suggest user is making a correction
-CORRECTION_PATTERNS = [
-    r"^actually[,\s]",
-    r"^no[,\s].*(?:i meant|that's|it's)",
-    r"^sorry[,\s].*(?:i meant|misspoke|wrong)",
-    r"^i meant\b",
-    r"^correction[:\s]",
-    r"^wait[,\s].*(?:i meant|that's wrong)",
-    r"that'?s (?:not right|wrong|incorrect)",
-    r"^let me correct",
-    r"^i misspoke",
-    r"not .+[,\s]+(?:but|it's|rather)",
-]
-
-
 class ExtractionService:
     """
     Service for LLM-based extraction from text.
@@ -237,7 +222,11 @@ class ExtractionService:
         """
         Check if text contains a user correction of previously stated information.
 
-        Uses heuristic patterns first, then LLM if a pattern matches.
+        Routes every gated turn to the LLM — the previous regex pre-filter
+        missed paraphrases ("scratch that", "that isn't what I said") and the
+        correction prompt already returns ``CORRECTION: NO`` for non-corrections.
+        A cheap length/skip-pattern guard still short-circuits trivial inputs so
+        we don't burn an LLM call on "ok" / "thanks".
 
         Args:
             text: The text to check for corrections
@@ -248,25 +237,21 @@ class ExtractionService:
         if not self.settings.correction_detection_enabled:
             return CorrectionResult(is_correction=False)
 
-        # Quick heuristic pre-filter
-        text_lower = text.strip().lower()
-        pattern_matched = False
-        for pattern in CORRECTION_PATTERNS:
-            if re.search(pattern, text_lower, re.IGNORECASE):
-                pattern_matched = True
-                break
-
-        if not pattern_matched:
+        # Cheap pre-filter: same gate as check_relevance, here purely for cost.
+        loader = get_prompt_loader()
+        text_stripped = text.strip()
+        if len(text_stripped) < 10:
+            return CorrectionResult(is_correction=False)
+        skip_patterns = loader.get_list("constants.skip_patterns")
+        if text_stripped.lower() in skip_patterns:
             return CorrectionResult(is_correction=False)
 
-        # Pattern matched - use LLM to extract correction details
         try:
             provider, model_id, temperature, max_tokens = self._get_provider_for_stage('correction')
         except ValueError as e:
             logger.warning(f"Correction model not available: {e}")
             return CorrectionResult(success=False, error=str(e))
 
-        loader = get_prompt_loader()
         prompt = loader.get("extraction.correction", text=text)
 
         messages = [

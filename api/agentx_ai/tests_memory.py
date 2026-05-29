@@ -50,7 +50,6 @@ from agentx_ai.kit.agent_memory.extraction import (
     extract_entities,
 )
 from agentx_ai.kit.agent_memory.extraction.service import (
-    CORRECTION_PATTERNS,
     CombinedExtractionResult,
     ExtractionResult,
     ExtractionService,
@@ -1705,44 +1704,60 @@ class AgentGracefulDegradationTest(TestCase):
 class CorrectionDetectionTest(TestCase):
     """Test user correction detection in extraction service."""
 
-    def test_check_correction_heuristic_patterns(self) -> None:
-        """Heuristic patterns should trigger correction check."""
+    def _make_service_with_llm(self, llm_content: str) -> ExtractionService:
+        """Build an ExtractionService with correction enabled + a scripted LLM."""
+        service = ExtractionService()
+        mock_settings = MagicMock()
+        mock_settings.correction_detection_enabled = True
+        service._settings = mock_settings
 
-        # Test cases that should match
-        matches = [
-            "Actually, I work at Google not Microsoft",
-            "No, I meant Python not Java",
-            "Sorry, I misspoke - it's version 3",
-            "I meant to say Seattle",
-            "Correction: my name is John",
-            "Wait, that's wrong - I have 5 years",
-            "That's not right, I prefer TypeScript",
-            "Let me correct that - it's 2024",
-            "I misspoke earlier, the deadline is Friday",
-            "Not Python, but JavaScript",
-        ]
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=MagicMock(content=llm_content))
+        service._get_provider_for_stage = MagicMock(
+            return_value=(provider, "mock-model", 0.0, 256)
+        )
+        return service
 
-        for sample in matches:
-            sample_lower = sample.strip().lower()
-            matched = any(re.search(p, sample_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
-            self.assertTrue(matched, f"Pattern should match: {sample}")
+    def test_check_correction_llm_yes_parses_original_and_corrected(self) -> None:
+        """LLM-affirmative response yields populated original/corrected claims."""
 
-    def test_check_correction_non_matches(self) -> None:
-        """Normal statements should not match correction patterns."""
+        # The previous regex pre-filter would have missed a paraphrase like
+        # "scratch that, ..." — the LLM-only path handles it.
+        service = self._make_service_with_llm(
+            "CORRECTION: YES\n"
+            "ORIGINAL: works at Microsoft\n"
+            "CORRECTED: works at Google\n"
+        )
 
-        # Test cases that should NOT match
-        non_matches = [
-            "I work at Google",
-            "My favorite language is Python",
-            "I have 5 years of experience",
-            "The project deadline is Friday",
-            "I started a new project yesterday",
-        ]
+        result = asyncio.run(
+            service.check_correction("scratch that — I work at Google, not Microsoft")
+        )
+        self.assertTrue(result.is_correction)
+        self.assertEqual(result.original_claim, "works at Microsoft")
+        self.assertEqual(result.corrected_claim, "works at Google")
+        self.assertTrue(result.success)
 
-        for sample in non_matches:
-            sample_lower = sample.strip().lower()
-            matched = any(re.search(p, sample_lower, re.IGNORECASE) for p in CORRECTION_PATTERNS)
-            self.assertFalse(matched, f"Pattern should NOT match: {sample}")
+    def test_check_correction_llm_no_returns_false(self) -> None:
+        """LLM-negative response yields is_correction=False without claims."""
+
+        service = self._make_service_with_llm("CORRECTION: NO")
+
+        result = asyncio.run(
+            service.check_correction("I started a new project yesterday")
+        )
+        self.assertFalse(result.is_correction)
+        self.assertIsNone(result.original_claim)
+        self.assertIsNone(result.corrected_claim)
+
+    def test_check_correction_short_input_skips_llm(self) -> None:
+        """Trivially short input short-circuits before the LLM call."""
+
+        service = self._make_service_with_llm("CORRECTION: YES\nORIGINAL: x\nCORRECTED: y")
+
+        result = asyncio.run(service.check_correction("ok"))
+        self.assertFalse(result.is_correction)
+        # Gate fired before provider lookup.
+        service._get_provider_for_stage.assert_not_called()
 
     def test_correction_result_model(self) -> None:
         """CorrectionResult model has expected fields."""
@@ -3661,3 +3676,53 @@ class ResolveDeviceTest(TestCase):
 
         with patch.object(device, "_cuda_available", return_value=True):
             self.assertEqual(device.resolve_device("cpu"), "cpu")
+
+
+class DedupeEntitiesAliasMergeTest(TestCase):
+    """
+    Pure-Python helpers in ``dedupe_entities`` — the Cypher rewrite needs a
+    live Neo4j to exercise, but the alias-merge logic that decides what the
+    survivor ends up with is deterministic and worth its own regression net.
+    """
+
+    def test_merge_alias_set_excludes_survivor_name(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+
+        merged = _merge_alias_set(
+            survivor_name="Alice",
+            names=["Alice", "alice", "ALICE"],
+            alias_lists=[["AL"], [], []],
+        )
+        # Survivor name is excluded; alias from the survivor's own list survives.
+        self.assertEqual(merged, ["AL"])
+
+    def test_merge_alias_set_lowercase_dedups_across_dups(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+
+        merged = _merge_alias_set(
+            survivor_name="Bob",
+            names=["Bob", "Robert", "bob"],
+            alias_lists=[["B"], ["Robert", "robbie"], ["B", "robbie"]],
+        )
+        # Order: dup names first ("Robert"), then alias lists in order
+        # ("B", "robbie"). Duplicates (case-insensitive) drop.
+        self.assertEqual(merged, ["Robert", "B", "robbie"])
+
+    def test_merge_alias_set_handles_empty_and_whitespace(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+
+        merged = _merge_alias_set(
+            survivor_name="Carol",
+            names=["Carol", "", "  ", "Caroline"],
+            alias_lists=[[""], ["  ", "C."]],
+        )
+        self.assertEqual(merged, ["Caroline", "C."])
+
+    def test_first_non_empty_skips_blank_strings(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import _first_non_empty
+
+        self.assertEqual(
+            _first_non_empty([None, "", "  ", "real value", "later"]),
+            "real value",
+        )
+        self.assertIsNone(_first_non_empty([None, "", "  "]))
