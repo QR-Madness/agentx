@@ -168,6 +168,15 @@ class AgentMemory:
                 error_message=error_msg,
             )
 
+    def get_conversation_participants(self, conversation_id: str) -> List[str]:
+        """Distinct agent ids that have produced turns in a conversation.
+
+        Pass-through to :meth:`EpisodicMemory.get_conversation_agent_ids`;
+        used by the chat endpoint to hydrate ``Session.participants`` for
+        multi-agent prompt awareness (Phase 16.2).
+        """
+        return self.episodic.get_conversation_agent_ids(conversation_id)
+
     def learn_fact(
         self,
         claim: str,

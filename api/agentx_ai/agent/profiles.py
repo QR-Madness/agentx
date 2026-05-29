@@ -153,6 +153,18 @@ class ProfileManager:
         """Get a profile by ID."""
         return self._profiles.get(profile_id)
 
+    def get_profile_by_agent_id(self, agent_id: str) -> Optional[AgentProfile]:
+        """Get a profile by its Docker-style agent_id (e.g. 'bold-cosmic-falcon').
+
+        The canonical routing/attribution key for multi-agent conversations
+        (Phase 16) — distinct from the profile ``id`` used by ``get_profile``.
+        """
+        return next(
+            (p for p in self._profiles.values()
+             if getattr(p, "agent_id", None) == agent_id),
+            None,
+        )
+
     def get_default_profile(self) -> Optional[AgentProfile]:
         """Get the default profile."""
         for profile in self._profiles.values():

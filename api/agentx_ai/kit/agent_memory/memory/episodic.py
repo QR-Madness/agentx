@@ -130,6 +130,22 @@ class EpisodicMemory:
                 "agent_id": turn.agent_id,
             })
 
+    def get_conversation_agent_ids(self, conversation_id: str) -> List[str]:
+        """Return the distinct producing-agent ids recorded for a conversation.
+
+        Reads the PostgreSQL ``conversation_logs.agent_id`` column (the Phase
+        16.1 attribution source of truth), so the result survives process
+        restarts and detached chat runs. Assistant turns carry an agent_id;
+        user/tool turns are NULL and excluded.
+        """
+        with get_postgres_session() as session:
+            result = session.execute(text("""
+                SELECT DISTINCT agent_id
+                FROM conversation_logs
+                WHERE conversation_id = :conv_id AND agent_id IS NOT NULL
+            """), {"conv_id": conversation_id})
+            return [row[0] for row in result if row[0]]
+
     def vector_search(
         self,
         query_embedding: List[float],

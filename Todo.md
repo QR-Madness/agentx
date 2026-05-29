@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.1** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.2** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -180,12 +180,24 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.1** (proto
 - Tests: `TurnAgentAttributionTest` (backend round-trip), `mapServerMessages` attribution cases (client).
 - Deferred: backfill of historical rows; `Message.name` provider-schema wiring (not needed — attribution rides metadata, not the provider message).
 
-### 16.2 Explicit Agent Routing
+### 16.2 Explicit Agent Routing — shipped `[v0.21.2]`
 
-- [ ] Add `target_agent_id` to chat stream request parsing
-- [ ] Resolve `AgentProfile` by `agent_id` (scan profiles for matching ID)
-- [ ] Add `participants: dict[agent_id, AgentProfile]` to `Session`
-- [ ] Build per-agent system prompt with multi-agent awareness when `len(participants) > 1`
+- [x] Add `target_agent_id` to chat stream request parsing — optional field on
+      `/api/agent/chat/stream`; resolution priority `workflow_id > target_agent_id >
+      agent_profile_id > default`. Unknown id yields an SSE `error` event (views.py).
+- [x] Resolve `AgentProfile` by `agent_id` — new `ProfileManager.get_profile_by_agent_id()`
+      (profiles.py); the workflow-supervisor lookup now reuses it.
+- [x] Add `participants: dict[agent_id, AgentProfile]` to `Session` (session.py). Hydrated
+      best-effort from the durable 16.1 attribution: `EpisodicMemory.get_conversation_agent_ids()`
+      (+ `AgentMemory.get_conversation_participants()` pass-through) over distinct
+      `conversation_logs.agent_id`, plus the active agent — so it survives restarts/detached runs.
+- [x] Build per-agent system prompt with multi-agent awareness when `len(participants) > 1` —
+      new `prompts/multi_agent.py:build_participants_block()` (roster of the *other* agents,
+      modeled on `alloy/prompts.build_supervisor_prompt`), injected as a SYSTEM message in the
+      streaming chat path. **Suppressed inside an Alloy workflow** (the supervisor prompt already
+      frames the team). Backend-only — `participants` grows organically as the existing selector
+      switches agents mid-conversation; explicit client routing UI deferred to 16.5.
+      Tests: `ExplicitAgentRoutingTest` (tests.py), `ConversationAgentIdsTest` (tests_memory.py).
 
 ### 16.3 Tool Isolation per Agent
 

@@ -640,7 +640,8 @@ paths:
       summary: Conversational chat (SSE streaming)
       description: >-
         Same body as `/agent/chat`, plus an optional `workflow_id` to run an Agent Alloy
-        workflow. Responds with `text/event-stream`. The run is executed detached
+        workflow and an optional `target_agent_id` to route the turn to a specific agent by
+        its Docker-style `agent_id`. Responds with `text/event-stream`. The run is executed detached
         server-side and survives client disconnect; the first event is `run_started`
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
         Events: `run_started`, `start`, `memory_context`, `chunk`, `tool_call`,
@@ -657,6 +658,12 @@ paths:
                   properties:
                     workflow_id:
                       type: string
+                    target_agent_id:
+                      type: string
+                      description: >-
+                        Route this turn to the agent with this Docker-style `agent_id`.
+                        Resolution priority: `workflow_id` > `target_agent_id` >
+                        `agent_profile_id` > default. An unknown id yields an SSE `error` event.
       responses:
         '200':
           description: SSE stream

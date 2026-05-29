@@ -374,6 +374,29 @@ class TurnAgentAttributionTest(TestCase):
         self.assertIn("agent_id", sql)
 
 
+class ConversationAgentIdsTest(TestCase):
+    """Phase 16.2 — get_conversation_agent_ids reads conversation_logs attribution."""
+
+    def test_returns_non_null_agent_ids(self) -> None:
+        mock_session = create_mock_postgres_session()
+        mock_session.execute.return_value = [("alpha-agent",), ("beta-agent",), (None,)]
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.get_postgres_session') as mock_pg:
+            mock_pg.return_value = mock_session
+            ids = EpisodicMemory().get_conversation_agent_ids("conv-1")
+        self.assertEqual(ids, ["alpha-agent", "beta-agent"])  # NULL row dropped
+
+    def test_query_filters_and_binds_conversation(self) -> None:
+        mock_session = create_mock_postgres_session()
+        mock_session.execute.return_value = []
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.get_postgres_session') as mock_pg:
+            mock_pg.return_value = mock_session
+            EpisodicMemory().get_conversation_agent_ids("conv-xyz")
+        sql = str(mock_session.execute.call_args[0][0]).lower()
+        self.assertIn("distinct agent_id", sql)
+        self.assertIn("agent_id is not null", sql)
+        self.assertEqual(mock_session.execute.call_args[0][1], {"conv_id": "conv-xyz"})
+
+
 class TurnIndexPassthroughTest(TestCase):
     """Test turn_index passed correctly to tool invocation recording."""
 

@@ -194,7 +194,7 @@ Base URL: `http://localhost:12319/api/`
 | `/api/providers/health` | GET | Check health of all providers |
 | `/api/agent/run` | POST | Execute a task with the agent |
 | `/api/agent/chat` | POST | Conversational interaction with session |
-| `/api/agent/chat/stream` | POST | Streaming chat via SSE. Runs detached server-side (survives client disconnect); first event `run_started` carries `run_id`. Events: run_started, start, chunk, tool_call, tool_result, done, error, close |
+| `/api/agent/chat/stream` | POST | Streaming chat via SSE. Optional `target_agent_id` routes the turn to a specific agent by Docker-style `agent_id` (priority `workflow_id > target_agent_id > agent_profile_id > default`). Runs detached server-side (survives client disconnect); first event `run_started` carries `run_id`. Events: run_started, start, chunk, tool_call, tool_result, done, error, close |
 | `/api/agent/chat/stream/attach` | GET | Re-attach to a detached run (`?run_id=`): replays buffered events + follows live. Emits `run_missing` if the buffer expired |
 | `/api/agent/chat/runs` | GET | List the caller's detached chat runs (newest first) for recovery surfaces (Relay inbox, conversation selector) |
 | `/api/agent/chat/runs/{run_id}/cancel` | POST | Cooperatively cancel a detached chat run |
@@ -317,4 +317,4 @@ Each agent profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon"):
 
 ## Project Status
 
-Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~30% — Agent Alloy v1 shipped (supervisor + specialist delegation). Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.21.1 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.
+Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~35% — Agent Alloy v1 shipped (supervisor + specialist delegation); 16.1 per-turn attribution + 16.2 explicit agent routing (`target_agent_id` + multi-agent prompt awareness) shipped. Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.21.2 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.

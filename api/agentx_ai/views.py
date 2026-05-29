@@ -785,7 +785,8 @@ async def agent_chat_stream(request):
         session_id = data.get("session_id")
         model = data.get("model")
         profile_id = data.get("profile_id")  # Prompt profile
-        agent_profile_id = data.get("agent_profile_id")  # Agent profile
+        agent_profile_id = data.get("agent_profile_id")  # Agent profile (by profile id)
+        target_agent_id = data.get("target_agent_id")  # Route by Docker-style agent_id (16.2)
         temperature = data.get("temperature")  # None if not specified
         use_memory = data.get("use_memory", True)
         workflow_id = data.get("workflow_id")  # Optional Agent Alloy workflow
@@ -809,7 +810,10 @@ async def agent_chat_stream(request):
         start_time = time.time()
 
         # Look up agent profile early to apply all settings
-        logger.debug(f"Stream chat request: agent_profile_id={agent_profile_id}, model={model}, workflow_id={workflow_id}")
+        logger.debug(
+            f"Stream chat request: agent_profile_id={agent_profile_id}, "
+            f"target_agent_id={target_agent_id}, model={model}, workflow_id={workflow_id}"
+        )
         profile_manager = get_profile_manager()
         agent_profile = None
 
@@ -824,10 +828,8 @@ async def agent_chat_stream(request):
             if active_workflow is None:
                 yield f"event: error\ndata: {json.dumps({'error': f'Unknown workflow_id: {workflow_id}'})}\n\n"
                 return
-            agent_profile = next(
-                (p for p in profile_manager.list_profiles()
-                 if p.agent_id == active_workflow.supervisor_agent_id),
-                None,
+            agent_profile = profile_manager.get_profile_by_agent_id(
+                active_workflow.supervisor_agent_id
             )
             if agent_profile is None:
                 yield f"event: error\ndata: {json.dumps({'error': f'Workflow {workflow_id!r} supervisor agent_id has no matching profile'})}\n\n"
@@ -835,6 +837,17 @@ async def agent_chat_stream(request):
             logger.info(
                 f"Workflow {workflow_id!r} active — supervisor profile: "
                 f"{agent_profile.name} ({agent_profile.agent_id})"
+            )
+        elif target_agent_id:
+            # Explicit routing by Docker-style agent_id (Phase 16.2). The
+            # canonical multi-agent routing key; 16.4/16.5 build on this.
+            agent_profile = profile_manager.get_profile_by_agent_id(target_agent_id)
+            if agent_profile is None:
+                yield f"event: error\ndata: {json.dumps({'error': f'Unknown target_agent_id: {target_agent_id}'})}\n\n"
+                return
+            logger.debug(
+                f"Routed to agent {agent_profile.name} ({agent_profile.agent_id}) "
+                f"via target_agent_id"
             )
         elif agent_profile_id:
             agent_profile = profile_manager.get_profile(agent_profile_id)
@@ -953,6 +966,23 @@ async def agent_chat_stream(request):
         if use_memory and agent.memory:
             agent.memory.conversation_id = conv_id
 
+        # Hydrate the conversation's agent roster (Phase 16.2). Seed from the
+        # durable per-turn attribution (16.1) so it reflects agents that spoke
+        # before this process/session existed, then add the active agent.
+        # Best-effort: a memory hiccup must never block the chat.
+        if agent_profile is not None:
+            try:
+                if use_memory and agent.memory:
+                    for past_id in agent.memory.get_conversation_participants(conv_id):
+                        if past_id in session.participants:
+                            continue
+                        past_profile = profile_manager.get_profile_by_agent_id(past_id)
+                        if past_profile is not None:
+                            session.participants[past_id] = past_profile
+                session.participants[agent_profile.agent_id] = agent_profile
+            except Exception as e:
+                logger.debug(f"Participant hydration skipped: {e}")
+
         # Bind the active agent context for internal tools (recall_user_history,
         # checkpoint). The token is reset at the end of the request so concurrent
         # streams don't see each other's bindings.
@@ -1002,6 +1032,19 @@ async def agent_chat_stream(request):
                     role=MessageRole.SYSTEM,
                     content=build_supervisor_prompt(active_workflow),
                 ))
+            # Otherwise, in a multi-agent (non-workflow) conversation, make this
+            # agent aware of the others that have spoken (Phase 16.2). Suppressed
+            # under a workflow — the supervisor prompt already frames the team.
+            elif len(session.participants) > 1:
+                from .prompts.multi_agent import build_participants_block
+                participants_block = build_participants_block(
+                    agent.config.agent_id, session.participants
+                )
+                if participants_block:
+                    messages.append(Message(
+                        role=MessageRole.SYSTEM,
+                        content=participants_block,
+                    ))
 
             # Re-inject any model-authored checkpoints for this conversation.
             # They live in Redis and are appended fresh each turn so trajectory

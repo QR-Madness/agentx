@@ -377,7 +377,7 @@ Conversational interaction with session management.
 POST /api/agent/chat/stream
 ```
 
-Same request body as `/agent/chat`. Returns Server-Sent Events (SSE).
+Same request body as `/agent/chat`. Two optional extras: `workflow_id` (run an Agent Alloy workflow) and `target_agent_id` (route this turn to a specific agent by its Docker-style `agent_id`). Routing priority: `workflow_id` > `target_agent_id` > `agent_profile_id` > default; an unknown `target_agent_id` yields an `error` event. Returns Server-Sent Events (SSE).
 
 **Response:** `Content-Type: text/event-stream`
 

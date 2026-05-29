@@ -9,9 +9,12 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from ..providers.base import Message, MessageRole
+
+if TYPE_CHECKING:
+    from .models import AgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,12 @@ class Session:
     # Metadata
     user_id: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    
+
+    # Multi-agent conversations (Phase 16.2): agents that have spoken in this
+    # conversation, keyed by Docker-style agent_id. Derived from the durable
+    # conversation_logs.agent_id attribution (16.1) plus the active agent.
+    participants: dict[str, "AgentProfile"] = field(default_factory=dict)
+
     # Settings
     max_messages: int = 100
     auto_summarize_at: int = 50

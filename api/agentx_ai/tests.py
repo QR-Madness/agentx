@@ -3384,3 +3384,40 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertIsNone(done["cost_estimate"])
         self.assertIsNone(done["cost_currency"])
         self.assertIsNone(done["pricing_snapshot"])
+
+
+class ExplicitAgentRoutingTest(TestCase):
+    """Phase 16.2: routing-by-agent_id helper + multi-agent prompt block."""
+
+    def _profiles(self):
+        from agentx_ai.agent.models import AgentProfile
+        # Field-defaulted args omitted (matches DEFAULT_PROFILE construction style).
+        return (
+            AgentProfile(id="1", name="Alpha", agent_id="alpha-agent"),  # type: ignore[call-arg]
+            AgentProfile(id="2", name="Beta", agent_id="beta-agent"),  # type: ignore[call-arg]
+        )
+
+    def test_get_profile_by_agent_id(self):
+        from agentx_ai.agent.profiles import ProfileManager
+        a, b = self._profiles()
+        mgr = ProfileManager.__new__(ProfileManager)
+        mgr._profiles = {a.id: a, b.id: b}
+        self.assertIs(mgr.get_profile_by_agent_id("beta-agent"), b)
+        self.assertIsNone(mgr.get_profile_by_agent_id("nope"))
+
+    def test_participants_block_excludes_self(self):
+        from agentx_ai.prompts.multi_agent import build_participants_block
+        a, b = self._profiles()
+        block = build_participants_block(
+            "alpha-agent", {"alpha-agent": a, "beta-agent": b}
+        )
+        assert block is not None
+        self.assertIn("Beta", block)
+        self.assertIn("beta-agent", block)
+        self.assertNotIn("Alpha", block)  # self is excluded from the roster
+
+    def test_participants_block_none_when_alone(self):
+        from agentx_ai.prompts.multi_agent import build_participants_block
+        a, _ = self._profiles()
+        self.assertIsNone(build_participants_block("alpha-agent", {"alpha-agent": a}))
+        self.assertIsNone(build_participants_block("alpha-agent", {}))
