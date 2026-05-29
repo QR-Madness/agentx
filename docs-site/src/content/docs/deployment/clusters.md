@@ -146,8 +146,8 @@ No application config changes are needed: the embedding model (BAAI/bge-m3) and 
 translation model auto-detect CUDA. Verify after start-up:
 
 ```bash
-docker compose --env-file clusters/<name>/.env -f docker-compose.gpu.yml \
-  --profile production exec api python -c "import torch; print(torch.cuda.is_available())"
+docker compose --env-file clusters/<name>/.env -f docker-compose.yml -f docker-compose.gpu.yml \
+  --profile production exec api uv run python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 The payoff is a large speedup for local embeddings and translation; GPU VRAM is separate from
