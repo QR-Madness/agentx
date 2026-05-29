@@ -115,6 +115,9 @@ DEFAULT_CONFIG = {
         "max_delegation_depth": 3,
         "specialist_inherits_supervisor_tools": True,
         "delegation_timeout_seconds": 300,
+        # Phase 16.4: when true, agents in a normal (non-workflow) conversation
+        # get a `delegate_to` tool targeting any other profile. Default off.
+        "allow_adhoc_delegation": False,
     },
 }
 

@@ -923,11 +923,31 @@ async def agent_chat_stream(request):
             from .config import get_config_manager
             cfg = get_config_manager()
             agent._active_alloy_executor = AlloyExecutor(  # type: ignore[attr-defined]
+                agent,
+                session,
                 workflow=active_workflow,
-                supervisor_agent=agent,
-                session=session,
                 max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
             )
+        # Ad-hoc agent-to-agent delegation (Phase 16.4): outside a workflow, when
+        # enabled and another profile exists, give this agent a workflow-less
+        # executor so it can delegate to any other agent via `delegate_to`.
+        elif agent_profile is not None:
+            from .config import get_config_manager
+            cfg = get_config_manager()
+            if cfg.get("alloy.allow_adhoc_delegation", False):
+                others = [
+                    p for p in profile_manager.list_profiles()
+                    if getattr(p, "agent_id", None) and p.agent_id != agent_profile.agent_id
+                ]
+                if others:
+                    from .alloy.executor import AlloyExecutor
+                    agent._active_alloy_executor = AlloyExecutor(  # type: ignore[attr-defined]
+                        agent,
+                        session,
+                        channel=agent.config.memory_channel,
+                        delegator_agent_id=agent.config.agent_id,
+                        max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
+                    )
 
         # Cache large user messages in Redis to save context
         message_for_context = message  # Version sent to LLM (may be truncated)
@@ -1118,10 +1138,18 @@ async def agent_chat_stream(request):
             logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
 
             # When a workflow is active, append the delegate_to tool so the
-            # supervisor can hand work to specialists.
+            # supervisor can hand work to specialists. Outside a workflow, the
+            # same tool is offered for ad-hoc delegation (Phase 16.4) whenever an
+            # ad-hoc executor was attached above.
             if active_workflow is not None and active_workflow.specialists():
                 from .alloy.delegation_tool import build_delegation_tool
                 desc = build_delegation_tool(active_workflow)
+            elif getattr(agent, "_active_alloy_executor", None) is not None:
+                from .alloy.delegation_tool import build_adhoc_delegation_tool
+                desc = build_adhoc_delegation_tool(agent.config.agent_id or "")
+            else:
+                desc = None
+            if desc is not None:
                 tools = (tools or []) + [{
                     "type": "function",
                     "function": {

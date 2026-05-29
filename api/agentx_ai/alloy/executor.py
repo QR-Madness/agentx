@@ -32,18 +32,51 @@ class AlloyExecutor:
 
     def __init__(
         self,
-        workflow: Workflow,
         supervisor_agent,
         session: Session,
         *,
+        workflow: Optional[Workflow] = None,
+        channel: Optional[str] = None,
+        delegator_agent_id: Optional[str] = None,
         max_delegation_depth: int = 3,
     ):
+        """Owns one delegating agent's in-flight delegations.
+
+        Two modes:
+        - **Workflow** (Agent Alloy): pass ``workflow``; the shared channel and
+          delegator id are derived from it and targets must be workflow
+          specialists.
+        - **Ad-hoc** (Phase 16.4): pass ``channel`` + ``delegator_agent_id``;
+          any agent profile (except the delegator) is a valid target.
+        """
         self.workflow = workflow
         self.supervisor = supervisor_agent
         self.session = session
         self.max_delegation_depth = max_delegation_depth
         self.depth = 0
         self.history: list[dict] = []  # {target_agent_id, status, result_preview}
+
+        if workflow is not None:
+            self.channel: str = workflow.shared_channel
+            self.delegator_agent_id: str = workflow.supervisor_agent_id
+        else:
+            self.channel = channel or "_global"
+            self.delegator_agent_id = delegator_agent_id or ""
+
+    def _validate_target(self, target_agent_id: str) -> Optional[str]:
+        """Return an error string if ``target_agent_id`` is not delegable, else None."""
+        # No self-delegation (both modes) — satisfies the Phase 16.4 safeguard
+        # and is harmless for workflow supervisors (they never list themselves).
+        if target_agent_id == self.delegator_agent_id:
+            return "an agent cannot delegate to itself"
+        if self.workflow is not None:
+            member = self.workflow.get_member(target_agent_id)
+            if member is None or member.role != MemberRole.SPECIALIST:
+                return f"agent_id {target_agent_id!r} is not a specialist in this workflow"
+        else:
+            if get_profile_manager().get_profile_by_agent_id(target_agent_id) is None:
+                return f"no agent profile for agent_id {target_agent_id!r}"
+        return None
 
     async def delegate(
         self,
@@ -60,11 +93,8 @@ class AlloyExecutor:
         tool result returned to the supervisor.
         """
         # ------- validate target -------
-        member = self.workflow.get_member(target_agent_id)
-        if member is None or member.role != MemberRole.SPECIALIST:
-            err = (
-                f"agent_id {target_agent_id!r} is not a specialist in this workflow"
-            )
+        err = self._validate_target(target_agent_id)
+        if err is not None:
             yield _sse("delegation_complete", {
                 "target_agent_id": target_agent_id,
                 "tool_call_id": tool_call_id,
@@ -111,8 +141,8 @@ class AlloyExecutor:
             "tool_call_id": tool_call_id,
             "task": task[:500],
             "depth": self.depth,
-            "supervisor_agent_id": self.workflow.supervisor_agent_id,
-            "shared_channel": self.workflow.shared_channel,
+            "supervisor_agent_id": self.delegator_agent_id,
+            "shared_channel": self.channel,
         }), ""
 
         # ------- create child goal (best effort) -------
@@ -126,7 +156,7 @@ class AlloyExecutor:
                     description=f"[delegation→{target_agent_id}] {task[:400]}",
                     status="active",
                     priority=3,
-                    channel=self.workflow.shared_channel,
+                    channel=self.channel,
                 )
                 memory_for_goal.add_goal(goal)
                 child_goal_id = goal.id
@@ -143,7 +173,7 @@ class AlloyExecutor:
             default_model=profile.default_model or self.supervisor.config.default_model,
             agent_id=profile.agent_id,
             prompt_profile_id=profile.prompt_profile_id,
-            memory_channel=self.workflow.shared_channel,
+            memory_channel=self.channel,
             enable_memory=profile.enable_memory,
             enable_tools=profile.enable_tools,
             max_tool_rounds=self.supervisor.config.max_tool_rounds,
@@ -251,7 +281,7 @@ class AlloyExecutor:
                     index=len(self.history),
                     role="assistant",
                     content=f"[{target_agent_id} → delegation] {accumulated}",
-                    channel=self.workflow.shared_channel,
+                    channel=self.channel,
                     metadata=delegation_metadata,
                 ))
             except Exception as e:
@@ -305,8 +335,8 @@ class AlloyExecutor:
                 role=MessageRole.SYSTEM,
                 content=(
                     (system_prompt or "You are a specialist agent.")
-                    + "\n\nYou are operating as part of a multi-agent workflow. "
-                    "You were delegated this task by a supervisor and do not "
+                    + "\n\nYou are operating as part of a multi-agent conversation. "
+                    "You were delegated this task by another agent and do not "
                     "have access to the user's original conversation. Focus on "
                     "completing the task and return a concise, complete answer."
                 ),

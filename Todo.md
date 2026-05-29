@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.2** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.3** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -205,12 +205,26 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.2** (proto
 - [X] Use existing `allowed_tools`/`blocked_tools` on `AgentConfig` for per-agent filtering
 - [X] Each agent only sees its configured tools in `_get_tools_for_provider()`
 
-### 16.4 Agent-to-Agent Delegation
+### 16.4 Agent-to-Agent Delegation — shipped `[v0.21.3]`
 
-- [ ] Define delegation protocol (structured JSON in assistant output)
-- [ ] Detect delegation in streaming handler, emit `delegation` SSE event
-- [ ] Chain into target agent's response flow
-- [ ] Safeguards: max delegation depth, no self-delegation
+> Chosen mechanism: **reuse Alloy's `delegate_to` tool**, generalized to non-workflow
+> conversations — not the originally-sketched "structured JSON in assistant output" (the Alloy
+> code flags JSON-in-output as a small-model failure mode). Gated by `alloy.allow_adhoc_delegation`
+> (default off). Backend-only — the client renders the existing `delegation_*` events.
+
+- [x] Define delegation protocol — reuses the existing `delegate_to` tool (`{agent_id, task}`). New
+      `build_adhoc_delegation_tool(self_agent_id)` (`alloy/delegation_tool.py`) shares a
+      `_build_descriptor` core with `build_delegation_tool`; enum = every profile except self.
+- [x] Detect delegation in streaming handler, emit `delegation` SSE events — no new code: the tool
+      loop's `_partition_tool_calls` already routes `delegate_to` to `agent._active_alloy_executor`,
+      which streams `delegation_start/chunk/complete`.
+- [x] Chain into target agent's response flow — `AlloyExecutor` generalized to a workflow-less mode
+      (`AlloyExecutor(agent, session, channel=, delegator_agent_id=)`); spins up the target agent,
+      streams its run back, returns the result as the delegating agent's tool result. `views.py`
+      attaches the ad-hoc executor + injects the tool via two `elif` branches mirroring the workflow path.
+- [x] Safeguards: max delegation depth (reuses `alloy.max_delegation_depth`) + **no self-delegation**
+      (new `_validate_target`, enforced in both workflow and ad-hoc modes).
+      Tests: `AdhocDelegationTest` (tests.py); `AlloyDelegationMetricsTest` still green (signature change).
 
 ### 16.5 @-Mention Routing + Graph Updates
 

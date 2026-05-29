@@ -3296,7 +3296,7 @@ class AlloyDelegationMetricsTest(TestCase):
             memory=None,  # skips goal creation + turn storage
         )
         session = SimpleNamespace(id="sess")
-        return AlloyExecutor(workflow, supervisor, session, max_delegation_depth=3)
+        return AlloyExecutor(supervisor, session, workflow=workflow, max_delegation_depth=3)
 
     def test_delegate_emits_metrics_on_complete(self):
         """delegate() yields token/duration/cost on the delegation_complete event."""
@@ -3421,3 +3421,121 @@ class ExplicitAgentRoutingTest(TestCase):
         a, _ = self._profiles()
         self.assertIsNone(build_participants_block("alpha-agent", {"alpha-agent": a}))
         self.assertIsNone(build_participants_block("alpha-agent", {}))
+
+
+class AdhocDelegationTest(TestCase):
+    """Phase 16.4: ad-hoc (non-workflow) agent-to-agent delegation."""
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    @staticmethod
+    def _parse_complete(events) -> dict:
+        for ev in events:
+            sse = ev[0] if isinstance(ev, tuple) else ev
+            if sse.startswith("event: delegation_complete\n"):
+                return json.loads(sse.split("data: ", 1)[1].rstrip())
+        raise AssertionError("no delegation_complete event emitted")
+
+    def _profiles(self):
+        from types import SimpleNamespace
+        return [
+            SimpleNamespace(agent_id="alpha-agent", name="Alpha", description="lead"),
+            SimpleNamespace(agent_id="beta-agent", name="Beta", description="researcher"),
+        ]
+
+    # ---- tool descriptor ----
+
+    def test_adhoc_tool_lists_others_excludes_self(self):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.delegation_tool import build_adhoc_delegation_tool, DELEGATION_TOOL_NAME
+        with patch("agentx_ai.agent.profiles.get_profile_manager",
+                   return_value=SimpleNamespace(list_profiles=self._profiles)):
+            desc = build_adhoc_delegation_tool("alpha-agent")
+        self.assertEqual(desc["name"], DELEGATION_TOOL_NAME)
+        self.assertEqual(desc["input_schema"]["properties"]["agent_id"]["enum"], ["beta-agent"])
+        self.assertIn("Beta", desc["description"])
+        self.assertNotIn("alpha-agent", desc["description"])
+
+    # ---- executor (ad-hoc mode) ----
+
+    def _make_executor(self, depth=0, max_depth=3):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        ex = AlloyExecutor(
+            supervisor, SimpleNamespace(id="sess"),  # type: ignore[arg-type]
+            channel="_global", delegator_agent_id="alpha-agent", max_delegation_depth=max_depth,
+        )
+        ex.depth = depth
+        return ex
+
+    def test_self_delegation_rejected(self):
+        from types import SimpleNamespace
+        ex = self._make_executor()
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("alpha-agent", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("itself", done["error"])
+
+    def test_unknown_target_rejected(self):
+        from types import SimpleNamespace
+        ex = self._make_executor()
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: None)):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("ghost", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("no agent profile", done["error"])
+
+    def test_depth_ceiling_enforced(self):
+        from types import SimpleNamespace
+        ex = self._make_executor(depth=3, max_depth=3)
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("beta-agent", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("max delegation depth", done["error"])
+
+    def test_adhoc_success_path(self):
+        from types import SimpleNamespace
+        ex = self._make_executor()
+        profile = SimpleNamespace(
+            name="Beta", default_model="m", agent_id="beta-agent", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+
+        async def fake_stream(*args, **kwargs):
+            kwargs["result"].content = "beta result"
+            yield 'event: chunk\ndata: {"content": "beta result"}\n\n'
+
+        pm = SimpleNamespace(
+            get_profile_by_agent_id=lambda a: profile if a == "beta-agent" else None,
+            list_profiles=lambda: [profile],
+        )
+        with patch("agentx_ai.alloy.executor.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(self._drain(
+                ex.delegate("beta-agent", "do it", tool_call_id="t")))
+        done = self._parse_complete(events)
+        self.assertEqual(done["status"], "success")
+        self.assertEqual(done["target_agent_id"], "beta-agent")
+        self.assertTrue(any(e[0].startswith("event: delegation_start") for e in events))
