@@ -3773,3 +3773,129 @@ class TaskComplexityTest(TestCase):
             ),
             TaskComplexity.COMPLEX,
         )
+
+
+class ToolGatingTest(TestCase):
+    """
+    Phase 18.9.x: per-profile tool gating in ``Agent._get_tools_for_provider``.
+
+    Matching is on the fully-qualified ``{server_name}.{tool_name}`` key so two
+    MCP servers exposing a same-named tool don't gate together. Built-in tools
+    resolve to ``_internal.<name>``.
+    """
+
+    def _make_agent(self, *, allowed=None, blocked=None):
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        config = AgentConfig(
+            enable_tools=True,
+            allowed_tools=allowed,
+            blocked_tools=list(blocked) if blocked else [],
+        )
+        agent = Agent(config)
+        # Bypass the lazy MCP-manager lookup; the property's `is None` guard
+        # means assigning to the private attr is enough.
+        client = MagicMock()
+        client.list_tools = MagicMock(return_value=self._tools())
+        client.list_connections = MagicMock(return_value=[])
+        # Empty registry => no server-side whitelist gate fires for these
+        # tools (their server_names don't appear in `server_gate`).
+        client.registry.list = MagicMock(return_value=[])
+        agent._mcp_client = client
+        return agent
+
+    def _tools(self):
+        from agentx_ai.mcp.tool_executor import ToolInfo
+
+        return [
+            ToolInfo(name="read_file", description="fs", input_schema={}, server_name="filesystem"),
+            ToolInfo(name="read_file", description="git", input_schema={}, server_name="git"),
+            ToolInfo(name="checkpoint", description="ck", input_schema={}, server_name="_internal"),
+            ToolInfo(name="recall_user_history", description="r", input_schema={}, server_name="_internal"),
+        ]
+
+    def _names(self, exposed):
+        # Exposed entries are provider-format dicts; flatten to FQ-ish display.
+        return sorted(t["function"]["name"] for t in (exposed or []))
+
+    def test_no_gating_exposes_everything(self) -> None:
+        agent = self._make_agent()
+        exposed = agent._get_tools_for_provider()
+        self.assertIsNotNone(exposed)
+        assert exposed is not None  # for pyright
+        # Two tools share the bare name `read_file`; both should pass.
+        self.assertEqual(len(exposed), 4)
+
+    def test_allowed_tools_is_fully_qualified(self) -> None:
+        # Whitelisting only `filesystem.read_file` must NOT also allow
+        # `git.read_file` — the bug we're fixing.
+        agent = self._make_agent(allowed=["filesystem.read_file"])
+        exposed = agent._get_tools_for_provider()
+        assert exposed is not None
+        self.assertEqual(len(exposed), 1)
+        self.assertEqual(exposed[0]["function"]["name"], "read_file")
+
+    def test_blocked_tools_is_fully_qualified(self) -> None:
+        agent = self._make_agent(blocked=["git.read_file"])
+        exposed = agent._get_tools_for_provider()
+        assert exposed is not None
+        # Three left: filesystem.read_file + the two internals.
+        self.assertEqual(len(exposed), 3)
+
+    def test_blocked_wins_over_allowed(self) -> None:
+        agent = self._make_agent(
+            allowed=["filesystem.read_file", "_internal.checkpoint"],
+            blocked=["_internal.checkpoint"],
+        )
+        exposed = agent._get_tools_for_provider()
+        self.assertEqual(self._names(exposed), ["read_file"])
+
+    def test_internal_tool_gating(self) -> None:
+        # Block only the introspection tool; checkpoint must stay.
+        agent = self._make_agent(blocked=["_internal.recall_user_history"])
+        exposed = agent._get_tools_for_provider()
+        names = self._names(exposed)
+        self.assertIn("checkpoint", names)
+        self.assertNotIn("recall_user_history", names)
+
+
+class ProfileUnqualifiedToolWarningTest(TestCase):
+    """A profile loaded with bare tool names (legacy format) logs a warning."""
+
+    def test_warns_on_unqualified_entries(self) -> None:
+        from agentx_ai.agent.models import AgentProfile
+        from agentx_ai.agent.profiles import _warn_unqualified_tool_names
+
+        profile = AgentProfile(  # type: ignore[call-arg]
+            id="legacy",
+            name="Legacy",
+            allowed_tools=["checkpoint"],         # bare → should warn
+            blocked_tools=["filesystem.read_file"],  # FQ → fine
+        )
+        with self.assertLogs("agentx_ai.agent.profiles", level="WARNING") as cm:
+            _warn_unqualified_tool_names(profile)
+        joined = "\n".join(cm.output)
+        self.assertIn("legacy", joined)
+        self.assertIn("checkpoint", joined)
+        self.assertNotIn("filesystem.read_file", joined)
+
+    def test_silent_when_all_fully_qualified(self) -> None:
+        from agentx_ai.agent.models import AgentProfile
+        from agentx_ai.agent.profiles import _warn_unqualified_tool_names
+
+        profile = AgentProfile(  # type: ignore[call-arg]
+            id="modern",
+            name="Modern",
+            allowed_tools=["_internal.checkpoint"],
+            blocked_tools=["filesystem.read_file"],
+        )
+        # assertNoLogs is 3.10+. The logger emits a record at WARNING only when
+        # there's at least one bare entry; check by capturing and asserting empty.
+        with self.assertLogs("agentx_ai.agent.profiles", level="WARNING") as cm:
+            # Emit something so assertLogs doesn't fail when our helper is silent.
+            import logging
+            logging.getLogger("agentx_ai.agent.profiles").warning("sentinel")
+            _warn_unqualified_tool_names(profile)
+        # Only the sentinel should be present.
+        self.assertEqual(len(cm.output), 1)
+        self.assertIn("sentinel", cm.output[0])

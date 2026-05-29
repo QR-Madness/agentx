@@ -34,6 +34,30 @@ DEFAULT_PROFILE = AgentProfile(
 )
 
 
+def _warn_unqualified_tool_names(profile: AgentProfile) -> None:
+    """
+    Flag entries in ``allowed_tools`` / ``blocked_tools`` that lack a ``.``
+    separator. Phase 18.9.x switched gating to fully-qualified ``server.tool``
+    keys (e.g. ``_internal.checkpoint``); bare names match nothing under the
+    new scheme. We only warn — the data still loads — so a user editing
+    YAML by hand sees what to fix without their profile bouncing.
+    """
+    unqualified: list[str] = []
+    for entry in (profile.allowed_tools or []):
+        if "." not in entry:
+            unqualified.append(entry)
+    for entry in profile.blocked_tools:
+        if "." not in entry:
+            unqualified.append(entry)
+    if unqualified:
+        logger.warning(
+            "Profile %r has unqualified tool names %r; use `server.tool` "
+            "(e.g. `_internal.checkpoint`) — bare names match nothing.",
+            profile.id,
+            unqualified,
+        )
+
+
 class ProfileManager:
     """
     Manages agent profiles and storage.
@@ -90,6 +114,7 @@ class ProfileManager:
 
                 profile = AgentProfile(**profile_data)
                 self._profiles[profile.id] = profile
+                _warn_unqualified_tool_names(profile)
 
             logger.info(f"Loaded {len(self._profiles)} agent profiles from {path}")
 

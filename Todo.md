@@ -244,10 +244,24 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.8** (proto
 - [ ] **Working-memory follow-ups** (18.9): pin/anchor arbitrary turns, `scratchpad_note` tool,
       `inspect_working_memory`, active-goals header, `forget` tool, cached `user_recap_summary`
       rolling summary.
-- [-] **Per-profile internal-tool gating UI** (18.9.x) — deferred. Backend `allowed_tools`/
-      `blocked_tools` on `AgentProfile` exist but are unsurfaced; Toolkit "Access" only gates whole
-      MCP servers and the profile editor has a single `enableTools` toggle. Building the per-tool
-      allowlist surface is its own task (would also expose `checkpoint`/`recall_user_history`).
+- [x] **Per-profile internal-tool gating UI** (18.9.x) — shipped. New
+      `ToolAccessSection` inside the Profile Editor (under the existing
+      `Enable Tools` toggle) surfaces `AgentProfile.allowed_tools` /
+      `blocked_tools` with a "Allow all / Limit to selected" mode chip
+      (mirrors the Toolkit AccessView UX), a per-server grouped checklist
+      pulled from `useMCPTools()`, and a separate Blocked-tools chip list
+      with a `<details>` add-to-block picker. `_internal.<name>` group is
+      pinned first so users can opt in/out of `checkpoint`,
+      `recall_user_history`, etc. Read-only "Enabled for: X, Y" badges in
+      the Toolkit Tools Browser surface the gating from the other side.
+      Backend now matches on fully-qualified `server.tool` keys
+      (`Agent._get_tools_for_provider`) — the docstrings already promised
+      this; legacy bare-name entries log a startup warning via
+      `profiles._warn_unqualified_tool_names`. Also fixed a stale TS type:
+      `MCPTool.server` is now populated (was always blank — backend returns
+      `server_name`). New `ToolGatingTest` + `ProfileUnqualifiedToolWarningTest`
+      in `tests.py` cover FQ matching, allow/block precedence,
+      internal-tool gating, and the warning path.
 
 ## Backlog (Future Enhancements)
 

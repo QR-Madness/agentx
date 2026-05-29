@@ -86,14 +86,26 @@ class AgentProfile(BaseModel):
     enable_memory: bool = Field(True, description="Whether to use the memory system")
     memory_channel: str = Field("_global", description="Memory channel to use for this profile")
     enable_tools: bool = Field(True, description="Whether to enable MCP tools")
-    # Phase 18.2: per-profile tool gating. Tool names are fully-qualified ("server.tool").
+    # Phase 18.2 / 18.9.x: per-profile tool gating. Entries are fully-qualified
+    # `server.tool` keys — built-in tools are `_internal.<tool_name>` (e.g.
+    # `_internal.checkpoint`); MCP tools are `<server_name>.<tool_name>`. The
+    # matching in `Agent._get_tools_for_provider` is exact-string and case-
+    # sensitive. Bare names (no `.`) won't match anything under the FQ scheme
+    # and are flagged with a startup warning; see profiles.py.
     allowed_tools: Optional[list[str]] = Field(
         None,
-        description="If set, only these fully-qualified tools (server.tool) are exposed to this agent. None = all enabled.",
+        description=(
+            "If set, only these fully-qualified tools (`server.tool`; "
+            "`_internal.<name>` for built-ins) are exposed to this agent. "
+            "None = all enabled."
+        ),
     )
     blocked_tools: list[str] = Field(
         default_factory=list,
-        description="Fully-qualified tools (server.tool) explicitly hidden from this agent. Wins over allowed_tools.",
+        description=(
+            "Fully-qualified tools (`server.tool`; `_internal.<name>` for "
+            "built-ins) explicitly hidden from this agent. Wins over allowed_tools."
+        ),
     )
 
     # Metadata

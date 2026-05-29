@@ -231,10 +231,30 @@ function ServersView() {
 
 function ToolsBrowserView() {
   const { tools, loading } = useMCPTools();
+  const { profiles } = useAgentProfile();
   const [q, setQ] = useState('');
   const filtered = tools.filter(t =>
     !q || t.name.toLowerCase().includes(q.toLowerCase()) || (t.description || '').toLowerCase().includes(q.toLowerCase())
   );
+
+  // Phase 18.9.x — surface per-profile gating as read-only badges. The edits
+  // live in the profile editor (ToolAccessSection); this is transparency only.
+  // We compute it client-side from the existing AgentProfileContext, so no new
+  // network calls. Only shown when at least one profile has overrides.
+  const hasAnyOverride = profiles.some(
+    p => (p.allowedTools !== null && p.allowedTools !== undefined) || (p.blockedTools && p.blockedTools.length > 0),
+  );
+  const exposedBy = (fq: string): string[] => {
+    if (!hasAnyOverride) return [];
+    const enabled: string[] = [];
+    for (const p of profiles) {
+      if (!p.enableTools) continue;
+      if (p.blockedTools && p.blockedTools.includes(fq)) continue;
+      if (p.allowedTools !== null && p.allowedTools !== undefined && !p.allowedTools.includes(fq)) continue;
+      enabled.push(p.name);
+    }
+    return enabled;
+  };
 
   return (
     <>
@@ -254,18 +274,40 @@ function ToolsBrowserView() {
         <div className="toolkit-empty">No tools match.</div>
       ) : (
         <div className="toolkit-card-grid">
-          {filtered.map(t => (
-            <div key={`${t.server}-${t.name}`} className="toolkit-card">
-              <div className="toolkit-card-header">
-                <Wrench size={16} />
-                <span className="name" title={t.name}>{t.name}</span>
+          {filtered.map(t => {
+            const fq = `${t.server}.${t.name}`;
+            const enabledFor = exposedBy(fq);
+            return (
+              <div key={`${t.server}-${t.name}`} className="toolkit-card">
+                <div className="toolkit-card-header">
+                  <Wrench size={16} />
+                  <span className="name" title={t.name}>{t.name}</span>
+                </div>
+                <div className="meta">{t.server}</div>
+                <div className="meta" style={{ color: 'var(--text-secondary)' }}>
+                  {t.description || 'No description'}
+                </div>
+                {hasAnyOverride && (
+                  <div className="toolkit-chips" style={{ marginTop: 6 }}>
+                    {enabledFor.length === 0 ? (
+                      <span className="toolkit-chip" style={{ color: 'var(--text-tertiary)' }}>
+                        Not enabled for any profile
+                      </span>
+                    ) : (
+                      <>
+                        <span className="toolkit-chip" style={{ color: 'var(--text-tertiary)' }}>
+                          Enabled for:
+                        </span>
+                        {enabledFor.map(name => (
+                          <span key={name} className="toolkit-chip solid">{name}</span>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="meta">{t.server}</div>
-              <div className="meta" style={{ color: 'var(--text-secondary)' }}>
-                {t.description || 'No description'}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>

@@ -20,6 +20,7 @@ import { AVATAR_OPTIONS } from '../../lib/avatars';
 import { fetchModelsOnce } from '../common/ModelSelector';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
+import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState, REASONING_OPTIONS } from './hooks/useProfileEditorState';
 
 const panelVariants = {
@@ -65,6 +66,8 @@ export function ProfileContent({
     enableMemory, setEnableMemory,
     memoryChannel, setMemoryChannel,
     enableTools, setEnableTools,
+    allowedTools, setAllowedTools,
+    blockedTools, setBlockedTools,
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
@@ -408,6 +411,15 @@ export function ProfileContent({
                   <span className={`profile-toggle-switch ${enableTools ? 'active' : ''}`} />
                 </div>
               </label>
+
+              {enableTools && (
+                <ToolAccessSection
+                  allowedTools={allowedTools}
+                  setAllowedTools={setAllowedTools}
+                  blockedTools={blockedTools}
+                  setBlockedTools={setBlockedTools}
+                />
+              )}
             </div>
 
             {/* Sticky footer */}

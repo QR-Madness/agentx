@@ -386,6 +386,11 @@ export interface AgentProfile {
   enableMemory: boolean;
   memoryChannel: string;
   enableTools: boolean;
+  // Phase 18.9.x: per-tool gating. Entries are fully-qualified `server.tool`
+  // (`_internal.<name>` for built-ins). `allowedTools === null` (or omitted)
+  // means all tools enabled; blockedTools always wins.
+  allowedTools?: string[] | null;
+  blockedTools?: string[];
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -404,6 +409,8 @@ export interface AgentProfileCreate {
   enable_memory?: boolean;
   memory_channel?: string;
   enable_tools?: boolean;
+  allowed_tools?: string[] | null;
+  blocked_tools?: string[];
   is_default?: boolean;
 }
 

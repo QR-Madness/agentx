@@ -9,7 +9,23 @@ export const mcpApi = {
   },
 
   async listMCPTools(): Promise<{ tools: MCPTool[] }> {
-    return apiRequest('/api/mcp/tools');
+    // Backend returns `server_name`; map to `server` for the TS contract so
+    // the property the UI reads (`t.server`) is actually populated.
+    const raw = await apiRequest<{ tools: Array<{
+      name: string;
+      description: string;
+      server_name?: string;
+      server?: string;
+      input_schema?: Record<string, unknown>;
+    }> }>('/api/mcp/tools');
+    return {
+      tools: raw.tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        server: t.server ?? t.server_name ?? '',
+        inputSchema: t.input_schema,
+      })),
+    };
   },
 
   async listMCPResources(): Promise<{ resources: unknown[] }> {

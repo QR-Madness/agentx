@@ -306,10 +306,16 @@ class Agent:
             server_name = getattr(t, "server_name", None) or getattr(t, "server", None)
             if server_name in server_gate and server_gate[server_name] is False:
                 continue
-            # Apply allow/block filters
-            if self.config.allowed_tools and t.name not in self.config.allowed_tools:
+            # Phase 18.9.x: allow/block filters keyed by fully-qualified
+            # `{server_name}.{tool_name}`. Two MCP servers may legitimately
+            # expose a same-named tool; matching on bare names would gate them
+            # together. Internal tools resolve to `_internal.<name>`. Tools
+            # without a server attribution (legacy paths) fall back to the
+            # bare name so old configs keep working until they're migrated.
+            fq_name = f"{server_name}.{t.name}" if server_name else t.name
+            if self.config.allowed_tools and fq_name not in self.config.allowed_tools:
                 continue
-            if self.config.blocked_tools and t.name in self.config.blocked_tools:
+            if self.config.blocked_tools and fq_name in self.config.blocked_tools:
                 continue
 
             tools.append({
