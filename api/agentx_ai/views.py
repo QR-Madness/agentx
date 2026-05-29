@@ -1619,6 +1619,7 @@ async def agent_chat_attach(request):
     return response
 
 
+@csrf_exempt
 def agent_chat_run_cancel(request, run_id):
     """
     POST /api/agent/chat/runs/<run_id>/cancel — cooperatively cancel a run.

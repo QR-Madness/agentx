@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.20.1** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.20.2** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -478,6 +478,20 @@ Currently our model selection and selector are a very solid foundation but are j
 - [x] Split the monolithic `lib/api.ts` (2,497 lines, 89 methods) → `lib/api/` folder: `types.ts` (DTOs), `errors.ts`, `version.ts`, `core.ts` (request layer + stream registry), 17 domain modules (`health`/`auth`/`providers`/`mcp`/`agent`/`relay`/`toolOutput`/`translation`/`prompts`/`promptTemplates`/`profiles`/`alloy`/`config`/`memory`/`jobs`/`history`/`streaming`), and `index.ts` facade that spreads them into `api` + re-exports the full public surface. Import specifier `'.../lib/api'` unchanged (folder barrel) → zero consumer changes. `facade.test.ts` guards 89-method parity.
 - [x] Split `ConversationContext` (599 lines) into concern hooks under `contexts/conversation/`: `useConversationTabs` (tab state + persistence + CRUD — source of truth), `useTabMessages`, `useTabSettings`, `useConversationHistory`, and a pure `mapServerMessages` (extracted + unit-tested). The provider (`ConversationContext.tsx`, now 133 lines) composes them; public API (`useConversation`/`ConversationProvider`/`ConversationTab`) unchanged → zero consumer edits.
 - [x] Adopt the new primitives repo-wide + fix the settings styling regression. `button-primary`/`secondary`/`ghost` → `<Button variant>` across all consumers (memory detail/list panels, modals, pages, JobsPanel, TranslationPanel, settings sections); the only remaining `button-*` references are `ui/Button.tsx` (the variant map) + its test. The `unified-settings/` sections (`Providers`/`Models`/`Appearance`/`MemoryOverview`/`Planner`/`Prompts`) now use `<SectionHeader>`/`<Card>`/`<Badge>`/`<Input>`/`<Button>` and route save/load feedback through `useNotify()` toasts (dropped the inline `configSaveMessage`/`save-message` banners). **Regression fixed:** the pass-1 deletion of `SettingsPanel.css` had orphaned the live provider/config/empty-state/section-header classes (`defs=0`) — provider icon tiles lost their gradient and the dark SVGs went near-invisible. Re-added + elevated (Aurora gradient tiles, glass hover) the provider/config/context-limits CSS in `UnifiedSettings.css`, and the generic `.section-header`/`.section-description`/`.empty-state` fallbacks in `base.css`. Smoke tests for `ProvidersSection`/`ModelsSection` added. **Deliberately left:** `.stat-badge` (distinct larger stats pill — `ax-badge` would shrink it), other `.card` divs (the `Card` primitive is class-identical, no visual gain), and `btn`/`icon-btn`-family bespoke buttons; repo-wide px→`--space-*` inside established `.css` files stays deferred (high churn, low value).
+
+### 18.11.x: Bugfix pass `[v0.20.2]`
+
+- [x] **Cancel never works (CSRF 403)** — `agent_chat_run_cancel` was missing `@csrf_exempt`
+      (every other chat endpoint has it), so `POST /api/agent/chat/runs/<id>/cancel` returned
+      `403 Forbidden (CSRF cookie not set)`; the cancel flag was never set and the detached run
+      streamed to completion. This affected both mid-run cancels and cancelling a just-started
+      conversation. Added the decorator (`views.py`); `agent_plan_cancel` already had it.
+- [x] **Custom chrome missing on the gate pages** — the frameless drag region + window controls
+      live in `TopBar`, which `RootLayout` only renders in the authenticated branch. The
+      `showConnect`/`AuthPage` and `versionMismatch` early returns had no titlebar, so those
+      screens were chromeless and unmovable on Windows/Linux. New `layouts/GateChrome.tsx` (a slim
+      fixed drag strip + `WindowControls`, gated on `isTauri`/`showWindowControls`) rendered in
+      both early-return branches.
 
 ### 18.12: Wave 3 — Start / Conversation UX + README
 

@@ -1,0 +1,23 @@
+/* Frameless titlebar strip for the gate (Connect/Auth + VersionMismatch) pages. */
+.gate-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+  z-index: 1000;
+  /* Transparent: the gate page background shows through; this is purely a
+     drag region + window-controls anchor. */
+  background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The window controls sit flush in the top-right corner. */
+.gate-chrome .window-controls {
+  -webkit-app-region: no-drag;
+}

@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { TopBar, PageId } from './TopBar';
+import { GateChrome } from './GateChrome';
 import { StartPage } from '../pages/StartPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { AgentXPage } from '../pages/AgentXPage';
@@ -113,6 +114,7 @@ export function RootLayout() {
           '--cursor-y': `${cursorPos.y}%`,
         } as React.CSSProperties}
       >
+        <GateChrome />
         <VersionMismatchPage versionInfo={versionInfo} onRetry={checkAuthStatus} />
       </div>
     );
@@ -134,6 +136,7 @@ export function RootLayout() {
           '--cursor-y': `${cursorPos.y}%`,
         } as React.CSSProperties}
       >
+        <GateChrome />
         <AuthPage />
       </div>
     );
