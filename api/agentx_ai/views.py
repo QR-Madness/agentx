@@ -23,6 +23,7 @@ from .streaming import (
     resolve_with_priority,
 )
 from .utils.decorators import lazy_singleton
+from .kit.translation import get_translation_kit  # shared lazy singleton (HTTP + internal tools)
 from .exceptions import AgentXError
 from .utils.responses import (
     error_response,
@@ -39,16 +40,6 @@ def _iso_or_str(value: Any) -> str:
     """Format a timestamp-ish value as ISO-8601 when possible, else as a string."""
     isoformat = getattr(value, "isoformat", None)
     return str(isoformat()) if callable(isoformat) else str(value or "")
-
-
-@lazy_singleton
-def get_translation_kit():
-    """Get or create TranslationKit instance lazily."""
-    from .kit.translation import TranslationKit
-    logger.info("Initializing TranslationKit (loading models)...")
-    kit = TranslationKit()
-    logger.info("TranslationKit initialized successfully")
-    return kit
 
 
 def index(request):

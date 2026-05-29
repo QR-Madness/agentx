@@ -5,6 +5,8 @@ import torch
 from termcolor import colored
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForSeq2SeqLM
 
+from ..utils.decorators import lazy_singleton
+
 logger = logging.getLogger("agentx")
 
 nlb200_list = ["ace_Arab", "ace_Latn", "acm_Arab", "acq_Arab", "aeb_Arab", "afr_Latn", "ajp_Arab", "aka_Latn",
@@ -167,3 +169,16 @@ class TranslationKit:
             max_length=512
         )
         return self.translation_tokenizer.batch_decode(gen_tokens, skip_special_tokens=True)[0]
+
+
+@lazy_singleton
+def get_translation_kit() -> "TranslationKit":
+    """Get or create the shared TranslationKit instance lazily.
+
+    Lives here (rather than in views) so both the HTTP endpoints and the internal
+    translation tools share one ~600 MB model instance, loaded on first use.
+    """
+    logger.info("Initializing TranslationKit (loading models)...")
+    kit = TranslationKit()
+    logger.info("TranslationKit initialized successfully")
+    return kit

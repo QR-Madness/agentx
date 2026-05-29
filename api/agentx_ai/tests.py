@@ -3580,3 +3580,90 @@ class AdhocDelegationTest(TestCase):
         self.assertEqual(done["status"], "success")
         self.assertEqual(done["target_agent_id"], "beta-agent")
         self.assertTrue(any(e[0].startswith("event: delegation_start") for e in events))
+
+
+class TranslationInternalToolsTest(TestCase):
+    """detect_language + translate_text internal tools (kit mocked — no model load)."""
+
+    def test_tools_registered(self) -> None:
+        from agentx_ai.mcp.internal_tools import is_internal_tool, get_internal_tools
+
+        self.assertTrue(is_internal_tool("detect_language"))
+        self.assertTrue(is_internal_tool("translate_text"))
+        names = {t.name for t in get_internal_tools()}
+        self.assertIn("detect_language", names)
+        self.assertIn("translate_text", names)
+
+    def test_detect_language(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        kit = MagicMock()
+        kit.detect_language_level_i.return_value = ("fr", 98.5)
+        with patch("agentx_ai.kit.translation.get_translation_kit", return_value=kit):
+            result = internal_tools.detect_language("Bonjour tout le monde")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["language"], "fr")
+        self.assertEqual(result["confidence"], 98.5)
+
+    def test_detect_language_empty(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        result = internal_tools.detect_language("   ")
+        self.assertFalse(result["success"])
+
+    def test_translate_level_1_for_bare_code(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        kit = MagicMock()
+        kit.translate_text.return_value = "Bonjour"
+        with patch("agentx_ai.kit.translation.get_translation_kit", return_value=kit):
+            result = internal_tools.translate_text("Hello", "fr")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["translated_text"], "Bonjour")
+        # Bare code → level 1
+        _, kwargs = kit.translate_text.call_args
+        self.assertEqual(kwargs["target_language_level"], 1)
+
+    def test_translate_level_2_for_nllb_code(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        kit = MagicMock()
+        kit.translate_text.return_value = "Hallo"
+        with patch("agentx_ai.kit.translation.get_translation_kit", return_value=kit):
+            result = internal_tools.translate_text("Hello", "deu_Latn")
+
+        self.assertTrue(result["success"])
+        _, kwargs = kit.translate_text.call_args
+        self.assertEqual(kwargs["target_language_level"], 2)
+
+    def test_translate_unsupported_lists_supported(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        kit = MagicMock()
+        kit.translate_text.side_effect = ValueError("Language xx not supported")
+        with patch("agentx_ai.kit.translation.get_translation_kit", return_value=kit):
+            result = internal_tools.translate_text("Hello", "xx")
+
+        self.assertFalse(result["success"])
+        self.assertIn("supported", result)
+        self.assertIn("french", result["supported"])  # level_i_languages map
+
+    def test_translate_missing_args(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        self.assertFalse(internal_tools.translate_text("", "fr")["success"])
+        self.assertFalse(internal_tools.translate_text("hi", "")["success"])
+
+    def test_execute_internal_tool_wraps_result(self) -> None:
+        from agentx_ai.mcp import internal_tools
+
+        kit = MagicMock()
+        kit.translate_text.return_value = "Hola"
+        with patch("agentx_ai.kit.translation.get_translation_kit", return_value=kit):
+            tr = internal_tools.execute_internal_tool(
+                "translate_text", {"text": "Hello", "target_language": "es"}
+            )
+        self.assertTrue(tr.success)
+        self.assertIn("Hola", tr.content[0]["text"])

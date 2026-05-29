@@ -563,6 +563,103 @@ def checkpoint(
     }
 
 
+@register_tool(
+    name="detect_language",
+    description=(
+        "Detect the language of a piece of text. Covers ~20 common languages and "
+        "returns an ISO 639-1 code (e.g. 'fr', 'es', 'ja') plus a confidence score. "
+        "Useful before translating, or to answer the user in their own language."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text whose language should be detected.",
+            },
+        },
+        "required": ["text"],
+    },
+)
+def detect_language(text: str) -> dict[str, Any]:
+    """Detect the language of ``text`` via the TranslationKit."""
+    if not text or not text.strip():
+        return {"error": "text is required", "success": False}
+
+    try:
+        from ..kit.translation import get_translation_kit
+
+        language, confidence = get_translation_kit().detect_language_level_i(text)
+    except Exception as e:  # noqa: BLE001 - model load / inference failure
+        return {"error": f"Language detection failed: {e}", "success": False}
+
+    return {
+        "language": language,
+        "confidence": confidence,
+        "success": True,
+    }
+
+
+@register_tool(
+    name="translate_text",
+    description=(
+        "Translate text into a target language using the on-device NLLB-200 model "
+        "(200+ languages). Pass the target as an ISO 639-1 code ('fr', 'es', 'zh') "
+        "for common languages, or a full NLLB code ('fra_Latn', 'zho_Hans') for the "
+        "wider set. Source language is auto-handled. On an unsupported code the "
+        "result lists the common supported languages."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The text to translate.",
+            },
+            "target_language": {
+                "type": "string",
+                "description": "Target language: ISO 639-1 (e.g. 'fr') or NLLB code (e.g. 'fra_Latn').",
+            },
+        },
+        "required": ["text", "target_language"],
+    },
+)
+def translate_text(text: str, target_language: str) -> dict[str, Any]:
+    """Translate ``text`` into ``target_language`` via the TranslationKit."""
+    if not text or not text.strip():
+        return {"error": "text is required", "success": False}
+    if not target_language or not target_language.strip():
+        return {"error": "target_language is required", "success": False}
+
+    # NLLB codes look like 'fra_Latn' (script suffix); bare codes/names are level 1.
+    level = 2 if "_" in target_language else 1
+
+    try:
+        from ..kit.translation import get_translation_kit
+
+        translated = get_translation_kit().translate_text(
+            text, target_language, target_language_level=level
+        )
+    except ValueError as e:
+        # Unsupported language — surface the common options for discovery.
+        from ..kit.translation import LanguageLexicon
+
+        return {
+            "error": str(e),
+            "supported": LanguageLexicon().level_i_languages,
+            "hint": "Use an ISO 639-1 code above, or a full NLLB code like 'fra_Latn'.",
+            "success": False,
+        }
+    except Exception as e:  # noqa: BLE001 - model load / inference failure
+        return {"error": f"Translation failed: {e}", "success": False}
+
+    return {
+        "translated_text": translated,
+        "target_language": target_language,
+        "success": True,
+    }
+
+
 # =============================================================================
 # Public API
 # =============================================================================
