@@ -7,6 +7,7 @@ a public models API. Users should use full model IDs directly.
 
 import json
 import logging
+import time
 from typing import Any, AsyncIterator, Optional
 
 from .base import (
@@ -72,8 +73,10 @@ _MODEL_CAPABILITIES: list[tuple[str, ModelCapabilities]] = [
     )),
 ]
 
-# Known model IDs for list_models()
-# These are the current Anthropic model identifiers as of April 2026
+# Fallback list used until `_fetch_models()` populates the dynamic cache (and
+# whenever the live /v1/models call fails). These are the Anthropic model IDs
+# as of April 2026; kept current enough to bootstrap, but the runtime list
+# always comes from the API once we've talked to it.
 KNOWN_MODELS = [
     "claude-haiku-4-5-20251001",
     "claude-sonnet-4-5-20250514",
@@ -82,6 +85,10 @@ KNOWN_MODELS = [
     "claude-opus-4-6",
 ]
 
+# Time-to-live for the dynamic model cache. Anthropic publishes new models
+# infrequently; an hour is plenty.
+MODEL_CACHE_TTL = 3600.0
+
 
 class AnthropicProvider(ModelProvider):
     """Anthropic API provider for Claude models."""
@@ -89,6 +96,12 @@ class AnthropicProvider(ModelProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self._client: Optional[Any] = None
+        # Dynamic model catalog populated from /v1/models on first use and
+        # whenever the cache TTL expires. Mirrors the OpenRouter pattern so
+        # the providers_models endpoint and the dashboard health pill stay
+        # in sync with Anthropic's actual offerings.
+        self._model_cache: dict[str, dict[str, Any]] = {}
+        self._cache_timestamp: float = 0.0
     
     @property
     def name(self) -> str:
@@ -345,12 +358,62 @@ class AnthropicProvider(ModelProvider):
                 return caps
         return DEFAULT_CAPABILITIES
 
+    async def _fetch_models_if_stale(self) -> None:
+        """Refresh the model cache from Anthropic's /v1/models if stale.
+
+        Leaves any prior cache intact on failure so a transient blip doesn't
+        blank the list mid-session.
+        """
+        now = time.time()
+        if self._model_cache and (now - self._cache_timestamp) < MODEL_CACHE_TTL:
+            return
+
+        page = await self.client.models.list(limit=1000)
+        # SDK returns a CursorPage with .data: list[ModelInfo]. We keep id +
+        # display_name + type + created_at — enough for picker / dashboard
+        # and forward-compatible if Anthropic adds new tiers.
+        cache: dict[str, dict[str, Any]] = {}
+        for m in getattr(page, "data", []) or []:
+            mid = getattr(m, "id", None)
+            if not mid:
+                continue
+            cache[mid] = {
+                "id": mid,
+                "display_name": getattr(m, "display_name", None),
+                "type": getattr(m, "type", None),
+                "created_at": getattr(m, "created_at", None),
+            }
+        if cache:
+            self._model_cache = cache
+            self._cache_timestamp = now
+            logger.info(f"Fetched {len(cache)} models from Anthropic")
+
     def list_models(self) -> list[str]:
-        """List known Anthropic models."""
+        """List Claude models.
+
+        Returns the dynamic cache once we've talked to /v1/models; falls
+        back to the hardcoded KNOWN_MODELS until then (so the UI has
+        something before the first network call lands).
+        """
+        if self._model_cache:
+            return list(self._model_cache.keys())
         return KNOWN_MODELS.copy()
 
+    async def fetch_models(self) -> list[dict[str, Any]]:
+        """Async hook for `/api/providers/models` — refreshes the cache if
+        stale and returns the full per-model metadata."""
+        await self._fetch_models_if_stale()
+        return list(self._model_cache.values())
+
     async def health_check(self) -> dict[str, Any]:
-        """Check if Anthropic API is reachable."""
+        """Check if Anthropic API is reachable.
+
+        Pings /v1/models — a free, no-token GET that validates auth and
+        connectivity without invoking inference. The previous implementation
+        pinged a hardcoded model ID (claude-3-5-haiku-latest) and broke
+        silently once that model was retired; this approach has no such
+        coupling.
+        """
         if not self.config.api_key:
             return {
                 "status": "not_configured",
@@ -358,16 +421,11 @@ class AnthropicProvider(ModelProvider):
             }
 
         try:
-            # Make a minimal API call to check connectivity
-            response = await self.client.messages.create(
-                model="claude-3-5-haiku-latest",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Hi"}],
-            )
+            await self._fetch_models_if_stale()
             return {
                 "status": "healthy",
-                "model": response.model,
-                "models": KNOWN_MODELS,
+                "models_available": len(self._model_cache),
+                "models": list(self._model_cache.keys())[:20],
             }
         except Exception as e:
             logger.error(f"Anthropic health check failed: {e}")
