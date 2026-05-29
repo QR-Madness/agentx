@@ -1236,14 +1236,14 @@ tasks:
     vars:
       CLUSTER: '{{.CLUSTER}}'
       REBUILD: '{{.REBUILD}}'
-      GPU:  '{{.GPU}}'
+      NVIDIA:  '{{.NVIDIA}}'
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
           echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
         else
-          OVERLAY=""
+          OVERLAY="-f docker-compose.yml"
           echo "🚀 Starting cluster {{.CLUSTER}} (no public gateway)..."
         fi
         BUILD_FLAG=""
@@ -1251,13 +1251,13 @@ tasks:
           echo "🔨 Rebuilding images..."
           BUILD_FLAG="--build"
         fi
-        if [ "{{.GPU}}" = "1" ]; then
+        if [ "{{.NVIDIA}}" = "1" ]; then
           echo "Enabling Nvidia Drivers for GPU Support (Using Nvidia Container Toolkit via Host)"
-          GPU_OVERLAY="-f docker-compose.gpu.yml"
+          NVIDIA_OVERLAY="-f docker-compose.gpu.yml"
         else
-          GPU_OVERLAY=""
+          NVIDIA_OVERLAY=""
         fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY $GPU_OVERLAY --profile production up -d $BUILD_FLAG
+        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY $NVIDIA_OVERLAY --profile production up -d $BUILD_FLAG
         echo ""
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           echo "Smoke test:"

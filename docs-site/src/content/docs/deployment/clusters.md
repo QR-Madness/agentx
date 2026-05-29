@@ -134,7 +134,8 @@ services:
 **Prerequisites** — the NVIDIA Container Toolkit on the host:
 
 ```bash
-nvidia-ctk runtime configure --runtime=docker
+# recommended to run as superuser if non-sudo doesn't work
+sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
@@ -146,8 +147,8 @@ No application config changes are needed: the app resolves its compute device fr
 (BAAI/bge-m3) and the NLLB-200 translation models onto it. Verify after start-up:
 
 ```bash
-docker compose --env-file clusters/<name>/.env -f docker-compose.gpu.yml \
-  --profile production exec api python -c "import torch; print(torch.cuda.is_available())"
+docker compose --env-file clusters/<name>/.env -f docker-compose.yml -f docker-compose.gpu.yml \
+  --profile production exec api uv run python -c "import torch; print(torch.cuda.is_available())"
 
 # Or via the API — no exec needed:
 curl -s localhost:<API_PORT>/api/health | jq .compute   # {"device":"cuda","cuda_available":true}

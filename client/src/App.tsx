@@ -17,36 +17,106 @@ import { ResizeHandles } from './layouts/ResizeHandles';
 import { showWindowControls } from './lib/platform';
 import './App.css';
 
+/**
+ * Self-contained fallback for the outermost boundary. It must render even when
+ * the crash came from a provider above it (e.g. ThemeProvider) — so it uses only
+ * inline styles and no theme tokens, app components, or context. Surfaces the
+ * stack so a blank-screen startup crash is debuggable on-device (no DevTools).
+ */
+function RootErrorFallback(error: Error) {
+  return (
+    <div
+      role="alert"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        overflow: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
+        padding: 24,
+        background: '#05070f',
+        color: '#e2e8f0',
+        font: '14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      }}
+    >
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>AgentX failed to start</h1>
+      <p style={{ margin: 0, maxWidth: 560, textAlign: 'center', color: '#94a3b8' }}>
+        {error.message || 'An unexpected error occurred during startup.'}
+      </p>
+      {error.stack && (
+        <pre
+          style={{
+            maxWidth: '100%',
+            maxHeight: '40vh',
+            overflow: 'auto',
+            margin: 0,
+            padding: 12,
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.06)',
+            color: '#cbd5e1',
+            fontSize: 12,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {error.stack}
+        </pre>
+      )}
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        style={{
+          padding: '8px 18px',
+          borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.16)',
+          background: '#8b5cf6',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}
+      >
+        Reload app
+      </button>
+    </div>
+  );
+}
+
 function App() {
   return (
-    <ServerProvider>
-      <AuthProvider>
-        <ThemeProvider>
-          <NotificationProvider>
-            <TooltipProvider>
-              <AgentProfileProvider>
-                <AlloyWorkflowProvider>
-                  <ConversationProvider>
-                    <PlansProvider>
-                      <ModalProvider>
-                        <UIChromeProvider>
-                          <ErrorBoundary>
-                            <RootLayout />
-                          </ErrorBoundary>
-                          <ModalPortal />
-                          <Toaster />
-                          {showWindowControls && <ResizeHandles />}
-                        </UIChromeProvider>
-                      </ModalProvider>
-                    </PlansProvider>
-                  </ConversationProvider>
-                </AlloyWorkflowProvider>
-              </AgentProfileProvider>
-            </TooltipProvider>
-          </NotificationProvider>
-        </ThemeProvider>
-      </AuthProvider>
-    </ServerProvider>
+    <ErrorBoundary fallback={(error) => RootErrorFallback(error)}>
+      <ServerProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <NotificationProvider>
+              <TooltipProvider>
+                <AgentProfileProvider>
+                  <AlloyWorkflowProvider>
+                    <ConversationProvider>
+                      <PlansProvider>
+                        <ModalProvider>
+                          <UIChromeProvider>
+                            <ErrorBoundary>
+                              <RootLayout />
+                            </ErrorBoundary>
+                            <ModalPortal />
+                            <Toaster />
+                            {showWindowControls && <ResizeHandles />}
+                          </UIChromeProvider>
+                        </ModalProvider>
+                      </PlansProvider>
+                    </ConversationProvider>
+                  </AlloyWorkflowProvider>
+                </AgentProfileProvider>
+              </TooltipProvider>
+            </NotificationProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </ServerProvider>
+    </ErrorBoundary>
   );
 }
 

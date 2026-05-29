@@ -6,58 +6,211 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AgentX - AI Toolbox</title>
     <style>
-      /* Boot splash — painted instantly, before the JS bundle parses, so the
-         frameless window never opens to a blank/white flash. Removed by
-         src/main.tsx once React has committed its first frame. */
+      /* Boot splash — pure CSS (no images, so it can't fail to load over the
+         dev network), painted instantly before the JS bundle parses so the
+         window never opens to a blank/white flash. Works on every platform incl.
+         Android. Removed by src/main.tsx once React commits its first frame
+         (with timer fallbacks). */
       #splash {
         position: fixed;
         inset: 0;
         z-index: 9999;
-        background: #05070f;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: opacity 0.4s ease;
+        overflow: hidden;
+        background: radial-gradient(125% 125% at 50% 28%, #0b1234 0%, #05070f 58%, #03040a 100%);
+        transition: opacity 0.45s ease;
       }
       #splash.splash-hide { opacity: 0; pointer-events: none; }
+      /* ambient glow behind the core */
+      #splash::before {
+        content: "";
+        position: absolute;
+        width: 520px;
+        height: 520px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.28), rgba(6, 182, 212, 0.1) 45%, transparent 65%);
+        filter: blur(46px);
+        animation: splash-pulse 3.4s ease-in-out infinite;
+      }
+      /* faint grid to read as a "system" backdrop */
+      #splash::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(125, 211, 252, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(125, 211, 252, 0.05) 1px, transparent 1px);
+        background-size: 42px 42px;
+        -webkit-mask: radial-gradient(circle at 50% 40%, #000 0%, transparent 70%);
+                mask: radial-gradient(circle at 50% 40%, #000 0%, transparent 70%);
+      }
       .splash-inner {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 18px;
+        gap: 26px;
       }
-      .splash-logo {
-        width: 72px;
-        height: 72px;
-        border-radius: 18px;
-        box-shadow: 0 0 44px rgba(139, 92, 246, 0.45);
+      /* rotating gradient rings around a glowing reactor core */
+      .splash-core {
+        position: relative;
+        width: 96px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .splash-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg, transparent 0 68%, #06b6d4 84%, #8b5cf6 100%);
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+                mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+        animation: splash-spin 1.4s linear infinite;
+      }
+      .splash-ring.is-inner {
+        inset: 15px;
+        background: conic-gradient(from 180deg, transparent 0 68%, #8b5cf6 84%, #06b6d4 100%);
+        animation-duration: 2.2s;
+        animation-direction: reverse;
+        opacity: 0.85;
+      }
+      .splash-orb {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 34% 30%, #a5f3fc, #06b6d4 46%, #8b5cf6 100%);
+        box-shadow: 0 0 26px rgba(6, 182, 212, 0.7), 0 0 52px rgba(139, 92, 246, 0.5);
+        animation: splash-pulse 1.6s ease-in-out infinite;
       }
       .splash-name {
-        color: #e2e8f0;
-        font: 600 20px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-        letter-spacing: 0.05em;
+        font: 700 24px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        letter-spacing: 0.42em;
+        text-indent: 0.42em; /* recenter against trailing letter-spacing */
+        background: linear-gradient(90deg, #67e8f9, #a78bfa 55%, #67e8f9);
+        background-size: 220% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: splash-shimmer 2.8s linear infinite;
       }
-      .splash-spinner {
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        border: 2.5px solid rgba(255, 255, 255, 0.12);
-        border-top-color: #06b6d4;
-        animation: splash-spin 0.8s linear infinite;
+      .splash-bar {
+        width: 134px;
+        height: 2px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .splash-bar > span {
+        display: block;
+        width: 38%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent);
+        animation: splash-scan 1.3s ease-in-out infinite;
       }
       @keyframes splash-spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .splash-spinner { animation: none; } }
+      @keyframes splash-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.85; }
+        50% { transform: scale(1.12); opacity: 1; }
+      }
+      @keyframes splash-shimmer { to { background-position: 220% 0; } }
+      @keyframes splash-scan {
+        0% { transform: translateX(-130%); }
+        100% { transform: translateX(360%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash::before, .splash-ring, .splash-orb, .splash-name, .splash-bar > span { animation: none; }
+      }
     </style>
   </head>
 
   <body>
     <div id="splash">
       <div class="splash-inner">
-        <img src="/favicon.png" alt="" class="splash-logo" />
+        <div class="splash-core">
+          <span class="splash-ring"></span>
+          <span class="splash-ring is-inner"></span>
+          <span class="splash-orb"></span>
+        </div>
         <div class="splash-name">AgentX</div>
-        <div class="splash-spinner"></div>
+        <div class="splash-bar"><span></span></div>
       </div>
     </div>
+    <script>
+      (function () {
+        // --- Pre-React fatal-error overlay -----------------------------------
+        // A React ErrorBoundary cannot catch failures that happen *before* React
+        // renders: a throw while a module is evaluated, or the bundle failing to
+        // load at all. Those leave a blank white screen with nothing in logcat.
+        // These global handlers run before the module script, so they surface
+        // such errors directly on screen (vital on mobile, where the JS console
+        // is hard to reach). Only shown while #root is still empty — a mounted
+        // app is never clobbered.
+        function showFatal(title, detail) {
+          var root = document.getElementById("root");
+          if (root && root.childElementCount > 0) return; // app mounted; ignore
+          var o = document.getElementById("fatal-overlay");
+          if (!o) {
+            o = document.createElement("div");
+            o.id = "fatal-overlay";
+            o.setAttribute("role", "alert");
+            o.style.cssText =
+              "position:fixed;inset:0;z-index:99999;overflow:auto;padding:24px;" +
+              "background:#05070f;color:#e2e8f0;" +
+              'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;';
+            o.innerHTML =
+              '<h1 style="margin:0 0 8px;font-size:18px;font-weight:600">AgentX failed to start</h1>' +
+              '<div id="fatal-list"></div>';
+            document.body.appendChild(o);
+          }
+          var line = document.createElement("pre");
+          line.style.cssText =
+            "margin:12px 0 0;padding:12px;border-radius:8px;background:rgba(255,255,255,.06);" +
+            "color:#cbd5e1;font-size:12px;white-space:pre-wrap;word-break:break-word";
+          line.textContent = title + (detail ? "\n\n" + detail : "");
+          (document.getElementById("fatal-list") || o).appendChild(line);
+        }
+        window.addEventListener(
+          "error",
+          function (e) {
+            // Resource-load failures (e.g. the module bundle) surface here in the
+            // capture phase with e.target set instead of e.message.
+            if (e && e.target && (e.target.src || e.target.href)) {
+              showFatal("Failed to load resource", String(e.target.src || e.target.href));
+              return;
+            }
+            var where = e && e.filename ? e.filename + ":" + e.lineno + ":" + e.colno : "";
+            var stack = e && e.error && e.error.stack ? e.error.stack : "";
+            showFatal(e && e.message ? e.message : "Script error", (where ? where + "\n\n" : "") + stack);
+          },
+          true,
+        );
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e && e.reason;
+          showFatal(
+            "Unhandled promise rejection: " + (r && r.message ? r.message : String(r)),
+            r && r.stack ? r.stack : "",
+          );
+        });
+
+        // --- Splash safety net --------------------------------------------
+        // The splash shows on every platform (incl. Android). main.tsx dismisses
+        // it after React's first frame (rAF + 1.5s timer). This 4s net is the
+        // last resort: remove it even if the app bundle never runs its own
+        // dismiss (e.g. a load error), so the splash can never get stuck.
+        window.setTimeout(function () {
+          var el = document.getElementById("splash");
+          if (el) {
+            el.classList.add("splash-hide");
+            window.setTimeout(function () { el.remove(); }, 450);
+          }
+        }, 4000);
+      })();
+    </script>
     <div id="root"></div>
     <div id="modal-root"></div>
     <div id="toast-root"></div>
