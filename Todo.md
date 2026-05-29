@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.3** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.4** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -226,11 +226,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.3** (proto
       (new `_validate_target`, enforced in both workflow and ad-hoc modes).
       Tests: `AdhocDelegationTest` (tests.py); `AlloyDelegationMetricsTest` still green (signature change).
 
-### 16.5 @-Mention Routing + Graph Updates
+### 16.5 @-Mention Routing + Graph Updates — shipped `[v0.21.4]`
 
-- [ ] Parse `@agent-id` from message text for implicit routing
-- [ ] Add `AgentParticipant` Neo4j node and `PARTICIPATED_IN` relationship
-- [ ] Migration job: backfill from existing `Conversation.agent_id` properties
+> Backend-only. Client @mention autocomplete/highlight (populating the existing unused
+> `UserMessage.targetAgentIds`) is the next task.
+
+- [x] Parse `@agent-id` from message text for implicit routing — new pure `agent/mentions.py`
+      (`extract_mentions` + `resolve_first_mention`; `@[\w-]+` with email/path lookbehind). Resolves
+      `@agent-id` or single-word `@name` (new `ProfileManager.get_profile_by_name`). `views.py`
+      sets `target_agent_id` from the first resolved mention (overriding selection; precedence
+      `workflow_id > @mention > target_agent_id > agent_profile_id > default`, suppressed in
+      workflows) and strips the token from the model-facing `message` only. Unmatched @tokens stay
+      as plain text. The mentioned agent joins `Session.participants` via the 16.2 hydration.
+- [x] Add `AgentParticipant` Neo4j node and `PARTICIPATED_IN` relationship — `EpisodicMemory.store_turn`
+      MERGEs `(:AgentParticipant {id:"<conv>:<agent>"})-[:PARTICIPATED_IN]->(:Conversation)` live for
+      each agent-attributed turn; constraint + index in `queries/neo4j_schemas.cypher`.
+- [x] Migration job: backfill — `queries/neo4j_migrations/0003_agent_participant_nodes.cypher`
+      (run via `task db:migrate`). Backfills from distinct **`Turn.agent_id`** (richer than the
+      original `Conversation.agent_id` note — captures every agent that spoke, not just the first).
+      Tests: `MentionRoutingTest` (tests.py), `AgentParticipantGraphTest` (tests_memory.py).
 
 ### 16.6 Ambassador Agent (dual-presentation layer) — deferred sub-phase
 

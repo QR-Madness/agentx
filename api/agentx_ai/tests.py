@@ -3423,6 +3423,47 @@ class ExplicitAgentRoutingTest(TestCase):
         self.assertIsNone(build_participants_block("alpha-agent", {}))
 
 
+class MentionRoutingTest(TestCase):
+    """Phase 16.5: @-mention parsing + name lookup for inline routing."""
+
+    def test_extract_mentions_order_dedup(self):
+        from agentx_ai.agent.mentions import extract_mentions
+        self.assertEqual(
+            extract_mentions("hi @bright-grand-fern and @Mobius, also @Mobius again"),
+            ["bright-grand-fern", "Mobius"],
+        )
+        self.assertEqual(extract_mentions("no mentions here"), [])
+
+    def test_extract_mentions_ignores_emails_and_paths(self):
+        from agentx_ai.agent.mentions import extract_mentions
+        self.assertEqual(extract_mentions("mail me at user@example.com"), [])
+        self.assertEqual(extract_mentions("see path/@thing"), [])
+
+    def test_resolve_first_mention_strips_resolved_token(self):
+        from agentx_ai.agent.mentions import resolve_first_mention
+        # Only "beta" resolves; "nope" is left in place.
+        def resolve(tok):
+            return "beta-agent" if tok == "beta" else None
+        agent_id, stripped = resolve_first_mention("hey @beta and @nope do it", resolve)
+        self.assertEqual(agent_id, "beta-agent")
+        self.assertEqual(stripped, "hey and @nope do it")
+
+    def test_resolve_first_mention_none_when_unresolved(self):
+        from agentx_ai.agent.mentions import resolve_first_mention
+        agent_id, stripped = resolve_first_mention("hello @ghost", lambda t: None)
+        self.assertIsNone(agent_id)
+        self.assertEqual(stripped, "hello @ghost")  # untouched
+
+    def test_get_profile_by_name_case_insensitive(self):
+        from agentx_ai.agent.profiles import ProfileManager
+        from agentx_ai.agent.models import AgentProfile
+        a = AgentProfile(id="1", name="Mobius", agent_id="bright-grand-fern")  # type: ignore[call-arg]
+        mgr = ProfileManager.__new__(ProfileManager)
+        mgr._profiles = {a.id: a}
+        self.assertIs(mgr.get_profile_by_name("mobius"), a)
+        self.assertIsNone(mgr.get_profile_by_name("nobody"))
+
+
 class AdhocDelegationTest(TestCase):
     """Phase 16.4: ad-hoc (non-workflow) agent-to-agent delegation."""
 

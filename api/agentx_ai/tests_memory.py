@@ -397,6 +397,25 @@ class ConversationAgentIdsTest(TestCase):
         self.assertEqual(mock_session.execute.call_args[0][1], {"conv_id": "conv-xyz"})
 
 
+class AgentParticipantGraphTest(TestCase):
+    """Phase 16.5 — store_turn records AgentParticipant + PARTICIPATED_IN in Neo4j."""
+
+    def test_store_turn_cypher_writes_agent_participant(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            EpisodicMemory().store_turn(
+                Turn(id="t", conversation_id="c1", index=0, role="assistant",
+                     content="hi", timestamp=datetime.now(timezone.utc), agent_id="beta-agent"),
+                user_id="u", channel="_global", agent_id="beta-agent",
+            )
+        cypher = mock_session.run.call_args[0][0]
+        self.assertIn("AgentParticipant", cypher)
+        self.assertIn("PARTICIPATED_IN", cypher)
+        # Guarded on the producing agent so user/tool (NULL) turns don't create nodes.
+        self.assertIn("$turn_agent_id IS NOT NULL", cypher)
+
+
 class TurnIndexPassthroughTest(TestCase):
     """Test turn_index passed correctly to tool invocation recording."""
 

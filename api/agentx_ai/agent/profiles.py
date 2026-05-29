@@ -165,6 +165,18 @@ class ProfileManager:
             None,
         )
 
+    def get_profile_by_name(self, name: str) -> Optional[AgentProfile]:
+        """Get a profile by its display name (case-insensitive exact match).
+
+        Used as the @-mention fallback (Phase 16.5) when a token isn't a known
+        agent_id — so `@Mobius` resolves as readily as `@bright-grand-fern`.
+        """
+        lowered = name.lower()
+        return next(
+            (p for p in self._profiles.values() if p.name.lower() == lowered),
+            None,
+        )
+
     def get_default_profile(self) -> Optional[AgentProfile]:
         """Get the default profile."""
         for profile in self._profiles.values():

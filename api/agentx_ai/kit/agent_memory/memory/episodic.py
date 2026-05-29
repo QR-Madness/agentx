@@ -76,6 +76,19 @@ class EpisodicMemory:
                 FOREACH (_ IN CASE WHEN prev IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (prev)-[:FOLLOWED_BY]->(t)
                 )
+
+                // Record the producing agent's participation (Phase 16.5).
+                // One AgentParticipant per (agent, conversation), maintained live.
+                WITH c
+                FOREACH (_ IN CASE WHEN $turn_agent_id IS NOT NULL THEN [1] ELSE [] END |
+                    MERGE (ap:AgentParticipant {id: $conv_id + ':' + $turn_agent_id})
+                    ON CREATE SET ap.conversation_id = $conv_id,
+                                  ap.agent_id = $turn_agent_id,
+                                  ap.user_id = $user_id,
+                                  ap.channel = $channel,
+                                  ap.first_seen = datetime()
+                    MERGE (ap)-[:PARTICIPATED_IN]->(c)
+                )
             """,
                 conv_id=turn.conversation_id,
                 turn_id=turn.id,

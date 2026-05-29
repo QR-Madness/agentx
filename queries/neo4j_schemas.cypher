@@ -24,7 +24,12 @@ FOR (t:Turn) REQUIRE t.id IS UNIQUE;
 CREATE CONSTRAINT strategy_id IF NOT EXISTS
 FOR (s:Strategy) REQUIRE s.id IS UNIQUE;
 
+// Phase 16.5: one node per (agent, conversation); id is "<conv_id>:<agent_id>"
+CREATE CONSTRAINT agent_participant_id IF NOT EXISTS
+FOR (ap:AgentParticipant) REQUIRE ap.id IS UNIQUE;
+
 // Property indexes for fast lookups
+CREATE INDEX agent_participant_agent IF NOT EXISTS FOR (ap:AgentParticipant) ON (ap.agent_id);
 CREATE INDEX entity_name IF NOT EXISTS FOR (e:Entity) ON (e.name);
 CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type);
 CREATE INDEX fact_confidence IF NOT EXISTS FOR (f:Fact) ON (f.confidence);

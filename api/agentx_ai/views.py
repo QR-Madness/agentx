@@ -796,6 +796,8 @@ async def agent_chat_stream(request):
 
     async def generate_sse():
         """Async generator that yields SSE events."""
+        # @-mention routing (16.5) may override the request's target_agent_id.
+        nonlocal target_agent_id
         import time
         import uuid
         from .agent import Agent, AgentConfig
@@ -816,6 +818,25 @@ async def agent_chat_stream(request):
         )
         profile_manager = get_profile_manager()
         agent_profile = None
+
+        # @-mention routing (Phase 16.5): an inline `@agent-id` / `@name` in the
+        # message overrides the selected agent for this turn and is stripped from
+        # the model-facing copy. Suppressed for workflow runs (the supervisor owns
+        # routing). Unmatched @tokens are left as plain text — never an error.
+        model_message = message
+        if not workflow_id:
+            from .agent.mentions import resolve_first_mention
+
+            def _resolve_mention(tok):
+                p = (profile_manager.get_profile_by_agent_id(tok)
+                     or profile_manager.get_profile_by_name(tok))
+                return p.agent_id if p else None
+
+            mentioned_id, stripped = resolve_first_mention(message, _resolve_mention)
+            if mentioned_id is not None:
+                target_agent_id = mentioned_id
+                model_message = stripped or message
+                logger.debug(f"@-mention routed turn to {mentioned_id}")
 
         # If a workflow_id is provided, the workflow's supervisor takes over
         # the request: its profile becomes the active agent_profile, and the
@@ -949,8 +970,10 @@ async def agent_chat_stream(request):
                         max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
                     )
 
-        # Cache large user messages in Redis to save context
-        message_for_context = message  # Version sent to LLM (may be truncated)
+        # Cache large user messages in Redis to save context. The model sees
+        # `model_message` (any resolved @-mention stripped, 16.5); history/memory
+        # and the cache keep the original `message`.
+        message_for_context = model_message  # Version sent to LLM (may be truncated)
         cached_message_key = None
         if len(message) > agent.config.user_message_cache_threshold:
             from .agent.user_message_storage import store_user_message
@@ -968,7 +991,7 @@ async def agent_chat_stream(request):
                 # Create truncated version with cache hint for context
                 preview_chars = agent.config.user_message_preview_chars
                 message_for_context = (
-                    f"{message[:preview_chars]}\n\n"
+                    f"{model_message[:preview_chars]}\n\n"
                     f"[USER MESSAGE CACHED - key: {cached_message_key}]\n"
                     f"Full message ({len(message):,} chars) stored in cache. "
                     f"Use read_user_message(key=\"{cached_message_key}\") to retrieve full content."
