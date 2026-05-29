@@ -22,7 +22,8 @@ import {
   MessageSquare, ChevronDown, RefreshCw,
 } from 'lucide-react';
 import {
-  useHealth, useProviders, useMCPServers, useAgentStatus, useMemoryStats,
+  useHealth, useProviders, useProvidersHealth, useMCPServers,
+  useAgentStatus, useMemoryStats,
 } from '../../lib/hooks';
 import { useConversation } from '../../contexts/ConversationContext';
 import { Button } from '../ui';
@@ -76,6 +77,13 @@ export function SystemStatusStrip() {
     useHealth(true, expanded, pollOpts);
   const { providers, loading: providersLoading, refresh: refreshProviders } =
     useProviders(pollOpts);
+  // The list endpoint only reports static "configured" status. Real
+  // reachability lives at /api/providers/health (pings each in parallel).
+  const {
+    providers: providersHealth,
+    loading: providersHealthLoading,
+    refresh: refreshProvidersHealth,
+  } = useProvidersHealth(pollOpts);
   const { servers: mcpServers, loading: mcpLoading, refresh: refreshMcp } =
     useMCPServers(pollOpts);
   const { status: agentStatus, refresh: refreshAgent } = useAgentStatus(pollOpts);
@@ -86,10 +94,14 @@ export function SystemStatusStrip() {
   const refreshAll = useCallback(() => {
     void refreshHealth();
     void refreshProviders();
+    void refreshProvidersHealth();
     void refreshMcp();
     void refreshAgent();
     if (expanded) void refreshMemory();
-  }, [refreshHealth, refreshProviders, refreshMcp, refreshAgent, refreshMemory, expanded]);
+  }, [
+    refreshHealth, refreshProviders, refreshProvidersHealth,
+    refreshMcp, refreshAgent, refreshMemory, expanded,
+  ]);
 
   // When the strip returns from off-screen, refresh once immediately —
   // otherwise users staring at a freshly-displayed Dashboard wait up to
@@ -100,7 +112,20 @@ export function SystemStatusStrip() {
     wasVisibleRef.current = visible;
   }, [visible, refreshAll]);
 
-  const providersOnline = providers.filter((p) => p.available).length;
+  // "Configured" = credentials present (list endpoint). "Healthy" = reachable
+  // right now (ping endpoint). Pill is green only when every configured
+  // provider passed its health check; warning if some failed; offline if none
+  // are configured at all.
+  const providersConfigured = providers.filter((p) => p.status === 'configured').length;
+  const providersHealthy = providers.filter(
+    (p) => p.status === 'configured' && providersHealth[p.name]?.status === 'healthy',
+  ).length;
+  const providersTone: Tone =
+    providersLoading || providersHealthLoading ? 'loading'
+    : providersConfigured === 0 ? 'offline'
+    : providersHealthy === providersConfigured ? 'online'
+    : providersHealthy > 0 ? 'warning'
+    : 'offline';
   const mcpOnline = mcpServers.filter((s) => s.status === 'connected').length;
 
   const pills: Array<{ label: string; tone: Tone; sub?: string }> = [
@@ -110,8 +135,10 @@ export function SystemStatusStrip() {
     { label: 'Redis', tone: pillTone(health?.memory?.redis?.status, healthLoading) },
     {
       label: 'Providers',
-      tone: providersLoading ? 'loading' : providersOnline > 0 ? 'online' : 'offline',
-      sub: providersLoading ? '…' : `${providersOnline}/${providers.length}`,
+      tone: providersTone,
+      sub: providersLoading || providersHealthLoading
+        ? '…'
+        : `${providersHealthy}/${providersConfigured}`,
     },
     {
       label: 'MCP',
@@ -169,15 +196,21 @@ export function SystemStatusStrip() {
               <Row k="Redis" v={health?.memory?.redis?.status ?? 'offline'} />
             </DetailGroup>
 
-            <DetailGroup icon={<Brain size={14} />} title="Providers" count={`${providersOnline}/${providers.length}`}>
+            <DetailGroup icon={<Brain size={14} />} title="Providers" count={`${providersHealthy}/${providersConfigured}`}>
               {providersLoading ? (
                 <p className="strip-empty">…</p>
               ) : providers.length === 0 ? (
                 <p className="strip-empty">None configured</p>
               ) : (
-                providers.slice(0, 4).map((p) => (
-                  <Row key={p.name} k={p.name} v={p.available ? 'available' : 'offline'} />
-                ))
+                providers.slice(0, 4).map((p) => {
+                  // Row value = the real ping result when we have one,
+                  // otherwise fall back to the configured/not_configured state.
+                  const live = providersHealth[p.name]?.status;
+                  const value = p.status === 'not_configured'
+                    ? 'not configured'
+                    : (live ?? (providersHealthLoading ? 'checking…' : 'unknown'));
+                  return <Row key={p.name} k={p.name} v={value} />;
+                })
               )}
             </DetailGroup>
 
@@ -251,7 +284,7 @@ function Row({ k, v }: { k: string; v: string | number }) {
   const tone = typeof v === 'string'
     ? (['healthy', 'available', 'connected', 'ready', 'online'].includes(v) ? 'online'
       : ['degraded', 'warning'].includes(v) ? 'warning'
-      : ['offline', 'unhealthy', 'disconnected'].includes(v) ? 'offline'
+      : ['offline', 'unhealthy', 'disconnected', 'not configured'].includes(v) ? 'offline'
       : 'neutral')
     : 'neutral';
   return (

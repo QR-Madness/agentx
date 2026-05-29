@@ -9,6 +9,7 @@ import {
   toApiError,
   HealthResponse,
   ProviderInfo,
+  ProvidersHealthResponse,
   MCPServer,
   MCPServerConfigInput,
   MCPTool,
@@ -137,6 +138,23 @@ export function useProviders(opts?: UseApiOptions) {
     opts
   );
   return { providers: data?.providers ?? [], loading, error, refresh };
+}
+
+/** Live per-provider reachability — pings each configured provider in parallel.
+ *  Use this (not useProviders) when you need to know if calls would actually succeed. */
+export function useProvidersHealth(opts?: UseApiOptions) {
+  const { data, loading, error, refresh } = useApi<ProvidersHealthResponse>(
+    () => api.checkProvidersHealth(),
+    [],
+    opts
+  );
+  return {
+    overall: data?.status,
+    providers: data?.providers ?? {},
+    loading,
+    error,
+    refresh,
+  };
 }
 
 export function useMCPServers(opts?: { pollInterval?: number }) {

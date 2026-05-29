@@ -68,8 +68,18 @@ export interface HealthResponse {
 
 export interface ProviderInfo {
   name: string;
-  available: boolean;
+  /** Whether the provider has the credentials/config to function.
+   *  Note: this is a static check; for true reachability use ProvidersHealthResponse. */
+  status: 'configured' | 'not_configured';
   models: string[];
+  error?: string;
+}
+
+/** Response of `GET /api/providers/health` — async ping of every configured provider. */
+export interface ProvidersHealthResponse {
+  /** `healthy` if all providers passed; `degraded` if any failed. */
+  status: 'healthy' | 'degraded';
+  providers: Record<string, { status: 'healthy' | 'unhealthy'; error?: string }>;
 }
 
 export interface ModelInfo {

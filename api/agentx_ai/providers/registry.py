@@ -247,18 +247,35 @@ class ProviderRegistry:
         
         return list(set(models))
     
-    async def health_check(self) -> dict[str, Any]:
-        """Check health of all configured providers."""
-        results = {}
+    async def health_check(self, per_provider_timeout: float = 4.0) -> dict[str, Any]:
+        """Check health of all configured providers.
 
-        for name in self._provider_configs:
+        Pings every provider in parallel with a per-provider timeout so a single
+        unreachable backend (e.g. LM Studio not running) can't stall the whole
+        endpoint. The dashboard polls this; with a 4 s cap the worst-case wall
+        time is ~4 s regardless of how many providers are configured.
+        """
+        import asyncio
+
+        names = list(self._provider_configs)
+
+        async def _check(name: str) -> dict[str, Any]:
             try:
                 provider = self.get_provider(name)
-                results[name] = await provider.health_check()
+                return await asyncio.wait_for(
+                    provider.health_check(),
+                    timeout=per_provider_timeout,
+                )
+            except asyncio.TimeoutError:
+                return {
+                    "status": "unhealthy",
+                    "error": f"timeout after {per_provider_timeout:.0f}s",
+                }
             except Exception as e:
-                results[name] = {"status": "error", "error": str(e)}
+                return {"status": "error", "error": str(e)}
 
-        return results
+        results = await asyncio.gather(*[_check(n) for n in names])
+        return dict(zip(names, results))
 
     async def aclose(self) -> None:
         """Close all cached provider instances, releasing their HTTP/SDK clients.

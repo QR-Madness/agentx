@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { ModelInfo, ProviderInfo } from './types';
+import type { ModelInfo, ProviderInfo, ProvidersHealthResponse } from './types';
 
 export const providersApi = {
   // === Providers ===
@@ -12,7 +12,7 @@ export const providersApi = {
     return apiRequest('/api/providers/models', { signal: AbortSignal.timeout(10_000) });
   },
 
-  async checkProvidersHealth(): Promise<Record<string, { status: string }>> {
+  async checkProvidersHealth(): Promise<ProvidersHealthResponse> {
     return apiRequest('/api/providers/health');
   },
 };
