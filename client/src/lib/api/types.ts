@@ -462,6 +462,13 @@ export interface DelegationCompleteEvent {
   status: 'success' | 'failed';
   error: string | null;
   result_preview: string;
+  // Per-delegation metrics (optional — absent from older servers).
+  tokens_input?: number;
+  tokens_output?: number;
+  duration_ms?: number;
+  cost_estimate?: number | null;
+  cost_currency?: string | null;
+  pricing_snapshot?: Record<string, unknown> | null;
 }
 
 export interface DelegationToolCallEvent {

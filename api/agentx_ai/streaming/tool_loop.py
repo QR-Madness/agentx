@@ -123,17 +123,37 @@ async def _run_delegations(
         target = args.get("agent_id", "")
         task = args.get("task", "")
         accumulated = ""
+        metrics: dict[str, Any] = {}
         async for event_str, partial in alloy_executor.delegate(
             target, task, tool_call_id=tc.id,
         ):
             yield event_str
             accumulated = partial
+            # Capture the final per-delegation metrics so they persist into
+            # the tool_result metadata (see delegation_raw below) and survive a
+            # conversation reload. We re-parse the SSE string rather than change
+            # delegate()'s (event_str, partial) yield contract, which has other
+            # consumers.
+            if event_str.startswith("event: delegation_complete"):
+                _, _, payload = event_str.partition("\n")
+                data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
+                try:
+                    done = json.loads(data_line)
+                except json.JSONDecodeError:
+                    done = {}
+                for key in (
+                    "tokens_input", "tokens_output", "duration_ms",
+                    "cost_estimate", "cost_currency", "pricing_snapshot",
+                ):
+                    if key in done:
+                        metrics[key] = done[key]
         if accumulated:
             result.delegations.append(accumulated)
         delegation_raw[tc.id] = {
             "raw_content": accumulated,
             "target_agent_id": target,
             "task": task,
+            **metrics,
         }
         # Route the delegation output through the same oversize handling
         # as a regular tool call, so a long specialist response is stored

@@ -110,6 +110,41 @@ describe('mapServerMessages', () => {
     expect(del.content).toBe('full content');
   });
 
+  it('restores per-delegation metrics from the delegation metadata blob', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"agent_id":"x","task":"t"}',
+        metadata: { tool: 'delegate_to', tool_call_id: 'd9' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: 'out',
+        metadata: {
+          tool_call_id: 'd9',
+          success: true,
+          delegation: {
+            raw_content: 'out',
+            target_agent_id: 'bold-cosmic-falcon',
+            task: 't',
+            tokens_input: 120,
+            tokens_output: 60,
+            duration_ms: 2500,
+            cost_estimate: 0.0042,
+            cost_currency: 'USD',
+          },
+        },
+      }),
+    ]);
+
+    const del = out[0] as DelegationMessage;
+    expect(del.tokensInput).toBe(120);
+    expect(del.tokensOutput).toBe(60);
+    expect(del.durationMs).toBe(2500);
+    expect(del.costEstimate).toBe(0.0042);
+    expect(del.costCurrency).toBe('USD');
+  });
+
   it('keeps an orphan tool_result as a standalone card', () => {
     const out = mapServerMessages([
       msg({ role: 'tool_result', content: 'orphan', metadata: { tool: 'search', tool_call_id: 'no-match', success: true } }),

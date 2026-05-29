@@ -414,6 +414,12 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             content: handle.content || data.result_preview,
             error: data.error ?? undefined,
             resultPreview: data.result_preview,
+            tokensInput: data.tokens_input,
+            tokensOutput: data.tokens_output,
+            costEstimate: data.cost_estimate,
+            costCurrency: data.cost_currency,
+            durationMs: data.duration_ms,
+            completedAt: new Date().toISOString(),
           });
         }
         if (key) {

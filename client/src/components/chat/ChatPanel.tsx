@@ -19,6 +19,7 @@ import {
   DatabaseZap,
   Cpu,
   X,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { RelayMenu } from './relay/RelayMenu';
@@ -40,6 +41,8 @@ import {
   stripThinkingTags,
 } from '../../lib/messages';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
+import { useModal } from '../../contexts/ModalContext';
+import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/ModelSelector';
 import { ModelPickerModal } from '../common/ModelPickerModal';
@@ -59,11 +62,28 @@ export function ChatPanel() {
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
+  const { openModal } = useModal();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
 
   // When a workflow is selected, the supervisor profile takes over.
   // Otherwise, the tab's per-tab profile (or the global active profile) is used.
+  // Most recent Alloy run in this tab — drives the "Run trace" affordance.
+  const traceRun = useMemo(
+    () => latestRun(activeTab?.messages ?? []),
+    [activeTab?.messages],
+  );
+  const openRunTrace = useCallback(() => {
+    if (!traceRun) return;
+    openModal({
+      id: 'alloy-run-trace',
+      type: 'modal',
+      component: 'alloyRunTrace',
+      size: 'full',
+      props: { runId: traceRun.id },
+    });
+  }, [traceRun, openModal]);
+
   const activeWorkflow = activeTab?.workflowId
     ? getWorkflowById(activeTab.workflowId)
     : null;
@@ -436,6 +456,18 @@ export function ChatPanel() {
             conversationId={activeTab.sessionId}
             flashSignal={checkpointSignal}
           />
+          {traceRun && (
+            <button
+              type="button"
+              className="run-trace-badge"
+              onClick={openRunTrace}
+              title="View Alloy run trace"
+            >
+              <ArrowRightLeft size={12} />
+              <span>Trace</span>
+              <span className="run-trace-count">{traceRun.totals.count}</span>
+            </button>
+          )}
         </div>
       </div>
 

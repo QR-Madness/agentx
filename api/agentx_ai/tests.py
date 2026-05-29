@@ -3206,3 +3206,181 @@ class ChatRunsEndpointTest(MockRedisTestBase):
     def test_post_rejected(self):
         resp = self.client.post("/api/agent/chat/runs")
         self.assertEqual(resp.status_code, 405)
+
+
+class AlloyDelegationMetricsTest(TestCase):
+    """Per-delegation metrics: emitted on `delegation_complete` (executor) and
+    persisted into the `delegation_raw` carrier (tool_loop). Backs the Alloy
+    run-trace UI."""
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    @staticmethod
+    def _parse_complete(events):
+        for ev in events:
+            # delegate() yields (sse_string, partial_text) tuples.
+            sse = ev[0] if isinstance(ev, tuple) else ev
+            if sse.startswith("event: delegation_complete\n"):
+                data_line = sse.split("data: ", 1)[1].rstrip()
+                return json.loads(data_line)
+        return None
+
+    def test_run_delegations_captures_metrics_into_raw(self):
+        """_run_delegations parses delegation_complete and merges metrics into
+        delegation_raw, which becomes the persisted tool_result metadata."""
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+
+        class FakeExec:
+            async def delegate(self, target, task, *, tool_call_id):
+                payload = {
+                    "delegation_id": "abc",
+                    "target_agent_id": target,
+                    "tool_call_id": tool_call_id,
+                    "status": "success",
+                    "error": None,
+                    "result_preview": "done",
+                    "tokens_input": 120,
+                    "tokens_output": 60,
+                    "duration_ms": 1234.5,
+                    "cost_estimate": 0.004,
+                    "cost_currency": "USD",
+                    "pricing_snapshot": {"x": 1},
+                }
+                yield f"event: delegation_complete\ndata: {json.dumps(payload)}\n\n", "done"
+
+        tc = MagicMock()
+        tc.id = "tc1"
+        tc.name = "delegate_to"
+        tc.arguments = {"agent_id": "spec", "task": "do it"}
+
+        result = ToolLoopResult()
+        delegation_messages: list = []
+        delegation_raw: dict = {}
+        # Bare object => no handle_oversized_tool_output attribute (skips that path).
+        agent = object()
+        asyncio.run(self._drain(_run_delegations(
+            [tc], FakeExec(), agent,
+            result=result,
+            delegation_messages=delegation_messages,
+            delegation_raw=delegation_raw,
+        )))
+
+        raw = delegation_raw["tc1"]
+        self.assertEqual(raw["raw_content"], "done")
+        self.assertEqual(raw["target_agent_id"], "spec")
+        self.assertEqual(raw["tokens_input"], 120)
+        self.assertEqual(raw["tokens_output"], 60)
+        self.assertEqual(raw["duration_ms"], 1234.5)
+        self.assertEqual(raw["cost_estimate"], 0.004)
+        self.assertEqual(raw["cost_currency"], "USD")
+        self.assertEqual(raw["pricing_snapshot"], {"x": 1})
+
+    def _make_executor(self):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        from agentx_ai.alloy.models import Workflow, WorkflowMember, MemberRole
+
+        workflow = Workflow(
+            id="wf",
+            name="WF",
+            supervisor_agent_id="sup",
+            members=[
+                WorkflowMember(agent_id="sup", role=MemberRole.SUPERVISOR),
+                WorkflowMember(agent_id="spec", role=MemberRole.SPECIALIST),
+            ],
+        )
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,  # skips goal creation + turn storage
+        )
+        session = SimpleNamespace(id="sess")
+        return AlloyExecutor(workflow, supervisor, session, max_delegation_depth=3)
+
+    def test_delegate_emits_metrics_on_complete(self):
+        """delegate() yields token/duration/cost on the delegation_complete event."""
+        from types import SimpleNamespace
+
+        executor = self._make_executor()
+
+        profile = SimpleNamespace(
+            name="Spec", default_model="m", agent_id="spec", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+
+        async def fake_stream(*args, **kwargs):
+            kwargs["result"].tokens_in = 120
+            kwargs["result"].tokens_out = 60
+            kwargs["result"].content = "spec output"
+            yield 'event: chunk\ndata: {"content": "spec output"}\n\n'
+
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(list_profiles=lambda: [profile])), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost",
+                   return_value={"cost_total": 0.004, "currency": "USD", "pricing_snapshot": {"r": 1}}):
+            events = asyncio.run(self._drain(
+                executor.delegate("spec", "do it", tool_call_id="tc1")
+            ))
+
+        done = self._parse_complete(events)
+        self.assertIsNotNone(done)
+        self.assertEqual(done["status"], "success")
+        self.assertEqual(done["tokens_input"], 120)
+        self.assertEqual(done["tokens_output"], 60)
+        self.assertIsInstance(done["duration_ms"], float)
+        self.assertEqual(done["cost_estimate"], 0.004)
+        self.assertEqual(done["cost_currency"], "USD")
+        self.assertEqual(done["pricing_snapshot"], {"r": 1})
+
+    def test_delegate_cost_none_when_pricing_unavailable(self):
+        """A pricing-less model (estimate_cost -> None) yields null cost but
+        still reports tokens + duration."""
+        from types import SimpleNamespace
+
+        executor = self._make_executor()
+        profile = SimpleNamespace(
+            name="Spec", default_model="m", agent_id="spec", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+
+        async def fake_stream(*args, **kwargs):
+            kwargs["result"].tokens_in = 10
+            kwargs["result"].tokens_out = 5
+            kwargs["result"].content = "out"
+            yield 'event: chunk\ndata: {"content": "out"}\n\n'
+
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(list_profiles=lambda: [profile])), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(self._drain(
+                executor.delegate("spec", "do it", tool_call_id="tc2")
+            ))
+
+        done = self._parse_complete(events)
+        self.assertEqual(done["tokens_input"], 10)
+        self.assertIsNone(done["cost_estimate"])
+        self.assertIsNone(done["cost_currency"])
+        self.assertIsNone(done["pricing_snapshot"])

@@ -125,6 +125,11 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           raw_content?: string;
           target_agent_id?: string;
           task?: string;
+          tokens_input?: number;
+          tokens_output?: number;
+          duration_ms?: number;
+          cost_estimate?: number | null;
+          cost_currency?: string | null;
         };
         const targetAgentId =
           delegationMeta.target_agent_id ||
@@ -142,6 +147,13 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           status: success ? 'completed' : 'failed',
           content: delegationMeta.raw_content || result?.content || '',
           resultPreview: result?.content,
+          // Metrics persisted by the backend (Phase 1/2). toolEvents are not
+          // persisted, so a restored delegation shows rollup metrics only.
+          tokensInput: delegationMeta.tokens_input,
+          tokensOutput: delegationMeta.tokens_output,
+          durationMs: delegationMeta.duration_ms,
+          costEstimate: delegationMeta.cost_estimate,
+          costCurrency: delegationMeta.cost_currency,
         });
         continue;
       }

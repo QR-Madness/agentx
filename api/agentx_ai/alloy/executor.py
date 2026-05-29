@@ -11,6 +11,7 @@ the supervisor's tool result.
 
 import json
 import logging
+import time
 from typing import AsyncGenerator, Optional
 from uuid import uuid4
 
@@ -167,8 +168,9 @@ class AlloyExecutor:
         accumulated = ""
         status = "success"
         error: Optional[str] = None
+        loop_result = ToolLoopResult()
+        t0 = time.perf_counter()
         try:
-            loop_result = ToolLoopResult()
             async for event_str in streaming_tool_loop(
                 provider, model_id, messages, tools, specialist,
                 temperature=profile.temperature,
@@ -222,6 +224,16 @@ class AlloyExecutor:
             accumulated = accumulated or f"[delegation failed: {error}]"
         finally:
             self.depth -= 1
+        duration_ms = (time.perf_counter() - t0) * 1000
+
+        # ------- cost estimate (reuses the supervisor done-event path) -------
+        cost: Optional[dict] = None
+        try:
+            from ..providers.pricing import estimate_cost
+            caps = provider.get_capabilities(model_id)
+            cost = estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out)
+        except Exception as e:
+            logger.warning(f"Failed to estimate delegation cost: {e}")
 
         # ------- record result in shared channel + close goal -------
         # Store the full accumulated specialist output (no pre-truncation):
@@ -267,6 +279,12 @@ class AlloyExecutor:
             "status": status,
             "error": error,
             "result_preview": accumulated[:500],
+            "tokens_input": loop_result.tokens_in,
+            "tokens_output": loop_result.tokens_out,
+            "duration_ms": duration_ms,
+            "cost_estimate": cost["cost_total"] if cost else None,
+            "cost_currency": cost["currency"] if cost else None,
+            "pricing_snapshot": cost["pricing_snapshot"] if cost else None,
         }), accumulated
 
     # ------------------------------------------------------------------

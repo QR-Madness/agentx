@@ -6,6 +6,11 @@
 
 **NOTE**: UI must be highly responsive between PC and mobile devices.
 
+**Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
+editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
+Bump the version when a unit of work completes — patch for additive/back-compat features, and
+bump `protocol_version` only on breaking API changes. Current: **0.20.1** (protocol 1).
+
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
 ---
@@ -157,7 +162,11 @@
 - [ ] Human-in-the-loop checkpoint nodes
 - [ ] Async delegation (specialist runs in background; supervisor continues other work)
 - [ ] "User as supervisor" mode (no LLM supervisor — user manually invokes specialists from the chat UI)
-- [ ] Tracing / replay UI for an Alloy run
+- [x] Tracing / replay UI for an Alloy run — shipped 2026-05-28 `[v0.20.1]` (static inspection, not re-run).
+  - Backend: `delegation_complete` now emits per-delegation `tokens_input/output`, `duration_ms`, `cost_estimate`, `cost_currency`, `pricing_snapshot` (`alloy/executor.py`, reuses `loop_result` tokens + `providers/pricing.estimate_cost`). Metrics persist into the `delegation` blob via `_run_delegations` → `delegation_raw` (`streaming/tool_loop.py`) so restored runs keep them; no `views.py` change (rides the existing carrier).
+  - Client: `DelegationMessage`/`DelegationCompleteEvent` widened with the metrics + `completedAt`; `useChatStream` stamps them; `mapServerMessages` restores them. New pure selector `lib/alloyTrace.ts` (`groupRunsFromMessages`/`latestRun`) groups the depth-1 fan-out into runs with token/cost/wall-clock totals. New full-screen `components/alloy/AlloyRunTraceModal.tsx` (registered `alloyRunTrace`), opened from a "Trace" badge in the `ChatPanel` header when the tab has delegations.
+  - Tests: `AlloyDelegationMetricsTest` (executor emit + `None`-cost path + `_run_delegations` persistence), `alloyTrace.test.ts` (grouping/totals/wall-clock), `mapServerMessages` metric round-trip.
+  - Deferred: per-tool timing isn't persisted (executor stores one rollup turn per delegation) → restored runs show delegation-level metrics only; supervisor done-event cost intentionally excludes specialist tokens (separate rollup task).
 - [ ] Tool-output sharing across agents (specialist's raw tool outputs visible to supervisor, not just final text)
 - [ ] Per-workflow tool isolation (specialist inherits a *subset* of supervisor tools, not all)
 
@@ -469,6 +478,27 @@ Currently our model selection and selector are a very solid foundation but are j
 - [x] Split the monolithic `lib/api.ts` (2,497 lines, 89 methods) → `lib/api/` folder: `types.ts` (DTOs), `errors.ts`, `version.ts`, `core.ts` (request layer + stream registry), 17 domain modules (`health`/`auth`/`providers`/`mcp`/`agent`/`relay`/`toolOutput`/`translation`/`prompts`/`promptTemplates`/`profiles`/`alloy`/`config`/`memory`/`jobs`/`history`/`streaming`), and `index.ts` facade that spreads them into `api` + re-exports the full public surface. Import specifier `'.../lib/api'` unchanged (folder barrel) → zero consumer changes. `facade.test.ts` guards 89-method parity.
 - [x] Split `ConversationContext` (599 lines) into concern hooks under `contexts/conversation/`: `useConversationTabs` (tab state + persistence + CRUD — source of truth), `useTabMessages`, `useTabSettings`, `useConversationHistory`, and a pure `mapServerMessages` (extracted + unit-tested). The provider (`ConversationContext.tsx`, now 133 lines) composes them; public API (`useConversation`/`ConversationProvider`/`ConversationTab`) unchanged → zero consumer edits.
 - [x] Adopt the new primitives repo-wide + fix the settings styling regression. `button-primary`/`secondary`/`ghost` → `<Button variant>` across all consumers (memory detail/list panels, modals, pages, JobsPanel, TranslationPanel, settings sections); the only remaining `button-*` references are `ui/Button.tsx` (the variant map) + its test. The `unified-settings/` sections (`Providers`/`Models`/`Appearance`/`MemoryOverview`/`Planner`/`Prompts`) now use `<SectionHeader>`/`<Card>`/`<Badge>`/`<Input>`/`<Button>` and route save/load feedback through `useNotify()` toasts (dropped the inline `configSaveMessage`/`save-message` banners). **Regression fixed:** the pass-1 deletion of `SettingsPanel.css` had orphaned the live provider/config/empty-state/section-header classes (`defs=0`) — provider icon tiles lost their gradient and the dark SVGs went near-invisible. Re-added + elevated (Aurora gradient tiles, glass hover) the provider/config/context-limits CSS in `UnifiedSettings.css`, and the generic `.section-header`/`.section-description`/`.empty-state` fallbacks in `base.css`. Smoke tests for `ProvidersSection`/`ModelsSection` added. **Deliberately left:** `.stat-badge` (distinct larger stats pill — `ax-badge` would shrink it), other `.card` divs (the `Card` primitive is class-identical, no visual gain), and `btn`/`icon-btn`-family bespoke buttons; repo-wide px→`--space-*` inside established `.css` files stays deferred (high churn, low value).
+
+### 18.12: Wave 3 — Start / Conversation UX + README
+
+> UX polish pass on the entry surfaces (Start page, conversation + profile selectors)
+> plus a README trim. Largely client-side.
+
+- [ ] **Recent conversations on the Start page** — surface recent chats on Start with a
+      persisted collapsable state (remember expanded/collapsed across reloads). Reuse the
+      recent-chats storage (`storage.ts` `recentChats`) + `useConversationHistory`.
+- [ ] **Renamable conversations** — let users rename a conversation/tab (inline edit). Tab
+      rename plumbing already exists in `ConversationContext` (`renameTab`); surface it on the
+      Start/history surfaces and persist the title server-side where possible.
+- [ ] **Improve the conversation selector** — better history/conversation picker UX
+      (`ConversationHistoryDropdown`): search/filter, clearer recency grouping, hit-regions.
+- [ ] **Improve the agent profile selector** — refine `AgentSelectorDropdown` (and the profile
+      switch UX): clearer active/default state, search when many profiles, comfortable hit-regions.
+- [ ] **Splash screen** — add an app splash/loading screen (Tauri startup + web) shown while the
+      client boots / connects to a server, themed to the cosmic dark design.
+- [ ] **Trim the README** — reduce it to: the banner, links, action statuses/badges, and a list
+      of the important libraries/tools the project uses. Remove everything that's now covered on
+      the docs site (don't duplicate docs-site content).
 
 ---
 

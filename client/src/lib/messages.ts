@@ -149,6 +149,15 @@ export interface DelegationMessage extends BaseMessage {
   resultPreview?: string;
   /** Specialist tool calls made during the delegation, rendered inside the card. */
   toolEvents?: DelegationToolEvent[];
+  // Per-delegation metrics (populated on completion; persisted into the
+  // delegate_to tool_result metadata so they survive a reload). `timestamp`
+  // is the delegation start; `completedAt` is stamped on completion.
+  tokensInput?: number;
+  tokensOutput?: number;
+  costEstimate?: number | null;
+  costCurrency?: string | null;
+  durationMs?: number;
+  completedAt?: string;
 }
 
 /** Agent handoff message - displayed when an agent transfers conversation to another */
