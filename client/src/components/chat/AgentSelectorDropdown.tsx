@@ -1,10 +1,15 @@
 /**
- * AgentSelectorDropdown — Select and manage agent profiles
- * Renders via portal for proper z-index handling
+ * AgentSelectorDropdown — pick the agent profile or Alloy workflow for the
+ * active conversation.
+ *
+ * Segmented layout: an [ Agents | Workflows ] toggle over a single full-height
+ * scroll list (so neither list is ever squished), a per-segment search, a
+ * context footer, and ↑/↓/Enter keyboard nav. Opens on whichever segment is
+ * currently active.
  */
 
-import { useMemo, useState } from 'react';
-import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon, Crown, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, Settings, Check, Plus, Workflow as WorkflowIcon, Crown, Search } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
@@ -13,8 +18,10 @@ import { getAvatarIcon } from '../../lib/avatars';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './AgentSelectorDropdown.css';
 
-// Show the profile search field only once the list is long enough to warrant it.
-const PROFILE_SEARCH_THRESHOLD = 6;
+// Show a segment's search field only once its list is long enough to warrant it.
+const SEARCH_THRESHOLD = 6;
+
+type Segment = 'agents' | 'workflows';
 
 interface AgentSelectorDropdownProps {
   isOpen: boolean;
@@ -28,66 +35,89 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
   const { activeTab, setActiveTabWorkflow } = useConversation();
   const { openModal } = useModal();
 
-  const [profileQuery, setProfileQuery] = useState('');
-  const showProfileSearch = profiles.length > PROFILE_SEARCH_THRESHOLD;
-  const filteredProfiles = useMemo(() => {
-    const q = profileQuery.trim().toLowerCase();
-    if (!q) return profiles;
-    return profiles.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      (p.defaultModel ?? '').toLowerCase().includes(q),
-    );
-  }, [profiles, profileQuery]);
-
-  const handleSelect = (profileId: string) => {
-    setActiveProfile(profileId);
-    onClose();
-  };
-
-  const handleEdit = (e: React.MouseEvent, profileId: string) => {
-    e.stopPropagation();
-    openModal({
-      id: 'profile-editor',
-      type: 'modal',
-      component: 'unifiedProfileEditor',
-      size: 'full',
-      props: { initialProfileId: profileId },
-    });
-    onClose();
-  };
-
-  const handleCreateNew = () => {
-    openModal({
-      id: 'profile-editor',
-      type: 'modal',
-      component: 'unifiedProfileEditor',
-      size: 'full',
-      props: { isNew: true },
-    });
-    onClose();
-  };
-
   const activeWorkflowId = activeTab?.workflowId ?? null;
   const activeWorkflow = activeWorkflowId
     ? workflows.find(w => w.id === activeWorkflowId) ?? null
     : null;
-  const supervisorProfile = activeWorkflow
-    ? profiles.find(p => p.agentId === activeWorkflow.supervisorAgentId) ?? null
-    : null;
+  const supervisorAgentId = activeWorkflow?.supervisorAgentId ?? null;
 
-  const handleSelectWorkflow = (workflowId: string | null) => {
-    setActiveTabWorkflow(workflowId);
+  const [segment, setSegment] = useState<Segment>(activeWorkflowId ? 'workflows' : 'agents');
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(0);
+
+  // On each open, land on the active context and reset transient UI state.
+  useEffect(() => {
+    if (!isOpen) return;
+    setSegment(activeWorkflowId ? 'workflows' : 'agents');
+    setQuery('');
+    setHighlight(0);
+  }, [isOpen, activeWorkflowId]);
+
+  const switchSegment = (next: Segment) => {
+    setSegment(next);
+    setQuery('');
+    setHighlight(0);
+  };
+
+  // ---- agents ----
+  const agentsLocked = activeWorkflow !== null; // agent is dictated by the workflow
+  const filteredProfiles = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return profiles;
+    return profiles.filter(p =>
+      p.name.toLowerCase().includes(q) || (p.defaultModel ?? '').toLowerCase().includes(q),
+    );
+  }, [profiles, query]);
+
+  // ---- workflows ----
+  const filteredWorkflows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return workflows;
+    return workflows.filter(w => w.name.toLowerCase().includes(q));
+  }, [workflows, query]);
+
+  const handleSelect = (profileId: string) => { setActiveProfile(profileId); onClose(); };
+  const handleSelectWorkflow = (workflowId: string | null) => { setActiveTabWorkflow(workflowId); onClose(); };
+
+  const handleEdit = (e: React.MouseEvent, profileId: string) => {
+    e.stopPropagation();
+    openModal({ id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full', props: { initialProfileId: profileId } });
+    onClose();
+  };
+  const handleCreateNew = () => {
+    openModal({ id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full', props: { isNew: true } });
+    onClose();
+  };
+  const handleManageWorkflows = () => {
+    openModal({ id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' });
     onClose();
   };
 
-  const handleManageWorkflows = () => {
-    openModal({
-      id: 'alloy-factory',
-      type: 'modal',
-      component: 'alloyFactory',
-      size: 'full',
-    });
-    onClose();
+  // Flat list of keyboard-selectable rows for the active segment.
+  const items = useMemo<Array<() => void>>(() => {
+    if (segment === 'agents') {
+      if (agentsLocked) return [];
+      return filteredProfiles.map(p => () => handleSelect(p.id));
+    }
+    return [() => handleSelectWorkflow(null), ...filteredWorkflows.map(w => () => handleSelectWorkflow(w.id))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment, agentsLocked, filteredProfiles, filteredWorkflows]);
+
+  useEffect(() => { setHighlight(h => Math.min(h, Math.max(0, items.length - 1))); }, [items.length]);
+
+  const showSearch = segment === 'agents'
+    ? profiles.length > SEARCH_THRESHOLD
+    : workflows.length > SEARCH_THRESHOLD;
+
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (isOpen && showSearch) searchRef.current?.focus(); }, [isOpen, segment, showSearch]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, items.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); items[highlight]?.(); }
+    else if (e.key === 'ArrowLeft') { switchSegment('agents'); }
+    else if (e.key === 'ArrowRight') { switchSegment('workflows'); }
   };
 
   return (
@@ -97,127 +127,143 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       anchorRef={anchorRef}
       preferredSide="top"
       align="start"
-      estimatedHeight={540}
+      estimatedHeight={440}
     >
-    <div className="agent-selector-dropdown">
-      <div className="agent-selector-header">
-        <Bot size={14} />
-        <span>{activeWorkflow ? 'Supervisor' : 'Select Agent'}</span>
-        {activeWorkflow ? (
-          <Crown size={12} className="header-icon" />
-        ) : (
-          <ChevronUp size={14} className="header-icon" />
+      <div className="agent-selector-dropdown" onKeyDown={onKeyDown}>
+        {/* Segmented control */}
+        <div className="agent-selector-segments" role="tablist">
+          <button
+            role="tab"
+            aria-selected={segment === 'agents'}
+            className={`agent-selector-segment ${segment === 'agents' ? 'active' : ''}`}
+            onClick={() => switchSegment('agents')}
+          >
+            <Bot size={13} />
+            Agents
+          </button>
+          <button
+            role="tab"
+            aria-selected={segment === 'workflows'}
+            className={`agent-selector-segment ${segment === 'workflows' ? 'active' : ''}`}
+            onClick={() => switchSegment('workflows')}
+          >
+            <WorkflowIcon size={13} />
+            Workflows
+            {activeWorkflow && <Crown size={11} className="segment-active-dot" />}
+          </button>
+        </div>
+
+        {/* Per-segment search */}
+        {showSearch && (
+          <div className="agent-selector-search">
+            <Search size={13} />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={segment === 'agents' ? 'Search agents…' : 'Search workflows…'}
+              aria-label={segment === 'agents' ? 'Search agents' : 'Search workflows'}
+            />
+          </div>
         )}
-      </div>
 
-      {activeWorkflow ? (
-        <>
-          <div className="agent-selector-list">
-            {supervisorProfile ? (
-              <div className="agent-selector-item locked active">
-                <div className="agent-item-avatar">
-                  {(() => {
-                    const SupAvatar = getAvatarIcon(supervisorProfile.avatar);
-                    return <SupAvatar size={16} />;
-                  })()}
-                </div>
-                <div className="agent-item-info">
-                  <span className="agent-item-name">{supervisorProfile.name}</span>
-                  <span className="agent-item-model">
-                    {supervisorProfile.defaultModel || 'Default model'}
-                  </span>
-                </div>
-                <Crown size={12} className="agent-item-check" />
-              </div>
-            ) : (
-              <div className="agent-selector-item locked">
-                <div className="agent-item-avatar">
-                  <Bot size={16} />
-                </div>
-                <div className="agent-item-info">
-                  <span className="agent-item-name">{activeWorkflow.supervisorAgentId}</span>
-                  <span className="agent-item-model">Supervisor profile not found</span>
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="agent-selector-locked-hint">
-            The agent is set by the active workflow. Switch workflow to "No workflow" to choose a different agent.
-          </div>
-        </>
-      ) : (
-        <>
-          {showProfileSearch && (
-            <div className="agent-selector-search">
-              <Search size={13} />
-              <input
-                type="text"
-                value={profileQuery}
-                onChange={(e) => setProfileQuery(e.target.value)}
-                placeholder="Search agents…"
-                aria-label="Search agents"
-              />
-            </div>
-          )}
-          <div className="agent-selector-list">
-            {filteredProfiles.length === 0 ? (
-              <div className="agent-selector-empty">No agents match “{profileQuery}”.</div>
-            ) : filteredProfiles.map(profile => {
-              const AvatarIcon = getAvatarIcon(profile.avatar);
-              const isActive = profile.id === activeProfile?.id;
-              return (
-                <div
-                  key={profile.id}
-                  className={`agent-selector-item ${isActive ? 'active' : ''}`}
-                  onClick={() => handleSelect(profile.id)}
-                >
-                  <div className="agent-item-avatar">
-                    <AvatarIcon size={16} />
-                  </div>
-                  <div className="agent-item-info">
-                    <span className="agent-item-name">
-                      {profile.name}
-                      {profile.isDefault && <span className="agent-item-badge">default</span>}
-                    </span>
-                    <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
-                  </div>
-                  {isActive && <Check size={14} className="agent-item-check" />}
-                  <button
-                    className="agent-item-edit"
-                    onClick={(e) => handleEdit(e, profile.id)}
-                    title="Edit profile"
-                  >
-                    <Settings size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+        {/* Single scroll list */}
+        <div className="agent-selector-list" role="listbox">
+          {segment === 'agents'
+            ? renderAgents()
+            : renderWorkflows()}
+        </div>
 
-          <div className="agent-selector-footer">
+        {/* Context footer */}
+        <div className="agent-selector-footer">
+          {segment === 'agents' ? (
             <button className="agent-create-button" onClick={handleCreateNew}>
               <Plus size={14} />
               <span>Create New Agent</span>
             </button>
-          </div>
-        </>
-      )}
-
-      <div className="agent-selector-section-divider" />
-
-      <div className="agent-selector-header">
-        <WorkflowIcon size={14} />
-        <span>Alloy Workflow</span>
+          ) : (
+            <button className="agent-create-button" onClick={handleManageWorkflows}>
+              <Settings size={14} />
+              <span>Manage Workflows…</span>
+            </button>
+          )}
+        </div>
       </div>
+    </DropdownPortal>
+  );
 
-      <div className="agent-selector-list">
-        <div
-          className={`agent-selector-item ${activeWorkflowId === null ? 'active' : ''}`}
-          onClick={() => handleSelectWorkflow(null)}
-        >
-          <div className="agent-item-avatar" style={{ background: 'transparent', border: '1px dashed var(--border-color)' }}>
-            <Bot size={14} />
+  function renderAgents() {
+    if (agentsLocked) {
+      return (
+        <>
+          <div className="agent-selector-locked-hint">
+            Agent is set by the active workflow. Switch to <strong>Workflows → No workflow</strong> to choose one.
           </div>
+          {profiles.map(profile => {
+            const AvatarIcon = getAvatarIcon(profile.avatar);
+            const isSupervisor = profile.agentId === supervisorAgentId;
+            return (
+              <div key={profile.id} className={`agent-selector-item locked ${isSupervisor ? 'active' : ''}`}>
+                <div className="agent-item-avatar"><AvatarIcon size={15} /></div>
+                <div className="agent-item-info">
+                  <span className="agent-item-name">
+                    {profile.name}
+                    {isSupervisor && <span className="agent-item-badge">supervisor</span>}
+                  </span>
+                  <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
+                </div>
+                {isSupervisor && <Crown size={13} className="agent-item-check" />}
+              </div>
+            );
+          })}
+        </>
+      );
+    }
+
+    if (filteredProfiles.length === 0) {
+      return <div className="agent-selector-empty">No agents match “{query}”.</div>;
+    }
+    return filteredProfiles.map((profile, i) => {
+      const AvatarIcon = getAvatarIcon(profile.avatar);
+      const isActive = profile.id === activeProfile?.id;
+      return (
+        <div
+          key={profile.id}
+          role="option"
+          aria-selected={isActive}
+          className={`agent-selector-item ${isActive ? 'active' : ''} ${i === highlight ? 'kb-active' : ''}`}
+          onClick={() => handleSelect(profile.id)}
+          onMouseEnter={() => setHighlight(i)}
+        >
+          <div className="agent-item-avatar"><AvatarIcon size={15} /></div>
+          <div className="agent-item-info">
+            <span className="agent-item-name">
+              {profile.name}
+              {profile.isDefault && <span className="agent-item-badge">default</span>}
+            </span>
+            <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
+          </div>
+          {isActive && <Check size={14} className="agent-item-check" />}
+          <button className="agent-item-edit" onClick={(e) => handleEdit(e, profile.id)} title="Edit profile">
+            <Settings size={12} />
+          </button>
+        </div>
+      );
+    });
+  }
+
+  function renderWorkflows() {
+    return (
+      <>
+        <div
+          role="option"
+          aria-selected={activeWorkflowId === null}
+          className={`agent-selector-item ${activeWorkflowId === null ? 'active' : ''} ${highlight === 0 ? 'kb-active' : ''}`}
+          onClick={() => handleSelectWorkflow(null)}
+          onMouseEnter={() => setHighlight(0)}
+        >
+          <div className="agent-item-avatar agent-item-avatar-ghost"><Bot size={14} /></div>
           <div className="agent-item-info">
             <span className="agent-item-name">No workflow</span>
             <span className="agent-item-model">Single-agent chat</span>
@@ -225,17 +271,23 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
           {activeWorkflowId === null && <Check size={14} className="agent-item-check" />}
         </div>
 
-        {workflows.map(w => {
+        {filteredWorkflows.length === 0 && query.trim() !== '' && (
+          <div className="agent-selector-empty">No workflows match “{query}”.</div>
+        )}
+
+        {filteredWorkflows.map((w, i) => {
           const specialistCount = w.members.filter(m => m.role === 'specialist').length;
+          const idx = i + 1; // row 0 is "No workflow"
           return (
             <div
               key={w.id}
-              className={`agent-selector-item ${activeWorkflowId === w.id ? 'active' : ''}`}
+              role="option"
+              aria-selected={activeWorkflowId === w.id}
+              className={`agent-selector-item ${activeWorkflowId === w.id ? 'active' : ''} ${idx === highlight ? 'kb-active' : ''}`}
               onClick={() => handleSelectWorkflow(w.id)}
+              onMouseEnter={() => setHighlight(idx)}
             >
-              <div className="agent-item-avatar">
-                <WorkflowIcon size={14} />
-              </div>
+              <div className="agent-item-avatar"><WorkflowIcon size={14} /></div>
               <div className="agent-item-info">
                 <span className="agent-item-name">{w.name}</span>
                 <span className="agent-item-model">
@@ -246,15 +298,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
             </div>
           );
         })}
-      </div>
-
-      <div className="agent-selector-footer">
-        <button className="agent-create-button" onClick={handleManageWorkflows}>
-          <Settings size={14} />
-          <span>Manage Workflows…</span>
-        </button>
-      </div>
-    </div>
-    </DropdownPortal>
-  );
+      </>
+    );
+  }
 }

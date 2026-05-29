@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.0** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.1** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -514,6 +514,13 @@ Currently our model selection and selector are a very solid foundation but are j
       hit-regions, Enter-opens-first-result.
 - [x] **Improve the agent profile selector** — `AgentSelectorDropdown`: search/filter (shown when
       >6 profiles), default badge + clearer active state. Selection/workflow-lock behavior unchanged.
+  - [x] **Redesign `[v0.21.1]`** — the stacked two-list layout cut the Workflows section to ~one card
+        (two `flex:1` lists fighting under a fixed `max-height`). Rebuilt as **segmented tabs**
+        ([ Agents | Workflows ]) over a **single** full-height scroll list (per-segment search,
+        context footer, ↑/↓/←/→/Enter keyboard nav, opens on the active segment). Compact two-line
+        rows (26px avatars, tighter padding); panel `max-height: min(460px, 70vh)` so it never
+        overflows a short window. Workflow-lock semantics preserved (Agents tab shows a hint +
+        highlighted supervisor when a workflow is active).
 - [x] **Splash screen** — instant static splash in `index.html` (cosmic bg + logo + spinner,
       painted before the JS bundle parses), faded out in `main.tsx` after React's first frame with a
       ~400ms minimum. Note: a native window `backgroundColor` is **not** in this Tauri version's

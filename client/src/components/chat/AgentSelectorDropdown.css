@@ -4,8 +4,8 @@
 
 /* Positioning is owned by DropdownPortal; this rule covers visuals only. */
 .agent-selector-dropdown {
-  width: 280px;
-  max-height: 540px;
+  width: 300px;
+  max-height: min(460px, 70vh);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -14,6 +14,42 @@
   flex-direction: column;
   overflow: hidden;
   animation: slideUp 0.15s ease-out;
+}
+
+/* Segmented control */
+.agent-selector-segments {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+.agent-selector-segment {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.agent-selector-segment:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.agent-selector-segment.active {
+  color: var(--text-primary);
+  background: rgba(139, 92, 246, 0.14);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+.segment-active-dot {
+  color: #f5c451;
 }
 
 @keyframes slideUp {
@@ -58,25 +94,29 @@
 .agent-selector-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.625rem 0.75rem;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.agent-selector-item:hover {
+.agent-selector-item:hover,
+.agent-selector-item.kb-active {
   background: var(--bg-hover);
 }
 
 .agent-selector-item.active {
   background: rgba(139, 92, 246, 0.12);
 }
+.agent-selector-item.active.kb-active {
+  background: rgba(139, 92, 246, 0.18);
+}
 
 .agent-item-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   background: var(--gradient-aurora);
   display: flex;
   align-items: center;
@@ -85,6 +125,12 @@
   font-weight: 600;
   font-size: 0.875rem;
   flex-shrink: 0;
+}
+
+.agent-item-avatar-ghost {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
 }
 
 .agent-item-info {
