@@ -820,9 +820,11 @@ async def agent_chat_stream(request):
         agent_profile = None
 
         # @-mention routing (Phase 16.5): an inline `@agent-id` / `@name` in the
-        # message overrides the selected agent for this turn and is stripped from
-        # the model-facing copy. Suppressed for workflow runs (the supervisor owns
-        # routing). Unmatched @tokens are left as plain text — never an error.
+        # message overrides the selected agent for this turn. The mention is left
+        # in the message verbatim — it reads as natural addressing ("@Mobius, how
+        # are you?") and the agent knows its own identity from the system prompt;
+        # stripping it would leave a dangling fragment. Suppressed for workflow
+        # runs. Unmatched @tokens are plain text — never an error.
         model_message = message
         if not workflow_id:
             from .agent.mentions import resolve_first_mention
@@ -832,10 +834,9 @@ async def agent_chat_stream(request):
                      or profile_manager.get_profile_by_name(tok))
                 return p.agent_id if p else None
 
-            mentioned_id, stripped = resolve_first_mention(message, _resolve_mention)
+            mentioned_id, _ = resolve_first_mention(message, _resolve_mention)
             if mentioned_id is not None:
                 target_agent_id = mentioned_id
-                model_message = stripped or message
                 logger.debug(f"@-mention routed turn to {mentioned_id}")
 
         # If a workflow_id is provided, the workflow's supervisor takes over

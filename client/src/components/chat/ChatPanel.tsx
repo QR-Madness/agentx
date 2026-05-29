@@ -308,10 +308,14 @@ export function ChatPanel() {
   const closeMention = () =>
     setMention({ open: false, query: '', span: null, highlight: 0 });
 
-  // Insert the picked agent's slug; the backend (16.5) parses it to route.
-  const pickMention = (agentId: string) => {
+  // Insert the picked agent's display name (friendly, shown verbatim in the
+  // textarea). The backend (16.5) resolves a single-token @name to its agent.
+  // Fall back to the agent_id slug only when the name isn't a single routable
+  // token (e.g. contains a space) so routing always works.
+  const pickMention = (profile: { name: string; agentId: string }) => {
     if (!mention.span) return;
-    const { text, caret } = applyMention(input, mention.span, agentId);
+    const token = /^[\w-]+$/.test(profile.name) ? profile.name : profile.agentId;
+    const { text, caret } = applyMention(input, mention.span, token);
     setInput(text);
     closeMention();
     requestAnimationFrame(() => {
@@ -427,7 +431,7 @@ export function ChatPanel() {
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const picked = mentionItems[mention.highlight];
-        if (picked) pickMention(picked.agentId);
+        if (picked) pickMention(picked);
         return;
       }
       if (e.key === 'Escape') {
@@ -755,7 +759,7 @@ export function ChatPanel() {
             highlight={mention.highlight}
             anchorRef={textareaRef}
             onHover={(i) => setMention(m => ({ ...m, highlight: i }))}
-            onPick={(p) => pickMention(p.agentId)}
+            onPick={(p) => pickMention(p)}
             onClose={closeMention}
           />
           {isTyping ? (
