@@ -5,13 +5,24 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2, Radio } from 'lucide-react';
+import { Clock, Search, Trash2, MessageSquare, X, Download, Loader2, Radio, Pencil } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useNotify } from '../../contexts/NotificationContext';
 import { orphanedRuns } from '../../contexts/conversation/orphanedRuns';
 import { api, type ActiveChatRun } from '../../lib/api';
+import { getDisplayTitle, setTitleOverride } from '../../lib/conversationTitles';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './ConversationHistoryDropdown.css';
+
+/** Bucket a date into a coarse recency group for section labelling. */
+function recencyBucket(dateStr: string | null): 'Today' | 'Yesterday' | 'This week' | 'Older' {
+  if (!dateStr) return 'Older';
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return 'This week';
+  return 'Older';
+}
 
 interface ConversationHistoryDropdownProps {
   isOpen: boolean;
@@ -21,7 +32,7 @@ interface ConversationHistoryDropdownProps {
 
 export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: ConversationHistoryDropdownProps) {
   const {
-    tabs, activeTabId, switchTab, closeTab,
+    tabs, activeTabId, switchTab, closeTab, renameTab,
     serverConversations, isLoadingHistory, restoreConversation, refreshHistory,
     deleteConversation, deleteServerConversation, resumeRun,
   } = useConversation();
@@ -30,6 +41,11 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [runs, setRuns] = useState<ActiveChatRun[]>([]);
+  // Inline rename: `editingId` is a tab id or a conversation_id; `renameTick`
+  // forces a re-render after a server-conversation override is written.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [, setRenameTick] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Refresh history + detached runs + focus search when opened. Fetched on open
@@ -147,6 +163,41 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
     }
   };
 
+  const startRename = (e: React.MouseEvent, id: string, currentTitle: string) => {
+    e.stopPropagation();
+    setEditingId(id);
+    setDraftTitle(currentTitle);
+  };
+
+  // Commit an inline rename. Open tabs go through `renameTab`; server
+  // conversations get a client-side title override.
+  const commitRename = (kind: 'tab' | 'server') => {
+    if (editingId) {
+      const next = draftTitle.trim();
+      if (next) {
+        if (kind === 'tab') renameTab(editingId, next);
+        else { setTitleOverride(editingId, next); setRenameTick(t => t + 1); }
+      }
+    }
+    setEditingId(null);
+  };
+
+  const renameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, kind: 'tab' | 'server') => {
+    if (e.key === 'Enter') { e.preventDefault(); commitRename(kind); }
+    else if (e.key === 'Escape') { e.preventDefault(); setEditingId(null); }
+  };
+
+  // Group past conversations by coarse recency for sub-section labels.
+  const pastByBucket = useMemo(() => {
+    const order: Array<'Today' | 'Yesterday' | 'This week' | 'Older'> = ['Today', 'Yesterday', 'This week', 'Older'];
+    const groups = new Map<string, typeof pastConversations>();
+    for (const c of pastConversations) {
+      const b = recencyBucket(c.last_message_at);
+      (groups.get(b) ?? groups.set(b, []).get(b)!).push(c);
+    }
+    return order.filter(b => groups.has(b)).map(b => [b, groups.get(b)!] as const);
+  }, [pastConversations]);
+
   const totalCount = filteredTabs.length + pastConversations.length + liveRuns.length;
 
   return (
@@ -174,6 +225,12 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter opens the first visible result (open tab, else past conv).
+            if (e.key !== 'Enter') return;
+            if (filteredTabs.length > 0) handleSelect(filteredTabs[0].id);
+            else if (pastConversations.length > 0) handleRestore(e as unknown as React.MouseEvent, pastConversations[0].conversation_id);
+          }}
           placeholder="Search conversations..."
         />
         {searchQuery && (
@@ -221,13 +278,31 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
               <div
                 key={tab.id}
                 className={`history-item ${tab.id === activeTabId ? 'active' : ''}`}
-                onClick={() => handleSelect(tab.id)}
+                onClick={() => editingId === tab.id ? undefined : handleSelect(tab.id)}
               >
                 <div className="history-item-icon">
                   <MessageSquare size={14} />
                 </div>
                 <div className="history-item-info">
-                  <span className="history-item-title">{tab.title}</span>
+                  {editingId === tab.id ? (
+                    <input
+                      className="history-item-rename"
+                      value={draftTitle}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setDraftTitle(e.target.value)}
+                      onBlur={() => commitRename('tab')}
+                      onKeyDown={(e) => renameKeyDown(e, 'tab')}
+                      aria-label="Rename conversation"
+                    />
+                  ) : (
+                    <span
+                      className="history-item-title"
+                      onDoubleClick={(e) => startRename(e, tab.id, tab.title)}
+                    >
+                      {tab.title}
+                    </span>
+                  )}
                   <span className="history-item-meta">
                     {tab.messages.length} messages · {formatDate(tab.lastMessageAt)}
                   </span>
@@ -239,6 +314,13 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
                     </div>
                   ) : (
                     <>
+                      <button
+                        className="history-item-action"
+                        onClick={(e) => startRename(e, tab.id, tab.title)}
+                        title="Rename"
+                      >
+                        <Pencil size={12} />
+                      </button>
                       <button
                         className="history-item-action"
                         onClick={(e) => handleClose(e, tab.id)}
@@ -261,47 +343,77 @@ export function ConversationHistoryDropdown({ isOpen, onClose, anchorRef }: Conv
           </>
         )}
 
-        {/* Past Conversations Section (from server) */}
-        {pastConversations.length > 0 && (
-          <>
-            <div className="history-section-label">Past Conversations</div>
-            {pastConversations.map(conv => (
-              <div
-                key={conv.conversation_id}
-                className="history-item history-item-server"
-                onClick={(e) => handleRestore(e, conv.conversation_id)}
-              >
-                <div className="history-item-icon">
-                  <Download size={14} />
+        {/* Past Conversations Section (from server), grouped by recency */}
+        {pastByBucket.map(([bucket, convs]) => (
+          <div key={bucket}>
+            <div className="history-section-label">{bucket}</div>
+            {convs.map(conv => {
+              const displayTitle = getDisplayTitle(conv.conversation_id, conv.title);
+              return (
+                <div
+                  key={conv.conversation_id}
+                  className="history-item history-item-server"
+                  onClick={(e) => editingId === conv.conversation_id ? undefined : handleRestore(e, conv.conversation_id)}
+                >
+                  <div className="history-item-icon">
+                    <Download size={14} />
+                  </div>
+                  <div className="history-item-info">
+                    {editingId === conv.conversation_id ? (
+                      <input
+                        className="history-item-rename"
+                        value={draftTitle}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setDraftTitle(e.target.value)}
+                        onBlur={() => commitRename('server')}
+                        onKeyDown={(e) => renameKeyDown(e, 'server')}
+                        aria-label="Rename conversation"
+                      />
+                    ) : (
+                      <span
+                        className="history-item-title"
+                        onDoubleClick={(e) => startRename(e, conv.conversation_id, displayTitle)}
+                      >
+                        {displayTitle}
+                      </span>
+                    )}
+                    <span className="history-item-meta">
+                      {conv.message_count} messages · {formatDate(conv.last_message_at)}
+                    </span>
+                    {conv.preview && (
+                      <span className="history-item-preview">{conv.preview}</span>
+                    )}
+                  </div>
+                  <div className="history-item-actions">
+                    {restoringId === conv.conversation_id || deletingId === conv.conversation_id ? (
+                      <div className="history-item-loading">
+                        <Loader2 size={12} className="spin" />
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          className="history-item-action"
+                          onClick={(e) => startRename(e, conv.conversation_id, displayTitle)}
+                          title="Rename"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          className="history-item-action history-item-action-danger"
+                          onClick={(e) => handleDeleteServerConversation(e, conv.conversation_id, displayTitle)}
+                          title="Delete conversation"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="history-item-info">
-                  <span className="history-item-title">{conv.title}</span>
-                  <span className="history-item-meta">
-                    {conv.message_count} messages · {formatDate(conv.last_message_at)}
-                  </span>
-                  {conv.preview && (
-                    <span className="history-item-preview">{conv.preview}</span>
-                  )}
-                </div>
-                <div className="history-item-actions">
-                  {restoringId === conv.conversation_id || deletingId === conv.conversation_id ? (
-                    <div className="history-item-loading">
-                      <Loader2 size={12} className="spin" />
-                    </div>
-                  ) : (
-                    <button
-                      className="history-item-action history-item-action-danger"
-                      onClick={(e) => handleDeleteServerConversation(e, conv.conversation_id, conv.title)}
-                      title="Delete conversation"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </>
-        )}
+              );
+            })}
+          </div>
+        ))}
 
         {/* Loading indicator */}
         {isLoadingHistory && pastConversations.length === 0 && filteredTabs.length === 0 && (

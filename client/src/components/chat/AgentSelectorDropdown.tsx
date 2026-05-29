@@ -3,7 +3,8 @@
  * Renders via portal for proper z-index handling
  */
 
-import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon, Crown } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Bot, Settings, Check, Plus, ChevronUp, Workflow as WorkflowIcon, Crown, Search } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
@@ -11,6 +12,9 @@ import { useModal } from '../../contexts/ModalContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './AgentSelectorDropdown.css';
+
+// Show the profile search field only once the list is long enough to warrant it.
+const PROFILE_SEARCH_THRESHOLD = 6;
 
 interface AgentSelectorDropdownProps {
   isOpen: boolean;
@@ -23,6 +27,17 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
   const { workflows } = useAlloyWorkflow();
   const { activeTab, setActiveTabWorkflow } = useConversation();
   const { openModal } = useModal();
+
+  const [profileQuery, setProfileQuery] = useState('');
+  const showProfileSearch = profiles.length > PROFILE_SEARCH_THRESHOLD;
+  const filteredProfiles = useMemo(() => {
+    const q = profileQuery.trim().toLowerCase();
+    if (!q) return profiles;
+    return profiles.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.defaultModel ?? '').toLowerCase().includes(q),
+    );
+  }, [profiles, profileQuery]);
 
   const handleSelect = (profileId: string) => {
     setActiveProfile(profileId);
@@ -132,25 +147,41 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
         </>
       ) : (
         <>
+          {showProfileSearch && (
+            <div className="agent-selector-search">
+              <Search size={13} />
+              <input
+                type="text"
+                value={profileQuery}
+                onChange={(e) => setProfileQuery(e.target.value)}
+                placeholder="Search agents…"
+                aria-label="Search agents"
+              />
+            </div>
+          )}
           <div className="agent-selector-list">
-            {profiles.map(profile => {
+            {filteredProfiles.length === 0 ? (
+              <div className="agent-selector-empty">No agents match “{profileQuery}”.</div>
+            ) : filteredProfiles.map(profile => {
               const AvatarIcon = getAvatarIcon(profile.avatar);
+              const isActive = profile.id === activeProfile?.id;
               return (
                 <div
                   key={profile.id}
-                  className={`agent-selector-item ${profile.id === activeProfile?.id ? 'active' : ''}`}
+                  className={`agent-selector-item ${isActive ? 'active' : ''}`}
                   onClick={() => handleSelect(profile.id)}
                 >
                   <div className="agent-item-avatar">
                     <AvatarIcon size={16} />
                   </div>
                   <div className="agent-item-info">
-                    <span className="agent-item-name">{profile.name}</span>
+                    <span className="agent-item-name">
+                      {profile.name}
+                      {profile.isDefault && <span className="agent-item-badge">default</span>}
+                    </span>
                     <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
                   </div>
-                  {profile.id === activeProfile?.id && (
-                    <Check size={14} className="agent-item-check" />
-                  )}
+                  {isActive && <Check size={14} className="agent-item-check" />}
                   <button
                     className="agent-item-edit"
                     onClick={(e) => handleEdit(e, profile.id)}

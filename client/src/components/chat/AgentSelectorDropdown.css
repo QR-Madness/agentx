@@ -102,6 +102,49 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.agent-item-badge {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent-primary, var(--cosmic-cyan));
+  background: var(--bg-elevated);
+  border-radius: 999px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+/* Profile search */
+.agent-selector-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.375rem 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+}
+.agent-selector-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.agent-selector-empty {
+  padding: 0.75rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-align: center;
 }
 
 .agent-item-model {

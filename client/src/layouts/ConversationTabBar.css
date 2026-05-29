@@ -79,6 +79,22 @@
   text-align: left;
 }
 
+/* Inline rename */
+.tab-button.tab-editing {
+  cursor: text;
+}
+.tab-title-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--cosmic-cyan, var(--border-color));
+  border-radius: 4px;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 1px 4px;
+  outline: none;
+}
+
 /* Streaming indicator */
 .tab-streaming {
   width: 6px;

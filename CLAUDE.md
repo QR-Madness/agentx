@@ -317,4 +317,4 @@ Each agent profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon"):
 
 ## Project Status
 
-Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~30% — Agent Alloy v1 shipped (supervisor + specialist delegation). Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.20.2 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.
+Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~30% — Agent Alloy v1 shipped (supervisor + specialist delegation). Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.21.0 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.

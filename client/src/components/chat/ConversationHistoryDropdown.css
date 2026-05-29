@@ -183,6 +183,19 @@
   color: var(--text-tertiary);
 }
 
+/* Inline rename input (tabs + server conversations) */
+.history-item-rename {
+  width: 100%;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--accent-primary, var(--border-color));
+  border-radius: 4px;
+  padding: 1px 5px;
+  outline: none;
+}
+
 /* Action buttons container */
 .history-item-actions {
   display: flex;

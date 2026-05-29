@@ -20,6 +20,7 @@ import {
 } from '../../lib/storage';
 import { api, type ConversationSummary } from '../../lib/api';
 import { mapServerMessages } from './mapServerMessages';
+import { getTitleOverride } from '../../lib/conversationTitles';
 
 interface UseConversationHistoryArgs {
   activeServer: ServerConfig | null;
@@ -82,7 +83,10 @@ export function useConversationHistory({
     const response = await api.getConversationMessages(conversationId);
     const messages = mapServerMessages(response.messages);
 
-    const title = messages.find(m => m.type === 'user')?.content.slice(0, 40) || 'Restored Conversation';
+    const derived = messages.find(m => m.type === 'user')?.content.slice(0, 40) || 'Restored Conversation';
+    const fallbackTitle = derived.length >= 40 ? derived + '...' : derived;
+    // A client-side rename of this past conversation takes precedence.
+    const title = getTitleOverride(conversationId) ?? fallbackTitle;
     const now = new Date().toISOString();
 
     // Recover the last known context-window snapshot from persisted metadata so
@@ -105,7 +109,7 @@ export function useConversationHistory({
 
     const newTab: ConversationTab = {
       id: generateTabId(),
-      title: title.length >= 40 ? title + '...' : title,
+      title,
       sessionId: conversationId,
       profileId: null,
       workflowId: null,

@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.20.2** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.0** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -493,26 +493,34 @@ Currently our model selection and selector are a very solid foundation but are j
       fixed drag strip + `WindowControls`, gated on `isTauri`/`showWindowControls`) rendered in
       both early-return branches.
 
-### 18.12: Wave 3 — Start / Conversation UX + README
+### 18.12: Wave 3 — Start / Conversation UX + README `[v0.21.0]`
 
 > UX polish pass on the entry surfaces (Start page, conversation + profile selectors)
-> plus a README trim. Largely client-side.
+> plus a README trim. Client-side.
 
-- [ ] **Recent conversations on the Start page** — surface recent chats on Start with a
-      persisted collapsable state (remember expanded/collapsed across reloads). Reuse the
-      recent-chats storage (`storage.ts` `recentChats`) + `useConversationHistory`.
-- [ ] **Renamable conversations** — let users rename a conversation/tab (inline edit). Tab
-      rename plumbing already exists in `ConversationContext` (`renameTab`); surface it on the
-      Start/history surfaces and persist the title server-side where possible.
-- [ ] **Improve the conversation selector** — better history/conversation picker UX
-      (`ConversationHistoryDropdown`): search/filter, clearer recency grouping, hit-regions.
-- [ ] **Improve the agent profile selector** — refine `AgentSelectorDropdown` (and the profile
-      switch UX): clearer active/default state, search when many profiles, comfortable hit-regions.
-- [ ] **Splash screen** — add an app splash/loading screen (Tauri startup + web) shown while the
-      client boots / connects to a server, themed to the cosmic dark design.
-- [ ] **Trim the README** — reduce it to: the banner, links, action statuses/badges, and a list
-      of the important libraries/tools the project uses. Remove everything that's now covered on
-      the docs site (don't duplicate docs-site content).
+- [x] **Recent conversations on the Start page** — Start now shows a collapsible "Recent
+      Conversations" list (open tabs + server history, deduped/sorted, capped 8) with persisted
+      collapse state (`agentx:startRecentsCollapsed`); refreshes history on mount. Sourced from
+      `useConversation()` — the old `storage.ts` `recentChats` helpers were **dead code** (never
+      called), so they weren't used. `pages/StartPage.tsx`.
+- [x] **Renamable conversations** — client-side rename (no server endpoint). New
+      `lib/conversationTitles.ts` (per-server `conversation_id → title` override map +
+      `getDisplayTitle`). Inline rename: double-click a tab (`ConversationTabBar`) or a row /
+      pencil action in `ConversationHistoryDropdown` (open tabs via `renameTab`, past convs via
+      `setTitleOverride`). Restored tabs seed their title from the override. Tests:
+      `conversationTitles.test.ts`.
+- [x] **Improve the conversation selector** — `ConversationHistoryDropdown`: recency grouping
+      (Today / Yesterday / This week / Older), `getDisplayTitle` applied, rename actions, larger
+      hit-regions, Enter-opens-first-result.
+- [x] **Improve the agent profile selector** — `AgentSelectorDropdown`: search/filter (shown when
+      >6 profiles), default badge + clearer active state. Selection/workflow-lock behavior unchanged.
+- [x] **Splash screen** — instant static splash in `index.html` (cosmic bg + logo + spinner,
+      painted before the JS bundle parses), faded out in `main.tsx` after React's first frame with a
+      ~400ms minimum. Note: a native window `backgroundColor` is **not** in this Tauri version's
+      window schema, so a brief pre-webview-paint flash on cold open remains (HTML splash covers the
+      rest); revisit if Tauri exposes the key.
+- [x] **Trim the README** — `Readme.md` reduced to banner + badges + a "Built With" table + docs
+      link; Features/Quick-Start/Architecture/Dev prose removed (now docs-site only).
 
 ---
 
