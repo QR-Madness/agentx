@@ -19,6 +19,7 @@ import {
   MemoryFactPatch,
   MemoryEntityPatch,
   MemoryStats,
+  UsageMetrics,
   CheckpointsResponse,
   EntityGraph,
   ConsolidateResult,
@@ -290,6 +291,14 @@ export function useMemoryStats() {
     []
   );
   return { stats: data, loading, error, refresh };
+}
+
+export function useUsageMetrics(days = 14) {
+  const { data, loading, error, refresh } = useApi<UsageMetrics>(
+    () => api.getUsageMetrics(days),
+    [days]
+  );
+  return { usage: data, loading, error, refresh };
 }
 
 export function useCheckpoints(conversationId: string | null | undefined) {

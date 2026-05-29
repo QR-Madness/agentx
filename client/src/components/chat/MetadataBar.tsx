@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Zap, Clock, Cpu, User, DollarSign } from 'lucide-react';
 import { fetchModelsOnce } from '../common/ModelSelector';
+import { formatCost, formatLatency, getModelShortName } from '../../lib/format';
 import './MetadataBar.css';
 
 export interface MetadataBarProps {
@@ -16,21 +17,6 @@ export interface MetadataBarProps {
   costCurrency?: string;
   latencyMs?: number;
   agentName?: string;
-}
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-};
-
-function formatCost(amount: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOLS[currency] ?? '';
-  const suffix = symbol ? '' : ` ${currency}`;
-  if (amount < 0.0001) return `<${symbol}0.0001${suffix}`;
-  if (amount < 0.01) return `${symbol}${amount.toFixed(4)}${suffix}`;
-  if (amount < 1) return `${symbol}${amount.toFixed(3)}${suffix}`;
-  return `${symbol}${amount.toFixed(2)}${suffix}`;
 }
 
 interface DerivedCost {
@@ -98,11 +84,6 @@ export function MetadataBar({
     return null;
   }
 
-  const formatLatency = (ms: number): string => {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
-  };
-
   const formatTokens = (): string | null => {
     if (tokensInput !== undefined && tokensOutput !== undefined) {
       return `${tokensInput} in / ${tokensOutput} out`;
@@ -111,12 +92,6 @@ export function MetadataBar({
       return `${tokensUsed} tokens`;
     }
     return null;
-  };
-
-  const getModelShortName = (modelName: string): string => {
-    // Extract just the model name from paths like "anthropic/claude-3-sonnet"
-    const parts = modelName.split('/');
-    return parts[parts.length - 1];
   };
 
   const tokenDisplay = formatTokens();

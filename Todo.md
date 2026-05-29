@@ -200,10 +200,26 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.8** (proto
 
 ### 18.x Open / Deferred
 
-- [ ] **Dashboard token + turn metrics** (18.5) — UI deferred; data layer ready. Assistant turns
-      carry `model` + a `metadata` JSONB (tokens/cost/latency) in `conversation_logs`, so a dashboard
-      card can aggregate via one `SELECT model, token_count, metadata FROM conversation_logs`
-      (`idx_logs_timestamp` covers "today"). No further backend work needed.
+- [x] **Dashboard redesign** (clean/mean/powerful) — shipped `[v0.21.10]`. Dropped the two
+      4-card status grids + maintenance banner for a slim `SystemStatusStrip` of
+      colored pills (API · Neo4j · PG · Redis · Providers · MCP · Agent) with a `Details`
+      toggle that expands the full subsystem breakdown inline (same hooks; same data).
+      `UsageMetricsSection` is now the hero: added a **Projected Month** KPI tile
+      (client-side MTD × days-in-month / days-elapsed), swapped the daily chart for a
+      dual-axis recharts `ComposedChart` (tokens bars + cost line), and added side-by-side
+      **Top Models** and **Per-Agent** leaderboard tables. Backend: `usage_metrics` view
+      gained a `by_agent` aggregation (`GROUP BY COALESCE(agent_id,'_default')`); type +
+      OpenAPI + endpoints doc updated. Agent display names resolved via
+      `useAgentProfile().profiles` (slug → name), fallback to slug / `Default agent`.
+- [x] **Dashboard token + turn metrics** (18.5) — shipped `[v0.21.9]`. New read-only
+      `GET /api/metrics/usage?days=` endpoint (`views.usage_metrics`) aggregates assistant turns from
+      `conversation_logs` (`metadata` JSONB → tokens/cost/latency, `idx_logs_timestamp` window) into
+      totals + by-model + daily series, with graceful `unavailable` degradation. Client adds
+      `metricsApi.getUsageMetrics` + `useUsageMetrics` and a Dashboard **Usage & Cost** section
+      (`components/dashboard/UsageMetricsSection.tsx`) with summary tiles + recharts bar/area charts
+      (7/14/30-day toggle). Shared formatters extracted to `lib/format.ts` (reused by `MetadataBar`).
+      Note: the earlier "no further backend work needed" assessment was inaccurate — `/api/memory/stats`
+      only counts Neo4j nodes, so the aggregation endpoint had to be added.
 - [ ] **Extraction eval-harness follow-ups** (18.6):
   - [ ] Procedural-memory eval cases (tool-usage/strategy learning) — once consolidation exercises that path
   - [ ] Snapshot/restore instead of `--wipe`, once memory export/import lands (see Backlog)

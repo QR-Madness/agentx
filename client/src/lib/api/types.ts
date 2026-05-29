@@ -688,6 +688,43 @@ export interface MemoryStats {
   unavailable?: boolean;  // Set when databases are offline
 }
 
+/** Aggregated token/cost/latency usage from conversation_logs (GET /api/metrics/usage). */
+export interface UsageMetrics {
+  totals: {
+    turns: number;
+    tokens_input: number;
+    tokens_output: number;
+    tokens_total: number;
+    cost_total: number;
+    cost_currency: string;
+    avg_latency_ms: number;
+  };
+  by_model: Array<{
+    model: string;
+    turns: number;
+    tokens_input: number;
+    tokens_output: number;
+    tokens_total: number;
+    cost_total: number;
+  }>;
+  by_agent: Array<{
+    agent_id: string;       // Docker-style slug, or '_default' when null
+    turns: number;
+    tokens_input: number;
+    tokens_output: number;
+    tokens_total: number;
+    cost_total: number;
+  }>;
+  daily: Array<{
+    date: string;        // YYYY-MM-DD
+    turns: number;
+    tokens_total: number;
+    cost_total: number;
+  }>;
+  days: number;
+  unavailable?: boolean;  // Set when databases are offline
+}
+
 // === Checkpoints (model-authored conversation anchors) ===
 
 export interface Checkpoint {

@@ -80,6 +80,7 @@ urlpatterns = [
     path("memory/facts/<str:fact_id>", views.memory_fact_detail, name="memory-fact-detail"),
     path("memory/strategies", views.memory_strategies, name="memory-strategies"),
     path("memory/stats", views.memory_stats, name="memory-stats"),
+    path("metrics/usage", views.usage_metrics, name="usage-metrics"),
     path("memory/checkpoints", views.memory_checkpoints, name="memory-checkpoints"),
     path("memory/user-history", views.memory_user_history, name="memory-user-history"),
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),

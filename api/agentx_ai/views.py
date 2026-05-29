@@ -3627,6 +3627,165 @@ def memory_stats(request):
 
 
 @csrf_exempt
+def usage_metrics(request):
+    """
+    GET /api/metrics/usage?days=14 - Aggregate token/cost/latency usage.
+
+    Reads assistant turns from PostgreSQL ``conversation_logs`` and returns
+    overall totals, a per-model breakdown, and a daily time series for the
+    last ``days`` days (default 14, clamped 1-90). Token and cost figures are
+    pulled from the ``metadata`` JSONB written per turn, falling back to the
+    ``token_count`` column. Degrades gracefully (zeros + unavailable) when the
+    database is offline.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        days = int(request.GET.get('days', 14))
+    except (TypeError, ValueError):
+        days = 14
+    days = max(1, min(days, 90))
+
+    empty = {
+        "totals": {
+            "turns": 0, "tokens_input": 0, "tokens_output": 0,
+            "tokens_total": 0, "cost_total": 0.0, "cost_currency": "USD",
+            "avg_latency_ms": 0.0,
+        },
+        "by_model": [],
+        "by_agent": [],
+        "daily": [],
+        "days": days,
+    }
+
+    try:
+        from sqlalchemy import text
+        from .kit.agent_memory.connections import get_postgres_session
+
+        # Token/cost expressions reused across queries. tokens fall back to the
+        # token_count column when the metadata keys are absent.
+        tokens_in = "COALESCE((metadata->>'tokens_input')::int, 0)"
+        tokens_out = "COALESCE((metadata->>'tokens_output')::int, 0)"
+        tokens_total = (
+            "COALESCE((metadata->>'tokens_input')::int, 0) "
+            "+ COALESCE((metadata->>'tokens_output')::int, 0) "
+            "+ CASE WHEN metadata ? 'tokens_input' THEN 0 ELSE COALESCE(token_count, 0) END"
+        )
+        cost = "COALESCE((metadata->>'cost_estimate')::float, 0)"
+        latency = "(metadata->>'latency_ms')::float"
+
+        with get_postgres_session() as session:
+            totals_row = session.execute(text(f"""
+                SELECT
+                    COUNT(*) AS turns,
+                    SUM({tokens_in}) AS tokens_input,
+                    SUM({tokens_out}) AS tokens_output,
+                    SUM({tokens_total}) AS tokens_total,
+                    SUM({cost}) AS cost_total,
+                    AVG({latency}) AS avg_latency_ms,
+                    MAX(metadata->>'cost_currency') AS cost_currency
+                FROM conversation_logs
+                WHERE role = 'assistant'
+                  AND timestamp >= NOW() - (:days || ' days')::interval
+            """), {"days": days}).mappings().first()
+
+            by_model_rows = session.execute(text(f"""
+                SELECT
+                    COALESCE(model, 'unknown') AS model,
+                    COUNT(*) AS turns,
+                    SUM({tokens_in}) AS tokens_input,
+                    SUM({tokens_out}) AS tokens_output,
+                    SUM({tokens_total}) AS tokens_total,
+                    SUM({cost}) AS cost_total
+                FROM conversation_logs
+                WHERE role = 'assistant'
+                  AND timestamp >= NOW() - (:days || ' days')::interval
+                GROUP BY COALESCE(model, 'unknown')
+                ORDER BY cost_total DESC, tokens_total DESC
+            """), {"days": days}).mappings().all()
+
+            by_agent_rows = session.execute(text(f"""
+                SELECT
+                    COALESCE(agent_id, '_default') AS agent_id,
+                    COUNT(*) AS turns,
+                    SUM({tokens_in}) AS tokens_input,
+                    SUM({tokens_out}) AS tokens_output,
+                    SUM({tokens_total}) AS tokens_total,
+                    SUM({cost}) AS cost_total
+                FROM conversation_logs
+                WHERE role = 'assistant'
+                  AND timestamp >= NOW() - (:days || ' days')::interval
+                GROUP BY COALESCE(agent_id, '_default')
+                ORDER BY cost_total DESC, tokens_total DESC
+            """), {"days": days}).mappings().all()
+
+            daily_rows = session.execute(text(f"""
+                SELECT
+                    to_char(date_trunc('day', timestamp), 'YYYY-MM-DD') AS date,
+                    COUNT(*) AS turns,
+                    SUM({tokens_total}) AS tokens_total,
+                    SUM({cost}) AS cost_total
+                FROM conversation_logs
+                WHERE role = 'assistant'
+                  AND timestamp >= NOW() - (:days || ' days')::interval
+                GROUP BY date_trunc('day', timestamp)
+                ORDER BY date_trunc('day', timestamp)
+            """), {"days": days}).mappings().all()
+
+        return JsonResponse({
+            "totals": {
+                "turns": int(totals_row["turns"] or 0),
+                "tokens_input": int(totals_row["tokens_input"] or 0),
+                "tokens_output": int(totals_row["tokens_output"] or 0),
+                "tokens_total": int(totals_row["tokens_total"] or 0),
+                "cost_total": round(float(totals_row["cost_total"] or 0.0), 6),
+                "cost_currency": totals_row["cost_currency"] or "USD",
+                "avg_latency_ms": round(float(totals_row["avg_latency_ms"] or 0.0), 1),
+            },
+            "by_model": [
+                {
+                    "model": r["model"],
+                    "turns": int(r["turns"] or 0),
+                    "tokens_input": int(r["tokens_input"] or 0),
+                    "tokens_output": int(r["tokens_output"] or 0),
+                    "tokens_total": int(r["tokens_total"] or 0),
+                    "cost_total": round(float(r["cost_total"] or 0.0), 6),
+                }
+                for r in by_model_rows
+            ],
+            "by_agent": [
+                {
+                    "agent_id": r["agent_id"],
+                    "turns": int(r["turns"] or 0),
+                    "tokens_input": int(r["tokens_input"] or 0),
+                    "tokens_output": int(r["tokens_output"] or 0),
+                    "tokens_total": int(r["tokens_total"] or 0),
+                    "cost_total": round(float(r["cost_total"] or 0.0), 6),
+                }
+                for r in by_agent_rows
+            ],
+            "daily": [
+                {
+                    "date": r["date"],
+                    "turns": int(r["turns"] or 0),
+                    "tokens_total": int(r["tokens_total"] or 0),
+                    "cost_total": round(float(r["cost_total"] or 0.0), 6),
+                }
+                for r in daily_rows
+            ],
+            "days": days,
+        })
+
+    except Exception as e:
+        logger.warning(f"Usage metrics unavailable (database may be offline): {e}")
+        return JsonResponse({**empty, "unavailable": True})
+
+
+@csrf_exempt
 def memory_settings(request):
     """
     GET /api/memory/settings - Get consolidation settings.

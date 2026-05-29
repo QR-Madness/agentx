@@ -22,6 +22,7 @@ import { profilesApi } from './profiles';
 import { alloyApi } from './alloy';
 import { configApi } from './config';
 import { memoryApi } from './memory';
+import { metricsApi } from './metrics';
 import { jobsApi } from './jobs';
 import { historyApi } from './history';
 import { streamingApi } from './streaming';
@@ -46,6 +47,7 @@ export const api = {
   ...alloyApi,
   ...configApi,
   ...memoryApi,
+  ...metricsApi,
   ...jobsApi,
   ...historyApi,
   ...streamingApi,

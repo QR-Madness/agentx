@@ -906,6 +906,45 @@ Returns total counts and per-channel breakdowns.
 }
 ```
 
+### Usage Metrics
+
+```
+GET /api/metrics/usage
+```
+
+Aggregates assistant turns from `conversation_logs` into overall totals, a per-model
+breakdown, and a daily time series. Degrades gracefully (zeros + `"unavailable": true`,
+HTTP 200) when the database is offline.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `days` | int | 14 | Window size in days (clamped 1–90) |
+
+**Response:**
+```json
+{
+  "totals": {
+    "turns": 42, "tokens_input": 18500, "tokens_output": 9200,
+    "tokens_total": 27700, "cost_total": 0.184, "cost_currency": "USD",
+    "avg_latency_ms": 2310.5
+  },
+  "by_model": [
+    {"model": "claude-opus-4-7", "turns": 30, "tokens_input": 15000,
+     "tokens_output": 7000, "tokens_total": 22000, "cost_total": 0.16}
+  ],
+  "by_agent": [
+    {"agent_id": "bold-cosmic-falcon", "turns": 18, "tokens_input": 9000,
+     "tokens_output": 4500, "tokens_total": 13500, "cost_total": 0.11},
+    {"agent_id": "_default", "turns": 4, "tokens_input": 1200,
+     "tokens_output": 600, "tokens_total": 1800, "cost_total": 0.012}
+  ],
+  "daily": [
+    {"date": "2026-05-28", "turns": 20, "tokens_total": 13000, "cost_total": 0.09}
+  ],
+  "days": 14
+}
+```
+
 ### Consolidation Settings
 
 ```
