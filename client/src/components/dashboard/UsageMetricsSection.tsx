@@ -70,11 +70,14 @@ export function UsageMetricsSection() {
 
   // Bar chart: cost per model (fall back to tokens when no cost was computed).
   const costMode = (usage?.by_model || []).some((m) => m.cost_total > 0);
-  const byModel = (usage?.by_model || []).map((m) => ({
-    name: getModelShortName(m.model),
-    cost: m.cost_total,
-    tokens: m.tokens_total,
-  }));
+  const byModel = useMemo(
+    () => (usage?.by_model || []).map((m) => ({
+      name: getModelShortName(m.model),
+      cost: m.cost_total,
+      tokens: m.tokens_total,
+    })),
+    [usage?.by_model],
+  );
 
   const dailySeries = useMemo(
     () => (usage?.daily || []).map((d) => ({

@@ -8,7 +8,15 @@
  * changes.
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+/** Polling interval (ms) for the strip's status hooks. 15s keeps connection
+ *  state fresh without hammering the API. Polling pauses while the tab is
+ *  hidden (handled in useApi) AND while the Dashboard isn't on-screen
+ *  (handled here via IntersectionObserver — the RootLayout keeps all pages
+ *  mounted, so the strip is "alive" even when the user is on Start or
+ *  AgentX; without this gate we'd poll for users who never visit). */
+const STRIP_POLL_MS = 15_000;
 import {
   Activity, Database, Brain, Wrench, Layers, HardDrive,
   MessageSquare, ChevronDown, RefreshCw,
@@ -40,14 +48,57 @@ function formatBytes(mb: number | string | undefined | null): string {
 }
 
 export function SystemStatusStrip() {
-  const { data: health, loading: healthLoading, refresh: refreshHealth } = useHealth();
-  const { providers, loading: providersLoading } = useProviders();
-  const { servers: mcpServers, loading: mcpLoading } = useMCPServers();
-  const { status: agentStatus } = useAgentStatus();
-  const { stats: memoryStats, loading: memoryLoading } = useMemoryStats();
+  const [expanded, setExpanded] = useState(false);
+
+  // Pause polling while the strip is off-screen (page-switched away). Pages
+  // are kept mounted in RootLayout, so without this gate every user polls
+  // forever even if they never visit the Dashboard.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setVisible(entry?.isIntersecting ?? true),
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const pollInterval = visible ? STRIP_POLL_MS : 0;
+  const pollOpts = { pollInterval };
+
+  // Only request `include_storage` (and fetch memory stats) when the detail
+  // panel is open — the slim pill view doesn't display either, and the
+  // storage queries (pg_database_size, du, redis INFO) are expensive per
+  // poll. Same for memory stats which only render in the expanded grid.
+  const { data: health, loading: healthLoading, refresh: refreshHealth } =
+    useHealth(true, expanded, pollOpts);
+  const { providers, loading: providersLoading, refresh: refreshProviders } =
+    useProviders(pollOpts);
+  const { servers: mcpServers, loading: mcpLoading, refresh: refreshMcp } =
+    useMCPServers(pollOpts);
+  const { status: agentStatus, refresh: refreshAgent } = useAgentStatus(pollOpts);
+  const { stats: memoryStats, loading: memoryLoading, refresh: refreshMemory } =
+    useMemoryStats({ enabled: expanded });
   const { serverConversations } = useConversation();
 
-  const [expanded, setExpanded] = useState(false);
+  const refreshAll = useCallback(() => {
+    void refreshHealth();
+    void refreshProviders();
+    void refreshMcp();
+    void refreshAgent();
+    if (expanded) void refreshMemory();
+  }, [refreshHealth, refreshProviders, refreshMcp, refreshAgent, refreshMemory, expanded]);
+
+  // When the strip returns from off-screen, refresh once immediately —
+  // otherwise users staring at a freshly-displayed Dashboard wait up to
+  // STRIP_POLL_MS for the next tick before stale pills update.
+  const wasVisibleRef = useRef(visible);
+  useEffect(() => {
+    if (!wasVisibleRef.current && visible) refreshAll();
+    wasVisibleRef.current = visible;
+  }, [visible, refreshAll]);
 
   const providersOnline = providers.filter((p) => p.available).length;
   const mcpOnline = mcpServers.filter((s) => s.status === 'connected').length;
@@ -75,7 +126,7 @@ export function SystemStatusStrip() {
   ];
 
   return (
-    <div className={`status-strip card glass ${expanded ? 'expanded' : ''}`}>
+    <div ref={rootRef} className={`status-strip card glass ${expanded ? 'expanded' : ''}`}>
       <div className="strip-row">
         <div className="strip-pills">
           {pills.map((p) => (
@@ -87,7 +138,7 @@ export function SystemStatusStrip() {
           ))}
         </div>
         <div className="strip-actions">
-          <Button variant="ghost" onClick={refreshHealth} aria-label="Refresh">
+          <Button variant="ghost" onClick={refreshAll} aria-label="Refresh">
             <RefreshCw size={14} />
           </Button>
           <button

@@ -34,6 +34,11 @@ export interface UseApiOptions {
   immediate?: boolean;
   /** Side-effect for errors (e.g. raise a toast); error is still returned. */
   onError?: (error: ApiError) => void;
+  /** When set, re-fetches on this interval (ms) while the component is mounted.
+   *  Used by status surfaces (health/providers/MCP/agent) so connection state
+   *  reflects reality without a manual refresh. Polling pauses while the tab
+   *  is hidden, and resumes (with an immediate refresh) when it becomes visible. */
+  pollInterval?: number;
 }
 
 export interface UseApiResult<T> {
@@ -88,25 +93,53 @@ export function useApi<T>(
     if (immediate && enabled) refresh();
   }, [refresh, immediate, enabled]);
 
+  // Polling: re-fetch every `pollInterval` ms while the tab is visible. We
+  // skip the wakeup tick when document.hidden is true (saves cycles for
+  // backgrounded windows) and trigger a one-shot refresh on visibilitychange
+  // so the user always sees current state right after switching back.
+  const { pollInterval } = opts;
+  useEffect(() => {
+    if (!enabled || !pollInterval || pollInterval <= 0) return;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refresh();
+    };
+    const id = setInterval(tick, pollInterval);
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && !document.hidden) refresh();
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    return () => {
+      clearInterval(id);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+    };
+  }, [refresh, enabled, pollInterval]);
+
   return { data, loading, error, refresh };
 }
 
-export function useHealth(includeMemory = true, includeStorage = true) {
+export function useHealth(includeMemory = true, includeStorage = true, opts?: UseApiOptions) {
   return useApi<HealthResponse>(
     () => api.health(includeMemory, includeStorage),
-    [includeMemory, includeStorage]
+    [includeMemory, includeStorage],
+    opts
   );
 }
 
-export function useProviders() {
+export function useProviders(opts?: UseApiOptions) {
   const { data, loading, error, refresh } = useApi<{ providers: ProviderInfo[] }>(
     () => api.listProviders(),
-    []
+    [],
+    opts
   );
   return { providers: data?.providers ?? [], loading, error, refresh };
 }
 
-export function useMCPServers() {
+export function useMCPServers(opts?: { pollInterval?: number }) {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -177,6 +210,31 @@ export function useMCPServers() {
     refresh();
   }, [refresh]);
 
+  // Optional polling so MCP connection status (connected / error / disconnected)
+  // updates without a manual refresh. Mirrors the pollInterval behavior in
+  // useApi: skip the tick when the tab is hidden, refresh on visibility return.
+  const pollInterval = opts?.pollInterval;
+  useEffect(() => {
+    if (!pollInterval || pollInterval <= 0) return;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refresh();
+    };
+    const id = setInterval(tick, pollInterval);
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && !document.hidden) refresh();
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    return () => {
+      clearInterval(id);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+    };
+  }, [refresh, pollInterval]);
+
   return {
     servers, loading, error, refresh,
     connectServer, connectAll, disconnectServer,
@@ -192,10 +250,11 @@ export function useMCPTools() {
   return { tools: data?.tools ?? [], loading, error, refresh };
 }
 
-export function useAgentStatus() {
+export function useAgentStatus(opts?: UseApiOptions) {
   const { data, loading, error, refresh } = useApi<{ status: string; active_sessions: number }>(
     () => api.getAgentStatus(),
-    []
+    [],
+    opts
   );
   return { status: data, loading, error, refresh };
 }
@@ -285,10 +344,11 @@ export function useMemoryStrategies(channel: string, page: number) {
   };
 }
 
-export function useMemoryStats() {
+export function useMemoryStats(opts?: UseApiOptions) {
   const { data, loading, error, refresh } = useApi<MemoryStats>(
     () => api.getMemoryStats(),
-    []
+    [],
+    opts
   );
   return { stats: data, loading, error, refresh };
 }
