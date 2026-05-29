@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.4** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.5** (protocol 1).
 
 > For completed phases (1-14) and project history, see [docs/roadmap.md](docs/roadmap.md)
 
@@ -228,8 +228,13 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.4** (proto
 
 ### 16.5 @-Mention Routing + Graph Updates — shipped `[v0.21.4]`
 
-> Backend-only. Client @mention autocomplete/highlight (populating the existing unused
-> `UserMessage.targetAgentIds`) is the next task.
+> Backend-only. **Client @mention autocomplete shipped `[v0.21.5]`**: composer popover
+> (`components/chat/MentionAutocomplete.tsx`) over `useAgentProfile()` profiles with ↑/↓/Enter/Tab/Esc
+> nav; picking inserts the routable `@<agent_id>` slug (no API change — rides the backend text
+> parser). Pure helpers in `lib/mentions.ts` (`getActiveMention`/`applyMention`/
+> `extractMentionedAgentIds`, tested in `mentions.test.ts`); `handleSend` populates
+> `UserMessage.targetAgentIds`; `UserBubble` emphasizes resolved mentions as `@DisplayName`
+> (via non-throwing `useAgentProfileOptional`). Live in-composer highlighting intentionally deferred.
 
 - [x] Parse `@agent-id` from message text for implicit routing — new pure `agent/mentions.py`
       (`extract_mentions` + `resolve_first_mention`; `@[\w-]+` with email/path lookbehind). Resolves

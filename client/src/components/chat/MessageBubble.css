@@ -75,6 +75,12 @@
   word-break: break-word;
 }
 
+/* @-mention emphasis in the sent bubble (16.5 client). */
+.message-text .mention {
+  color: var(--accent, #8b5cf6);
+  font-weight: 600;
+}
+
 .message-bubble.user .message-meta {
   margin-top: 0.25rem;
   display: flex;

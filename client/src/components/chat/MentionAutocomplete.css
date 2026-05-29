@@ -1,0 +1,73 @@
+/* @-mention autocomplete popover — mirrors AgentSelectorDropdown's look. */
+
+.mention-ac {
+  width: 280px;
+  max-height: min(260px, 50vh);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35));
+  padding: 6px;
+}
+
+.mention-ac-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.mention-ac-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.mention-ac-item:hover,
+.mention-ac-item.kb-active {
+  background: var(--bg-hover);
+}
+
+.mention-ac-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--gradient-aurora);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.mention-ac-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mention-ac-name {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-ac-id {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

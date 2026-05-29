@@ -208,3 +208,9 @@ export function useAgentProfile() {
   }
   return context;
 }
+
+/** Non-throwing variant: returns null outside a provider (for incidental
+ *  consumers like message bubbles that may render in isolation/tests). */
+export function useAgentProfileOptional() {
+  return useContext(AgentProfileContext);
+}

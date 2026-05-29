@@ -35,6 +35,8 @@ import { usePlans } from '../../contexts/PlansContext';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getAvatarIcon } from '../../lib/avatars';
+import { getActiveMention, applyMention, extractMentionedAgentIds } from '../../lib/mentions';
+import { MentionAutocomplete } from './MentionAutocomplete';
 import {
   type UserMessage,
   createMessageId,
@@ -97,6 +99,13 @@ export function ChatPanel() {
       : activeProfile;
 
   const [input, setInput] = useState('');
+  // @-mention autocomplete state (16.5 client). span = the @token being typed.
+  const [mention, setMention] = useState<{
+    open: boolean;
+    query: string;
+    span: { start: number; end: number } | null;
+    highlight: number;
+  }>({ open: false, query: '', span: null, highlight: 0 });
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -277,6 +286,40 @@ export function ChatPanel() {
     };
   }, [activeTab, setTabContextInfo]);
 
+  // Profiles matching the active @query (by name or agent_id), like the selector.
+  const mentionItems = useMemo(() => {
+    if (!mention.open) return [];
+    const q = mention.query.toLowerCase();
+    return profiles.filter(
+      p => p.name.toLowerCase().includes(q) || p.agentId.toLowerCase().includes(q),
+    );
+  }, [mention.open, mention.query, profiles]);
+
+  // Recompute the active @-mention from the caret; opens/filters or closes the popover.
+  const refreshMention = (text: string, caret: number) => {
+    const active = getActiveMention(text, caret);
+    setMention(m =>
+      active
+        ? { open: true, query: active.query, span: { start: active.start, end: active.end }, highlight: 0 }
+        : (m.open ? { open: false, query: '', span: null, highlight: 0 } : m),
+    );
+  };
+
+  const closeMention = () =>
+    setMention({ open: false, query: '', span: null, highlight: 0 });
+
+  // Insert the picked agent's slug; the backend (16.5) parses it to route.
+  const pickMention = (agentId: string) => {
+    if (!mention.span) return;
+    const { text, caret } = applyMention(input, mention.span, agentId);
+    setInput(text);
+    closeMention();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) { el.focus(); el.setSelectionRange(caret, caret); }
+    });
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !activeTab) return;
 
@@ -285,11 +328,13 @@ export function ChatPanel() {
       type: 'user',
       content: input,
       timestamp: new Date().toISOString(),
+      targetAgentIds: extractMentionedAgentIds(input, profiles),
     };
 
     appendMessage(userMessage);
     const messageText = input;
     setInput('');
+    closeMention();
 
     stream.send({
       message: messageText,
@@ -367,6 +412,30 @@ export function ChatPanel() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // When the @-mention popover is open, it owns navigation keys.
+    if (mention.open && mentionItems.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMention(m => ({ ...m, highlight: Math.min(m.highlight + 1, mentionItems.length - 1) }));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMention(m => ({ ...m, highlight: Math.max(m.highlight - 1, 0) }));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const picked = mentionItems[mention.highlight];
+        if (picked) pickMention(picked.agentId);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMention();
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submit();
@@ -670,11 +739,24 @@ export function ChatPanel() {
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            }}
+            onClick={(e) => refreshMention(input, e.currentTarget.selectionStart ?? input.length)}
             onKeyDown={handleKeyDown}
             placeholder="Type your message... (Shift+Enter for new line)"
             rows={1}
             disabled={isTyping}
+          />
+          <MentionAutocomplete
+            isOpen={mention.open}
+            items={mentionItems}
+            highlight={mention.highlight}
+            anchorRef={textareaRef}
+            onHover={(i) => setMention(m => ({ ...m, highlight: i }))}
+            onPick={(p) => pickMention(p.agentId)}
+            onClose={closeMention}
           />
           {isTyping ? (
             <button
