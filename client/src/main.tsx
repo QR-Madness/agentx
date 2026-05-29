@@ -12,15 +12,24 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 // frame, keeping a small minimum visible time so it doesn't flash.
 const splash = document.getElementById("splash");
 if (splash) {
-  const MIN_VISIBLE_MS = 400;
+  // Keep the splash up long enough for its animation to play a full beat every
+  // launch (and give the UI a touch more time to settle) — enforced even when
+  // React paints instantly. Must stay below the fallback timers below.
+  const MIN_VISIBLE_MS = 1200;
+  const FALLBACK_MS = 2000; // Android WebView can stall chained rAFs — guarantee removal
   const start = performance.now();
+  let dismissed = false;
   const hide = () => {
+    if (dismissed) return;
+    dismissed = true;
     const wait = Math.max(0, MIN_VISIBLE_MS - (performance.now() - start));
     window.setTimeout(() => {
       splash.classList.add("splash-hide");
       window.setTimeout(() => splash.remove(), 450);
     }, wait);
   };
-  // Two RAFs ≈ after the first paint of the real UI.
+  // Fast path: two RAFs ≈ after the first paint of the real UI (reliable on desktop).
   requestAnimationFrame(() => requestAnimationFrame(hide));
+  // Fallback: if rAF never fires (Android WebView), force the dismiss.
+  window.setTimeout(hide, FALLBACK_MS);
 }

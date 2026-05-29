@@ -580,6 +580,7 @@ Currently our model selection and selector are a very solid foundation but are j
 
 > Items to consider after prototype is complete
 
+- [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)
 - [ ] Disabled memory conversation prompt message banner - informs the model that memory is off for this conversation and the details are not persistent, and also that the conversation may contain confidential material.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown
