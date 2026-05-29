@@ -3473,3 +3473,191 @@ class ConnectionHealthCheckTest(TestCase):
         self.assertEqual(health["postgres"]["status"], "unhealthy")
         self.assertEqual(health["postgres"]["error"], "boom")
         self.assertEqual(health["redis"]["status"], "healthy")
+
+
+def _queue_settings(**overrides):
+    """Minimal settings stub for the embedding dispatcher/queue."""
+    import types as _types
+
+    base = dict(
+        embedding_queue_enabled=True,
+        embedding_batch_max_size=8,
+        embedding_batch_window_ms=10,
+        embedding_request_timeout=5.0,
+        embedding_queue_max_size=64,
+        embedding_max_retries=2,
+        embedding_cache_enabled=True,
+        embedding_cache_max_size=4,
+        embedding_cache_ttl_seconds=10.0,
+    )
+    base.update(overrides)
+    return _types.SimpleNamespace(**base)
+
+
+class EmbeddingQueueTest(TestCase):
+    """Serializer + batching + cache + retry for the embedding request queue."""
+
+    def test_serializes_concurrent_calls(self) -> None:
+        import threading
+        import time
+
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingDispatcher
+
+        overlap = {"cur": 0, "max": 0}
+        lock = threading.Lock()
+        compute_calls = []
+
+        def compute(texts):
+            with lock:
+                overlap["cur"] += 1
+                overlap["max"] = max(overlap["max"], overlap["cur"])
+            time.sleep(0.02)
+            with lock:
+                overlap["cur"] -= 1
+            compute_calls.append(list(texts))
+            return [[float(len(t))] for t in texts]
+
+        d = EmbeddingDispatcher(compute, _queue_settings(), namespace="t:m")
+        results = {}
+
+        def worker(i):
+            results[i] = d.embed([f"text-{i}"])
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Never two compute calls at once (local model is not thread-safe).
+        self.assertEqual(overlap["max"], 1)
+        # Concurrent requests coalesced into fewer compute calls.
+        self.assertLess(len(compute_calls), 12)
+        for i, vec in results.items():
+            self.assertEqual(vec, [[float(len(f"text-{i}"))]])
+
+    def test_cache_hit_skips_compute(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingDispatcher
+
+        calls = []
+
+        def compute(texts):
+            calls.append(list(texts))
+            return [[1.0] for _ in texts]
+
+        d = EmbeddingDispatcher(compute, _queue_settings(), namespace="t:m")
+        v1 = d.embed(["hello"])
+        v2 = d.embed(["hello"])
+        self.assertEqual(v1, v2)
+        self.assertEqual(len(calls), 1)  # second call served from cache
+
+    def test_cache_ttl_expiry_and_lru(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingCache
+
+        c = EmbeddingCache(max_size=2, ttl_seconds=0.05)
+        c.put("n", "a", [1.0])
+        self.assertEqual(c.get("n", "a"), [1.0])
+        import time
+
+        time.sleep(0.06)
+        self.assertIsNone(c.get("n", "a"))  # expired
+
+        c2 = EmbeddingCache(max_size=2, ttl_seconds=100)
+        c2.put("n", "a", [1.0])
+        c2.put("n", "b", [2.0])
+        c2.put("n", "c", [3.0])  # evicts LRU "a"
+        self.assertIsNone(c2.get("n", "a"))
+        self.assertEqual(c2.get("n", "c"), [3.0])
+        self.assertEqual(len(c2), 2)
+
+    def test_retry_on_transient_then_succeeds(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingDispatcher
+
+        attempts = {"n": 0}
+
+        def compute(texts):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError("rate limit exceeded (429)")
+            return [[9.0] for _ in texts]
+
+        d = EmbeddingDispatcher(compute, _queue_settings(), namespace="t:m")
+        result = d.embed(["x"])
+        self.assertEqual(result, [[9.0]])
+        self.assertEqual(attempts["n"], 2)
+
+    def test_permanent_error_fails_fast(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingDispatcher
+
+        attempts = {"n": 0}
+
+        def compute(texts):
+            attempts["n"] += 1
+            raise RuntimeError("CUDA out of memory")  # not transient
+
+        d = EmbeddingDispatcher(compute, _queue_settings(), namespace="t:m")
+        with self.assertRaises(RuntimeError):
+            d.embed(["x"])
+        self.assertEqual(attempts["n"], 1)  # no retries
+
+    def test_queue_disabled_uses_direct_compute(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import EmbeddingDispatcher
+
+        calls = []
+
+        def compute(texts):
+            calls.append(list(texts))
+            return [[1.0] for _ in texts]
+
+        d = EmbeddingDispatcher(
+            compute,
+            _queue_settings(embedding_queue_enabled=False, embedding_cache_enabled=False),
+            namespace="t:m",
+        )
+        self.assertEqual(d.embed(["a", "b"]), [[1.0], [1.0]])
+        self.assertEqual(calls, [["a", "b"]])
+
+    def test_transient_classifier(self) -> None:
+        from agentx_ai.kit.agent_memory.embedding_queue import _is_transient
+
+        self.assertTrue(_is_transient(Exception("Rate limit reached, try again")))
+        self.assertTrue(_is_transient(TimeoutError("connection timed out")))
+        self.assertFalse(_is_transient(RuntimeError("device-side assert triggered")))
+
+
+class ResolveDeviceTest(TestCase):
+    """AGENTX_DEVICE resolution + CUDA fallback."""
+
+    def setUp(self) -> None:
+        from agentx_ai.kit.device import resolve_device
+
+        resolve_device.cache_clear()
+
+    def tearDown(self) -> None:
+        from agentx_ai.kit.device import resolve_device
+
+        resolve_device.cache_clear()
+
+    def test_auto_picks_cpu_without_cuda(self) -> None:
+        from agentx_ai.kit import device
+
+        with patch.object(device, "_cuda_available", return_value=False):
+            self.assertEqual(device.resolve_device("auto"), "cpu")
+
+    def test_auto_picks_cuda_when_available(self) -> None:
+        from agentx_ai.kit import device
+
+        with patch.object(device, "_cuda_available", return_value=True):
+            self.assertEqual(device.resolve_device("auto"), "cuda")
+
+    def test_cuda_request_falls_back_to_cpu(self) -> None:
+        from agentx_ai.kit import device
+
+        with patch.object(device, "_cuda_available", return_value=False):
+            self.assertEqual(device.resolve_device("cuda"), "cpu")
+
+    def test_explicit_cpu_override(self) -> None:
+        from agentx_ai.kit import device
+
+        with patch.object(device, "_cuda_available", return_value=True):
+            self.assertEqual(device.resolve_device("cpu"), "cpu")

@@ -16,10 +16,16 @@
 #   docker compose -f docker-compose.yml -f docker-compose.cluster.yml -f docker-compose.gpu.yml \
 #     --profile production --env-file clusters/<name>/.env up -d
 #
-# SentenceTransformer auto-selects CUDA when torch.cuda.is_available() is true,
-# so no application config change is required. Verify after start:
+# The app resolves its compute device via AGENTX_DEVICE (default "auto" → CUDA when
+# torch.cuda.is_available() is true). Both the embedding model and the translation
+# models (NLLB-200 + language detection) are moved onto that device, so this overlay
+# is all that's needed to put them on the GPU. Verify after start:
 #
 #   docker exec <cluster>-api python -c "import torch; print(torch.cuda.is_available())"
+#   curl -s localhost:<API_PORT>/api/health | jq .compute   # {"device":"cuda","cuda_available":true}
+#
+# The default Linux torch wheel bundles the CUDA runtime, so the python:3.12-slim
+# image works as-is once the NVIDIA Container Toolkit passes the driver through.
 
 services:
   api:

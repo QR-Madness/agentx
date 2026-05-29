@@ -1,7 +1,11 @@
+import logging
+
 import iso639
 import torch
 from termcolor import colored
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForSeq2SeqLM
+
+logger = logging.getLogger("agentx")
 
 nlb200_list = ["ace_Arab", "ace_Latn", "acm_Arab", "acq_Arab", "aeb_Arab", "afr_Latn", "ajp_Arab", "aka_Latn",
                "amh_Ethi", "apc_Arab", "arb_Arab", "ars_Arab", "ary_Arab", "arz_Arab", "asm_Beng", "ast_Latn",
@@ -83,14 +87,28 @@ class TranslationKit:
     #
 
     def __init__(self):
+        from .device import resolve_device
+
+        # Resolve the compute device once and move every model onto it. Without
+        # this the models stay on CPU even when a GPU is present.
+        self.device = resolve_device()
+
         # initialize models
         self.language_detection_tokenizer = AutoTokenizer.from_pretrained(self.language_detection_model_name)
         self.language_detection_model = AutoModelForSequenceClassification.from_pretrained(
-            self.language_detection_model_name)
+            self.language_detection_model_name).to(self.device)
 
         # Use NLLB-200 model for translation (supports 204 languages with NLLB format codes)
         self.translation_tokenizer = AutoTokenizer.from_pretrained(self.level_ii_translation_model_name)
-        self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(self.level_ii_translation_model_name)
+        self.translation_model = AutoModelForSeq2SeqLM.from_pretrained(
+            self.level_ii_translation_model_name).to(self.device)
+
+        logger.info(
+            "TranslationKit models loaded on device '%s' (detection=%s, translation=%s).",
+            self.device,
+            self.language_detection_model_name,
+            self.level_ii_translation_model_name,
+        )
 
     def detect_language_level_i(self, unclassified_text) -> tuple[str, float]:
         """ Will detect a language from a given text; supports about 20 languages; thus level I.
@@ -98,6 +116,7 @@ class TranslationKit:
         :param str unclassified_text: Text to detect language from.
         """
         inputs = self.language_detection_tokenizer(unclassified_text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         outputs = self.language_detection_model(**inputs)
 
         # Get predicted class
@@ -133,6 +152,7 @@ class TranslationKit:
         # convert language code to language name
         text_to_translate = text
         model_inputs = self.translation_tokenizer(text_to_translate, return_tensors="pt")
+        model_inputs = {k: v.to(self.device) for k, v in model_inputs.items()}
 
         # For NLLB-200, set the target language using forced_bos_token_id
         # Language codes are stored directly in the tokenizer vocabulary

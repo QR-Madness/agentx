@@ -18,6 +18,7 @@ class EmbeddingProvider:
         self._client = None
         self._model = None
         self._dimensions_validated = False
+        self._dispatcher = None
 
     def _init_openai(self):
         """Initialize OpenAI client for embeddings."""
@@ -25,9 +26,17 @@ class EmbeddingProvider:
         self._client = OpenAI(api_key=settings.openai_api_key)
 
     def _init_local(self):
-        """Initialize local embedding model."""
+        """Initialize local embedding model on the resolved compute device."""
         from sentence_transformers import SentenceTransformer
-        self._model = SentenceTransformer(settings.local_embedding_model)
+        from ..device import resolve_device
+
+        device = resolve_device()
+        self._model = SentenceTransformer(settings.local_embedding_model, device=device)
+        logger.info(
+            "Local embedding model '%s' loaded on device '%s'.",
+            settings.local_embedding_model,
+            device,
+        )
 
     @property
     def output_dimensions(self) -> int:
@@ -80,6 +89,25 @@ class EmbeddingProvider:
         if isinstance(texts, str):
             texts = [texts]
 
+        return self._get_dispatcher().embed(texts)
+
+    def _get_dispatcher(self):
+        """Lazily build the process-wide cache+queue dispatcher for this provider."""
+        if self._dispatcher is None:
+            from .embedding_queue import EmbeddingDispatcher
+
+            model = (
+                settings.embedding_model
+                if self.provider == "openai"
+                else settings.local_embedding_model
+            )
+            self._dispatcher = EmbeddingDispatcher(
+                self._compute, settings, namespace=f"{self.provider}:{model}"
+            )
+        return self._dispatcher
+
+    def _compute(self, texts: List[str]) -> List[List[float]]:
+        """Raw embedding compute — invoked serially by the dispatcher's worker."""
         if self.provider == "openai":
             return self._embed_openai(texts)
         else:

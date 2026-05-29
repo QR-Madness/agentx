@@ -82,6 +82,13 @@ def health(request):
     if include_memory:
         memory_status = check_memory_health()
 
+    # Resolved compute device (so GPU use is verifiable without `docker exec`)
+    try:
+        from .kit.device import resolve_device, cuda_available
+        compute_status = {"device": resolve_device(), "cuda_available": cuda_available()}
+    except Exception:
+        compute_status = {"device": "unknown", "cuda_available": False}
+
     response = {
         "status": "healthy",
         "version": VERSION,
@@ -89,6 +96,7 @@ def health(request):
         "min_client_version": MIN_CLIENT_VERSION,
         "cluster": getattr(settings, 'AGENTX_CLUSTER_NAME', 'default'),
         "api": {"status": "healthy"},
+        "compute": compute_status,
         "translation": translation_status,
     }
 
