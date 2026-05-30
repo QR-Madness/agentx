@@ -257,19 +257,14 @@ class Command(BaseCommand):
                 dims = self._get_configured_dims()
                 applied = 0
 
+                from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+
                 for mfile in pending:
                     cypher = self._substitute_neo4j_dims(mfile.read_text(), dims)
 
-                    # Split on semicolons, filter out blank/comment-only blocks
-                    statements = []
-                    for stmt in cypher.split(";"):
-                        lines = [
-                            ln for ln in stmt.strip().splitlines()
-                            if ln.strip() and not ln.strip().startswith("//")
-                        ]
-                        cleaned = "\n".join(lines).strip()
-                        if cleaned and cleaned != "RETURN 1":
-                            statements.append(cleaned)
+                    # Comment-aware split: strips // comments before splitting on
+                    # ';' so a semicolon inside a comment can't break a statement.
+                    statements = split_cypher_statements(cypher)
 
                     if verbose:
                         self.stdout.write(f"  Applying {mfile.name} ({len(statements)} statements)...")
@@ -277,7 +272,7 @@ class Command(BaseCommand):
                     try:
                         for stmt in statements:
                             try:
-                                session.run(stmt)
+                                session.run(stmt)  # type: ignore[arg-type]
                             except Exception as e:
                                 err = str(e).lower()
                                 if "already exists" in err:

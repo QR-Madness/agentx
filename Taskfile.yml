@@ -411,42 +411,6 @@ tasks:
       - docker exec -i agent-postgres psql -U agent -d agent_memory < "{{.BACKUP_FILE}}"
       - echo "✅ Restore complete!"
 
-  db:migrate-volumes:
-    desc: "Migrate data from Docker volumes to local ./data/"
-    cmds:
-      - task: db:migrate-volumes:neo4j
-      - task: db:migrate-volumes:postgres
-      - task: db:migrate-volumes:redis
-
-  db:migrate-volumes:neo4j:
-    desc: "Migrate Neo4j volumes to local"
-    internal: true
-    cmds:
-      - mkdir -p data/neo4j/{data,logs,plugins}
-      - docker run --rm -v agentx-source_neo4j_data:/from -v "{{.ROOT_DIR}}/data/neo4j/data:/to" alpine sh -c "cp -av /from/. /to/"
-      - docker run --rm -v agentx-source_neo4j_logs:/from -v "{{.ROOT_DIR}}/data/neo4j/logs:/to" alpine sh -c "cp -av /from/. /to/"
-      - docker run --rm -v agentx-source_neo4j_plugins:/from -v "{{.ROOT_DIR}}/data/neo4j/plugins:/to" alpine sh -c "cp -av /from/. /to/"
-    status:
-      - test -d data/neo4j/data/databases
-
-  db:migrate-volumes:postgres:
-    desc: "Migrate PostgreSQL volumes to local"
-    internal: true
-    cmds:
-      - mkdir -p data/postgres
-      - docker run --rm -v agentx-source_postgres_data:/from -v "{{.ROOT_DIR}}/data/postgres:/to" alpine sh -c "cp -av /from/. /to/"
-    status:
-      - test -f data/postgres/PG_VERSION
-
-  db:migrate-volumes:redis:
-    desc: "Migrate Redis volumes to local"
-    internal: true
-    cmds:
-      - mkdir -p data/redis
-      - docker run --rm -v agentx-source_redis_data:/from -v "{{.ROOT_DIR}}/data/redis:/to" alpine sh -c "cp -av /from/. /to/"
-    status:
-      - test -f data/redis/appendonlydir/appendonly.aof.1.base.rdb || test -f data/redis/appendonly.aof
-
 # ============================================================================
 # MCP TOOLS
 # ============================================================================
@@ -1020,66 +984,6 @@ tasks:
       - uv run python api/manage.py setup_auth --check
 
 # ============================================================================
-# PRODUCTION DEPLOYMENT (Phase 17)
-# ============================================================================
-
-  prod:build:
-    desc: "Build production Docker image"
-    cmds:
-      - echo "🔨 Building production Docker image..."
-      - docker compose --profile production build
-      - echo "✅ Build complete!"
-
-  prod:up:
-    desc: "Start full production stack (API + databases)"
-    cmds:
-      - echo "🚀 Starting production stack..."
-      - docker compose --profile production up -d
-      - echo "\n"
-      - echo "✅ Production stack is running!"
-      - 'echo "API: http://localhost:12319"'
-      - echo "\n"
-      - 'echo "📋 Next steps:"'
-      - 'echo "   1. Set root password: task prod:auth:setup"'
-      - 'echo "   2. Configure Cloudflare Tunnel"'
-      - 'echo "   3. Add tunnel domain to CORS/CSRF settings"'
-
-  prod:down:
-    desc: "Stop production stack"
-    cmds:
-      - docker compose --profile production down
-
-  prod:restart:
-    desc: "Restart production API"
-    cmds:
-      - docker compose --profile production restart api
-
-  prod:logs:
-    desc: "Tail production logs"
-    cmds:
-      - docker compose --profile production logs -f api
-
-  prod:status:
-    desc: "Show production stack status"
-    cmds:
-      - docker compose --profile production ps
-
-  prod:auth:setup:
-    desc: "Set up root password in production container"
-    cmds:
-      - docker compose --profile production exec api uv run python api/manage.py setup_auth
-
-  prod:warmup:
-    desc: "Warm up embedding model in production container"
-    cmds:
-      - docker compose --profile production exec api uv run python api/manage.py warmup_embeddings --validate
-
-  prod:shell:
-    desc: "Open shell in production API container"
-    cmds:
-      - docker compose --profile production exec api /bin/bash
-
-# ============================================================================
 # MOBILE / ANDROID
 # ============================================================================
 # Tauri v2 mobile builds. Requires Android Studio + SDK + NDK + JDK 17 with
@@ -1171,9 +1075,15 @@ tasks:
           echo "     - Set AGENTX_PUBLIC_HOST and AGENTX_GATEWAY_TOKEN"
           echo "  2. Edit clusters/{{.CLUSTER}}/cloudflared/config.yml — paste tunnel id + hostname"
           echo "  3. Drop credentials.json into clusters/{{.CLUSTER}}/cloudflared/"
-          echo "  4. Start: task cluster:up CLUSTER={{.CLUSTER}}"
+          echo "  4. Start:        task cluster:up CLUSTER={{.CLUSTER}}"
+          echo "  5. Init DBs:     task cluster:migrate CLUSTER={{.CLUSTER}}   # Django + memory schema"
+          echo "  6. Set password: task cluster:auth:setup CLUSTER={{.CLUSTER}}"
+          echo "  7. Warm models:  task cluster:warmup CLUSTER={{.CLUSTER}}"
         else
-          echo "  2. Start: task cluster:up CLUSTER={{.CLUSTER}}"
+          echo "  2. Start:        task cluster:up CLUSTER={{.CLUSTER}}"
+          echo "  3. Init DBs:     task cluster:migrate CLUSTER={{.CLUSTER}}   # Django + memory schema"
+          echo "  4. Set password: task cluster:auth:setup CLUSTER={{.CLUSTER}}"
+          echo "  5. Warm models:  task cluster:warmup CLUSTER={{.CLUSTER}}"
         fi
 
   cluster:seed:
@@ -1373,11 +1283,16 @@ tasks:
         docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production ps
 
   cluster:migrate:
-    desc: "Apply Django migrations in a cluster (CLUSTER=name)"
+    desc: "Apply Django + memory-schema migrations in a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
+      # Django/PostgreSQL ORM tables
       - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py migrate
+      # Neo4j/PG/Redis memory schema (baseline vector indexes + incremental
+      # migrate_schema). Required for recall + the semantic-duplicate check —
+      # without it, consolidation logs "fact_embeddings index missing".
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py init_memory_schema --verbose
 
   cluster:makemigrations:
     desc: "Generate new Django migrations in a cluster (CLUSTER=name)"

@@ -4153,3 +4153,49 @@ class ProfileUnqualifiedToolWarningTest(TestCase):
         # Only the sentinel should be present.
         self.assertEqual(len(cm.output), 1)
         self.assertIn("sentinel", cm.output[0])
+
+
+class SchemaLoaderTest(TestCase):
+    """Comment-aware Cypher statement splitting (regression for the
+    'Invalid input id' schema-init bug caused by a ';' inside a // comment)."""
+
+    def test_semicolon_inside_comment_does_not_break_next_statement(self):
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+        # The exact shape that broke init_memory_schema: a comment containing a
+        # ';' immediately followed by a real statement.
+        cypher = (
+            '// Phase 16.5: one node per (agent, conversation); id is "<conv_id>:<agent_id>"\n'
+            "CREATE CONSTRAINT agent_participant_id IF NOT EXISTS\n"
+            "FOR (ap:AgentParticipant) REQUIRE ap.id IS UNIQUE;\n"
+        )
+        stmts = split_cypher_statements(cypher)
+        self.assertEqual(len(stmts), 1)
+        self.assertTrue(stmts[0].startswith("CREATE CONSTRAINT agent_participant_id"))
+        # The orphaned comment tail must NOT have leaked into the statement.
+        self.assertNotIn("id is", stmts[0])
+
+    def test_trailing_inline_comment_with_semicolon(self):
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+        cypher = "CREATE INDEX foo IF NOT EXISTS FOR (n:Foo) ON (n.bar);  // note; with semicolon\n"
+        stmts = split_cypher_statements(cypher)
+        self.assertEqual(len(stmts), 1)
+        self.assertNotIn("note", stmts[0])
+
+    def test_blank_and_return_markers_dropped(self):
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+        self.assertEqual(split_cypher_statements("// only a comment\nRETURN 1;\n"), [])
+
+    def test_real_baseline_schema_parses_cleanly(self):
+        """Every parsed statement from the real baseline must start with a
+        Cypher keyword — a leaked comment fragment would start lowercase."""
+        from pathlib import Path
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+        schema = Path(__file__).resolve().parents[2] / "queries" / "neo4j_schemas.cypher"
+        stmts = split_cypher_statements(schema.read_text())
+        self.assertGreater(len(stmts), 0)
+        for s in stmts:
+            first = s.split(None, 1)[0]
+            self.assertTrue(
+                first.isupper() or first[0].isupper(),
+                f"statement does not start with a keyword (leaked comment?): {s[:60]!r}",
+            )

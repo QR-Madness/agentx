@@ -1,26 +1,21 @@
 # Production Deployment
 
 For local development the API runs on your host (via `task dev`) against Dockerized
-databases. For production, AgentX also runs the **API itself in a container** using the
-`production` Docker Compose profile. This page covers the single-host production stack; to run
-multiple isolated instances or expose them publicly, see [Clusters](clusters.md).
+databases. For production, AgentX runs the **API itself in a container** using the
+`production` Docker Compose profile.
+
+The deployment unit is a **cluster** — a self-contained instance with its own `.env`, config,
+database storage, and ports. Even a single private instance is just a cluster without the public
+gateway. This page covers the production profile and required configuration; for the full
+workflow (scaffolding, the optional Nginx + Cloudflare gateway, GPU overlay, running multiple
+instances) see [Clusters](clusters.md).
 
 ## The production profile
 
 The `api` service in `docker-compose.yml` is gated behind `profiles: [production]`, so it only
-starts when you opt in with `--profile production`. The `prod:*` tasks wrap this:
-
-| Task | Runs | Purpose |
-|------|------|---------|
-| `prod:build` | `docker compose --profile production build` | Build the API image |
-| `prod:up` | `… up -d` | Start the full stack (API + Neo4j + PostgreSQL + Redis) |
-| `prod:down` | `… down` | Stop the stack |
-| `prod:restart` | `… restart api` | Restart just the API |
-| `prod:logs` | `… logs -f api` | Tail API logs |
-| `prod:status` | `… ps` | Container status |
-| `prod:shell` | `… exec api /bin/bash` | Shell into the API container |
-| `prod:auth:setup` | `… exec api … setup_auth` | Set the root password (see [Authentication](authentication.md)) |
-| `prod:warmup` | `… exec api … warmup_embeddings --validate` | Pre-load the embedding model |
+starts when you opt in with `--profile production`. You never invoke Compose directly — the
+`cluster:*` tasks assemble the right `--env-file` and overlays for you (see the
+[Clusters lifecycle table](clusters.md#lifecycle)).
 
 The API image is built from the repo `Dockerfile` (Python 3.12 + uv, Node for asset build) and
 served by uvicorn (ASGI) on port `12319`. It restarts `unless-stopped` and has a healthcheck
@@ -37,7 +32,8 @@ with a 60s start period.
 
 ## Required configuration
 
-Set these in your `.env` (or the cluster `.env`) before `prod:up`:
+Set these in the cluster's `.env` (`clusters/<name>/.env`, scaffolded by `cluster:new`) before
+`cluster:up`:
 
 ```bash
 # Django — REQUIRED, no safe default
@@ -51,17 +47,17 @@ POSTGRES_USER=agent
 POSTGRES_PASSWORD=<strong>
 POSTGRES_DB=agent_memory
 
-# Host ports (override to avoid conflicts)
+# Host ports (override to avoid conflicts between clusters)
 API_PORT=12319
 NEO4J_HTTP_PORT=7474
 NEO4J_BOLT_PORT=7687
 POSTGRES_PORT=5432
 REDIS_PORT=6379
-
-# Where the API container reads config / persists DB data
-AGENTX_CONFIG_DIR=./data
-AGENTX_DB_DIR=./data
 ```
+
+`cluster:new` also writes `AGENTX_CONFIG_DIR` and `AGENTX_DB_DIR` (pointing at
+`clusters/<name>/config` and `clusters/<name>/db`) so the container reads config from and
+persists database data into the cluster directory.
 
 Plus any LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) and CORS settings you
 need. See [Configuration](../getting-started/configuration.md) for the full list.
@@ -72,13 +68,23 @@ need. See [Configuration](../getting-started/configuration.md) for the full list
 
 ## Bring-up sequence
 
+A private single-host instance (no public gateway):
+
 ```bash
-task prod:build          # build the API image
-task prod:up             # start API + databases
-task prod:auth:setup     # set the root password (if AGENTX_AUTH_ENABLED=true)
-task prod:warmup         # pre-load the embedding model (avoids a slow first request)
-task prod:status         # confirm everything is healthy
+task cluster:new CLUSTER=prod            # scaffold clusters/prod/ + seed config
+# edit clusters/prod/.env: DJANGO_SECRET_KEY, DJANGO_DEBUG=false, passwords, provider keys
+task cluster:up CLUSTER=prod             # build + start API + databases
+task cluster:migrate CLUSTER=prod        # apply Django + memory schema (vector indexes, etc.)
+task cluster:auth:setup CLUSTER=prod     # set the root password (if AGENTX_AUTH_ENABLED=true)
+task cluster:warmup CLUSTER=prod         # pre-load the embedding model (avoids a slow first request)
+task cluster:status CLUSTER=prod         # confirm everything is healthy
 ```
+
+!!! warning "Don't skip `cluster:migrate`"
+    `cluster:migrate` applies **both** the Django/PostgreSQL ORM tables **and** the Neo4j/PG/Redis
+    memory schema (`init_memory_schema`). The memory schema creates the vector indexes recall and
+    the semantic-duplicate check rely on — without it, consolidation logs
+    `fact_embeddings index missing` and silently stops de-duplicating.
 
 Verify the API:
 

@@ -187,22 +187,6 @@ data/
 - **Debugging**: Direct file access
 - **No Orphaned Volumes**: Explicit data location
 
-## Migration from Docker Volumes
-
-If you have existing data in Docker volumes:
-
-```bash
-# Migrate all databases
-task db:migrate-volumes
-
-# Or individually
-task db:migrate-volumes:neo4j
-task db:migrate-volumes:postgres
-task db:migrate-volumes:redis
-```
-
-This copies data from Docker volumes to `./data/` directories.
-
 ## Backup Strategies
 
 ### PostgreSQL Backup

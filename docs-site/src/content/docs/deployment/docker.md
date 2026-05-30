@@ -101,14 +101,6 @@ data/
 task db:init
 ```
 
-### Migrating from Docker Volumes
-
-If you previously used Docker volumes:
-
-```bash
-task db:migrate-volumes
-```
-
 ## Environment Configuration
 
 Configure services via `.env` file (copy from `.env.example`):

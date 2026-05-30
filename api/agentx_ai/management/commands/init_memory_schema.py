@@ -95,7 +95,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Schema Initialization Summary"))  # type: ignore[attr-defined]
         self.stdout.write("=" * 50)
 
-        all_success = True
+        baseline_success = True
         for db, result in results.items():
             if result is None:
                 continue
@@ -105,23 +105,36 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.ERROR(f"  ✗ {db.upper()}: {result['message']}")  # type: ignore[attr-defined]
                 )
-                all_success = False
+                baseline_success = False
 
-        if all_success:
-            self.stdout.write(self.style.SUCCESS("\n✅ All schemas initialized!"))  # type: ignore[attr-defined]
-        else:
-            raise CommandError("Some schema initializations failed")
-
-        # Apply any pending incremental migrations on top of the baseline
+        # Apply any pending incremental migrations on top of the baseline.
+        # This runs even when the baseline reported an error, so a single
+        # non-fatal baseline hiccup can't silently skip incremental migrations
+        # (the failure is still surfaced via the CommandError below).
+        migrations_success = True
         if not verify_only and not force_recreate:
             self.stdout.write("\n📦 Applying pending migrations...")
             from django.core.management import call_command
-            call_command(
-                "migrate_schema",
-                verbose=verbose,
-                stdout=self.stdout,
-                stderr=self.stderr,
-            )
+            try:
+                call_command(
+                    "migrate_schema",
+                    verbose=verbose,
+                    stdout=self.stdout,
+                    stderr=self.stderr,
+                )
+            except CommandError as e:
+                migrations_success = False
+                self.stderr.write(self.style.ERROR(f"  ✗ migrate_schema: {e}"))  # type: ignore[attr-defined]
+
+        if baseline_success and migrations_success:
+            self.stdout.write(self.style.SUCCESS("\n✅ All schemas initialized!"))  # type: ignore[attr-defined]
+        else:
+            failed = []
+            if not baseline_success:
+                failed.append("baseline schema")
+            if not migrations_success:
+                failed.append("incremental migrations")
+            raise CommandError(f"Some schema initializations failed: {', '.join(failed)}")
 
     def _get_configured_dims(self) -> int:
         """Get configured embedding dimensions from settings."""
@@ -196,16 +209,10 @@ class Command(BaseCommand):
         # Validate embedder dimensions match config
         self._validate_embedder_dimensions(verbose)
 
-        # Parse individual statements (split on semicolons, filter empty/comments)
-        statements = []
-        for stmt in schema_content.split(";"):
-            # Strip comment lines, then check if anything remains
-            lines = [line for line in stmt.strip().splitlines()
-                     if line.strip() and not line.strip().startswith("//")]
-            cleaned = "\n".join(lines).strip()
-            if not cleaned or cleaned == "RETURN 1":
-                continue
-            statements.append(cleaned)
+        # Parse individual statements (comment-aware: strips // comments before
+        # splitting on ';' so a semicolon inside a comment can't break a statement).
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
+        statements = split_cypher_statements(schema_content)
 
         if verbose:
             self.stdout.write(f"  Found {len(statements)} schema statements")
@@ -227,15 +234,48 @@ class Command(BaseCommand):
                     )
 
             if verify_only:
-                # Just check if indexes exist
+                # Check what exists, and assert the required vector indexes are
+                # present AND online — a missing/failed fact_embeddings is what
+                # silently breaks the semantic-duplicate check at consolidation.
                 with driver.session() as session:
-                    result = session.run("SHOW INDEXES")
-                    indexes = [r["name"] for r in result]
-                    result = session.run("SHOW CONSTRAINTS")
-                    constraints = [r["name"] for r in result]
+                    index_states = {
+                        r["name"]: r["state"]
+                        for r in session.run("SHOW INDEXES YIELD name, state RETURN name, state")
+                    }
+                    constraints = [
+                        r["name"] for r in session.run("SHOW CONSTRAINTS YIELD name RETURN name")
+                    ]
 
-                self.stdout.write(f"  Found {len(indexes)} indexes, {len(constraints)} constraints")
-                return {"success": True, "message": f"{len(indexes)} indexes, {len(constraints)} constraints"}
+                self.stdout.write(
+                    f"  Found {len(index_states)} indexes, {len(constraints)} constraints"
+                )
+
+                missing = [n for n in VECTOR_INDEXES if n not in index_states]
+                not_online = [
+                    f"{n} ({index_states[n]})"
+                    for n in VECTOR_INDEXES
+                    if n in index_states and index_states[n] != "ONLINE"
+                ]
+                if missing or not_online:
+                    problems = []
+                    if missing:
+                        problems.append(f"missing: {', '.join(missing)}")
+                    if not_online:
+                        problems.append(f"not online: {', '.join(not_online)}")
+                    detail = "; ".join(problems)
+                    self.stdout.write(
+                        self.style.ERROR(  # type: ignore[attr-defined]
+                            f"  ✗ Required vector indexes — {detail}. "
+                            f"Run: python manage.py init_memory_schema"
+                        )
+                    )
+                    return {"success": False, "message": f"vector indexes {detail}"}
+
+                self.stdout.write("  ✓ All required vector indexes present and online")
+                return {
+                    "success": True,
+                    "message": f"{len(index_states)} indexes, {len(constraints)} constraints",
+                }
 
             # Execute schema statements
             success_count = 0
@@ -244,7 +284,7 @@ class Command(BaseCommand):
             with driver.session() as session:
                 for stmt in statements:
                     try:
-                        session.run(stmt)
+                        session.run(stmt)  # type: ignore[arg-type]
                         success_count += 1
                         if verbose:
                             # Extract a description from the statement
@@ -297,12 +337,9 @@ class Command(BaseCommand):
         schema_content = self._substitute_neo4j_dims(schema_file.read_text(), dims)
 
         # Extract CREATE VECTOR INDEX statements from schema
+        from agentx_ai.kit.agent_memory.schema_loader import split_cypher_statements
         create_stmts = {}
-        for stmt in schema_content.split(";"):
-            cleaned = "\n".join(
-                line for line in stmt.strip().splitlines()
-                if line.strip() and not line.strip().startswith("//")
-            ).strip()
+        for cleaned in split_cypher_statements(schema_content):
             if "CREATE VECTOR INDEX" in cleaned:
                 for idx_name in VECTOR_INDEXES:
                     if idx_name in cleaned:

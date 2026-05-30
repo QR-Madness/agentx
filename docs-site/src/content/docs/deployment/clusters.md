@@ -41,7 +41,8 @@ settings). `config.json` is **not** seeded — it's synthesized at runtime by `C
 | `cluster:up CLUSTER=<name> [REBUILD=1] [NVIDIA=1]` | Start the cluster (auto-includes the gateway overlay if `nginx.conf` exists; `--build` if `REBUILD=1`; GPU overlay if `NVIDIA=1`) |
 | `cluster:down` / `cluster:restart` / `cluster:rebuild` | Stop / restart / rebuild |
 | `cluster:status` / `cluster:logs` / `cluster:logs:gateway` / `cluster:logs:tunnel` | Status & logs |
-| `cluster:migrate` / `cluster:makemigrations` | Django migrations inside the container |
+| `cluster:migrate` | Apply **Django + memory-schema** migrations inside the container (PostgreSQL ORM tables **and** `init_memory_schema` — the Neo4j/PG/Redis memory schema incl. vector indexes) |
+| `cluster:makemigrations` | Generate new Django migrations inside the container |
 | `cluster:auth:setup` / `cluster:warmup` | Set the root password / pre-load the embedding model |
 | `cluster:list` | List clusters with tags (e.g. `gateway`, `missing-env`) |
 
@@ -168,6 +169,7 @@ task cluster:new CLUSTER=prod GATEWAY=1        # scaffold (with gateway)
 #   AGENTX_PUBLIC_HOST, AGENTX_GATEWAY_TOKEN, provider keys
 # set up the Cloudflare tunnel (see above), drop credentials.json
 task cluster:up CLUSTER=prod                   # add NVIDIA=1 for GPU
+task cluster:migrate CLUSTER=prod              # Django + memory schema (vector indexes — required)
 task cluster:auth:setup CLUSTER=prod           # set root password
 task cluster:warmup CLUSTER=prod               # pre-load embeddings
 task cluster:status CLUSTER=prod               # verify

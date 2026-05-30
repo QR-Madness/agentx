@@ -154,16 +154,6 @@ task db:init
 
 This creates the local data directories for Neo4j, PostgreSQL, and Redis under `./data/`.
 
-### Docker Volume Migration
-
-If you have existing data in Docker volumes:
-
-```bash
-task db:migrate-volumes
-```
-
-This migrates data from Docker volumes to local bind mounts in `./data/`.
-
 ## Next Steps
 
 - [Quick Start Guide](quickstart.md) - Learn basic usage

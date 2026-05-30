@@ -2,7 +2,7 @@
 
 This document tracks the development history and future direction of AgentX.
 
-**Current release:** v0.21.20 — the v0.20 milestone, "Mobile-Ready Alpha".
+**Current release:** v0.21.21 — the v0.20 milestone, "Mobile-Ready Alpha".
 
 ## Progress Overview
 
@@ -589,7 +589,7 @@ Implemented `Session` and `SessionManager`:
 > **Goal**: Make AgentX deployable beyond a single dev machine
 
 - Optional session authentication: single root user, bcrypt password, Redis-backed sessions, gated by `AGENTX_AUTH_ENABLED`
-- Docker production stack (`task prod:*`) and multi-cluster deployment (`task cluster:*`) with an optional Nginx + Cloudflare gateway
+- Dockerized production deployment via clusters (`task cluster:*`) — single or multiple isolated instances per host, with an optional Nginx + Cloudflare gateway
 - Client/API version matching via `versions.yaml` (`protocol_version` + `min_client_version`), surfaced by `VersionMismatchPage`
 
 ---

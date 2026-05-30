@@ -30,8 +30,8 @@ task auth:setup:force    # reset an existing password (invalidates all sessions)
 task auth:check          # report whether setup is required
 ```
 
-In containerized deployments use the wrappers `prod:auth:setup` (see
-[Production](production.md)) or `cluster:auth:setup CLUSTER=<name>` (see [Clusters](clusters.md)).
+In containerized deployments use the wrapper `cluster:auth:setup CLUSTER=<name>` (see
+[Clusters](clusters.md)), which runs `setup_auth` inside the cluster's API container.
 
 ## How requests are gated
 

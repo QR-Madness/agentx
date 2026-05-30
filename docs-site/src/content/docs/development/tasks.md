@@ -142,22 +142,6 @@ task db:shell:redis
 
 Neo4j Browser: [http://localhost:7474](http://localhost:7474)
 
-### Volume Migration
-
-Migrate all databases from Docker volumes to local bind mounts:
-```bash
-task db:migrate-volumes
-```
-
-Migrate individual databases:
-```bash
-task db:migrate-volumes:neo4j
-task db:migrate-volumes:postgres
-task db:migrate-volumes:redis
-```
-
-These commands copy data from Docker volumes to `./data/` directories.
-
 ### Clean All Data
 
 !!! danger "Destructive Operation"
@@ -352,8 +336,7 @@ Run `task --list-all` for the full set (120+ tasks). Other groups worth knowing:
 |-------|----------|---------|
 | `mcp:*` | `mcp:servers`, `mcp:tools`, `mcp:resources`, `mcp:health` | Inspect MCP servers/tools (API must be running) |
 | `auth:*` | `auth:setup`, `auth:setup:force`, `auth:check` | Manage the root password (Phase 17 auth) |
-| `prod:*` | `prod:build`, `prod:up`, `prod:down`, `prod:logs`, `prod:shell` | Production Docker stack |
-| `cluster:*` | `cluster:new`, `cluster:up`, `cluster:down`, `cluster:status`, `cluster:list` | Multi-cluster deployment (`CLUSTER=name`) |
+| `cluster:*` | `cluster:new`, `cluster:up`, `cluster:migrate`, `cluster:down`, `cluster:status`, `cluster:list` | Production deployment unit — single or multi-instance (`CLUSTER=name`) |
 | `models:*` | `models:download`, `models:cache`, `models:clear`, `warmup:embeddings` | HuggingFace model management |
 | `check:*` | `check:static`, `check:types`, `check:build` | Static analysis (lint + types + build) |
 | `lint:*` / `format:*` | `lint:python`, `lint:client`, `format:python`, `format:client` | Lint and format |

@@ -1,18 +1,8 @@
 # Database Migration
 
-Guide for migrating database data.
-
-## From Docker Volumes to Bind Mounts
-
-```bash
-# Migrate all databases
-task db:migrate-volumes
-
-# Or individually
-task db:migrate-volumes:neo4j
-task db:migrate-volumes:postgres
-task db:migrate-volumes:redis
-```
+Guide for backing up and restoring database data. AgentX stores all database data as bind mounts
+under `./data/` (or `clusters/<name>/db/` for a cluster) — there are no Docker named volumes to
+migrate.
 
 ## Backup and Restore
 

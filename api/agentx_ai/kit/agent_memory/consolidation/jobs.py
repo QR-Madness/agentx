@@ -108,7 +108,8 @@ def _is_semantic_duplicate(
     except Exception as e:
         logger.warning(
             f"Semantic duplicate check failed [{type(e).__name__}] "
-            f"(index missing or param shape mismatch): {e}"
+            f"(fact_embeddings index missing/offline or param shape mismatch): {e}. "
+            f"If the index is missing, run: python manage.py init_memory_schema"
         )
         return False
 
