@@ -58,7 +58,7 @@ export function UserHistoryTab() {
       {loading && !data ? (
         <div className="user-history-empty">Loading…</div>
       ) : data ? (
-        <UserHistoryView turns={data.user_turns} facts={data.facts} topic={data.topic} />
+        <UserHistoryView turns={data.user_turns} facts={data.facts} topic={data.topic} summary={data.summary} />
       ) : null}
     </div>
   );

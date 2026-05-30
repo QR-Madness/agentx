@@ -6,7 +6,7 @@
  * Pure: takes already-fetched turns + facts.
  */
 
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageSquare, Sparkles, BookUser } from 'lucide-react';
 import type { UserHistoryFact, UserHistoryTurn } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
 import './UserHistoryView.css';
@@ -15,17 +15,28 @@ interface UserHistoryViewProps {
   turns: UserHistoryTurn[];
   facts: UserHistoryFact[];
   topic?: string | null;
+  summary?: string | null;
   compact?: boolean;
 }
 
-export function UserHistoryView({ turns, facts, topic, compact }: UserHistoryViewProps) {
-  const empty = turns.length === 0 && facts.length === 0;
+export function UserHistoryView({ turns, facts, topic, summary, compact }: UserHistoryViewProps) {
+  const empty = turns.length === 0 && facts.length === 0 && !summary;
 
   return (
     <div className={`user-history-view ${compact ? 'compact' : ''}`}>
       {topic && (
         <div className="user-history-topic">
           Topic: <span>{topic}</span>
+        </div>
+      )}
+
+      {summary && (
+        <div className="user-history-section">
+          <div className="user-history-section-title">
+            <BookUser size={12} />
+            <span>Recap</span>
+          </div>
+          <p className="user-history-recap">{summary}</p>
         </div>
       )}
 

@@ -1413,6 +1413,18 @@ async def consolidate_episodic_to_semantic(
                 progress_callback,
             )
 
+    # Refresh the cached cross-conversation recap for each user/channel we just
+    # consolidated, so recall_user_history has a warm summary to surface. Best
+    # effort — never let a recap failure abort consolidation.
+    from ..config import get_settings as _get_mem_settings
+    if getattr(_get_mem_settings(), "user_recap_enabled", True):
+        from ..recap import build_and_cache_user_recap
+        for cache_key, mem in list(memory_cache.items()):
+            try:
+                await build_and_cache_user_recap(mem)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"User recap refresh skipped for {cache_key}: {e}")
+
     # Clean up memory cache to release resources
     memory_cache.clear()
 

@@ -64,6 +64,15 @@
   word-break: break-word;
 }
 
+.user-history-recap {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .user-history-turn-time {
   margin-top: 4px;
   font-size: 10px;

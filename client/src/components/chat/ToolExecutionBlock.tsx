@@ -25,6 +25,7 @@ function parseUserHistory(content: string): {
   turns: UserHistoryTurn[];
   facts: UserHistoryFact[];
   topic: string | null;
+  summary: string | null;
 } | null {
   try {
     const data = JSON.parse(content);
@@ -33,6 +34,7 @@ function parseUserHistory(content: string): {
       turns: data.user_turns as UserHistoryTurn[],
       facts: Array.isArray(data.facts) ? (data.facts as UserHistoryFact[]) : [],
       topic: data.topic ?? null,
+      summary: data.summary ?? null,
     };
   } catch {
     return null;
@@ -113,6 +115,7 @@ export function ToolExecutionBlock({
               turns={userHistory.turns}
               facts={userHistory.facts}
               topic={userHistory.topic}
+              summary={userHistory.summary}
               compact
             />
           </div>

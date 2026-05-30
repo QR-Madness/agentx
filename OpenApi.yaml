@@ -2152,6 +2152,9 @@ paths:
                   topic:
                     type: string
                     nullable: true
+                  summary:
+                    type: string
+                    description: Cached cross-conversation recap of the user (refreshed during consolidation); empty until first built.
                   turn_count:
                     type: integer
                   user_turns:

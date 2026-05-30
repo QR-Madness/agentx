@@ -3598,8 +3598,16 @@ def memory_user_history(request):
         for f in (getattr(bundle, "facts", None) or [])[:10]
     ]
 
+    try:
+        from .kit.agent_memory.recap import get_cached_recap
+        _recap = get_cached_recap(DEFAULT_USER_ID, channel)
+        recap_summary = _recap.get("summary", "") if _recap else ""
+    except Exception:  # noqa: BLE001
+        recap_summary = ""
+
     return JsonResponse({
         "topic": topic or None,
+        "summary": recap_summary,
         "user_turns": user_turns,
         "facts": facts,
         "turn_count": len(user_turns),

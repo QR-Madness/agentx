@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     fact_confidence_threshold: float = 0.7
     salience_decay_rate: float = 0.95  # Daily decay multiplier
     max_working_memory_items: int = 50
+    user_recap_enabled: bool = True  # Refresh the cached cross-conversation recap during consolidation
 
     # Retrieval settings
     default_top_k: int = 10

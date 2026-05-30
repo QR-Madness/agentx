@@ -458,8 +458,17 @@ def recall_user_history(
     except Exception as e:
         return {"error": f"Recall failed: {e}", "success": False}
 
+    # Cached cross-conversation recap (refreshed during consolidation), used to
+    # fill the summary field below.
+    try:
+        from ..kit.agent_memory.recap import get_cached_recap
+        _recap = get_cached_recap(ctx.user_id, ctx.channel or "_default")
+        recap_summary = _recap.get("summary", "") if _recap else ""
+    except Exception:  # noqa: BLE001
+        recap_summary = ""
+
     if bundle is None:
-        return {"summary": "", "user_turns": [], "facts": [], "success": True}
+        return {"summary": recap_summary, "user_turns": [], "facts": [], "success": True}
 
     user_turns: list[dict[str, Any]] = []
     seen_conv_pairs: set[tuple[Any, Any]] = set()
@@ -490,6 +499,7 @@ def recall_user_history(
 
     return {
         "topic": topic,
+        "summary": recap_summary,
         "user_turns": user_turns,
         "facts": facts,
         "turn_count": len(user_turns),

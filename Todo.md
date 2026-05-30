@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.19** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.20** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -23,7 +23,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.19** (prot
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
 | Phase 16: Multi-Agent Conversations | **In Progress** | ~65% (16.0–16.5 shipped; Factory UI + ambassador deferred) |
-| Phase 18: UX + Memory Tuning | **In Progress** | ~90% (dashboard metrics + extraction follow-ups open) |
+| Phase 18: UX + Memory Tuning | **In Progress** | ~93% (18.9 working-memory waves done; extraction eval follow-ups open) |
 
 ---
 
@@ -252,7 +252,12 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.19** (prot
         `AgentMemory.boost_salience`/`forget_fact`/`get_fact_provenance` (+ `episodic.get_turn_by_id`);
         `_internal.remember_this`/`_internal.forget` tools; `POST /api/memory/facts/{id}/remember`,
         `.../forget`, `GET .../provenance`; Memory-drawer fact actions (Remember / Source / Forget).
-  - [ ] cached `user_recap_summary` rolling summary (fills `recall_user_history`'s empty `summary`).
+  - [x] cached `user_recap_summary` rolling summary — shipped `[v0.21.20]`. New
+        `kit/agent_memory/recap.py` builds a durable cross-conversation recap (recent turns + facts →
+        the configured summary model) and caches it in Redis (`user_recap:{user_id}:{channel}`, 30-day
+        TTL); refreshed at the end of `consolidate_episodic_to_semantic` (gated by
+        `user_recap_enabled`). `recall_user_history` + `POST /api/memory/user-history` now fill their
+        `summary` field from the cache, surfaced as a "Recap" block in `UserHistoryView`.
   - **Cut after review (already covered):** active-goals header (the memory bundle already injects a
         `## Active Goals` section), model-driven pin/anchor turns (duplicates `checkpoint`).
 - [x] **Per-profile internal-tool gating UI** (18.9.x) — shipped. New

@@ -3302,6 +3302,45 @@ class FactActionEndpointTest(TestCase):
         self.assertEqual(resp.json()["origin"]["conversation_id"], "conv-7")
 
 
+class UserRecapTest(MockRedisTestBase):
+    """Cached user recap store + recall_user_history summary wiring."""
+
+    def test_cache_round_trip(self):
+        from agentx_ai.kit.agent_memory.recap import set_cached_recap, get_cached_recap
+
+        set_cached_recap("u1", "_default", "Alice is a backend developer.")
+        # setex(key, ttl, value) — feed the stored payload back through get().
+        key, _ttl, value = self.mock_redis.setex.call_args[0]
+        self.assertTrue(key.startswith("user_recap:"))
+        self.mock_redis.get.return_value = value
+
+        entry = get_cached_recap("u1", "_default")
+        self.assertEqual(entry["summary"], "Alice is a backend developer.")
+
+    def test_recall_user_history_fills_summary_from_cache(self):
+        from agentx_ai.mcp.internal_context import InternalToolContext, set_context, reset_context
+        from agentx_ai.mcp.internal_tools import recall_user_history
+
+        mem = MagicMock()
+        mem.remember.return_value = MagicMock(relevant_turns=[], facts=[])
+
+        token = set_context(InternalToolContext(
+            user_id="u1", channel="_default", agent_id=None, conversation_id="c1",
+        ))
+        try:
+            with patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=mem), \
+                 patch(
+                     "agentx_ai.kit.agent_memory.recap.get_cached_recap",
+                     return_value={"summary": "Alice is a backend developer."},
+                 ):
+                result = recall_user_history()
+        finally:
+            reset_context(token)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["summary"], "Alice is a backend developer.")
+
+
 class ChatRunStoreTest(MockRedisTestBase):
     """Detached chat-run state store + tail entry paths (Redis mocked)."""
 

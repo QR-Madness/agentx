@@ -794,6 +794,7 @@ export interface UserHistoryFact {
 
 export interface UserHistoryResponse {
   topic: string | null;
+  summary?: string;
   turn_count: number;
   user_turns: UserHistoryTurn[];
   facts: UserHistoryFact[];
