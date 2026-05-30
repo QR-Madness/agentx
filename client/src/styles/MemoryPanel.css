@@ -19,6 +19,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  /* Keep the right-aligned actions clear of the shell-owned close button,
+     which floats over the panel's top-right corner. */
+  padding-right: 40px;
 }
 
 .header-actions {
@@ -1163,12 +1166,15 @@
 }
 
 @media (max-width: 480px) {
-  /* On very narrow screens the fixed detail panel should fill width */
+  /* On very narrow screens the fixed detail panel should fill width.
+     Pad for side notches, the status bar, and the bottom-anchored TopBar +
+     home indicator so the detail header and content stay clear. */
   .split-detail.is-open {
     width: 100vw;
     border-left: none;
     border-top: 1px solid var(--border-color);
-    padding: 16px;
+    padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px))
+             calc(56px + max(16px, env(safe-area-inset-bottom, 0px))) max(16px, env(safe-area-inset-left, 0px));
   }
 
   .graph-view {

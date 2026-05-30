@@ -335,6 +335,12 @@
   .toolbar-secondary {
     display: none !important;
   }
+
+  /* Drop the Workspace overflow trigger on mobile — the command palette (⌘K)
+     is the canonical launcher for every drawer/modal and covers all of it. */
+  .toolbar-workspace-trigger {
+    display: none !important;
+  }
 }
 
 /* Plans indicator — animated construction (hazard) stripes while a plan runs */

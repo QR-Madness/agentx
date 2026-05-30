@@ -1012,3 +1012,14 @@
     padding: 20px;
   }
 }
+
+/* On phones: hard top buffer (Android status-bar clip), side notches, and
+   room for the bottom-anchored TopBar + home indicator. */
+@media (max-width: 600px) {
+  .unified-profile-container {
+    padding-top: max(env(safe-area-inset-top, 0px), 28px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px) + 16px);
+  }
+}

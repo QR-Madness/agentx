@@ -231,6 +231,10 @@
   align-items: center;
   gap: 16px;
   width: 100%;
+  /* Never let the flex-column list shrink a row below its content — a <button>
+     flex item ignores min-height:auto, so without this the (wrapping, multi-line)
+     description overflows the row once the list scrolls. The list scrolls instead. */
+  flex-shrink: 0;
   padding: 12px 14px;
   background: var(--glass-layer-1);
   border: 1px solid transparent;
@@ -321,16 +325,95 @@
 
 /* Mobile */
 @media (max-width: 720px) {
-  .model-picker-container { padding: 12px; gap: 12px; }
+  .model-picker-container {
+    padding: 12px;
+    gap: 12px;
+    /* Hard top buffer (Android status-bar clip) + side notches; bottom clears
+       the bottom-anchored TopBar + home indicator so the footer stays reachable. */
+    padding-top: max(env(safe-area-inset-top, 0px), 24px);
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px));
+  }
+
+  /* Shrink the title and drop the Refresh label so header controls don't collide. */
+  .model-picker-header { padding: 0 4px; gap: 10px; }
+  .model-picker-header .header-left h1 { font-size: 20px; }
+  .model-picker-header .header-right .mp-button span { display: none; }
+  .model-picker-header .header-right .mp-button { padding: 8px; }
+
+  /* Stack: a compact filter bar on top, the model list fills the rest. */
   .model-picker-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
   }
+
+  /* Filters collapse from a tall sidebar into a horizontal, wrapping chip bar. */
   .model-picker-filters {
-    max-height: 32vh;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    max-height: none;
+    padding: 10px 12px;
   }
-  .model-row-meta { max-width: 100%; }
-  .model-row { flex-direction: column; align-items: flex-start; }
+  .filter-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .filter-group h3 { width: 100%; margin: 0 0 2px; }
+  .filter-chip {
+    width: auto;
+    margin-bottom: 0;
+    padding: 6px 10px;
+  }
+  .filter-chip-count { margin-left: 6px; }
+  .filter-clear { margin: 0 0 0 auto; }
+
+  /* Spacious card rows: each model is a distinct, roomy card with every field
+     wrapping fully instead of clipping. Vertical space is fine — searching is
+     the primary way to narrow the list. */
+  .model-picker-list { gap: 10px; padding: 10px 12px; }
+
+  .model-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 16px;
+    border-color: var(--accent-tint-soft);
+    border-radius: 14px;
+  }
+  .model-row-main {
+    width: 100%;
+    min-width: 0;
+  }
+  .model-row-title-line {
+    gap: 8px;
+    row-gap: 6px;
+  }
+  .model-row-title {
+    font-size: 15px;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .model-row-subtitle {
+    margin-top: 6px;
+    /* Full wrap + higher contrast so the description is readable, not clipped. */
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: 100%;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+  .model-row-meta {
+    max-width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
 }
 
 .spin { animation: mp-spin 1s linear infinite; }

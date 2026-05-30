@@ -25,6 +25,7 @@ import {
   Command,
   Eye,
   EyeOff,
+  MessagesSquare,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
@@ -32,7 +33,7 @@ import { useConversation } from '../contexts/ConversationContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
-import { useConsolidationStatus } from '../lib/hooks';
+import { useConsolidationStatus, useIsMobile } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
 import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
 import { ConversationTabBar } from './ConversationTabBar';
@@ -64,6 +65,7 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   ).length;
   const { authRequired, isAuthenticated, logout } = useAuth();
   const { focusMode, toggleFocusMode } = useUIChrome();
+  const isMobile = useIsMobile();
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
@@ -146,6 +148,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
     });
   };
 
+  const openConversations = () => {
+    openModal({
+      id: 'conversations-drawer',
+      type: 'drawer',
+      component: 'conversations',
+      position: 'right',
+      size: 'md',
+    });
+  };
+
   const openTranslation = () => {
     openModal({
       id: 'translation-modal',
@@ -221,6 +233,17 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
       {/* Right: live indicators + ⌘K + Focus + Workspace menu + window controls */}
       <div className="top-bar-right">
+        {/* Conversations — mobile-only switcher (the tab bar is hidden on mobile) */}
+        {isMobile && (
+          <button
+            className="toolbar-icon"
+            onClick={openConversations}
+            title="Conversations"
+          >
+            <MessagesSquare size={18} />
+          </button>
+        )}
+
         {/* Consolidation lightning — pulses as a live indicator when active */}
         <div className="consolidation-trigger-container">
           <button

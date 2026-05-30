@@ -3,10 +3,14 @@
  */
 
 import { useEffect, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import type { ModalSize } from '../../contexts/ModalContext';
 
 interface ModalDialogProps {
   size?: ModalSize;
+  /** Render the shell-owned close button. Default true; pass false for content
+   *  that renders its own close affordance (see SELF_CLOSING in ModalPortal). */
+  showClose?: boolean;
   onClose: () => void;
   children: ReactNode;
 }
@@ -20,7 +24,7 @@ const SIZE_MAX_WIDTHS: Record<ModalSize, string> = {
   full: '95vw',
 };
 
-export function ModalDialog({ size = 'md', onClose, children }: ModalDialogProps) {
+export function ModalDialog({ size = 'md', showClose = true, onClose, children }: ModalDialogProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -38,7 +42,18 @@ export function ModalDialog({ size = 'md', onClose, children }: ModalDialogProps
         role="dialog"
         aria-modal="true"
       >
-        {children}
+        {showClose && (
+          <button
+            type="button"
+            className="shell-close-btn"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          >
+            <X size={20} />
+          </button>
+        )}
+        <div className="modal-dialog-body">{children}</div>
       </div>
     </div>
   );

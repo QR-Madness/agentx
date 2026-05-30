@@ -335,3 +335,36 @@
     max-width: none;
   }
 }
+
+/* === Conversations drawer (mobile) — reuses the list body in a side drawer.
+   Fills the drawer height; the inner .history-list owns the scroll. === */
+.conversations-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* The list is the flex child that scrolls. Without min-height:0 the flex item
+   keeps its content height (default min-height:auto) instead of shrinking, so a
+   long list overflows past the drawer bottom and looks cut off rather than
+   scrolling. min-height:0 lets overflow-y engage; max-height:none clears any
+   inherited dropdown cap. */
+.conversations-drawer .history-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.conversations-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  /* Leave room for the shell-owned close button pinned at the top-right. */
+  padding-right: calc(44px + 24px);
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
