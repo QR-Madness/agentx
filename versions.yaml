@@ -14,7 +14,7 @@
 
 api:
   # Semantic version of the API
-  version: "0.21.17"
+  version: "0.21.18"
 
   # Protocol version - integer that increments on breaking API changes
   # Clients must match this exactly to connect
@@ -26,4 +26,4 @@ api:
 
 client:
   # Client version (should match api.version for releases)
-  version: "0.21.17"
+  version: "0.21.18"

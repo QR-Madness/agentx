@@ -1103,6 +1103,20 @@ async def agent_chat_stream(request):
             except Exception as cp_err:
                 logger.debug(f"Checkpoint injection skipped: {cp_err}")
 
+            # Re-inject any model-authored scratchpad notes for this conversation.
+            # Same Redis-backed, append-fresh-each-turn pattern as checkpoints, so
+            # they also survive trajectory compression.
+            try:
+                from .agent.scratchpad_storage import render_scratchpad_block
+                scratchpad_block = render_scratchpad_block(conv_id)
+                if scratchpad_block:
+                    messages.append(Message(
+                        role=MessageRole.SYSTEM,
+                        content=scratchpad_block,
+                    ))
+            except Exception as sp_err:
+                logger.debug(f"Scratchpad injection skipped: {sp_err}")
+
             # Retrieve relevant memories and inject into context
             memory_bundle = None
             if use_memory and agent.memory:

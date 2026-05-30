@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.8** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.18** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -241,9 +241,17 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.8** (proto
       gate. Tests in `tests_memory.py::CorrectionDetectionTest` rewritten against a
       mocked provider; new `DedupeEntitiesAliasMergeTest` covers the alias-merge
       helper.
-- [ ] **Working-memory follow-ups** (18.9): pin/anchor arbitrary turns, `scratchpad_note` tool,
-      `inspect_working_memory`, active-goals header, `forget` tool, cached `user_recap_summary`
-      rolling summary.
+- [x] **Working-memory follow-ups** (18.9) — redundancy-pruned after review and shipped in waves:
+  - [x] `scratchpad_note` tool + read-back (folds in `inspect_working_memory`) — shipped `[v0.21.18]`.
+        New `agent/scratchpad_storage.py` mirrors checkpoint storage (Redis, re-injected each turn so
+        it survives compression); the tool's no-arg/`read` mode returns notes + checkpoints + active
+        goals (never the transcript). Injected next to checkpoints in `views.py`. Also removed the
+        dead `push_thought`/`get_thoughts`/`set_active_goal`/`get_active_goal` helpers in `working.py`.
+  - [ ] `forget` (soft-supersede) + salience boost ("remember this") + "where did I learn this?"
+        provenance.
+  - [ ] cached `user_recap_summary` rolling summary (fills `recall_user_history`'s empty `summary`).
+  - **Cut after review (already covered):** active-goals header (the memory bundle already injects a
+        `## Active Goals` section), model-driven pin/anchor turns (duplicates `checkpoint`).
 - [x] **Per-profile internal-tool gating UI** (18.9.x) — shipped. New
       `ToolAccessSection` inside the Profile Editor (under the existing
       `Enable Tools` toggle) surfaces `AgentProfile.allowed_tools` /

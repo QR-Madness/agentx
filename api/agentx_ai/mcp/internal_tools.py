@@ -564,6 +564,98 @@ def checkpoint(
 
 
 @register_tool(
+    name="scratchpad_note",
+    description=(
+        "Jot a short free-form working note for the current conversation. Notes "
+        "are re-injected into the system prompt every turn and survive automatic "
+        "context compression — use them for loose reminders, intermediate "
+        "findings, or anything you want to keep in view that isn't a formal "
+        "checkpoint. Call with no `note` (or `read=true`) to read back your "
+        "current working state: scratchpad notes, active checkpoints, and active "
+        "goals (this does NOT echo the conversation transcript). Set "
+        "`replace=true` to clear existing notes before writing the new one."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "description": "The note to append. Omit to read back current state.",
+            },
+            "replace": {
+                "type": "boolean",
+                "description": "Clear existing notes before adding this one.",
+                "default": False,
+            },
+            "read": {
+                "type": "boolean",
+                "description": "Read back current working state without writing.",
+                "default": False,
+            },
+        },
+    },
+)
+def scratchpad_note(
+    note: str | None = None,
+    replace: bool = False,
+    read: bool = False,
+) -> dict[str, Any]:
+    """Append a scratchpad note, or read back the agent's working state."""
+    from .internal_context import current_context
+    from ..agent.scratchpad_storage import add_note, clear_notes, list_notes
+
+    ctx = current_context()
+    if ctx is None or not ctx.conversation_id:
+        return {
+            "error": "scratchpad_note requires an active conversation context.",
+            "success": False,
+        }
+
+    # Read-back mode: surface only the non-transcript working state.
+    if read or not (note and note.strip()):
+        from ..agent.checkpoint_storage import list_checkpoints
+
+        active_goals: list[dict[str, Any]] = []
+        try:
+            from ..kit.memory_utils import get_agent_memory
+
+            memory = get_agent_memory(
+                user_id=ctx.user_id,
+                channel=ctx.channel or "_default",
+                agent_id=ctx.agent_id,
+            )
+            if memory is not None:
+                for g in memory.get_active_goals() or []:
+                    active_goals.append({
+                        "description": getattr(g, "description", ""),
+                        "status": getattr(g, "status", "active"),
+                        "priority": getattr(g, "priority", 3),
+                    })
+        except Exception as e:  # noqa: BLE001 - memory optional
+            logger.debug(f"scratchpad read-back goals skipped: {e}")
+
+        return {
+            "notes": list_notes(ctx.conversation_id),
+            "checkpoints": list_checkpoints(ctx.conversation_id),
+            "active_goals": active_goals,
+            "success": True,
+        }
+
+    # Write mode.
+    if replace:
+        clear_notes(ctx.conversation_id)
+    entry = add_note(conversation_id=ctx.conversation_id, note=note)
+    total = len(list_notes(ctx.conversation_id))
+
+    return {
+        "stored": entry,
+        "note_count": total,
+        "note": "Scratchpad notes are re-injected into system context every turn.",
+        "success": True,
+    }
+
+
+@register_tool(
     name="detect_language",
     description=(
         "Detect the language of a piece of text. Covers ~20 common languages and "

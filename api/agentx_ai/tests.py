@@ -3087,6 +3087,104 @@ class CheckpointEndpointTest(MockRedisTestBase):
         self.assertEqual(resp.json()["count"], 0)
 
 
+class ScratchpadStorageTest(MockRedisTestBase):
+    """Redis-backed scratchpad note store (mirrors checkpoint storage)."""
+
+    def test_add_note_round_trips_through_render(self):
+        from agentx_ai.agent.scratchpad_storage import (
+            add_note,
+            render_scratchpad_block,
+        )
+
+        # add_note serializes via rpush; feed the captured payload back through
+        # lrange so the full round-trip is exercised.
+        add_note("conv-1", "remember the API key is in .env")
+        stored = self.mock_redis.rpush.call_args[0][1]
+        self.assertEqual(json.loads(stored)["note"], "remember the API key is in .env")
+
+        self.mock_redis.lrange.return_value = [stored]
+        block = render_scratchpad_block("conv-1")
+        self.assertIn("Scratchpad", block)
+        self.assertIn("remember the API key is in .env", block)
+
+    def test_render_empty_returns_blank(self):
+        from agentx_ai.agent.scratchpad_storage import render_scratchpad_block
+
+        self.mock_redis.lrange.return_value = []
+        self.assertEqual(render_scratchpad_block("conv-1"), "")
+
+    def test_clear_notes_returns_prior_count(self):
+        from agentx_ai.agent.scratchpad_storage import clear_notes
+
+        self.mock_redis.llen.return_value = 4
+        self.assertEqual(clear_notes("conv-1"), 4)
+        self.mock_redis.delete.assert_called_once()
+
+
+class ScratchpadToolTest(MockRedisTestBase):
+    """The scratchpad_note internal tool — write + read-back modes."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from agentx_ai.mcp.internal_context import (
+            InternalToolContext,
+            set_context,
+        )
+        self._ctx_token = set_context(InternalToolContext(
+            user_id="u1",
+            channel="_default",
+            agent_id=None,
+            conversation_id="conv-1",
+        ))
+
+    def tearDown(self) -> None:
+        from agentx_ai.mcp.internal_context import reset_context
+        reset_context(self._ctx_token)
+        super().tearDown()
+
+    def test_write_appends_note(self):
+        from agentx_ai.mcp.internal_tools import scratchpad_note
+
+        result = scratchpad_note(note="check the retry path")
+        self.assertTrue(result["success"])
+        self.assertTrue(self.mock_redis.rpush.called)
+        self.assertEqual(result["stored"]["note"], "check the retry path")
+
+    def test_replace_clears_before_write(self):
+        from agentx_ai.mcp.internal_tools import scratchpad_note
+
+        scratchpad_note(note="new note", replace=True)
+        # clear_notes issues a DELETE before the new rpush.
+        self.assertTrue(self.mock_redis.delete.called)
+        self.assertTrue(self.mock_redis.rpush.called)
+
+    def test_read_back_returns_state_not_transcript(self):
+        from agentx_ai.mcp.internal_tools import scratchpad_note
+
+        # No live memory system → active_goals degrades to [].
+        with patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=None):
+            self.mock_redis.lrange.return_value = []
+            result = scratchpad_note(read=True)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(set(result.keys()) >= {"notes", "checkpoints", "active_goals"}, True)
+        self.assertEqual(result["active_goals"], [])
+        # Read-back must never echo the conversation transcript.
+        self.assertNotIn("recent_turns", result)
+        self.assertNotIn("turns", result)
+
+    def test_requires_conversation_context(self):
+        from agentx_ai.mcp.internal_context import set_context, reset_context
+        from agentx_ai.mcp.internal_tools import scratchpad_note
+
+        token = set_context(None)
+        try:
+            result = scratchpad_note(note="orphaned")
+        finally:
+            reset_context(token)
+        self.assertFalse(result["success"])
+
+
 class ChatRunStoreTest(MockRedisTestBase):
     """Detached chat-run state store + tail entry paths (Redis mocked)."""
 

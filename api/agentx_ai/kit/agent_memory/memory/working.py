@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 import json
-from datetime import datetime, timezone
 
 from ..connections import RedisConnection
 from ..config import get_settings
@@ -174,63 +173,3 @@ class WorkingMemory:
                 self.redis.delete(*key_strs)
             if cursor == 0:
                 break
-
-    # Specialized working memory operations
-
-    def set_active_goal(self, goal_id: str, goal_description: str) -> None:
-        """
-        Set the currently active goal.
-
-        Args:
-            goal_id: Goal ID
-            goal_description: Goal description
-        """
-        self.set("active_goal", {
-            "id": goal_id,
-            "description": goal_description,
-            "set_at": datetime.now(timezone.utc).isoformat()
-        })
-
-    def get_active_goal(self) -> Optional[Dict[str, Any]]:
-        """
-        Get the currently active goal.
-
-        Returns:
-            Active goal dictionary or None
-        """
-        return self.get("active_goal")
-
-    def push_thought(self, thought: str) -> None:
-        """
-        Push a reasoning step (for chain-of-thought tracking).
-
-        Args:
-            thought: Reasoning step text
-        """
-        thoughts_key = f"{self.session_key}:thoughts"
-        self.redis.lpush(thoughts_key, json.dumps({
-            "thought": thought,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }))
-        # Use configured limit instead of hard-coded value
-        self.redis.ltrim(thoughts_key, 0, settings.max_working_memory_items - 1)
-        self.redis.expire(thoughts_key, 3600)
-
-    def get_thoughts(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get recent reasoning steps.
-
-        Args:
-            limit: Maximum number of thoughts to return (capped to max_working_memory_items)
-
-        Returns:
-            List of thought dictionaries
-        """
-        # Cap limit to configured maximum
-        effective_limit = min(max(1, limit), settings.max_working_memory_items)
-        thoughts_key = f"{self.session_key}:thoughts"
-        thoughts = self.redis.lrange(thoughts_key, 0, effective_limit - 1)
-        if not isinstance(thoughts, list):
-            return []
-        # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
-        return [json.loads(t) for t in thoughts]  # type: ignore[arg-type]
