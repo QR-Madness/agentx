@@ -899,6 +899,14 @@ tasks:
         sed -i "s/\"version\": \".*\"/\"version\": \"$CLIENT_VERSION\"/" client/src-tauri/tauri.conf.json
         echo "  ✓ client/src-tauri/tauri.conf.json"
 
+        # docs-site landing data (drives the hub Hero/TopNav/Footer)
+        sed -i "s/^export const version = '.*'/export const version = '$API_VERSION'/" docs-site/src/config/landing.ts
+        echo "  ✓ docs-site/src/config/landing.ts"
+
+        # docs-site "Current release:" prose mentions
+        sed -i "s/\(Current release:\*\* v\)[0-9.]*/\1$API_VERSION/" docs-site/src/content/docs/index.md docs-site/src/content/docs/roadmap.md
+        echo "  ✓ docs-site docs prose"
+
         echo "Done."
 
   release:build:

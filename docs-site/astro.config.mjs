@@ -69,8 +69,11 @@ export default defineConfig({
   markdown: {
     // Order matters: rewrite links first, then transform admonitions.
     remarkPlugins: [remarkRewriteMdLinks, remarkAdmonitions],
-    // Append a hover `#` anchor to each heading (IDs already added by Astro;
-    // rehype-slug is idempotent and guarantees them before autolink runs).
+    // Append an empty hover anchor to each heading. The `#` glyph is drawn
+    // presentationally via CSS (`a.anchor::after` in global.css) rather than as a
+    // real text node — otherwise it leaks into Astro's collected heading text and
+    // shows up appended to every right-rail TOC entry. IDs are added by rehype-slug
+    // (idempotent) before autolink runs.
     rehypePlugins: [
       rehypeSlug,
       [
@@ -78,7 +81,7 @@ export default defineConfig({
         {
           behavior: 'append',
           properties: { className: ['anchor'], ariaHidden: true, tabIndex: -1 },
-          content: { type: 'text', value: '#' },
+          content: [],
         },
       ],
     ],

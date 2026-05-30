@@ -3,7 +3,7 @@
 // Ported from the design handoff (landing.jsx / common.jsx / system-map.jsx).
 
 /** Product version — keep in sync with ../../../versions.yaml (api.version). */
-export const version = '0.20.0';
+export const version = '0.21.20';
 
 export type Feature = {
   key: string;
@@ -52,9 +52,9 @@ export const FEATURES: Feature[] = [
   {
     key: 'providers',
     label: 'Providers',
-    desc: 'One interface. LM Studio, Anthropic, OpenAI — swap models per request.',
+    desc: 'One interface across LM Studio, Anthropic, OpenAI, OpenRouter, and Vercel AI Gateway — swap models per request.',
     color: 'var(--c-providers)',
-    tag: 'lmstudio · anthropic · openai',
+    tag: '5 providers · byo models',
     href: '/docs/features/providers',
   },
   {
@@ -68,9 +68,9 @@ export const FEATURES: Feature[] = [
   {
     key: 'memory',
     label: 'Memory',
-    desc: 'Four memory types — episodic, semantic, procedural, working — with recall + extraction.',
+    desc: 'Four memory types with five recall techniques, per-agent self-knowledge, and background consolidation.',
     color: 'var(--c-memory)',
-    tag: '4-type persistent',
+    tag: '4-type · 5 recall',
     href: '/docs/features/memory',
   },
   {
@@ -150,4 +150,131 @@ export const STORES: Store[] = [
   { c: 'var(--c-memory)', n: 'Neo4j 5.15', d: 'entity graphs · semantic + procedural' },
   { c: 'var(--c-agent)', n: 'PostgreSQL + pgvector', d: 'vectors · episodic · audit log' },
   { c: 'var(--c-drafting)', n: 'Redis 7', d: 'working memory cache · session state' },
+];
+
+// ── "Why AgentX" — the differentiators band ─────────────────────────────────
+export type Differentiator = {
+  title: string;
+  desc: string;
+  color: string; // a --c-* token
+  tag: string;
+  href: string;
+};
+
+export const DIFFERENTIATORS: Differentiator[] = [
+  {
+    title: 'Glassbox, not a black box',
+    desc: 'Watch every decision the loop makes — profile compose, memory recall, reasoning, delegation, and each tool call stream live. Nothing happens off-screen.',
+    color: 'var(--c-reasoning)',
+    tag: 'live trace',
+    href: '/docs/architecture/overview',
+  },
+  {
+    title: 'Memory that actually learns',
+    desc: 'Episodic, semantic, procedural, and working memory — with five recall techniques, per-agent self-knowledge channels, and background consolidation. Agents remember across conversations.',
+    color: 'var(--c-memory)',
+    tag: '4 types · 5 recall',
+    href: '/docs/features/memory',
+  },
+  {
+    title: 'Agent Alloy — multi-agent',
+    desc: 'A supervisor delegates to specialist agents over a shared memory channel. @-mention routing, ad-hoc agent-to-agent delegation, and per-agent tool isolation.',
+    color: 'var(--c-agent)',
+    tag: 'supervisor · specialists',
+    href: '/docs/features/multi-agent',
+  },
+  {
+    title: 'Self-hosted · bring your own models',
+    desc: 'Run your own server, air-gappable over DNS — no SaaS lock-in. One interface across LM Studio, Anthropic, OpenAI, OpenRouter, and Vercel AI Gateway.',
+    color: 'var(--c-providers)',
+    tag: 'you run it',
+    href: '/docs/features/providers',
+  },
+  {
+    title: 'Runs where you do',
+    desc: 'One Tauri v2 client across Windows, macOS, and Linux — plus an Android build (mobile-ready) and a browser/web mode. Same app, every platform.',
+    color: 'var(--color-accent)',
+    tag: 'desktop · mobile · web',
+    href: '/docs/getting-started/installation',
+  },
+  {
+    title: 'One-line internal tools',
+    desc: 'Turn any Python function into an agent tool with a single @register_tool decorator — no MCP server required for in-process tools.',
+    color: 'var(--c-mcp)',
+    tag: '@register_tool',
+    href: '/docs/features/mcp',
+  },
+  {
+    title: 'Context that never overflows',
+    desc: 'Oversized tool outputs are compressed and stored for retrieval; Focus-style trajectory compression keeps long tool loops inside the window.',
+    color: 'var(--c-drafting)',
+    tag: 'context gating',
+    href: '/docs/architecture/overview',
+  },
+  {
+    title: 'GPU-accelerated, if you have one',
+    desc: 'CUDA-accelerated translation and local embeddings via the NVIDIA Container Toolkit. Drop in a GPU and the stack picks it up.',
+    color: 'var(--c-translation)',
+    tag: 'nvidia toolkit',
+    href: '/docs/development/gpu',
+  },
+  {
+    title: 'Composable prompts + enhancer',
+    desc: 'Profile-based prompt composition over a global layer, reusable templates, and an LLM-backed prompt enhancer that rewrites prompts on demand.',
+    color: 'var(--c-prompts)',
+    tag: 'profiles · enhancer',
+    href: '/docs/features/prompts',
+  },
+];
+
+// ── "Direction" — roadmap teaser ────────────────────────────────────────────
+export type DirectionColumn = { k: string; title: string; items: string[] };
+
+export const DIRECTION: DirectionColumn[] = [
+  {
+    k: 'shipped',
+    title: 'Shipped',
+    items: [
+      'Mobile-Ready Alpha — Tauri v2 Android target',
+      'Server management: auth, production Docker, clusters',
+      'Memory system + 5-technique recall, consolidation',
+    ],
+  },
+  {
+    k: 'now',
+    title: 'Shipping now',
+    items: [
+      'Agent Alloy v1 — supervisor + specialist delegation',
+      'Memory tuning, metrics & detached chat runs (Phase 18)',
+      '@-mention routing + per-agent tool isolation',
+    ],
+  },
+  {
+    k: 'next',
+    title: 'Next',
+    items: [
+      'Factory canvas — visual workflow editor',
+      'Ambassador agent — voice/text relay layer',
+      'Parallel plan execution + per-subtask strategies',
+    ],
+  },
+];
+
+// ── "Powered by" — open-source shout-out ────────────────────────────────────
+export type Dependency = { name: string; href: string };
+
+export const POWERED_BY: Dependency[] = [
+  { name: 'Django', href: 'https://www.djangoproject.com/' },
+  { name: 'Tauri', href: 'https://tauri.app/' },
+  { name: 'React', href: 'https://react.dev/' },
+  { name: 'Vite', href: 'https://vite.dev/' },
+  { name: 'Tailwind CSS', href: 'https://tailwindcss.com/' },
+  { name: 'NLLB-200', href: 'https://huggingface.co/facebook/nllb-200-distilled-600M' },
+  { name: 'Hugging Face', href: 'https://huggingface.co/' },
+  { name: 'sentence-transformers', href: 'https://www.sbert.net/' },
+  { name: 'Neo4j', href: 'https://neo4j.com/' },
+  { name: 'PostgreSQL', href: 'https://www.postgresql.org/' },
+  { name: 'pgvector', href: 'https://github.com/pgvector/pgvector' },
+  { name: 'Redis', href: 'https://redis.io/' },
+  { name: 'Model Context Protocol', href: 'https://modelcontextprotocol.io/' },
 ];

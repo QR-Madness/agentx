@@ -1,0 +1,70 @@
+---
+// "Powered by" — a tasteful open-source shout-out. Data from config/landing.ts.
+import { POWERED_BY } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+---
+
+<section class="powered">
+  <div class="inner">
+    <MonoTag>§ powered by open source</MonoTag>
+    <p class="blurb">
+      AgentX stands on the shoulders of the open-source ecosystem. A few of the projects that make
+      it work:
+    </p>
+    <div class="pills">
+      {
+        POWERED_BY.map((dep) => (
+          <a class="pill" href={dep.href} target="_blank" rel="noopener">
+            {dep.name}
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .powered {
+    padding: 24px 48px 8px;
+  }
+  .inner {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .blurb {
+    margin: 12px 0 18px;
+    max-width: 560px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+  }
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-muted);
+    transition:
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .pill:hover {
+    color: var(--color-text-strong);
+    border-color: var(--color-border-2);
+  }
+
+  @media (max-width: 720px) {
+    .powered {
+      padding: 16px 18px 0;
+    }
+  }
+</style>

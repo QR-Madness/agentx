@@ -1,6 +1,8 @@
 # AgentX Documentation
 
-AgentX is an AI Agent Platform combining MCP client integration, multi-model reasoning, drafting strategies, and a persistent memory system — all backed by a Django REST API.
+AgentX is a self-hosted, **glassbox** AI agent platform: persistent multi-type memory, multi-agent **Agent Alloy** orchestration, four reasoning strategies, MCP tools, and your choice of model — all behind a Django REST API you run yourself, with every step of the agent loop observable.
+
+> **Current release:** v0.21.20 (the v0.20 milestone — "Mobile-Ready Alpha").
 
 ## Architecture at a Glance
 
@@ -60,7 +62,7 @@ graph TB
 | **Frontend**    | Tauri v2 + React 19      | Desktop application shell                 |
 | **Build**       | Vite + TypeScript        | Fast development and bundling             |
 | **Backend**     | Django 5.2               | REST API framework                        |
-| **AI/ML**       | HuggingFace Transformers | Translation models (NLLB-200)             |
+| **AI/ML**       | HuggingFace Transformers · sentence-transformers | Translation (NLLB-200) + local embeddings |
 | **Graph DB**    | Neo4j 5.15               | Entity relationships and knowledge graphs |
 | **Vector DB**   | PostgreSQL + pgvector    | Semantic search and episodic memory       |
 | **Cache**       | Redis 7                  | Working memory and session state          |
@@ -91,9 +93,9 @@ graph TB
 
 **In Progress:**
 
-- Phase 15: Plan execution (~80%)
-- Phase 16: Multi-agent conversations — Agent Alloy v1 shipped (supervisor + specialist delegation)
-- Phase 18: UX improvements + memory tuning
+- Phase 15: Plan execution (Core Complete — executor, Redis-tracked state, streamed progress, cancellation)
+- Phase 16: Multi-agent — Agent Alloy v1 + routing, ad-hoc delegation, and @-mention routing shipped (~65%)
+- Phase 18: UX improvements + memory tuning (~93%)
 
 See the [Roadmap](roadmap.md) for detailed phase history.
 

@@ -3,7 +3,7 @@ export const site = {
   name: 'AgentX',
   title: 'AgentX',
   description:
-    'AI Agent Platform with MCP client integration, multi-model reasoning, drafting strategies, and a persistent memory system.',
+    'A self-hosted, glassbox AI agent platform: persistent memory, multi-agent Agent Alloy orchestration, MCP tools, and bring-your-own models — behind a REST API you run yourself.',
   // Where the documentation section lives within the hub.
   docsBasePath: '/docs',
   repoUrl: 'https://github.com/QR-Madness/agentx',

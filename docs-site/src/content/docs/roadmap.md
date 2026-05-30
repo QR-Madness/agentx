@@ -2,6 +2,8 @@
 
 This document tracks the development history and future direction of AgentX.
 
+**Current release:** v0.21.20 — the v0.20 milestone, "Mobile-Ready Alpha".
+
 ## Progress Overview
 
 | Phase | Status | Description |
@@ -23,7 +25,7 @@ This document tracks the development history and future direction of AgentX.
 | Phase 15: Plan Execution | **Core Complete** | Plan state store, executor, streamed progress, cancellation (parallelism deferred) |
 | Phase 16: Multi-Agent | **In Progress (~65%)** | Agent Alloy v1 + routing/delegation/@-mentions shipped; Factory UI + ambassador deferred |
 | Phase 17: Server Management | **Complete** | Auth, Docker production stack, multi-cluster, version matching |
-| Phase 18: UX + Memory Tuning | **In Progress (~90%)** | Toolkit, Relay, model metadata, metrics, extraction tuning, detached runs |
+| Phase 18: UX + Memory Tuning | **In Progress (~93%)** | Toolkit, Relay, model metadata, metrics, extraction tuning, detached runs |
 
 ---
 
@@ -592,7 +594,7 @@ Implemented `Session` and `SessionManager`:
 
 ---
 
-### Phase 18: UX Improvements & Memory Tuning (In Progress, ~90%)
+### Phase 18: UX Improvements & Memory Tuning (In Progress, ~93%)
 
 > **Goal**: Polish the client and tune the memory pipeline
 

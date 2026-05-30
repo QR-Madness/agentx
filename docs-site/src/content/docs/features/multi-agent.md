@@ -79,6 +79,7 @@ and extracted facts are visible across the workflow. Each delegation also create
 |-----|---------|-------------|
 | `alloy.max_delegation_depth` | `3` | Maximum delegation nesting depth |
 | `alloy.specialist_inherits_supervisor_tools` | `true` | Whether specialists get the supervisor's tool set |
+| `alloy.allow_adhoc_delegation` | `false` | Allow `delegate_to` in ordinary (workflow-less) chats |
 | `alloy.delegation_timeout_seconds` | — | Per-delegation timeout |
 
 ## Execution & Streaming
@@ -121,12 +122,19 @@ singleton (mirroring `ProfileManager`). CRUD is exposed under `/api/alloy/workfl
 On the client, `AlloyWorkflowContext` (`contexts/AlloyWorkflowContext.tsx`) manages the
 workflow list and selection; the active workflow's id is passed to the chat stream.
 
-## Status (v1)
+## Status
 
-Shipped: the data model + `WorkflowManager`, the `delegate_to` tool and `AlloyExecutor`,
-specialist isolation, the `delegation_*` SSE events, goal-tracking integration, the workflow
-CRUD API, and the client context.
+Shipped (v1 plus the routing/delegation waves through v0.21.5):
 
-Deferred (see [Roadmap → Phase 16](../roadmap.md)): the visual **Factory canvas** UI,
-execution of declarative `routes` (accepted and stored but ignored), message attribution
-(`agent_id` on turns), explicit agent routing / `@`-mentions, and async/parallel delegation.
+- Data model + `WorkflowManager`, the `delegate_to` tool, `AlloyExecutor`, and specialist isolation
+- Live `delegation_*` SSE streaming, goal-tracking integration, the workflow CRUD API, and the client context
+- **Parallel / fan-out delegation** with a client trace/replay modal (per-delegation tokens, cost, and wall-clock)
+- **Per-turn attribution** — `agent_id` on turns and `conversation_logs`, restored to display names on reload
+- **Explicit routing** — `target_agent_id` on the chat-stream request (priority `workflow_id > target_agent_id > agent_profile_id > default`)
+- **Per-agent tool isolation** — `allowed_tools` / `blocked_tools` enforced per profile
+- **Ad-hoc agent-to-agent delegation** — `delegate_to` in workflow-less chats, gated by `alloy.allow_adhoc_delegation` (depth-limited, no self-delegation)
+- **@-mention routing** — an inline `@agent-id` / `@name` routes a turn; `AgentParticipant` graph nodes + a client `@`-autocomplete composer
+
+Deferred (see [Roadmap → Phase 16](../roadmap.md)): the visual **Factory canvas** editor,
+execution of declarative `routes` (accepted and stored but ignored), the **Ambassador**
+dual-presentation layer, async (background) delegation, and per-workflow tool subsetting.

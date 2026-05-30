@@ -1,0 +1,126 @@
+---
+// "Why AgentX" — the differentiators band. Glass cards that link into the docs.
+// Data from config/landing.ts; styling follows the SubsystemsRail / token system.
+import { DIFFERENTIATORS } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+import Dot from '../ui/Dot.astro';
+import ArrowRight from '../icons/ArrowRight.astro';
+---
+
+<section class="why">
+  <div class="inner">
+    <div class="head">
+      <h2 class="ax-wordmark title">Why AgentX</h2>
+      <MonoTag>§ what makes it different</MonoTag>
+    </div>
+
+    <div class="grid">
+      {
+        DIFFERENTIATORS.map((d) => (
+          <a class="card ax-glass ax-lift" href={d.href} style={`--accent:${d.color}`}>
+            <div class="card-top">
+              <Dot color={d.color} size={7} />
+              <MonoTag color={d.color}>{d.tag}</MonoTag>
+            </div>
+            <h3 class="card-title">{d.title}</h3>
+            <p class="card-desc">{d.desc}</p>
+            <span class="card-more">
+              Learn more <ArrowRight size={12} />
+            </span>
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .why {
+    padding: 16px 48px 24px;
+  }
+  .inner {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .title {
+    font-size: 32px;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px;
+    border-radius: var(--radius-card);
+    color: var(--color-text);
+    /* a faint top accent drawn from the card's subsystem color */
+    border-top: 2px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--color-text-strong);
+    margin: 0;
+  }
+  .card-desc {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+  .card-more {
+    margin-top: auto;
+    padding-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-dim);
+    transition: color 0.15s ease;
+  }
+  .card:hover .card-more {
+    color: var(--accent);
+  }
+
+  @media (max-width: 980px) {
+    .grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 720px) {
+    .why {
+      padding: 8px 18px 16px;
+    }
+    .grid {
+      grid-template-columns: 1fr;
+    }
+    .card {
+      padding: 18px;
+    }
+    .title {
+      font-size: 24px;
+    }
+  }
+</style>

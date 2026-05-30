@@ -1,0 +1,164 @@
+---
+// "Direction" — a compact roadmap teaser (shipped / now / next) with a CTA into
+// the full roadmap. Data from config/landing.ts.
+import { DIRECTION } from '../../config/landing';
+import MonoTag from '../ui/MonoTag.astro';
+import Cta from '../ui/Cta.astro';
+import ArrowRight from '../icons/ArrowRight.astro';
+
+const stateColor: Record<string, string> = {
+  shipped: 'var(--color-ok)',
+  now: 'var(--c-agent)',
+  next: 'var(--color-text-dim)',
+};
+---
+
+<section class="direction">
+  <div class="wash" aria-hidden="true"></div>
+  <div class="ax-grid-bg grid-wash" aria-hidden="true"></div>
+
+  <div class="inner">
+    <div class="head">
+      <div>
+        <MonoTag>§ direction</MonoTag>
+        <h2 class="ax-wordmark title">
+          Built in the open,<br />
+          <span class="title-muted">shipping every week.</span>
+        </h2>
+      </div>
+      <Cta kind="ghost" href="/docs/roadmap">
+        Full roadmap
+        <ArrowRight slot="icon" size={14} />
+      </Cta>
+    </div>
+
+    <div class="cols">
+      {
+        DIRECTION.map((col) => (
+          <div class="col">
+            <div class="col-head">
+              <span class="col-dot" style={`--c:${stateColor[col.k] ?? 'var(--c-agent)'}`} />
+              <MonoTag color={stateColor[col.k] ?? 'var(--c-agent)'}>{col.title}</MonoTag>
+            </div>
+            <ul class="col-list">
+              {col.items.map((it) => (
+                <li>{it}</li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .direction {
+    position: relative;
+    padding: 80px 48px;
+    border-top: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .wash {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(40% 60% at 80% 10%, rgba(99, 102, 241, 0.14), transparent 70%),
+      radial-gradient(30% 40% at 12% 90%, rgba(34, 211, 238, 0.06), transparent 75%);
+  }
+  .grid-wash {
+    position: absolute;
+    inset: 0;
+    opacity: 0.4;
+    mask-image: radial-gradient(70% 80% at 50% 30%, black 20%, transparent 85%);
+    -webkit-mask-image: radial-gradient(70% 80% at 50% 30%, black 20%, transparent 85%);
+  }
+
+  .inner {
+    position: relative;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 36px;
+  }
+  .title {
+    font-size: clamp(30px, 4vw, 44px);
+    margin: 10px 0 0;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .title-muted {
+    color: var(--color-text-muted);
+  }
+
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .col {
+    padding: 22px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+  .col-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .col-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--c);
+    box-shadow: 0 0 8px var(--c);
+  }
+  .col-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .col-list li {
+    position: relative;
+    padding-left: 16px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+  }
+  .col-list li::before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .cols {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 720px) {
+    .direction {
+      padding: 56px 18px;
+    }
+    .head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
+  }
+</style>

@@ -1,6 +1,7 @@
-// Docs sidebar structure — ported from mkdocs.yml `nav`, reorganized to match the
-// design handoff (Development moved last). Single source of truth for the docs
-// section's navigation.
+// Docs sidebar structure. Single source of truth for the docs section's navigation.
+// Organized into two task-oriented pillars — "Using the Platform" (the app) and
+// "Build & Integrate" (the API / developer surface) — followed by API Reference and
+// the supporting Architecture / Deploy / Contribute sections.
 //
 // Slugs are docs-relative (no `/docs` prefix, no `.md`). An empty slug ('') maps to the
 // docs landing page (/docs). Helpers below resolve slugs to full routes.
@@ -13,12 +14,43 @@ export type NavEntry = NavLink | NavGroup;
 export const nav: NavEntry[] = [
   { label: 'Home', slug: '' },
   {
-    label: 'Getting Started',
+    label: 'Get Started',
     items: [
       { label: 'Installation', slug: 'getting-started/installation' },
       { label: 'Windows Setup', slug: 'getting-started/windows' },
       { label: 'Quick Start', slug: 'getting-started/quickstart' },
       { label: 'Configuration', slug: 'getting-started/configuration' },
+    ],
+  },
+  {
+    // Feature pages map to runtime subsystems; each carries a semantic accent
+    // (the --c-* tokens) shown as a color dot in the sidebar.
+    label: 'Using the Platform',
+    items: [
+      { label: 'Chat', slug: 'features/chat', color: 'var(--c-agent)' },
+      { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
+      { label: 'Drafting', slug: 'features/drafting', color: 'var(--c-drafting)' },
+      { label: 'MCP Client', slug: 'features/mcp', color: 'var(--c-mcp)' },
+      { label: 'Multi-Agent', slug: 'features/multi-agent', color: 'var(--c-agent)' },
+      { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
+      { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },
+      { label: 'Memory', slug: 'features/memory', color: 'var(--c-memory)' },
+      { label: 'Translation', slug: 'features/translation', color: 'var(--c-translation)' },
+    ],
+  },
+  {
+    label: 'Build & Integrate',
+    items: [
+      { label: 'Integration Overview', slug: 'integrate/overview' },
+      { label: 'Streaming & Detached Runs', slug: 'integrate/streaming' },
+      { label: 'Recipes', slug: 'integrate/recipes' },
+    ],
+  },
+  {
+    label: 'API Reference',
+    items: [
+      { label: 'Endpoints', slug: 'api/endpoints' },
+      { label: 'Models', slug: 'api/models' },
     ],
   },
   {
@@ -32,31 +64,7 @@ export const nav: NavEntry[] = [
     ],
   },
   {
-    // Feature pages map to runtime subsystems; each carries a semantic accent
-    // (the --c-* tokens) shown as a color dot in the sidebar.
-    label: 'Features',
-    items: [
-      { label: 'Chat', slug: 'features/chat', color: 'var(--c-agent)' },
-      { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
-      { label: 'Drafting', slug: 'features/drafting', color: 'var(--c-drafting)' },
-      { label: 'MCP Client', slug: 'features/mcp', color: 'var(--c-mcp)' },
-      { label: 'Multi-Agent', slug: 'features/multi-agent', color: 'var(--c-agent)' },
-      { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
-      { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },
-      { label: 'Memory', slug: 'features/memory', color: 'var(--c-memory)' },
-      { label: 'Translation', slug: 'features/translation', color: 'var(--c-translation)' },
-    ],
-  },
-  { label: 'Roadmap', slug: 'roadmap' },
-  {
-    label: 'API Reference',
-    items: [
-      { label: 'Endpoints', slug: 'api/endpoints' },
-      { label: 'Models', slug: 'api/models' },
-    ],
-  },
-  {
-    label: 'Deployment',
+    label: 'Deploy & Operate',
     items: [
       { label: 'Docker', slug: 'deployment/docker' },
       { label: 'Production', slug: 'deployment/production' },
@@ -66,7 +74,7 @@ export const nav: NavEntry[] = [
     ],
   },
   {
-    label: 'Development',
+    label: 'Contribute',
     items: [
       { label: 'Setup', slug: 'development/setup' },
       { label: 'Task Commands', slug: 'development/tasks' },
@@ -77,6 +85,7 @@ export const nav: NavEntry[] = [
       { label: 'Contributing', slug: 'development/contributing' },
     ],
   },
+  { label: 'Roadmap', slug: 'roadmap' },
 ];
 
 export function isGroup(entry: NavEntry): entry is NavGroup {

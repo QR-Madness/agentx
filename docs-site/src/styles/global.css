@@ -290,6 +290,13 @@ a:hover {
   opacity: 0;
   transition: opacity 0.15s ease;
 }
+/* The `#` glyph is presentational only — the autolink anchor is emitted empty
+ * (see astro.config.mjs) so it never enters the TOC's collected heading text. */
+.ax-prose h2 a.anchor::after,
+.ax-prose h3 a.anchor::after,
+.ax-prose h4 a.anchor::after {
+  content: "#";
+}
 .ax-prose h2:hover a.anchor,
 .ax-prose h3:hover a.anchor,
 .ax-prose h4:hover a.anchor {
