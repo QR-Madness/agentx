@@ -18,6 +18,8 @@ import {
   MemoryEntity,
   MemoryFact,
   MemoryFactPatch,
+  FactForgetResult,
+  FactProvenance,
   MemoryEntityPatch,
   MemoryStats,
   UsageMetrics,
@@ -441,6 +443,67 @@ export function useDeleteMemoryFact() {
   }, []);
 
   return { mutate, loading, error };
+}
+
+export function useRememberMemoryFact() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (factId: string, to?: number): Promise<MemoryFact | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.rememberMemoryFact(factId, to);
+      return result.fact;
+    } catch (err) {
+      setError(err as ApiError);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useForgetMemoryFact() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(async (factId: string, hard = false): Promise<FactForgetResult | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await api.forgetMemoryFact(factId, hard);
+    } catch (err) {
+      setError(err as ApiError);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useFactProvenance() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const fetch = useCallback(async (factId: string): Promise<FactProvenance | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await api.getFactProvenance(factId);
+    } catch (err) {
+      setError(err as ApiError);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { fetch, loading, error };
 }
 
 export function useUpdateMemoryEntity() {

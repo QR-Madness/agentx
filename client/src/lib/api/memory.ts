@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
+import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
 
 export const memoryApi = {
   // === Memory Explorer ===
@@ -75,6 +75,24 @@ export const memoryApi = {
     return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}`, {
       method: 'DELETE',
     });
+  },
+
+  async rememberMemoryFact(factId: string, to?: number): Promise<{ fact: MemoryFact }> {
+    return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/remember`, {
+      method: 'POST',
+      body: JSON.stringify(to !== undefined ? { to } : {}),
+    });
+  },
+
+  async forgetMemoryFact(factId: string, hard = false): Promise<FactForgetResult> {
+    return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/forget`, {
+      method: 'POST',
+      body: JSON.stringify({ hard }),
+    });
+  },
+
+  async getFactProvenance(factId: string): Promise<FactProvenance> {
+    return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/provenance`);
   },
 
   async updateMemoryEntity(entityId: string, patch: MemoryEntityPatch): Promise<{ entity: MemoryEntity }> {

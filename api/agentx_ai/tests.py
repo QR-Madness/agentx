@@ -3185,6 +3185,123 @@ class ScratchpadToolTest(MockRedisTestBase):
         self.assertFalse(result["success"])
 
 
+class FactToolWiringTest(TestCase):
+    """remember_this / forget internal tools route to AgentMemory correctly."""
+
+    def setUp(self) -> None:
+        from agentx_ai.mcp.internal_context import InternalToolContext, set_context
+        self._ctx_token = set_context(InternalToolContext(
+            user_id="u1", channel="_default", agent_id=None, conversation_id="conv-1",
+        ))
+
+    def tearDown(self) -> None:
+        from agentx_ai.mcp.internal_context import reset_context
+        reset_context(self._ctx_token)
+
+    def test_remember_this_boosts_salience(self):
+        from agentx_ai.mcp.internal_tools import remember_this
+
+        mem = MagicMock()
+        mem.boost_salience.return_value = {"id": "f1", "salience": 0.9}
+        with patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=mem):
+            result = remember_this(fact_id="f1")
+
+        mem.boost_salience.assert_called_once_with("f1")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["salience"], 0.9)
+
+    def test_remember_this_requires_fact_id(self):
+        from agentx_ai.mcp.internal_tools import remember_this
+        self.assertFalse(remember_this(fact_id="")["success"])
+
+    def test_forget_passes_hard_flag(self):
+        from agentx_ai.mcp.internal_tools import forget
+
+        mem = MagicMock()
+        mem.forget_fact.return_value = {"success": True, "mode": "hard", "fact_id": "f1"}
+        with patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=mem):
+            result = forget(fact_id="f1", hard=True)
+
+        mem.forget_fact.assert_called_once_with("f1", hard=True)
+        self.assertEqual(result["mode"], "hard")
+
+    def test_forget_defaults_to_soft(self):
+        from agentx_ai.mcp.internal_tools import forget
+
+        mem = MagicMock()
+        mem.forget_fact.return_value = {"success": True, "mode": "soft", "fact_id": "f1"}
+        with patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=mem):
+            forget(fact_id="f1")
+        mem.forget_fact.assert_called_once_with("f1", hard=False)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class FactActionEndpointTest(TestCase):
+    """POST forget/remember + GET provenance routes (AgentMemory mocked)."""
+
+    def setUp(self) -> None:
+        from django.test import Client
+        self.client = Client()
+
+    def _patch_memory(self, mem):
+        return patch(
+            "agentx_ai.kit.agent_memory.memory.interface.AgentMemory",
+            return_value=mem,
+        )
+
+    def test_remember_endpoint_boosts(self):
+        mem = MagicMock()
+        mem.boost_salience.return_value = {"id": "f1", "salience": 0.9}
+        with self._patch_memory(mem):
+            resp = self.client.post(
+                "/api/memory/facts/f1/remember",
+                data=json.dumps({"to": 0.9}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["fact"]["salience"], 0.9)
+        mem.boost_salience.assert_called_once_with("f1", to=0.9)
+
+    def test_remember_rejects_get(self):
+        resp = self.client.get("/api/memory/facts/f1/remember")
+        self.assertEqual(resp.status_code, 405)
+
+    def test_forget_endpoint_soft_by_default(self):
+        mem = MagicMock()
+        mem.forget_fact.return_value = {"success": True, "mode": "soft", "fact_id": "f1"}
+        with self._patch_memory(mem):
+            resp = self.client.post(
+                "/api/memory/facts/f1/forget",
+                data=json.dumps({}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["mode"], "soft")
+        mem.forget_fact.assert_called_once_with("f1", hard=False)
+
+    def test_forget_returns_404_when_missing(self):
+        mem = MagicMock()
+        mem.forget_fact.return_value = {"success": False, "mode": "soft", "fact_id": "x"}
+        with self._patch_memory(mem):
+            resp = self.client.post(
+                "/api/memory/facts/x/forget",
+                data=json.dumps({}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_provenance_endpoint_returns_origin(self):
+        mem = MagicMock()
+        mem.get_fact_provenance.return_value = {
+            "success": True, "fact_id": "f1", "source_turn_id": "t9",
+            "origin": {"conversation_id": "conv-7"},
+        }
+        with self._patch_memory(mem):
+            resp = self.client.get("/api/memory/facts/f1/provenance")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["origin"]["conversation_id"], "conv-7")
+
+
 class ChatRunStoreTest(MockRedisTestBase):
     """Detached chat-run state store + tail entry paths (Redis mocked)."""
 

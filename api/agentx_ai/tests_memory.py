@@ -170,6 +170,88 @@ class GoalAccessControlTest(TestCase):
             self.assertEqual(kwargs["channel"], "project-X")
 
 
+class FactSalienceForgetTest(TestCase):
+    """boost_salience / forget_fact / get_fact_provenance (Neo4j mocked)."""
+
+    def _memory(self, mock_session):
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j, \
+             patch('agentx_ai.kit.agent_memory.connections.RedisConnection.get_client') as mock_redis:
+            mock_neo4j.return_value = mock_session
+            mock_redis.return_value = create_mock_redis_client()
+            return AgentMemory(user_id="user-A", channel="_global"), mock_neo4j
+
+    def test_boost_salience_sets_salience_in_cypher(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        # update_fact -> single() {"id"}; then get_fact_by_id -> single() fact dict
+        mock_session.run.return_value.single.side_effect = [
+            {"id": "f1"},
+            {"id": "f1", "claim": "c", "salience": 0.9, "confidence": 0.8},
+        ]
+        memory, mock_neo4j = self._memory(mock_session)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', mock_neo4j):
+            result = memory.boost_salience("f1", to=0.9)
+
+        self.assertEqual(result["salience"], 0.9)
+        set_query = mock_session.run.call_args_list[0][0][0]
+        self.assertIn("f.salience", set_query)
+        self.assertEqual(mock_session.run.call_args_list[0][1]["salience"], 0.9)
+
+    def test_boost_salience_clamps_to_unit_interval(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        mock_session.run.return_value.single.side_effect = [
+            {"id": "f1"},
+            {"id": "f1", "claim": "c", "salience": 1.0},
+        ]
+        memory, mock_neo4j = self._memory(mock_session)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', mock_neo4j):
+            memory.boost_salience("f1", to=5.0)
+        self.assertEqual(mock_session.run.call_args_list[0][1]["salience"], 1.0)
+
+    def test_forget_fact_soft_retires_with_past_and_low_salience(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        # get_fact_by_id (current) -> update_fact single {"id"} -> get_fact_by_id (updated)
+        mock_session.run.return_value.single.side_effect = [
+            {"id": "f1", "claim": "c", "confidence": 0.8},
+            {"id": "f1"},
+            {"id": "f1", "claim": "c", "confidence": 0.24, "temporal_context": "past", "salience": 0.05},
+        ]
+        memory, mock_neo4j = self._memory(mock_session)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', mock_neo4j):
+            result = memory.forget_fact("f1", hard=False)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "soft")
+        update_kwargs = mock_session.run.call_args_list[1][1]
+        self.assertEqual(update_kwargs["temporal_context"], "past")
+        self.assertEqual(update_kwargs["salience"], 0.05)
+        self.assertEqual(update_kwargs["confidence"], round(0.8 * 0.3, 3))
+
+    def test_forget_fact_missing_returns_failure(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        mock_session.run.return_value.single.side_effect = [None]
+        memory, mock_neo4j = self._memory(mock_session)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', mock_neo4j):
+            result = memory.forget_fact("missing", hard=False)
+        self.assertFalse(result["success"])
+
+    def test_provenance_resolves_origin_turn(self) -> None:
+        mock_session = create_mock_neo4j_session()
+        # get_fact_by_id -> fact with source_turn_id; get_turn_by_id -> turn + conv
+        turn_node = {"id": "t9", "role": "user", "content": "the key is X", "timestamp": "2026-01-01T00:00:00Z"}
+        mock_session.run.return_value.single.side_effect = [
+            {"id": "f1", "claim": "key is X", "source": "user", "source_turn_id": "t9"},
+            {"t": turn_node, "conversation_id": "conv-7"},
+        ]
+        memory, mock_neo4j = self._memory(mock_session)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', mock_neo4j):
+            result = memory.get_fact_provenance("f1")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source_turn_id"], "t9")
+        self.assertIsNotNone(result["origin"])
+        self.assertEqual(result["origin"]["conversation_id"], "conv-7")
+
+
 class GoalMemoryTest(TestCase):
     """GoalMemory sub-module storage (Pass 4 — extracted from interface.py)."""
 

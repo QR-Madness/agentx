@@ -655,6 +655,109 @@ def scratchpad_note(
     }
 
 
+def _memory_for_ctx():
+    """Resolve the AgentMemory for the active tool context, or (None, error)."""
+    from .internal_context import current_context
+
+    ctx = current_context()
+    if ctx is None:
+        return None, {
+            "error": "No active agent context — this tool can only be called during a chat turn.",
+            "success": False,
+        }
+    try:
+        from ..kit.memory_utils import get_agent_memory
+    except Exception as e:  # noqa: BLE001
+        return None, {"error": f"Memory system unavailable: {e}", "success": False}
+
+    memory = get_agent_memory(
+        user_id=ctx.user_id,
+        channel=ctx.channel or "_default",
+        agent_id=ctx.agent_id,
+    )
+    if memory is None:
+        return None, {"error": "Memory system unavailable", "success": False}
+    return memory, None
+
+
+@register_tool(
+    name="remember_this",
+    description=(
+        "Mark a known fact as important so it survives memory decay and ranks "
+        "higher in future recall. Pass the `fact_id` from a fact you saw in the "
+        "injected memory context. Use when the user signals something matters "
+        "long-term (\"remember that…\", \"this is important\")."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "fact_id": {
+                "type": "string",
+                "description": "ID of the fact to boost (from injected memory context).",
+            },
+        },
+        "required": ["fact_id"],
+    },
+)
+def remember_this(fact_id: str) -> dict[str, Any]:
+    """Boost a fact's salience via AgentMemory."""
+    if not fact_id or not fact_id.strip():
+        return {"error": "fact_id is required", "success": False}
+
+    memory, err = _memory_for_ctx()
+    if memory is None:
+        return err or {"error": "Memory system unavailable", "success": False}
+
+    try:
+        updated = memory.boost_salience(fact_id.strip())
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Boost failed: {e}", "success": False}
+
+    if updated is None:
+        return {"error": "Fact not found", "fact_id": fact_id, "success": False}
+    return {"fact_id": fact_id, "salience": updated.get("salience"), "success": True}
+
+
+@register_tool(
+    name="forget",
+    description=(
+        "Forget a known fact. By default this is a soft retire — the fact is "
+        "marked as past and de-prioritized in recall, but kept for provenance. "
+        "Set `hard=true` to delete it permanently. Pass the `fact_id` from a "
+        "fact you saw in the injected memory context. Use when the user asks you "
+        "to forget something or corrects a now-wrong fact."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "fact_id": {
+                "type": "string",
+                "description": "ID of the fact to forget (from injected memory context).",
+            },
+            "hard": {
+                "type": "boolean",
+                "description": "Permanently delete instead of soft-retiring.",
+                "default": False,
+            },
+        },
+        "required": ["fact_id"],
+    },
+)
+def forget(fact_id: str, hard: bool = False) -> dict[str, Any]:
+    """Soft-retire (default) or hard-delete a fact via AgentMemory."""
+    if not fact_id or not fact_id.strip():
+        return {"error": "fact_id is required", "success": False}
+
+    memory, err = _memory_for_ctx()
+    if memory is None:
+        return err or {"error": "Memory system unavailable", "success": False}
+
+    try:
+        return memory.forget_fact(fact_id.strip(), hard=bool(hard))
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Forget failed: {e}", "success": False}
+
+
 @register_tool(
     name="detect_language",
     description=(

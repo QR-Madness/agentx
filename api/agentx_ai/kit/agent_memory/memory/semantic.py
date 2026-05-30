@@ -442,6 +442,7 @@ class SemanticMemory:
         confidence: Optional[float] = None,
         source: Optional[str] = None,
         temporal_context: Optional[str] = None,
+        salience: Optional[float] = None,
         channel: str = "_global",
     ) -> Optional[Dict[str, Any]]:
         """
@@ -461,7 +462,8 @@ class SemanticMemory:
                     f.embedding = coalesce($embedding, f.embedding),
                     f.confidence = coalesce($confidence, f.confidence),
                     f.source = coalesce($source, f.source),
-                    f.temporal_context = coalesce($temporal_context, f.temporal_context)
+                    f.temporal_context = coalesce($temporal_context, f.temporal_context),
+                    f.salience = coalesce($salience, f.salience)
                 RETURN f.id AS id
             """,
                 fact_id=fact_id,
@@ -472,6 +474,7 @@ class SemanticMemory:
                 confidence=confidence,
                 source=source,
                 temporal_context=temporal_context,
+                salience=salience,
             )
             record = result.single()
             if not record:
@@ -492,6 +495,7 @@ class SemanticMemory:
                             "confidence": confidence,
                             "source": source,
                             "temporal_context": temporal_context,
+                            "salience": salience,
                         }.items() if v is not None
                     ],
                 },

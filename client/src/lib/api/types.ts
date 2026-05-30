@@ -625,6 +625,29 @@ export interface MemoryFactPatch {
   temporal_context?: 'current' | 'past' | 'future' | null;
 }
 
+export interface FactForgetResult {
+  success: boolean;
+  mode: 'soft' | 'hard';
+  fact_id: string;
+  fact?: MemoryFact;
+}
+
+export interface FactProvenanceOrigin {
+  conversation_id: string;
+  role: string;
+  timestamp: string;
+  snippet: string;
+}
+
+export interface FactProvenance {
+  success: boolean;
+  fact_id: string;
+  claim?: string;
+  source?: string | null;
+  source_turn_id?: string | null;
+  origin: FactProvenanceOrigin | null;
+}
+
 export interface MemoryEntityPatch {
   name?: string;
   type?: string;

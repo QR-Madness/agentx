@@ -1,9 +1,15 @@
 // ─── Fact detail panel ─────────────────────────────────────────────────────
 
 import { useState, useCallback, useEffect } from 'react';
-import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle } from 'lucide-react';
-import { useUpdateMemoryFact, useDeleteMemoryFact } from '../../lib/hooks';
-import type { MemoryFact } from '../../lib/api';
+import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle, Star, Archive, History } from 'lucide-react';
+import {
+  useUpdateMemoryFact,
+  useDeleteMemoryFact,
+  useRememberMemoryFact,
+  useForgetMemoryFact,
+  useFactProvenance,
+} from '../../lib/hooks';
+import type { MemoryFact, FactProvenance } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
 import { Button } from '../ui';
 
@@ -17,9 +23,15 @@ export function FactDetail({
 }) {
   const { mutate: updateFact, loading: saving } = useUpdateMemoryFact();
   const { mutate: deleteFact, loading: deleting } = useDeleteMemoryFact();
+  const { mutate: rememberFact, loading: remembering } = useRememberMemoryFact();
+  const { mutate: forgetFact, loading: forgetting } = useForgetMemoryFact();
+  const { fetch: fetchProvenance, loading: loadingProvenance } = useFactProvenance();
 
   const [editMode, setEditMode] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [forgetConfirm, setForgetConfirm] = useState(false);
+  const [remembered, setRemembered] = useState(false);
+  const [provenance, setProvenance] = useState<FactProvenance | null>(null);
   const [editClaim, setEditClaim] = useState(fact.claim);
   const [editConfidence, setEditConfidence] = useState(Math.round((fact.confidence || 0) * 100));
   const [editSource, setEditSource] = useState(fact.source);
@@ -32,6 +44,9 @@ export function FactDetail({
     setEditTemporal('');
     setEditMode(false);
     setDeleteConfirm(false);
+    setForgetConfirm(false);
+    setRemembered(false);
+    setProvenance(null);
   }, [fact.id]);
 
   const handleSave = useCallback(async () => {
@@ -51,6 +66,29 @@ export function FactDetail({
     const ok = await deleteFact(fact.id);
     if (ok) onDeleted();
   }, [fact.id, deleteFact, onDeleted]);
+
+  const handleRemember = useCallback(async () => {
+    const result = await rememberFact(fact.id);
+    if (result) {
+      setRemembered(true);
+      onUpdated(result);
+    }
+  }, [fact.id, rememberFact, onUpdated]);
+
+  const handleForget = useCallback(async () => {
+    const result = await forgetFact(fact.id, false);
+    if (result?.success) {
+      setForgetConfirm(false);
+      if (result.fact) onUpdated(result.fact);
+      else onDeleted();
+    }
+  }, [fact.id, forgetFact, onUpdated, onDeleted]);
+
+  const handleProvenance = useCallback(async () => {
+    if (provenance) { setProvenance(null); return; }
+    const result = await fetchProvenance(fact.id);
+    if (result) setProvenance(result);
+  }, [fact.id, provenance, fetchProvenance]);
 
   return (
     <div className="split-detail-inner">
@@ -121,10 +159,46 @@ export function FactDetail({
             <Button variant="secondary" onClick={() => setEditMode(true)}>
               <Edit2 size={14} /> Edit
             </Button>
+            <Button variant="ghost" onClick={handleRemember} disabled={remembering}>
+              <Star size={14} /> {remembered ? 'Remembered' : 'Remember'}
+            </Button>
+            <Button variant="ghost" onClick={handleProvenance} disabled={loadingProvenance}>
+              <History size={14} /> Source
+            </Button>
+            <Button variant="secondary" onClick={() => setForgetConfirm(true)} disabled={forgetting}>
+              <Archive size={14} /> Forget
+            </Button>
             <Button variant="danger" onClick={() => setDeleteConfirm(true)} disabled={deleting}>
               <Trash2 size={14} /> Delete
             </Button>
           </div>
+
+          {provenance && (
+            <div className="provenance-panel">
+              {provenance.origin ? (
+                <>
+                  <div className="info-row">
+                    <span className="label">Learned in</span>
+                    <span className="value">{formatTimestamp(provenance.origin.timestamp)}</span>
+                  </div>
+                  <p className="provenance-snippet">“{provenance.origin.snippet}”</p>
+                </>
+              ) : (
+                <p className="provenance-empty">No recorded source conversation for this fact.</p>
+              )}
+            </div>
+          )}
+
+          {forgetConfirm && (
+            <div className="delete-confirm">
+              <AlertTriangle size={14} />
+              <span>Forget this fact? It’s retired from recall but kept for provenance.</span>
+              <Button variant="secondary" onClick={handleForget} disabled={forgetting}>
+                {forgetting ? 'Forgetting...' : <><Check size={14} /> Confirm</>}
+              </Button>
+              <Button variant="ghost" onClick={() => setForgetConfirm(false)}>Cancel</Button>
+            </div>
+          )}
 
           {deleteConfirm && (
             <div className="delete-confirm">

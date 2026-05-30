@@ -1844,6 +1844,112 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /memory/facts/{fact_id}/remember:
+    post:
+      tags: [Memory]
+      operationId: memoryFactRemember
+      summary: Boost a fact's salience ("remember this")
+      description: >-
+        Raises the fact's salience so it survives memory decay and ranks higher
+        in recall.
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to:
+                  type: number
+                  description: Target salience, clamped to [0, 1] (default 0.9).
+                  default: 0.9
+      responses:
+        '200':
+          description: Updated fact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fact:
+                    $ref: '#/components/schemas/Fact'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /memory/facts/{fact_id}/forget:
+    post:
+      tags: [Memory]
+      operationId: memoryFactForget
+      summary: Forget a fact (soft-retire by default)
+      description: >-
+        Soft mode (default) marks the fact `temporal_context: past` and lowers
+        its confidence + salience so recall de-prioritizes it, while preserving
+        provenance. `hard: true` deletes the node permanently.
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hard:
+                  type: boolean
+                  description: Permanently delete instead of soft-retiring.
+                  default: false
+      responses:
+        '200':
+          description: Forget result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  mode:
+                    type: string
+                    enum: [soft, hard]
+                  fact_id: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /memory/facts/{fact_id}/provenance:
+    get:
+      tags: [Memory]
+      operationId: memoryFactProvenance
+      summary: Where was this fact learned?
+      description: >-
+        Resolves the fact's `source_turn_id` to its originating conversation and
+        turn snippet, when still on record.
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      responses:
+        '200':
+          description: Provenance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  fact_id: { type: string }
+                  claim: { type: string }
+                  source: { type: string, nullable: true }
+                  source_turn_id: { type: string, nullable: true }
+                  origin:
+                    type: object
+                    nullable: true
+                    properties:
+                      conversation_id: { type: string }
+                      role: { type: string }
+                      timestamp: { type: string }
+                      snippet: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /memory/strategies:
     get:
       tags: [Memory]

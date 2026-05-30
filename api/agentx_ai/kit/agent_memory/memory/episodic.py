@@ -9,7 +9,7 @@ from typing_extensions import LiteralString
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
 from ..config import get_settings
-from ..query_utils import CypherFilterBuilder
+from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
@@ -287,6 +287,31 @@ class EpisodicMemory:
                 turn_data["conversation_id"] = conversation_id
                 turns.append(turn_data)
             return turns
+
+    def get_turn_by_id(
+        self,
+        turn_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a single turn by ID plus its owning conversation, scoped to user.
+
+        Used for fact provenance ("where did I learn this?"). Returns a dict with
+        the turn fields and ``conversation_id``, or None if not found / not owned.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation)
+                      -[:HAS_TURN]->(t:Turn {id: $turn_id})
+                RETURN t, c.id AS conversation_id
+            """, user_id=user_id, turn_id=turn_id)
+
+            record = result.single()
+            if not record:
+                return None
+            turn_data = dict(record["t"])
+            turn_data["conversation_id"] = record["conversation_id"]
+            return convert_record_datetimes(turn_data)
 
     def get_recent_turns(
         self,

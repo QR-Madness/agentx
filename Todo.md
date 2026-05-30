@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.18** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.19** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -247,8 +247,11 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.18** (prot
         it survives compression); the tool's no-arg/`read` mode returns notes + checkpoints + active
         goals (never the transcript). Injected next to checkpoints in `views.py`. Also removed the
         dead `push_thought`/`get_thoughts`/`set_active_goal`/`get_active_goal` helpers in `working.py`.
-  - [ ] `forget` (soft-supersede) + salience boost ("remember this") + "where did I learn this?"
-        provenance.
+  - [x] `forget` (soft-supersede) + salience boost ("remember this") + "where did I learn this?"
+        provenance — shipped `[v0.21.19]`. `salience` threaded through `update_fact`; new
+        `AgentMemory.boost_salience`/`forget_fact`/`get_fact_provenance` (+ `episodic.get_turn_by_id`);
+        `_internal.remember_this`/`_internal.forget` tools; `POST /api/memory/facts/{id}/remember`,
+        `.../forget`, `GET .../provenance`; Memory-drawer fact actions (Remember / Source / Forget).
   - [ ] cached `user_recap_summary` rolling summary (fills `recall_user_history`'s empty `summary`).
   - **Cut after review (already covered):** active-goals header (the memory bundle already injects a
         `## Active Goals` section), model-driven pin/anchor turns (duplicates `checkpoint`).

@@ -3336,6 +3336,80 @@ def memory_fact_detail(request, fact_id):
 
 
 @csrf_exempt
+def memory_fact_remember(request, fact_id):
+    """POST /api/memory/facts/{id}/remember - Boost a fact's salience ("remember this")."""
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'POST':
+        return json_error("POST only", status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+
+        to = 0.9
+        data, _ = parse_json_body(request)
+        if isinstance(data, dict) and data.get("to") is not None:
+            try:
+                to = float(data["to"])
+            except (TypeError, ValueError):
+                return json_error("to must be a number")
+
+        updated = memory.boost_salience(fact_id, to=to)
+        if updated is None:
+            return json_error("Fact not found", status=404)
+        return JsonResponse({"fact": updated})
+    except Exception as e:
+        logger.error(f"Error in memory_fact_remember: {e}")
+        return json_error(str(e), status=500)
+
+
+@csrf_exempt
+def memory_fact_forget(request, fact_id):
+    """POST /api/memory/facts/{id}/forget - Soft-retire (default) or hard-delete a fact."""
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'POST':
+        return json_error("POST only", status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+
+        hard = False
+        data, _ = parse_json_body(request)
+        if isinstance(data, dict):
+            hard = bool(data.get("hard", False))
+
+        result = memory.forget_fact(fact_id, hard=hard)
+        if not result.get("success"):
+            return json_error("Fact not found", status=404)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Error in memory_fact_forget: {e}")
+        return json_error(str(e), status=500)
+
+
+def memory_fact_provenance(request, fact_id):
+    """GET /api/memory/facts/{id}/provenance - Where was this fact learned?"""
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'GET':
+        return json_error("GET only", status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+        result = memory.get_fact_provenance(fact_id)
+        if not result.get("success"):
+            return json_error("Fact not found", status=404)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Error in memory_fact_provenance: {e}")
+        return json_error(str(e), status=500)
+
+
+@csrf_exempt
 def memory_entity_detail(request, entity_id):
     """
     PATCH /api/memory/entities/{id} - Update editable entity fields (re-embeds on name/description change).

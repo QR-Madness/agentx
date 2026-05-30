@@ -677,6 +677,28 @@
   padding: 4px 10px;
 }
 
+.provenance-panel {
+  padding: 10px 14px;
+  background: var(--bg-void);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.provenance-snippet {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.provenance-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
 /* Edit Form */
 .edit-form {
   display: flex;

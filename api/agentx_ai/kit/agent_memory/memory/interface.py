@@ -319,6 +319,7 @@ class AgentMemory:
         confidence: Optional[float] = None,
         source: Optional[str] = None,
         temporal_context: Optional[str] = None,
+        salience: Optional[float] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Update editable fields on a fact in place.
@@ -341,6 +342,7 @@ class AgentMemory:
             confidence=confidence,
             source=source,
             temporal_context=temporal_context,
+            salience=salience,
             channel=self.channel,
         )
 
@@ -353,6 +355,7 @@ class AgentMemory:
                 "confidence": confidence,
                 "source": source,
                 "temporal_context": temporal_context,
+                "salience": salience,
             }.items() if v is not None
         ]
         self.events.emit(
@@ -387,6 +390,76 @@ class AgentMemory:
             )
             self._invalidate_retrieval_cache()
         return deleted
+
+    def boost_salience(self, fact_id: str, to: float = 0.9) -> Optional[Dict[str, Any]]:
+        """
+        Raise a fact's salience ("remember this") so it survives memory decay
+        and ranks higher in recall. ``to`` is clamped to [0, 1]. Returns the
+        updated fact dict, or None if not found.
+        """
+        target = max(0.0, min(1.0, float(to)))
+        return self.update_fact(fact_id, salience=target)
+
+    def forget_fact(self, fact_id: str, hard: bool = False) -> Dict[str, Any]:
+        """
+        "Forget" a fact. Soft (default) retires it for recall while preserving
+        provenance: marks ``temporal_context="past"`` and drops both confidence
+        and salience so it sinks in ranking. ``hard=True`` deletes the node.
+
+        Returns ``{"success": bool, "mode": "soft"|"hard", ...}``.
+        """
+        if hard:
+            deleted = self.delete_fact(fact_id)
+            return {"success": deleted, "mode": "hard", "fact_id": fact_id}
+
+        current = self.semantic.get_fact_by_id(fact_id, self.user_id)
+        if current is None:
+            return {"success": False, "mode": "soft", "fact_id": fact_id}
+
+        lowered = round(float(current.get("confidence") or 0.5) * 0.3, 3)
+        updated = self.update_fact(
+            fact_id,
+            confidence=max(0.05, lowered),
+            temporal_context="past",
+            salience=0.05,
+        )
+        return {
+            "success": updated is not None,
+            "mode": "soft",
+            "fact_id": fact_id,
+            "fact": updated,
+        }
+
+    def get_fact_provenance(self, fact_id: str) -> Dict[str, Any]:
+        """
+        Resolve where a fact was learned ("where did I learn this?"). Returns the
+        fact's ``source``/``source_turn_id`` and, when the origin turn is still on
+        record, the originating conversation + turn snippet.
+        """
+        fact = self.semantic.get_fact_by_id(fact_id, self.user_id)
+        if fact is None:
+            return {"success": False, "fact_id": fact_id, "error": "Fact not found"}
+
+        source_turn_id = fact.get("source_turn_id")
+        result: Dict[str, Any] = {
+            "success": True,
+            "fact_id": fact_id,
+            "claim": fact.get("claim"),
+            "source": fact.get("source"),
+            "source_turn_id": source_turn_id,
+            "origin": None,
+        }
+        if source_turn_id:
+            turn = self.episodic.get_turn_by_id(source_turn_id, self.user_id)
+            if turn:
+                content = turn.get("content") or ""
+                result["origin"] = {
+                    "conversation_id": turn.get("conversation_id"),
+                    "role": turn.get("role"),
+                    "timestamp": str(turn.get("timestamp")),
+                    "snippet": content[:600],
+                }
+        return result
 
     def update_entity(
         self,
