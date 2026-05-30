@@ -784,6 +784,13 @@
   border: 1px solid var(--accent-tint-soft);
   border-radius: 10px;
   background: var(--glass-layer-2);
+  /* Override .profile-nested's 24px left margin — the section card already
+     pads us, and chiplets need every horizontal pixel they can get. */
+  margin-left: 0;
+  /* Box-sizing + min-width:0 keep the panel honest inside flex parents. */
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
 }
 
 .profile-tool-access-title {
@@ -796,7 +803,8 @@
 }
 
 .profile-tool-access-mode {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -834,10 +842,13 @@
   margin-top: 4px;
   max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
   border: 1px solid var(--accent-tint-soft);
   border-radius: 8px;
   background: var(--surface-base, rgba(0, 0, 0, 0.18));
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .profile-tool-search {
@@ -853,6 +864,7 @@
 
 .profile-tool-search input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
@@ -909,7 +921,7 @@
 }
 
 .profile-tool-checkbox {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
@@ -918,7 +930,13 @@
   padding: 4px 6px;
   border-radius: 4px;
   width: 100%;
+  min-width: 0;
   min-height: 28px;
+  box-sizing: border-box;
+}
+
+.profile-tool-checkbox input[type="checkbox"] {
+  flex: 0 0 auto;
 }
 
 .profile-tool-checkbox:hover {
@@ -931,9 +949,14 @@
 }
 
 .profile-tool-name {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
+  /* FQ names like `_internal.recall_user_history` are long monospace tokens;
+     let them wrap mid-word rather than push the row wider than the column. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .profile-tool-blocked-tag {
@@ -987,6 +1010,11 @@
   color: var(--text-primary);
   cursor: pointer;
   min-height: 28px;
+  max-width: 100%;
+  /* Long FQ names mustn't push the chip past the panel; wrap inside instead. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: left;
   transition: all 0.15s;
 }
 
@@ -1014,10 +1042,21 @@
   margin-top: 6px;
   max-height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 8px;
   border: 1px solid var(--accent-tint-soft);
   border-radius: 6px;
   background: var(--surface-base, rgba(0, 0, 0, 0.18));
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.profile-tool-blocked {
+  min-width: 0;
+}
+
+.profile-tool-blocked-chips {
+  min-width: 0;
 }
 
 /* ── Responsive ── */
