@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ShieldOff, Lock, Search, X } from 'lucide-react';
+import { Lock, Search } from 'lucide-react';
 import { useMCPTools } from '../../lib/hooks';
 
 interface ToolAccessSectionProps {
   /**
-   * `null` ⇔ "Allow all tools"; an array switches to whitelist mode. The
-   * empty array is a valid whitelist (block everything) but the UI nudges
-   * users toward picking at least one.
+   * `null` ⇔ all tools on (minus blocked); a non-null array is an allow-list.
+   * The UI never emits `[]` — clearing the last Allow collapses back to `null`.
    */
   allowedTools: string[] | null;
   setAllowedTools: (next: string[] | null) => void;
@@ -15,14 +14,25 @@ interface ToolAccessSectionProps {
   setBlockedTools: (next: string[]) => void;
 }
 
+type ToolState = 'default' | 'allow' | 'block';
+
+const SEGMENTS: { value: ToolState; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'allow', label: 'Allow' },
+  { value: 'block', label: 'Block' },
+];
+
 /**
  * Phase 18.9.x — per-profile tool gating UI.
  *
- * Sits inside the Profile Editor's Capabilities section, rendered only when
- * `enableTools` is on. Mirrors the chip-toggle pattern from the Toolkit's
- * Access tab (`ToolkitPage.tsx::AccessView`) so the two surfaces feel like
- * one feature: that one gates whole servers per agent, this one refines
- * within a single agent down to individual tools.
+ * One flat, server-grouped list; each tool carries a Default · Allow · Block
+ * segmented control. The two backend levers (`allowed_tools` allow-list +
+ * `blocked_tools` denylist, matched on fully-qualified `server.tool` keys in
+ * `Agent._get_tools_for_provider`) are derived from the per-tool states:
+ *   - any tool set to Allow ⇒ allow-list mode (others are off)
+ *   - no Allow set          ⇒ all tools on, minus Blocked
+ * A per-row effective-state dim makes the "Default means off now" flip visible
+ * once an allow-list is active.
  */
 export function ToolAccessSection({
   allowedTools,
@@ -33,9 +43,7 @@ export function ToolAccessSection({
   const { tools, loading } = useMCPTools();
   const [search, setSearch] = useState('');
 
-  // Fully-qualified `server.tool` keys — what the backend matches against
-  // (`Agent._get_tools_for_provider`). Built-in tools surface as
-  // `_internal.<name>`. We group by server for the checklist.
+  // Fully-qualified `server.tool` keys grouped by server, `_internal` first.
   const groups = useMemo(() => {
     const byServer = new Map<string, { fq: string; name: string; description: string }[]>();
     for (const t of tools) {
@@ -45,13 +53,11 @@ export function ToolAccessSection({
       arr.push({ fq, name: t.name, description: t.description });
       byServer.set(server, arr);
     }
-    // Internal tools first so users notice them; rest alphabetical.
-    const ordered = Array.from(byServer.entries()).sort(([a], [b]) => {
+    return Array.from(byServer.entries()).sort(([a], [b]) => {
       if (a === '_internal') return -1;
       if (b === '_internal') return 1;
       return a.localeCompare(b);
     });
-    return ordered;
   }, [tools]);
 
   const filteredGroups = useMemo(() => {
@@ -63,188 +69,131 @@ export function ToolAccessSection({
         items.filter(
           i =>
             i.fq.toLowerCase().includes(needle) ||
+            i.name.toLowerCase().includes(needle) ||
             i.description.toLowerCase().includes(needle),
         ),
       ] as const)
       .filter(([, items]) => items.length > 0);
   }, [groups, search]);
 
-  const allowAllMode = allowedTools === null;
   const allowedSet = useMemo(() => new Set(allowedTools ?? []), [allowedTools]);
   const blockedSet = useMemo(() => new Set(blockedTools), [blockedTools]);
+  const allowlistActive = allowedTools !== null;
 
-  const toggleAllowed = (fq: string) => {
-    const next = new Set(allowedSet);
-    if (next.has(fq)) next.delete(fq);
-    else next.add(fq);
-    setAllowedTools(Array.from(next));
+  const toolState = (fq: string): ToolState => {
+    if (blockedSet.has(fq)) return 'block';
+    if (allowedSet.has(fq)) return 'allow';
+    return 'default';
   };
 
-  const toggleBlocked = (fq: string) => {
-    const next = new Set(blockedSet);
-    if (next.has(fq)) next.delete(fq);
-    else next.add(fq);
-    setBlockedTools(Array.from(next));
+  // Mirrors the backend gate: blocked wins, then allow-list, else on.
+  const effectiveOn = (fq: string): boolean => {
+    if (blockedSet.has(fq)) return false;
+    if (allowlistActive && !allowedSet.has(fq)) return false;
+    return true;
   };
 
-  const setMode = (mode: 'all' | 'whitelist') => {
-    if (mode === 'all') setAllowedTools(null);
-    else setAllowedTools(allowedTools ?? []);
+  const setToolState = (fq: string, next: ToolState) => {
+    const nextAllowed = new Set(allowedSet);
+    const nextBlocked = new Set(blockedSet);
+    nextAllowed.delete(fq);
+    nextBlocked.delete(fq);
+    if (next === 'allow') nextAllowed.add(fq);
+    else if (next === 'block') nextBlocked.add(fq);
+
+    // Never emit []; an empty allow-list collapses to null (= all on).
+    setAllowedTools(nextAllowed.size > 0 ? Array.from(nextAllowed) : null);
+    setBlockedTools(Array.from(nextBlocked));
   };
+
+  const allowCount = allowedTools?.length ?? 0;
+  const blockCount = blockedTools.length;
 
   return (
     <div className="profile-form-group profile-nested profile-tool-access">
-      <label className="profile-tool-access-title">
-        <Lock size={14} />
-        Tool Access
-      </label>
-
-      {/* Mode toggle — mirrors the "All agents / per-agent" pattern from
-          ToolkitPage::AccessView (chip-style segmented control). */}
-      <div className="profile-tool-access-mode" role="radiogroup" aria-label="Tool access mode">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={allowAllMode}
-          className={`profile-tool-mode-chip ${allowAllMode ? 'solid' : ''}`}
-          onClick={() => setMode('all')}
-        >
-          Allow all tools
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={!allowAllMode}
-          className={`profile-tool-mode-chip ${!allowAllMode ? 'solid' : ''}`}
-          onClick={() => setMode('whitelist')}
-        >
-          Limit to selected
-        </button>
+      <div className="profile-tool-access-head">
+        <span className="profile-tool-access-title">
+          <Lock size={14} />
+          Tool Access
+        </span>
+        <span className="profile-tool-access-status">
+          {allowlistActive
+            ? 'Allow-list active — only Allowed tools run.'
+            : 'All tools run except Blocked.'}
+        </span>
       </div>
-      <span className="profile-form-hint">
-        Blocked tools always win over allowed tools.
-      </span>
 
-      {/* Allowed-tools checklist (whitelist mode only) */}
-      {!allowAllMode && (
-        <div className="profile-tool-checklist">
-          <div className="profile-tool-search">
-            <Search size={13} />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Filter tools…"
-            />
-          </div>
-
-          {loading && <div className="profile-tool-empty">Loading tools…</div>}
-          {!loading && filteredGroups.length === 0 && (
-            <div className="profile-tool-empty">
-              {tools.length === 0
-                ? 'No tools available. Connect an MCP server to surface tools here.'
-                : 'No tools match your search.'}
-            </div>
-          )}
-          {!loading &&
-            filteredGroups.map(([server, items]) => (
-              <div key={server} className="profile-tool-group">
-                <div className="profile-tool-group-header">
-                  <span className="profile-tool-group-name">{server}</span>
-                  {server === '_internal' && (
-                    <span className="profile-tool-group-hint">
-                      AgentX built-in tools
-                    </span>
-                  )}
-                </div>
-                <ul className="profile-tool-list">
-                  {items.map(t => {
-                    const checked = allowedSet.has(t.fq);
-                    const isBlocked = blockedSet.has(t.fq);
-                    return (
-                      <li key={t.fq} className="profile-tool-row">
-                        <label className="profile-tool-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isBlocked}
-                            onChange={() => toggleAllowed(t.fq)}
-                          />
-                          <span className="profile-tool-name">{t.name}</span>
-                          {isBlocked && (
-                            <span className="profile-tool-blocked-tag">blocked</span>
-                          )}
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+      <div className="profile-tool-list">
+        <div className="profile-tool-search">
+          <Search size={13} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Filter tools…"
+          />
         </div>
-      )}
 
-      {/* Blocked-tools list — always visible. Block wins so users always have
-          a denylist regardless of mode. */}
-      <div className="profile-tool-blocked">
-        <div className="profile-tool-blocked-header">
-          <ShieldOff size={13} />
-          <span>Blocked tools</span>
-          <span className="profile-form-hint">({blockedTools.length})</span>
-        </div>
-        {blockedTools.length === 0 ? (
-          <div className="profile-tool-empty profile-tool-blocked-empty">
-            Nothing blocked. Click a tool below to add it.
-          </div>
-        ) : (
-          <div className="profile-tool-blocked-chips">
-            {blockedTools.map(fq => (
-              <button
-                key={fq}
-                type="button"
-                className="profile-tool-blocked-chip"
-                onClick={() => toggleBlocked(fq)}
-                title="Click to unblock"
-              >
-                {fq}
-                <X size={11} />
-              </button>
-            ))}
+        {loading && <div className="profile-tool-empty">Loading tools…</div>}
+        {!loading && filteredGroups.length === 0 && (
+          <div className="profile-tool-empty">
+            {tools.length === 0
+              ? 'No tools available. Connect an MCP server to surface tools here.'
+              : 'No tools match your search.'}
           </div>
         )}
 
-        {/* Inline picker: every tool, click to toggle block. Reuses the same
-            groups list so users don't need a second search box. */}
-        <details className="profile-tool-block-picker">
-          <summary>Add a tool to block</summary>
-          <div className="profile-tool-block-picker-list">
-            {groups.map(([server, items]) => (
-              <div key={server} className="profile-tool-group">
-                <div className="profile-tool-group-header">
-                  <span className="profile-tool-group-name">{server}</span>
-                </div>
-                <ul className="profile-tool-list">
-                  {items.map(t => {
-                    const isBlocked = blockedSet.has(t.fq);
-                    return (
-                      <li key={t.fq} className="profile-tool-row">
-                        <label className="profile-tool-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={isBlocked}
-                            onChange={() => toggleBlocked(t.fq)}
-                          />
-                          <span className="profile-tool-name">{t.name}</span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
+        {!loading &&
+          filteredGroups.map(([server, items]) => (
+            <div key={server} className="profile-tool-group">
+              <div className="profile-tool-group-header">
+                <span className="profile-tool-group-name">{server}</span>
+                {server === '_internal' && (
+                  <span className="profile-tool-group-hint">built-in</span>
+                )}
               </div>
-            ))}
-          </div>
-        </details>
+              {items.map(t => {
+                const state = toolState(t.fq);
+                const off = !effectiveOn(t.fq);
+                return (
+                  <div
+                    key={t.fq}
+                    className={`profile-tool-row ${off ? 'is-off' : ''}`}
+                  >
+                    <span className="profile-tool-name" title={t.fq}>
+                      {t.name}
+                    </span>
+                    {off && <span className="profile-tool-off">off</span>}
+                    <div
+                      className="profile-tool-seg"
+                      role="radiogroup"
+                      aria-label={`Access for ${t.name}`}
+                    >
+                      {SEGMENTS.map(seg => (
+                        <button
+                          key={seg.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={state === seg.value}
+                          className={`profile-tool-seg-btn ${seg.value} ${
+                            state === seg.value ? 'active' : ''
+                          }`}
+                          onClick={() => setToolState(t.fq, seg.value)}
+                        >
+                          {seg.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
       </div>
+
+      <span className="profile-form-hint">
+        {allowCount} allowed · {blockCount} blocked
+      </span>
     </div>
   );
 }

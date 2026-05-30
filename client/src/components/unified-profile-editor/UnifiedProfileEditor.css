@@ -780,17 +780,18 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--accent-tint-soft);
-  border-radius: 10px;
-  background: var(--glass-layer-2);
-  /* Override .profile-nested's 24px left margin — the section card already
-     pads us, and chiplets need every horizontal pixel they can get. */
+  /* Override .profile-nested's 24px left margin — the section card pads us. */
   margin-left: 0;
-  /* Box-sizing + min-width:0 keep the panel honest inside flex parents. */
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
+}
+
+.profile-tool-access-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
 }
 
 .profile-tool-access-title {
@@ -802,53 +803,41 @@
   color: var(--text-primary);
 }
 
-.profile-tool-access-mode {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.profile-tool-mode-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 999px;
+.profile-tool-access-status {
   font-size: 12px;
-  font-family: inherit;
-  background: var(--glass-layer-2);
-  border: 1px solid var(--accent-tint-soft);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
-  min-height: 30px;
+  color: var(--text-tertiary);
 }
 
-.profile-tool-mode-chip:hover {
-  background: var(--glass-layer-3);
-  border-color: var(--accent-tint-medium);
-  color: var(--text-primary);
-}
-
-.profile-tool-mode-chip.solid {
-  background: rgba(139, 92, 246, 0.18);
-  border-color: var(--cosmic-violet);
-  color: var(--text-primary);
-}
-
-.profile-tool-checklist {
+/* The one and only box. */
+.profile-tool-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-  max-height: 320px;
+  max-height: 340px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid var(--accent-tint-soft);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface-base, rgba(0, 0, 0, 0.18));
   box-sizing: border-box;
   min-width: 0;
+}
+
+.profile-tool-list::-webkit-scrollbar {
+  width: 10px;
+}
+.profile-tool-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.profile-tool-list::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.profile-tool-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5);
+  background-clip: content-box;
 }
 
 .profile-tool-search {
@@ -856,10 +845,14 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
+  margin-bottom: 4px;
   background: var(--glass-layer-2);
   border: 1px solid var(--accent-tint-soft);
   border-radius: 6px;
   color: var(--text-tertiary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .profile-tool-search input {
@@ -884,179 +877,113 @@
 .profile-tool-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .profile-tool-group-header {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 2px;
-  border-bottom: 1px solid var(--accent-tint-soft);
+  padding: 8px 6px 4px;
 }
 
 .profile-tool-group-name {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--text-secondary);
 }
 
 .profile-tool-group-hint {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-tertiary);
 }
 
-.profile-tool-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
+/* Tool row: name (flexes, ellipsifies) + segmented control. */
 .profile-tool-row {
-  padding: 2px 0;
-}
-
-.profile-tool-checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
   padding: 4px 6px;
-  border-radius: 4px;
-  width: 100%;
+  border-radius: 6px;
   min-width: 0;
-  min-height: 28px;
-  box-sizing: border-box;
 }
 
-.profile-tool-checkbox input[type="checkbox"] {
-  flex: 0 0 auto;
-}
-
-.profile-tool-checkbox:hover {
-  background: var(--glass-layer-3);
-}
-
-.profile-tool-checkbox input[type="checkbox"]:disabled + .profile-tool-name {
-  color: var(--text-tertiary);
-  text-decoration: line-through;
+.profile-tool-row:hover {
+  background: var(--glass-layer-2);
 }
 
 .profile-tool-name {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px;
-  /* FQ names like `_internal.recall_user_history` are long monospace tokens;
-     let them wrap mid-word rather than push the row wider than the column. */
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.profile-tool-blocked-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(248, 113, 113, 0.16);
-  color: rgb(248, 113, 113);
-}
-
-/* Blocked-tools area */
-.profile-tool-blocked {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--accent-tint-soft);
-}
-
-.profile-tool-blocked-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.profile-tool-blocked-empty {
-  text-align: left;
-  padding: 6px 0;
-}
-
-.profile-tool-blocked-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.profile-tool-blocked-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: rgba(248, 113, 113, 0.12);
-  border: 1px solid rgba(248, 113, 113, 0.4);
+  font-size: 13px;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-tool-row.is-off .profile-tool-name {
+  color: var(--text-tertiary);
+}
+
+.profile-tool-off {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+
+/* Segmented Default · Allow · Block control. */
+.profile-tool-seg {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--glass-layer-2);
+}
+
+.profile-tool-seg-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 4px 10px;
   cursor: pointer;
   min-height: 28px;
-  max-width: 100%;
-  /* Long FQ names mustn't push the chip past the panel; wrap inside instead. */
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  text-align: left;
-  transition: all 0.15s;
+  transition: background 0.12s, color 0.12s;
+  border-left: 1px solid var(--accent-tint-soft);
 }
 
-.profile-tool-blocked-chip:hover {
-  background: rgba(248, 113, 113, 0.2);
+.profile-tool-seg-btn:first-child {
+  border-left: none;
 }
 
-.profile-tool-block-picker {
-  margin-top: 4px;
+.profile-tool-seg-btn:hover {
+  color: var(--text-primary);
+  background: var(--glass-layer-3);
 }
 
-.profile-tool-block-picker > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  padding: 4px 0;
-  user-select: none;
+.profile-tool-seg-btn.active {
+  color: var(--text-primary);
 }
 
-.profile-tool-block-picker > summary:hover {
-  color: var(--text-secondary);
+.profile-tool-seg-btn.default.active {
+  background: var(--accent-tint-medium);
 }
 
-.profile-tool-block-picker-list {
-  margin-top: 6px;
-  max-height: 240px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 6px 8px;
-  border: 1px solid var(--accent-tint-soft);
-  border-radius: 6px;
-  background: var(--surface-base, rgba(0, 0, 0, 0.18));
-  box-sizing: border-box;
-  min-width: 0;
+.profile-tool-seg-btn.allow.active {
+  background: rgba(139, 92, 246, 0.28);
+  color: #fff;
 }
 
-.profile-tool-blocked {
-  min-width: 0;
-}
-
-.profile-tool-blocked-chips {
-  min-width: 0;
+.profile-tool-seg-btn.block.active {
+  background: rgba(248, 113, 113, 0.26);
+  color: #fecaca;
 }
 
 /* ── Responsive ── */
