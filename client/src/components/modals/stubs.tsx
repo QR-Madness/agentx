@@ -3,13 +3,14 @@
  */
 
 import { useState } from 'react';
-import { CheckCircle, XCircle, Copy, Check } from 'lucide-react';
+import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
+import { ConversationListContent } from '../chat/ConversationListContent';
 import { Button } from '../ui';
 
 // Re-export ProfileEditorModal for the modal registry
@@ -31,6 +32,28 @@ export function PlansModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
       <PlansPanel />
+    </div>
+  );
+}
+
+/**
+ * ConversationsDrawerContent — mobile-first drawer for browsing/switching active
+ * and past conversations. Reuses the shared ConversationListContent (same body
+ * as the desktop history dropdown). The shell-owned close button (DrawerPanel)
+ * dismisses it; selecting a conversation also closes via `onActivated`.
+ */
+export function ConversationsDrawerContent({ onClose }: ModalContentProps) {
+  // Rendered directly into .drawer-content (no .modal-content-wrapper) so the
+  // flex chain resolves: .conversations-drawer fills the drawer height and the
+  // inner .history-list owns the scroll. The wrapper's min-height:100vh would
+  // otherwise break the fill and leave the list collapsed to its content.
+  return (
+    <div className="conversations-drawer">
+      <div className="conversations-drawer-header">
+        <MessagesSquare size={18} />
+        <span>Conversations</span>
+      </div>
+      <ConversationListContent onActivated={onClose} autoFocusSearch={false} />
     </div>
   );
 }

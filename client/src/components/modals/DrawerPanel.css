@@ -14,7 +14,15 @@
     border-radius: 0 !important;
   }
 
+  /* Pad the scrolling content (not the panel) so the shell close button stays
+     at the true top-right edge while content clears the status bar, side
+     notches, and the bottom-anchored TopBar. The hard top buffer guards
+     against Android WebView clipping under the status bar. */
   .drawer-content {
     border-radius: 0 !important;
+    padding-top: max(env(safe-area-inset-top, 0px), 24px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px));
   }
 }

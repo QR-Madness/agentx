@@ -48,6 +48,12 @@
   flex-shrink: 0;
 }
 
+/* In the standalone modal variant the shell-owned close button floats over the
+   top-right corner — keep the header's right-side controls clear of it. */
+.plm-variant-modal .plm-header {
+  padding-right: 64px;
+}
+
 .plm-header-title {
   display: flex;
   align-items: center;

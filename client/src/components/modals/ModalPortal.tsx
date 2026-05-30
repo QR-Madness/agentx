@@ -28,7 +28,26 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   alloyFactory: lazy(() => import('./AlloyFactoryModal').then(m => ({ default: m.AlloyFactoryModal as ComponentType<ModalComponentProps> }))),
   alloyRunTrace: lazy(() => import('../alloy/AlloyRunTraceModal').then(m => ({ default: m.AlloyRunTraceModal as ComponentType<ModalComponentProps> }))),
   changePassword: lazy(() => import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))),
+  conversations: lazy(() => import('./stubs').then(m => ({ default: m.ConversationsDrawerContent }))),
 };
+
+/**
+ * Components that render their own header close button — they opt OUT of the
+ * shell-owned close button so we don't double up. Anything NOT listed here gets
+ * the shell close button by default, so a new panel can never ship un-closable.
+ */
+const SELF_CLOSING = new Set<string>([
+  'unifiedSettings',
+  'tools',
+  'unifiedProfileEditor',
+  'profileEditor',
+  'changePassword',
+  'toolOutput',
+  'alloyFactory',
+  'alloyRunTrace',
+  // NOTE: 'promptLibrary' intentionally omitted — its standalone modal has no
+  // header close button of its own, so it relies on the shell close button.
+]);
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {
   const { closeModal } = useModal();
@@ -40,6 +59,7 @@ function ModalRenderer({ modal }: { modal: ModalInstance }) {
   }
 
   const onClose = () => closeModal(modal.id);
+  const showClose = !SELF_CLOSING.has(modal.component);
 
   const content = (
     <Suspense
@@ -56,6 +76,7 @@ function ModalRenderer({ modal }: { modal: ModalInstance }) {
       <DrawerPanel
         position={modal.position as 'left' | 'right'}
         size={modal.size}
+        showClose={showClose}
         onClose={onClose}
       >
         {content}
@@ -64,7 +85,7 @@ function ModalRenderer({ modal }: { modal: ModalInstance }) {
   }
 
   return (
-    <ModalDialog size={modal.size} onClose={onClose}>
+    <ModalDialog size={modal.size} showClose={showClose} onClose={onClose}>
       {content}
     </ModalDialog>
   );

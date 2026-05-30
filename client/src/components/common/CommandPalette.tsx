@@ -28,10 +28,13 @@ import {
   EyeOff,
   Zap,
   Search,
+  KeyRound,
+  LogOut,
 } from 'lucide-react';
 import { useModal } from '../../contexts/ModalContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useUIChrome } from '../../contexts/UIChromeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import type { PageId } from '../../layouts/TopBar';
 import './CommandPalette.css';
 
@@ -54,6 +57,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
   const { openModal } = useModal();
   const { addTab, closeTab, activeTabId, activeTab, updateTab } = useConversation();
   const { focusMode, toggleFocusMode } = useUIChrome();
+  const { authRequired, isAuthenticated, logout } = useAuth();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -92,8 +96,15 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
     if (activeTabId) {
       list.push({ id: 'conv-close', label: 'Close conversation', hint: '⌘W', icon: <X size={16} />, keywords: 'tab remove', run: () => { closeTab(activeTabId); onClose(); } });
     }
+
+    // Account actions live only here (and the desktop Workspace menu); the
+    // mobile toolbar drops its overflow trigger, so the palette is their home.
+    if (authRequired && isAuthenticated) {
+      list.push({ id: 'change-password', label: 'Change Password', icon: <KeyRound size={16} />, keywords: 'account security login', run: open({ id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' }) });
+      list.push({ id: 'sign-out', label: 'Sign Out', icon: <LogOut size={16} />, keywords: 'logout exit session', run: () => { onClose(); logout().then(() => onNavigate('start')); } });
+    }
     return list;
-  }, [openModal, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, focusMode, toggleFocusMode, updateTab]);
+  }, [openModal, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, focusMode, toggleFocusMode, updateTab, authRequired, isAuthenticated, logout]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

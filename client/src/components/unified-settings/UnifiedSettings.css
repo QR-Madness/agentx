@@ -686,9 +686,13 @@
 }
 
 /* On phones: leave room for bottom TopBar + safe-area, and lock the
-   nav drawer above the bottom bar so it isn't covered. */
+   nav drawer above the bottom bar so it isn't covered. The hard top buffer
+   guards against Android WebView clipping the header under the status bar. */
 @media (max-width: 600px) {
   .unified-settings-container {
+    padding-top: max(env(safe-area-inset-top, 0px), 28px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px) + 16px);
   }
 }

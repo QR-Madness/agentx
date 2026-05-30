@@ -464,14 +464,25 @@ select {
 }
 
 .modal-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
   width: 90vw;
   max-height: 85vh;
-  overflow-y: auto;
+  /* The inner .modal-dialog-body owns the scroll so the shell close button,
+     pinned to .modal-dialog, never scrolls out of view. */
+  overflow: hidden;
   animation: modalSlideUp 0.25s ease;
+}
+
+.modal-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 @keyframes modalSlideUp {
@@ -523,6 +534,41 @@ select {
   overflow-y: auto;
 }
 
+/* === Shell-owned close button (DrawerPanel + ModalDialog) ===
+   Pinned to the panel (not the scrolling content) so it never scrolls away.
+   The top/right offsets use a guaranteed minimum buffer in addition to the
+   safe-area inset — Android WebView under-reports env(safe-area-inset-*) and
+   can otherwise tuck the button under the status bar. */
+.shell-close-btn {
+  position: absolute;
+  top: max(env(safe-area-inset-top, 0px), 12px);
+  right: max(env(safe-area-inset-right, 0px), 12px);
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--bg-elevated, var(--bg-card));
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.shell-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--border-color));
+}
+
+/* Left-anchored drawers flip the button to the left edge. */
+.shell-close-btn[data-position="left"] {
+  right: auto;
+  left: max(env(safe-area-inset-left, 0px), 12px);
+}
+
 /* === Modal Content Wrapper === */
 .modal-content-wrapper {
   height: 100%;
@@ -547,6 +593,32 @@ select {
 /* Mobile-first breakpoints: sm (640px), md (768px), lg (1024px), xl (1280px) */
 
 /* Small devices (landscape phones) */
+/* Phones — centered modals go full-screen so the on-screen keyboard can't
+   bury content and the close button stays reachable. `dvh` shrinks with the
+   keyboard; the hard top buffer guards against Android WebView clipping under
+   the status bar (env(safe-area-inset-top) is unreliable there). */
+@media (max-width: 600px) {
+  .modal-backdrop {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal-dialog {
+    width: 100vw;
+    max-width: 100vw !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+
+  .modal-dialog-body {
+    padding-top: max(env(safe-area-inset-top, 0px), 24px);
+    /* Clear the bottom-anchored TopBar (~56px) + home indicator. */
+    padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px));
+  }
+}
+
 @media (max-width: 640px) {
   :root {
     font-size: 14px;
