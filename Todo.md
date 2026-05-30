@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.20** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.21** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -23,7 +23,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.20** (prot
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
 | Phase 16: Multi-Agent Conversations | **In Progress** | ~65% (16.0–16.5 shipped; Factory UI + ambassador deferred) |
-| Phase 18: UX + Memory Tuning | **In Progress** | ~93% (18.9 working-memory waves done; extraction eval follow-ups open) |
+| Phase 18: UX + Memory Tuning | **In Progress** | ~96% (18.9 done; eval procedural cases + run persistence done; only snapshot/restore — blocked on memory export/import — open) |
 
 ---
 
@@ -220,10 +220,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.20** (prot
       (7/14/30-day toggle). Shared formatters extracted to `lib/format.ts` (reused by `MetadataBar`).
       Note: the earlier "no further backend work needed" assessment was inaccurate — `/api/memory/stats`
       only counts Neo4j nodes, so the aggregation endpoint had to be added.
-- [ ] **Extraction eval-harness follow-ups** (18.6):
-  - [ ] Procedural-memory eval cases (tool-usage/strategy learning) — once consolidation exercises that path
+- [-] **Extraction eval-harness follow-ups** (18.6):
+  - [x] Procedural-memory eval cases (tool-usage/strategy learning) — shipped `[v0.21.21]`.
+        `eval_consolidation` now carries procedural cases (any `EvalCase` with a
+        `tool_sequence`): seeds a tool trajectory + success/failure `Outcome` **directly**
+        (bypassing the extraction LLM — embedding-only), runs `detect_patterns()`, and scores
+        the learned `Strategy` via the `SUCCEEDED_IN` edge back to the eval conversation
+        (strategies aren't channel-tagged). Includes a negative case (`proc_failed_run`) that
+        asserts the detector's `WHERE success:true` gate learns nothing. **Note:** the
+        *production* agent loop never writes `:Outcome` nodes, so `detect_patterns()` is a
+        no-op outside this eval — wiring that into the live loop is a separate follow-up
+        (see Backlog/Phase 15-16 procedural tracking).
   - [ ] Snapshot/restore instead of `--wipe`, once memory export/import lands (see Backlog)
-  - [ ] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt comparison
+  - [x] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt
+        comparison — shipped `[v0.21.21]`. `--save`/`--no-save` (default on) + `--output-dir`
+        write `data/eval_runs/<ts>-<run4>_<model>_<full|quick>.json` (per-case results,
+        `summary.by_kind`, full `ConsolidationMetrics`) and append `index.jsonl`. Extraction
+        vs procedural tallies are kept **separate** — extraction quality varies by model, but
+        procedural is embedding-only and constant across models, so a single number would
+        muddy comparison.
 - [x] **Extraction cleanup** (18.6) — shipped. Two changes land together:
       (a) `python manage.py dedupe_entities` (Django management command, wired via
       `task db:dedupe:entities[:apply]`) collapses pre-resolution-fix duplicates in

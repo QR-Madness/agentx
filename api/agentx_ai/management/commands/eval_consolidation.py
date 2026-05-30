@@ -22,9 +22,12 @@ Usage:
     python manage.py eval_consolidation --wipe --only occupation_location,temporal_job_change
 """
 
+import argparse
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -38,10 +41,22 @@ CHANNEL_PREFIX = "_eval_"
 class EvalCase:
     """A graded consolidation eval case.
 
-    `expect_facts` / `expect_entities` are case-insensitive substrings expected
-    to appear in some stored claim / entity name. `forbid_facts` substrings must
-    NOT appear in any claim (e.g. the positive form of a negated statement).
-    `relevant=False` asserts the turns are pure noise and nothing should store.
+    Two kinds of case share this shape:
+
+    **Extraction** (default) — graded conversation turns scored against the
+    entities/facts that consolidation should store. `expect_facts` /
+    `expect_entities` are case-insensitive substrings expected to appear in some
+    stored claim / entity name. `forbid_facts` substrings must NOT appear in any
+    claim (e.g. the positive form of a negated statement). `relevant=False`
+    asserts the turns are pure noise and nothing should store.
+
+    **Procedural** — any case with a non-empty `tool_sequence`. Instead of turns,
+    it seeds a tool-usage trajectory plus a success/failure `Outcome` and is
+    scored against the `Strategy` that `detect_patterns()` learns. `task_type`
+    only flavors the learned strategy description (not a scoring key — learned
+    strategies carry no channel). `expect_strategy_tools` defaults to
+    `tool_sequence`; set it to assert a subset. `outcome_success=False` is a
+    negative case — the detector's `WHERE success:true` gate must learn nothing.
     """
     name: str
     level: int  # 1 (simple) .. 5 (complex)
@@ -51,6 +66,24 @@ class EvalCase:
     expect_facts: list[str] = field(default_factory=list)
     expect_entities: list[str] = field(default_factory=list)
     forbid_facts: list[str] = field(default_factory=list)
+    # -- procedural-only fields ---------------------------------------------
+    tool_sequence: list[str] = field(default_factory=list)
+    task_type: str = "general"
+    outcome_success: bool = True
+    expect_strategy_tools: list[str] = field(default_factory=list)
+
+    @property
+    def is_procedural(self) -> bool:
+        return bool(self.tool_sequence)
+
+    @property
+    def expected_tools(self) -> list[str]:
+        """Tools the learned strategy must cover (defaults to the seeded set)."""
+        return self.expect_strategy_tools or self.tool_sequence
+
+    @property
+    def kind(self) -> str:
+        return "procedural" if self.is_procedural else "extraction"
 
 
 # Cases range in complexity so prompt/model changes can be evaluated across
@@ -135,6 +168,25 @@ CASES: list[EvalCase] = [
         expect_facts=["reinforcement learning"],
         expect_entities=["ETH Zurich", "DeepMind"],
     ),
+    # ---- Procedural: tool-usage → strategy learning -------------------------
+    # These seed a tool trajectory + success/failure Outcome and are scored
+    # against the Strategy that detect_patterns() learns. They're embedding-only
+    # (no extraction LLM) — a plumbing/regression check, constant across --model.
+    EvalCase(
+        name="proc_web_research", level=2, turns=[],
+        note="successful research run → strategy over both tools",
+        tool_sequence=["web_search", "read_stored_output"], task_type="research",
+    ),
+    EvalCase(
+        name="proc_code_edit", level=2, turns=[],
+        note="successful coding run → strategy over both tools",
+        tool_sequence=["read_file", "edit_file"], task_type="coding",
+    ),
+    EvalCase(
+        name="proc_failed_run", level=2, turns=[],
+        note="failed outcome → detector's success-gate must learn nothing",
+        tool_sequence=["web_search"], task_type="research", outcome_success=False,
+    ),
 ]
 
 
@@ -161,6 +213,14 @@ class Command(BaseCommand):
         parser.add_argument(
             "--only", default=None,
             help="Comma-separated case names to run (default: all).",
+        )
+        parser.add_argument(
+            "--save", action=argparse.BooleanOptionalAction, default=True,
+            help="Persist a JSON run file + index.jsonl line (default: on; --no-save to skip).",
+        )
+        parser.add_argument(
+            "--output-dir", default=None,
+            help="Where to write run files (default: <repo>/data/eval_runs).",
         )
 
     # -- environment ---------------------------------------------------------
@@ -219,15 +279,55 @@ class Command(BaseCommand):
 
     # -- seeding -------------------------------------------------------------
     def _seed(self, cases):
+        for case in cases:
+            if case.is_procedural:
+                self._seed_procedural(case)
+            else:
+                self._seed_extraction(case)
+
+    def _seed_extraction(self, case):
         from agentx_ai.kit.agent_memory.models import Turn
         from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
-        for case in cases:
-            channel = CHANNEL_PREFIX + case.name
-            conv_id = str(uuid4())
-            mem = AgentMemory(user_id=EVAL_USER, conversation_id=conv_id, channel=channel)
-            for i, content in enumerate(case.turns):
-                mem.store_turn(Turn(conversation_id=conv_id, index=i, role="user",
-                                    content=content, channel=channel))
+        channel = CHANNEL_PREFIX + case.name
+        conv_id = str(uuid4())
+        mem = AgentMemory(user_id=EVAL_USER, conversation_id=conv_id, channel=channel)
+        for i, content in enumerate(case.turns):
+            mem.store_turn(Turn(conversation_id=conv_id, index=i, role="user",
+                                content=content, channel=channel))
+
+    def _seed_procedural(self, case):
+        """Seed a tool trajectory + Outcome directly (no extraction pipeline).
+
+        Procedural cases don't need consolidation — routing them through
+        store_turn would burn LLM calls and risk polluting extraction scores.
+        record_invocation only needs the Conversation node to exist, so we
+        MERGE it directly, record the tool invocations, then seed the Outcome
+        that detect_patterns() gates on.
+        """
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
+        channel = CHANNEL_PREFIX + case.name
+        conv_id = str(uuid4())
+        with Neo4jConnection.session() as s:
+            s.run("MERGE (c:Conversation {id:$id}) SET c.channel = $ch",
+                  id=conv_id, ch=channel).consume()
+        proc = ProceduralMemory()
+        for i, tool in enumerate(case.tool_sequence):
+            proc.record_invocation(
+                conversation_id=conv_id, turn_id=None, tool_name=tool,
+                tool_input={}, tool_output="ok", success=True, latency_ms=10,
+                channel=channel, turn_index=i,
+            )
+        with Neo4jConnection.session() as s:
+            s.run(
+                """
+                MATCH (c:Conversation {id:$id})
+                CREATE (o:Outcome {success:$success, task_type:$task_type, channel:$ch})
+                MERGE (c)-[:RESULTED_IN]->(o)
+                """,
+                id=conv_id, success=case.outcome_success,
+                task_type=case.task_type, ch=channel,
+            ).consume()
 
     # -- scoring -------------------------------------------------------------
     @staticmethod
@@ -269,18 +369,81 @@ class Command(BaseCommand):
             detail += f" — FORBIDDEN matched: {forbidden}"
         return {"status": status, "facts": facts, "entities": ents, "detail": detail}
 
+    @staticmethod
+    def _learned_strategy(channel):
+        """Strategy learned for the case's conversation, via SUCCEEDED_IN.
+
+        detect_patterns() doesn't tag strategies with a channel, so match
+        through the edge back to the eval Conversation (which IS channel-tagged)
+        rather than by channel/context_pattern.
+        """
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+        with Neo4jConnection.session() as s:
+            rec = s.run(
+                """
+                MATCH (c:Conversation {channel:$ch})<-[:SUCCEEDED_IN]-(s:Strategy)
+                RETURN s.tool_sequence AS tools, s.description AS d LIMIT 1
+                """,
+                ch=channel,
+            ).single()
+        if not rec:
+            return None
+        return {"tools": rec["tools"] or [], "description": rec["d"] or ""}
+
+    def _score_procedural_case(self, case):
+        strat = self._learned_strategy(CHANNEL_PREFIX + case.name)
+
+        # Negative case: the success-gate must have learned nothing.
+        if not case.outcome_success:
+            ok = strat is None
+            return {"status": "PASS" if ok else "FAIL", "facts": [], "entities": [],
+                    "detail": "no strategy learned (correct)" if ok
+                              else f"expected none, learned tools {strat['tools']}"}
+
+        if strat is None:
+            return {"status": "FAIL", "facts": [], "entities": [],
+                    "detail": "no strategy learned"}
+
+        learned = {t.lower() for t in strat["tools"]}
+        expected = case.expected_tools
+        hits = [t for t in expected if t.lower() in learned]
+        if len(hits) == len(expected):
+            status = "PASS"
+        elif hits:
+            status = "PARTIAL"
+        else:
+            status = "FAIL"
+        # Reuse the facts/entities slots so the existing table renderer is unchanged.
+        return {"status": status, "facts": [strat["description"]], "entities": strat["tools"],
+                "detail": f"strategy tools {len(hits)}/{len(expected)}"}
+
+    def _score(self, case):
+        return self._score_procedural_case(case) if case.is_procedural else self._score_case(case)
+
     # -- cleanup -------------------------------------------------------------
-    def _cleanup(self):
+    def _cleanup(self, cases):
         from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
         from sqlalchemy import text
+        # Tools created by procedural cases are global (no channel) — collect
+        # their names so we can delete them explicitly.
+        eval_tools = sorted({t for c in cases if c.is_procedural for t in c.tool_sequence})
         with Neo4jConnection.session() as s:
+            # Strategies aren't channel-tagged — delete via the SUCCEEDED_IN edge
+            # back to the eval conversations BEFORE those conversations are gone.
+            s.run("""
+                MATCH (c:Conversation) WHERE c.channel STARTS WITH $p
+                MATCH (c)<-[:SUCCEEDED_IN]-(s:Strategy) DETACH DELETE s
+            """, p=CHANNEL_PREFIX).consume()
             s.run("MATCH (n) WHERE n.channel STARTS WITH $p DETACH DELETE n", p=CHANNEL_PREFIX).consume()
             s.run("MATCH (c:Conversation) WHERE c.channel STARTS WITH $p DETACH DELETE c", p=CHANNEL_PREFIX).consume()
             s.run("MATCH (u:User {id:$uid}) DETACH DELETE u", uid=EVAL_USER).consume()
+            if eval_tools:
+                s.run("MATCH (t:Tool) WHERE t.name IN $names DETACH DELETE t", names=eval_tools).consume()
         try:
             with get_postgres_session() as ses:
-                ses.execute(text("DELETE FROM conversation_logs WHERE channel LIKE :p"),
-                            {"p": CHANNEL_PREFIX + "%"})
+                for tbl in ("conversation_logs", "tool_invocations"):
+                    ses.execute(text(f"DELETE FROM {tbl} WHERE channel LIKE :p"),
+                                {"p": CHANNEL_PREFIX + "%"})
         except Exception:
             pass
 
@@ -328,28 +491,39 @@ class Command(BaseCommand):
             f"\nConsolidation eval — model={model}  cases={len(cases)}  "
             f"full={'yes' if opts['full'] else 'no'}\n"))
 
-        # Seed → consolidate → score.
+        # Seed → consolidate (extraction cases) → detect patterns (procedural) → score.
         self._seed(cases)
         from agentx_ai.kit.agent_memory.consolidation import jobs
         result = asyncio.run(jobs.consolidate_episodic_to_semantic())
+        patterns_extracted = 0
+        if any(c.is_procedural for c in cases):
+            patterns_extracted = jobs.detect_patterns().get("items_processed", 0)
 
         passed = partial = failed = 0
+        by_kind = {"extraction": {"pass": 0, "partial": 0, "fail": 0},
+                   "procedural": {"pass": 0, "partial": 0, "fail": 0}}
+        case_results = []
         self.stdout.write("=" * 78)
-        for case in sorted(cases, key=lambda c: (c.level, c.name)):
-            r = self._score_case(case)
+        for case in sorted(cases, key=lambda c: (c.is_procedural, c.level, c.name)):
+            r = self._score(case)
             passed += r["status"] == "PASS"
             partial += r["status"] == "PARTIAL"
             failed += r["status"] == "FAIL"
+            by_kind[case.kind][r["status"].lower()] += 1
+            case_results.append({"name": case.name, "level": case.level, "kind": case.kind,
+                                 "status": r["status"], "detail": r["detail"]})
             style = {"PASS": self.style.SUCCESS, "PARTIAL": self.style.WARNING,
                      "FAIL": self.style.ERROR}[r["status"]]
+            tag = "P" if case.is_procedural else "L"
             self.stdout.write(
-                f"L{case.level} {case.name:<24} {style(r['status']):<8} {r['detail']}")
+                f"{tag}{case.level} {case.name:<24} {style(r['status']):<8} {r['detail']}")
             self.stdout.write(f"     note: {case.note}")
             if r["facts"]:
                 for c in r["facts"]:
-                    self.stdout.write(f"       fact:   {c}")
+                    self.stdout.write(f"       {'strategy' if case.is_procedural else 'fact':<8}: {c}")
             if r["entities"]:
-                self.stdout.write(f"       entities: {', '.join(r['entities'])}")
+                label = "tools" if case.is_procedural else "entities"
+                self.stdout.write(f"       {label}: {', '.join(r['entities'])}")
             if not r["facts"] and not r["entities"]:
                 self.stdout.write("       (nothing stored)")
         self.stdout.write("=" * 78)
@@ -363,14 +537,57 @@ class Command(BaseCommand):
         self.stdout.write(
             f"LLM calls={m['extraction_calls']}  tokens={m['total_tokens_used']}  "
             f"stored=[{result['entities']}e, {result['facts']}f]  "
-            f"errors={len(result['errors'])}")
+            f"strategies={patterns_extracted}  errors={len(result['errors'])}")
         if result["errors"]:
             for err in result["errors"][:5]:
                 self.stderr.write(f"  error: {err}")
+
+        if opts["save"]:
+            self._persist_run(opts, model, cases, case_results,
+                              {"pass": passed, "partial": partial, "fail": failed,
+                               "total": len(cases), "by_kind": by_kind},
+                              m, patterns_extracted)
 
         if opts["keep"]:
             self.stdout.write(self.style.WARNING(
                 f"\n--keep set: eval data left under channels '{CHANNEL_PREFIX}*'"))
         else:
-            self._cleanup()
+            self._cleanup(cases)
             self.stdout.write("\ncleaned up seeded eval data")
+
+    # -- persistence ---------------------------------------------------------
+    def _persist_run(self, opts, model, cases, case_results, summary, metrics, patterns_extracted):
+        """Write a JSON run file + append a one-line index entry for comparison."""
+        out_dir = Path(opts["output_dir"]) if opts["output_dir"] else (
+            Path(__file__).resolve().parents[4] / "data" / "eval_runs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:4]}"
+        slug = model.replace("/", "-").replace(":", "-")
+        path = out_dir / f"{run_id}_{slug}_{'full' if opts['full'] else 'quick'}.json"
+
+        payload = {
+            "run_id": run_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "flags": {"full": opts["full"], "only": opts["only"]},
+            "cases": case_results,
+            "summary": summary,
+            "metrics": metrics,
+            "procedural": {"patterns_extracted": patterns_extracted},
+        }
+        path.write_text(json.dumps(payload, indent=2, default=str))
+
+        ext, proc = summary["by_kind"]["extraction"], summary["by_kind"]["procedural"]
+        ext_total = sum(ext.values())
+        proc_total = sum(proc.values())
+        index_line = {
+            "run_id": run_id, "timestamp": payload["timestamp"], "model": model,
+            "extraction_pass": ext["pass"], "extraction_total": ext_total,
+            "procedural_pass": proc["pass"], "procedural_total": proc_total,
+            "tokens": metrics.get("total_tokens_used", 0),
+        }
+        with (out_dir / "index.jsonl").open("a") as fh:
+            fh.write(json.dumps(index_line) + "\n")
+
+        self.stdout.write(f"\nsaved run → {path}")
