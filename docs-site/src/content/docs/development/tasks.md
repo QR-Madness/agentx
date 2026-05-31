@@ -153,6 +153,28 @@ task db:clean
 
 You will be prompted for confirmation.
 
+### Export / Import Memory
+
+Round-trippable, ID-stable snapshots of the agent memory graph (conversations,
+facts, entities, strategies, goals + the PostgreSQL audit mirror).
+
+```bash
+# Export every channel to data/memory_exports/<ts>_all.json
+task memory:export
+
+# Export one channel, stripping embeddings (smaller, diffable, git-friendly)
+task memory:export -- --channel _global --no-embeddings
+
+# Import (idempotent MERGE-on-id; embeddings restored or recomputed)
+task memory:import -- --input data/memory_exports/<file>.json
+
+# Replace a channel exactly (wipe that channel for the user, then import)
+task memory:import -- --input <file>.json --mode replace --channel _global
+```
+
+`--mode merge` (default) upserts and leaves other data untouched; `--mode replace`
+wipes the target channel first. Pass `--dry-run` to parse + summarize without writing.
+
 ## Testing
 
 ### Run All Tests

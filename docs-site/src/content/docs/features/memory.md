@@ -266,8 +266,35 @@ Jobs can be monitored and controlled via the [Jobs API](../api/endpoints.md#jobs
 | `/api/memory/recall-settings` | GET/POST | Recall layer settings |
 | `/api/memory/consolidate` | POST | Manually run consolidation |
 | `/api/memory/reset` | POST | Reset consolidation state |
+| `/api/memory/export` | POST | Export the memory graph to a JSON envelope |
+| `/api/memory/import` | POST | Import a memory export (idempotent) |
 
 See [API Endpoints: Memory](../api/endpoints.md#memory) for full details.
+
+## Backup & Portability
+
+The memory graph can be exported to a single round-trippable JSON envelope and
+re-imported with stable IDs — for backups, moving memory between instances, or
+hand-editing and pushing changes back.
+
+- **Stable IDs.** Every node (turn, entity, fact, goal, strategy) carries a UUID,
+  so import `MERGE`s on it: re-importing the same file twice is a no-op.
+- **Full graph.** Conversations/turns, facts/entities, strategies, goals and
+  tool-invocations, plus the PostgreSQL audit mirror.
+- **Modes.** `merge` upserts and leaves other data untouched; `replace` wipes the
+  target channel first so it ends up matching the file exactly.
+- **Embeddings.** Restored verbatim when dimension-compatible, otherwise
+  recomputed from each node's text. Exporting with embeddings stripped yields a
+  smaller, deterministic, diffable artifact — handy for version-controlling
+  memory snapshots.
+
+Use it from the **Memory drawer** (Export / Import buttons), over HTTP
+(`POST /api/memory/export` and `/api/memory/import`), or via the CLI
+(`task memory:export` / `task memory:import` — see
+[Task Commands](../development/tasks.md#export--import-memory)).
+
+The consolidation eval harness builds on this: `eval_consolidation --snapshot`
+backs up the whole cluster, runs, and restores it afterward instead of wiping.
 
 ## Configuration
 
