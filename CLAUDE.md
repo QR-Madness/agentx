@@ -218,6 +218,8 @@ Base URL: `http://localhost:12319/api/`
 | `/api/memory/recall-settings` | GET/POST | Get or update recall layer settings |
 | `/api/memory/consolidate` | POST | Trigger manual consolidation |
 | `/api/memory/reset` | POST | Reset memory data (with confirmation) |
+| `/api/memory/export` | POST | Export the user's memory graph to a round-trippable JSON envelope (`{channel?, include_embeddings?}`); also `task memory:export` |
+| `/api/memory/import` | POST | Import a memory export idempotently (`{data, mode: merge\|replace, channel?}`); also `task memory:import` |
 | `/api/memory/settings` | GET/POST | Get or update memory settings |
 | `/api/jobs` | GET | List background jobs |
 | `/api/jobs/clear-stuck` | POST | Clear stuck jobs |

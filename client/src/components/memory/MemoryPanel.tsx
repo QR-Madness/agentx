@@ -6,16 +6,18 @@
  * (all in this folder). Pure presentational pieces live in their own files.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Database, Users, FileText, Zap, Search, RefreshCw,
-  ChevronRight, X, Clock, GitBranch, History
+  ChevronRight, X, Clock, GitBranch, History, Download, Upload, AlertTriangle, Check
 } from 'lucide-react';
 import {
   useMemoryEntities, useMemoryFacts, useMemoryStrategies,
-  useMemoryStats, useConsolidate,
+  useMemoryStats, useConsolidate, useExportMemory, useImportMemory,
 } from '../../lib/hooks';
-import type { MemoryFact, MemoryStrategy } from '../../lib/api';
+import type { MemoryExport, MemoryFact, MemoryStrategy } from '../../lib/api';
+import { useNotify } from '../../contexts/NotificationContext';
+import { downloadJson, readJsonFile, fileTimestamp } from '../../lib/fileTransfer';
 import { JobsPanel } from '../JobsPanel';
 import { EntityListView } from './EntityListView';
 import { FactListView } from './FactListView';
@@ -47,6 +49,14 @@ export const MemoryPanel: React.FC = () => {
 
   const { stats, loading: statsLoading, refresh: refreshStats } = useMemoryStats();
   const { consolidate, loading: consolidating } = useConsolidate();
+  const { mutate: exportMemory, loading: exporting } = useExportMemory();
+  const { mutate: importMemory, loading: importing } = useImportMemory();
+  const { notifySuccess, notifyError } = useNotify();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Staged import: file parsed, awaiting mode choice + confirm (replace is destructive).
+  const [pendingImport, setPendingImport] = useState<{ data: MemoryExport; fileName: string } | null>(null);
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
 
   const {
     entities, total: entitiesTotal, hasNext: entitiesHasNext,
@@ -110,6 +120,52 @@ export const MemoryPanel: React.FC = () => {
     }
   };
 
+  const handleExport = async () => {
+    const data = await exportMemory({ channel: '_all' });
+    if (!data) {
+      notifyError('Could not export memory', 'Export failed');
+      return;
+    }
+    downloadJson(data, `agentx-memory-${fileTimestamp()}.json`);
+    notifySuccess('Memory snapshot downloaded', 'Export complete');
+  };
+
+  const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    try {
+      const data = await readJsonFile<MemoryExport>(file);
+      if (!data || typeof data.schema_version !== 'number') {
+        notifyError('That file is not a memory export', 'Invalid file');
+        return;
+      }
+      setImportMode('merge');
+      setPendingImport({ data, fileName: file.name });
+    } catch (err) {
+      notifyError(err as Error, 'Could not read file');
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingImport) return;
+    const result = await importMemory(pendingImport.data, importMode);
+    if (!result) {
+      notifyError('Import failed', 'Import error');
+      return;
+    }
+    const created = Object.values(result.imported).reduce((sum, c) => sum + c.created, 0);
+    notifySuccess(
+      `${importMode === 'replace' ? 'Replaced' : 'Merged'} memory — ${created} new node(s)` +
+        (result.recomputed_embeddings ? `, ${result.recomputed_embeddings} embeddings recomputed` : ''),
+      'Import complete',
+    );
+    setPendingImport(null);
+    refreshStats();
+    refreshEntities();
+    refreshFacts();
+  };
+
   return (
     <div className="memory-tab">
       {/* Header */}
@@ -130,12 +186,74 @@ export const MemoryPanel: React.FC = () => {
                 ? <><RefreshCw size={16} className="spin" /> Consolidating...</>
                 : <><Zap size={16} /> Consolidate Now</>}
             </Button>
+            <Button
+              variant="ghost" onClick={handleExport} disabled={exporting}
+              title="Download a round-trippable JSON snapshot of all memory"
+            >
+              {exporting ? <RefreshCw size={16} className="spin" /> : <Download size={16} />} Export
+            </Button>
+            <Button
+              variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={importing}
+              title="Import a memory snapshot from a JSON file"
+            >
+              <Upload size={16} /> Import
+            </Button>
             <Button variant="ghost" onClick={refreshStats} disabled={statsLoading}>
               <RefreshCw size={18} className={statsLoading ? 'spin' : ''} />
             </Button>
           </div>
         </div>
         <p className="page-subtitle">Browse and inspect stored memories</p>
+
+        <input
+          ref={fileInputRef} type="file" accept="application/json,.json"
+          onChange={handleFilePicked} style={{ display: 'none' }}
+        />
+
+        {pendingImport && (
+          <div className={`import-confirm ${importMode === 'replace' ? 'destructive' : ''}`}>
+            <div className="import-confirm-head">
+              <Upload size={16} />
+              <span>Import <strong>{pendingImport.fileName}</strong></span>
+              <button className="dismiss-btn" onClick={() => setPendingImport(null)} title="Cancel">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="import-mode-toggle">
+              <button
+                className={importMode === 'merge' ? 'active' : ''}
+                onClick={() => setImportMode('merge')}
+              >
+                Merge <span>upsert; keeps existing</span>
+              </button>
+              <button
+                className={importMode === 'replace' ? 'active' : ''}
+                onClick={() => setImportMode('replace')}
+              >
+                Replace <span>wipe channel first</span>
+              </button>
+            </div>
+            {importMode === 'replace' && (
+              <p className="import-warning">
+                <AlertTriangle size={14} /> Replace deletes the snapshot's channel(s) for this
+                user before importing. This cannot be undone.
+              </p>
+            )}
+            <div className="import-confirm-actions">
+              <Button
+                variant={importMode === 'replace' ? 'danger' : 'primary'}
+                onClick={handleConfirmImport} disabled={importing}
+              >
+                {importing
+                  ? <><RefreshCw size={14} className="spin" /> Importing…</>
+                  : <><Check size={14} /> {importMode === 'replace' ? 'Replace & Import' : 'Merge Import'}</>}
+              </Button>
+              <Button variant="ghost" onClick={() => setPendingImport(null)} disabled={importing}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {consolidateMessage && (
           <div className={`consolidate-message ${consolidateMessage.type}`}>

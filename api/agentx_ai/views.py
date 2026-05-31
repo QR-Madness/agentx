@@ -4350,6 +4350,96 @@ def memory_reset(request):
 
 
 @csrf_exempt
+def memory_export(request):
+    """
+    POST /api/memory/export - Export the user's memory graph to a JSON envelope.
+
+    Request body (optional):
+        {"channel": "_global", "include_embeddings": true}
+
+    `channel` defaults to "_all" (every channel). When `include_embeddings` is
+    false the vectors are stripped (smaller, diffable; recomputed on import).
+
+    Returns: {"export": <round-trippable envelope>}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+
+        data = json.loads(request.body) if request.body else {}
+        channel = data.get('channel', '_all')
+        include_embeddings = bool(data.get('include_embeddings', True))
+
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+        export = memory.export_memory(
+            channel=channel, include_embeddings=include_embeddings
+        )
+        return JsonResponse({"export": export.model_dump(mode="json")})
+
+    except Exception as e:
+        logger.error(f"Error exporting memory: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_import(request):
+    """
+    POST /api/memory/import - Import a memory export (idempotent MERGE-on-id).
+
+    Request body:
+        {"data": <envelope>, "mode": "merge"|"replace", "channel": "_global"?}
+
+    `mode` defaults to "merge" (upsert). "replace" wipes the target channel for
+    the user first. `channel` overrides the wipe scope for replace mode.
+
+    Returns: {"imported": <summary with per-type counts>}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    envelope = data.get('data')
+    if not isinstance(envelope, dict):
+        return JsonResponse(
+            {"error": "Missing 'data' (the export envelope)"}, status=400
+        )
+
+    mode = data.get('mode', 'merge')
+    if mode not in ('merge', 'replace'):
+        return JsonResponse(
+            {"error": "mode must be 'merge' or 'replace'"}, status=400
+        )
+
+    try:
+        from .kit.agent_memory.memory.interface import AgentMemory
+
+        memory = AgentMemory(user_id=DEFAULT_USER_ID)
+        summary = memory.import_memory(
+            envelope, mode=mode, channel=data.get('channel')
+        )
+        return JsonResponse({"imported": summary})
+
+    except ValueError as e:
+        # schema_version too new / malformed envelope → client error.
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Error importing memory: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 def jobs_clear_stuck(request):
     """
     POST /api/jobs/clear-stuck - Clear any jobs stuck in 'running' state.

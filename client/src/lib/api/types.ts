@@ -746,6 +746,42 @@ export interface MemoryStats {
   unavailable?: boolean;  // Set when databases are offline
 }
 
+/**
+ * Round-trippable memory export envelope (POST /api/memory/export).
+ *
+ * Treated as an opaque blob by the client — it's downloaded as a file and
+ * round-tripped back to POST /api/memory/import verbatim. `counts()` server-side
+ * mirrors the collection lengths; the client only needs the discriminating
+ * header fields for display.
+ */
+export interface MemoryExport {
+  schema_version: number;
+  exported_at: string;
+  user_id: string;
+  channel: string | null;
+  include_embeddings: boolean;
+  embedder: { provider_model: string; dimensions: number };
+  conversations: unknown[];
+  turns: unknown[];
+  entities: unknown[];
+  facts: unknown[];
+  goals: unknown[];
+  strategies: unknown[];
+  tool_invocations: unknown[];
+  pg_conversation_logs: unknown[];
+  pg_tool_invocations: unknown[];
+}
+
+/** Per-type result of a memory import (POST /api/memory/import). */
+export interface MemoryImportResult {
+  mode: 'merge' | 'replace';
+  channel: string | null;
+  recomputed_embeddings: number;
+  imported: Record<string, { created: number; total: number }>;
+  pg_conversation_logs: number;
+  pg_tool_invocations: number;
+}
+
 /** Aggregated token/cost/latency usage from conversation_logs (GET /api/metrics/usage). */
 export interface UsageMetrics {
   totals: {

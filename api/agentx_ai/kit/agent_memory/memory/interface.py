@@ -2,7 +2,10 @@
 
 import logging
 import time
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..portability import MemoryExport
 
 from ..models import Turn, Entity, Fact, Goal, Strategy, MemoryBundle, compute_claim_hash
 from ..embeddings import get_embedder
@@ -911,6 +914,50 @@ class AgentMemory:
             conversation_id=self.conversation_id,
             user_id=self.user_id,
             outcome=outcome
+        )
+
+    # Portability (scriptable import/export)
+
+    def export_memory(
+        self,
+        channel: Optional[str] = None,
+        include_embeddings: bool = True,
+    ) -> "MemoryExport":
+        """Serialize this user's memory graph into a round-trippable envelope.
+
+        Args:
+            channel: Limit to one channel (defaults to this instance's channel;
+                pass ``"_all"`` to export every channel for the user).
+            include_embeddings: When False, strip vectors for a smaller,
+                deterministic/diffable artifact (recomputed on import).
+        """
+        from ..portability import MemoryExporter
+
+        scope = channel if channel is not None else self.channel
+        return MemoryExporter(
+            user_id=self.user_id,
+            channel=scope,
+            include_embeddings=include_embeddings,
+        ).export()
+
+    def import_memory(
+        self,
+        payload: Union["MemoryExport", Dict[str, Any]],
+        mode: str = "merge",
+        channel: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Restore a memory export under this user (idempotent MERGE-on-id).
+
+        Args:
+            payload: A ``MemoryExport`` or its serialized dict.
+            mode: ``"merge"`` (upsert) or ``"replace"`` (wipe the target
+                channel first, then import).
+            channel: Override the wipe scope for replace mode.
+        """
+        from ..portability import MemoryImporter
+
+        return MemoryImporter(user_id=self.user_id).import_export(
+            payload, mode=mode, channel=channel  # type: ignore[arg-type]
         )
 
     def close(self) -> None:

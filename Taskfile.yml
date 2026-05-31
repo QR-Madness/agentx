@@ -354,6 +354,22 @@ tasks:
     cmds:
       - uv run python -m agentx_ai.kit.agent_memory.consolidation.worker
 
+  memory:export:
+    desc: "Export agent memory to a round-trippable JSON file. Pass --channel/--output/--no-embeddings via CLI_ARGS."
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py export_memory {{.CLI_ARGS}}
+
+  memory:import:
+    desc: "Import a memory export (idempotent). Pass --input <file> [--mode replace --channel _global] via CLI_ARGS."
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py import_memory {{.CLI_ARGS}}
+
   db:status:
     desc: "Show status of database containers"
     cmds:

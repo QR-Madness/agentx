@@ -90,6 +90,8 @@ urlpatterns = [
     path("memory/consolidate", views.memory_consolidate, name="memory-consolidate"),
     path("memory/consolidate/stream", views.consolidate_stream, name="consolidate-stream"),
     path("memory/reset", views.memory_reset, name="memory-reset"),
+    path("memory/export", views.memory_export, name="memory-export"),
+    path("memory/import", views.memory_import, name="memory-import"),
     path("memory/settings", views.memory_settings, name="memory-settings"),
     path("memory/recall-settings", views.recall_settings, name="recall-settings"),
     # Job monitoring endpoints

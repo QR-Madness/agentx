@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
+import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryExport, MemoryImportResult, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
 
 export const memoryApi = {
   // === Memory Explorer ===
@@ -126,6 +126,29 @@ export const memoryApi = {
     return apiRequest('/api/memory/user-history', {
       method: 'POST',
       body: JSON.stringify(params),
+    });
+  },
+
+  // === Import / export (round-trippable memory snapshots) ===
+
+  async exportMemory(params: { channel?: string; includeEmbeddings?: boolean } = {}): Promise<{ export: MemoryExport }> {
+    return apiRequest('/api/memory/export', {
+      method: 'POST',
+      body: JSON.stringify({
+        channel: params.channel ?? '_all',
+        include_embeddings: params.includeEmbeddings ?? true,
+      }),
+    });
+  },
+
+  async importMemory(
+    data: MemoryExport,
+    mode: 'merge' | 'replace' = 'merge',
+    channel?: string,
+  ): Promise<{ imported: MemoryImportResult }> {
+    return apiRequest('/api/memory/import', {
+      method: 'POST',
+      body: JSON.stringify({ data, mode, channel }),
     });
   },
 };

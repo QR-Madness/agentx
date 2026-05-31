@@ -2244,6 +2244,84 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /memory/export:
+    post:
+      tags: [Memory]
+      operationId: memoryExport
+      summary: Export the user's memory graph to a round-trippable JSON envelope
+      description: >
+        Serializes conversations/turns, facts/entities, strategies, goals and
+        tool-invocations (plus the PostgreSQL audit mirror) keyed by stable ids.
+        With include_embeddings=false the vectors are stripped for a smaller,
+        deterministic, diffable artifact (recomputed on import).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel:
+                  type: string
+                  description: Channel to export, or "_all" (default) for every channel.
+                include_embeddings:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: The export envelope under "export"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  export:
+                    type: object
+                    additionalProperties: true
+
+  /memory/import:
+    post:
+      tags: [Memory]
+      operationId: memoryImport
+      summary: Import a memory export (idempotent MERGE-on-id)
+      description: >
+        Restores an envelope produced by /memory/export. mode "merge" upserts
+        and leaves other data untouched; "replace" wipes the target channel for
+        the user first. Embeddings are restored verbatim when present and
+        dimension-compatible, else recomputed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: object
+                  description: The export envelope (the "export" object from /memory/export).
+                  additionalProperties: true
+                mode:
+                  type: string
+                  enum: [merge, replace]
+                  default: merge
+                channel:
+                  type: string
+                  description: Override the wipe scope for replace mode.
+      responses:
+        '200':
+          description: Per-type import summary under "imported"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: object
+                    additionalProperties: true
+        '400':
+          description: Missing envelope, bad mode, or unsupported schema_version
+
   /memory/settings:
     get:
       tags: [Memory]

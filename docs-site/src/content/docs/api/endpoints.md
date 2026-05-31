@@ -997,6 +997,45 @@ Clears consolidated timestamps from all conversations, allowing reprocessing.
 
 When `delete_memories` is true, also deletes all entities, facts, and strategies. Useful when extraction logic has changed.
 
+### Export Memory
+
+```
+POST /api/memory/export
+```
+
+Serializes the user's memory graph (conversations/turns, facts/entities, strategies, goals, tool-invocations) plus the PostgreSQL audit mirror into a single round-trippable envelope keyed by stable node ids. Re-import with `/api/memory/import`.
+
+**Request (optional):**
+```json
+{"channel": "_all", "include_embeddings": true}
+```
+
+`channel` defaults to `"_all"` (every channel). With `include_embeddings: false` the vectors are stripped, yielding a smaller, deterministic, diffable artifact (the importer recomputes them) — handy for version-controlling memory snapshots.
+
+**Response:** `{"export": { ...envelope... }}` — `schema_version`, `embedder`, and per-type node collections.
+
+Scriptable equivalent: `task memory:export -- --channel _global --no-embeddings`.
+
+### Import Memory
+
+```
+POST /api/memory/import
+```
+
+Restores an export idempotently by `MERGE`-ing each node on its stable id. Embeddings are restored verbatim when present and dimension-compatible, otherwise recomputed from each node's canonical text.
+
+**Request:**
+```json
+{"data": { ...envelope... }, "mode": "merge", "channel": "_global"}
+```
+
+- `mode`: `"merge"` (default) upserts and leaves other data untouched; `"replace"` wipes the target channel for the user first, so it ends up matching the file exactly.
+- `channel`: overrides the wipe scope for `replace` mode (defaults to the file's channel).
+
+**Response:** `{"imported": {"mode", "channel", "recomputed_embeddings", "imported": {<type>: {"created", "total"}}, ...}}`. Returns `400` for a missing envelope, bad `mode`, or an unsupported (newer) `schema_version`.
+
+Scriptable equivalent: `task memory:import -- --input snapshot.json --mode replace --channel _global`.
+
 ### Detail & Streaming Endpoints
 
 | Endpoint | Method | Description |

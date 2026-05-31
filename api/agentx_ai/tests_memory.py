@@ -63,6 +63,7 @@ from agentx_ai.kit.agent_memory.memory.retrieval import MemoryRetriever
 from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
 from agentx_ai.kit.agent_memory.memory.working import WorkingMemory
 from agentx_ai.kit.agent_memory.models import (
+    Entity,
     Fact,
     MemoryBundle,
     Turn,
@@ -3808,3 +3809,135 @@ class DedupeEntitiesAliasMergeTest(TestCase):
             "real value",
         )
         self.assertIsNone(_first_non_empty([None, "", "  "]))
+
+
+@skipUnless(docker_services_running(), "Docker services not running")
+class MemoryPortabilityTest(MemoryTestBase):
+    """Round-trippable memory export/import (kit.agent_memory.portability)."""
+
+    def _seed(self, user_id, conversation_id, channel="_global"):
+        """Write a turn + entity + fact (linked) for `user_id`. Returns (memory, ids)."""
+        memory = AgentMemory(
+            user_id=user_id, conversation_id=conversation_id, channel=channel
+        )
+        turn = Turn(
+            conversation_id=conversation_id, index=0, role="user",
+            content="My favorite language is Python.",
+            timestamp=datetime.now(timezone.utc),
+        )
+        memory.store_turn(turn)
+        entity = Entity(name="Python", type="Concept", description="A programming language")
+        memory.upsert_entity(entity)
+        fact = memory.learn_fact(
+            "The user's favorite language is Python",
+            source="user_stated", confidence=0.9,
+            entity_ids=[entity.id], source_turn_id=turn.id,
+        )
+        return memory, {"turn": turn.id, "entity": entity.id, "fact": fact.id}
+
+    def _count(self, user_id, label):
+        # label is from a fixed internal set — safe to interpolate.
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                f"MATCH (n:{label}) WHERE n.user_id = $uid RETURN count(n) AS c",
+                uid=user_id,
+            ).single()
+            return rec["c"] if rec else 0
+
+    def _delete_user(self, user_id):
+        with Neo4jConnection.session() as session:
+            session.run(
+                "MATCH (n) WHERE n.user_id = $uid DETACH DELETE n", uid=user_id
+            ).consume()
+
+    def test_round_trip_restores_after_wipe(self):
+        """export → wipe → import (merge) restores nodes with their original ids."""
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, ids = self._seed(self.test_user_id, self.test_conversation_id)
+
+        export = memory.export_memory(channel="_all")
+        self.assertGreaterEqual(len(export.facts), 1)
+        self.assertGreaterEqual(len(export.entities), 1)
+        self.assertGreaterEqual(len(export.turns), 1)
+        self.assertIn(ids["fact"], [f["id"] for f in export.facts])
+
+        self._delete_user(self.test_user_id)
+        self.assertEqual(self._count(self.test_user_id, "Fact"), 0)
+
+        memory.import_memory(export, mode="merge")
+
+        self.assertEqual(self._count(self.test_user_id, "Fact"), 1)
+        self.assertEqual(self._count(self.test_user_id, "Entity"), 1)
+        self.assertEqual(self._count(self.test_user_id, "Turn"), 1)
+        # The fact↔entity ABOUT edge is rebuilt and the id preserved.
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                "MATCH (f:Fact {id: $fid})-[:ABOUT]->(e:Entity {id: $eid}) RETURN f.id AS id",
+                fid=ids["fact"], eid=ids["entity"],
+            ).single()
+            self.assertIsNotNone(rec)
+
+    def test_merge_is_idempotent(self):
+        """Re-importing an export the user already has creates nothing new."""
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id)
+        export = memory.export_memory(channel="_all")
+
+        summary = memory.import_memory(export, mode="merge")
+        created = sum(c["created"] for c in summary["imported"].values())
+        self.assertEqual(created, 0)
+        # Node count unchanged after a second import.
+        self.assertEqual(self._count(self.test_user_id, "Fact"), 1)
+
+    def test_replace_wipes_stray_nodes(self):
+        """replace mode drops channel data not present in the export."""
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id)
+        export = memory.export_memory(channel="_all")
+
+        # Add a stray fact that is NOT in the export.
+        memory.learn_fact("A stray fact", source="inferred", confidence=0.5)
+        self.assertEqual(self._count(self.test_user_id, "Fact"), 2)
+
+        memory.import_memory(export, mode="replace", channel="_global")
+        self.assertEqual(self._count(self.test_user_id, "Fact"), len(export.facts))
+
+    def test_strip_and_recompute_embeddings(self):
+        """--no-embeddings export carries no vectors; import recomputes them."""
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, ids = self._seed(self.test_user_id, self.test_conversation_id)
+
+        export = memory.export_memory(channel="_all", include_embeddings=False)
+        self.assertFalse(export.include_embeddings)
+        self.assertTrue(all(not f.get("embedding") for f in export.facts))
+
+        self._delete_user(self.test_user_id)
+        summary = memory.import_memory(export, mode="merge")
+        self.assertGreater(summary["recomputed_embeddings"], 0)
+
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                "MATCH (f:Fact {id: $fid}) RETURN f.embedding IS NOT NULL AS has_emb",
+                fid=ids["fact"],
+            ).single()
+            self.assertTrue(rec["has_emb"])
+
+    def test_newer_schema_version_rejected(self):
+        """Imports refuse an envelope from a newer schema than the build supports."""
+        from agentx_ai.kit.agent_memory.portability import MemoryImporter
+
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id) \
+            if embeddings_compatible() else (None, None)
+        if memory is None:
+            self.skipTest("Embedding dimensions mismatch")
+
+        export = memory.export_memory(channel="_all")
+        payload = export.model_dump(mode="json")
+        payload["schema_version"] = 999
+
+        with self.assertRaises(ValueError):
+            MemoryImporter(user_id=self.test_user_id).import_export(payload)

@@ -88,6 +88,91 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Import staging panel (file picked → choose mode → confirm) */
+.import-confirm {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-line, rgba(255, 255, 255, 0.12));
+  animation: slideIn 0.2s ease;
+}
+
+.import-confirm.destructive {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.import-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-confirm-head .dismiss-btn {
+  margin-left: auto;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  display: flex;
+  border-radius: 4px;
+}
+
+.import-confirm-head .dismiss-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.1); }
+
+.import-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.import-mode-toggle button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border-line, rgba(255, 255, 255, 0.12));
+  color: var(--text-fg, inherit);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.import-mode-toggle button span {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.import-mode-toggle button.active {
+  border-color: var(--accent, #7c5cff);
+  background: var(--accent-tertiary, rgba(124, 92, 255, 0.15));
+}
+
+.import-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: var(--status-error, #ef4444);
+  font-size: 12px;
+}
+
+.import-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .memory-header .page-title {
   display: flex;
   align-items: center;

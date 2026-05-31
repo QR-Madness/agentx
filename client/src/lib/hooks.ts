@@ -28,6 +28,8 @@ import {
   ConsolidateResult,
   ConsolidationSettings,
   RecallSettings,
+  MemoryExport,
+  MemoryImportResult,
 } from './api';
 
 export interface UseApiOptions {
@@ -591,6 +593,58 @@ export function useConsolidate() {
   }, []);
 
   return { consolidate, loading, result, error, reset };
+}
+
+export function useExportMemory() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(
+    async (params: { channel?: string; includeEmbeddings?: boolean } = {}): Promise<MemoryExport | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.exportMemory(params);
+        return res.export;
+      } catch (err) {
+        setError(err as ApiError);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  return { mutate, loading, error };
+}
+
+export function useImportMemory() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(
+    async (
+      data: MemoryExport,
+      mode: 'merge' | 'replace' = 'merge',
+      channel?: string,
+    ): Promise<MemoryImportResult | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.importMemory(data, mode, channel);
+        return res.imported;
+      } catch (err) {
+        setError(err as ApiError);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  return { mutate, loading, error };
 }
 
 export function useConsolidationSettings() {
