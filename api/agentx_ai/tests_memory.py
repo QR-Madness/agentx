@@ -3941,3 +3941,82 @@ class MemoryPortabilityTest(MemoryTestBase):
 
         with self.assertRaises(ValueError):
             MemoryImporter(user_id=self.test_user_id).import_export(payload)
+
+
+@skipUnless(docker_services_running(), "Docker services not running")
+class EvalSnapshotRestoreTest(MemoryTestBase):
+    """eval_consolidation --snapshot/--restore: cluster snapshot bundle + per-user restore.
+
+    Deliberately exercises `_make_snapshot` (multi-user enumeration + bundling) and the
+    per-user import that `_restore_snapshot` performs, but NOT the global `_wipe()` it
+    calls — wiping the shared dev cluster from a test would risk real data if the test
+    failed mid-run. Scope deletes to the seeded user instead (cf. MemoryPortabilityTest).
+    """
+
+    def _seed(self):
+        memory = AgentMemory(
+            user_id=self.test_user_id, conversation_id=self.test_conversation_id,
+            channel="_global",
+        )
+        turn = Turn(
+            conversation_id=self.test_conversation_id, index=0, role="user",
+            content="My favorite language is Python.", timestamp=datetime.now(timezone.utc),
+        )
+        memory.store_turn(turn)
+        entity = Entity(name="Python", type="Concept", description="A programming language")
+        memory.upsert_entity(entity)
+        fact = memory.learn_fact(
+            "The user's favorite language is Python", source="user_stated",
+            confidence=0.9, entity_ids=[entity.id], source_turn_id=turn.id,
+        )
+        return {"turn": turn.id, "entity": entity.id, "fact": fact.id}
+
+    def _delete_user(self, user_id):
+        with Neo4jConnection.session() as session:
+            session.run("MATCH (n) WHERE n.user_id = $uid DETACH DELETE n", uid=user_id).consume()
+
+    def _count(self, user_id, label):
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                f"MATCH (n:{label}) WHERE n.user_id = $uid RETURN count(n) AS c", uid=user_id,
+            ).single()
+            return rec["c"] if rec else 0
+
+    def test_snapshot_bundles_users_and_restores_per_user(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from uuid import uuid4 as _uuid4
+
+        from agentx_ai.management.commands.eval_consolidation import Command
+        from agentx_ai.kit.agent_memory.portability import MemoryImporter
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+
+        ids = self._seed()
+        cmd = Command()
+        snap_path = Path(tempfile.gettempdir()) / f"evalsnap_{_uuid4().hex}.json"
+        try:
+            cmd._make_snapshot(snap_path)
+            bundle = json.loads(snap_path.read_text(encoding="utf-8"))
+            self.assertEqual(bundle["snapshot_version"], 1)
+
+            # The seeded user is present in the cluster snapshot...
+            mine = [u for u in bundle["users"] if u["user_id"] == self.test_user_id]
+            self.assertEqual(len(mine), 1)
+            envelope = mine[0]
+            self.assertIn(ids["fact"], [f["id"] for f in envelope["facts"]])
+
+            # ...and its envelope round-trips per-user (what _restore_snapshot does
+            # for each user after the global wipe).
+            self._delete_user(self.test_user_id)
+            self.assertEqual(self._count(self.test_user_id, "Fact"), 0)
+
+            MemoryImporter(self.test_user_id).import_export(envelope, mode="merge")
+            self.assertEqual(self._count(self.test_user_id, "Fact"), 1)
+            self.assertEqual(self._count(self.test_user_id, "Entity"), 1)
+            self.assertEqual(self._count(self.test_user_id, "Turn"), 1)
+        finally:
+            snap_path.unlink(missing_ok=True)
+            self._delete_user(self.test_user_id)

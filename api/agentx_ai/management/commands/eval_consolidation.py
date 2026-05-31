@@ -10,16 +10,17 @@ expectations. Use it to compare models and tune extraction prompts.
 
 ⚠️  consolidate_episodic_to_semantic() is GLOBAL — it processes every
 unconsolidated conversation in the connected memory cluster. This command must
-run against a STERILE dev instance. Pass --wipe to clear ALL memory data first.
-NEVER run against a cluster holding real data. (A future memory export/import —
-Todo.md backlog — would let us snapshot/restore instead of wiping.)
+run against a STERILE dev instance. On a cluster that holds data you care about,
+pass --snapshot: it exports ALL memory, wipes, runs, then restores it afterward
+(even if the eval errors). --wipe is the destructive alternative (no restore).
 
 Usage:
-    python manage.py eval_consolidation --wipe
-    python manage.py eval_consolidation --model openrouter:minimax/minimax-m2.7 --wipe
-    python manage.py eval_consolidation --wipe --full     # also exercise correction + contradiction stages
-    python manage.py eval_consolidation --wipe --keep     # leave seeded data for inspection
-    python manage.py eval_consolidation --wipe --only occupation_location,temporal_job_change
+    python manage.py eval_consolidation --snapshot   # back up + restore around the run
+    python manage.py eval_consolidation --wipe        # destructive; sterile/dev only
+    python manage.py eval_consolidation --model openrouter:minimax/minimax-m2.7 --snapshot
+    python manage.py eval_consolidation --snapshot --full   # also correction + contradiction stages
+    python manage.py eval_consolidation --snapshot --only occupation_location,temporal_job_change
+    python manage.py eval_consolidation --restore data/eval_snapshots/<ts>.json  # recovery
 """
 
 import argparse
@@ -200,7 +201,19 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--wipe", action="store_true",
-            help="DESTROY all memory data first (required unless the instance is already sterile).",
+            help="DESTROY all memory data first (required unless the instance is already sterile). "
+                 "Prefer --snapshot on a dev cluster you care about.",
+        )
+        parser.add_argument(
+            "--snapshot", action="store_true",
+            help="Non-destructive alternative to --wipe: export all memory to "
+                 "data/eval_snapshots/<ts>.json, wipe, run, then restore it afterward "
+                 "(even if the eval errors). Bypasses the sterility gate.",
+        )
+        parser.add_argument(
+            "--restore", default=None, metavar="FILE",
+            help="Recovery mode: wipe and restore a prior --snapshot file, then exit "
+                 "(use if a snapshot run crashed between wipe and restore).",
         )
         parser.add_argument(
             "--keep", action="store_true",
@@ -258,6 +271,49 @@ class Command(BaseCommand):
         except Exception as e:
             self.stderr.write(f"  postgres wipe note: {e}")
         self.stdout.write(f"  wiped Neo4j nodes={neo}, postgres rows={pg}")
+
+    # -- snapshot / restore (non-destructive eval on a live cluster) ----------
+    def _list_user_ids(self):
+        """Every User id in the graph. Snapshots are cluster-wide because the wipe is."""
+        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+        with Neo4jConnection.session() as s:
+            return [r["uid"] for r in s.run("MATCH (u:User) RETURN u.id AS uid") if r["uid"]]
+
+    def _make_snapshot(self, path):
+        """Export every user's full memory (with embeddings) into one bundle file."""
+        import json
+        from agentx_ai.kit.agent_memory.portability import MemoryExporter
+
+        users = []
+        for uid in self._list_user_ids():
+            export = MemoryExporter(uid, channel="_all", include_embeddings=True).export()
+            users.append(export.model_dump(mode="json"))
+        bundle = {
+            "snapshot_version": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "users": users,
+        }
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(bundle), encoding="utf-8")
+        self.stdout.write(f"  snapshot: {len(users)} user(s) → {path}")
+        return path
+
+    def _restore_snapshot(self, path):
+        """Wipe the cluster (removes eval residue) and re-import a snapshot bundle."""
+        import json
+        from agentx_ai.kit.agent_memory.portability import MemoryImporter
+
+        bundle = json.loads(Path(path).read_text(encoding="utf-8"))
+        users = bundle.get("users", [])
+        self._wipe()
+        restored = 0
+        for env in users:
+            summary = MemoryImporter(env["user_id"]).import_export(env, mode="merge")
+            restored += sum(c["total"] for c in summary["imported"].values())
+        self.stdout.write(self.style.SUCCESS(
+            f"  restored {len(users)} user(s), {restored} node(s) from {path}"
+        ))
 
     # -- model override ------------------------------------------------------
     def _pin_model(self, model, full):
@@ -451,6 +507,14 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         self._load_dotenv()
 
+        # Recovery mode: just restore a prior snapshot and exit (no model/cases needed).
+        if opts["restore"]:
+            if not Path(opts["restore"]).exists():
+                raise CommandError(f"Snapshot file not found: {opts['restore']}")
+            self.stdout.write(self.style.WARNING("Restoring snapshot (wipes current memory first)..."))
+            self._restore_snapshot(opts["restore"])
+            return
+
         cases = CASES
         if opts["only"]:
             wanted = {n.strip() for n in opts["only"].split(",")}
@@ -462,20 +526,8 @@ class Command(BaseCommand):
         from agentx_ai.kit.agent_memory.config import get_settings
         model = opts["model"] or get_settings().combined_extraction_model
 
-        # Sterility gate — consolidation is global.
-        existing = self._count_conversations()
-        if existing and not opts["wipe"]:
-            raise CommandError(
-                f"Memory cluster is not sterile ({existing} conversations present). "
-                "Consolidation runs GLOBALLY, so this eval must start from an empty "
-                "cluster. Re-run with --wipe to DESTROY all memory data first — dev "
-                "instances only, never against real data."
-            )
-        if opts["wipe"]:
-            self.stdout.write(self.style.WARNING("Wiping all memory data..."))
-            self._wipe()
-
-        # Pin the model and (re)build the registry so provider keys resolve.
+        # Validate the provider BEFORE touching data — a snapshot run must not
+        # wipe the cluster and then bail because the model is unusable.
         self._pin_model(model, opts["full"])
         from agentx_ai.providers.registry import reset_registry, get_registry
         reset_registry()
@@ -487,11 +539,51 @@ class Command(BaseCommand):
                 "provider (e.g. set OPENROUTER_API_KEY) or pass --model provider:model_id."
             )
 
+        # Sterility gate — consolidation is global. --snapshot satisfies it
+        # non-destructively (snapshot → wipe → run → restore).
+        existing = self._count_conversations()
+        if existing and not (opts["wipe"] or opts["snapshot"]):
+            raise CommandError(
+                f"Memory cluster is not sterile ({existing} conversations present). "
+                "Consolidation runs GLOBALLY, so this eval must start from an empty "
+                "cluster. Re-run with --snapshot to back up + restore your data around "
+                "the run (recommended), or --wipe to DESTROY all memory data first — "
+                "dev instances only, never against real data."
+            )
+
+        # Snapshot the whole cluster before wiping so we can restore it afterward.
+        snapshot_path = None
+        if opts["snapshot"]:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            snapshot_dir = Path(__file__).resolve().parents[4] / "data" / "eval_snapshots"
+            snapshot_path = self._make_snapshot(snapshot_dir / f"{ts}.json")
+        if snapshot_path or opts["wipe"]:
+            self.stdout.write(self.style.WARNING("Wiping all memory data..."))
+            self._wipe()
+
         self.stdout.write(self.style.MIGRATE_HEADING(
             f"\nConsolidation eval — model={model}  cases={len(cases)}  "
             f"full={'yes' if opts['full'] else 'no'}\n"))
 
-        # Seed → consolidate (extraction cases) → detect patterns (procedural) → score.
+        # Run the eval, then ALWAYS restore the snapshot (or clean up) — even if
+        # seeding/consolidation/scoring raises — so a snapshot run can't leave the
+        # cluster wiped.
+        try:
+            self._run_eval(cases, model, opts)
+        finally:
+            if snapshot_path:
+                self._restore_snapshot(snapshot_path)
+                self.stdout.write(self.style.WARNING(
+                    f"\nsnapshot kept for recovery: {snapshot_path}"))
+            elif opts["keep"]:
+                self.stdout.write(self.style.WARNING(
+                    f"\n--keep set: eval data left under channels '{CHANNEL_PREFIX}*'"))
+            else:
+                self._cleanup(cases)
+                self.stdout.write("\ncleaned up seeded eval data")
+
+    def _run_eval(self, cases, model, opts):
+        """Seed → consolidate (extraction) → detect patterns (procedural) → score → persist."""
         self._seed(cases)
         from agentx_ai.kit.agent_memory.consolidation import jobs
         result = asyncio.run(jobs.consolidate_episodic_to_semantic())
@@ -547,13 +639,6 @@ class Command(BaseCommand):
                               {"pass": passed, "partial": partial, "fail": failed,
                                "total": len(cases), "by_kind": by_kind},
                               m, patterns_extracted)
-
-        if opts["keep"]:
-            self.stdout.write(self.style.WARNING(
-                f"\n--keep set: eval data left under channels '{CHANNEL_PREFIX}*'"))
-        else:
-            self._cleanup(cases)
-            self.stdout.write("\ncleaned up seeded eval data")
 
     # -- persistence ---------------------------------------------------------
     def _persist_run(self, opts, model, cases, case_results, summary, metrics, patterns_extracted):

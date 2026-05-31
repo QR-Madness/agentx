@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.22** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.23** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -231,10 +231,12 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.22** (prot
         *production* agent loop never writes `:Outcome` nodes, so `detect_patterns()` is a
         no-op outside this eval — wiring that into the live loop is a separate follow-up
         (see Backlog/Phase 15-16 procedural tracking).
-  - [ ] Snapshot/restore instead of `--wipe` — **now unblocked**: scriptable memory import/export
-        shipped `[v0.21.22]` (`task memory:export|import`, replace mode = scoped wipe + restore).
-        Remaining work is wiring `eval_consolidation` to snapshot before a run and restore after,
-        instead of `--wipe`-ing the dev cluster (see Open Platform backlog).
+  - [x] Snapshot/restore instead of `--wipe` — shipped `[v0.21.23]`. `eval_consolidation --snapshot`
+        exports the whole cluster (every user, with embeddings) to `data/eval_snapshots/<ts>.json`,
+        wipes, runs, then restores it in a `finally` (survives an eval error); bypasses the sterility
+        gate non-destructively. Provider usability is validated **before** the wipe (fail-fast).
+        `--restore <file>` is a standalone recovery path. Reuses the `[v0.21.22]` portability module.
+        Covered by `EvalSnapshotRestoreTest`.
   - [x] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt
         comparison — shipped `[v0.21.21]`. `--save`/`--no-save` (default on) + `--output-dir`
         write `data/eval_runs/<ts>-<run4>_<model>_<full|quick>.json` (per-case results,
