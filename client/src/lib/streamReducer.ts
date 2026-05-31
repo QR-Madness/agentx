@@ -155,10 +155,13 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     }
 
     case 'stream_ended':
+      // Clear any still-open delegation cards so the typing-spinner suppression
+      // (activeDelegationCount) releases even if a fan-out was cut short.
       return {
         ...state,
         phase: 'idle',
         liveContent: '',
+        activeDelegations: new Map(),
       };
 
     default:

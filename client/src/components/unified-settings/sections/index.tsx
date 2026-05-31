@@ -15,7 +15,9 @@ import {
   Languages,
   Palette,
   Brain,
-  ListTree
+  ListTree,
+  Globe,
+  Users
 } from 'lucide-react';
 
 export interface Section {
@@ -53,6 +55,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         component: lazy(() => import('./ModelsSection')),
         keywords: ['context', 'tokens', 'window', 'output', 'limits']
       },
+      {
+        id: 'search',
+        label: 'Web Search',
+        icon: <Globe size={18} />,
+        component: lazy(() => import('./SearchSection')),
+        keywords: ['search', 'web search', 'tavily', 'brave', 'backend']
+      },
     ]
   },
   intelligence: {
@@ -72,6 +81,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <ListTree size={18} />,
         component: lazy(() => import('./PlannerSection')),
         keywords: ['plan', 'planner', 'decompose', 'subtask', 'complexity']
+      },
+      {
+        id: 'alloy',
+        label: 'Multi-Agent',
+        icon: <Users size={18} />,
+        component: lazy(() => import('./AlloySection')),
+        keywords: ['delegation', 'delegate', 'alloy', 'multi-agent', 'ad-hoc', 'parallel', 'fan-out']
       },
       {
         id: 'memory-overview',

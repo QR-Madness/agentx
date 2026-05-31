@@ -23,6 +23,14 @@ export const configApi = {
     });
   },
 
+  /**
+   * Probe the configured web-search backend with a trivial query.
+   * Powers the 'Test connection' button in Settings → Web Search.
+   */
+  async searchHealth(): Promise<{ ok: boolean; backend: string | null; count: number; error?: string | null }> {
+    return apiRequest('/api/tools/search-health');
+  },
+
   async getContextLimits(): Promise<{
     lmstudio: { context_window: number; max_output_tokens: number };
     models: Record<string, { context_window: number; max_output_tokens: number }>;

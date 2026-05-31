@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import * as Tabs from '@radix-ui/react-tabs';
+import * as Accordion from '@radix-ui/react-accordion';
 import {
   Brain,
   ChevronRight,
+  ChevronDown,
   Cpu,
   Eye,
   Library,
@@ -13,6 +16,7 @@ import {
   Wrench,
   X,
   Zap,
+  Share2,
   AlertCircle,
 } from 'lucide-react';
 import { type AgentProfile, type ModelInfo } from '../../lib/api';
@@ -39,6 +43,39 @@ const panelVariants = {
     transition: { duration: 0.2 },
   }),
 };
+
+/** A collapsible section card (Radix Accordion item) styled like the editor cards. */
+function AccordionCard({
+  value,
+  icon,
+  title,
+  hint,
+  children,
+}: {
+  value: string;
+  icon: ReactNode;
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Accordion.Item value={value} className="profile-section-card profile-accordion-item">
+      <Accordion.Header>
+        <Accordion.Trigger className="profile-accordion-trigger">
+          <span className="profile-section-header profile-accordion-title">
+            {icon}
+            <span>{title}</span>
+            {hint && <span className="profile-accordion-hint">{hint}</span>}
+          </span>
+          <ChevronDown size={15} className="profile-accordion-chevron" />
+        </Accordion.Trigger>
+      </Accordion.Header>
+      <Accordion.Content className="profile-accordion-content">
+        <div className="profile-accordion-content-inner">{children}</div>
+      </Accordion.Content>
+    </Accordion.Item>
+  );
+}
 
 interface ProfileContentProps {
   profile: AgentProfile | null;
@@ -68,6 +105,7 @@ export function ProfileContent({
     enableTools, setEnableTools,
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
+    availableForDelegation, setAvailableForDelegation,
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
@@ -101,6 +139,10 @@ export function ProfileContent({
   const selectedProviderLabel = selectedModel?.provider ?? (defaultModel.includes(':') ? defaultModel.split(':')[0] : '');
   // dir: 1 = library slides in from right, -1 = form slides back in from left
   const [panelDir, setPanelDir] = useState(1);
+
+  const promptPreview = systemPrompt.trim()
+    ? `${systemPrompt.trim().slice(0, 80)}${systemPrompt.trim().length > 80 ? '…' : ''}`
+    : 'Default instructions';
 
   const openLibrary = (mode: 'insert' | 'select') => {
     setLibraryMode(mode);
@@ -165,262 +207,300 @@ export function ProfileContent({
               </div>
             )}
 
-            {/* Identity */}
-            <div className="profile-section-card">
-              <div className="profile-section-header">
-                <Settings2 size={14} />
-                <span>Identity</span>
-              </div>
+            <Tabs.Root defaultValue="core" className="profile-tabs-root">
+              <Tabs.List className="profile-tabs-list" aria-label="Profile settings">
+                <Tabs.Trigger value="core" className="profile-tab-trigger">Core</Tabs.Trigger>
+                <Tabs.Trigger value="tools" className="profile-tab-trigger">Tools</Tabs.Trigger>
+                <Tabs.Trigger value="advanced" className="profile-tab-trigger">Advanced</Tabs.Trigger>
+              </Tabs.List>
 
-              <div className="profile-form-group">
-                <label>Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Enter profile name..."
-                  autoFocus
-                />
-              </div>
-
-              <div className="profile-form-group">
-                <label>Avatar</label>
-                <div className="profile-avatar-picker">
-                  {AVATAR_OPTIONS.map(opt => {
-                    const Icon = opt.icon;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        className={`profile-avatar-option ${avatar === opt.id ? 'selected' : ''}`}
-                        onClick={() => setAvatar(opt.id)}
-                        title={opt.label}
-                      >
-                        <Icon size={18} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="profile-form-group">
-                <label>Description</label>
-                <textarea
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="Describe this profile's purpose..."
-                  rows={2}
-                />
-              </div>
-            </div>
-
-            {/* Model & Generation */}
-            <div className="profile-section-card">
-              <div className="profile-section-header">
-                <Cpu size={14} />
-                <span>Model & Generation</span>
-              </div>
-
-              <div className="profile-model-selector-wrap">
-                <button
-                  type="button"
-                  className="profile-model-trigger"
-                  onClick={() => setPickerOpen(true)}
+              {/* ── Core ── */}
+              <Tabs.Content value="core" className="profile-tab-content">
+                <Accordion.Root
+                  type="multiple"
+                  defaultValue={['identity', 'model', 'delegation']}
+                  className="profile-accordion-root"
                 >
-                  <div className="profile-model-trigger-main">
-                    <span className="profile-model-trigger-label">Model</span>
-                    <span className="profile-model-trigger-name">{selectedLabel}</span>
-                    {selectedProviderLabel && (
-                      <span className="profile-model-trigger-provider">{selectedProviderLabel}</span>
-                    )}
-                  </div>
-                  <div className="profile-model-trigger-meta">
-                    {selectedCtx && (
-                      <span className="profile-model-trigger-badge">
-                        {selectedCtx >= 1000 ? `${Math.round(selectedCtx / 1000)}k ctx` : `${selectedCtx} ctx`}
+                  <AccordionCard value="identity" icon={<Settings2 size={14} />} title="Identity">
+                    <div className="profile-form-group">
+                      <label>Name</label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder="Enter profile name..."
+                      />
+                    </div>
+
+                    <div className="profile-form-group">
+                      <label>Avatar</label>
+                      <div className="profile-avatar-picker">
+                        {AVATAR_OPTIONS.map(opt => {
+                          const Icon = opt.icon;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              className={`profile-avatar-option ${avatar === opt.id ? 'selected' : ''}`}
+                              onClick={() => setAvatar(opt.id)}
+                              title={opt.label}
+                            >
+                              <Icon size={18} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="profile-form-group">
+                      <label>Description</label>
+                      <textarea
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        placeholder="Describe this profile's purpose..."
+                        rows={2}
+                      />
+                      <span className="profile-form-hint">
+                        Shown to other agents when deciding whether to delegate here.
                       </span>
-                    )}
-                    {selectedModel?.supports_tools && (
-                      <span className="profile-model-trigger-cap" title="Tools"><Wrench size={12} /></span>
-                    )}
-                    {selectedModel?.supports_vision && (
-                      <span className="profile-model-trigger-cap" title="Vision"><Eye size={12} /></span>
-                    )}
-                    <ChevronRight size={14} className="profile-model-trigger-chev" />
-                  </div>
-                </button>
-              </div>
-              <ModelPickerModal
-                isOpen={pickerOpen}
-                onClose={() => setPickerOpen(false)}
-                value={defaultModel}
-                onChange={setDefaultModel}
-                showDefault
-              />
+                    </div>
+                  </AccordionCard>
 
-              <div className="profile-form-group">
-                <label>Temperature: {temperature.toFixed(1)}</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={temperature}
-                  onChange={e => setTemperature(parseFloat(e.target.value))}
-                  className="profile-slider"
-                />
-                <div className="profile-slider-labels">
-                  <span>Focused</span>
-                  <span>Creative</span>
-                </div>
-              </div>
-
-              <div className="profile-form-group">
-                <label>Reasoning Strategy</label>
-                <select
-                  value={reasoningStrategy}
-                  onChange={e => setReasoningStrategy(e.target.value as typeof reasoningStrategy)}
-                >
-                  {REASONING_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label} — {opt.description}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* System Prompt */}
-            <div className="profile-section-card">
-              <div className="profile-section-header">
-                <MessageSquare size={14} />
-                <span>System Prompt</span>
-              </div>
-
-              <div className="profile-form-group">
-                <label>Base Template</label>
-                <div className="profile-base-template-row">
-                  {baseTemplate ? (
-                    <>
-                      <span className="profile-template-name">{baseTemplate.name}</span>
-                      {baseTemplate.hasModifications && (
-                        <span className="profile-modified-badge">Modified</span>
-                      )}
+                  <AccordionCard value="model" icon={<Cpu size={14} />} title="Model &amp; Generation">
+                    <div className="profile-model-selector-wrap">
                       <button
                         type="button"
-                        className="profile-btn-secondary profile-btn-sm"
-                        onClick={() => openLibrary('select')}
+                        className="profile-model-trigger"
+                        onClick={() => setPickerOpen(true)}
                       >
-                        Change
+                        <div className="profile-model-trigger-main">
+                          <span className="profile-model-trigger-label">Model</span>
+                          <span className="profile-model-trigger-name">{selectedLabel}</span>
+                          {selectedProviderLabel && (
+                            <span className="profile-model-trigger-provider">{selectedProviderLabel}</span>
+                          )}
+                        </div>
+                        <div className="profile-model-trigger-meta">
+                          {selectedCtx && (
+                            <span className="profile-model-trigger-badge">
+                              {selectedCtx >= 1000 ? `${Math.round(selectedCtx / 1000)}k ctx` : `${selectedCtx} ctx`}
+                            </span>
+                          )}
+                          {selectedModel?.supports_tools && (
+                            <span className="profile-model-trigger-cap" title="Tools"><Wrench size={12} /></span>
+                          )}
+                          {selectedModel?.supports_vision && (
+                            <span className="profile-model-trigger-cap" title="Vision"><Eye size={12} /></span>
+                          )}
+                          <ChevronRight size={14} className="profile-model-trigger-chev" />
+                        </div>
                       </button>
-                      <button
-                        type="button"
-                        className="profile-btn-ghost profile-btn-sm"
-                        onClick={() => setBaseTemplateId('')}
-                        title="Remove base template"
+                    </div>
+                    <ModelPickerModal
+                      isOpen={pickerOpen}
+                      onClose={() => setPickerOpen(false)}
+                      value={defaultModel}
+                      onChange={setDefaultModel}
+                      showDefault
+                    />
+
+                    <div className="profile-form-group">
+                      <label>Temperature: {temperature.toFixed(1)}</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={temperature}
+                        onChange={e => setTemperature(parseFloat(e.target.value))}
+                        className="profile-slider"
+                      />
+                      <div className="profile-slider-labels">
+                        <span>Focused</span>
+                        <span>Creative</span>
+                      </div>
+                    </div>
+
+                    <div className="profile-form-group">
+                      <label>Reasoning Strategy</label>
+                      <select
+                        value={reasoningStrategy}
+                        onChange={e => setReasoningStrategy(e.target.value as typeof reasoningStrategy)}
                       >
-                        <X size={13} />
-                      </button>
-                    </>
+                        {REASONING_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label} — {opt.description}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </AccordionCard>
+
+                  {/* System Prompt — collapsed by default so the long text doesn't
+                      dominate the scroll; preview shown on the closed header. */}
+                  <AccordionCard
+                    value="prompt"
+                    icon={<MessageSquare size={14} />}
+                    title="System Prompt"
+                    hint={promptPreview}
+                  >
+                    <div className="profile-form-group">
+                      <label>Base Template</label>
+                      <div className="profile-base-template-row">
+                        {baseTemplate ? (
+                          <>
+                            <span className="profile-template-name">{baseTemplate.name}</span>
+                            {baseTemplate.hasModifications && (
+                              <span className="profile-modified-badge">Modified</span>
+                            )}
+                            <button
+                              type="button"
+                              className="profile-btn-secondary profile-btn-sm"
+                              onClick={() => openLibrary('select')}
+                            >
+                              Change
+                            </button>
+                            <button
+                              type="button"
+                              className="profile-btn-ghost profile-btn-sm"
+                              onClick={() => setBaseTemplateId('')}
+                              title="Remove base template"
+                            >
+                              <X size={13} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="profile-btn-secondary"
+                            onClick={() => openLibrary('select')}
+                          >
+                            <Library size={14} />
+                            Select Base Template
+                          </button>
+                        )}
+                      </div>
+                      <span className="profile-form-hint">Optional template for base agent instructions</span>
+                    </div>
+
+                    <div className="profile-form-group">
+                      <div className="profile-prompt-toolbar">
+                        <label>Agent Instructions</label>
+                        <button
+                          type="button"
+                          className="profile-library-btn"
+                          onClick={() => openLibrary('insert')}
+                        >
+                          <Library size={13} />
+                          Insert from Library
+                        </button>
+                      </div>
+                      <textarea
+                        ref={systemPromptRef}
+                        value={systemPrompt}
+                        onChange={e => setSystemPrompt(e.target.value)}
+                        placeholder="Custom instructions for this agent… (leave empty to use defaults)"
+                        rows={6}
+                        className="profile-system-prompt"
+                      />
+                      <span className="profile-form-hint">Agent-specific instructions prepended to conversations</span>
+                    </div>
+                  </AccordionCard>
+
+                  {/* Delegation — Track D */}
+                  <AccordionCard value="delegation" icon={<Share2 size={14} />} title="Delegation">
+                    <label className="profile-toggle-row">
+                      <span className="profile-toggle-label">
+                        <Share2 size={15} />
+                        Available for delegation
+                      </span>
+                      <div className="profile-toggle-right">
+                        <input
+                          type="checkbox"
+                          checked={availableForDelegation}
+                          onChange={e => setAvailableForDelegation(e.target.checked)}
+                          className="profile-toggle-input"
+                        />
+                        <span className={`profile-toggle-switch ${availableForDelegation ? 'active' : ''}`} />
+                      </div>
+                    </label>
+                    <span className="profile-form-hint">
+                      When on, other agents can hand subtasks to this profile via the
+                      <code> delegate_to </code> tool (requires ad-hoc delegation enabled
+                      in Settings → Multi-Agent).
+                    </span>
+                  </AccordionCard>
+                </Accordion.Root>
+              </Tabs.Content>
+
+              {/* ── Tools ── */}
+              <Tabs.Content value="tools" className="profile-tab-content">
+                <div className="profile-section-card">
+                  <label className="profile-toggle-row">
+                    <span className="profile-toggle-label">
+                      <Zap size={15} />
+                      Enable Tools
+                    </span>
+                    <div className="profile-toggle-right">
+                      <input
+                        type="checkbox"
+                        checked={enableTools}
+                        onChange={e => setEnableTools(e.target.checked)}
+                        className="profile-toggle-input"
+                      />
+                      <span className={`profile-toggle-switch ${enableTools ? 'active' : ''}`} />
+                    </div>
+                  </label>
+
+                  {enableTools ? (
+                    <ToolAccessSection
+                      allowedTools={allowedTools}
+                      setAllowedTools={setAllowedTools}
+                      blockedTools={blockedTools}
+                      setBlockedTools={setBlockedTools}
+                    />
                   ) : (
-                    <button
-                      type="button"
-                      className="profile-btn-secondary"
-                      onClick={() => openLibrary('select')}
-                    >
-                      <Library size={14} />
-                      Select Base Template
-                    </button>
+                    <span className="profile-form-hint">Tools are disabled for this agent.</span>
                   )}
                 </div>
-                <span className="profile-form-hint">Optional template for base agent instructions</span>
-              </div>
+              </Tabs.Content>
 
-              <div className="profile-form-group">
-                <div className="profile-prompt-toolbar">
-                  <label>Agent Instructions</label>
-                  <button
-                    type="button"
-                    className="profile-library-btn"
-                    onClick={() => openLibrary('insert')}
-                  >
-                    <Library size={13} />
-                    Insert from Library
-                  </button>
-                </div>
-                <textarea
-                  ref={systemPromptRef}
-                  value={systemPrompt}
-                  onChange={e => setSystemPrompt(e.target.value)}
-                  placeholder="Custom instructions for this agent… (leave empty to use defaults)"
-                  rows={6}
-                  className="profile-system-prompt"
-                />
-                <span className="profile-form-hint">Agent-specific instructions prepended to conversations</span>
-              </div>
-            </div>
+              {/* ── Advanced ── */}
+              <Tabs.Content value="advanced" className="profile-tab-content">
+                <Accordion.Root type="multiple" defaultValue={['memory']} className="profile-accordion-root">
+                  <AccordionCard value="memory" icon={<Brain size={14} />} title="Memory">
+                    <label className="profile-toggle-row">
+                      <span className="profile-toggle-label">
+                        <Brain size={15} />
+                        Enable Memory
+                      </span>
+                      <div className="profile-toggle-right">
+                        <input
+                          type="checkbox"
+                          checked={enableMemory}
+                          onChange={e => setEnableMemory(e.target.checked)}
+                          className="profile-toggle-input"
+                        />
+                        <span className={`profile-toggle-switch ${enableMemory ? 'active' : ''}`} />
+                      </div>
+                    </label>
 
-            {/* Capabilities */}
-            <div className="profile-section-card">
-              <div className="profile-section-header">
-                <Zap size={14} />
-                <span>Capabilities</span>
-              </div>
-
-              <label className="profile-toggle-row">
-                <span className="profile-toggle-label">
-                  <Brain size={15} />
-                  Enable Memory
-                </span>
-                <div className="profile-toggle-right">
-                  <input
-                    type="checkbox"
-                    checked={enableMemory}
-                    onChange={e => setEnableMemory(e.target.checked)}
-                    className="profile-toggle-input"
-                  />
-                  <span className={`profile-toggle-switch ${enableMemory ? 'active' : ''}`} />
-                </div>
-              </label>
-
-              {enableMemory && (
-                <div className="profile-form-group profile-nested">
-                  <label>Memory Channel</label>
-                  <input
-                    type="text"
-                    value={memoryChannel}
-                    onChange={e => setMemoryChannel(e.target.value)}
-                    placeholder="_global"
-                  />
-                  <span className="profile-form-hint">Isolate memories to a specific channel</span>
-                </div>
-              )}
-
-              <label className="profile-toggle-row">
-                <span className="profile-toggle-label">
-                  <Zap size={15} />
-                  Enable Tools
-                </span>
-                <div className="profile-toggle-right">
-                  <input
-                    type="checkbox"
-                    checked={enableTools}
-                    onChange={e => setEnableTools(e.target.checked)}
-                    className="profile-toggle-input"
-                  />
-                  <span className={`profile-toggle-switch ${enableTools ? 'active' : ''}`} />
-                </div>
-              </label>
-
-              {enableTools && (
-                <ToolAccessSection
-                  allowedTools={allowedTools}
-                  setAllowedTools={setAllowedTools}
-                  blockedTools={blockedTools}
-                  setBlockedTools={setBlockedTools}
-                />
-              )}
-            </div>
+                    {enableMemory && (
+                      <div className="profile-form-group profile-nested">
+                        <label>Memory Channel</label>
+                        <input
+                          type="text"
+                          value={memoryChannel}
+                          onChange={e => setMemoryChannel(e.target.value)}
+                          placeholder="_global"
+                        />
+                        <span className="profile-form-hint">Isolate memories to a specific channel</span>
+                      </div>
+                    )}
+                  </AccordionCard>
+                </Accordion.Root>
+              </Tabs.Content>
+            </Tabs.Root>
 
             {/* Sticky footer */}
             <div className="profile-footer">

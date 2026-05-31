@@ -143,10 +143,21 @@ class ProfileManager:
                     "temperature": p.temperature,
                     "prompt_profile_id": p.prompt_profile_id,
                     "system_prompt": p.system_prompt,
-                    "reasoning_strategy": p.reasoning_strategy,
+                    # Coerce enum → its string value; a raw enum attribute (e.g. a
+                    # code-constructed profile's default) would dump as an
+                    # unloadable !!python/object tag.
+                    "reasoning_strategy": getattr(
+                        p.reasoning_strategy, "value", p.reasoning_strategy
+                    ),
                     "enable_memory": p.enable_memory,
                     "memory_channel": p.memory_channel,
                     "enable_tools": p.enable_tools,
+                    # Per-profile tool gating — previously dropped here, so gating
+                    # was lost on restart (Phase 18.2+ regression). blocked_tools
+                    # defaults to [] (kept); allowed_tools is None=all (filtered out).
+                    "allowed_tools": p.allowed_tools,
+                    "blocked_tools": p.blocked_tools,
+                    "available_for_delegation": p.available_for_delegation,
                     "is_default": p.is_default,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,

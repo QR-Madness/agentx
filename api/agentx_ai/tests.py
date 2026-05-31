@@ -2183,6 +2183,99 @@ class ToolOutputChunkerTest(TestCase):
         self.assertAlmostEqual(_cosine_similarity([0, 0], [1, 0]), 0.0)
 
 
+class WebSearchToolTest(TestCase):
+    """Track B: the internal `web_search` tool (Tavily primary, Brave fallback)."""
+
+    def setUp(self):
+        from unittest.mock import patch
+
+        from agentx_ai.config import get_config_manager
+        from agentx_ai.mcp import internal_tools
+
+        self.internal_tools = internal_tools
+        internal_tools._SEARCH_CACHE.clear()
+
+        # Deterministic config; restore in tearDown.
+        cfg = get_config_manager()
+        self._orig_search = cfg.get("search")
+        cfg.set("search", {
+            "backend": "tavily",
+            "fallback_enabled": True,
+            "max_results": 3,
+            "cache_ttl_seconds": 300,
+            "tavily_api_key": "test-tavily",
+            "brave_api_key": "test-brave",
+        })
+
+        # Keys always resolve so we exercise orchestration, not key resolution.
+        self._key_patch = patch.object(
+            internal_tools, "_resolve_search_key", return_value="test-key"
+        )
+        self._key_patch.start()
+
+    def tearDown(self):
+        from agentx_ai.config import get_config_manager
+
+        self._key_patch.stop()
+        self.internal_tools._SEARCH_CACHE.clear()
+        get_config_manager().set("search", self._orig_search)
+
+    def test_tavily_success(self):
+        from unittest.mock import patch
+
+        tavily_payload = {"results": [
+            {"title": "T1", "url": "https://a", "content": "snippet one"},
+            {"title": "T2", "url": "https://b", "content": "snippet two"},
+        ]}
+        with patch.object(self.internal_tools, "_http_post_json", return_value=tavily_payload):
+            out = self.internal_tools.web_search("hello world")
+        self.assertTrue(out["success"])
+        self.assertEqual(out["backend"], "tavily")
+        self.assertEqual(out["count"], 2)
+        self.assertEqual(out["results"][0], {"title": "T1", "url": "https://a", "snippet": "snippet one"})
+
+    def test_fallback_to_brave(self):
+        from unittest.mock import patch
+
+        brave_payload = {"web": {"results": [
+            {"title": "B1", "url": "https://x", "description": "brave snippet"},
+        ]}}
+        with patch.object(self.internal_tools, "_http_post_json", side_effect=RuntimeError("tavily down")), \
+             patch.object(self.internal_tools, "_http_get_json", return_value=brave_payload):
+            out = self.internal_tools.web_search("hello")
+        self.assertTrue(out["success"])
+        self.assertEqual(out["backend"], "brave")
+        self.assertEqual(out["results"][0], {"title": "B1", "url": "https://x", "snippet": "brave snippet"})
+
+    def test_both_down_graceful_empty(self):
+        from unittest.mock import patch
+
+        with patch.object(self.internal_tools, "_http_post_json", side_effect=RuntimeError("tavily down")), \
+             patch.object(self.internal_tools, "_http_get_json", side_effect=RuntimeError("brave down")):
+            out = self.internal_tools.web_search("hello")
+        self.assertFalse(out["success"])
+        self.assertEqual(out["results"], [])
+        self.assertIn("error", out)
+
+    def test_cache_hit_avoids_second_call(self):
+        from unittest.mock import patch
+
+        tavily_payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with patch.object(
+            self.internal_tools, "_http_post_json", return_value=tavily_payload
+        ) as mock_post:
+            first = self.internal_tools.web_search("cached query")
+            second = self.internal_tools.web_search("cached query")
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertFalse(first["cached"])
+        self.assertTrue(second["cached"])
+
+    def test_empty_query_rejected(self):
+        out = self.internal_tools.web_search("   ")
+        self.assertFalse(out["success"])
+        self.assertEqual(out["results"], [])
+
+
 class IntentAwareRetrievalTest(TestCase):
     """Tests for Phase 14.3 intent-aware retrieval internal tools."""
 
@@ -3638,6 +3731,279 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertIsNone(done["cost_estimate"])
         self.assertIsNone(done["cost_currency"])
         self.assertIsNone(done["pricing_snapshot"])
+
+
+class ParallelDelegationTest(TestCase):
+    """Track A: fan-out delegation — `_run_delegations` runs multiple delegate_to
+    calls concurrently, interleaving their events, isolating failures, bounding
+    concurrency, and mapping results back by tool_call_id in original order."""
+
+    @staticmethod
+    def _tc(tid, agent_id, task="t"):
+        m = MagicMock()
+        m.id = tid
+        m.name = "delegate_to"
+        m.arguments = {"agent_id": agent_id, "task": task}
+        return m
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    @staticmethod
+    def _chunk_target(ev):
+        """Extract the delegation_id/target marker from a delegation_chunk SSE."""
+        if not ev.startswith("event: delegation_chunk"):
+            return None
+        data_line = ev.split("data: ", 1)[1].rstrip()
+        return json.loads(data_line).get("delegation_id")
+
+    def _run(self, calls, exec_obj, agent=None):
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+        result = ToolLoopResult()
+        messages: list = []
+        raw: dict = {}
+        events = asyncio.run(self._drain(_run_delegations(
+            calls, exec_obj, agent if agent is not None else object(),
+            result=result, delegation_messages=messages, delegation_raw=raw,
+        )))
+        return events, result, messages, raw
+
+    def test_interleaving(self):
+        """Two branches' chunk events interleave rather than block-A-then-block-B."""
+        class ChunkExec:
+            max_parallel_delegations = 5
+
+            async def delegate(self, target, task, *, tool_call_id):
+                for i in range(3):
+                    await asyncio.sleep(0)
+                    yield (
+                        f"event: delegation_chunk\ndata: "
+                        f"{json.dumps({'delegation_id': target, 'content': f'{target}{i}'})}\n\n",
+                        f"{target}-{i}",
+                    )
+                yield (
+                    f"event: delegation_complete\ndata: "
+                    f"{json.dumps({'delegation_id': target, 'target_agent_id': target, 'tool_call_id': tool_call_id, 'status': 'success', 'result_preview': target})}\n\n",
+                    f"{target}-final",
+                )
+
+        events, _, _, _ = self._run(
+            [self._tc("tcA", "A"), self._tc("tcB", "B")], ChunkExec()
+        )
+        targets = [t for t in (self._chunk_target(e) for e in events) if t]
+        # Both branches surface within the first two chunk events → interleaved.
+        self.assertEqual(set(targets[:2]), {"A", "B"})
+
+    def test_tool_result_mapping_and_order(self):
+        """B completes before A, but delegation_messages stay in original order and
+        each tool_call_id maps to its own accumulated content."""
+        class UnevenExec:
+            max_parallel_delegations = 5
+
+            async def delegate(self, target, task, *, tool_call_id):
+                # A streams more chunks, so B reaches completion first.
+                n = 5 if target == "A" else 1
+                for i in range(n):
+                    await asyncio.sleep(0)
+                    yield (
+                        f"event: delegation_chunk\ndata: {json.dumps({'delegation_id': target, 'content': 'x'})}\n\n",
+                        f"{target}-partial-{i}",
+                    )
+                yield (
+                    f"event: delegation_complete\ndata: {json.dumps({'delegation_id': target, 'tool_call_id': tool_call_id, 'status': 'success'})}\n\n",
+                    f"{target}-final",
+                )
+
+        _, _, messages, raw = self._run(
+            [self._tc("tcA", "A"), self._tc("tcB", "B")], UnevenExec()
+        )
+        self.assertEqual([m.tool_call_id for m in messages], ["tcA", "tcB"])
+        self.assertEqual(messages[0].content, "A-final")
+        self.assertEqual(messages[1].content, "B-final")
+        self.assertEqual(raw["tcA"]["raw_content"], "A-final")
+        self.assertEqual(raw["tcB"]["raw_content"], "B-final")
+
+    def test_error_isolation(self):
+        """One branch raising does not kill its sibling; the failed branch still
+        emits a delegation_complete and produces a TOOL message."""
+        class FlakyExec:
+            max_parallel_delegations = 5
+
+            async def delegate(self, target, task, *, tool_call_id):
+                if target == "A":
+                    raise RuntimeError("boom")
+                    yield  # pragma: no cover - make it an async generator
+                yield (
+                    f"event: delegation_chunk\ndata: {json.dumps({'delegation_id': target, 'content': 'ok'})}\n\n",
+                    "B-partial",
+                )
+                yield (
+                    f"event: delegation_complete\ndata: {json.dumps({'delegation_id': target, 'tool_call_id': tool_call_id, 'status': 'success'})}\n\n",
+                    "B-final",
+                )
+
+        events, _, messages, raw = self._run(
+            [self._tc("tcA", "A"), self._tc("tcB", "B")], FlakyExec()
+        )
+        # Sibling B intact.
+        self.assertEqual(raw["tcB"]["raw_content"], "B-final")
+        # Failed branch A emits a failed completion and still yields a TOOL message.
+        self.assertTrue(any(
+            e.startswith("event: delegation_complete") and '"status": "failed"' in e
+            for e in events
+        ))
+        self.assertEqual({m.tool_call_id for m in messages}, {"tcA", "tcB"})
+        self.assertTrue(raw["tcA"]["raw_content"].startswith("[delegation failed"))
+
+    def test_max_concurrency_bound(self):
+        """Peak simultaneous delegate() calls never exceeds max_parallel_delegations."""
+        class CountingExec:
+            max_parallel_delegations = 2
+
+            def __init__(self):
+                self.active = 0
+                self.peak = 0
+
+            async def delegate(self, target, task, *, tool_call_id):
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+                try:
+                    for _ in range(3):
+                        await asyncio.sleep(0)
+                        yield (
+                            f"event: delegation_chunk\ndata: {json.dumps({'delegation_id': target, 'content': 'x'})}\n\n",
+                            "p",
+                        )
+                finally:
+                    self.active -= 1
+
+        exec_obj = CountingExec()
+        calls = [self._tc(f"tc{i}", f"A{i}") for i in range(4)]
+        self._run(calls, exec_obj)
+        self.assertLessEqual(exec_obj.peak, 2)
+
+    def test_cancellation_cleans_up_branches(self):
+        """aclose() mid-stream cancels all in-flight branches (no orphans)."""
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+
+        class ForeverExec:
+            max_parallel_delegations = 5
+
+            def __init__(self):
+                self.active = 0
+
+            async def delegate(self, target, task, *, tool_call_id):
+                self.active += 1
+                try:
+                    while True:
+                        await asyncio.sleep(0)
+                        yield (
+                            f"event: delegation_chunk\ndata: {json.dumps({'delegation_id': target, 'content': 'x'})}\n\n",
+                            "p",
+                        )
+                finally:
+                    self.active -= 1
+
+        exec_obj = ForeverExec()
+
+        async def scenario():
+            gen = _run_delegations(
+                [self._tc("tcA", "A"), self._tc("tcB", "B")], exec_obj, object(),
+                result=ToolLoopResult(), delegation_messages=[], delegation_raw={},
+            )
+            seen = 0
+            async for _ in gen:
+                seen += 1
+                if seen >= 3:
+                    break
+            await gen.aclose()
+
+        asyncio.run(scenario())
+        self.assertEqual(exec_obj.active, 0)
+
+    def test_executor_has_no_shared_depth_counter(self):
+        """Reentrancy guarantee: delegate() no longer mutates a shared self.depth
+        (depth is a per-call parameter), and the depth gate works independently."""
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        from agentx_ai.alloy.models import Workflow, WorkflowMember, MemberRole
+
+        workflow = Workflow(
+            id="wf", name="WF", supervisor_agent_id="sup",
+            members=[
+                WorkflowMember(agent_id="sup", role=MemberRole.SUPERVISOR),
+                WorkflowMember(agent_id="spec", role=MemberRole.SPECIALIST),
+            ],
+        )
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        executor = AlloyExecutor(
+            supervisor, SimpleNamespace(id="s"), workflow=workflow, max_delegation_depth=1
+        )
+        self.assertFalse(hasattr(executor, "depth"))
+
+        async def run():
+            return [ev async for ev in executor.delegate("spec", "t", tool_call_id="x", depth=1)]
+
+        events = asyncio.run(run())
+        done = json.loads(events[-1][0].split("data: ", 1)[1].rstrip())
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("max delegation depth", done["error"])
+
+
+class DelegatableProfileTest(TestCase):
+    """Track D: per-profile `available_for_delegation` flag + the tool-gating
+    persistence-bug fix in ProfileManager.save_config()."""
+
+    def _manager(self, tmp_path):
+        from agentx_ai.agent.profiles import ProfileManager
+        return ProfileManager(config_path=tmp_path)
+
+    def test_save_config_persists_tool_gating_and_delegation_flag(self):
+        """Regression: allowed_tools/blocked_tools/available_for_delegation must
+        survive a save→reload (previously silently dropped on save)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = self._manager(path)
+            mgr.create_profile(AgentProfile(
+                id="r", name="R", agent_id="aaa-bbb-ccc",
+                allowed_tools=["_internal.web_search"],
+                blocked_tools=["x.y"],
+                available_for_delegation=False,
+            ))
+            # Reload from disk into a fresh manager.
+            reloaded = self._manager(path)
+            p = reloaded.get_profile("r")
+            self.assertEqual(p.allowed_tools, ["_internal.web_search"])
+            self.assertEqual(p.blocked_tools, ["x.y"])
+            self.assertFalse(p.available_for_delegation)
+
+    def test_adhoc_delegation_excludes_undelegatable_profiles(self):
+        """build_adhoc_delegation_tool drops profiles with the flag off."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.alloy.delegation_tool import build_adhoc_delegation_tool
+
+        profiles = [
+            SimpleNamespace(agent_id="self-aa-bb", name="Self", description="", available_for_delegation=True),
+            SimpleNamespace(agent_id="on-cc-dd", name="On", description="yes", available_for_delegation=True),
+            SimpleNamespace(agent_id="off-ee-ff", name="Off", description="no", available_for_delegation=False),
+        ]
+        with patch("agentx_ai.agent.profiles.get_profile_manager") as gpm:
+            gpm.return_value = SimpleNamespace(list_profiles=lambda: profiles)
+            tool = build_adhoc_delegation_tool("self-aa-bb")
+
+        enum = tool["input_schema"]["properties"]["agent_id"].get("enum", [])
+        self.assertIn("on-cc-dd", enum)        # delegatable peer included
+        self.assertNotIn("off-ee-ff", enum)    # flag off → excluded
+        self.assertNotIn("self-aa-bb", enum)   # self excluded
 
 
 class ExplicitAgentRoutingTest(TestCase):

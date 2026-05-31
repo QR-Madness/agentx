@@ -17,6 +17,7 @@ urlpatterns = [
     # Tool endpoints
     path("tools/language-detect-20", views.language_detect, name="language-detect"),
     path("tools/translate", views.translate, name="translate"),
+    path("tools/search-health", views.search_health, name="search-health"),
     # MCP endpoints
     path("mcp/servers", views.mcp_servers, name="mcp-servers"),
     path("mcp/servers/validate", views.mcp_server_validate, name="mcp-server-validate"),

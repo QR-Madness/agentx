@@ -108,6 +108,14 @@ class AgentProfile(BaseModel):
         ),
     )
 
+    # Delegation (Phase 16.4): when true, this profile is offered as an ad-hoc
+    # `delegate_to` target to other agents. Default true keeps existing behavior
+    # (all profiles were delegable); turn off to hide a profile from delegation.
+    available_for_delegation: bool = Field(
+        True,
+        description="Whether other agents may delegate to this profile (ad-hoc delegation)",
+    )
+
     # Metadata
     is_default: bool = Field(False, description="Whether this is the default profile")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)

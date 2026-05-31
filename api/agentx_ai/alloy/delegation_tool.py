@@ -34,7 +34,10 @@ def _build_descriptor(entries: list[tuple[str, str, str]]) -> dict:
         "Delegate a focused task to another agent. "
         "That agent runs independently and returns its result to you. "
         "It will NOT see your conversation history — include all "
-        "context it needs in the task description. Available agents:\n"
+        "context it needs in the task description. "
+        "To run several agents at once on independent subtasks, emit multiple "
+        "delegate_to calls in the same turn — they execute concurrently and "
+        "their results return together. Available agents:\n"
         f"{bullet_lines}"
     )
 
@@ -91,6 +94,8 @@ def build_adhoc_delegation_tool(self_agent_id: str) -> dict:
     entries = [
         (p.agent_id, p.name, p.description or "")
         for p in get_profile_manager().list_profiles()
-        if getattr(p, "agent_id", None) and p.agent_id != self_agent_id
+        if getattr(p, "agent_id", None)
+        and p.agent_id != self_agent_id
+        and getattr(p, "available_for_delegation", True)
     ]
     return _build_descriptor(entries)

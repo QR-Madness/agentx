@@ -319,8 +319,6 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.21** (prot
 - [ ] Voice input/output
 - [ ] Offline mode with cached models
 - [ ] Cross-encoder reranking model for retrieval quality
-- [ ] Memory export/import (JSON/SQLite backup) — also unblocks snapshot/restore for the consolidation eval harness (18.6) so it needn't `--wipe` a dev cluster
-- [ ] Advanced memory visualization (interactive graph, embedding clusters)
 - [ ] Streaming memory retrieval during chat
 - [ ] Conversation sharing (read-only shareable links)
 - [ ] Blocking tool call approval (pause stream, user approves/rejects before execution)
@@ -329,6 +327,85 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.21** (prot
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 - [ ] Message injection into delegated tasks (agent interdiction tools)
 - [ ] Custom window chrome — frameless Tauri window with our own title bar + window controls (minimize / maximize / close) and a drag region, styled to the cosmic theme. **Windows + Linux first; macOS later** (traffic-light insets + native fullscreen need separate handling). Touches `client/src-tauri/tauri.conf.json` (`decorations: false`) + a top-of-app titlebar component using the Tauri window API.
+
+### Open Platform — De-walling the Garden
+
+> AgentX is today an MCP *consumer* (it eats external tool servers). This track makes it
+> interoperable in the other direction: scriptable data I/O, an outward-facing contract, and
+> egress. All items carry a schema-versioned envelope (`schema_version` + `agent_id`/channel
+> scoping) to honor the v0.20 "migratable across platforms" rule. Cross-references the content-part
+> protocol below (an export payload is the same typed structure).
+
+- [ ] **Scriptable memory import/export (JSON)** — round-trippable export *and* re-import with stable
+      IDs so a human or script can diff, hand-edit, and push back. Supersedes the old "Memory
+      export/import (JSON/SQLite backup)" item; also unblocks snapshot/restore for the consolidation
+      eval harness (18.6) so it needn't `--wipe` a dev cluster.
+- [ ] **Import dry-run / preview-diff** — show the graph delta before committing (mirrors the existing
+      `POST /api/memory/consolidate/preview` pattern) so a bad hand-edit can't silently nuke the graph.
+- [ ] **Verify-on-import (default on, opt-out)** — route imported facts through the three-layer
+      `check_contradictions` pipeline rather than trusting JSON verbatim; opt-out flag for trusted/raw
+      restores.
+- [ ] **Expose AgentX outward** — publish its own memory/agents as an MCP *server* + promote
+      `OpenApi.yaml` to a stable public REST contract. (Subsumes the "Conversation MCP Tool" item under
+      MCP Tools below — `memory_recall` / `memory_store` / `conversation_summary`.)
+- [ ] **Egress / webhooks** — outbound events so external systems can react to agent activity
+      (run lifecycle, new facts, goal completion).
+
+### Rich Agent-Authored Content (typed content-part protocol)
+
+> The agent emits structured content *parts* on the stream (the way it already emits
+> `tool_call` / `tool_result`), and the client renders registered components — rather than the agent
+> hand-rolling raw HTML (a security/consistency liability). Visual sibling to the 16.6 Ambassador
+> Agent (which mediates via voice/briefing); this mediates visually. Same typed structure doubles as
+> the export/integration payload above.
+
+- [ ] **Content-part protocol** — typed parts (`text`, `card`, `diagram`, `table`, `choice`,
+      `citation`) over the chat stream + a client part-registry mapping type → render component.
+- [ ] **Mermaid diagrams** — lightweight agent-authored diagrams; text-emittable by the model, so it
+      ships *ahead* of the generative avatar (which is blocked by image capabilities).
+- [ ] **Interactive parts that round-trip** — `choice` / `form` cards the user acts on, feeding back
+      as the next turn; natural fit with blocking tool-call approval and the ambassador relay.
+- [ ] **Render allow-list + sandboxing** — "agent presents arbitrary content" is an injection
+      surface; constrain renderable types and sanitize.
+- [ ] Absorbs the former "Advanced memory visualization (interactive graph, embedding clusters)" item
+      as one registered part type.
+
+### Translation Quality Overhaul (pluggable `TranslationKit` backend)
+
+> NLLB-200 graded 5/10 — but we just invested in it (GPU accel `[v0.21.6]`, `LanguageLexicon` ISO-code
+> bridging), so the move is *pluggable backend*, not rip-and-replace. (Caveat on the eval: Mistral
+> grading NLLB output while itself relying on NLLB is a soft/circular benchmark.)
+
+- [ ] **Pluggable translation backend behind `TranslationKit`** — interface so backends swap without
+      touching the `LanguageLexicon` code-bridging or call sites.
+- [ ] **LLM-provider translation path** — route high-value pairs through the existing model-provider
+      stack (reuses the provider abstraction, no new dependency) and keep NLLB-200 as the cheap offline
+      fallback.
+- [ ] **Evaluate stronger open models** — SeamlessM4T / MADLAD-400 / Tower as alternative offline
+      backends; pick on a non-circular eval.
+
+### Web Search & Delegation — shipped + deferred
+
+> Shipped (see plan `~/.claude/plans/i-can-t-do-it-unified-pond.md`): internal `web_search` tool
+> (**Tavily** primary + **Brave REST** fallback, in-tool retry + short-TTL cache; Brave MCP server
+> auto-connect disabled), `search.*` config + **Settings → Web Search** UI; **parallel fan-out
+> delegation** (`alloy.max_parallel_delegations`, reentrant `AlloyExecutor`, queue fan-in in
+> `_run_delegations`); **delegatable agent profiles** (`available_for_delegation` flag + filter,
+> tool-gating persistence-bug fix, **Settings → Multi-Agent** toggle, **Researcher** preset); profile
+> editor **hybrid Tabs+Accordion** UX. SearXNG was dropped in favor of Tavily (no proxy/blacklist ops).
+
+Deferred — **Search Router** subsystem ("browsing on autopilot"); a delegatable Researcher already
+covers ~80% of this via its own tool loop:
+- [ ] **`fetch_page` tool** — trafilatura (static) now, Playwright (JS-heavy) later — lets a
+      Researcher read full pages, not just snippets.
+- [ ] **Autonomous browse loop** — search→fetch→follow→synthesize with confidence/termination
+      heuristics (a `research` tool or ReAct-derived `ResearchAgent` via `reasoning/orchestrator.py`).
+- [ ] **Group-based tool gating** — consume the latent `groups` field (`mcp/server_registry.py`) to
+      route a set of web tools into a managed lane (today's per-profile `allowed_tools` suffices).
+- [ ] **Router lifecycle subsystem** — per-tool rate limiting, session state, shared cache, backend
+      rotation beyond the in-tool Tavily→Brave fallback.
+- [ ] **SearXNG self-hosted backend** — optional fully-self-hosted `web_search` backend (needs
+      residential/ISP proxy in `settings.yml`); slots behind the existing pluggable tool.
 
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation

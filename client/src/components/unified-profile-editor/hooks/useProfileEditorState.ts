@@ -33,6 +33,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   // non-null array switches to whitelist mode. `blockedTools` always wins.
   const [allowedTools, setAllowedTools] = useState<string[] | null>(null);
   const [blockedTools, setBlockedTools] = useState<string[]>([]);
+  const [availableForDelegation, setAvailableForDelegation] = useState(true);
   const [baseTemplateId, setBaseTemplateId] = useState('');
   const [baseTemplate, setBaseTemplate] = useState<PromptTemplate | null>(null);
   const [saving, setSaving] = useState(false);
@@ -56,6 +57,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setEnableTools(profile.enableTools);
       setAllowedTools(profile.allowedTools ?? null);
       setBlockedTools(profile.blockedTools ?? []);
+      setAvailableForDelegation(profile.availableForDelegation ?? true);
     } else {
       setName('');
       setAvatar('sparkles');
@@ -70,6 +72,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setEnableTools(true);
       setAllowedTools(null);
       setBlockedTools([]);
+      setAvailableForDelegation(true);
     }
     setError(null);
   }, [profile]);
@@ -129,6 +132,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
         // (server defaults to []).
         allowed_tools: allowedTools,
         blocked_tools: blockedTools,
+        available_for_delegation: availableForDelegation,
       };
       let saved: AgentProfile;
       if (isEditing && profileId) {
@@ -176,6 +180,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     enableTools, setEnableTools,
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
+    availableForDelegation, setAvailableForDelegation,
     baseTemplateId, setBaseTemplateId,
     baseTemplate,
     systemPromptRef,

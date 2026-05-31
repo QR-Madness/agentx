@@ -136,6 +136,20 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     optsRef.current.appendMessage(msg);
   }, []);
 
+  // Any delegation still in activeDelegationsRef when a stream ends/cancels never
+  // got its delegation_complete (e.g. a fan-out cut short). Mark those cards as
+  // failed-interrupted so they don't sit "streaming" forever, then drop the refs.
+  const finalizeDanglingDelegations = useCallback(() => {
+    for (const handle of activeDelegationsRef.current.values()) {
+      optsRef.current.updateMessage(handle.messageId, {
+        status: 'failed',
+        error: 'Delegation interrupted',
+        completedAt: new Date().toISOString(),
+      });
+    }
+    activeDelegationsRef.current = new Map();
+  }, []);
+
   const reset = useCallback(() => {
     liveContentRef.current = '';
     activeToolCallsRef.current = new Map();
@@ -477,6 +491,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         liveContentRef.current = '';
         currentRunIdRef.current = null;
         optsRef.current.onRunChanged?.(null);
+        finalizeDanglingDelegations();
         dispatch({ type: 'stream_ended' });
 
         const cleanContent = stripThinkingTags(finalContent);
@@ -514,7 +529,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         currentStepRef.current = null;
         currentRunIdRef.current = null;
         optsRef.current.onRunChanged?.(null);
-        activeDelegationsRef.current = new Map();
+        finalizeDanglingDelegations();
         dispatch({ type: 'stream_ended' });
 
         const msg: AssistantMessage = {
@@ -529,7 +544,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         // scrolled away or the user has switched tabs.
         notifyError(error);
       },
-  }), [flushLiveContent, notifyError]);
+  }), [flushLiveContent, notifyError, finalizeDanglingDelegations]);
 
   const send = useCallback((req: ChatRequest) => {
     abortRef.current?.abort();
@@ -580,9 +595,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     }
     activePlanRef.current = null;
     currentStepRef.current = null;
-    activeDelegationsRef.current = new Map();
+    finalizeDanglingDelegations();
     dispatch({ type: 'stream_ended' });
-  }, []);
+  }, [finalizeDanglingDelegations]);
 
   return { state, send, attach, stop, detach };
 }

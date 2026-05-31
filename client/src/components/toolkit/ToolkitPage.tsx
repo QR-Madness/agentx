@@ -5,12 +5,13 @@
  * Modeled on UnifiedSettings (animations + glass shell).
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as Accordion from '@radix-ui/react-accordion';
 import {
   X, Server, Wrench, Tag, Shield, Code, Plus, Pencil, Trash2,
-  Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save,
+  Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown,
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
@@ -26,19 +27,35 @@ interface ToolkitPageProps {
   onClose: () => void;
 }
 
-type SectionId = 'servers' | 'browser' | 'meta' | 'access' | 'raw';
-
-const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode }[] = [
-  { id: 'servers', label: 'Servers', icon: <Server size={16} /> },
-  { id: 'browser', label: 'Tools Browser', icon: <Wrench size={16} /> },
-  { id: 'meta', label: 'Groups & Tags', icon: <Tag size={16} /> },
-  { id: 'access', label: 'Access', icon: <Shield size={16} /> },
-  { id: 'raw', label: 'Raw JSON', icon: <Code size={16} /> },
-];
+/** A collapsible Toolkit section (Radix Accordion item), styled like the glass cards. */
+function ToolkitSection({
+  value, icon, title, subtitle, children,
+}: {
+  value: string;
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Accordion.Item value={value} className="toolkit-section-card">
+      <Accordion.Header>
+        <Accordion.Trigger className="toolkit-accordion-trigger">
+          <span className="toolkit-accordion-titlewrap">
+            <span className="toolkit-accordion-title">{icon}<span>{title}</span></span>
+            {subtitle && <span className="toolkit-accordion-subtitle">{subtitle}</span>}
+          </span>
+          <ChevronDown size={16} className="toolkit-accordion-chevron" />
+        </Accordion.Trigger>
+      </Accordion.Header>
+      <Accordion.Content className="toolkit-accordion-content">
+        <div className="toolkit-accordion-content-inner">{children}</div>
+      </Accordion.Content>
+    </Accordion.Item>
+  );
+}
 
 export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
-  const [active, setActive] = useState<SectionId>('servers');
-
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
@@ -77,26 +94,49 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
                 <X size={16} />
               </button>
             </div>
-            <div className="toolkit-layout">
-              <nav className="toolkit-nav">
-                {SECTIONS.map(s => (
-                  <button
-                    key={s.id}
-                    className={`toolkit-nav-item ${active === s.id ? 'active' : ''}`}
-                    onClick={() => setActive(s.id)}
-                  >
-                    {s.icon}
-                    <span>{s.label}</span>
-                  </button>
-                ))}
-              </nav>
-              <div className="toolkit-content">
-                {active === 'servers' && <ServersView />}
-                {active === 'browser' && <ToolsBrowserView />}
-                {active === 'meta' && <MetaView />}
-                {active === 'access' && <AccessView />}
-                {active === 'raw' && <RawJsonView />}
-              </div>
+            <div className="toolkit-content toolkit-single-view">
+              {/* Primary section — always visible. */}
+              <ServersView />
+
+              {/* Everything else folds into collapsible cards in the same scroll. */}
+              <Accordion.Root
+                type="multiple"
+                defaultValue={['meta', 'access', 'catalog']}
+                className="toolkit-accordion-root"
+              >
+                <ToolkitSection
+                  value="meta"
+                  icon={<Tag size={15} />}
+                  title="Groups & Tags"
+                  subtitle="Toggle each server's tag / group membership"
+                >
+                  <MetaView />
+                </ToolkitSection>
+                <ToolkitSection
+                  value="access"
+                  icon={<Shield size={15} />}
+                  title="Agent Access"
+                  subtitle="Whitelist which agents may use each server"
+                >
+                  <AccessView />
+                </ToolkitSection>
+                <ToolkitSection
+                  value="catalog"
+                  icon={<Wrench size={15} />}
+                  title="Tool Catalog"
+                  subtitle="Discovered tools across connected servers"
+                >
+                  <ToolsBrowserView />
+                </ToolkitSection>
+                <ToolkitSection
+                  value="raw"
+                  icon={<Code size={15} />}
+                  title="Raw JSON"
+                  subtitle="Advanced — edit mcp_servers.json directly"
+                >
+                  <RawJsonView />
+                </ToolkitSection>
+              </Accordion.Root>
             </div>
           </motion.div>
         </>
@@ -231,39 +271,17 @@ function ServersView() {
 
 function ToolsBrowserView() {
   const { tools, loading } = useMCPTools();
-  const { profiles } = useAgentProfile();
   const [q, setQ] = useState('');
   const filtered = tools.filter(t =>
     !q || t.name.toLowerCase().includes(q.toLowerCase()) || (t.description || '').toLowerCase().includes(q.toLowerCase())
   );
 
-  // Phase 18.9.x — surface per-profile gating as read-only badges. The edits
-  // live in the profile editor (ToolAccessSection); this is transparency only.
-  // We compute it client-side from the existing AgentProfileContext, so no new
-  // network calls. Only shown when at least one profile has overrides.
-  const hasAnyOverride = profiles.some(
-    p => (p.allowedTools !== null && p.allowedTools !== undefined) || (p.blockedTools && p.blockedTools.length > 0),
-  );
-  const exposedBy = (fq: string): string[] => {
-    if (!hasAnyOverride) return [];
-    const enabled: string[] = [];
-    for (const p of profiles) {
-      if (!p.enableTools) continue;
-      if (p.blockedTools && p.blockedTools.includes(fq)) continue;
-      if (p.allowedTools !== null && p.allowedTools !== undefined && !p.allowedTools.includes(fq)) continue;
-      enabled.push(p.name);
-    }
-    return enabled;
-  };
-
   return (
     <>
-      <div className="toolkit-section-title">
-        <div>
-          <h2>Tools</h2>
-          <p>{tools.length} discovered across connected servers</p>
-        </div>
-      </div>
+      <p className="toolkit-section-note">
+        Reference catalog of discovered tools. Per-agent tool access is set per profile —
+        Agent Profiles → Tools.
+      </p>
       <div className="toolkit-search">
         <Search size={16} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tools…" />
@@ -274,40 +292,18 @@ function ToolsBrowserView() {
         <div className="toolkit-empty">No tools match.</div>
       ) : (
         <div className="toolkit-card-grid">
-          {filtered.map(t => {
-            const fq = `${t.server}.${t.name}`;
-            const enabledFor = exposedBy(fq);
-            return (
-              <div key={`${t.server}-${t.name}`} className="toolkit-card">
-                <div className="toolkit-card-header">
-                  <Wrench size={16} />
-                  <span className="name" title={t.name}>{t.name}</span>
-                </div>
-                <div className="meta">{t.server}</div>
-                <div className="meta" style={{ color: 'var(--text-secondary)' }}>
-                  {t.description || 'No description'}
-                </div>
-                {hasAnyOverride && (
-                  <div className="toolkit-chips" style={{ marginTop: 6 }}>
-                    {enabledFor.length === 0 ? (
-                      <span className="toolkit-chip" style={{ color: 'var(--text-tertiary)' }}>
-                        Not enabled for any profile
-                      </span>
-                    ) : (
-                      <>
-                        <span className="toolkit-chip" style={{ color: 'var(--text-tertiary)' }}>
-                          Enabled for:
-                        </span>
-                        {enabledFor.map(name => (
-                          <span key={name} className="toolkit-chip solid">{name}</span>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
+          {filtered.map(t => (
+            <div key={`${t.server}-${t.name}`} className="toolkit-card">
+              <div className="toolkit-card-header">
+                <Wrench size={16} />
+                <span className="name" title={t.name}>{t.name}</span>
               </div>
-            );
-          })}
+              <div className="meta">{t.server}</div>
+              <div className="meta" style={{ color: 'var(--text-secondary)' }}>
+                {t.description || 'No description'}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </>
@@ -331,12 +327,7 @@ function MetaView() {
 
   return (
     <>
-      <div className="toolkit-section-title">
-        <div>
-          <h2>Groups & Tags</h2>
-          <p>Use the server form to define new tags/groups; toggle membership here.</p>
-        </div>
-      </div>
+      <p className="toolkit-section-note">Define new tags/groups in a server's form; toggle membership here.</p>
       {servers.length === 0 ? (
         <div className="toolkit-empty">No servers yet.</div>
       ) : (
@@ -396,12 +387,7 @@ function AccessView() {
 
   return (
     <>
-      <div className="toolkit-section-title">
-        <div>
-          <h2>Access</h2>
-          <p>Whitelist which agents can use each server. "All" means no restriction.</p>
-        </div>
-      </div>
+      <p className="toolkit-section-note">"All agents" means no restriction on this server.</p>
       {servers.length === 0 ? (
         <div className="toolkit-empty">No servers yet.</div>
       ) : (
@@ -510,12 +496,6 @@ function RawJsonView() {
 
   return (
     <>
-      <div className="toolkit-section-title">
-        <div>
-          <h2>Raw JSON</h2>
-          <p>Edits replace the entire mcp_servers.json. Use with care.</p>
-        </div>
-      </div>
       <div className="toolkit-raw-editor">
         <div className="warning"><AlertTriangle size={14} /> Saving here disconnects affected servers and rewrites the config file.</div>
         <textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />

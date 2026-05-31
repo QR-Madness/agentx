@@ -808,17 +808,37 @@
   color: var(--text-tertiary);
 }
 
-/* The one and only box. */
+/* Reset-overrides button (head, pushed right). */
+.profile-tool-reset {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.profile-tool-reset:hover {
+  color: var(--text-primary);
+  background: var(--glass-layer-3);
+  border-color: var(--accent-tint-medium);
+}
+
+/* Outer list: transparent — the per-group cards carry the surface. */
 .profile-tool-list {
   display: flex;
   flex-direction: column;
-  max-height: 340px;
+  gap: 12px;
+  max-height: 440px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px;
-  border: 1px solid var(--accent-tint-soft);
-  border-radius: 10px;
-  background: var(--surface-base, rgba(0, 0, 0, 0.18));
+  padding: 2px;
   box-sizing: border-box;
   min-width: 0;
 }
@@ -843,16 +863,15 @@
 .profile-tool-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
+  gap: 7px;
+  padding: 8px 12px;
   background: var(--glass-layer-2);
   border: 1px solid var(--accent-tint-soft);
-  border-radius: 6px;
+  border-radius: 9px;
   color: var(--text-tertiary);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
 }
 
 .profile-tool-search input {
@@ -868,30 +887,51 @@
 }
 
 .profile-tool-empty {
-  padding: 12px;
+  padding: 18px 12px;
   text-align: center;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-tertiary);
 }
 
+/* Each server = a distinct glass sub-card. */
 .profile-tool-group {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px 10px;
+  background: var(--glass-layer-1);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 12px;
 }
 
 .profile-tool-group-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 8px 6px 4px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--accent-tint-soft);
 }
 
 .profile-tool-group-name {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-tool-group-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
 }
 
 .profile-tool-group-hint {
@@ -899,13 +939,46 @@
   color: var(--text-tertiary);
 }
 
-/* Tool row: name (flexes, ellipsifies) + segmented control. */
+/* Per-group bulk actions, pushed to the right of the header. */
+.profile-tool-group-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.profile-tool-group-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.profile-tool-group-btn:hover {
+  background: var(--glass-layer-2);
+  color: var(--text-primary);
+}
+.profile-tool-group-btn.allow:hover {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.14);
+}
+.profile-tool-group-btn.block:hover {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.14);
+}
+
+/* Tool row: info (name + description) on the left, segmented control on the right. */
 .profile-tool-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
   min-width: 0;
 }
 
@@ -913,11 +986,29 @@
   background: var(--glass-layer-2);
 }
 
-.profile-tool-name {
+.profile-tool-info {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.profile-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13.5px;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-tool-desc {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -926,13 +1017,20 @@
 .profile-tool-row.is-off .profile-tool-name {
   color: var(--text-tertiary);
 }
+.profile-tool-row.is-off .profile-tool-desc {
+  opacity: 0.6;
+}
 
 .profile-tool-off {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: 9.5px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-tertiary);
+  background: var(--glass-layer-2);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 /* Segmented Default · Allow · Block control. */
@@ -940,7 +1038,7 @@
   flex: 0 0 auto;
   display: inline-flex;
   border: 1px solid var(--accent-tint-soft);
-  border-radius: 7px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--glass-layer-2);
 }
@@ -951,10 +1049,10 @@
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 11.5px;
-  padding: 4px 10px;
+  font-size: 12px;
+  padding: 6px 13px;
   cursor: pointer;
-  min-height: 28px;
+  min-height: 32px;
   transition: background 0.12s, color 0.12s;
   border-left: 1px solid var(--accent-tint-soft);
 }
@@ -970,6 +1068,7 @@
 
 .profile-tool-seg-btn.active {
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 .profile-tool-seg-btn.default.active {
@@ -977,13 +1076,13 @@
 }
 
 .profile-tool-seg-btn.allow.active {
-  background: rgba(139, 92, 246, 0.28);
-  color: #fff;
+  background: rgba(34, 197, 94, 0.30);
+  color: #dcfce7;
 }
 
 .profile-tool-seg-btn.block.active {
-  background: rgba(248, 113, 113, 0.26);
-  color: #fecaca;
+  background: rgba(248, 113, 113, 0.28);
+  color: #fee2e2;
 }
 
 /* ── Responsive ── */
@@ -1011,6 +1110,147 @@
   .profile-form-scroll {
     padding: 20px;
   }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Hybrid editor chrome: top-level Tabs (Core / Tools / Advanced) + collapsible
+   Accordion cards within each tab. Scales as profile fields grow.
+   ─────────────────────────────────────────────────────────────────────────── */
+.profile-tabs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-tabs-list {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--glass-layer-1);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  border-radius: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(var(--blur-medium));
+}
+
+.profile-tab-trigger {
+  flex: 1;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profile-tab-trigger:hover {
+  color: var(--text-secondary);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.profile-tab-trigger[data-state='active'] {
+  color: var(--text-primary);
+  background: rgba(139, 92, 246, 0.22);
+}
+
+.profile-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  outline: none;
+}
+
+.profile-accordion-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The accordion item reuses the section-card shell but lets the trigger/content
+   own their padding so the collapsed state is a tidy header row. */
+.profile-accordion-item {
+  padding: 0;
+  overflow: hidden;
+}
+
+.profile-accordion-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-accordion-title {
+  border-bottom: none;
+  padding-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profile-accordion-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.profile-accordion-chevron {
+  color: var(--text-tertiary);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.profile-accordion-trigger[data-state='open'] .profile-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.profile-accordion-content {
+  overflow: hidden;
+}
+
+.profile-accordion-content[data-state='open'] {
+  animation: profile-accordion-down 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-accordion-content[data-state='closed'] {
+  animation: profile-accordion-up 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-accordion-content-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 24px 20px;
+  border-top: 1px solid rgba(139, 92, 246, 0.1);
+  padding-top: 16px;
+}
+
+@keyframes profile-accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes profile-accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
 }
 
 /* On phones: hard top buffer (Android status-bar clip), side notches, and

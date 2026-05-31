@@ -45,58 +45,98 @@
   margin: 0;
 }
 
-.toolkit-layout {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 24px;
-  overflow: hidden;
-  height: 100%;
-  min-height: 0;
-}
-
-.toolkit-nav {
-  background: var(--glass-layer-1);
-  backdrop-filter: blur(var(--blur-medium));
-  border: 1px solid var(--accent-tint-medium);
-  border-radius: 20px;
-  padding: 16px;
-  overflow-y: auto;
-  min-height: 0;
-  height: 100%;
+/* Single rich scroll view — no submenu; sections stack in one column. */
+.toolkit-single-view {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  gap: 20px;
 }
 
-.toolkit-nav-item {
+/* ── Collapsible section cards (Radix Accordion) ── */
+.toolkit-accordion-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.toolkit-section-card {
+  background: var(--glass-layer-1);
+  backdrop-filter: blur(var(--blur-medium));
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.toolkit-accordion-trigger {
+  width: 100%;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  width: 100%;
-  padding: 12px 16px;
+  padding: 18px 24px;
   background: transparent;
   border: none;
-  border-radius: 12px;
-  color: var(--text-secondary);
-  font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
+  transition: background 0.2s ease;
 }
-.toolkit-nav-item:hover {
+.toolkit-accordion-trigger:hover {
   background: var(--glass-layer-2);
+}
+
+.toolkit-accordion-titlewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.toolkit-accordion-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-primary);
-  transform: translateX(4px);
 }
-.toolkit-nav-item.active {
-  background: linear-gradient(135deg, var(--accent-tint-medium), rgba(6, 182, 212, 0.1));
-  border-left: 3px solid var(--cosmic-violet);
-  padding-left: 13px;
-  color: var(--cosmic-violet);
-  box-shadow: var(--border-glow-medium);
+.toolkit-accordion-title svg { flex-shrink: 0; color: var(--cosmic-violet); }
+.toolkit-accordion-subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding-left: 27px;
 }
-.toolkit-nav-item svg { flex-shrink: 0; }
+
+.toolkit-accordion-chevron {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toolkit-accordion-trigger[data-state='open'] .toolkit-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.toolkit-accordion-content {
+  overflow: hidden;
+}
+.toolkit-accordion-content[data-state='open'] {
+  animation: toolkit-accordion-down 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toolkit-accordion-content[data-state='closed'] {
+  animation: toolkit-accordion-up 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toolkit-accordion-content-inner {
+  padding: 4px 24px 22px;
+  border-top: 1px solid var(--accent-tint-soft);
+  padding-top: 18px;
+}
+
+@keyframes toolkit-accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes toolkit-accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
 
 .toolkit-content {
   background: var(--glass-layer-0);
@@ -125,6 +165,12 @@
 }
 .toolkit-section-title p {
   margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.toolkit-section-note {
+  margin: 0 0 16px;
   color: var(--text-tertiary);
   font-size: 13px;
 }
@@ -452,16 +498,13 @@ button.toolkit-chip.solid:hover {
 }
 
 @media (max-width: 1024px) {
-  .toolkit-layout { grid-template-columns: 200px 1fr; }
   .toolkit-header h1 { font-size: 26px; }
 }
 @media (max-width: 768px) {
   .toolkit-container { padding: 16px; gap: 16px; }
-  .toolkit-layout { grid-template-columns: 1fr; }
-  .toolkit-nav { flex-direction: row; overflow-x: auto; height: auto; }
-  .toolkit-nav-item { flex: 0 0 auto; }
-  .toolkit-nav-item:hover { transform: none; }
   .toolkit-content { padding: 20px; }
+  .toolkit-accordion-trigger { padding: 16px 18px; }
+  .toolkit-accordion-content-inner { padding-left: 18px; padding-right: 18px; }
   .toolkit-form-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {

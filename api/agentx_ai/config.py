@@ -114,11 +114,23 @@ DEFAULT_CONFIG = {
     },
     "alloy": {
         "max_delegation_depth": 3,
+        # Max specialists a supervisor may run concurrently when it emits several
+        # delegate_to calls in one turn (fan-out). Bounds combinatorial blow-up.
+        "max_parallel_delegations": 3,
         "specialist_inherits_supervisor_tools": True,
         "delegation_timeout_seconds": 300,
         # Phase 16.4: when true, agents in a normal (non-workflow) conversation
         # get a `delegate_to` tool targeting any other profile. Default off.
         "allow_adhoc_delegation": False,
+    },
+    "search": {
+        "backend": "tavily",          # "tavily" | "brave"
+        "fallback_enabled": True,      # fall back to the other backend on error/empty
+        "max_results": 5,
+        "cache_ttl_seconds": 300,      # short-TTL in-process cache of identical queries
+        # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
+        "tavily_api_key": None,
+        "brave_api_key": None,
     },
 }
 

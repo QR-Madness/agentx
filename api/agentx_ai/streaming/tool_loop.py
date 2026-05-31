@@ -6,6 +6,7 @@ Runs provider.stream() in a loop, executing tool calls between rounds,
 and yielding SSE-formatted events for each chunk, tool call, and tool result.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -107,59 +108,117 @@ async def _run_delegations(
     delegation_messages: list[Message],
     delegation_raw: dict[str, dict[str, Any]],
 ) -> AsyncGenerator[str, None]:
-    """Run Agent Alloy delegations, yielding their event stream.
+    """Run Agent Alloy delegations **concurrently**, yielding their interleaved
+    event stream.
 
-    Produced TOOL messages are appended to `delegation_messages` and per-call
-    metadata to `delegation_raw` (so a restored conversation can rebuild the
-    delegation card). Long specialist output is routed through the agent's
-    oversize handling, same as a regular tool result.
+    When the supervisor emits several `delegate_to` calls in one turn, each runs
+    as its own task (bounded by `alloy.max_parallel_delegations`) feeding a single
+    queue, so their `delegation_*` events interleave in real time. Produced TOOL
+    messages are appended to `delegation_messages` and per-call metadata to
+    `delegation_raw` (so a restored conversation can rebuild the delegation card),
+    **in original `delegation_calls` order** keyed by `tool_call_id` — out-of-order
+    completion is fine because the provider matches tool results by id. Long
+    specialist output is routed through the agent's oversize handling, same as a
+    regular tool result.
     """
-    for tc in delegation_calls:
-        # delegation_calls is only populated when alloy_executor is set;
-        # this guard narrows the Optional for the type checker.
-        if alloy_executor is None:
-            continue
+    if alloy_executor is None or not delegation_calls:
+        return
+
+    max_parallel = getattr(alloy_executor, "max_parallel_delegations", 3) or 3
+    sem = asyncio.Semaphore(max_parallel)
+    queue: asyncio.Queue = asyncio.Queue()
+    done_sentinel = object()
+    final_partials: dict[str, str] = {}
+    final_metrics: dict[str, dict[str, Any]] = {}
+
+    def _parse_complete_metrics(event_str: str) -> dict[str, Any]:
+        """Re-parse a `delegation_complete` SSE for its metrics (keeps delegate()'s
+        (event_str, partial) yield contract unchanged for other consumers)."""
+        _, _, payload = event_str.partition("\n")
+        data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
+        try:
+            done = json.loads(data_line)
+        except json.JSONDecodeError:
+            return {}
+        return {
+            k: done[k]
+            for k in (
+                "tokens_input", "tokens_output", "duration_ms",
+                "cost_estimate", "cost_currency", "pricing_snapshot",
+            )
+            if k in done
+        }
+
+    async def _drive(tc) -> None:
+        """One delegation branch: stream its events into the shared queue."""
         args = tc.arguments or {}
         target = args.get("agent_id", "")
         task = args.get("task", "")
         accumulated = ""
-        metrics: dict[str, Any] = {}
-        async for event_str, partial in alloy_executor.delegate(
-            target, task, tool_call_id=tc.id,
-        ):
-            yield event_str
-            accumulated = partial
-            # Capture the final per-delegation metrics so they persist into
-            # the tool_result metadata (see delegation_raw below) and survive a
-            # conversation reload. We re-parse the SSE string rather than change
-            # delegate()'s (event_str, partial) yield contract, which has other
-            # consumers.
-            if event_str.startswith("event: delegation_complete"):
-                _, _, payload = event_str.partition("\n")
-                data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
-                try:
-                    done = json.loads(data_line)
-                except json.JSONDecodeError:
-                    done = {}
-                for key in (
-                    "tokens_input", "tokens_output", "duration_ms",
-                    "cost_estimate", "cost_currency", "pricing_snapshot",
+        try:
+            async with sem:
+                # Top-level fan-out is always depth 0; delegate() defaults depth=0
+                # (omitted here so simpler delegate() signatures stay compatible).
+                async for event_str, partial in alloy_executor.delegate(
+                    target, task, tool_call_id=tc.id,
                 ):
-                    if key in done:
-                        metrics[key] = done[key]
+                    await queue.put(event_str)
+                    accumulated = partial
+                    if event_str.startswith("event: delegation_complete"):
+                        final_metrics[tc.id] = _parse_complete_metrics(event_str)
+        except asyncio.CancelledError:
+            # Client disconnect / sibling teardown — propagate, don't swallow.
+            raise
+        except Exception as e:  # noqa: BLE001 - isolate this branch from siblings
+            logger.exception(f"Delegation branch for {target!r} failed")
+            await queue.put(_sse("delegation_complete", {
+                "target_agent_id": target,
+                "tool_call_id": tc.id,
+                "status": "failed",
+                "error": str(e),
+                "result_preview": "",
+            }))
+            accumulated = accumulated or f"[delegation failed: {e}]"
+        finally:
+            final_partials[tc.id] = accumulated
+            await queue.put(done_sentinel)
+
+    tasks = [asyncio.create_task(_drive(tc)) for tc in delegation_calls]
+    remaining = len(tasks)
+    try:
+        while remaining:
+            item = await queue.get()
+            if item is done_sentinel:
+                remaining -= 1
+                continue
+            yield item
+    finally:
+        # GeneratorExit (client aclose) or normal exit — ensure no orphan tasks.
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Post-gather aggregation, in original order, keyed by tool_call_id. Every
+    # call must produce a TOOL message (provider contract) even if it errored,
+    # was cancelled, or produced nothing.
+    for tc in delegation_calls:
+        args = tc.arguments or {}
+        target = args.get("agent_id", "")
+        task = args.get("task", "")
+        accumulated = final_partials.get(tc.id, "")
         if accumulated:
             result.delegations.append(accumulated)
         delegation_raw[tc.id] = {
             "raw_content": accumulated,
             "target_agent_id": target,
             "task": task,
-            **metrics,
+            **final_metrics.get(tc.id, {}),
         }
-        # Route the delegation output through the same oversize handling
-        # as a regular tool call, so a long specialist response is stored
-        # in Redis with a retrieval key instead of being hard-truncated
-        # by `truncate_tool_messages` (which would leave the supervisor
-        # unable to recover the full content).
+        # Route delegation output through the same oversize handling as a regular
+        # tool call (sync; run serially here to avoid concurrent Redis writes), so
+        # a long specialist response is stored with a retrieval key instead of
+        # being hard-truncated.
         tool_content = accumulated or "[delegation produced no output]"
         if hasattr(agent, "handle_oversized_tool_output"):
             tool_content = agent.handle_oversized_tool_output(

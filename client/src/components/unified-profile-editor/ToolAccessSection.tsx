@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Lock, Search } from 'lucide-react';
+import { Lock, Search, RotateCcw } from 'lucide-react';
 import { useMCPTools } from '../../lib/hooks';
 
 interface ToolAccessSectionProps {
@@ -93,6 +93,12 @@ export function ToolAccessSection({
     return true;
   };
 
+  const commit = (nextAllowed: Set<string>, nextBlocked: Set<string>) => {
+    // Never emit []; an empty allow-list collapses to null (= all on).
+    setAllowedTools(nextAllowed.size > 0 ? Array.from(nextAllowed) : null);
+    setBlockedTools(Array.from(nextBlocked));
+  };
+
   const setToolState = (fq: string, next: ToolState) => {
     const nextAllowed = new Set(allowedSet);
     const nextBlocked = new Set(blockedSet);
@@ -100,14 +106,30 @@ export function ToolAccessSection({
     nextBlocked.delete(fq);
     if (next === 'allow') nextAllowed.add(fq);
     else if (next === 'block') nextBlocked.add(fq);
+    commit(nextAllowed, nextBlocked);
+  };
 
-    // Never emit []; an empty allow-list collapses to null (= all on).
-    setAllowedTools(nextAllowed.size > 0 ? Array.from(nextAllowed) : null);
-    setBlockedTools(Array.from(nextBlocked));
+  // Batch-apply a state to every tool in a group (per-group bulk action).
+  const setGroupState = (fqs: string[], next: ToolState) => {
+    const nextAllowed = new Set(allowedSet);
+    const nextBlocked = new Set(blockedSet);
+    for (const fq of fqs) {
+      nextAllowed.delete(fq);
+      nextBlocked.delete(fq);
+      if (next === 'allow') nextAllowed.add(fq);
+      else if (next === 'block') nextBlocked.add(fq);
+    }
+    commit(nextAllowed, nextBlocked);
+  };
+
+  const resetAll = () => {
+    setAllowedTools(null);
+    setBlockedTools([]);
   };
 
   const allowCount = allowedTools?.length ?? 0;
   const blockCount = blockedTools.length;
+  const hasOverrides = allowlistActive || blockCount > 0;
 
   return (
     <div className="profile-form-group profile-nested profile-tool-access">
@@ -121,6 +143,17 @@ export function ToolAccessSection({
             ? 'Allow-list active — only Allowed tools run.'
             : 'All tools run except Blocked.'}
         </span>
+        {hasOverrides && (
+          <button
+            type="button"
+            className="profile-tool-reset"
+            onClick={resetAll}
+            title="Clear all Allow/Block overrides"
+          >
+            <RotateCcw size={12} />
+            Reset
+          </button>
+        )}
       </div>
 
       <div className="profile-tool-list">
@@ -148,9 +181,23 @@ export function ToolAccessSection({
             <div key={server} className="profile-tool-group">
               <div className="profile-tool-group-header">
                 <span className="profile-tool-group-name">{server}</span>
+                <span className="profile-tool-group-count">{items.length}</span>
                 {server === '_internal' && (
                   <span className="profile-tool-group-hint">built-in</span>
                 )}
+                <div className="profile-tool-group-actions" aria-label={`Set all ${server} tools`}>
+                  {SEGMENTS.map(seg => (
+                    <button
+                      key={seg.value}
+                      type="button"
+                      className={`profile-tool-group-btn ${seg.value}`}
+                      onClick={() => setGroupState(items.map(i => i.fq), seg.value)}
+                      title={`Set all to ${seg.label}`}
+                    >
+                      {seg.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               {items.map(t => {
                 const state = toolState(t.fq);
@@ -160,10 +207,17 @@ export function ToolAccessSection({
                     key={t.fq}
                     className={`profile-tool-row ${off ? 'is-off' : ''}`}
                   >
-                    <span className="profile-tool-name" title={t.fq}>
-                      {t.name}
-                    </span>
-                    {off && <span className="profile-tool-off">off</span>}
+                    <div className="profile-tool-info">
+                      <span className="profile-tool-name" title={t.fq}>
+                        {t.name}
+                        {off && <span className="profile-tool-off">off</span>}
+                      </span>
+                      {t.description && (
+                        <span className="profile-tool-desc" title={t.description}>
+                          {t.description}
+                        </span>
+                      )}
+                    </div>
                     <div
                       className="profile-tool-seg"
                       role="radiogroup"

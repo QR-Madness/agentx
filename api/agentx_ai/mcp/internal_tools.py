@@ -866,6 +866,205 @@ def translate_text(text: str, target_language: str) -> dict[str, Any]:
 
 
 # =============================================================================
+# Web search (Tavily primary, Brave REST fallback)
+# =============================================================================
+
+# Short-TTL in-process cache of identical queries: key -> (expiry_epoch, results)
+_SEARCH_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_SEARCH_TIMEOUT = 15.0
+
+
+def _resolve_search_key(config_key: str, env_var: str) -> str | None:
+    """Config value first, then env var fallback."""
+    from ..config import get_config_manager
+
+    val = get_config_manager().get(config_key)
+    if val:
+        return str(val)
+    import os
+
+    return os.environ.get(env_var) or None
+
+
+def _http_get_json(url: str, *, headers: dict, params: dict) -> dict[str, Any]:
+    """GET with small retry/backoff on transient errors (timeouts, 429, 5xx)."""
+    import httpx
+
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=_SEARCH_TIMEOUT) as client:
+                resp = client.get(url, headers=headers, params=params)
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise httpx.HTTPStatusError(
+                    f"transient {resp.status_code}", request=resp.request, response=resp
+                )
+            resp.raise_for_status()
+            return resp.json()
+        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as e:
+            last_exc = e
+            if attempt < 2:
+                time.sleep(0.5 * (2 ** attempt))
+    raise last_exc  # type: ignore[misc]
+
+
+def _http_post_json(url: str, *, headers: dict, json_body: dict) -> dict[str, Any]:
+    """POST with small retry/backoff on transient errors (timeouts, 429, 5xx)."""
+    import httpx
+
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=_SEARCH_TIMEOUT) as client:
+                resp = client.post(url, headers=headers, json=json_body)
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise httpx.HTTPStatusError(
+                    f"transient {resp.status_code}", request=resp.request, response=resp
+                )
+            resp.raise_for_status()
+            return resp.json()
+        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as e:
+            last_exc = e
+            if attempt < 2:
+                time.sleep(0.5 * (2 ** attempt))
+    raise last_exc  # type: ignore[misc]
+
+
+def _tavily_search(query: str, max_results: int) -> list[dict[str, Any]]:
+    """Query Tavily; returns normalized {title, url, snippet} list. Raises on failure."""
+    key = _resolve_search_key("search.tavily_api_key", "TAVILY_API_KEY")
+    if not key:
+        raise RuntimeError("Tavily API key not configured (search.tavily_api_key / TAVILY_API_KEY)")
+    data = _http_post_json(
+        "https://api.tavily.com/search",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json_body={
+            "query": query,
+            "max_results": max_results,
+            "search_depth": "basic",
+        },
+    )
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        }
+        for r in (data.get("results") or [])
+    ]
+
+
+def _brave_search(query: str, max_results: int) -> list[dict[str, Any]]:
+    """Query Brave REST; returns normalized {title, url, snippet} list. Raises on failure."""
+    key = _resolve_search_key("search.brave_api_key", "BRAVE_API_KEY")
+    if not key:
+        raise RuntimeError("Brave API key not configured (search.brave_api_key / BRAVE_API_KEY)")
+    data = _http_get_json(
+        "https://api.search.brave.com/res/v1/web/search",
+        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+        params={"q": query, "count": max_results},
+    )
+    web = (data.get("web") or {}).get("results") or []
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("description", ""),
+        }
+        for r in web
+    ]
+
+
+_SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
+
+
+@register_tool(
+    name="web_search",
+    description=(
+        "Search the public web and get back a ranked list of results "
+        "({title, url, snippet}). Use this for current events, facts you're "
+        "unsure about, documentation lookups, or anything beyond your training "
+        "data. Returns concise snippets; follow up with a page-fetch tool if you "
+        "need full content."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Max results to return (default from config, usually 5).",
+            },
+        },
+        "required": ["query"],
+    },
+)
+def web_search(query: str, max_results: int | None = None) -> dict[str, Any]:
+    """Search the web via the configured backend (Tavily) with Brave fallback."""
+    if not query or not query.strip():
+        return {"error": "query is required", "success": False, "results": []}
+
+    from ..config import get_config_manager
+
+    cfg = get_config_manager()
+    backend = (cfg.get("search.backend", "tavily") or "tavily").lower()
+    fallback_enabled = bool(cfg.get("search.fallback_enabled", True))
+    if max_results is None:
+        max_results = int(cfg.get("search.max_results", 5))
+    ttl = int(cfg.get("search.cache_ttl_seconds", 300))
+
+    # Cache check (keyed by backend + normalized query + count)
+    cache_key = f"{backend}:{max_results}:{query.strip().lower()}"
+    now = time.time()
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return {
+            "results": cached[1],
+            "count": len(cached[1]),
+            "backend": backend,
+            "cached": True,
+            "success": True,
+        }
+
+    # Backend order: configured primary, then the other (if fallback enabled)
+    primary = backend if backend in _SEARCH_BACKENDS else "tavily"
+    order = [primary]
+    if fallback_enabled:
+        order += [b for b in _SEARCH_BACKENDS if b != primary]
+
+    errors: list[str] = []
+    for name in order:
+        try:
+            results = _SEARCH_BACKENDS[name](query, max_results)
+        except Exception as e:  # noqa: BLE001 - backend/network failure → try fallback
+            errors.append(f"{name}: {e}")
+            logger.warning(f"web_search backend '{name}' failed: {e}")
+            continue
+        if not results:
+            errors.append(f"{name}: no results")
+            continue
+        if ttl > 0:
+            _SEARCH_CACHE[cache_key] = (now + ttl, results)
+        return {
+            "results": results,
+            "count": len(results),
+            "backend": name,
+            "cached": False,
+            "success": True,
+        }
+
+    return {
+        "results": [],
+        "count": 0,
+        "success": False,
+        "error": "all search backends failed or returned no results: " + "; ".join(errors),
+    }
+
+
+# =============================================================================
 # Public API
 # =============================================================================
 

@@ -9,6 +9,7 @@ which spins up a specialist Agent, streams its tokens back as
 the supervisor's tool result.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -39,6 +40,7 @@ class AlloyExecutor:
         channel: Optional[str] = None,
         delegator_agent_id: Optional[str] = None,
         max_delegation_depth: int = 3,
+        max_parallel_delegations: int = 3,
     ):
         """Owns one delegating agent's in-flight delegations.
 
@@ -53,8 +55,11 @@ class AlloyExecutor:
         self.supervisor = supervisor_agent
         self.session = session
         self.max_delegation_depth = max_delegation_depth
-        self.depth = 0
+        self.max_parallel_delegations = max_parallel_delegations
+        # `history` is appended from concurrent delegate() branches (fan-out);
+        # guard slot allocation + append with a lock so Turn indices stay unique.
         self.history: list[dict] = []  # {target_agent_id, status, result_preview}
+        self._history_lock = asyncio.Lock()
 
         if workflow is not None:
             self.channel: str = workflow.shared_channel
@@ -84,6 +89,7 @@ class AlloyExecutor:
         task: str,
         *,
         tool_call_id: str,
+        depth: int = 0,
     ) -> AsyncGenerator[tuple[str, str], None]:
         """
         Run one specialist for one task.
@@ -91,6 +97,10 @@ class AlloyExecutor:
         Yields ``(sse_event_string, partial_text)`` tuples. The final
         ``partial_text`` value is the full specialist content and becomes the
         tool result returned to the supervisor.
+
+        ``depth`` is the caller's delegation depth (0 at the top level). It is a
+        parameter rather than instance state so concurrent fan-out branches do
+        not race a shared counter; this delegation runs at ``depth + 1``.
         """
         # ------- validate target -------
         err = self._validate_target(target_agent_id)
@@ -104,7 +114,7 @@ class AlloyExecutor:
             }), f"[delegation rejected: {err}]"
             return
 
-        if self.depth >= self.max_delegation_depth:
+        if depth >= self.max_delegation_depth:
             err = f"max delegation depth ({self.max_delegation_depth}) reached"
             yield _sse("delegation_complete", {
                 "target_agent_id": target_agent_id,
@@ -133,14 +143,13 @@ class AlloyExecutor:
             return
 
         # ------- announce -------
-        self.depth += 1
         delegation_id = uuid4().hex[:8]
         yield _sse("delegation_start", {
             "delegation_id": delegation_id,
             "target_agent_id": target_agent_id,
             "tool_call_id": tool_call_id,
             "task": task[:500],
-            "depth": self.depth,
+            "depth": depth + 1,
             "supervisor_agent_id": self.delegator_agent_id,
             "shared_channel": self.channel,
         }), ""
@@ -252,9 +261,16 @@ class AlloyExecutor:
             status = "failed"
             error = str(e)
             accumulated = accumulated or f"[delegation failed: {error}]"
-        finally:
-            self.depth -= 1
         duration_ms = (time.perf_counter() - t0) * 1000
+
+        # Reserve a unique history slot + Turn index up front (fan-out safe).
+        async with self._history_lock:
+            turn_index = len(self.history)
+            self.history.append({
+                "target_agent_id": target_agent_id,
+                "status": status,
+                "result_preview": accumulated[:200],
+            })
 
         # ------- cost estimate (reuses the supervisor done-event path) -------
         cost: Optional[dict] = None
@@ -278,7 +294,7 @@ class AlloyExecutor:
                 }
                 memory_for_goal.store_turn(Turn(
                     conversation_id=self.session.id,
-                    index=len(self.history),
+                    index=turn_index,
                     role="assistant",
                     content=f"[{target_agent_id} → delegation] {accumulated}",
                     channel=self.channel,
@@ -295,12 +311,6 @@ class AlloyExecutor:
                 )
             except Exception as e:
                 logger.warning(f"Failed to close delegation goal: {e}")
-
-        self.history.append({
-            "target_agent_id": target_agent_id,
-            "status": status,
-            "result_preview": accumulated[:200],
-        })
 
         yield _sse("delegation_complete", {
             "delegation_id": delegation_id,

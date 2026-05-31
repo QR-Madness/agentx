@@ -209,6 +209,29 @@ def translate(request):
 
 
 @csrf_exempt
+@require_methods("GET")
+def search_health(request):
+    """Probe the configured web-search backend(s) with a trivial query.
+
+    Powers the 'Test connection' button in Settings → Web Search.
+    """
+    from .mcp.internal_tools import web_search
+
+    try:
+        result = web_search(query="ping", max_results=1)
+    except Exception as e:  # noqa: BLE001 - surface any probe failure to the UI
+        logger.exception("search-health probe error")
+        return json_error(f"Search probe failed: {e}", status=500)
+
+    return json_success({
+        "ok": bool(result.get("success")),
+        "backend": result.get("backend"),
+        "count": result.get("count", 0),
+        "error": result.get("error"),
+    })
+
+
+@csrf_exempt
 def language_detect(request):
     # Handle CORS preflight
     if request.method == 'OPTIONS':
@@ -948,6 +971,7 @@ async def agent_chat_stream(request):
                 session,
                 workflow=active_workflow,
                 max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
+                max_parallel_delegations=int(cfg.get("alloy.max_parallel_delegations", 3)),
             )
         # Ad-hoc agent-to-agent delegation (Phase 16.4): outside a workflow, when
         # enabled and another profile exists, give this agent a workflow-less
@@ -968,6 +992,7 @@ async def agent_chat_stream(request):
                         channel=agent.config.memory_channel,
                         delegator_agent_id=agent.config.agent_id,
                         max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
+                        max_parallel_delegations=int(cfg.get("alloy.max_parallel_delegations", 3)),
                     )
 
         # Cache large user messages in Redis to save context. The model sees
@@ -4387,6 +4412,13 @@ def config_get(request):
                         safe_settings[k] = v
                 safe_value[provider] = safe_settings
             safe_config[key] = safe_value
+        elif key == 'search' and isinstance(value, dict):
+            # Redact API keys in the search backend config (flat dict)
+            safe_config[key] = {
+                k: ('***' + str(v)[-4:] if len(str(v)) > 4 else '***')
+                if 'key' in k.lower() and v else v
+                for k, v in value.items()
+            }
         else:
             safe_config[key] = value
 
@@ -4480,6 +4512,32 @@ def config_update(request):
             continue
         config.set(f"planner.{key}", value)
         updated_keys.append(f"planner.{key}")
+
+    # Update web search settings (Track B). None values are skipped so unchanged
+    # (redacted) API keys are preserved rather than overwritten with the mask.
+    _SEARCH_KEYS = (
+        "backend", "fallback_enabled", "max_results",
+        "cache_ttl_seconds", "tavily_api_key", "brave_api_key",
+    )
+    search_settings = data.get("search", {})
+    for key, value in search_settings.items():
+        if key not in _SEARCH_KEYS or value is None:
+            continue
+        config.set(f"search.{key}", value)
+        updated_keys.append(f"search.{key}")
+
+    # Update Agent Alloy / multi-agent delegation settings (Track A/D).
+    _ALLOY_KEYS = (
+        "allow_adhoc_delegation", "max_parallel_delegations",
+        "max_delegation_depth", "delegation_timeout_seconds",
+        "specialist_inherits_supervisor_tools",
+    )
+    alloy_settings = data.get("alloy", {})
+    for key, value in alloy_settings.items():
+        if key not in _ALLOY_KEYS or value is None:
+            continue
+        config.set(f"alloy.{key}", value)
+        updated_keys.append(f"alloy.{key}")
 
     # Persist to disk
     if not config.save():
@@ -4618,6 +4676,7 @@ def agent_profiles_list(request):
                     "enable_tools": p.enable_tools,
                     "allowed_tools": list(p.allowed_tools) if p.allowed_tools is not None else None,
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
+                    "available_for_delegation": p.available_for_delegation,
                     "is_default": p.is_default,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -4661,6 +4720,7 @@ def agent_profiles_list(request):
                     "enable_tools": created.enable_tools,
                     "allowed_tools": list(created.allowed_tools) if created.allowed_tools is not None else None,
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
+                    "available_for_delegation": created.available_for_delegation,
                     "is_default": created.is_default,
                     "created_at": created.created_at.isoformat() if created.created_at else None,
                     "updated_at": created.updated_at.isoformat() if created.updated_at else None,
@@ -4708,6 +4768,7 @@ def agent_profile_detail(request, profile_id):
                 "enable_tools": profile.enable_tools,
                 "allowed_tools": list(profile.allowed_tools) if profile.allowed_tools is not None else None,
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
+                "available_for_delegation": profile.available_for_delegation,
                 "is_default": profile.is_default,
                 "created_at": profile.created_at.isoformat() if profile.created_at else None,
                 "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
@@ -4740,6 +4801,7 @@ def agent_profile_detail(request, profile_id):
                 "enable_tools": updated.enable_tools,
                 "allowed_tools": list(updated.allowed_tools) if updated.allowed_tools is not None else None,
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
+                "available_for_delegation": updated.available_for_delegation,
                 "is_default": updated.is_default,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,

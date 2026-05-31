@@ -391,6 +391,9 @@ export interface AgentProfile {
   // means all tools enabled; blockedTools always wins.
   allowedTools?: string[] | null;
   blockedTools?: string[];
+  // Phase 16.4: when true, other agents may delegate to this profile (ad-hoc
+  // delegation). Defaults true server-side.
+  availableForDelegation?: boolean;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -411,6 +414,7 @@ export interface AgentProfileCreate {
   enable_tools?: boolean;
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
+  available_for_delegation?: boolean;
   is_default?: boolean;
 }
 
@@ -588,6 +592,20 @@ export interface ConfigUpdate {
     complexity_threshold?: 'simple' | 'moderate' | 'complex';
     /** Read-only: the built-in decomposition prompt, used to seed the editor. */
     decompose_default?: string;
+  };
+  search?: {
+    backend?: 'tavily' | 'brave';
+    fallback_enabled?: boolean;
+    max_results?: number;
+    cache_ttl_seconds?: number;
+    /** Omit when unchanged (redacted) so the stored key isn't overwritten. */
+    tavily_api_key?: string;
+    brave_api_key?: string;
+  };
+  alloy?: {
+    allow_adhoc_delegation?: boolean;
+    max_parallel_delegations?: number;
+    max_delegation_depth?: number;
   };
 }
 
