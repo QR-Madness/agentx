@@ -1,0 +1,224 @@
+name: Build Client Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Client release version (e.g. 0.21.25, 0.22.0-beta.1)"
+        required: true
+        type: string
+
+# Build-only: produce installers as workflow artifacts. No tag/commit/release.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Run JS-based actions on Node 24 (Node 20 is being removed from runners).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          # Check for non-ASCII characters (catches Unicode hyphens, smart quotes, etc.)
+          if [[ "$VERSION" =~ [^[:ascii:]] ]]; then
+            echo "::error::Version contains non-ASCII characters. Got: '$VERSION'"
+            echo "::error::Common culprit: Unicode hyphen (U+2011) instead of ASCII hyphen (U+002D)"
+            echo "::error::Hex dump:" && echo -n "$VERSION" | xxd
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g. 0.21.25 or 0.22.0-beta.1)"
+            exit 1
+          fi
+
+  test:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: bun install
+
+      - name: TypeScript check
+        working-directory: client
+        run: bun run tsc --noEmit
+
+      - name: Frontend tests
+        working-directory: client
+        run: bun run test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            artifact_suffix: linux-amd64
+            tauri_bundles: deb,appimage
+          - platform: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            artifact_suffix: linux-rpm
+            tauri_bundles: rpm
+          - platform: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            artifact_suffix: windows-x64
+            tauri_bundles: nsis,msi
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf rpm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+          shared-key: ${{ matrix.artifact_suffix }}
+
+      - name: Bump versions for build
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          # MSI/WiX only supports numeric pre-release identifiers — strip the
+          # pre-release suffix for tauri.conf.json (e.g. 0.22.0-beta.1 → 0.22.0)
+          MSI_VERSION="${VERSION%%-*}"
+
+          # versions.yaml — single source of truth; vite injects __APP_VERSION__ from it.
+          # Scope the replace to the client: block so api.version is left untouched.
+          bun -e "
+            let t = await Bun.file('versions.yaml').text();
+            t = t.replace(/(client:[\s\S]*?version:\s*)\"[^\"]*\"/, '\$1\"${VERSION}\"');
+            await Bun.write('versions.yaml', t);
+          "
+
+          # client/package.json — full semver
+          bun -e "
+            const pkg = JSON.parse(await Bun.file('client/package.json').text());
+            pkg.version = '${VERSION}';
+            await Bun.write('client/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # client/src-tauri/tauri.conf.json — MSI-safe version (no pre-release suffix)
+          bun -e "
+            const conf = JSON.parse(await Bun.file('client/src-tauri/tauri.conf.json').text());
+            conf.version = '${MSI_VERSION}';
+            await Bun.write('client/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+
+          # client/src-tauri/Cargo.toml — full semver (first occurrence = package version)
+          sed -i "0,/^version = .*/s//version = \"${VERSION}\"/" client/src-tauri/Cargo.toml
+
+          # Refresh Cargo.lock for the version bump (minimal change, preserves locked deps)
+          cargo update --manifest-path client/src-tauri/Cargo.toml --package agentx-client
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: client
+          tauriScript: bun run tauri
+          args: --bundles ${{ matrix.tauri_bundles }}
+
+      - name: Rename artifacts with platform suffix
+        shell: bash
+        run: |
+          SUFFIX="${{ matrix.artifact_suffix }}"
+
+          rename_glob() {
+            local ext="$1"
+            for f in $2; do
+              [ -f "$f" ] && mv "$f" "${f%.$ext}_${SUFFIX}.$ext"
+            done
+            return 0
+          }
+
+          rename_glob deb       "client/src-tauri/target/release/bundle/deb/*.deb"
+          rename_glob AppImage  "client/src-tauri/target/release/bundle/appimage/*.AppImage"
+          rename_glob rpm       "client/src-tauri/target/release/bundle/rpm/*.rpm"
+          rename_glob exe       "client/src-tauri/target/release/bundle/nsis/*.exe"
+          rename_glob msi       "client/src-tauri/target/release/bundle/msi/*.msi"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.artifact_suffix }}
+          path: |
+            client/src-tauri/target/release/bundle/deb/*.deb
+            client/src-tauri/target/release/bundle/appimage/*.AppImage
+            client/src-tauri/target/release/bundle/rpm/*.rpm
+            client/src-tauri/target/release/bundle/nsis/*.exe
+            client/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: ignore
+
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd release-artifacts
+          find . -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' -o -name '*.exe' -o -name '*.msi' \) \
+            -exec sha256sum {} + | sed 's| \./| |' | sort -k2 > checksums-sha256.txt
+          echo "=== checksums-sha256.txt ==="
+          cat checksums-sha256.txt
+
+      - name: List artifacts
+        run: find release-artifacts -type f | sort
+
+      - name: Re-upload as single artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentx-client-v${{ inputs.version }}
+          path: |
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.rpm
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.msi
+            release-artifacts/checksums-sha256.txt
+          if-no-files-found: warn
+          retention-days: 90
