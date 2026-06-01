@@ -1,7 +1,13 @@
 # Self-Hosting (Docker Hub)
 
+[![Docker Image Version](https://img.shields.io/docker/v/qrmadness/agentx-api?sort=semver&logo=docker&label=qrmadness%2Fagentx-api)](https://hub.docker.com/r/qrmadness/agentx-api)
+[![Image Size](https://img.shields.io/docker/image-size/qrmadness/agentx-api/latest?logo=docker)](https://hub.docker.com/r/qrmadness/agentx-api/tags)
+[![Docker Pulls](https://img.shields.io/docker/pulls/qrmadness/agentx-api?logo=docker)](https://hub.docker.com/r/qrmadness/agentx-api)
+
 Run AgentX from the **published Docker image** — no source checkout, no Taskfile.
 This is the simplest way to stand up your own instance.
+
+> **Image:** [`qrmadness/agentx-api`](https://hub.docker.com/r/qrmadness/agentx-api) on Docker Hub.
 
 AgentX deployments come in two flavours along an **isolation axis**:
 

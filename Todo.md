@@ -190,6 +190,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `.github/workflows/api-release.yml` publishes `qrmadness/agentx-api` to Docker Hub;
       `task deploy:bundle` generates the isolated deployment bundle; docs at
       `deployment/self-hosting`.
+- [ ] **Image groundskeeping** — the API image is ~12 GB uncompressed (~4.4 GB compressed on
+      Docker Hub). Slim it: multi-stage build, drop build toolchain/caches from the final layer,
+      reconsider the bundled CUDA torch wheel (CPU-only base + optional CUDA variant), and trim
+      the nvm/Node install. Heavy pull for self-hosters today.
 - [ ] arm64 / multi-arch API image (amd64-only today; QEMU build deferred).
 - [ ] Offline "models-baked" image variant (first run downloads ~5 GB to the HF cache volume).
 - [ ] Shared-infra local clusters (one DB stack, namespaced) — deferred per the isolation-axis design.

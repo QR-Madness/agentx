@@ -88,6 +88,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Sync Docker Hub repo overview
+        # Non-fatal: the image is already pushed by this point. The description
+        # API needs a Docker Hub password or a PAT with Read/Write/Delete scope —
+        # if the token lacks it, the overview can be pasted manually from
+        # deploy/dockerhub-overview.md instead.
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          readme-filepath: ./deploy/dockerhub-overview.md
+          short-description: "AgentX API — AI agent platform server (MCP, reasoning, layered memory)"
+
       - name: Summary
         run: |
           {
