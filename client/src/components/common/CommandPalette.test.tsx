@@ -17,6 +17,9 @@ vi.mock('../../contexts/ConversationContext', () => ({
 vi.mock('../../contexts/UIChromeContext', () => ({
   useUIChrome: () => ({ focusMode: false, toggleFocusMode: vi.fn() }),
 }));
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ authRequired: false, isAuthenticated: false, logout: vi.fn() }),
+}));
 
 describe('CommandPalette', () => {
   it('renders nothing when closed', () => {
