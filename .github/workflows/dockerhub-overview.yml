@@ -1,0 +1,26 @@
+name: Sync Docker Hub Overview
+
+# Pushes deploy/dockerhub-overview.md to the Docker Hub repository description
+# without rebuilding/pushing the image. Run this for docs-only overview changes;
+# the api-release workflow also syncs it on each image publish.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Docker Hub repository description
+        # Needs a Docker Hub password or a PAT with Read/Write/Delete scope.
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: qrmadness/agentx-api
+          readme-filepath: ./deploy/dockerhub-overview.md
+          short-description: "AgentX API — AI agent platform server (MCP, reasoning, layered memory)"
