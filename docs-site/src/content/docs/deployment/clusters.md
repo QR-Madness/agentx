@@ -5,6 +5,15 @@ and ports — that you can run alongside other clusters on a single host. Cluste
 [production profile](production.md) and add an optional public **gateway** (Nginx + Cloudflare
 tunnel) and an optional **GPU overlay**.
 
+!!! note "Local vs isolated clusters"
+    This page covers **local clusters**: repo-native, built from source, and driven by the
+    `task cluster:*` workflow — ideal for development and running several instances on your own
+    machine. If you instead want a portable, self-managing instance from the published image
+    (no repo, no Taskfile), that's an **isolated cluster** — see
+    [Self-Hosting (Docker Hub)](self-hosting.md). Local clusters add the
+    `docker-compose.build.yml` overlay (to build the API from source) on top of the same base
+    compose the isolated bundle ships.
+
 ## On-disk layout
 
 Each cluster lives under `clusters/<name>/`:
@@ -51,7 +60,8 @@ Compose invocation is assembled automatically — for example `cluster:up` runs 
 ```bash
 docker compose --env-file clusters/<name>/.env \
   -f docker-compose.yml \
-  [-f docker-compose.cluster.yml]   # when clusters/<name>/nginx.conf exists
+  [-f docker-compose.build.yml]     # local clusters build the API from source
+  [-f docker-compose.gateway.yml]   # when clusters/<name>/nginx.conf exists
   [-f docker-compose.gpu.yml]       # when NVIDIA=1
   --profile production up -d
 ```
@@ -72,7 +82,7 @@ REDIS_PORT=6379
 ## Gateway (Nginx + Cloudflare)
 
 When `clusters/<name>/nginx.conf` is present, `cluster:up` layers in
-`docker-compose.cluster.yml`, which adds two services:
+`docker-compose.gateway.yml`, which adds two services:
 
 - **nginx** (`nginx:1.27-alpine`) — renders `nginx.conf` via envsubst (only `AGENTX_*` vars),
   then for every request:

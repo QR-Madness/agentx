@@ -66,6 +66,7 @@ export const nav: NavEntry[] = [
   {
     label: 'Deploy & Operate',
     items: [
+      { label: 'Self-Hosting (Docker Hub)', slug: 'deployment/self-hosting' },
       { label: 'Docker', slug: 'deployment/docker' },
       { label: 'Production', slug: 'deployment/production' },
       { label: 'Clusters & Gateway', slug: 'deployment/clusters' },

@@ -10,6 +10,13 @@ gateway. This page covers the production profile and required configuration; for
 workflow (scaffolding, the optional Nginx + Cloudflare gateway, GPU overlay, running multiple
 instances) see [Clusters](clusters.md).
 
+!!! tip "Just want to self-host? Use the published image."
+    Clusters come in two flavours: **local** clusters build from the repo and are managed by the
+    `task cluster:*` workflow below; **isolated** clusters pull the published Docker image, manage
+    themselves via the in-image `agentx` CLI, and need no repo or Taskfile. If you're standing up
+    your own instance, start at [Self-Hosting (Docker Hub)](self-hosting.md) — it's the shortest
+    path. This page documents the local/repo-managed workflow.
+
 ## The production profile
 
 The `api` service in `docker-compose.yml` is gated behind `profiles: [production]`, so it only
@@ -17,9 +24,13 @@ starts when you opt in with `--profile production`. You never invoke Compose dir
 `cluster:*` tasks assemble the right `--env-file` and overlays for you (see the
 [Clusters lifecycle table](clusters.md#lifecycle)).
 
-The API image is built from the repo `Dockerfile` (Python 3.12 + uv, Node for asset build) and
-served by uvicorn (ASGI) on port `12319`. It restarts `unless-stopped` and has a healthcheck
-with a 60s start period.
+The base `docker-compose.yml` pulls the published API image
+(`${AGENTX_IMAGE:-qrmadness/agentx-api:latest}`). Local clusters layer
+`docker-compose.build.yml` on top to **build from the repo `Dockerfile`** instead (Python 3.12 +
+uv, Node for local MCP tools); the `cluster:*` tasks add this overlay automatically. The API is
+served by uvicorn (ASGI) on port `12319`, restarts `unless-stopped`, and self-initializes its
+schemas on boot via the container entrypoint (so `cluster:migrate` is belt-and-suspenders, not
+required).
 
 ## Services & resource limits
 

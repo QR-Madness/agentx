@@ -178,6 +178,22 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 
 - [ ] Cloudflare Tunnel deployment documentation (pending)
 
+### 17.7 Release & Packaging
+
+- [x] **Client release CI** — `.github/workflows/client-release.yml`: manual-dispatch matrix
+      (Windows nsis/msi + Linux deb/AppImage/rpm) building Tauri installers + SHA-256 checksums;
+      version flows through `versions.yaml`.
+- [x] **Server packaging — local vs isolated clusters**: single-source compose
+      (`docker-compose.yml` pulls the image; `docker-compose.build.yml` overlay builds locally;
+      `docker-compose.cluster.yml` → `docker-compose.gateway.yml`); self-initializing API
+      entrypoint (`docker/entrypoint.sh`) + in-image `agentx` ops CLI (`docker/agentx`);
+      `.github/workflows/api-release.yml` publishes `qrmadness/agentx-api` to Docker Hub;
+      `task deploy:bundle` generates the isolated deployment bundle; docs at
+      `deployment/self-hosting`.
+- [ ] arm64 / multi-arch API image (amd64-only today; QEMU build deferred).
+- [ ] Offline "models-baked" image variant (first run downloads ~5 GB to the HF cache volume).
+- [ ] Shared-infra local clusters (one DB stack, namespaced) — deferred per the isolation-axis design.
+
 ---
 
 ## Phase 18: UX Improvements & Optimization and Memory Tuning (In Progress, ~90%)
@@ -332,6 +348,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
 - [ ] Message injection into delegated tasks (agent interdiction tools)
 - [ ] Custom window chrome — frameless Tauri window with our own title bar + window controls (minimize / maximize / close) and a drag region, styled to the cosmic theme. **Windows + Linux first; macOS later** (traffic-light insets + native fullscreen need separate handling). Touches `client/src-tauri/tauri.conf.json` (`decorations: false`) + a top-of-app titlebar component using the Tauri window API.
+- [ ] macOS runner for the client release matrix — add a `macos-latest` leg to `.github/workflows/client-release.yml` (currently Windows + Linux only). Builds `.dmg`/`.app` (`tauri_bundles: dmg,app`); `client/src-tauri/tauri.macos.conf.json` already exists. Needs Apple Developer signing + notarization (certs/secrets) for distributable builds — without them the app is unsigned/Gatekeeper-blocked.
 
 ### Open Platform — De-walling the Garden
 
