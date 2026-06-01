@@ -1,6 +1,6 @@
-# docker-compose.cluster.yml
+# docker-compose.gateway.yml
 #
-# Cluster gateway overlay: adds an Nginx gateway and a Cloudflare Tunnel in
+# Public gateway overlay: adds an Nginx gateway and a Cloudflare Tunnel in
 # front of the API service from docker-compose.yml. The tunnel terminates
 # HTTPS at Cloudflare's edge and forwards requests to nginx, which enforces
 # the shared AgentX-Gateway-Token header before anything reaches Django.

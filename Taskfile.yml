@@ -1189,11 +1189,13 @@ tasks:
       NVIDIA:  '{{.NVIDIA}}'
     cmds:
       - |
+        # Local clusters build the API from source (the base compose pulls the
+        # published image, so the build overlay re-adds the build: section).
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
           echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
         else
-          OVERLAY="-f docker-compose.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
           echo "🚀 Starting cluster {{.CLUSTER}} (no public gateway)..."
         fi
         BUILD_FLAG=""
@@ -1224,7 +1226,7 @@ tasks:
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
         else
           OVERLAY=""
         fi
@@ -1236,10 +1238,12 @@ tasks:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
       - |
+        # Includes the build overlay so `build` actually rebuilds from source
+        # (the base compose only declares image:).
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
         else
-          OVERLAY=""
+          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
         fi
         echo "🔨 Rebuilding images for cluster {{.CLUSTER}}..."
         docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production build
@@ -1252,7 +1256,7 @@ tasks:
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
         else
           OVERLAY=""
         fi
@@ -1265,7 +1269,7 @@ tasks:
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
         else
           OVERLAY=""
         fi
@@ -1276,14 +1280,14 @@ tasks:
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.cluster.yml --profile production logs -f nginx
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml --profile production logs -f nginx
 
   cluster:logs:tunnel:
     desc: "Tail cloudflared tunnel logs (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.cluster.yml --profile production logs -f cloudflared
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml --profile production logs -f cloudflared
 
   cluster:status:
     desc: "Show cluster status (CLUSTER=name)"
@@ -1292,7 +1296,7 @@ tasks:
     cmds:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.cluster.yml"
+          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
         else
           OVERLAY=""
         fi
@@ -1346,3 +1350,62 @@ tasks:
             echo "  $name${tags:+ —$tags}"
           fi
         done 2>/dev/null || echo "  (none)"
+
+# ============================================================================
+# DEPLOYMENT / PUBLISHING (isolated clusters)
+# ============================================================================
+
+  deploy:bundle:
+    desc: "Generate the isolated deployment bundle (dist/agentx-deploy/ + tarball)"
+    silent: true
+    vars:
+      OUT: '{{.OUT | default "dist/agentx-deploy"}}'
+    cmds:
+      - |
+        set -e
+        OUT="{{.OUT}}"
+        echo "📦 Generating deployment bundle → $OUT"
+        rm -rf "$OUT"
+        mkdir -p "$OUT"
+        # The base compose is already image-based + portable, so it ships as-is.
+        # The build overlay (source-only) and the repo-relative gateway overlay
+        # are intentionally excluded.
+        cp docker-compose.yml      "$OUT/docker-compose.yml"
+        cp docker-compose.gpu.yml  "$OUT/docker-compose.gpu.yml"
+        cp deploy/.env.example     "$OUT/.env.example"
+        cp deploy/README.md        "$OUT/README.md"
+        tar -czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
+        echo "  ✓ $OUT/"
+        echo "  ✓ $OUT.tar.gz"
+
+  deploy:bundle:check:
+    desc: "Fail if the committed deploy/ files drift from the canonical compose"
+    silent: true
+    cmds:
+      - |
+        set -e
+        # The bundle copies docker-compose.yml + docker-compose.gpu.yml verbatim;
+        # this guards that the authored deploy/ env+readme still reference real
+        # files and that the canonical compose is image-based (not build-only).
+        if grep -qE '^\s+build:' docker-compose.yml; then
+          echo "✗ docker-compose.yml has a top-level api build: — base compose must be image-based" >&2
+          exit 1
+        fi
+        for f in docker-compose.yml docker-compose.gpu.yml deploy/.env.example deploy/README.md; do
+          [ -f "$f" ] || { echo "✗ missing $f" >&2; exit 1; }
+        done
+        echo "✓ deploy bundle sources present and base compose is image-based"
+
+  docker:publish:
+    desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev). CI uses .github/workflows/api-release.yml"
+    silent: true
+    vars:
+      IMAGE: '{{.IMAGE | default "qrmadness/agentx-api"}}'
+      TAG: '{{.TAG | default "dev"}}'
+    cmds:
+      - |
+        set -e
+        echo "🐳 Building {{.IMAGE}}:{{.TAG}} ..."
+        docker build -t "{{.IMAGE}}:{{.TAG}}" .
+        echo "⬆️  Pushing {{.IMAGE}}:{{.TAG}} ..."
+        docker push "{{.IMAGE}}:{{.TAG}}"

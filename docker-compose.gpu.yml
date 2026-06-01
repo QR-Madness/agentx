@@ -13,7 +13,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile production up -d
 #
 # Or for a cluster:
-#   docker compose -f docker-compose.yml -f docker-compose.cluster.yml -f docker-compose.gpu.yml \
+#   docker compose -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.gpu.yml \
 #     --profile production --env-file clusters/<name>/.env up -d
 #
 # The app resolves its compute device via AGENTX_DEVICE (default "auto" → CUDA when

@@ -1,0 +1,26 @@
+# docker-compose.build.yml
+#
+# Build-from-source overlay for the API service.
+#
+# The base docker-compose.yml pulls the published image
+# (${AGENTX_IMAGE:-qrmadness/agentx-api:latest}). Local/dev clusters layer this
+# overlay on top so the API is built from the repo Dockerfile instead of pulled.
+# When both `image:` and `build:` are present, `docker compose ... build` /
+# `up --build` builds and tags it as that image; plain `up` against the base
+# alone pulls it.
+#
+# Usage (the cluster:* tasks add this automatically for local clusters):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml \
+#     --profile production up -d --build
+#
+# It is intentionally excluded from the published/isolated deployment bundle,
+# which has no source tree to build from.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Tag the locally-built image consistently with the base `image:` ref so
+    # `up` (without --build) can still find it.
+    image: ${AGENTX_IMAGE:-qrmadness/agentx-api:latest}
