@@ -44,10 +44,16 @@ RUN npx -v
 RUN uv sync --frozen --no-dev
 
 # Copy application code
-# Preserve api/ structure so versions.yaml path calculation works
+# Preserve api/ structure so versions.yaml path calculation works.
+# api/defaults/ rides along here and is the seed source for the entrypoint.
 COPY api/ ./api/
 COPY queries/ ./queries/
 COPY versions.yaml ./versions.yaml
+
+# Operations tooling: self-init entrypoint + the `agentx` ops CLI on PATH.
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/agentx /usr/local/bin/agentx
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/agentx
 
 # Create data directory for runtime config
 RUN mkdir -p ./data
@@ -64,6 +70,10 @@ EXPOSE 12319
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:12319/api/health || exit 1
+
+# Self-init entrypoint runs first (seed config + migrate + schema init), then
+# exec's the CMD below. Set AGENTX_AUTO_INIT=false to skip auto-init.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Run with uvicorn for production (ASGI)
 CMD ["uv", "run", "uvicorn", "agentx_api.asgi:application", "--host", "0.0.0.0", "--port", "12319"]

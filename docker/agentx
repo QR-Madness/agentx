@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# `agentx` — in-image operations CLI for AgentX deployments.
+#
+# A thin, honest front-door over the Django management commands so operators of
+# an isolated (Docker Hub) deployment never need the repo or the Taskfile:
+#
+#   docker compose exec api agentx <command> [args...]
+#
+# It is versioned with the image (no external files to keep in sync).
+set -euo pipefail
+
+APP_DIR="/app"
+MANAGE=("uv" "run" "python" "$APP_DIR/api/manage.py")
+API_PORT="${API_PORT:-12319}"
+
+cd "$APP_DIR"
+
+usage() {
+  cat <<'EOF'
+agentx — AgentX deployment operations
+
+Usage: agentx <command> [args...]
+
+Commands:
+  migrate              Apply DB migrations + initialize the memory schema
+  setup-auth [args]    Set/verify the root password
+                         --password <pw>  non-interactive set
+                         --check          report if setup is required
+                         --force          reset password (invalidates sessions)
+  warmup [args]        Pre-load the embedding model (avoids a slow first request)
+  export [args]        Export the memory graph to JSON  (memory only)
+  import [args]        Import a memory-graph export      (memory only)
+  status               Health check (GET /api/health?include_memory=true)
+  version              Print the running API version
+  manage <args...>     Passthrough to manage.py (escape hatch)
+  help                 Show this help
+
+Note: a full database backup is a DB-level operation (pg_dump / neo4j-admin
+dump) — see the deployment docs. `export`/`import` cover the memory graph only.
+EOF
+}
+
+cmd="${1:-help}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$cmd" in
+  migrate)
+    "${MANAGE[@]}" migrate --noinput
+    "${MANAGE[@]}" init_memory_schema "$@"
+    ;;
+  setup-auth)
+    "${MANAGE[@]}" setup_auth "$@"
+    ;;
+  warmup)
+    "${MANAGE[@]}" warmup_embeddings "$@"
+    ;;
+  export)
+    "${MANAGE[@]}" export_memory "$@"
+    ;;
+  import)
+    "${MANAGE[@]}" import_memory "$@"
+    ;;
+  status)
+    curl -fsS "http://localhost:${API_PORT}/api/health?include_memory=true"
+    echo
+    ;;
+  version)
+    curl -fsS "http://localhost:${API_PORT}/api/health" \
+      | (python3 -c 'import sys,json; print(json.load(sys.stdin).get("version","unknown"))' 2>/dev/null || cat)
+    ;;
+  manage)
+    "${MANAGE[@]}" "$@"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "agentx: unknown command '$cmd'" >&2
+    echo >&2
+    usage >&2
+    exit 2
+    ;;
+esac
