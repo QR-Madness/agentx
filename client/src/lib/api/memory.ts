@@ -131,13 +131,10 @@ export const memoryApi = {
 
   // === Import / export (round-trippable memory snapshots) ===
 
-  async exportMemory(params: { channel?: string; includeEmbeddings?: boolean } = {}): Promise<{ export: MemoryExport }> {
+  async exportMemory(params: { channel?: string } = {}): Promise<{ export: MemoryExport }> {
     return apiRequest('/api/memory/export', {
       method: 'POST',
-      body: JSON.stringify({
-        channel: params.channel ?? '_all',
-        include_embeddings: params.includeEmbeddings ?? true,
-      }),
+      body: JSON.stringify({ channel: params.channel ?? '_all' }),
     });
   },
 

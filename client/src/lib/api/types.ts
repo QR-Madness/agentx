@@ -759,7 +759,6 @@ export interface MemoryExport {
   exported_at: string;
   user_id: string;
   channel: string | null;
-  include_embeddings: boolean;
   embedder: { provider_model: string; dimensions: number };
   conversations: unknown[];
   turns: unknown[];

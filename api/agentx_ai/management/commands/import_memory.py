@@ -5,9 +5,8 @@ Idempotently MERGEs every node on its stable id. ``--mode merge`` (default)
 upserts and leaves other data untouched; ``--mode replace`` wipes the target
 channel(s) for the user first, so the channel ends up matching the file exactly.
 
-Embeddings are restored verbatim when present and dimension-compatible, else
-recomputed from each node's canonical text (also how a ``--no-embeddings``
-export is rehydrated).
+Exports are text-only, so every embedding is regenerated from the node's
+canonical text with this instance's model on import.
 
 Usage:
     python manage.py import_memory --input snapshot.json
@@ -77,8 +76,8 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f"Loaded {in_path} — schema v{export.schema_version}, "
-            f"user='{export.user_id}', channel='{export.channel}', "
-            f"embeddings={'on' if export.include_embeddings else 'off'}"
+            f"user='{export.user_id}', channel='{export.channel}' "
+            f"(source embedder: {export.embedder.provider_model})"
         )
         for name, n in export.counts().items():
             if n:

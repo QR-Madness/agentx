@@ -2,9 +2,9 @@
 
 This package serializes the agent memory graph (episodic, semantic, procedural,
 goals) plus the PostgreSQL audit mirror into a single versioned envelope, and
-re-imports it idempotently by ``MERGE``-ing on the stable node ids. Embeddings
-can be carried verbatim or stripped (``--no-embeddings``) and recomputed on
-import — the latter yields a deterministic, diffable artifact.
+re-imports it idempotently by ``MERGE``-ing on the stable node ids. Exports are
+text-only — embeddings are regenerated from text on import, so files are small,
+deterministic, diffable, and portable across embedding models.
 
 Public surface:
     - ``SCHEMA_VERSION`` / ``MemoryExport`` (envelope)

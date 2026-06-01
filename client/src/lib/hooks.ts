@@ -600,7 +600,7 @@ export function useExportMemory() {
   const [error, setError] = useState<ApiError | null>(null);
 
   const mutate = useCallback(
-    async (params: { channel?: string; includeEmbeddings?: boolean } = {}): Promise<MemoryExport | null> => {
+    async (params: { channel?: string } = {}): Promise<MemoryExport | null> => {
       setLoading(true);
       setError(null);
       try {

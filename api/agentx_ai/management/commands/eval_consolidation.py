@@ -208,7 +208,8 @@ class Command(BaseCommand):
             "--snapshot", action="store_true",
             help="Non-destructive alternative to --wipe: export all memory to "
                  "data/eval_snapshots/<ts>.json, wipe, run, then restore it afterward "
-                 "(even if the eval errors). Bypasses the sterility gate.",
+                 "(even if the eval errors). Bypasses the sterility gate. Snapshots are "
+                 "text-only; embeddings are regenerated on restore.",
         )
         parser.add_argument(
             "--restore", default=None, metavar="FILE",
@@ -280,13 +281,14 @@ class Command(BaseCommand):
             return [r["uid"] for r in s.run("MATCH (u:User) RETURN u.id AS uid") if r["uid"]]
 
     def _make_snapshot(self, path):
-        """Export every user's full memory (with embeddings) into one bundle file."""
+        """Export every user's full memory into one bundle file (text-only;
+        embeddings are regenerated on restore)."""
         import json
         from agentx_ai.kit.agent_memory.portability import MemoryExporter
 
         users = []
         for uid in self._list_user_ids():
-            export = MemoryExporter(uid, channel="_all", include_embeddings=True).export()
+            export = MemoryExporter(uid, channel="_all").export()
             users.append(export.model_dump(mode="json"))
         bundle = {
             "snapshot_version": 1,

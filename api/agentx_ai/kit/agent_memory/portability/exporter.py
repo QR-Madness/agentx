@@ -38,12 +38,10 @@ class MemoryExporter:
         self,
         user_id: str,
         channel: Optional[str] = None,
-        include_embeddings: bool = True,
     ):
         self.user_id = user_id
         # Normalize "_all"/None → no channel filter.
         self.channel = None if channel in (None, "_all") else channel
-        self.include_embeddings = include_embeddings
 
     # -- helpers ---------------------------------------------------------
 
@@ -52,10 +50,10 @@ class MemoryExporter:
         return CypherFilterBuilder(alias).add_channel_filter(self.channel).build_inline()
 
     def _node(self, raw: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize a Neo4j node property dict for JSON (datetimes, embeddings)."""
+        """Normalize a Neo4j node property dict for JSON. Exports are text-only:
+        the embedding is always dropped (regenerated on import)."""
         d = convert_record_datetimes(dict(raw), fields=_DATETIME_FIELDS)
-        if not self.include_embeddings:
-            d.pop("embedding", None)
+        d.pop("embedding", None)
         return d
 
     # -- node collections ------------------------------------------------
@@ -65,7 +63,6 @@ class MemoryExporter:
         export = MemoryExport(
             user_id=self.user_id,
             channel=self.channel,
-            include_embeddings=self.include_embeddings,
             embedder=current_embedder_info(),
         )
         with Neo4jConnection.session() as session:
@@ -173,16 +170,15 @@ class MemoryExporter:
             row["conversation_id"] = str(row["conversation_id"])
             if row.get("timestamp") is not None and hasattr(row["timestamp"], "isoformat"):
                 row["timestamp"] = row["timestamp"].isoformat()
-            if not self.include_embeddings:
-                row.pop("embedding", None)
             out.append(row)
         return out
 
     def _export_pg_logs(self, conv_ids: List[str]) -> List[Dict[str, Any]]:
+        # Text-only: the embedding column is omitted (regenerated on import).
         return self._pg_rows("""
             SELECT conversation_id::text AS conversation_id, turn_index, timestamp,
                    role, content, content_hash, token_count, model, channel, agent_id,
-                   metadata, embedding::text AS embedding
+                   metadata
             FROM conversation_logs
             WHERE conversation_id::text IN :ids
             ORDER BY conversation_id, turn_index

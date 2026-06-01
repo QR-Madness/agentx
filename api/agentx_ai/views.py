@@ -4355,10 +4355,10 @@ def memory_export(request):
     POST /api/memory/export - Export the user's memory graph to a JSON envelope.
 
     Request body (optional):
-        {"channel": "_global", "include_embeddings": true}
+        {"channel": "_global"}
 
-    `channel` defaults to "_all" (every channel). When `include_embeddings` is
-    false the vectors are stripped (smaller, diffable; recomputed on import).
+    `channel` defaults to "_all" (every channel). Exports are text-only —
+    embeddings are regenerated on import.
 
     Returns: {"export": <round-trippable envelope>}
     """
@@ -4373,12 +4373,9 @@ def memory_export(request):
 
         data = json.loads(request.body) if request.body else {}
         channel = data.get('channel', '_all')
-        include_embeddings = bool(data.get('include_embeddings', True))
 
         memory = AgentMemory(user_id=DEFAULT_USER_ID)
-        export = memory.export_memory(
-            channel=channel, include_embeddings=include_embeddings
-        )
+        export = memory.export_memory(channel=channel)
         return JsonResponse({"export": export.model_dump(mode="json")})
 
     except Exception as e:

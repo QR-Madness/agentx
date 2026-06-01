@@ -1007,14 +1007,14 @@ Serializes the user's memory graph (conversations/turns, facts/entities, strateg
 
 **Request (optional):**
 ```json
-{"channel": "_all", "include_embeddings": true}
+{"channel": "_all"}
 ```
 
-`channel` defaults to `"_all"` (every channel). With `include_embeddings: false` the vectors are stripped, yielding a smaller, deterministic, diffable artifact (the importer recomputes them) — handy for version-controlling memory snapshots.
+`channel` defaults to `"_all"` (every channel). Exports are **text-only** — embeddings are regenerated from text on import, so files are small, deterministic, git-diffable, and portable across embedding models.
 
-**Response:** `{"export": { ...envelope... }}` — `schema_version`, `embedder`, and per-type node collections.
+**Response:** `{"export": { ...envelope... }}` — `schema_version`, `embedder` (provenance), and per-type node collections.
 
-Scriptable equivalent: `task memory:export -- --channel _global --no-embeddings`.
+Scriptable equivalent: `task memory:export -- --channel _global`.
 
 ### Import Memory
 
@@ -1022,7 +1022,7 @@ Scriptable equivalent: `task memory:export -- --channel _global --no-embeddings`
 POST /api/memory/import
 ```
 
-Restores an export idempotently by `MERGE`-ing each node on its stable id. Embeddings are restored verbatim when present and dimension-compatible, otherwise recomputed from each node's canonical text.
+Restores an export idempotently by `MERGE`-ing each node on its stable id. Embeddings are regenerated from each node's canonical text with the importing instance's model (exports are text-only).
 
 **Request:**
 ```json

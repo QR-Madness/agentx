@@ -918,27 +918,19 @@ class AgentMemory:
 
     # Portability (scriptable import/export)
 
-    def export_memory(
-        self,
-        channel: Optional[str] = None,
-        include_embeddings: bool = True,
-    ) -> "MemoryExport":
+    def export_memory(self, channel: Optional[str] = None) -> "MemoryExport":
         """Serialize this user's memory graph into a round-trippable envelope.
+
+        The export is text-only (embeddings are regenerated on import).
 
         Args:
             channel: Limit to one channel (defaults to this instance's channel;
                 pass ``"_all"`` to export every channel for the user).
-            include_embeddings: When False, strip vectors for a smaller,
-                deterministic/diffable artifact (recomputed on import).
         """
         from ..portability import MemoryExporter
 
         scope = channel if channel is not None else self.channel
-        return MemoryExporter(
-            user_id=self.user_id,
-            channel=scope,
-            include_embeddings=include_embeddings,
-        ).export()
+        return MemoryExporter(user_id=self.user_id, channel=scope).export()
 
     def import_memory(
         self,

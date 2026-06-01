@@ -5,13 +5,12 @@ Serializes the full memory graph (conversations/turns, facts/entities,
 strategies/tool-invocations, goals) plus the PostgreSQL audit mirror into a
 single round-trippable file. Re-import with ``import_memory``.
 
-``--no-embeddings`` strips vectors for a smaller, deterministic, diffable
-artifact (the importer recomputes them); pairs naturally with version control.
+Exports are text-only — embeddings are regenerated from text on import, so the
+files are small, deterministic and diffable (and portable across embedders).
 
 Usage:
     python manage.py export_memory
     python manage.py export_memory --channel _global --output snapshot.json
-    python manage.py export_memory --no-embeddings
     python manage.py export_memory --user-id alice --channel _all
 """
 
@@ -54,30 +53,19 @@ class Command(BaseCommand):
                 "data/memory_exports/<ts>_<channel>.json"
             ),
         )
-        parser.add_argument(
-            "--no-embeddings",
-            action="store_true",
-            help="Strip embedding vectors (smaller, diffable; recomputed on import).",
-        )
 
     def handle(self, *args, **options):
         from agentx_ai.kit.agent_memory.portability import MemoryExporter
 
         user_id = options["user_id"]
         channel = options["channel"]
-        include_embeddings = not options["no_embeddings"]
 
         self.stdout.write(
-            f"Exporting memory for user='{user_id}' channel='{channel}' "
-            f"(embeddings={'on' if include_embeddings else 'off'})…"
+            f"Exporting memory for user='{user_id}' channel='{channel}'…"
         )
 
         try:
-            export = MemoryExporter(
-                user_id=user_id,
-                channel=channel,
-                include_embeddings=include_embeddings,
-            ).export()
+            export = MemoryExporter(user_id=user_id, channel=channel).export()
         except Exception as e:  # noqa: BLE001 — surface a clean CLI error
             raise CommandError(f"Export failed: {e}") from e
 

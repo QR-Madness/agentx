@@ -2,9 +2,9 @@
 
 Every node is written with ``MERGE`` on its stable ``id`` (or, for the id-less
 ``ToolInvocation``, on a natural key), so re-importing the same envelope is a
-no-op. Embeddings are restored verbatim when present and dimension-compatible,
-otherwise recomputed from the node's canonical text — which is also how an
-``--no-embeddings`` (stripped, diffable) export is rehydrated.
+no-op. Exports are text-only, so every embedding is recomputed from the node's
+canonical text with this instance's model on import (which also makes exports
+portable across embedding models).
 
 Modes:
     - ``merge``   — upsert; leaves nodes outside the envelope untouched.
@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from sqlalchemy import bindparam, text
 from typing_extensions import Literal, LiteralString
 
-from ..config import get_settings
 from ..connections import Neo4jConnection, get_postgres_session
 from ..embeddings import get_embedder
 from ..query_utils import CypherFilterBuilder
@@ -52,16 +51,11 @@ class MemoryImporter:
         Returns a summary dict with per-type counts and `recomputed_embeddings`.
         """
         export = self._coerce(payload)
-        settings = get_settings()
-        # Whole-export recompute when the source used a different-sized vectorizer
-        # (or stripped embeddings entirely → fields are absent → falsy → recompute).
-        self._force_recompute = (
-            export.embedder.dimensions != settings.embedding_dimensions
-        )
         self._recomputed = 0
 
-        # Recompute/strip embeddings in Python before touching the DB so the
-        # write transaction stays short and atomic.
+        # Exports are text-only: regenerate every embedding from the node's text
+        # with THIS instance's model, in Python, before touching the DB (keeps the
+        # write transaction short and makes imports portable across embedders).
         self._prepare_embeddings(export)
 
         wipe_channel = channel if channel is not None else export.channel
@@ -109,27 +103,19 @@ class MemoryImporter:
         self._recomputed += 1
         return self._embedder.embed_single(text_value)
 
-    def _needs_recompute(self, embedding: Any) -> bool:
-        return self._force_recompute or not embedding
-
     def _prepare_embeddings(self, export: MemoryExport) -> None:
-        """Fill in node embeddings that are missing or dimension-mismatched."""
+        """Regenerate every node embedding from its canonical text."""
         for t in export.turns:
-            if self._needs_recompute(t.get("embedding")):
-                t["embedding"] = self._embed(t.get("content") or "")
+            t["embedding"] = self._embed(t.get("content") or "")
         for e in export.entities:
-            if self._needs_recompute(e.get("embedding")):
-                text_value = f"{e.get('name', '')}: {e.get('description') or e.get('type', '')}"
-                e["embedding"] = self._embed(text_value)
+            text_value = f"{e.get('name', '')}: {e.get('description') or e.get('type', '')}"
+            e["embedding"] = self._embed(text_value)
         for f in export.facts:
-            if self._needs_recompute(f.get("embedding")):
-                f["embedding"] = self._embed(f.get("claim") or "")
+            f["embedding"] = self._embed(f.get("claim") or "")
         for g in export.goals:
-            if self._needs_recompute(g.get("embedding")):
-                g["embedding"] = self._embed(g.get("description") or "")
+            g["embedding"] = self._embed(g.get("description") or "")
         for s in export.strategies:
-            if self._needs_recompute(s.get("embedding")):
-                s["embedding"] = self._embed(s.get("description") or "")
+            s["embedding"] = self._embed(s.get("description") or "")
 
     # -- replace-mode wipe ----------------------------------------------
 
@@ -414,15 +400,17 @@ class MemoryImporter:
     def _import_pg_logs(self, rows: List[Dict[str, Any]]) -> int:
         if not rows:
             return 0
+        # The audit-mirror embedding is left NULL on import — recall uses the
+        # recomputed Neo4j `turn_embeddings` vectors, not this column.
         with get_postgres_session() as session:
             for row in rows:
                 session.execute(text("""
                     INSERT INTO conversation_logs
                     (conversation_id, turn_index, timestamp, role, content, content_hash,
-                     token_count, model, channel, agent_id, metadata, embedding)
+                     token_count, model, channel, agent_id, metadata)
                     VALUES (CAST(:conversation_id AS UUID), :turn_index, :timestamp, :role,
                             :content, :content_hash, :token_count, :model, :channel, :agent_id,
-                            CAST(:metadata AS JSONB), :embedding)
+                            CAST(:metadata AS JSONB))
                     ON CONFLICT (conversation_id, turn_index) DO UPDATE
                     SET timestamp = EXCLUDED.timestamp,
                         role = EXCLUDED.role,
@@ -432,8 +420,7 @@ class MemoryImporter:
                         model = EXCLUDED.model,
                         channel = EXCLUDED.channel,
                         agent_id = EXCLUDED.agent_id,
-                        metadata = EXCLUDED.metadata,
-                        embedding = EXCLUDED.embedding
+                        metadata = EXCLUDED.metadata
                 """), self._pg_log_params(row))
         return len(rows)
 
@@ -480,7 +467,6 @@ class MemoryImporter:
             "channel": row.get("channel") or "_global",
             "agent_id": row.get("agent_id"),
             "metadata": self._json_param(row.get("metadata")) or "{}",
-            "embedding": row.get("embedding"),
         }
 
     def _pg_tool_params(self, row: Dict[str, Any]) -> Dict[str, Any]:

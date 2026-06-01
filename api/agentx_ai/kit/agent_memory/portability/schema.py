@@ -58,7 +58,8 @@ class MemoryExport(BaseModel):
     exported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     user_id: str
     channel: Optional[str] = None  # None / "_all" = every channel for the user
-    include_embeddings: bool = True
+    # Exports are text-only — embeddings are always regenerated on import.
+    # `embedder` records which model the source ran, as provenance only.
     embedder: EmbedderInfo
 
     # Node collections — each item is the node's full property dict (datetimes

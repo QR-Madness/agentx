@@ -3905,15 +3905,17 @@ class MemoryPortabilityTest(MemoryTestBase):
         memory.import_memory(export, mode="replace", channel="_global")
         self.assertEqual(self._count(self.test_user_id, "Fact"), len(export.facts))
 
-    def test_strip_and_recompute_embeddings(self):
-        """--no-embeddings export carries no vectors; import recomputes them."""
+    def test_export_is_text_only_and_import_recomputes_embeddings(self):
+        """Exports never carry vectors; import regenerates them from text."""
         if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch")
         memory, ids = self._seed(self.test_user_id, self.test_conversation_id)
 
-        export = memory.export_memory(channel="_all", include_embeddings=False)
-        self.assertFalse(export.include_embeddings)
+        export = memory.export_memory(channel="_all")
+        # Text-only: no node carries an embedding.
         self.assertTrue(all(not f.get("embedding") for f in export.facts))
+        self.assertTrue(all(not t.get("embedding") for t in export.turns))
+        self.assertTrue(all(not e.get("embedding") for e in export.entities))
 
         self._delete_user(self.test_user_id)
         summary = memory.import_memory(export, mode="merge")

@@ -2252,8 +2252,8 @@ paths:
       description: >
         Serializes conversations/turns, facts/entities, strategies, goals and
         tool-invocations (plus the PostgreSQL audit mirror) keyed by stable ids.
-        With include_embeddings=false the vectors are stripped for a smaller,
-        deterministic, diffable artifact (recomputed on import).
+        Exports are text-only — embeddings are regenerated from text on import,
+        so files are small, deterministic and diffable.
       requestBody:
         required: false
         content:
@@ -2264,9 +2264,6 @@ paths:
                 channel:
                   type: string
                   description: Channel to export, or "_all" (default) for every channel.
-                include_embeddings:
-                  type: boolean
-                  default: true
       responses:
         '200':
           description: The export envelope under "export"

@@ -9,7 +9,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.23** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.24** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -346,30 +346,32 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.23** (prot
       mirror) and idempotent re-import that `MERGE`-es every node on its stable id. New
       `kit/agent_memory/portability/` (`schema`/`exporter`/`importer`); `AgentMemory.export_memory`/
       `import_memory` delegators; `POST /api/memory/{export,import}`; `task memory:export|import`
-      commands; **merge** + **replace** (scoped `DETACH DELETE`) modes; `--no-embeddings` strip with
-      recompute-on-import (deterministic/diffable artifact — the basis for *Memory-as-VCS* below).
-      `MemoryPortabilityTest` covers round-trip, idempotency, replace-wipe, strip+recompute, and
-      schema-version rejection. Client: Export/Import buttons in the Memory drawer (`lib/fileTransfer.ts`
-      browser Blob/FileReader helper — first file I/O in the client). Unblocks the 18.6 eval
-      snapshot/restore. Supersedes the old "Memory export/import (JSON/SQLite backup)" item.
+      commands; **merge** + **replace** (scoped `DETACH DELETE`) modes. Exports are **text-only** —
+      embeddings are regenerated from text on import (`[v0.21.24]`), so files are small (~9× smaller),
+      deterministic, git-diffable, and portable across embedding models (the *Memory-as-VCS* basis is
+      now the default behavior). `MemoryPortabilityTest` covers round-trip, idempotency, replace-wipe,
+      text-only-export + recompute, and schema-version rejection. Client: Export/Import buttons in the
+      Memory drawer (`lib/fileTransfer.ts` browser Blob/FileReader helper — first file I/O in the
+      client). Unblocks the 18.6 eval snapshot/restore. Supersedes the old "Memory export/import
+      (JSON/SQLite backup)" item.
 - [ ] **Import dry-run / preview-diff** — show the graph delta before committing (mirrors the existing
       `POST /api/memory/consolidate/preview` pattern) so a bad hand-edit can't silently nuke the graph.
       *Natural next follow-up to the shipped import/export above.*
 - [ ] **Verify-on-import (default on, opt-out)** — route imported facts through the three-layer
       `check_contradictions` pipeline rather than trusting JSON verbatim; opt-out flag for trusted/raw
       restores. *Natural next follow-up to the shipped import/export above.*
-- [ ] **Memory-as-VCS (diffable, hand-editable snapshots)** — build on the shipped `--no-embeddings`
-      export (deterministic, git-friendly) + idempotent MERGE-on-id import (recompute-on-missing):
-      export → commit/hand-edit → import re-applies, re-embedding only changed text → branchable/
-      restorable memory states. Follow-ups: canonical/sorted-key JSON (+ optional NDJSON) for clean
-      `git diff`; a `memory:snapshot`/`memory:restore` task pair; per-node content hash to recompute
-      only changed embeddings; a "memory log" of snapshots.
+- [ ] **Memory-as-VCS (diffable, hand-editable snapshots)** — the text-only export + idempotent
+      MERGE-on-id import (`[v0.21.24]`) already gives the core loop: export → commit/hand-edit →
+      import re-applies, re-embedding from text → branchable/restorable memory states. Remaining
+      polish: canonical/sorted-key JSON (+ optional NDJSON) for clean `git diff`; a
+      `memory:snapshot`/`memory:restore` task pair; per-node content hash to recompute only changed
+      embeddings (today import re-embeds every node); a "memory log" of snapshots.
 - [ ] **Import conflict policy** — skip / overwrite / rename strategies for cross-instance id
       collisions (merge currently overwrites — importing another instance's export reassigns shared-id
       nodes to the importing user).
-- [ ] **Embedder-mismatch hardening** — import already recomputes when the export's
-      `embedder.dimensions` ≠ current config; add a `--force` verbatim override and per-node
-      length validation (today only the config-level dimension is checked).
+- [ ] **Recompute PG audit-mirror embeddings on import** — import leaves
+      `conversation_logs.embedding` NULL (recall uses the recomputed Neo4j `turn_embeddings`); fill it
+      from content (cheap via the embedding cache) if anything starts querying the PG vector column.
 - [ ] **Per-user export** — export/import is single-user (`DEFAULT_USER_ID = "default"`) until auth
       lands; scope by authenticated user when multi-user ships.
 - [ ] **Expose AgentX outward** — publish its own memory/agents as an MCP *server* + promote

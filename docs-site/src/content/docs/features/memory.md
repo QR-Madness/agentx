@@ -283,10 +283,10 @@ hand-editing and pushing changes back.
   tool-invocations, plus the PostgreSQL audit mirror.
 - **Modes.** `merge` upserts and leaves other data untouched; `replace` wipes the
   target channel first so it ends up matching the file exactly.
-- **Embeddings.** Restored verbatim when dimension-compatible, otherwise
-  recomputed from each node's text. Exporting with embeddings stripped yields a
-  smaller, deterministic, diffable artifact — handy for version-controlling
-  memory snapshots.
+- **Text-only, re-embedded on import.** Exports never carry embedding vectors —
+  they're regenerated from each node's text with the importing instance's model.
+  Files stay small, deterministic and git-diffable, and a snapshot is portable
+  across embedding models (and ideal for version-controlling memory).
 
 Use it from the **Memory drawer** (Export / Import buttons), over HTTP
 (`POST /api/memory/export` and `/api/memory/import`), or via the CLI

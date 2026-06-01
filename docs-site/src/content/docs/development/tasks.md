@@ -156,16 +156,18 @@ You will be prompted for confirmation.
 ### Export / Import Memory
 
 Round-trippable, ID-stable snapshots of the agent memory graph (conversations,
-facts, entities, strategies, goals + the PostgreSQL audit mirror).
+facts, entities, strategies, goals + the PostgreSQL audit mirror). Exports are
+text-only — embeddings are regenerated on import, so files stay small and
+git-diffable.
 
 ```bash
 # Export every channel to data/memory_exports/<ts>_all.json
 task memory:export
 
-# Export one channel, stripping embeddings (smaller, diffable, git-friendly)
-task memory:export -- --channel _global --no-embeddings
+# Export one channel
+task memory:export -- --channel _global
 
-# Import (idempotent MERGE-on-id; embeddings restored or recomputed)
+# Import (idempotent MERGE-on-id; embeddings recomputed from text)
 task memory:import -- --input data/memory_exports/<file>.json
 
 # Replace a channel exactly (wipe that channel for the user, then import)
