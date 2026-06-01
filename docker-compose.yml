@@ -33,7 +33,9 @@ services:
       - ${AGENTX_DB_DIR:-./data}/neo4j/logs:/logs
       - ${AGENTX_DB_DIR:-./data}/neo4j/plugins:/plugins
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${NEO4J_HTTP_PORT:-7474}/ || exit 1"]
+      # Runs inside the container, so it must hit the fixed container-internal
+      # port (7474), not the host-mapped ${NEO4J_HTTP_PORT}.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -147,7 +149,9 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${API_PORT:-12319}/api/health"]
+      # Runs inside the container — use the fixed internal port (12319), not the
+      # host-mapped ${API_PORT}.
+      test: ["CMD", "curl", "-f", "http://localhost:12319/api/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
