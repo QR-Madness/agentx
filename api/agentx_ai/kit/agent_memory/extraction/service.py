@@ -458,6 +458,23 @@ class ExtractionService:
         return facts
 
     @staticmethod
+    def _normalize_subject(
+        facts: list[dict[str, Any]], default: str,
+    ) -> list[dict[str, Any]]:
+        """Normalize each fact's ``subject`` to user|agent|third_party.
+
+        Consolidation routes a fact to a channel by its subject (user → user
+        channel, agent → self channel). The LLM emits ``subject`` per fact; if it
+        is missing or unrecognized we fall back to ``default`` (the turn-role
+        subject), which preserves the pre-subject behavior for older prompts.
+        """
+        valid = {"user", "agent", "third_party"}
+        for fact in facts:
+            subject = str(fact.get("subject", "")).strip().lower()
+            fact["subject"] = subject if subject in valid else default
+        return facts
+
+    @staticmethod
     def _render_scope_context(
         known_entities: Optional[List[Dict[str, Any]]],
         known_facts: Optional[List[Dict[str, Any]]],
@@ -589,6 +606,9 @@ class ExtractionService:
             if parsed.facts:
                 parsed.facts = self._apply_confidence_calibration(parsed.facts)
                 parsed.facts = self._normalize_temporal_fields(parsed.facts)
+                # Default subject is the user (this is the user-turn extractor), but a
+                # fact about the agent/a third party keeps its declared subject.
+                parsed.facts = self._normalize_subject(parsed.facts, default="user")
 
             # Add source turn ID to facts
             if source_turn_id:
@@ -701,6 +721,9 @@ class ExtractionService:
 
             if parsed.facts:
                 parsed.facts = self._apply_assistant_confidence_calibration(parsed.facts)
+                # Default subject is the agent (this is the assistant-turn extractor),
+                # but a fact about the user/a third party keeps its declared subject.
+                parsed.facts = self._normalize_subject(parsed.facts, default="agent")
 
             if source_turn_id:
                 for fact in parsed.facts:

@@ -171,6 +171,8 @@ LLM-based extraction of entities, facts, and relationships from conversation tex
 - **Combined extraction** — Single LLM call extracts entities + facts + relationships (~75% fewer API calls vs. separate extraction)
 - **Confidence calibration** — Maps LLM certainty labels to numeric scores: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
 - **Temporal context** — Extracts temporal tags (`current`, `past`, `future`) per fact
+- **Subject attribution** — Each fact carries a `subject` (`user` / `agent` / `third_party`). Both user and assistant turns are extracted, and consolidation routes a fact by its subject — agent facts to `_self_{agent_id}`, user/third-party facts to the active channel — rather than by which turn it came from. This keeps the user's memory and the agent's self-knowledge from bleeding into each other.
+- **Bulletproof entity linking** — A fact's mentioned entity names resolve to `(:Fact)-[:ABOUT]->(:Entity)` edges via batch map → name/alias/slug lookup → auto-created stub entity, so facts are never silently orphaned from their entities (`fact_entity_links_recovered` / `fact_entity_stubs_created` metrics track recoveries/stubs).
 - **Contradiction detection** — Compares new facts against recent existing facts; resolution via prefer_new, prefer_old, or flag_review
 - **User correction handling** — Detects correction patterns ("actually...", "no, I meant..."); supersedes old facts via `[:SUPERSEDES]` relationship
 - Uses `claude-3-5-haiku-latest` by default (configurable via `extraction_model` setting)

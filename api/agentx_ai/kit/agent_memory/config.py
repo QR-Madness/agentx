@@ -169,6 +169,12 @@ class Settings(BaseSettings):
     contradiction_similarity_threshold: float = 0.5
     contradiction_max_candidates: int = 10
 
+    # --- Fact→Entity Linking ---
+    # When a fact's entity_name resolves to no existing entity (not in the batch,
+    # not found by name/alias/slug), auto-create a placeholder Entity so the fact is
+    # never orphaned. Disable to fall back to recover-or-drop (still counted in metrics).
+    link_autocreate_stub_entities: bool = True
+
     # --- User Correction Handling (detect "actually...", "no I meant...") ---
     correction_detection_enabled: bool = True  # Implicit corrections caught at extraction time
     correction_model: str = "lmstudio:google/gemma-3-4b"
@@ -367,6 +373,7 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "job_entity_linking_interval": settings.job_entity_linking_interval,
 
         # Fact verification pipeline
+        "link_autocreate_stub_entities": settings.link_autocreate_stub_entities,
         "contradiction_detection_enabled": settings.contradiction_detection_enabled,
         "correction_detection_enabled": settings.correction_detection_enabled,
         "semantic_duplicate_threshold": settings.semantic_duplicate_threshold,

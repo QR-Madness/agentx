@@ -34,6 +34,9 @@ from agentx_ai.kit.agent_memory.consolidation import jobs as consolidation_jobs_
 from agentx_ai.kit.agent_memory.consolidation.jobs import (
     _get_recent_facts,
     _handle_contradiction,
+    _make_subject_router,
+    _resolve_fact_entity_ids,
+    _resolve_subject_channel,
     apply_memory_decay,
     consolidate_episodic_to_semantic,
     detect_patterns,
@@ -2026,6 +2029,147 @@ class ConsolidationContradictionHandlerTest(TestCase):
 
         self.assertEqual(result, "flagged")
         self.assertTrue(fact_dict.get("flagged_for_review"))
+
+
+class SubjectRoutingTest(TestCase):
+    """Subject → channel routing so user facts and agent self-knowledge stay apart."""
+
+    def test_resolve_subject_channel(self) -> None:
+        # agent-subject + an agent present → the agent's self channel
+        self.assertEqual(
+            _resolve_subject_channel("agent", "_default", "bold-cosmic-falcon"),
+            "_self_bold-cosmic-falcon",
+        )
+        # user / third_party → the active channel
+        self.assertEqual(_resolve_subject_channel("user", "proj", "agent-x"), "proj")
+        self.assertEqual(_resolve_subject_channel("third_party", "proj", "agent-x"), "proj")
+        # agent-subject but no agent on the conversation → fall back to active channel
+        self.assertEqual(_resolve_subject_channel("agent", "proj", None), "proj")
+
+    def test_router_routes_and_caches(self) -> None:
+        active_mem = MagicMock(name="active")
+        cache = {"u1:proj": active_mem}
+        with patch(
+            'agentx_ai.kit.agent_memory.memory.interface.AgentMemory',
+        ) as AM:
+            self_mem = MagicMock(name="self")
+            AM.return_value = self_mem
+            route = _make_subject_router(cache, "u1", "proj", "bold-cosmic-falcon")
+
+            # user-subject → existing active-channel memory, no new construction
+            mem, channel = route("user")
+            self.assertIs(mem, active_mem)
+            self.assertEqual(channel, "proj")
+            AM.assert_not_called()
+
+            # agent-subject → lazily built self-channel memory, then cached
+            mem, channel = route("agent")
+            self.assertIs(mem, self_mem)
+            self.assertEqual(channel, "_self_bold-cosmic-falcon")
+            self.assertIn("u1:_self_bold-cosmic-falcon", cache)
+            route("agent")  # second call reuses cache
+            AM.assert_called_once()
+
+    def test_normalize_subject_defaults_and_validates(self) -> None:
+        facts = [
+            {"claim": "User works at Acme"},                 # missing → default
+            {"claim": "Agent reasons well", "subject": "agent"},
+            {"claim": "X", "subject": "BOGUS"},              # invalid → default
+            {"claim": "Y", "subject": "Third_Party"},        # case-insensitive
+        ]
+        out = ExtractionService._normalize_subject(facts, default="user")
+        self.assertEqual([f["subject"] for f in out],
+                         ["user", "agent", "user", "third_party"])
+
+
+class FactEntityLinkResolutionTest(TestCase):
+    """Unit tests for _resolve_fact_entity_ids — the bulletproof fact→entity linker.
+
+    Pins the three-tier resolution (batch map → store lookup → stub) plus dedup,
+    blank-skipping, and the autocreate-disabled fallback. All mocked; no Docker.
+    """
+
+    @staticmethod
+    def _metrics() -> ConsolidationMetrics:
+        return ConsolidationMetrics(job_id="t")
+
+    def test_batch_map_fast_path(self) -> None:
+        """A name already in entity_map resolves without touching the store."""
+        memory = MagicMock()
+        metrics = self._metrics()
+        ids = _resolve_fact_entity_ids(
+            memory, MagicMock(), ["Python"], {"python": "ent-py"},
+            "user-1", "_default", "conv-1", metrics,
+        )
+        self.assertEqual(ids, ["ent-py"])
+        memory.semantic.find_entity_by_name_or_alias.assert_not_called()
+        self.assertEqual(metrics.fact_entity_links_recovered, 0)
+        self.assertEqual(metrics.fact_entity_stubs_created, 0)
+
+    def test_store_lookup_recovers_link(self) -> None:
+        """A name missing from the batch map is recovered via name/alias/slug lookup."""
+        memory = MagicMock()
+        memory.semantic.find_entity_by_name_or_alias.return_value = {"id": "ent-claude"}
+        metrics = self._metrics()
+        entity_map: dict = {}
+        ids = _resolve_fact_entity_ids(
+            memory, MagicMock(), ["Claude"], entity_map,
+            "user-1", "_default", "conv-1", metrics,
+        )
+        self.assertEqual(ids, ["ent-claude"])
+        self.assertEqual(metrics.fact_entity_links_recovered, 1)
+        self.assertEqual(metrics.fact_entity_stubs_created, 0)
+        self.assertEqual(entity_map["claude"], "ent-claude")  # cached for the batch
+
+    def test_autocreate_stub_when_unresolved(self) -> None:
+        """An unresolvable name gets a stub entity so the fact is never orphaned."""
+        memory = MagicMock()
+        memory.semantic.find_entity_by_name_or_alias.return_value = None
+        metrics = self._metrics()
+        entity_map: dict = {}
+        with patch.object(
+            consolidation_jobs_module, '_batch_store_entities', return_value=1,
+        ) as bse:
+            ids = _resolve_fact_entity_ids(
+                memory, MagicMock(), ["NewThing"], entity_map,
+                "user-1", "_default", "conv-1", metrics,
+            )
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(metrics.fact_entity_stubs_created, 1)
+        bse.assert_called_once()
+        # The stub was persisted with the verbatim name and cached lowercased.
+        stub_entity = bse.call_args.args[1][0]
+        self.assertEqual(stub_entity.name, "NewThing")
+        self.assertEqual(stub_entity.type, "Concept")
+        self.assertEqual(entity_map["newthing"], ids[0])
+
+    def test_stub_disabled_drops_with_no_link(self) -> None:
+        """With autocreate off, an unresolved name is dropped (no stub, no link)."""
+        memory = MagicMock()
+        memory.semantic.find_entity_by_name_or_alias.return_value = None
+        metrics = self._metrics()
+        with patch.object(consolidation_jobs_module, '_batch_store_entities') as bse, \
+             patch.object(
+                 consolidation_jobs_module, 'get_settings',
+                 return_value=MagicMock(link_autocreate_stub_entities=False),
+             ):
+            ids = _resolve_fact_entity_ids(
+                memory, MagicMock(), ["Ghost"], {},
+                "user-1", "_default", "conv-1", metrics,
+            )
+        self.assertEqual(ids, [])
+        bse.assert_not_called()
+        self.assertEqual(metrics.fact_entity_stubs_created, 0)
+
+    def test_dedup_order_and_blank_skip(self) -> None:
+        """Blank names are skipped; ids are deduped while preserving first-seen order."""
+        memory = MagicMock()
+        metrics = self._metrics()
+        ids = _resolve_fact_entity_ids(
+            memory, MagicMock(), ["A", "  ", "B", "a"], {"a": "ent-a", "b": "ent-b"},
+            "user-1", "_default", "conv-1", metrics,
+        )
+        self.assertEqual(ids, ["ent-a", "ent-b"])
 
 
 class ConsolidationMetricsTest(TestCase):

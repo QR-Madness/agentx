@@ -328,7 +328,32 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 
 > Items to consider after prototype is complete
 
-- [ ] Add relations for entities to other entities in the memory panel - consider using an LLM request to map the relation properly and identify potential other relations.
+- [x] **Bulletproof fact→entity linking** — root cause of facts not showing under their entities was a
+      silent name-resolution gap in consolidation: facts linked entities only via an exact batch-map
+      lookup, dropping cross-batch / alias / variant names with no log. Fixed with
+      `_resolve_fact_entity_ids` (batch map → `find_entity_by_name_or_alias` → auto-create stub entity)
+      wired into both the user and self fact-storage paths, plus `fact_entity_links_recovered` /
+      `fact_entity_stubs_created` metrics and a `link_autocreate_stub_entities` flag. (The "use an LLM to
+      map relations" idea was the hacky path — the deterministic resolver already existed.)
+- [x] **Subject-aware attribution** — consolidator was mixing the user up with the agent because it
+      mapped turn-role → subject rigidly (assistant self-extractor absorbed relayed user facts; user
+      extractor force-prefixed every claim with "User"). Now both extractors emit a per-fact
+      `subject` (user|agent|third_party) and consolidation routes each fact to the matching channel
+      (agent → `_self_{agent_id}`, user/third-party → active channel), so either turn role can
+      contribute correctly-attributed facts.
+- [ ] **Backfill orphaned facts** — one-shot repair for facts already stored with empty `entity_ids`
+      (pre-fix data): re-link via name/alias/slug (optional embedding fallback) and create the missing
+      `(Fact)-[:ABOUT]->(Entity)` edges. Surface as `task memory:relink` or an admin endpoint. (Note:
+      a `job_entity_linking_interval` setting already exists — check for an existing entity-linking job
+      to extend.)
+- [ ] **Memory panel: Fact→Entity display** — `client/src/components/memory/FactDetail.tsx` ignores
+      `entity_ids` entirely (Entity→Fact works in EntityDetail; the reverse is missing). Have
+      `/api/memory/facts` return `{id,name,type}` for ABOUT'd entities (query already does
+      `OPTIONAL MATCH (f)-[:ABOUT]->(e)`) and add a clickable "Mentioned entities" section.
+- [ ] **Entity-relationship type consistency** — consolidation stores all entity↔entity relations as
+      `[:RELATES_TO {type}]` (jobs.py `_batch_store_relationships`) while `queries/neo4j_schemas.cypher`
+      documents specific types (`RELATED_TO`, `WORKS_FOR`, …). Pick one model and align graph
+      traversals/queries.
 - [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
 - [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)

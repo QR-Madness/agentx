@@ -59,6 +59,13 @@ class ConsolidationMetrics:
     relationships_stored: int = 0
     storage_errors: int = 0
 
+    # Fact→entity linking (bulletproofing the ABOUT edge)
+    # recovered: a fact entity_name not in the batch map but resolved against the
+    #            store by name/alias/slug. stubs_created: a name that resolved to
+    #            nothing, so a placeholder Entity was created to anchor the link.
+    fact_entity_links_recovered: int = 0
+    fact_entity_stubs_created: int = 0
+
     # Assistant self-extraction
     assistant_turns_total: int = 0
     assistant_turns_relevant: int = 0
@@ -134,6 +141,7 @@ class ConsolidationMetrics:
             f"llm_calls={self.total_llm_calls}, tokens={self.total_tokens_used}, "
             f"extracted=[{self.entities_extracted}e, {self.facts_extracted}f, {self.relationships_extracted}r], "
             f"stored=[{self.entities_stored}e, {self.facts_stored}f, {self.relationships_stored}r], "
+            f"fact_links=[recovered={self.fact_entity_links_recovered}, stubs={self.fact_entity_stubs_created}], "
             f"latency={self.total_latency_ms}ms"
         )
 

@@ -649,6 +649,132 @@ def _batch_store_relationships(
     return len(valid_rels)
 
 
+def _resolve_subject_channel(
+    subject: Optional[str], active_channel: str, agent_id: Optional[str],
+) -> str:
+    """Map a fact's subject to the channel it belongs in.
+
+    Facts are extracted from both user and assistant turns; routing by *subject*
+    (not turn role) keeps the user's memory and the agent's self-knowledge from
+    bleeding into each other:
+      - ``agent`` (and the conversation has an agent) → ``_self_{agent_id}``
+      - ``user`` / ``third_party`` / agent-without-an-agent → the active channel
+    """
+    if subject == "agent" and agent_id:
+        return f"_self_{agent_id}"
+    return active_channel
+
+
+def _get_or_create_memory(
+    memory_cache: Dict[str, "AgentMemory"],
+    user_id: str,
+    channel: str,
+    agent_id: Optional[str] = None,
+) -> "AgentMemory":
+    """Return a cached AgentMemory for (user_id, channel), creating it if needed."""
+    cache_key = f"{user_id}:{channel}"
+    mem = memory_cache.get(cache_key)
+    if mem is None:
+        from ..memory.interface import AgentMemory as _AM
+        mem = _AM(user_id=user_id, channel=channel, agent_id=agent_id)
+        memory_cache[cache_key] = mem
+    return mem
+
+
+def _make_subject_router(
+    memory_cache: Dict[str, "AgentMemory"],
+    user_id: str,
+    active_channel: str,
+    agent_id: Optional[str],
+) -> Callable[[Optional[str]], Tuple["AgentMemory", str]]:
+    """Build a ``route(subject) -> (memory, channel)`` closure for fact storage.
+
+    The active-channel memory is expected to already be cached; cross-subject
+    targets (e.g. the agent self-channel) are built lazily on first use.
+    """
+    def route(subject: Optional[str]) -> Tuple["AgentMemory", str]:
+        channel = _resolve_subject_channel(subject, active_channel, agent_id)
+        return _get_or_create_memory(memory_cache, user_id, channel, agent_id), channel
+
+    return route
+
+
+def _resolve_fact_entity_ids(
+    memory: "AgentMemory",
+    session,
+    entity_names: List[str],
+    entity_map: Dict[str, str],
+    user_id: str,
+    channel: str,
+    conv_id: str,
+    metrics: ConsolidationMetrics,
+) -> List[str]:
+    """Resolve a fact's ``entity_names`` to entity ids, bulletproofing the ABOUT link.
+
+    A fact's entity_names previously linked only when the exact lowercased name was in
+    the batch-local ``entity_map`` — so cross-batch entities, alias/variant forms, and
+    names the LLM mentioned but didn't list as entities were silently dropped, leaving
+    facts orphaned (no ``(Fact)-[:ABOUT]->(Entity)`` edge). This resolves each name via:
+
+      1. ``entity_map``                              — fast path (this batch)
+      2. ``find_entity_by_name_or_alias``            — name / alias / slug, across the store
+      3. auto-create a stub :Entity (if enabled)     — so the link is never lost
+
+    Every resolution is cached back into ``entity_map``. Returns a deduped,
+    order-preserving list of entity ids. Records recovery + stub metrics.
+    """
+    settings = get_settings()
+    ids: List[str] = []
+    seen: set = set()
+
+    for raw in entity_names or []:
+        name = (raw or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+
+        # 1) Batch fast path
+        eid = entity_map.get(key)
+
+        # 2) Store lookup (cross-batch / alias / slug)
+        if not eid:
+            try:
+                resolved = memory.semantic.find_entity_by_name_or_alias(
+                    name=name, user_id=user_id, channel=channel,
+                )
+            except Exception as e:  # noqa: BLE001 — never let linking abort fact storage
+                logger.debug(f"Entity lookup failed for '{name}': {e}")
+                resolved = None
+            if resolved:
+                eid = resolved["id"]
+                entity_map[key] = eid
+                metrics.fact_entity_links_recovered += 1
+
+        # 3) Auto-create a stub so the fact is never orphaned
+        if not eid and settings.link_autocreate_stub_entities:
+            try:
+                stub = Entity(
+                    id=str(uuid4()),
+                    name=name,
+                    type="Concept",  # unknown type; enriched on a later real mention
+                    salience=0.3,
+                )
+                # Persist immediately so the subsequent learn_fact MATCH finds it.
+                _batch_store_entities(session, [stub], conv_id, user_id, channel)
+                eid = stub.id
+                entity_map[key] = eid
+                metrics.fact_entity_stubs_created += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Stub entity creation failed for '{name}': {e}")
+                eid = None
+
+        if eid and eid not in seen:
+            seen.add(eid)
+            ids.append(eid)
+
+    return ids
+
+
 # Candidate name regex: capitalized words (incl. inner caps like PostgreSQL),
 # acronyms (2-6 caps), and quoted spans. Cheap pre-pass; the LLM normalizes.
 _NAME_CANDIDATE_RE = re.compile(
@@ -820,6 +946,7 @@ def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
         RETURN c.id AS conversation_id,
                coalesce(u.id, 'default') AS user_id,
                coalesce(c.channel, '_default') AS channel,
+               c.agent_id AS agent_id,
                [t IN turns | {content: t.content}] AS turns
     """)
 
@@ -929,17 +1056,26 @@ def _store_conversation_entities(
 
 
 async def _store_facts_with_verification(
-    session, memory, extraction_service, extracted_facts, entity_map,
-    user_id, channel, conv_id, metrics, errors,
+    session, route, extraction_service, extracted_facts, entity_map,
+    user_id, active_channel, conv_id, metrics, errors,
 ) -> _FactStoreResult:
     """Run the four-layer fact pipeline (LLM-refine → hash gate → semantic gate
     → contradiction candidates → temporal/LLM adjudication → store) over the
-    extracted facts. Returns the stored fact ids plus per-conversation counters."""
+    extracted facts. Returns the stored fact ids plus per-conversation counters.
+
+    ``route(subject) -> (memory, channel)`` selects where each fact is stored: a
+    fact's subject (user/agent/third_party) — not the turn it came from — decides
+    its channel, so user facts and agent self-knowledge stay separated. All
+    channel-scoped checks (dedup, contradiction, entity linking) run against the
+    fact's resolved target channel."""
     res = _FactStoreResult()
 
     # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
     # Collect fact IDs for batch DERIVED_FROM relationship creation
     embedder = get_embedder()
+    # Per-channel entity maps so a routed fact never links to an entity in another
+    # channel. The active channel reuses the conversation's prebuilt map.
+    entity_maps: Dict[str, Dict[str, str]] = {active_channel: entity_map}
 
     for fact_dict in extracted_facts:
         try:
@@ -949,25 +1085,29 @@ async def _store_facts_with_verification(
                 logger.warning(f"Skipping fact with missing claim: {fact_dict}")
                 continue
 
+            # Route by subject: user/third_party → active channel, agent → self.
+            fact_memory, fact_channel = route(fact_dict.get("subject", "user"))
+            fact_entity_map = entity_maps.setdefault(fact_channel, {})
+
             # === Layer 0: LLM-supplied refinement ===
             # If extraction marked this claim as refining a known fact, supersede
             # directly via the existing PREFER_NEW path and skip the rest of the
             # pipeline. Validates the target fact is in scope before acting.
             refines_id = fact_dict.get("refines_fact_id")
             if refines_id:
-                target = memory.semantic.get_fact_by_id(refines_id, user_id)
+                target = fact_memory.semantic.get_fact_by_id(refines_id, user_id)
                 target_channel = (target or {}).get("channel")
-                in_scope = bool(target) and target_channel in (channel, "_global")
+                in_scope = bool(target) and target_channel in (fact_channel, "_global")
                 if in_scope:
                     _handle_contradiction(
-                        memory, session, fact_dict,
+                        fact_memory, session, fact_dict,
                         type('Result', (), {
                             'has_contradiction': True,
                             'contradicting_fact_id': refines_id,
                             'resolution': 'prefer_new',
                             'reason': 'llm_refinement',
                         })(),
-                        user_id, channel,
+                        user_id, fact_channel,
                     )
                     res.fact_count += 1
                     metrics.facts_stored += 1
@@ -983,7 +1123,7 @@ async def _store_facts_with_verification(
             # === Layer 1: Fast Gate (no LLM) ===
 
             # 1a. Exact hash duplicate check
-            if _is_duplicate_fact(session, claim, user_id, channel):
+            if _is_duplicate_fact(session, claim, user_id, fact_channel):
                 res.skipped_duplicates += 1
                 metrics.duplicates_skipped += 1
                 logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
@@ -994,7 +1134,7 @@ async def _store_facts_with_verification(
 
             # 1b. Semantic duplicate check (cosine > threshold)
             if _is_semantic_duplicate(
-                session, claim_embedding, user_id, channel,
+                session, claim_embedding, user_id, fact_channel,
                 threshold=settings.semantic_duplicate_threshold,
             ):
                 res.skipped_duplicates += 1
@@ -1008,7 +1148,7 @@ async def _store_facts_with_verification(
                 entity_names = fact_dict.get("entity_names", [])
                 candidates = _get_contradiction_candidates(
                     session, claim, claim_embedding, entity_names,
-                    user_id, channel,
+                    user_id, fact_channel,
                     similarity_threshold=settings.contradiction_similarity_threshold,
                     max_candidates=settings.contradiction_max_candidates,
                 )
@@ -1022,14 +1162,14 @@ async def _store_facts_with_verification(
                         if _is_temporal_progression(fact_dict, candidate):
                             # Auto-supersede without LLM call
                             _handle_contradiction(
-                                memory, session, fact_dict,
+                                fact_memory, session, fact_dict,
                                 type('Result', (), {
                                     'has_contradiction': True,
                                     'contradicting_fact_id': candidate['id'],
                                     'resolution': 'prefer_new',
                                     'reason': 'temporal_progression',
                                 })(),
-                                user_id, channel,
+                                user_id, fact_channel,
                             )
                             res.contradictions_found += 1
                             metrics.contradictions_found += 1
@@ -1055,7 +1195,7 @@ async def _store_facts_with_verification(
                         res.contradictions_found += 1
                         metrics.contradictions_found += 1
                         action = _handle_contradiction(
-                            memory, session, fact_dict, contradiction, user_id, channel
+                            fact_memory, session, fact_dict, contradiction, user_id, fact_channel
                         )
                         if action == "skipped":
                             res.skipped_contradictions += 1
@@ -1066,14 +1206,13 @@ async def _store_facts_with_verification(
                             metrics.contradictions_resolved += 1
                             continue
 
-            # Link fact to mentioned entities (case-insensitive lookup)
-            entity_ids = [
-                entity_map[name.lower()]
-                for name in fact_dict.get("entity_names", [])
-                if name.lower() in entity_map
-            ]
+            # Link fact to mentioned entities — batch map → store lookup → stub.
+            entity_ids = _resolve_fact_entity_ids(
+                fact_memory, session, fact_dict.get("entity_names", []),
+                fact_entity_map, user_id, fact_channel, conv_id, metrics,
+            )
 
-            fact = memory.learn_fact(
+            fact = fact_memory.learn_fact(
                 claim=claim,
                 source="extraction",
                 confidence=fact_dict.get("confidence", 0.7),
@@ -1195,9 +1334,13 @@ async def _consolidate_user_conversation(
         user_id, channel, conv_id, metrics, errors,
     )
 
-    # Store facts via AgentMemory interface (three-layer verification pipeline)
+    # Store facts via AgentMemory interface (three-layer verification pipeline).
+    # Route each fact by subject: agent-subject facts land in the agent's self
+    # channel (when the conversation has an agent), the rest in the active channel.
+    agent_id = record.get("agent_id")
+    route = _make_subject_router(memory_cache, user_id, channel, agent_id)
     fact_result = await _store_facts_with_verification(
-        session, memory, extraction_service, extracted.facts, entity_map,
+        session, route, extraction_service, extracted.facts, entity_map,
         user_id, channel, conv_id, metrics, errors,
     )
 
@@ -1246,6 +1389,7 @@ async def _consolidate_assistant_conversation(
     user_id = record["user_id"]
     agent_id = record["agent_id"]
     self_channel = f"_self_{agent_id}"
+    active_channel = record.get("channel", "_default")  # the user's channel
     a_turns = record["turns"]
 
     # Get or create memory for this agent's self-channel
@@ -1256,6 +1400,10 @@ async def _consolidate_assistant_conversation(
             user_id=user_id, channel=self_channel, agent_id=agent_id,
         )
     memory = self_memory_cache[cache_key]
+
+    # Route by subject: agent-subject facts stay in the self channel; user/third-party
+    # facts the agent stated or inferred go to the user's active channel.
+    route = _make_subject_router(self_memory_cache, user_id, active_channel, agent_id)
 
     self_extraction_failed = False
 
@@ -1320,22 +1468,28 @@ async def _consolidate_assistant_conversation(
                 logger.warning(f"Self-extraction entity storage failed: {e}")
                 errors.append(f"self_entity:{conv_id}:{e}")
 
-        # Store facts with self_extraction source
+        # Store facts with self_extraction source. Per-channel entity maps keep a
+        # routed user-subject fact from linking to a self-channel entity.
+        entity_maps: Dict[str, Dict[str, str]] = {self_channel: entity_map}
         for fact_dict in result.facts:
             claim = fact_dict.get("claim")
             if not claim:
                 continue
-            if _is_duplicate_fact(session, claim, user_id, self_channel):
+
+            # Route by subject (default "agent" for the assistant extractor).
+            fact_memory, fact_channel = route(fact_dict.get("subject", "agent"))
+            fact_entity_map = entity_maps.setdefault(fact_channel, {})
+
+            if _is_duplicate_fact(session, claim, user_id, fact_channel):
                 continue
 
-            entity_ids = [
-                entity_map[n.lower()]
-                for n in fact_dict.get("entity_names", [])
-                if n.lower() in entity_map
-            ]
+            entity_ids = _resolve_fact_entity_ids(
+                fact_memory, session, fact_dict.get("entity_names", []),
+                fact_entity_map, user_id, fact_channel, conv_id, metrics,
+            )
 
             try:
-                memory.learn_fact(
+                fact_memory.learn_fact(
                     claim=claim,
                     source="self_extraction",
                     confidence=fact_dict.get("confidence", 0.7),
@@ -1447,6 +1601,7 @@ async def consolidate_episodic_to_semantic(
             LIMIT 10
             RETURN c.id AS conversation_id,
                    coalesce(u.id, 'default') AS user_id,
+                   coalesce(c.channel, '_default') AS channel,
                    c.agent_id AS agent_id,
                    [t IN turns | {content: t.content, id: t.id}] AS turns
         """)

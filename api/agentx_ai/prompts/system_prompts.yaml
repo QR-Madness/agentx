@@ -124,11 +124,21 @@ extraction:
 
     STEP 2 — EXTRACTION (only if relevant)
 
+    SUBJECT — who each fact is about
+    This is the USER's message. Resolve pronouns: "I"/"me"/"my" = the user;
+    "you"/"your" = the agent (the AI you are part of). Tag every fact with "subject":
+    - "user":        about the speaker (the user). The common case.
+    - "agent":       about the AI assistant ("you're great at SQL" → subject="agent").
+    - "third_party": about someone/something else named (a colleague, company, tool).
+    Only emit a fact if it carries durable information; do not invent an agent fact
+    just because the user paid a compliment.
+
     CLAIM CONVENTION
-    Every fact claim MUST start with "User " followed by a present-tense verb.
-    Use third person; never echo "I"/"my" into the stored claim.
-    - "I work at Anthropic"            → claim="User works at Anthropic"
-    - "My favorite language is Python" → claim="User prefers Python"
+    Write each claim in the third person, present tense, starting with the subject.
+    Never echo "I"/"my"/"you" into the stored claim.
+    - subject="user":        "User <verb> ..."  ("I work at Anthropic" → "User works at Anthropic")
+    - subject="agent":       "Agent <verb> ..." ("you keep forgetting my name" → "Agent forgets the user's name")
+    - subject="third_party": "<Name> <verb> ..." ("my manager Sarah leads payments" → "Sarah leads payments")
 
     NEGATION
     Negation must be explicit in the claim — never emit the positive form for a denial.
@@ -193,7 +203,8 @@ extraction:
       ],
       "facts": [
         {{
-          "claim": "User <verb> ...",
+          "claim": "<Subject> <verb> ...",
+          "subject": "user|agent|third_party",
           "certainty": "explicit|implied|inferred|uncertain",
           "temporal_context": "current|past|future|null (JSON literal, not the string)",
           "entity_names": ["CanonicalName"],
@@ -221,8 +232,23 @@ extraction:
         {{"name": "San Francisco", "type": "Location", "confidence": 0.9}}
       ],
       "facts": [
-        {{"claim": "User works at Anthropic", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Anthropic"]}},
-        {{"claim": "User works in San Francisco", "certainty": "implied", "temporal_context": "current", "entity_names": ["San Francisco"]}}
+        {{"claim": "User works at Anthropic", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Anthropic"]}},
+        {{"claim": "User works in San Francisco", "subject": "user", "certainty": "implied", "temporal_context": "current", "entity_names": ["San Francisco"]}}
+      ],
+      "relationships": []
+    }}
+
+    Example 1b — subject is the agent, not the user:
+    TEXT: "You always forget that I prefer metric units."
+    KNOWN ENTITIES: (none)
+    KNOWN FACTS: (none)
+    OUTPUT:
+    {{
+      "is_relevant": true,
+      "entities": [],
+      "facts": [
+        {{"claim": "Agent forgets that the user prefers metric units", "subject": "agent", "certainty": "explicit", "temporal_context": "current", "entity_names": []}},
+        {{"claim": "User prefers metric units", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": []}}
       ],
       "relationships": []
     }}
@@ -240,7 +266,7 @@ extraction:
         {{"name": "Python", "type": "Technology", "existing_entity_id": "ent-py-1", "confidence": 0.95}}
       ],
       "facts": [
-        {{"claim": "User uses Python 3.12 for async work", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Python"], "refines_fact_id": "fact-uses-py"}}
+        {{"claim": "User uses Python 3.12 for async work", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Python"], "refines_fact_id": "fact-uses-py"}}
       ],
       "relationships": []
     }}
@@ -331,7 +357,10 @@ extraction:
     direct quotation without analysis.
 
     STEP 2 — EXTRACTION (only if relevant)
-    Extract ONLY the agent's own contributions — reasoning it performed, not data it relayed.
+    Primarily extract the agent's own contributions — reasoning it performed. You MAY
+    also capture a durable fact about the user or a third party that you stated or
+    inferred here, but tag it with the correct subject so it is stored as theirs, not
+    the agent's (see SUBJECT). Do not re-emit raw data you merely relayed.
 
     Use this operational test for each fact:
     - CONCLUSION ("definitive"): would I confidently restate this next session?
@@ -345,15 +374,24 @@ extraction:
     - INSIGHT: a novel connection between previously separate things.
 
     SKIP:
-    - Facts the user stated (extracted from user turns, not here).
     - Common knowledge or generic definitions.
     - Raw tool output relayed without analysis.
     - Pleasantries / meta-conversation.
+    - A user fact you merely echoed verbatim with no added inference (it is already
+      captured from the user's own turn).
+
+    SUBJECT — who each fact is about
+    This is the AGENT's (your) response. Resolve pronouns: "I"/"me"/"my" = the agent;
+    "you"/"your" = the user. Tag every fact with "subject":
+    - "agent":       your own reasoning, conclusions, decisions, plans. The common case.
+    - "user":        a fact about the user you concluded or inferred ("you're clearly on
+                     Python 3.12" → subject="user"). Stored in the user's memory, not yours.
+    - "third_party": about a named external entity.
 
     CLAIM CONVENTION
-    Each fact is a single declarative statement of what the agent concluded or observed.
-    Keep it self-contained: a reader six months later should understand the claim
-    without the original conversation.
+    Each fact is a single declarative statement, self-contained (a reader six months
+    later should understand it without the original conversation), written in the third
+    person and starting with the subject ("Agent ...", "User ...", "<Name> ...").
 
     ENTITY REUSE
     If a referent matches a KNOWN ENTITY, set existing_entity_id to that entity's id.
@@ -383,7 +421,8 @@ extraction:
       ],
       "facts": [
         {{
-          "claim": "what the agent concluded/observed",
+          "claim": "<Subject> <verb> ... (what was concluded/observed)",
+          "subject": "agent|user|third_party",
           "certainty": "definitive|analytical|speculative",
           "entity_names": ["CanonicalName"],
           "refines_fact_id": "uuid-if-this-refines-a-known-fact (omit otherwise)"
@@ -412,8 +451,8 @@ extraction:
         {{"name": "Cache thrash under burst writes", "type": "Pattern", "description": "Latency spike pattern observed in price service traces", "confidence": 0.7}}
       ],
       "facts": [
-        {{"claim": "Latency spikes on the price service correlate with cache evictions", "certainty": "analytical", "entity_names": ["Price service"]}},
-        {{"claim": "Raising LRU size or sharding by region likely mitigates the price-service cache thrash", "certainty": "speculative", "entity_names": ["Price service", "Cache thrash under burst writes"]}}
+        {{"claim": "Latency spikes on the price service correlate with cache evictions", "subject": "agent", "certainty": "analytical", "entity_names": ["Price service"]}},
+        {{"claim": "Raising LRU size or sharding by region likely mitigates the price-service cache thrash", "subject": "agent", "certainty": "speculative", "entity_names": ["Price service", "Cache thrash under burst writes"]}}
       ],
       "relationships": [
         {{"source": "Cache thrash under burst writes", "target": "Price service", "type": "applies_to", "confidence": 0.7}}
