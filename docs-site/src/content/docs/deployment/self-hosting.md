@@ -65,6 +65,24 @@ With `AGENTX_AUTH_ENABLED=true` (the default), set the password once on first ru
 docker compose exec api agentx setup-auth
 ```
 
+## Get the desktop client
+
+The Tauri **desktop client** connects to the server you just started — point it at
+your server's URL on first run.
+
+- **Download the latest client:** [github.com/QR-Madness/agentx/releases/latest](https://github.com/QR-Madness/agentx/releases/latest)
+- **All releases / a specific version:** [github.com/QR-Madness/agentx/releases](https://github.com/QR-Madness/agentx/releases)
+
+Each client release lists the supported **API protocol version** and ships SHA-256
+checksums for every installer. Platform coverage today is **Windows**
+(`.exe` / `.msi`) and **Linux** (`.deb` / `.AppImage` / `.rpm`); a macOS build is
+not yet in the release matrix.
+
+!!! note "Protocol matching"
+    The client must speak the same API **protocol version** as your server (reported
+    at `/api/health`). If they differ, the client shows a version-mismatch screen —
+    grab the client release that matches your server's protocol.
+
 ## The `agentx` CLI
 
 All day-2 operations run through the in-image CLI (versioned with the image, so
