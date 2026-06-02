@@ -29,7 +29,7 @@ import json
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Callable, Optional
+from typing import Any, AsyncGenerator, Callable, Optional, cast
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ class ChatRunStore:
 
     def get_state(self, run_id: str) -> Optional[dict]:
         try:
-            raw = _redis().hgetall(_state_key(run_id))
+            raw = cast(dict, _redis().hgetall(_state_key(run_id)))
             if not raw:
                 return None
             return {_decode(k): _decode(v) for k, v in raw.items()}
@@ -185,7 +185,8 @@ class ChatRunStore:
         try:
             client = _redis()
             index_key = _index_key(user_id)
-            run_ids = [_decode(rid) for rid in client.zrevrange(index_key, 0, max(0, limit - 1))]
+            run_ids = [_decode(rid)
+                       for rid in cast(list, client.zrevrange(index_key, 0, max(0, limit - 1)))]
         except Exception as e:
             logger.warning(f"chat_run list_runs failed: {e}")
             return []
@@ -320,10 +321,10 @@ async def tail_chat_run(run_id: str, last_id: str = "0") -> AsyncGenerator[str, 
     redis = _redis()
     while True:
         try:
-            entries = await loop.run_in_executor(
+            entries = cast(list, await loop.run_in_executor(
                 None,
                 lambda lid=last_id: redis.xread({key: lid}, block=TAIL_BLOCK_MS, count=100),
-            )
+            ))
         except Exception as e:
             logger.warning(f"tail_chat_run xread failed: {e}")
             yield f"event: error\ndata: {json.dumps({'error': 'stream read failed'})}\n\n"

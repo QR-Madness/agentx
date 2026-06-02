@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 # Default Profile
 # =============================================================================
 
-DEFAULT_PROFILE = AgentProfile(
+# pyright doesn't recognize pydantic v2 positional Field() defaults, so it treats
+# defaulted fields as required here — they're not. Suppress that false positive.
+DEFAULT_PROFILE = AgentProfile(  # pyright: ignore[reportCallIssue]
     id="default",
     name="AgentX",
     avatar="sparkles",

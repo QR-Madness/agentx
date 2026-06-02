@@ -3812,7 +3812,7 @@ def usage_metrics(request):
                 FROM conversation_logs
                 WHERE role = 'assistant'
                   AND timestamp >= NOW() - (:days || ' days')::interval
-            """), {"days": days}).mappings().first()
+            """), {"days": days}).mappings().first() or {}
 
             by_model_rows = session.execute(text(f"""
                 SELECT

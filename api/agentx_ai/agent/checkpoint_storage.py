@@ -77,7 +77,7 @@ def clear_checkpoints(conversation_id: str) -> int:
     """Delete all checkpoints for a conversation. Returns the prior count."""
     try:
         client = _redis()
-        count = int(client.llen(_key(conversation_id)) or 0)
+        count = int(cast(int, client.llen(_key(conversation_id))) or 0)
         client.delete(_key(conversation_id))
         return count
     except Exception as e:  # pragma: no cover — Redis offline

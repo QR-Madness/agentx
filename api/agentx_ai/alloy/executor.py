@@ -13,7 +13,10 @@ import asyncio
 import json
 import logging
 import time
-from typing import AsyncGenerator, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Optional
+
+if TYPE_CHECKING:
+    from ..providers.pricing import CostEstimate
 from uuid import uuid4
 
 from ..agent.profiles import get_profile_manager
@@ -273,7 +276,7 @@ class AlloyExecutor:
             })
 
         # ------- cost estimate (reuses the supervisor done-event path) -------
-        cost: Optional[dict] = None
+        cost: Optional["CostEstimate"] = None
         try:
             from ..providers.pricing import estimate_cost
             caps = provider.get_capabilities(model_id)

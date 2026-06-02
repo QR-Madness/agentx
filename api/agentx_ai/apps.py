@@ -7,8 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 class AgentxAiConfig(AppConfig):
-    default_auto_field: str = 'django.db.models.BigAutoField'
-    name: str = 'agentx_ai'
+    # Standard Django idiom; pyright sees the base as a cached_property descriptor.
+    default_auto_field = 'django.db.models.BigAutoField'  # pyright: ignore[reportAssignmentType]
+    name = 'agentx_ai'
 
     def ready(self) -> None:
         # Avoid starting the worker during management commands like migrate,

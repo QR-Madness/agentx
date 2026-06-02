@@ -11,6 +11,11 @@ This file contains comprehensive tests for the memory system fixes and features:
 - Agent integration tests (require Docker + configured provider)
 """
 
+# Test-only: suppress framework-typing false positives (mocked sessions, Optional
+# model getters, redis/pydantic typing). Test-harness artifacts, not real bugs;
+# source code stays strictly type-checked (baseline 0).
+# pyright: reportAttributeAccessIssue=false, reportCallIssue=false, reportOptionalSubscript=false, reportOptionalMemberAccess=false, reportArgumentType=false, reportFunctionMemberAccess=false
+
 import asyncio
 import inspect
 import json
