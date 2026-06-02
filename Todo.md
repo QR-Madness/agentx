@@ -134,6 +134,27 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - [ ] Per-workflow tool isolation (specialist inherits a *subset* of supervisor tools, not all)
 - [ ] Trace UI follow-up: persist per-tool timing (executor currently stores one rollup turn per delegation → restored runs show delegation-level metrics only); fold specialist tokens into the supervisor done-event cost rollup
 - [ ] Attribution follow-up: backfill historical NULL `agent_id` rows
+- [ ] **Attribution quality in compound messages** — the `debug_attribution` harness shows
+      that on a *mixed* user turn ("I prefer metric… also Mobius, cite sources… Jeff, be
+      concise"), a small extraction model (gpt-4o-mini) left the per-agent directives in the
+      active channel instead of homing them to each agent's `_self_`, and dropped some facts.
+      Clean single directives route correctly. Follow-up: tune the `combined_with_relevance`
+      prompt (or default to a stronger extraction model) so multi-directive turns split +
+      attribute reliably; add a golden-output regression once stabilized.
+- [ ] **Full-roster DI provider** — resolve user-named agents that aren't conversation
+      participants (today they demote to `third_party`); inject the full profile roster into
+      consolidation without coupling the kit to `ProfileManager`.
+- [ ] **Agent social/delegation graph** — mine cross-agent facts ("Atlas is faster at SQL
+      than Mobius") into a graph that informs Agent Alloy routing ("who's good at what").
+- [ ] **Per-agent identity seeding** — on profile create, seed the agent's `_self_` channel
+      with an identity fact/entity ("I am Mobius, id …") for stronger self-recall.
+- [ ] **Debug-harness extensions** — record/replay real conversations into scenarios;
+      assertion-based regression suite (golden attribution outcomes) runnable in CI when a
+      provider is configured; extract the shared cluster snapshot/wipe/restore util used by
+      `eval_consolidation` into a module both commands import.
+- [ ] **Memory capability registry** — a code-side `@capability(...)`/registry that
+      `architecture/memory-capabilities.md` is generated from or validated against, so the
+      manifest can't silently drift from code (the deferred half of the drift decision).
 
 ### 16.6 Ambassador Agent (dual-presentation layer) — deferred sub-phase
 

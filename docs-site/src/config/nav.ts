@@ -61,6 +61,7 @@ export const nav: NavEntry[] = [
       { label: 'Client Layer', slug: 'architecture/client' },
       { label: 'Database Stack', slug: 'architecture/databases' },
       { label: 'Memory Architecture', slug: 'architecture/memory' },
+      { label: 'Memory Capabilities', slug: 'architecture/memory-capabilities' },
     ],
   },
   {

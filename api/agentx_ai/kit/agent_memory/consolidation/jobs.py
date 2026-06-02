@@ -976,7 +976,9 @@ class _FactStoreResult:
     skipped_contradictions: int = 0
 
 
-def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
+def _fetch_pending_conversations(
+    session, only_conversation_id: Optional[str] = None,
+) -> Tuple[List[Any], int]:
     """Discover conversations with unconsolidated user turns.
 
     Returns ``(records, total_in_neo4j)`` where ``records`` are the
@@ -1003,6 +1005,7 @@ def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
         MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
         WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
           AND t.role = 'user'
+          AND ($only IS NULL OR c.id = $only)
         OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
         OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
         WITH c, u, t, resp
@@ -1015,7 +1018,7 @@ def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
                coalesce(c.channel, '_default') AS channel,
                c.agent_id AS agent_id,
                turns
-    """)
+    """, only=only_conversation_id)
 
     records = list(result)
     logger.info(f"Consolidation: {len(records)} conversations need processing")
@@ -1623,6 +1626,7 @@ async def _consolidate_assistant_conversation(
 
 async def consolidate_episodic_to_semantic(
     progress_callback: Optional[Callable] = None,
+    only_conversation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
@@ -1634,6 +1638,9 @@ async def consolidate_episodic_to_semantic(
 
     Args:
         progress_callback: Optional callback(stage, details) for progress reporting.
+        only_conversation_id: If set, restrict both phases to this one conversation
+            (the rest of the cluster is left untouched). Used by the
+            ``debug_attribution`` harness for a fast, non-destructive single-run.
 
     Returns:
         Dictionary with consolidation metrics
@@ -1655,7 +1662,7 @@ async def consolidate_episodic_to_semantic(
     # Phase 1: User-turn consolidation into semantic memory
     # =========================================================================
     with Neo4jConnection.session() as session:
-        records, total_in_neo4j = _fetch_pending_conversations(session)
+        records, total_in_neo4j = _fetch_pending_conversations(session, only_conversation_id)
 
         if progress_callback:
             progress_callback("discovery", {
@@ -1698,6 +1705,7 @@ async def consolidate_episodic_to_semantic(
             WHERE (c.self_consolidated IS NULL OR c.self_consolidated < datetime() - duration('PT15M'))
               AND t.role = 'assistant'
               AND c.agent_id IS NOT NULL
+              AND ($only IS NULL OR c.id = $only)
             OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
             WITH c, u, collect(t) AS turns
             ORDER BY c.started_at DESC
@@ -1707,7 +1715,7 @@ async def consolidate_episodic_to_semantic(
                    coalesce(c.channel, '_default') AS channel,
                    c.agent_id AS agent_id,
                    [t IN turns | {content: t.content, id: t.id, agent_id: t.agent_id}] AS turns
-        """)
+        """, only=only_conversation_id)
 
         assistant_records = list(assistant_result)
         logger.info(f"Self-extraction: {len(assistant_records)} conversations with assistant turns")

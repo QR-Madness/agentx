@@ -338,6 +338,14 @@ tasks:
     cmds:
       - uv run python api/manage.py backfill_agent_attribution --apply --verbose {{.CLI_ARGS}}
 
+  memory:debug-attribution:
+    desc: "Run a scripted multi-agent conversation through real consolidation + report per-channel attribution. Pass --scenario/--agents/--model via CLI_ARGS."
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py debug_attribution {{.CLI_ARGS}}
+
   db:migrate:
     desc: "Apply pending schema migrations (PostgreSQL + Neo4j)"
     deps: [db:up]

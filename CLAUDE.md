@@ -157,6 +157,8 @@ task api:spec:lint       # Lint OpenApi.yaml (full API spec) with Redocly
 
 The root `OpenApi.yaml` is the machine-readable mirror of the docs-site API reference (`docs-site/src/content/docs/api/endpoints.md`). When endpoints change, update both and run `task api:spec:lint`.
 
+When a **memory capability** is added or changed, update the capability manifest `docs-site/src/content/docs/architecture/memory-capabilities.md` (matrix row + section, and the interconnection diagram if a new edge appears) in the same change.
+
 ### Django Commands
 
 ```bash
@@ -326,6 +328,7 @@ Attribution is agent-specific, not a singleton "agent". `agent_id` is the durabl
 - **Per-agent routing**: `_resolve_subject_channel` honors a fact's `subject_agent_id` → `_self_{that_agent}` (a directive aimed at Mobius lands in Mobius's memory, not the producer's). The user-turn fetch resolves "you" per turn via the responding agent (`FOLLOWED_BY`); assistant self-extraction routes **each turn by its own producing `agent_id`** so multi-agent conversations don't funnel into the first agent's channel
 - **Rename-safety**: `ProfileManager.update_profile` propagates a display-name change to the Agent entity's `aliases` (`_propagate_agent_rename`); `dedupe_entities` never merges `Agent` nodes (keyed by `agent_id`, not name)
 - **Backfill**: `task memory:backfill-agent-attribution[:apply]` (mgmt command `backfill_agent_attribution`) deterministically rewrites legacy generic "Agent …" self-facts to the agent's name + adds the `[:ABOUT]` link (channel encodes which agent → no LLM needed)
+- **Debug harness**: `task memory:debug-attribution -- --scenario <directive|cross-agent|mixed> --agents "Mobius,Jeff"` (mgmt command `debug_attribution`) drives a scripted multi-agent conversation through *real* consolidation and reports per-channel attribution + `[:ABOUT]` links with ✅/❌ expectations. Non-destructive by default (throwaway user, scoped cleanup); `--isolate` snapshots+wipes+restores for a sterile read
 
 ## Project Status
 
