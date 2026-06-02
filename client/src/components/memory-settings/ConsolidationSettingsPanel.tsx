@@ -252,6 +252,12 @@ export function ConsolidationSettingsPanel({
               compact
             />
           </div>
+          <SliderField
+            label="Temperature"
+            value={localSettings.relevance_filter_temperature ?? 0.1}
+            min={0} max={1} step={0.05}
+            onChange={v => handleChange('relevance_filter_temperature', v)}
+          />
           <NumberField
             label="Max Tokens"
             value={localSettings.relevance_filter_max_tokens ?? 500}
@@ -379,6 +385,22 @@ export function ConsolidationSettingsPanel({
             format={pct}
             onChange={v => handleChange('entity_linking_similarity_threshold', v)}
           />
+          <ToggleField
+            label="Use LLM for ambiguous matches"
+            checked={localSettings.entity_linking_use_llm_disambiguation ?? false}
+            onChange={v => handleChange('entity_linking_use_llm_disambiguation', v)}
+          />
+          {localSettings.entity_linking_use_llm_disambiguation && (
+            <div className="setting-row">
+              <ModelSelector
+                label="Disambiguation Model"
+                value={localSettings.entity_linking_model || ''}
+                onChange={v => handleChange('entity_linking_model', v)}
+                showDefault={false}
+                compact
+              />
+            </div>
+          )}
         </div>
       </SettingsSection>
 
@@ -432,11 +454,61 @@ export function ConsolidationSettingsPanel({
             checked={localSettings.contradiction_detection_enabled ?? false}
             onChange={v => handleChange('contradiction_detection_enabled', v)}
           />
+          {localSettings.contradiction_detection_enabled && (
+            <>
+              <div className="setting-row">
+                <ModelSelector
+                  label="Contradiction Model"
+                  value={localSettings.contradiction_model || ''}
+                  onChange={v => handleChange('contradiction_model', v)}
+                  showDefault={false}
+                  compact
+                />
+              </div>
+              <SliderField
+                label="Temperature"
+                value={localSettings.contradiction_temperature ?? 0.2}
+                min={0} max={1} step={0.05}
+                onChange={v => handleChange('contradiction_temperature', v)}
+              />
+              <NumberField
+                label="Max Tokens"
+                value={localSettings.contradiction_max_tokens ?? 500}
+                min={100} max={4000} fallback={500}
+                onChange={v => handleChange('contradiction_max_tokens', v)}
+              />
+            </>
+          )}
           <ToggleField
             label="Enable user correction handling"
             checked={localSettings.correction_detection_enabled ?? false}
             onChange={v => handleChange('correction_detection_enabled', v)}
           />
+          {localSettings.correction_detection_enabled && (
+            <>
+              <div className="setting-row">
+                <ModelSelector
+                  label="Correction Model"
+                  value={localSettings.correction_model || ''}
+                  onChange={v => handleChange('correction_model', v)}
+                  showDefault={false}
+                  compact
+                />
+              </div>
+              <SliderField
+                label="Temperature"
+                value={localSettings.correction_temperature ?? 0.2}
+                min={0} max={1} step={0.05}
+                onChange={v => handleChange('correction_temperature', v)}
+              />
+              <NumberField
+                label="Max Tokens"
+                value={localSettings.correction_max_tokens ?? 500}
+                min={100} max={4000} fallback={500}
+                onChange={v => handleChange('correction_max_tokens', v)}
+              />
+            </>
+          )}
         </div>
       </div>
 

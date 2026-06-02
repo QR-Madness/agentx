@@ -983,6 +983,7 @@ export interface ConsolidationSettings {
   relevance_filter_enabled: boolean;
   relevance_filter_provider: string;
   relevance_filter_model: string;
+  relevance_filter_temperature: number;
   relevance_filter_max_tokens: number;
   relevance_filter_prompt: string;
 
@@ -1002,6 +1003,8 @@ export interface ConsolidationSettings {
   // Entity linking
   entity_linking_enabled: boolean;
   entity_linking_similarity_threshold: number;
+  entity_linking_model: string;
+  entity_linking_use_llm_disambiguation: boolean;
 
   // Quality thresholds
   fact_confidence_threshold: number;
@@ -1014,7 +1017,13 @@ export interface ConsolidationSettings {
 
   // Experimental
   contradiction_detection_enabled: boolean;
+  contradiction_model: string;
+  contradiction_temperature: number;
+  contradiction_max_tokens: number;
   correction_detection_enabled: boolean;
+  correction_model: string;
+  correction_temperature: number;
+  correction_max_tokens: number;
 
   // Read-only (from server)
   entity_types: string[];

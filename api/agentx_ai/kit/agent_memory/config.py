@@ -356,6 +356,8 @@ def get_consolidation_settings() -> Dict[str, Any]:
         # Relevance filter
         "relevance_filter_enabled": settings.relevance_filter_enabled,
         "relevance_filter_model": settings.relevance_filter_model,
+        "relevance_filter_temperature": settings.relevance_filter_temperature,
+        "relevance_filter_max_tokens": settings.relevance_filter_max_tokens,
         "relevance_filter_prompt": settings.relevance_filter_prompt,
 
         # Combined relevance + extraction (handles ~75% of consolidation traffic)
@@ -368,6 +370,8 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "entity_linking_similarity_threshold": settings.entity_linking_similarity_threshold,
         "entity_linking_max_facts": settings.entity_linking_max_facts,
         "entity_linking_max_ngram": settings.entity_linking_max_ngram,
+        "entity_linking_use_llm_disambiguation": settings.entity_linking_use_llm_disambiguation,
+        "entity_linking_model": settings.entity_linking_model,
 
         # Quality thresholds
         "fact_confidence_threshold": settings.fact_confidence_threshold,
@@ -381,7 +385,13 @@ def get_consolidation_settings() -> Dict[str, Any]:
         # Fact verification pipeline
         "link_autocreate_stub_entities": settings.link_autocreate_stub_entities,
         "contradiction_detection_enabled": settings.contradiction_detection_enabled,
+        "contradiction_model": settings.contradiction_model,
+        "contradiction_temperature": settings.contradiction_temperature,
+        "contradiction_max_tokens": settings.contradiction_max_tokens,
         "correction_detection_enabled": settings.correction_detection_enabled,
+        "correction_model": settings.correction_model,
+        "correction_temperature": settings.correction_temperature,
+        "correction_max_tokens": settings.correction_max_tokens,
         "semantic_duplicate_threshold": settings.semantic_duplicate_threshold,
         "contradiction_similarity_threshold": settings.contradiction_similarity_threshold,
         "contradiction_max_candidates": settings.contradiction_max_candidates,
