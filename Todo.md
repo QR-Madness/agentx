@@ -341,11 +341,18 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `subject` (user|agent|third_party) and consolidation routes each fact to the matching channel
       (agent → `_self_{agent_id}`, user/third-party → active channel), so either turn role can
       contribute correctly-attributed facts.
-- [ ] **Backfill orphaned facts** — one-shot repair for facts already stored with empty `entity_ids`
-      (pre-fix data): re-link via name/alias/slug (optional embedding fallback) and create the missing
-      `(Fact)-[:ABOUT]->(Entity)` edges. Surface as `task memory:relink` or an admin endpoint. (Note:
-      a `job_entity_linking_interval` setting already exists — check for an existing entity-linking job
-      to extend.)
+- [x] **Backfill orphaned facts** — reworked `link_facts_to_entities` (the scheduled
+      `entity_linking` job) into a deterministic, full-history repair: per-(user,channel) name/alias/slug
+      index + claim n-gram matching → `(Fact)-[:ABOUT]->(Entity)` edges (`method='backfill_namematch'`),
+      no 7-day window, channel-scoped, reports `facts_still_orphan`. Dropped the broken entity-embedding
+      dependency (consolidation entities have no embeddings). Remaining (optional): a `task memory:relink`
+      / admin endpoint to trigger it on demand instead of only on the 30-min schedule.
+- [ ] **Type-check the test suite (django-stubs)** — `tests.py` / `tests_memory.py` currently disable
+      pyright framework-noise rules at file level (Django test-client return types, Optional model
+      getters, mocked sessions) because no stubs are configured. Add `django-stubs` (+ a pyright/mypy
+      config, settings module wiring) and `types-redis` so the test suite gets real type coverage, then
+      drop the file-level `# pyright: ...=false` directives. Watch for new stricter-typing fallout on
+      Django models. Source already type-checks clean at baseline 0.
 - [ ] **Memory panel: Fact→Entity display** — `client/src/components/memory/FactDetail.tsx` ignores
       `entity_ids` entirely (Entity→Fact works in EntityDetail; the reverse is missing). Have
       `/api/memory/facts` return `{id,name,type}` for ABOUT'd entities (query already does
