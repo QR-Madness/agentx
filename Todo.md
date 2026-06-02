@@ -1,3 +1,4 @@
+
 # AgentX Development To-do
 
 **Project**: AgentX - AI Agent Platform
@@ -196,6 +197,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       the nvm/Node install. Heavy pull for self-hosters today.
 - [ ] arm64 / multi-arch API image (amd64-only today; QEMU build deferred).
 - [ ] Offline "models-baked" image variant (first run downloads ~5 GB to the HF cache volume).
+- [x] **GitHub Releases Automation** — the `release` job in `.github/workflows/client-release.yml`
+      drafts a `client-v{version}` GitHub Release (draft for manual publish; `-suffix` → prerelease)
+      with SHA-256 checksums, supported-server notes (protocol/min-client/api version from
+      `versions.yaml`), and the installers attached. Download links on `deployment/self-hosting`.
 - [ ] Shared-infra local clusters (one DB stack, namespaced) — deferred per the isolation-axis design.
 
 ---
@@ -323,6 +328,8 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 
 > Items to consider after prototype is complete
 
+- [ ] Add relations for entities to other entities in the memory panel - consider using an LLM request to map the relation properly and identify potential other relations.
+- [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
 - [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)
 - [ ] Disabled memory conversation prompt message banner - informs the model that memory is off for this conversation and the details are not persistent, and also that the conversation may contain confidential material.

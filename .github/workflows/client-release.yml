@@ -8,7 +8,8 @@ on:
         required: true
         type: string
 
-# Build-only: produce installers as workflow artifacts. No tag/commit/release.
+# Build installers as workflow artifacts, then draft a GitHub Release (client-v*)
+# with checksums + supported-server notes. The release is a DRAFT (publish manually).
 permissions:
   contents: read
 
@@ -188,10 +189,21 @@ jobs:
             client/src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: ignore
 
-  checksums:
+  release:
     needs: build
     runs-on: ubuntu-latest
+    # Only this job needs write access — to create the draft release.
+    permissions:
+      contents: write
     steps:
+      # Checkout FIRST: reading versions.yaml (the compatibility contract) needs the
+      # repo, and checkout cleans the workspace — running it after the download would
+      # wipe release-artifacts/.
+      - uses: actions/checkout@v4
+
+      # Reuse the bun-based versions.yaml idiom used by the build job.
+      - uses: oven-sh/setup-bun@v2
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -222,3 +234,79 @@ jobs:
             release-artifacts/checksums-sha256.txt
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Read server compatibility from versions.yaml
+        id: compat
+        shell: bash
+        run: |
+          # protocol_version is the exact-match contract the client speaks; the API
+          # server reports it via /api/health. min_client_version is the floor servers
+          # accept. api.version is the paired/reference server build at this commit.
+          # (Read from the checked-out commit — these are not mutated by the build.)
+          bun -e "
+            const t = await Bun.file('versions.yaml').text();
+            const protocol = t.match(/protocol_version:\s*(\d+)/)?.[1] ?? '';
+            const minClient = t.match(/min_client_version:\s*\"([^\"]*)\"/)?.[1] ?? '';
+            const apiVersion = t.match(/api:[\s\S]*?\n  version:\s*\"([^\"]*)\"/)?.[1] ?? '';
+            console.log('protocol_version=' + protocol);
+            console.log('min_client_version=' + minClient);
+            console.log('api_version=' + apiVersion);
+          " | tee -a "$GITHUB_OUTPUT"
+
+      - name: Assemble release notes
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          PROTOCOL="${{ steps.compat.outputs.protocol_version }}"
+          MIN_CLIENT="${{ steps.compat.outputs.min_client_version }}"
+          API_VERSION="${{ steps.compat.outputs.api_version }}"
+
+          {
+            echo "## AgentX Client v${VERSION}"
+            echo ""
+            echo "Desktop client for the AgentX platform. Point it at your AgentX API server on first run."
+            echo ""
+            echo "### Supported server"
+            echo ""
+            echo "- **API protocol:** v${PROTOCOL} — connect to any AgentX server speaking protocol ${PROTOCOL} (servers report it at \`/api/health\`)."
+            echo "- **Built against API:** v${API_VERSION}."
+            echo "- **Server requires client:** ≥ v${MIN_CLIENT}."
+            echo ""
+            echo "### Downloads"
+            echo ""
+            echo "| Platform | File |"
+            echo "|----------|------|"
+            echo "| Linux (Debian/Ubuntu) | \`*_linux-amd64.deb\` |"
+            echo "| Linux (AppImage) | \`*_linux-amd64.AppImage\` |"
+            echo "| Linux (RPM) | \`*_linux-rpm.rpm\` |"
+            echo "| Windows (installer) | \`*_windows-x64.exe\` |"
+            echo "| Windows (MSI) | \`*_windows-x64.msi\` |"
+            echo ""
+            echo "See the [self-hosting guide](https://github.com/QR-Madness/agentx/blob/master/docs-site/src/content/docs/deployment/self-hosting.md) for connecting the client to a server."
+            echo ""
+            echo "### SHA-256 checksums"
+            echo ""
+            echo '```text'
+            cat release-artifacts/checksums-sha256.txt
+            echo '```'
+          } > notes.md
+
+          echo "=== notes.md ==="
+          cat notes.md
+
+      - name: Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: client-v${{ inputs.version }}
+          name: AgentX Client v${{ inputs.version }}
+          draft: true
+          prerelease: ${{ contains(inputs.version, '-') }}
+          body_path: notes.md
+          fail_on_unmatched_files: false
+          files: |
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.rpm
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.msi
+            release-artifacts/checksums-sha256.txt
