@@ -16,6 +16,43 @@ from .models import AgentProfile, ReasoningStrategy
 logger = logging.getLogger(__name__)
 
 
+def _propagate_agent_rename(agent_id: str, old_name: str, new_name: str) -> None:
+    """Rename the agent's first-class memory entity and keep the old name as an alias.
+
+    Best-effort and lazily imported so profile CRUD never hard-depends on the
+    memory layer (or a running Neo4j). Updates every ``agent:{agent_id}`` Entity
+    node across all users/channels in one statement; agent_id is the stable key,
+    so the rename is unambiguous.
+    """
+    try:
+        from ..kit.agent_memory.connections import Neo4jConnection
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"agent rename propagation skipped (no memory layer): {e}")
+        return
+    try:
+        with Neo4jConnection.session() as session:
+            session.run(
+                """
+                MATCH (e:Entity)
+                WHERE coalesce(e.type, '') = 'Agent'
+                  AND e.id ENDS WITH (':' + $agent_id)
+                SET e.aliases = CASE
+                        WHEN $old_name IS NULL
+                             OR toLower($old_name) = toLower($new_name)
+                             OR toLower($old_name) IN [a IN coalesce(e.aliases, []) | toLower(a)]
+                        THEN coalesce(e.aliases, [])
+                        ELSE coalesce(e.aliases, []) + [$old_name]
+                    END,
+                    e.name = $new_name
+                """,
+                agent_id=agent_id,
+                old_name=old_name,
+                new_name=new_name,
+            )
+    except Exception as e:  # noqa: BLE001 — a rename must never break profile save
+        logger.warning(f"Failed to propagate agent rename for {agent_id}: {e}")
+
+
 # =============================================================================
 # Default Profile
 # =============================================================================
@@ -241,12 +278,21 @@ class ProfileManager:
         # Use model_dump to carry every field forward, so adding new fields to
         # AgentProfile (e.g. allowed_tools/blocked_tools in Phase 18.2) doesn't
         # silently reset them on any edit.
+        old_name = current.name
         updated_data = current.model_dump()
         updated_data.update(updates)
         updated_data["updated_at"] = datetime.utcnow()
 
         self._profiles[profile_id] = AgentProfile(**updated_data)
         self.save_config()
+
+        # Keep the agent's first-class memory entity rename-safe: on a display-name
+        # change, fold the old name into the Agent entity's aliases so historical
+        # prose and recall-by-old-name keep resolving. agent_id is the stable key.
+        new_name = self._profiles[profile_id].name
+        if new_name != old_name:
+            _propagate_agent_rename(current.agent_id, old_name, new_name)
+
         return self._profiles[profile_id]
 
     def delete_profile(self, profile_id: str) -> bool:

@@ -126,18 +126,33 @@ extraction:
 
     SUBJECT — who each fact is about
     This is the USER's message. Resolve pronouns: "I"/"me"/"my" = the user;
-    "you"/"your" = the agent (the AI you are part of). Tag every fact with "subject":
+    "you"/"your" = the agent the user is addressing (see AGENT ATTRIBUTION).
+    Tag every fact with "subject":
     - "user":        about the speaker (the user). The common case.
-    - "agent":       about the AI assistant ("you're great at SQL" → subject="agent").
+    - "agent":       about an AI agent ("you're great at SQL" → subject="agent").
     - "third_party": about someone/something else named (a colleague, company, tool).
     Only emit a fact if it carries durable information; do not invent an agent fact
     just because the user paid a compliment.
 
+    AGENT ATTRIBUTION — which agent a fact concerns
+    Agents in this conversation (attribute by NAME; the id is the durable key):
+    {agent_roster}
+    Addressed agent (resolves "you"/"your"): {addressed_agent}
+    When a fact is about or directed at a specific agent, add a "subject_agent" field
+    holding that agent's NAME exactly as listed above. Resolve "you" to the addressed
+    agent. A directive is *about* the targeted agent — set subject="agent" and
+    subject_agent to its name even though the user is the one asking
+    ("Mobius, think step-by-step" → subject="agent", subject_agent="Mobius"). If you
+    cannot tell which agent, omit subject_agent. Never invent a name that is not listed.
+
     CLAIM CONVENTION
     Write each claim in the third person, present tense, starting with the subject.
-    Never echo "I"/"my"/"you" into the stored claim.
+    Never echo "I"/"my"/"you" into the stored claim. Name the agent — never the generic
+    word "agent" — whenever you know which one (and add that name to entity_names).
     - subject="user":        "User <verb> ..."  ("I work at Anthropic" → "User works at Anthropic")
-    - subject="agent":       "Agent <verb> ..." ("you keep forgetting my name" → "Agent forgets the user's name")
+    - subject="agent":       "<AgentName> <verb> ..." ("you keep forgetting my name" → "Mobius forgets the user's name").
+                             Directive: phrase naturally and still set subject_agent —
+                             "Mobius, think step-by-step" → "User wants Mobius to think step-by-step"
     - subject="third_party": "<Name> <verb> ..." ("my manager Sarah leads payments" → "Sarah leads payments")
 
     NEGATION
@@ -205,6 +220,7 @@ extraction:
         {{
           "claim": "<Subject> <verb> ...",
           "subject": "user|agent|third_party",
+          "subject_agent": "AgentName (only when the fact is about/directed at a specific listed agent; omit otherwise)",
           "certainty": "explicit|implied|inferred|uncertain",
           "temporal_context": "current|past|future|null (JSON literal, not the string)",
           "entity_names": ["CanonicalName"],
@@ -238,8 +254,10 @@ extraction:
       "relationships": []
     }}
 
-    Example 1b — subject is the agent, not the user:
-    TEXT: "You always forget that I prefer metric units."
+    Example 1b — subject is a named agent, not the user (a directive):
+    TEXT: "Mobius, always think step-by-step, and you keep forgetting I prefer metric units."
+    AGENTS: - Mobius (id: mobile-cosmic-falcon)
+    ADDRESSED AGENT: Mobius (id: mobile-cosmic-falcon)
     KNOWN ENTITIES: (none)
     KNOWN FACTS: (none)
     OUTPUT:
@@ -247,7 +265,8 @@ extraction:
       "is_relevant": true,
       "entities": [],
       "facts": [
-        {{"claim": "Agent forgets that the user prefers metric units", "subject": "agent", "certainty": "explicit", "temporal_context": "current", "entity_names": []}},
+        {{"claim": "User wants Mobius to think step-by-step", "subject": "agent", "subject_agent": "Mobius", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Mobius"]}},
+        {{"claim": "Mobius forgets that the user prefers metric units", "subject": "agent", "subject_agent": "Mobius", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Mobius"]}},
         {{"claim": "User prefers metric units", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": []}}
       ],
       "relationships": []
@@ -381,17 +400,27 @@ extraction:
       captured from the user's own turn).
 
     SUBJECT — who each fact is about
-    This is the AGENT's (your) response. Resolve pronouns: "I"/"me"/"my" = the agent;
-    "you"/"your" = the user. Tag every fact with "subject":
+    This is the AGENT's (your) response. Resolve pronouns: "I"/"me"/"my" = YOU, the
+    speaking agent; "you"/"your" = the user. Tag every fact with "subject":
     - "agent":       your own reasoning, conclusions, decisions, plans. The common case.
     - "user":        a fact about the user you concluded or inferred ("you're clearly on
                      Python 3.12" → subject="user"). Stored in the user's memory, not yours.
     - "third_party": about a named external entity.
 
+    AGENT ATTRIBUTION — which agent
+    You are: {addressed_agent}
+    Other agents you may reference:
+    {agent_roster}
+    For any subject="agent" fact, add a "subject_agent" field with the agent's NAME. Your
+    own reasoning → your name (above). A fact fundamentally about a *different* agent you
+    named (e.g. "I delegated SQL to Atlas because Atlas is faster") → that agent's name.
+    Use names exactly as listed; never invent one. Add the agent's name to entity_names.
+
     CLAIM CONVENTION
     Each fact is a single declarative statement, self-contained (a reader six months
     later should understand it without the original conversation), written in the third
-    person and starting with the subject ("Agent ...", "User ...", "<Name> ...").
+    person and starting with the subject — name the agent ("Mobius ...", never the generic
+    "Agent ..."), "User ...", or "<Name> ...".
 
     ENTITY REUSE
     If a referent matches a KNOWN ENTITY, set existing_entity_id to that entity's id.
@@ -423,6 +452,7 @@ extraction:
         {{
           "claim": "<Subject> <verb> ... (what was concluded/observed)",
           "subject": "agent|user|third_party",
+          "subject_agent": "AgentName (required when subject=agent; your name for your own reasoning)",
           "certainty": "definitive|analytical|speculative",
           "entity_names": ["CanonicalName"],
           "refines_fact_id": "uuid-if-this-refines-a-known-fact (omit otherwise)"
@@ -437,9 +467,11 @@ extraction:
 
     ───────── EXAMPLE ─────────
 
+    YOU ARE: Mobius (id: mobile-cosmic-falcon)
+    OTHER AGENTS: - Atlas (id: steady-iron-atlas)
     TEXT: "Looking at the traces, the latency spike correlates with cache evictions on
-    the price service. I'd hypothesize cache thrash under burst writes; the fix is
-    probably to raise the LRU size or shard by region."
+    the price service. I'd hypothesize cache thrash under burst writes. I handed the SQL
+    tuning to Atlas — Atlas is faster at query plans than I am."
     KNOWN ENTITIES:
     - id=ent-price-svc name="Price service" type=Concept desc="Internal service the agent has been debugging"
     KNOWN FACTS: (none)
@@ -451,8 +483,8 @@ extraction:
         {{"name": "Cache thrash under burst writes", "type": "Pattern", "description": "Latency spike pattern observed in price service traces", "confidence": 0.7}}
       ],
       "facts": [
-        {{"claim": "Latency spikes on the price service correlate with cache evictions", "subject": "agent", "certainty": "analytical", "entity_names": ["Price service"]}},
-        {{"claim": "Raising LRU size or sharding by region likely mitigates the price-service cache thrash", "subject": "agent", "certainty": "speculative", "entity_names": ["Price service", "Cache thrash under burst writes"]}}
+        {{"claim": "Latency spikes on the price service correlate with cache evictions", "subject": "agent", "subject_agent": "Mobius", "certainty": "analytical", "entity_names": ["Price service"]}},
+        {{"claim": "Atlas is faster at SQL query plans than Mobius", "subject": "agent", "subject_agent": "Atlas", "certainty": "definitive", "entity_names": ["Atlas", "Mobius"]}}
       ],
       "relationships": [
         {{"source": "Cache thrash under burst writes", "target": "Price service", "type": "applies_to", "confidence": 0.7}}

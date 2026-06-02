@@ -1661,6 +1661,11 @@ async def agent_chat_stream(request):
                                 asst_metadata["thinking"] = parsed.thinking
                             if plan_summary is not None:
                                 asst_metadata["plan"] = plan_summary
+                            # Stamp the display name so consolidation can attribute
+                            # facts to this agent by name (agent_id stays source of truth).
+                            agent_name = getattr(agent_profile, "name", None)
+                            if agent_name:
+                                asst_metadata["agent_name"] = agent_name
 
                             assistant_turn = Turn(
                                 id=asst_turn_id,

@@ -298,6 +298,7 @@ The `AgentMemory` class (`kit/agent_memory/memory/interface.py`) provides a unif
 The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-based extraction:
 - `check_relevance_and_extract(text)` — Combined relevance check + extraction in single LLM call (~75% fewer calls)
 - `check_relevance_and_extract_assistant(text)` — Self-knowledge extraction from agent's own responses (certainty: definitive/analytical/speculative)
+- Both accept a `roster` (`[{agent_id, name}]`) + `addressed_agent_id` so facts are attributed to a *specific* agent: the LLM names the agent in prose (`subject_agent`), and `_resolve_agent_attribution` resolves that name → `agent_id` (the durable source of truth), stored transiently as `subject_agent_id`. Unknown names are demoted to `third_party` (never fabricate an agent_id)
 - `check_contradictions(claim, facts)` — Three-layer fact verification: hash gate → semantic duplicate → entity-scoped candidates → LLM adjudication
 - Uses `nvidia/nemotron-3-nano` by default for extraction (configurable via `combined_extraction_model` setting)
 - Consolidation jobs (`consolidation/jobs.py`) call extractors every 15 minutes
@@ -318,6 +319,14 @@ Each agent profile has a Docker-style `agent_id` (e.g., "bold-cosmic-falcon"):
 - Recall searches: `[active_channel, _self_{agent_id}, _global]`
 - Agent self-extraction during consolidation stores knowledge to self-channel
 
+### Multi-Agent Attribution (Phase 16)
+Attribution is agent-specific, not a singleton "agent". `agent_id` is the durable key; the display name is prose only.
+- **Agents are first-class entities**: consolidation `_ensure_agent_entities` upserts an `Entity(type="Agent")` per participating agent, in `_global` (so it serves every channel via `find_entity_by_name_or_alias`), id `agent:{user_id}:{agent_id}` (one-per-user, no cross-user bleed), canonical key in `properties.agent_id`, name + prior names as `aliases`. Facts about an agent link to it via the normal `[:ABOUT]` entity machinery
+- **Name stamping**: assistant turns carry the agent's display name in `Turn.metadata["agent_name"]` (set by the writers in `views.py`/`core.py`/`alloy/executor.py`); `episodic.store_turn` stamps it onto the `Turn`/`AgentParticipant` nodes so the kit can build a roster (`get_conversation_roster`) without importing `ProfileManager`
+- **Per-agent routing**: `_resolve_subject_channel` honors a fact's `subject_agent_id` → `_self_{that_agent}` (a directive aimed at Mobius lands in Mobius's memory, not the producer's). The user-turn fetch resolves "you" per turn via the responding agent (`FOLLOWED_BY`); assistant self-extraction routes **each turn by its own producing `agent_id`** so multi-agent conversations don't funnel into the first agent's channel
+- **Rename-safety**: `ProfileManager.update_profile` propagates a display-name change to the Agent entity's `aliases` (`_propagate_agent_rename`); `dedupe_entities` never merges `Agent` nodes (keyed by `agent_id`, not name)
+- **Backfill**: `task memory:backfill-agent-attribution[:apply]` (mgmt command `backfill_agent_attribution`) deterministically rewrites legacy generic "Agent …" self-facts to the agent's name + adds the `[:ABOUT]` link (channel encodes which agent → no LLM needed)
+
 ## Project Status
 
-Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~45% — Agent Alloy v1 shipped (supervisor + specialist delegation); 16.1 per-turn attribution, 16.2 explicit agent routing, 16.3 per-agent tool isolation, 16.4 ad-hoc agent-to-agent delegation, and 16.5 @-mention routing + `AgentParticipant` graph nodes (with client `@`-autocomplete) shipped. Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.21.5 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.
+Phases 1-14 and 17 (Server Management: auth, Docker production stack, multi-cluster, version matching) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent Conversations) ~45% — Agent Alloy v1 shipped (supervisor + specialist delegation); 16.1 per-turn attribution, 16.2 explicit agent routing, 16.3 per-agent tool isolation, 16.4 ad-hoc agent-to-agent delegation, and 16.5 @-mention routing + `AgentParticipant` graph nodes (with client `@`-autocomplete) shipped; multi-agent attribution (per-agent self-channel routing, agents as first-class entities, name-stamping + roster-aware extraction, rename-safety, legacy backfill) shipped. Phase 18 (UX Improvements + Memory Tuning) in progress. Current version: 0.21.5 ("Mobile-Ready Alpha"). See `Todo.md` for detailed tracking.

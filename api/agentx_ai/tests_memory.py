@@ -2168,6 +2168,24 @@ class SubjectRoutingTest(TestCase):
         # agent-subject but no agent on the conversation → fall back to active channel
         self.assertEqual(_resolve_subject_channel("agent", "proj", None), "proj")
 
+    def test_resolve_subject_channel_specific_agent(self) -> None:
+        # A fact attributed to a *specific* agent homes to THAT agent's self channel,
+        # not the conversation's addressed/producing agent.
+        self.assertEqual(
+            _resolve_subject_channel(
+                "agent", "_default", "bold-cosmic-falcon",
+                subject_agent_id="mobile-cosmic-falcon",
+            ),
+            "_self_mobile-cosmic-falcon",
+        )
+        # subject_agent_id is ignored for non-agent subjects.
+        self.assertEqual(
+            _resolve_subject_channel(
+                "user", "proj", "agent-x", subject_agent_id="mobile-cosmic-falcon",
+            ),
+            "proj",
+        )
+
     def test_router_routes_and_caches(self) -> None:
         active_mem = MagicMock(name="active")
         cache: dict = {"u1:proj": active_mem}
@@ -2179,18 +2197,36 @@ class SubjectRoutingTest(TestCase):
             route = _make_subject_router(cache, "u1", "proj", "bold-cosmic-falcon")
 
             # user-subject → existing active-channel memory, no new construction
-            mem, channel = route("user")
+            mem, channel = route({"subject": "user"})
             self.assertIs(mem, active_mem)
             self.assertEqual(channel, "proj")
             AM.assert_not_called()
 
             # agent-subject → lazily built self-channel memory, then cached
-            mem, channel = route("agent")
+            mem, channel = route({"subject": "agent"})
             self.assertIs(mem, self_mem)
             self.assertEqual(channel, "_self_bold-cosmic-falcon")
             self.assertIn("u1:_self_bold-cosmic-falcon", cache)
-            route("agent")  # second call reuses cache
+            route({"subject": "agent"})  # second call reuses cache
             AM.assert_called_once()
+
+    def test_router_fans_out_to_specific_agents(self) -> None:
+        """One conversation can route facts to several agents' self-channels."""
+        active_mem = MagicMock(name="active")
+        cache: dict = {"u1:proj": active_mem}
+        with patch('agentx_ai.kit.agent_memory.memory.interface.AgentMemory') as AM:
+            AM.side_effect = lambda **kw: MagicMock(name=kw.get("channel"))
+            route = _make_subject_router(cache, "u1", "proj", "bold-cosmic-falcon")
+
+            # A directive aimed at Mobius → Mobius's self channel (not the producer's).
+            _, mobius_ch = route({"subject": "agent", "subject_agent_id": "mobile-cosmic-falcon"})
+            self.assertEqual(mobius_ch, "_self_mobile-cosmic-falcon")
+            # Another fact aimed at Atlas → Atlas's self channel.
+            _, atlas_ch = route({"subject": "agent", "subject_agent_id": "steady-iron-atlas"})
+            self.assertEqual(atlas_ch, "_self_steady-iron-atlas")
+            # Bare agent subject → the conversation's producing agent.
+            _, bare_ch = route({"subject": "agent"})
+            self.assertEqual(bare_ch, "_self_bold-cosmic-falcon")
 
     def test_normalize_subject_defaults_and_validates(self) -> None:
         facts = [
@@ -2202,6 +2238,62 @@ class SubjectRoutingTest(TestCase):
         out = ExtractionService._normalize_subject(facts, default="user")
         self.assertEqual([f["subject"] for f in out],
                          ["user", "agent", "user", "third_party"])
+
+
+class AgentAttributionResolutionTest(TestCase):
+    """Resolve the LLM-supplied agent NAME → agent_id (the durable source of truth)."""
+
+    ROSTER = [
+        {"agent_id": "mobile-cosmic-falcon", "name": "Mobius"},
+        {"agent_id": "steady-iron-atlas", "name": "Atlas"},
+    ]
+
+    def test_resolves_name_case_insensitively(self) -> None:
+        facts = [{"claim": "User wants Mobius to think step-by-step",
+                  "subject": "agent", "subject_agent": "mobius"}]
+        out = ExtractionService._resolve_agent_attribution(
+            facts, self.ROSTER, default_agent_id="steady-iron-atlas", default_subject="user",
+        )
+        self.assertEqual(out[0]["subject"], "agent")
+        self.assertEqual(out[0]["subject_agent_id"], "mobile-cosmic-falcon")
+        self.assertNotIn("subject_agent", out[0])  # transient name field consumed
+
+    def test_bare_agent_falls_back_to_addressed(self) -> None:
+        facts = [{"claim": "Agent is helpful", "subject": "agent"}]
+        out = ExtractionService._resolve_agent_attribution(
+            facts, self.ROSTER, default_agent_id="steady-iron-atlas", default_subject="user",
+        )
+        self.assertEqual(out[0]["subject_agent_id"], "steady-iron-atlas")
+
+    def test_unknown_name_demotes_to_third_party(self) -> None:
+        # Never fabricate an agent_id for a name that isn't a real agent.
+        facts = [{"claim": "Jarvis is fast", "subject": "agent", "subject_agent": "Jarvis"}]
+        out = ExtractionService._resolve_agent_attribution(
+            facts, self.ROSTER, default_agent_id="steady-iron-atlas", default_subject="user",
+        )
+        self.assertEqual(out[0]["subject"], "third_party")
+        self.assertNotIn("subject_agent_id", out[0])
+
+    def test_user_subject_untouched(self) -> None:
+        facts = [{"claim": "User likes Python", "subject": "user"}]
+        out = ExtractionService._resolve_agent_attribution(
+            facts, self.ROSTER, default_agent_id="mobile-cosmic-falcon", default_subject="user",
+        )
+        self.assertEqual(out[0]["subject"], "user")
+        self.assertNotIn("subject_agent_id", out[0])
+
+    def test_render_roster(self) -> None:
+        roster_block, addressed = ExtractionService._render_roster(
+            self.ROSTER, "mobile-cosmic-falcon",
+        )
+        self.assertIn("Mobius (id: mobile-cosmic-falcon)", roster_block)
+        self.assertIn("Atlas (id: steady-iron-atlas)", roster_block)
+        self.assertEqual(addressed, "Mobius (id: mobile-cosmic-falcon)")
+
+    def test_render_roster_empty(self) -> None:
+        roster_block, addressed = ExtractionService._render_roster([], None)
+        self.assertIn("single-agent", roster_block)
+        self.assertIn("unknown", addressed)
 
 
 class FactEntityLinkResolutionTest(TestCase):
@@ -4288,3 +4380,38 @@ class EvalSnapshotRestoreTest(MemoryTestBase):
         finally:
             snap_path.unlink(missing_ok=True)
             self._delete_user(self.test_user_id)
+
+
+class BackfillAgentAttributionRenameTest(TestCase):
+    """Pure-function tests for the legacy 'Agent ...' → '<Name> ...' claim rewrite."""
+
+    @staticmethod
+    def _rename(claim: str, name: str):
+        from agentx_ai.management.commands.backfill_agent_attribution import Command
+        return Command._rename(claim, name)
+
+    def test_rewrites_leading_agent(self) -> None:
+        self.assertEqual(
+            self._rename("Agent forgets the user's name", "Mobius"),
+            "Mobius forgets the user's name",
+        )
+
+    def test_rewrites_the_agent(self) -> None:
+        self.assertEqual(
+            self._rename("The agent prefers concise answers", "Mobius"),
+            "Mobius prefers concise answers",
+        )
+
+    def test_preserves_possessive(self) -> None:
+        self.assertEqual(
+            self._rename("Agent's reasoning is strong", "Mobius"),
+            "Mobius's reasoning is strong",
+        )
+
+    def test_idempotent_when_already_named(self) -> None:
+        self.assertIsNone(self._rename("Mobius forgets the user's name", "Mobius"))
+
+    def test_skips_non_agent_claims(self) -> None:
+        self.assertIsNone(self._rename("User works at Acme", "Mobius"))
+        # "agential" must not match the \bagent\b boundary.
+        self.assertIsNone(self._rename("Agentic workflows are useful", "Mobius"))

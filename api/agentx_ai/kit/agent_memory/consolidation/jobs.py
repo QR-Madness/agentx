@@ -650,16 +650,25 @@ def _batch_store_relationships(
 
 
 def _resolve_subject_channel(
-    subject: Optional[str], active_channel: str, agent_id: Optional[str],
+    subject: Optional[str],
+    active_channel: str,
+    agent_id: Optional[str],
+    subject_agent_id: Optional[str] = None,
 ) -> str:
     """Map a fact's subject to the channel it belongs in.
 
     Facts are extracted from both user and assistant turns; routing by *subject*
-    (not turn role) keeps the user's memory and the agent's self-knowledge from
+    (not turn role) keeps the user's memory and each agent's self-knowledge from
     bleeding into each other:
-      - ``agent`` (and the conversation has an agent) → ``_self_{agent_id}``
-      - ``user`` / ``third_party`` / agent-without-an-agent → the active channel
+      - a fact attributed to a *specific* agent (``subject_agent_id``, resolved from
+        the LLM-supplied name) → that agent's ``_self_{subject_agent_id}`` — so a
+        directive aimed at Mobius lands in Mobius's memory, not Atlas's;
+      - a bare ``agent`` subject (the conversation's addressed/producing agent) →
+        ``_self_{agent_id}`` (legacy fallback);
+      - ``user`` / ``third_party`` / agent-without-an-agent → the active channel.
     """
+    if subject == "agent" and subject_agent_id:
+        return f"_self_{subject_agent_id}"
     if subject == "agent" and agent_id:
         return f"_self_{agent_id}"
     return active_channel
@@ -686,17 +695,70 @@ def _make_subject_router(
     user_id: str,
     active_channel: str,
     agent_id: Optional[str],
-) -> Callable[[Optional[str]], Tuple["AgentMemory", str]]:
-    """Build a ``route(subject) -> (memory, channel)`` closure for fact storage.
+) -> Callable[[Dict[str, Any]], Tuple["AgentMemory", str]]:
+    """Build a ``route(fact) -> (memory, channel)`` closure for fact storage.
 
-    The active-channel memory is expected to already be cached; cross-subject
-    targets (e.g. the agent self-channel) are built lazily on first use.
+    The fact dict carries ``subject`` and an optional ``subject_agent_id`` (the
+    specific agent the fact concerns, resolved from the LLM-supplied name). The
+    active-channel memory is expected to already be cached; cross-subject targets
+    (any agent's self-channel) are built lazily on first use, so a single
+    conversation can fan facts out to several agents' ``_self_`` channels.
     """
-    def route(subject: Optional[str]) -> Tuple["AgentMemory", str]:
-        channel = _resolve_subject_channel(subject, active_channel, agent_id)
+    def route(fact: Dict[str, Any]) -> Tuple["AgentMemory", str]:
+        channel = _resolve_subject_channel(
+            fact.get("subject"), active_channel, agent_id,
+            subject_agent_id=fact.get("subject_agent_id"),
+        )
         return _get_or_create_memory(memory_cache, user_id, channel, agent_id), channel
 
     return route
+
+
+def _ensure_agent_entities(
+    session,
+    memory_cache: Dict[str, "AgentMemory"],
+    user_id: str,
+    roster: List[Dict[str, str]],
+) -> None:
+    """Upsert one first-class ``Agent`` entity per roster member, in ``_global``.
+
+    Makes agents linkable like any other entity: a fact about "Mobius" resolves
+    (via ``find_entity_by_name_or_alias``, which searches the fact's channel +
+    ``_global``) to this node, whose canonical key is ``properties.agent_id`` —
+    the source of truth, stable across renames. The display name is stamped at
+    write-time (the kit can't reach ``ProfileManager``).
+
+    The node lives in ``_global`` so a single entity serves every channel
+    (``_self_*`` + active), and the id is scoped ``agent:{user_id}:{agent_id}``
+    so it is one-per-user (no cross-user bleed) and idempotent. Failures never
+    abort consolidation.
+    """
+    if not roster:
+        return
+    from ..models import Entity
+
+    for member in roster:
+        agent_id = (member or {}).get("agent_id")
+        if not agent_id:
+            continue
+        ent_id = f"agent:{user_id}:{agent_id}"
+        name = member.get("name") or agent_id
+        try:
+            exists = session.run(
+                "MATCH (e:Entity {id: $id}) RETURN e.id LIMIT 1", id=ent_id,
+            ).single()
+            if exists:
+                continue
+            mem = _get_or_create_memory(memory_cache, user_id, "_global")
+            mem.upsert_entity(Entity(
+                id=ent_id,
+                name=name,
+                type="Agent",
+                description=f"AI agent (id {agent_id})",
+                properties={"agent_id": agent_id},
+            ))
+        except Exception as e:  # noqa: BLE001 — never let this abort consolidation
+            logger.debug(f"ensure_agent_entity failed for {agent_id}: {e}")
 
 
 def _resolve_fact_entity_ids(
@@ -935,19 +997,24 @@ def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
 
     # Get recent conversations not yet processed, including user info
     # Only extract from user turns (not assistant/system/tool responses)
+    # ``responder_agent_id`` (the agent that produced the immediately following turn)
+    # resolves "you"/"your" per user turn in multi-agent conversations.
     result = session.run("""
         MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
         WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
           AND t.role = 'user'
         OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
-        WITH c, u, collect(t) AS turns
+        OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
+        WITH c, u, t, resp
+        ORDER BY t.index
+        WITH c, u, collect({content: t.content, responder_agent_id: resp.agent_id}) AS turns
         ORDER BY c.started_at DESC
         LIMIT 10
         RETURN c.id AS conversation_id,
                coalesce(u.id, 'default') AS user_id,
                coalesce(c.channel, '_default') AS channel,
                c.agent_id AS agent_id,
-               [t IN turns | {content: t.content}] AS turns
+               turns
     """)
 
     records = list(result)
@@ -957,15 +1024,21 @@ def _fetch_pending_conversations(session) -> Tuple[List[Any], int]:
 
 async def _extract_from_conversation(
     turns, memory, session, extraction_service, user_id, channel,
-    conv_id, metrics, errors,
+    conv_id, metrics, errors, roster=None, default_agent_id=None,
 ) -> _ConvExtraction:
     """Apply correction detection + combined relevance/extraction over a
-    conversation's user turns, accumulating entities/facts/relationships."""
+    conversation's user turns, accumulating entities/facts/relationships.
+
+    ``roster`` ([{agent_id, name}]) lets the extractor attribute facts to specific
+    agents by name; the per-turn ``responder_agent_id`` (falling back to
+    ``default_agent_id``) tells it which agent "you" addresses.
+    """
     out = _ConvExtraction()
 
     relevance_start = time.perf_counter()
     for turn in turns:
         content = turn['content']
+        addressed_agent_id = turn.get('responder_agent_id') or default_agent_id
         metrics.turns_total += 1
 
         # Check for user corrections first (before relevance filter)
@@ -992,6 +1065,8 @@ async def _extract_from_conversation(
             content,
             known_entities=scope_entities,
             known_facts=scope_facts,
+            roster=roster,
+            addressed_agent_id=addressed_agent_id,
         )
         metrics.extraction_calls += 1
         metrics.total_tokens_used += combined_result.tokens_used
@@ -1085,8 +1160,10 @@ async def _store_facts_with_verification(
                 logger.warning(f"Skipping fact with missing claim: {fact_dict}")
                 continue
 
-            # Route by subject: user/third_party → active channel, agent → self.
-            fact_memory, fact_channel = route(fact_dict.get("subject", "user"))
+            # Route by subject (+ specific agent): user/third_party → active channel,
+            # agent → that agent's self channel.
+            fact_dict.setdefault("subject", "user")
+            fact_memory, fact_channel = route(fact_dict)
             fact_entity_map = entity_maps.setdefault(fact_channel, {})
 
             # === Layer 0: LLM-supplied refinement ===
@@ -1292,10 +1369,19 @@ async def _consolidate_user_conversation(
         memory_cache[cache_key] = _get_memory_for_user(user_id, channel)
     memory = memory_cache[cache_key]
 
+    # Roster of agents that participated, so the extractor can attribute facts to
+    # specific agents by name (agent_id is the durable key). Register each as a
+    # first-class Agent entity in the active channel + its own self-channel so the
+    # ABOUT link resolves regardless of where the fact lands.
+    agent_id = record.get("agent_id")
+    roster = memory.get_conversation_roster(conv_id)
+    if roster:
+        _ensure_agent_entities(session, memory_cache, user_id, roster)
+
     # Filter turns by relevance and extract entities/facts
     extracted = await _extract_from_conversation(
         turns, memory, session, extraction_service, user_id, channel,
-        conv_id, metrics, errors,
+        conv_id, metrics, errors, roster=roster, default_agent_id=agent_id,
     )
 
     if not extracted.relevant_turns:
@@ -1335,9 +1421,9 @@ async def _consolidate_user_conversation(
     )
 
     # Store facts via AgentMemory interface (three-layer verification pipeline).
-    # Route each fact by subject: agent-subject facts land in the agent's self
-    # channel (when the conversation has an agent), the rest in the active channel.
-    agent_id = record.get("agent_id")
+    # Route each fact by subject + specific agent: a fact attributed to an agent
+    # lands in that agent's self channel, the rest in the active channel. (agent_id
+    # and roster were resolved above.)
     route = _make_subject_router(memory_cache, user_id, channel, agent_id)
     fact_result = await _store_facts_with_verification(
         session, route, extraction_service, extracted.facts, entity_map,
@@ -1383,27 +1469,25 @@ async def _consolidate_user_conversation(
 async def _consolidate_assistant_conversation(
     record, session, self_memory_cache, extraction_service, metrics, errors,
 ) -> None:
-    """Extract assistant self-knowledge from one conversation into the agent's
-    ``_self_{agent_id}`` channel and mark it self-consolidated."""
+    """Extract assistant self-knowledge into each producing agent's
+    ``_self_{agent_id}`` channel and mark the conversation self-consolidated.
+
+    A conversation can have turns from several agents (delegation, @-mentions,
+    Agent Alloy). Each assistant turn is routed by *its own* ``agent_id`` so an
+    agent's self-knowledge never bleeds into another agent's channel.
+    """
     conv_id = record["conversation_id"]
     user_id = record["user_id"]
-    agent_id = record["agent_id"]
-    self_channel = f"_self_{agent_id}"
+    conv_agent_id = record["agent_id"]  # conversation default for legacy turns
     active_channel = record.get("channel", "_default")  # the user's channel
     a_turns = record["turns"]
 
-    # Get or create memory for this agent's self-channel
-    cache_key = f"{user_id}:{self_channel}"
-    if cache_key not in self_memory_cache:
-        from ..memory.interface import AgentMemory as _AM
-        self_memory_cache[cache_key] = _AM(
-            user_id=user_id, channel=self_channel, agent_id=agent_id,
-        )
-    memory = self_memory_cache[cache_key]
-
-    # Route by subject: agent-subject facts stay in the self channel; user/third-party
-    # facts the agent stated or inferred go to the user's active channel.
-    route = _make_subject_router(self_memory_cache, user_id, active_channel, agent_id)
+    # Roster + Agent entities so the extractor can name agents ("I" = the speaker,
+    # plus any other agent referenced) and facts link to them.
+    roster_memory = _get_or_create_memory(self_memory_cache, user_id, active_channel)
+    roster = roster_memory.get_conversation_roster(conv_id)
+    if roster:
+        _ensure_agent_entities(session, self_memory_cache, user_id, roster)
 
     self_extraction_failed = False
 
@@ -1411,6 +1495,21 @@ async def _consolidate_assistant_conversation(
         content = turn["content"]
         turn_id = turn.get("id")
         metrics.assistant_turns_total += 1
+
+        # Route this turn by the agent that produced it (the "I"); fall back to the
+        # conversation's agent for legacy turns missing per-turn attribution.
+        turn_agent_id = turn.get("agent_id") or conv_agent_id
+        if not turn_agent_id:
+            continue
+        self_channel = f"_self_{turn_agent_id}"
+        memory = _get_or_create_memory(
+            self_memory_cache, user_id, self_channel, turn_agent_id,
+        )
+        # agent-subject facts → that agent's self channel; user/third-party facts
+        # the agent stated/inferred → the user's active channel.
+        route = _make_subject_router(
+            self_memory_cache, user_id, active_channel, turn_agent_id,
+        )
 
         # Skip short responses (greetings, acknowledgments)
         if len(content.strip()) < 100:
@@ -1428,6 +1527,8 @@ async def _consolidate_assistant_conversation(
                 source_turn_id=turn_id,
                 known_entities=self_scope_entities,
                 known_facts=self_scope_facts,
+                roster=roster,
+                addressed_agent_id=turn_agent_id,
             )
         except Exception as e:
             logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
@@ -1476,8 +1577,10 @@ async def _consolidate_assistant_conversation(
             if not claim:
                 continue
 
-            # Route by subject (default "agent" for the assistant extractor).
-            fact_memory, fact_channel = route(fact_dict.get("subject", "agent"))
+            # Route by subject (+ specific agent); default "agent" for the assistant
+            # extractor (the speaking agent).
+            fact_dict.setdefault("subject", "agent")
+            fact_memory, fact_channel = route(fact_dict)
             fact_entity_map = entity_maps.setdefault(fact_channel, {})
 
             if _is_duplicate_fact(session, claim, user_id, fact_channel):
@@ -1603,7 +1706,7 @@ async def consolidate_episodic_to_semantic(
                    coalesce(u.id, 'default') AS user_id,
                    coalesce(c.channel, '_default') AS channel,
                    c.agent_id AS agent_id,
-                   [t IN turns | {content: t.content, id: t.id}] AS turns
+                   [t IN turns | {content: t.content, id: t.id, agent_id: t.agent_id}] AS turns
         """)
 
         assistant_records = list(assistant_result)

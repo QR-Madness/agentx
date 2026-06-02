@@ -205,7 +205,11 @@ class Settings(BaseSettings):
     # Entity types to recognize
     entity_types: list = [
         "Person", "Organization", "Location", "Concept",
-        "Technology", "Product", "Event"
+        "Technology", "Product", "Event",
+        # First-class agents: facts about a specific agent link to its Agent
+        # entity (canonical key in properties.agent_id). See consolidation
+        # _ensure_agent_entities (Phase 16 multi-agent attribution).
+        "Agent",
     ]
 
     # Relationship types to recognize

@@ -293,6 +293,7 @@ class AlloyExecutor:
                 delegation_metadata = {
                     "delegation_id": delegation_id,
                     "agent_id": target_agent_id,
+                    "agent_name": profile.name,
                     "task": task[:500],
                 }
                 memory_for_goal.store_turn(Turn(
@@ -301,6 +302,9 @@ class AlloyExecutor:
                     role="assistant",
                     content=f"[{target_agent_id} → delegation] {accumulated}",
                     channel=self.channel,
+                    # Attribute the turn to the specialist so its self-knowledge
+                    # consolidates into the specialist's own _self_ channel.
+                    agent_id=target_agent_id,
                     metadata=delegation_metadata,
                 ))
             except Exception as e:

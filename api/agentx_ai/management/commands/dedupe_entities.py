@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 ENUMERATE_IN_CHANNEL = """
 MATCH (e:Entity)
 WHERE e.name IS NOT NULL
+  AND coalesce(e.type, '') <> 'Agent'
   AND ($user_id IS NULL OR e.user_id = $user_id)
   AND ($channel IS NULL OR e.channel = $channel)
 WITH e
@@ -74,6 +75,7 @@ RETURN user_id, channel, key,
 ENUMERATE_CROSS_CHANNEL = """
 MATCH (e:Entity)
 WHERE e.name IS NOT NULL
+  AND coalesce(e.type, '') <> 'Agent'
   AND ($user_id IS NULL OR e.user_id = $user_id)
 WITH e
 ORDER BY CASE WHEN e.channel = '_global' THEN 0 ELSE 1 END ASC,

@@ -475,6 +475,95 @@ class ExtractionService:
         return facts
 
     @staticmethod
+    def _render_roster(
+        roster: Optional[List[Dict[str, str]]],
+        addressed_agent_id: Optional[str],
+    ) -> tuple[str, str]:
+        """Render the ``{agent_roster}`` and ``{addressed_agent}`` prompt blocks.
+
+        ``roster`` is ``[{agent_id, name}, ...]``; ``addressed_agent_id`` is the
+        agent that "you"/"I" resolves to (the addressed agent on user turns, the
+        speaking agent on assistant turns).
+        """
+        roster = roster or []
+        members = [m for m in roster if m.get("agent_id")]
+        if not members:
+            roster_block = "(no agents recorded — this is a single-agent conversation)"
+        else:
+            roster_block = "\n".join(
+                f'- {m.get("name") or m["agent_id"]} (id: {m["agent_id"]})'
+                for m in members
+            )
+
+        addressed = next(
+            (m for m in members if m.get("agent_id") == addressed_agent_id), None
+        )
+        if addressed:
+            addressed_block = f'{addressed.get("name") or addressed["agent_id"]} (id: {addressed["agent_id"]})'
+        elif addressed_agent_id:
+            addressed_block = f"(id: {addressed_agent_id})"
+        else:
+            addressed_block = '(unknown — resolve "you"/"I" only if a single agent is listed)'
+        return roster_block, addressed_block
+
+    @staticmethod
+    def _resolve_agent_attribution(
+        facts: list[dict[str, Any]],
+        roster: Optional[List[Dict[str, str]]],
+        default_agent_id: Optional[str],
+        default_subject: str,
+    ) -> list[dict[str, Any]]:
+        """Normalize ``subject`` and resolve ``subject_agent`` (a name) → ``agent_id``.
+
+        ``agent_id`` is the durable source of truth; the LLM supplies the agent's
+        *name* (which it sees in the roster) and we resolve it authoritatively:
+          - subject is normalized to user|agent|third_party (fallback ``default_subject``);
+          - ``subject_agent`` is matched case-insensitively against the roster and
+            stored as transient ``fact["subject_agent_id"]``;
+          - a bare ``subject="agent"`` with no resolvable name falls back to
+            ``default_agent_id`` (the addressed/producing agent);
+          - a name that is NOT in the roster is never coerced into an agent_id — the
+            fact is demoted to ``third_party`` so it lands in the active channel as an
+            ordinary mention.
+        """
+        valid = {"user", "agent", "third_party"}
+        by_name: dict[str, str] = {}
+        ids: set[str] = set()
+        for m in roster or []:
+            aid = m.get("agent_id")
+            if not aid:
+                continue
+            ids.add(aid)
+            nm = (m.get("name") or "").strip().lower()
+            if nm:
+                by_name[nm] = aid
+
+        for fact in facts:
+            subject = str(fact.get("subject", "")).strip().lower()
+            subject = subject if subject in valid else default_subject
+
+            raw_agent = str(fact.pop("subject_agent", "") or "").strip()
+            resolved: Optional[str] = None
+            if raw_agent:
+                low = raw_agent.lower()
+                if low in by_name:
+                    resolved = by_name[low]
+                elif raw_agent in ids:  # LLM echoed an id that is in the roster
+                    resolved = raw_agent
+                elif subject == "agent":
+                    # Named an agent we don't know — don't fabricate an id; store the
+                    # (already name-bearing) claim as an ordinary mention instead.
+                    subject = "third_party"
+
+            if subject == "agent" and not resolved:
+                resolved = default_agent_id  # addressed/producing agent
+
+            fact["subject"] = subject
+            if resolved:
+                fact["subject_agent_id"] = resolved
+        return facts
+
+    @staticmethod
     def _render_scope_context(
         known_entities: Optional[List[Dict[str, Any]]],
         known_facts: Optional[List[Dict[str, Any]]],
@@ -525,6 +614,8 @@ class ExtractionService:
         source_turn_id: Optional[str] = None,
         known_entities: Optional[List[Dict[str, Any]]] = None,
         known_facts: Optional[List[Dict[str, Any]]] = None,
+        roster: Optional[List[Dict[str, str]]] = None,
+        addressed_agent_id: Optional[str] = None,
     ) -> CombinedExtractionResult:
         """
         Combined relevance check and extraction in a single LLM call.
@@ -568,11 +659,14 @@ class ExtractionService:
         # Pass scope context so the LLM can mark mentions as existing_entity_id
         # and emit refines_fact_id when a claim sharpens a known fact.
         entities_block, facts_block = self._render_scope_context(known_entities, known_facts)
+        roster_block, addressed_block = self._render_roster(roster, addressed_agent_id)
         prompt = loader.get(
             "extraction.combined_with_relevance",
             text=text,
             known_entities=entities_block,
             known_facts=facts_block,
+            agent_roster=roster_block,
+            addressed_agent=addressed_block,
         )
 
         messages = [
@@ -606,9 +700,13 @@ class ExtractionService:
             if parsed.facts:
                 parsed.facts = self._apply_confidence_calibration(parsed.facts)
                 parsed.facts = self._normalize_temporal_fields(parsed.facts)
-                # Default subject is the user (this is the user-turn extractor), but a
-                # fact about the agent/a third party keeps its declared subject.
-                parsed.facts = self._normalize_subject(parsed.facts, default="user")
+                # Default subject is the user (this is the user-turn extractor); a fact
+                # about an agent/third party keeps its declared subject. Resolve the
+                # LLM-supplied agent NAME → agent_id (source of truth); a bare agent
+                # subject falls back to the addressed agent.
+                parsed.facts = self._resolve_agent_attribution(
+                    parsed.facts, roster, addressed_agent_id, default_subject="user",
+                )
 
             # Add source turn ID to facts
             if source_turn_id:
@@ -654,6 +752,8 @@ class ExtractionService:
         source_turn_id: Optional[str] = None,
         known_entities: Optional[List[Dict[str, Any]]] = None,
         known_facts: Optional[List[Dict[str, Any]]] = None,
+        roster: Optional[List[Dict[str, str]]] = None,
+        addressed_agent_id: Optional[str] = None,
     ) -> CombinedExtractionResult:
         """
         Extract self-knowledge from an assistant response.
@@ -690,11 +790,14 @@ class ExtractionService:
             )
 
         entities_block, facts_block = self._render_scope_context(known_entities, known_facts)
+        roster_block, addressed_block = self._render_roster(roster, addressed_agent_id)
         prompt = loader.get(
             "extraction.assistant_self",
             text=text,
             known_entities=entities_block,
             known_facts=facts_block,
+            agent_roster=roster_block,
+            addressed_agent=addressed_block,
         )
         messages = [Message(role=MessageRole.USER, content=prompt)]
 
@@ -721,9 +824,13 @@ class ExtractionService:
 
             if parsed.facts:
                 parsed.facts = self._apply_assistant_confidence_calibration(parsed.facts)
-                # Default subject is the agent (this is the assistant-turn extractor),
-                # but a fact about the user/a third party keeps its declared subject.
-                parsed.facts = self._normalize_subject(parsed.facts, default="agent")
+                # Default subject is the agent (this is the assistant-turn extractor);
+                # a fact about the user/third party keeps its declared subject. Resolve
+                # subject_agent NAME → agent_id; a bare agent subject is the speaking
+                # (addressed) agent.
+                parsed.facts = self._resolve_agent_attribution(
+                    parsed.facts, roster, addressed_agent_id, default_subject="agent",
+                )
 
             if source_turn_id:
                 for fact in parsed.facts:

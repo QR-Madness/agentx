@@ -59,7 +59,8 @@ class EpisodicMemory:
                     token_count: $token_count,
                     channel: $channel,
                     user_id: $user_id,
-                    agent_id: $turn_agent_id
+                    agent_id: $turn_agent_id,
+                    agent_name: $turn_agent_name
                 })
 
                 MERGE (c)-[:HAS_TURN]->(t)
@@ -84,9 +85,14 @@ class EpisodicMemory:
                     MERGE (ap:AgentParticipant {id: $conv_id + ':' + $turn_agent_id})
                     ON CREATE SET ap.conversation_id = $conv_id,
                                   ap.agent_id = $turn_agent_id,
+                                  ap.agent_name = $turn_agent_name,
                                   ap.user_id = $user_id,
                                   ap.channel = $channel,
                                   ap.first_seen = datetime()
+                    // Keep the display name current (renames win) without
+                    // clobbering it when a turn arrives without one.
+                    ON MATCH SET ap.agent_name =
+                        coalesce($turn_agent_name, ap.agent_name)
                     MERGE (ap)-[:PARTICIPATED_IN]->(c)
                 )
             """,
@@ -102,6 +108,7 @@ class EpisodicMemory:
                 channel=channel,
                 agent_id=agent_id,
                 turn_agent_id=turn.agent_id,
+                turn_agent_name=(turn.metadata or {}).get("agent_name"),
             )
 
     def store_turn_log(self, turn: Turn, channel: str = "_global") -> None:
@@ -158,6 +165,24 @@ class EpisodicMemory:
                 WHERE conversation_id = :conv_id AND agent_id IS NOT NULL
             """), {"conv_id": conversation_id})
             return [row[0] for row in result if row[0]]
+
+    def get_conversation_roster(self, conversation_id: str) -> List[Dict[str, str]]:
+        """Return the agents that produced turns in a conversation as a roster.
+
+        Each entry is ``{"agent_id": ..., "name": ...}``. The ``name`` is the
+        display name stamped onto :class:`AgentParticipant` at write-time (the
+        kit has no access to ``ProfileManager``); it falls back to the agent_id
+        when a name was never recorded. Used to attribute facts to specific
+        agents by name (prose) while keeping agent_id the source of truth.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (ap:AgentParticipant {conversation_id: $conv_id})
+                WHERE ap.agent_id IS NOT NULL
+                RETURN ap.agent_id AS agent_id,
+                       coalesce(ap.agent_name, ap.agent_id) AS name
+            """, conv_id=conversation_id)
+            return [{"agent_id": r["agent_id"], "name": r["name"]} for r in result]
 
     def vector_search(
         self,

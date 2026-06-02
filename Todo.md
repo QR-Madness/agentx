@@ -120,6 +120,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - **16.3 Per-agent tool isolation**: `allowed_tools`/`blocked_tools` enforced in `_get_tools_for_provider`.
 - **16.4 Ad-hoc agent-to-agent delegation** (`[v0.21.3]`): workflow-less `AlloyExecutor` mode gated by `alloy.allow_adhoc_delegation`, depth-limited, no self-delegation.
 - **16.5 @-mention routing** (`[v0.21.4]`/`[v0.21.5]`): `agent/mentions.py` parsing, `AgentParticipant` Neo4j nodes + backfill migration, client `@`-autocomplete composer.
+- **Multi-agent attribution**: attribution is now per-agent, not a singleton "agent". Agents are first-class `Entity(type="Agent")` (canonical `properties.agent_id`, name as prose, prior names as aliases); facts attributed to a specific agent (`subject_agent` name → resolved `subject_agent_id`) route to that agent's `_self_` channel — so a directive aimed at Mobius lands in Mobius's memory, not Atlas's. Roster-aware extraction prompts + per-turn responder resolution for "you"; assistant self-extraction routes each turn by its own producing `agent_id`. Display names stamped onto `Turn`/`AgentParticipant` at write-time (`get_conversation_roster`); rename-safety via Agent-entity aliases; `dedupe_entities` skips Agent nodes; deterministic legacy backfill (`task memory:backfill-agent-attribution`).
 
 ### 16.x Deferred / Next
 
@@ -341,6 +342,12 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `subject` (user|agent|third_party) and consolidation routes each fact to the matching channel
       (agent → `_self_{agent_id}`, user/third-party → active channel), so either turn role can
       contribute correctly-attributed facts.
+- [x] **Subject-aware attribution → per-agent** — the singleton "agent" subject couldn't tell
+      Mobius from Atlas (every directive stored as the generic "User wants agent to …"). Now the
+      extractor names the specific agent (`subject_agent` → resolved `subject_agent_id`, agent_id =
+      source of truth) and consolidation homes each fact to *that* agent's `_self_` channel; agents
+      are first-class entities; legacy "Agent …" facts are renamed by a deterministic backfill. (See
+      Phase 16 multi-agent attribution.)
 - [x] **Backfill orphaned facts** — reworked `link_facts_to_entities` (the scheduled
       `entity_linking` job) into a deterministic, full-history repair: per-(user,channel) name/alias/slug
       index + claim n-gram matching → `(Fact)-[:ABOUT]->(Entity)` edges (`method='backfill_namematch'`),
@@ -361,6 +368,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `[:RELATES_TO {type}]` (jobs.py `_batch_store_relationships`) while `queries/neo4j_schemas.cypher`
       documents specific types (`RELATED_TO`, `WORKS_FOR`, …). Pick one model and align graph
       traversals/queries.
+- [ ] Store Consolidation costs
 - [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
 - [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)

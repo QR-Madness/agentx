@@ -180,6 +180,14 @@ class AgentMemory:
         """
         return self.episodic.get_conversation_agent_ids(conversation_id)
 
+    def get_conversation_roster(self, conversation_id: str) -> List[Dict[str, str]]:
+        """Agents (``{agent_id, name}``) that produced turns in a conversation.
+
+        Pass-through to :meth:`EpisodicMemory.get_conversation_roster`; used by
+        consolidation to attribute facts to specific agents by name (Phase 16).
+        """
+        return self.episodic.get_conversation_roster(conversation_id)
+
     def learn_fact(
         self,
         claim: str,

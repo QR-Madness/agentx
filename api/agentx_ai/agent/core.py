@@ -974,6 +974,7 @@ class Agent:
                             "model": model_id,
                             "latency_ms": total_time,
                             "task_id": task_id,
+                            "agent_name": self.config.name,
                         }
                     )
                     self._dispatch("on_turn", assistant_turn)
@@ -1011,6 +1012,7 @@ class Agent:
                             "task_id": task_id,
                             "reasoning_steps": result.reasoning_steps,
                             "tools_used": result.tools_used,
+                            "agent_name": self.config.name,
                         }
                     )
                     self._dispatch("on_turn", assistant_turn)
