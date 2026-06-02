@@ -32,12 +32,16 @@ from agentx_ai.kit.agent_memory.config import (
 from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
 from agentx_ai.kit.agent_memory.consolidation import jobs as consolidation_jobs_module
 from agentx_ai.kit.agent_memory.consolidation.jobs import (
+    _build_entity_index,
+    _claim_entity_candidates,
     _get_recent_facts,
     _handle_contradiction,
     _make_subject_router,
     _resolve_fact_entity_ids,
     _resolve_subject_channel,
+    _slug,
     apply_memory_decay,
+    link_facts_to_entities,
     consolidate_episodic_to_semantic,
     detect_patterns,
     manage_audit_partitions,
@@ -58,6 +62,12 @@ from agentx_ai.kit.agent_memory.extraction.service import (
     ExtractionService,
     get_extraction_service,
 )
+from agentx_ai.kit.agent_memory.portability.exporter import MemoryExporter
+from agentx_ai.kit.agent_memory.portability.schema import (
+    MemoryExport,
+    current_embedder_info,
+)
+from agentx_ai.kit.agent_memory.query_utils import convert_all_datetimes
 from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
 from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
@@ -2031,6 +2041,113 @@ class ConsolidationContradictionHandlerTest(TestCase):
         self.assertTrue(fact_dict.get("flagged_for_review"))
 
 
+class MemoryExportDatetimeTest(TestCase):
+    """Memory export must not crash on raw Neo4j temporals (e.g. self_consolidated)."""
+
+    @staticmethod
+    def _neo4j_dt():
+        from neo4j.time import DateTime as Neo4jDateTime
+        return Neo4jDateTime(2026, 6, 1, 12, 0, 0)
+
+    def test_convert_all_datetimes_generic(self) -> None:
+        rec = {
+            "id": "c1",
+            "self_consolidated": self._neo4j_dt(),  # not in any allowlist
+            "channel": "_default",
+            "count": 3,
+            "tags": ["a", "b"],
+            "missing": None,
+        }
+        out = convert_all_datetimes(rec)
+        self.assertIsInstance(out["self_consolidated"], str)
+        # Non-temporal values are untouched.
+        self.assertEqual(out["channel"], "_default")
+        self.assertEqual(out["count"], 3)
+        self.assertEqual(out["tags"], ["a", "b"])
+        self.assertIsNone(out["missing"])
+
+    def test_exporter_node_serializes_self_consolidated(self) -> None:
+        node = MemoryExporter(user_id="u1")._node({
+            "id": "c1",
+            "self_consolidated": self._neo4j_dt(),
+            "embedding": [0.1, 0.2],
+        })
+        self.assertNotIn("embedding", node)  # text-only export
+        self.assertIsInstance(node["self_consolidated"], str)
+        # End-to-end: the node round-trips through pydantic JSON dump — the original
+        # crash site (model_dump raised on the raw neo4j.time.DateTime).
+        export = MemoryExport(
+            user_id="u1", channel=None,
+            embedder=current_embedder_info(), conversations=[node],
+        )
+        dumped = export.model_dump(mode="json")
+        self.assertEqual(
+            dumped["conversations"][0]["self_consolidated"], node["self_consolidated"]
+        )
+
+
+class EntityLinkBackfillTest(TestCase):
+    """Deterministic name/alias/slug backfill of orphaned fact→entity links."""
+
+    def test_slug(self) -> None:
+        self.assertEqual(_slug("San Francisco!"), "sanfrancisco")
+        self.assertEqual(_slug("GPT-4o"), "gpt4o")
+
+    def test_claim_candidates_ngrams_stopwords_order(self) -> None:
+        lc = [c.lower() for c in _claim_entity_candidates("User works at Acme Corp.", max_ngram=3)]
+        self.assertIn("acme corp", lc)        # multi-word entity name
+        self.assertIn("acme", lc)
+        self.assertNotIn("user", lc)          # subject token dropped (unigram)
+        self.assertNotIn("at", lc)            # stopword dropped (unigram)
+        self.assertLess(lc.index("acme corp"), lc.index("acme"))  # longest-first
+
+    def test_build_entity_index(self) -> None:
+        session = MagicMock()
+        session.run.return_value = [
+            {"id": "e1", "name": "Acme Corp", "aliases": ["Acme"], "salience": 0.9},
+            {"id": "e2", "name": "Python", "aliases": [], "salience": 0.5},
+        ]
+        idx = _build_entity_index(session, "u1", "_default")
+        self.assertEqual(idx["acme corp"], "e1")   # name
+        self.assertEqual(idx["acme"], "e1")         # alias
+        self.assertEqual(idx["acmecorp"], "e1")     # slug
+        self.assertEqual(idx["python"], "e2")
+
+    def test_backfill_links_matches_and_counts_orphans(self) -> None:
+        orphans = [
+            {"fact_id": "f1", "claim": "User works at Acme Corp",
+             "user_id": "u1", "channel": "_default"},
+            {"fact_id": "f2", "claim": "User enjoys long walks",
+             "user_id": "u1", "channel": "_default"},
+        ]
+        entities = [{"id": "e1", "name": "Acme Corp", "aliases": ["Acme"], "salience": 0.9}]
+        merge_calls = []
+
+        def _run(query, **params):
+            if "WHERE NOT (f)-[:ABOUT]" in query:
+                return list(orphans)
+            if "MERGE (f)-[r:ABOUT]" in query:
+                merge_calls.append(params)
+                return MagicMock()
+            if "MATCH (e:Entity)" in query:  # the per-channel index builder
+                return list(entities)
+            return MagicMock()
+
+        session = create_mock_neo4j_session()
+        session.run.side_effect = _run
+        with patch(
+            'agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+            return_value=session,
+        ):
+            result = link_facts_to_entities()
+
+        self.assertEqual(result["items_processed"], 2)
+        self.assertEqual(result["links_created"], 1)        # f1 → e1
+        self.assertEqual(result["facts_still_orphan"], 1)   # f2 unmatched
+        self.assertEqual(len(merge_calls), 1)
+        self.assertEqual(merge_calls[0]["entity_ids"], ["e1"])
+
+
 class SubjectRoutingTest(TestCase):
     """Subject → channel routing so user facts and agent self-knowledge stay apart."""
 
@@ -2048,7 +2165,7 @@ class SubjectRoutingTest(TestCase):
 
     def test_router_routes_and_caches(self) -> None:
         active_mem = MagicMock(name="active")
-        cache = {"u1:proj": active_mem}
+        cache: dict = {"u1:proj": active_mem}
         with patch(
             'agentx_ai.kit.agent_memory.memory.interface.AgentMemory',
         ) as AM:

@@ -202,7 +202,9 @@ class MemoryImporter:
                 c.started_at = CASE WHEN row.started_at IS NULL
                     THEN coalesce(c.started_at, datetime()) ELSE datetime(row.started_at) END,
                 c.consolidated = CASE WHEN row.consolidated IS NULL
-                    THEN c.consolidated ELSE datetime(row.consolidated) END
+                    THEN c.consolidated ELSE datetime(row.consolidated) END,
+                c.self_consolidated = CASE WHEN row.self_consolidated IS NULL
+                    THEN c.self_consolidated ELSE datetime(row.self_consolidated) END
             MERGE (u:User {id: $user_id})
             MERGE (u)-[:HAS_CONVERSATION]->(c)
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total

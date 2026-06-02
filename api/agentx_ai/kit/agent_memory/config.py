@@ -192,11 +192,15 @@ class Settings(BaseSettings):
     confidence_inferred: float = 0.70  # Reasonably inferred
     confidence_uncertain: float = 0.50 # Ambiguous or hedged
 
-    # --- Entity Linking (match facts to existing entities) ---
+    # --- Entity Linking (backfill: link orphaned facts to existing entities) ---
     entity_linking_enabled: bool = True
-    entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity
+    entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity (fallback path)
     entity_linking_use_llm_disambiguation: bool = False  # Use LLM when ambiguous
     entity_linking_model: str = "lmstudio:google/gemma-3-4b"
+    # Max orphan facts scanned per backfill run (full-history; bounds memory/time).
+    entity_linking_max_facts: int = 5000
+    # Longest entity name (in words) the claim n-gram matcher will consider.
+    entity_linking_max_ngram: int = 4
 
     # Entity types to recognize
     entity_types: list = [
@@ -362,6 +366,8 @@ def get_consolidation_settings() -> Dict[str, Any]:
         # Entity linking
         "entity_linking_enabled": settings.entity_linking_enabled,
         "entity_linking_similarity_threshold": settings.entity_linking_similarity_threshold,
+        "entity_linking_max_facts": settings.entity_linking_max_facts,
+        "entity_linking_max_ngram": settings.entity_linking_max_ngram,
 
         # Quality thresholds
         "fact_confidence_threshold": settings.fact_confidence_threshold,

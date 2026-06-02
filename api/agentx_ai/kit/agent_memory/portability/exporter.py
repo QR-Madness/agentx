@@ -17,18 +17,12 @@ from typing_extensions import LiteralString
 
 from ..connections import Neo4jConnection, get_postgres_session
 from ..query_utils import (
-    COMMON_DATETIME_FIELDS,
     CypherFilterBuilder,
-    convert_record_datetimes,
+    convert_all_datetimes,
 )
 from .schema import MemoryExport, current_embedder_info
 
 logger = logging.getLogger(__name__)
-
-# Datetime fields beyond the common set that appear on memory nodes/rows.
-# (`consolidated` lives on Conversation; without it the raw Neo4j DateTime would
-# break JSON serialization of the node dict.)
-_DATETIME_FIELDS = COMMON_DATETIME_FIELDS + ["superseded_at", "deadline", "consolidated"]
 
 
 class MemoryExporter:
@@ -51,8 +45,10 @@ class MemoryExporter:
 
     def _node(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize a Neo4j node property dict for JSON. Exports are text-only:
-        the embedding is always dropped (regenerated on import)."""
-        d = convert_record_datetimes(dict(raw), fields=_DATETIME_FIELDS)
+        the embedding is always dropped (regenerated on import). Every temporal
+        property is converted to ISO so no raw Neo4j DateTime (e.g. a Conversation's
+        ``self_consolidated``) can break serialization."""
+        d = convert_all_datetimes(dict(raw))
         d.pop("embedding", None)
         return d
 

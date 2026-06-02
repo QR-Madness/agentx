@@ -2222,111 +2222,168 @@ def manage_audit_partitions() -> Dict[str, Any]:
     }
 
 
+# Tokens that lead third-person claims ("User works at…") or carry no entity weight;
+# excluded from the n-gram candidates so they never spuriously match an entity name.
+_BACKFILL_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "for", "with",
+    "is", "are", "was", "were", "be", "has", "have", "had", "does", "do", "did",
+    "user", "agent", "their", "they", "it", "this", "that", "his", "her",
+})
+
+
+def _slug(text: str) -> str:
+    """Lowercased, non-alphanumerics stripped — mirrors find_entity_by_name_or_alias."""
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+
+
+def _build_entity_index(session, user_id: str, channel: str) -> Dict[str, str]:
+    """Map name/alias (lowercased) and slug → entity id for a (user, channel) scope.
+
+    Scoped to ``channel`` + ``_global`` and ranked by salience so a name shared by
+    two entities resolves to the more salient one (mirrors the live resolver's
+    ordering). Built once per channel and reused across that channel's facts.
+    """
+    rows = session.run("""
+        MATCH (e:Entity)
+        WHERE e.user_id = $user_id
+          AND (e.channel = $channel OR e.channel = '_global')
+        RETURN e.id AS id, e.name AS name,
+               coalesce(e.aliases, []) AS aliases,
+               coalesce(e.salience, 0.5) AS salience
+        ORDER BY coalesce(e.salience, 0.5) ASC
+    """, user_id=user_id, channel=channel)
+
+    # Ascending salience so higher-salience entries overwrite lower ones on key collision.
+    index: Dict[str, str] = {}
+    for r in rows:
+        names = [r["name"], *(r["aliases"] or [])]
+        for nm in names:
+            if not nm:
+                continue
+            index[nm.lower()] = r["id"]
+            slug = _slug(nm)
+            if slug:
+                index[slug] = r["id"]
+    return index
+
+
+def _claim_entity_candidates(claim: str, max_ngram: int) -> List[str]:
+    """Contiguous 1..max_ngram-word n-grams from a claim, for entity-name matching.
+
+    Punctuation is stripped per word; stopwords are dropped from the unigrams but
+    kept inside multi-word grams (e.g. "Bank of America"). Returns lowercased,
+    deduped candidates ordered longest-first so the most specific match wins.
+    """
+    words = [w.strip(".,;:!?\"'()[]{}").strip() for w in claim.split()]
+    words = [w for w in words if w]
+    candidates: List[str] = []
+    seen: set = set()
+    for n in range(min(max_ngram, len(words)), 0, -1):
+        for i in range(len(words) - n + 1):
+            gram = " ".join(words[i:i + n])
+            low = gram.lower()
+            if low in seen:
+                continue
+            # Drop a lone stopword / too-short unigram; keep multi-word grams.
+            if n == 1 and (low in _BACKFILL_STOPWORDS or len(low) < 3):
+                continue
+            seen.add(low)
+            candidates.append(gram)
+    return candidates
+
+
 def link_facts_to_entities() -> Dict[str, Any]:
     """
-    Link unlinked facts to existing entities using embedding similarity.
+    Backfill: link orphaned facts (no ``ABOUT`` edge) to existing entities.
 
-    Finds facts without entity connections, extracts potential entity mentions
-    from the claim text, and creates ABOUT relationships to matching entities.
+    Deterministic, full-history repair for facts stored before/around the live
+    linking fix. For each orphan fact it matches claim n-grams against a per-channel
+    index of entity names/aliases/slugs (same semantics as
+    ``find_entity_by_name_or_alias``) and creates ``(Fact)-[:ABOUT]->(:Entity)``
+    edges. No embeddings (consolidation entities have none) and no LLM; it only links
+    to entities that already exist (unlike the live path, it does not create stubs).
 
     Returns:
-        Dictionary with linking metrics
+        Dict with items_processed, links_created, facts_still_orphan, errors.
     """
     if not settings.entity_linking_enabled:
         logger.debug("Entity linking is disabled")
-        return {"items_processed": 0, "links_created": 0, "skipped": "disabled"}
+        return {"items_processed": 0, "links_created": 0,
+                "facts_still_orphan": 0, "skipped": "disabled"}
 
-    embedder = get_embedder()
-    threshold = settings.entity_linking_similarity_threshold
-
+    max_ngram = settings.entity_linking_max_ngram
     links_created = 0
     facts_processed = 0
-    errors = []
+    facts_still_orphan = 0
+    errors: List[str] = []
 
     with Neo4jConnection.session() as session:
-        # Find facts that have no ABOUT relationships to entities
-        result = session.run("""
+        # All orphan facts (no 7-day window) — bounded by a config cap.
+        facts_to_link = list(session.run("""
             MATCH (f:Fact)
             WHERE NOT (f)-[:ABOUT]->(:Entity)
-              AND f.created_at > datetime() - duration('P7D')
             RETURN f.id AS fact_id,
                    f.claim AS claim,
-                   f.user_id AS user_id,
-                   f.channel AS channel
-            LIMIT 100
-        """)
+                   coalesce(f.user_id, 'default') AS user_id,
+                   coalesce(f.channel, '_default') AS channel
+            ORDER BY f.user_id, f.channel, f.id
+            LIMIT $cap
+        """, cap=settings.entity_linking_max_facts))
+        logger.info(f"Entity-link backfill: found {len(facts_to_link)} unlinked facts")
 
-        facts_to_link = list(result)
-        logger.info(f"Entity linking: found {len(facts_to_link)} unlinked facts")
+        # Cache one entity index per (user_id, channel) across the batch.
+        index_cache: Dict[Tuple[str, str], Dict[str, str]] = {}
 
         for record in facts_to_link:
             fact_id = record["fact_id"]
-            claim = record["claim"]
+            claim = record["claim"] or ""
             user_id = record["user_id"]
+            channel = record["channel"]
             facts_processed += 1
 
             try:
-                # Embed the fact claim
-                claim_embedding = embedder.embed_single(claim)
+                cache_key = (user_id, channel)
+                index = index_cache.get(cache_key)
+                if index is None:
+                    index = _build_entity_index(session, user_id, channel)
+                    index_cache[cache_key] = index
 
-                # Find similar entities by vector search
-                # Note: This requires Neo4j vector index on entity embeddings
-                entity_result = session.run("""
-                    CALL db.index.vector.queryNodes('entity_embeddings', 5, $embedding)
-                    YIELD node, score
-                    WHERE node.user_id = $user_id
-                      AND score >= $threshold
-                    RETURN node.id AS entity_id,
-                           node.name AS entity_name,
-                           score
-                    ORDER BY score DESC
-                    LIMIT 3
-                """, embedding=claim_embedding, user_id=user_id, threshold=threshold)
+                matched_ids: List[str] = []
+                seen_ids: set = set()
+                for phrase in _claim_entity_candidates(claim, max_ngram):
+                    eid = index.get(phrase.lower()) or index.get(_slug(phrase))
+                    if eid and eid not in seen_ids:
+                        seen_ids.add(eid)
+                        matched_ids.append(eid)
 
-                matching_entities: list[dict] = [dict(r) for r in entity_result]
+                if not matched_ids:
+                    facts_still_orphan += 1
+                    continue
 
-                # Also try text-based matching for entity names mentioned in claim
-                claim_lower = claim.lower()
-                text_result = session.run("""
-                    MATCH (e:Entity)
-                    WHERE e.user_id = $user_id
-                      AND toLower(e.name) IN $words
-                    RETURN e.id AS entity_id, e.name AS entity_name
-                """, user_id=user_id, words=claim_lower.split())
-
-                for text_match in text_result:
-                    if text_match["entity_id"] not in [m["entity_id"] for m in matching_entities]:
-                        matching_entities.append({
-                            "entity_id": text_match["entity_id"],
-                            "entity_name": text_match["entity_name"],
-                            "score": 0.8  # Text match gets decent confidence
-                        })
-
-                # Create ABOUT relationships for matches
-                for match in matching_entities:
-                    entity_id = match["entity_id"]
-                    entity_name = match["entity_name"]
-                    score = match.get("score", 0.8)
-
-                    session.run("""
-                        MATCH (f:Fact {id: $fact_id}), (e:Entity {id: $entity_id})
-                        MERGE (f)-[r:ABOUT]->(e)
-                        SET r.confidence = $score,
-                            r.linked_at = datetime(),
-                            r.method = 'auto_embedding'
-                    """, fact_id=fact_id, entity_id=entity_id, score=score)
-
-                    links_created += 1
-                    logger.debug(f"Linked fact '{claim[:50]}...' to entity '{entity_name}'")
+                session.run("""
+                    MATCH (f:Fact {id: $fact_id})
+                    UNWIND $entity_ids AS eid
+                    MATCH (e:Entity {id: eid})
+                    MERGE (f)-[r:ABOUT]->(e)
+                    ON CREATE SET r.confidence = 0.85,
+                                  r.linked_at = datetime(),
+                                  r.method = 'backfill_namematch'
+                """, fact_id=fact_id, entity_ids=matched_ids)
+                links_created += len(matched_ids)
+                logger.debug(f"Backfill linked fact '{claim[:50]}...' to {len(matched_ids)} entities")
 
             except Exception as e:
                 logger.warning(f"Failed to link fact {fact_id}: {e}")
                 errors.append(f"{fact_id}:{e}")
 
-    logger.info(f"Entity linking complete: {facts_processed} facts processed, {links_created} links created")
+    logger.info(
+        f"Entity-link backfill complete: {facts_processed} processed, "
+        f"{links_created} links created, {facts_still_orphan} still orphan"
+    )
 
     return {
         "items_processed": facts_processed,
         "links_created": links_created,
-        "errors": errors
+        "facts_still_orphan": facts_still_orphan,
+        "errors": errors,
     }

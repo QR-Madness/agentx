@@ -258,6 +258,28 @@ def convert_record_datetimes(
     return record
 
 
+def convert_all_datetimes(record: dict[str, Any]) -> dict[str, Any]:
+    """
+    Convert every temporal-valued field in a record to an ISO string.
+
+    Unlike :func:`convert_record_datetimes` (which only touches a known allowlist),
+    this walks all values and converts anything that is a Neo4j/Python temporal —
+    detected by duck-typing ``isoformat()`` — so a node never leaks a raw
+    ``neo4j.time.DateTime`` into JSON serialization regardless of the field name.
+    Strings, numbers, lists, and dicts are left untouched.
+
+    Args:
+        record: Dictionary from a Neo4j node/record.
+
+    Returns:
+        The record with temporal values converted (mutates original).
+    """
+    for key, value in record.items():
+        if value is not None and not isinstance(value, str) and hasattr(value, "isoformat"):
+            record[key] = value.isoformat()
+    return record
+
+
 def validate_pagination(
     offset: int = 0,
     limit: int = 20,
