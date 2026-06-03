@@ -467,6 +467,17 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 > Grounded tech-debt / consistency items noticed during the model-fallback + context work.
 
+- [ ] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — subtask state is
+      encoded as magic prefixes on the *result* string (`[FAILED: …]` / `[SKIPPED: …]` / `[ABANDONED: …]`)
+      and re-parsed by `str.startswith` in **three** places (`plan_executor.py` `_build_synthesis_messages`,
+      `_handle_failure`, `_completed_count`, and `views.py::_subtask_status`). Replace with a real
+      `status` enum/field on `Subtask` (keep the result string for the human-readable reason). Cross-file;
+      own pass. *(Filed from the PlanExecutor cleanup that did #1 typed `PlanResult` + #2 sync safety-net
+      parity.)*
+- [ ] **Unify the plan executor's sync/async engines (optional)** — `execute()` and `execute_streaming()`
+      duplicate the subtask loop (select → run → mark/handle-failure → safety-net → synthesize). Parity is
+      now restored (safety net mirrored), but the two skeletons can still drift. Sharing the loop body is
+      awkward across sync/async; revisit only if `Agent.run` (the sync path) grows.
 - [ ] **Extend the universal model fallback to the remaining feature sites** — Slice 5 wired
       `resolve_with_fallback` into memory/recall/recap/compression, but **reasoning** (CoT/ToT/ReAct/
       Reflection), **drafting** (speculative/pipeline/candidate), `agent/planner.py`, and

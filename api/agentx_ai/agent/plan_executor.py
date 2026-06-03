@@ -8,6 +8,7 @@ via the provider's streaming or synchronous completion with tool-use loops.
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Optional
 from uuid import uuid4
 
@@ -20,6 +21,23 @@ logger = logging.getLogger(__name__)
 def _sse(event: str, data: dict) -> str:
     """Format a Server-Sent Event string."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@dataclass
+class PlanResult:
+    """Accumulated outputs of a streaming plan run, owned by the caller.
+
+    Mirrors ``ToolLoopResult``: the caller pre-allocates one and passes it into
+    ``execute_streaming(result=…)`` so the executor's outputs are a single typed
+    contract rather than scattered ``self.*`` attributes (which silently dropped
+    the steers field before this existed).
+    """
+    full_content: str = ""
+    tools_used: list[str] = field(default_factory=list)
+    tokens_in: int = 0
+    tokens_out: int = 0
+    steers: list[dict] = field(default_factory=list)
+    plan_id: str = ""
 
 
 class PlanExecutor:
@@ -56,6 +74,21 @@ class PlanExecutor:
         # is a goal-state update only — not a task-completion event, so it does
         # not trigger reflection.
         self.agent._dispatch("on_goal_complete", subtask.goal_id, status, result)
+
+    @staticmethod
+    def _completed_count(plan: TaskPlan, *, exclude_abandoned: bool = False) -> int:
+        """Count subtasks that produced a result (not FAILED; optionally not ABANDONED).
+
+        Used for the plan_complete / plan_cancelled event payloads.
+        """
+        n = 0
+        for s in plan.steps:
+            if not s.result or s.result.startswith("[FAILED"):
+                continue
+            if exclude_abandoned and s.result.startswith("[ABANDONED"):
+                continue
+            n += 1
+        return n
 
     # ------------------------------------------------------------------
     # Synchronous execution (for Agent.run)
@@ -104,6 +137,19 @@ class PlanExecutor:
                 logger.error(f"Subtask {subtask.id} failed: {e}")
                 self._handle_failure(plan, plan_id, subtask, e)
 
+            # Safety net (parity with execute_streaming): a selected subtask must
+            # reach a terminal state, else get_next_subtask could re-select it
+            # forever (defends against the historical id/index mismatch loop).
+            if not subtask.completed:
+                logger.error(
+                    f"Subtask {subtask.id} did not reach a terminal state; "
+                    f"force-failing to prevent a loop."
+                )
+                self._handle_failure(
+                    plan, plan_id, subtask,
+                    RuntimeError("subtask did not complete"),
+                )
+
         if cancelled:
             self._abandon_pending_subtasks(plan, plan_id)
             self.state.mark_complete(plan_id, status="cancelled")
@@ -128,11 +174,14 @@ class PlanExecutor:
         max_tokens: int = 4096,
         max_context_tokens: int = 100000,
         conversation_context: Optional[list[Message]] = None,
+        result: Optional[PlanResult] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Execute a plan as an async generator, yielding SSE event strings.
 
-        The caller (generate_sse) iterates with ``async for event in ...``.
+        The caller (generate_sse) iterates with ``async for event in ...`` and
+        reads the run's outputs off the ``result`` it passed in (a ``PlanResult``;
+        one is created internally if omitted).
 
         Yields:
             SSE-formatted event strings (plan_start, subtask_start, chunk,
@@ -145,14 +194,9 @@ class PlanExecutor:
         start_time = time.time()
         self.state.create(plan_id, plan)
 
-        # Stash metadata on self so the caller can read it after iteration
-        self.full_content = ""
-        self.tools_used = []
-        self.total_tokens_in = 0
-        self.total_tokens_out = 0
-        # Steers folded across subtasks, surfaced so the caller persists them
-        # (steered turns + procedural correction candidates) like the std path.
-        self.steers: list[dict] = []
+        # Single caller-owned outputs object (full_content, tools, tokens, steers).
+        self._result = result if result is not None else PlanResult()
+        self._result.plan_id = plan_id
 
         yield _sse("plan_start", {
             "plan_id": plan_id,
@@ -246,11 +290,7 @@ class PlanExecutor:
             yield _sse("plan_cancelled", {
                 "plan_id": plan_id,
                 "subtask_count": len(plan.steps),
-                "completed_count": sum(
-                    1 for s in plan.steps
-                    if s.result and not s.result.startswith("[FAILED")
-                    and not s.result.startswith("[ABANDONED")
-                ),
+                "completed_count": self._completed_count(plan, exclude_abandoned=True),
                 "total_time_ms": round(total_time, 1),
             })
             return
@@ -268,10 +308,7 @@ class PlanExecutor:
         yield _sse("plan_complete", {
             "plan_id": plan_id,
             "subtask_count": len(plan.steps),
-            "completed_count": sum(
-                1 for s in plan.steps
-                if s.result and not s.result.startswith("[FAILED")
-            ),
+            "completed_count": self._completed_count(plan),
             "total_time_ms": round(total_time, 1),
         })
 
@@ -353,11 +390,11 @@ class PlanExecutor:
         ):
             yield event_str
 
-        # Accumulate metrics from this subtask
-        self.tools_used.extend(loop_result.tools_used)
-        self.total_tokens_in += loop_result.tokens_in
-        self.total_tokens_out += loop_result.tokens_out
-        self.steers.extend(loop_result.steers)
+        # Accumulate metrics from this subtask onto the caller-owned result.
+        self._result.tools_used.extend(loop_result.tools_used)
+        self._result.tokens_in += loop_result.tokens_in
+        self._result.tokens_out += loop_result.tokens_out
+        self._result.steers.extend(loop_result.steers)
 
         # Pick the most useful representation of this subtask's output:
         # the supervisor's post-tool synthesis if it produced one; otherwise
@@ -503,7 +540,7 @@ class PlanExecutor:
             temperature=temperature, max_tokens=max_tokens,
         ):
             if chunk.content:
-                self.full_content += chunk.content
+                self._result.full_content += chunk.content
                 yield _sse("chunk", {"content": chunk.content})
 
     def _build_synthesis_messages(self, plan: TaskPlan) -> list[Message]:

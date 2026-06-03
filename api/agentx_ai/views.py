@@ -1508,7 +1508,7 @@ async def agent_chat_stream(request):
             if decompose:
                 # Plan execution path — delegate to PlanExecutor
                 from .agent.plan_state import PlanStateStore
-                from .agent.plan_executor import PlanExecutor
+                from .agent.plan_executor import PlanExecutor, PlanResult
 
                 state_store = PlanStateStore(conv_id)
                 executor = PlanExecutor(agent, state_store)
@@ -1519,22 +1519,24 @@ async def agent_chat_stream(request):
                 # tied to the ongoing conversation instead of resetting it.
                 inherited_context = messages[:-1] if messages else []
 
+                plan_result = PlanResult()
                 async for event_str in executor.execute_streaming(
                     plan, provider, model_id, tools,
                     temperature=effective_temperature,
                     max_tokens=adaptive_max_tokens,
                     max_context_tokens=max_context_tokens,
                     conversation_context=inherited_context,
+                    result=plan_result,
                 ):
                     yield event_str
 
-                # Collect metadata from executor for done event
-                full_content = executor.full_content
-                total_tokens_input = executor.total_tokens_in
-                total_tokens_output = executor.total_tokens_out
-                # Surface steers folded across subtasks so they persist (steered
-                # turns + procedural correction candidates) like the standard path.
-                steers_data = executor.steers
+                # Collect outputs from the run (single typed result object).
+                full_content = plan_result.full_content
+                total_tokens_input = plan_result.tokens_in
+                total_tokens_output = plan_result.tokens_out
+                # Steers folded across subtasks persist (steered turns +
+                # procedural correction candidates) like the standard path.
+                steers_data = plan_result.steers
 
                 # Snapshot the plan so the in-chat plan card can be reconstructed
                 # on conversation restore (subtask-level turns aren't persisted;
@@ -1551,7 +1553,7 @@ async def agent_chat_stream(request):
                     return "completed"
 
                 plan_summary = {
-                    "plan_id": executor.plan_id,
+                    "plan_id": plan_result.plan_id,
                     "task": plan.task,
                     "complexity": plan.complexity.value,
                     "subtask_count": len(plan.steps),

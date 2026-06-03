@@ -3054,6 +3054,97 @@ class EntityGraphNodeDictTest(TestCase):
         self.assertEqual(out["related"][0]["relationship"], "RELATES_TO")
 
 
+class PlanExecutorResultTest(TestCase):
+    """PlanExecutor cleanup: typed PlanResult, completed-count, sync safety net."""
+
+    @staticmethod
+    def _plan(*results):
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+        steps = []
+        for i, r in enumerate(results):
+            s = Subtask(id=i, description=f"step {i}", type=SubtaskType.GENERATION)
+            s.result = r
+            s.completed = r is not None
+            steps.append(s)
+        return TaskPlan(task="t", complexity=TaskComplexity.COMPLEX, steps=steps)
+
+    def test_completed_count(self) -> None:
+        from agentx_ai.agent.plan_executor import PlanExecutor
+
+        plan = self._plan("ok", "[FAILED: x]", "[ABANDONED: y]", None)
+        # Default counts everything with a result that isn't FAILED (so ABANDONED counts).
+        self.assertEqual(PlanExecutor._completed_count(plan), 2)
+        # exclude_abandoned drops the ABANDONED one.
+        self.assertEqual(PlanExecutor._completed_count(plan, exclude_abandoned=True), 1)
+
+    def test_sync_execute_force_fails_non_terminal_subtask(self) -> None:
+        """Safety-net parity: a subtask that never marks complete is force-failed,
+        so the sync loop terminates instead of re-selecting it forever."""
+        from agentx_ai.agent.plan_executor import PlanExecutor
+
+        plan = self._plan(None)  # one pending subtask
+        agent = MagicMock()
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+        ex = PlanExecutor(agent, state)
+        # Subtask "runs" fine, but mark_complete is neutered (simulates the
+        # historical id/index mismatch that left the slot not-completed).
+        with patch.object(PlanExecutor, "_execute_subtask_sync", return_value="x"), \
+             patch.object(plan, "mark_complete", lambda *a, **k: None), \
+             patch.object(PlanExecutor, "_compose_answer_sync", return_value="final"):
+            answer = ex.execute(plan)
+        self.assertEqual(answer, "final")          # loop terminated (didn't spin)
+        self.assertTrue(plan.steps[0].completed)   # force-failed to a terminal state
+        self.assertTrue((plan.steps[0].result or "").startswith("[FAILED"))
+
+    def test_execute_streaming_surfaces_outputs_into_result(self) -> None:
+        """The caller-owned PlanResult carries content, tokens, and steers
+        (the dropped-field regression that the typed result guards against)."""
+        from types import SimpleNamespace
+        from agentx_ai.agent.plan_executor import PlanExecutor, PlanResult
+
+        plan = self._plan(None)  # one pending subtask
+        agent = MagicMock()
+        agent._active_alloy_executor = None
+        agent._get_tools_for_provider.return_value = None
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+
+        async def fake_loop(provider, model_id, messages, tools, ag, *, result=None, **kw):
+            if result is not None:
+                result.final_content = "subtask out"
+                result.tokens_in = 5
+                result.tokens_out = 3
+                result.steers.append(
+                    {"content": "do Y", "round": 0, "after_tools": [], "phase": "would_end"}
+                )
+            return
+            yield  # make this an async generator
+
+        class _FakeProvider:
+            async def stream(self, messages, model_id, **kw):
+                yield SimpleNamespace(content="final synthesis")
+
+        ex = PlanExecutor(agent, state)
+        pr = PlanResult()
+
+        async def _drive():
+            async for _ in ex.execute_streaming(
+                plan, _FakeProvider(), "m", None, result=pr,
+            ):
+                pass
+
+        with patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_loop):
+            asyncio.run(_drive())
+
+        self.assertEqual(pr.plan_id, ex.plan_id)
+        self.assertIn("final synthesis", pr.full_content)
+        self.assertEqual(pr.tokens_in, 5)
+        self.assertEqual(pr.tokens_out, 3)
+        self.assertEqual(len(pr.steers), 1)
+        self.assertEqual(pr.steers[0]["content"], "do Y")
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 
