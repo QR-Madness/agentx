@@ -1532,6 +1532,9 @@ async def agent_chat_stream(request):
                 full_content = executor.full_content
                 total_tokens_input = executor.total_tokens_in
                 total_tokens_output = executor.total_tokens_out
+                # Surface steers folded across subtasks so they persist (steered
+                # turns + procedural correction candidates) like the standard path.
+                steers_data = executor.steers
 
                 # Snapshot the plan so the in-chat plan card can be reconstructed
                 # on conversation restore (subtask-level turns aren't persisted;

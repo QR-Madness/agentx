@@ -150,6 +150,9 @@ class PlanExecutor:
         self.tools_used = []
         self.total_tokens_in = 0
         self.total_tokens_out = 0
+        # Steers folded across subtasks, surfaced so the caller persists them
+        # (steered turns + procedural correction candidates) like the std path.
+        self.steers: list[dict] = []
 
         yield _sse("plan_start", {
             "plan_id": plan_id,
@@ -354,6 +357,7 @@ class PlanExecutor:
         self.tools_used.extend(loop_result.tools_used)
         self.total_tokens_in += loop_result.tokens_in
         self.total_tokens_out += loop_result.tokens_out
+        self.steers.extend(loop_result.steers)
 
         # Pick the most useful representation of this subtask's output:
         # the supervisor's post-tool synthesis if it produced one; otherwise
