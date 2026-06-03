@@ -908,7 +908,7 @@ Returns total counts and per-channel breakdowns.
 **Response:**
 ```json
 {
-  "totals": {"entities": 45, "facts": 120, "strategies": 8, "turns": 300},
+  "totals": {"entities": 45, "facts": 120, "strategies": 8, "turns": 300, "procedure_candidates": 5},
   "by_channel": {
     "_global": {"entities": 30, "facts": 80, "strategies": 5, "turns": 200},
     "my-project": {"entities": 15, "facts": 40, "strategies": 3, "turns": 100}

@@ -1422,6 +1422,38 @@ async def agent_chat_stream(request):
                         for t in turns:
                             mem.store_turn(t)
                         logger.debug(f"Stored {len(turns)} turns in memory for conversation {conv_id}")
+
+                        # Procedural memory — encode loop (Slice 0): stage the
+                        # highest-signal candidates from this turn. Corrections
+                        # (steers) and explicit user rules; no LLM, best-effort.
+                        try:
+                            from .kit.agent_memory.memory.procedural import detect_explicit_rule
+                            _proc_agent_id = getattr(agent_profile, "agent_id", None)
+                            _staged: list[str] = []
+                            for s in steers_data:
+                                if mem.stage_procedure_candidate(
+                                    signal="correction",
+                                    content=s.get("content", ""),
+                                    context={
+                                        "after_tools": s.get("after_tools") or [],
+                                        "steer_round": s.get("round"),
+                                        "phase": s.get("phase"),
+                                    },
+                                    agent_id=_proc_agent_id,
+                                ):
+                                    _staged.append("correction")
+                            rule = detect_explicit_rule(message)
+                            if rule and mem.stage_procedure_candidate(
+                                signal="explicit_rule", content=rule, agent_id=_proc_agent_id,
+                            ):
+                                _staged.append("explicit_rule")
+                            if _staged:
+                                logger.info(
+                                    f"Procedural encode: staged {len(_staged)} candidate(s) "
+                                    f"({', '.join(_staged)}) for conversation {conv_id}"
+                                )
+                        except Exception as proc_err:
+                            logger.debug(f"Procedure-candidate staging skipped: {proc_err}")
                     except Exception as mem_err:
                         logger.warning(f"Failed to store turns in memory: {mem_err}")
 
@@ -3769,6 +3801,17 @@ def memory_stats(request):
                 RETURN count(t) AS cnt
             """, user_id=DEFAULT_USER_ID).single()
             totals["turns"] = turn_count["cnt"] if turn_count else 0
+
+            # Procedural-memory candidates staged but not yet distilled (Slice 0).
+            try:
+                from .kit.agent_memory.connections import get_postgres_session
+                from sqlalchemy import text as _sa_text
+                with get_postgres_session() as _pg:
+                    totals["procedure_candidates"] = int(_pg.execute(
+                        _sa_text("SELECT COUNT(*) FROM procedure_candidates WHERE status = 'pending'")
+                    ).scalar() or 0)
+            except Exception:
+                totals["procedure_candidates"] = 0
 
             # Get per-channel breakdown
             by_channel = {}

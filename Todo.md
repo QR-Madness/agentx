@@ -779,6 +779,95 @@ covers ~80% of this via its own tool loop:
 - [ ] **SearXNG self-hosted backend** — optional fully-self-hosted `web_search` backend (needs
       residential/ISP proxy in `settings.yml`); slots behind the existing pluggable tool.
 
+### ⭐ Active Memory Recall — close the query-formulation gap
+
+> The real gap isn't *retrieval*, it's **query formulation**. Recall is `remember(query=message)` —
+> the literal user turn is the query. But "should we go after this idea?" has near-zero overlap with
+> the facts that matter (our goals, prior decisions, constraints, what we're mid-build on). A human
+> partner first asks *themselves* "what are we trying to accomplish? what are we working on?" — an
+> **implicit question** the LLM has to synthesize. HyDE only half-helps (it hypothesizes an *answer*;
+> here there's no answer yet, only the implicit questions). Build recall in **three tiers** — the model
+> needs memory in-context *before* it generates, so this can't be streamed in after the fact. Ties
+> foundation #3 (stable memory core) + the Retrieval Quality items below.
+
+- [ ] **Tier 2 — smart pre-turn recall (start here; the 80/20)** — replace `remember(query=message)`
+      with: (1) a **conversational query rewrite / step-back** (one fast-model call: "should we go
+      after this?" → "active goals; current project scope; prior strategic decisions; known
+      constraints/risks"); (2) **anchor retrieval on `get_active_goals()` + `session.summary`**, not
+      the raw message (both already exist, recall ignores them); (3) fan the sub-queries out
+      concurrently. Synchronous but cheap; fixes the completion gap on every turn.
+- [ ] **Fast recall model knob** — add `recall.expansion_model` (rewrite/step-back/expansion) defaulting
+      to a fast tier (local `nemotron-nano` like `combined_extraction_model`, or a Haiku/Flash-class
+      cloud model). The expensive chat model never touches recall; sub-queries parallelize.
+- [ ] **Tier 1 — passive working-set watchdog (always-on, state-driven)** — a debounced background
+      updater keeps a compact "here's our head right now" digest fresh as turns accumulate (goals +
+      recent decisions + salient entities + open questions); piggyback the rolling-summary update that
+      already fires. Injected as the **stable core** every turn (foundation #3); recall is the
+      *supplement*. This is the "thinking in their own head" — maintenance, not search. Supersedes the
+      **Working Memory Scratchpad** item below.
+- [ ] **Tier 3 — agentic deep recall (on-demand, observable)** — an LLM-callable `deep_recall("what do
+      we know bearing on this?")` that runs a **multi-hop compounding** loop (retrieve → read → the gaps
+      become the next query → retrieve again; FLARE/IRCoT/self-RAG family), synthesizing a working
+      brief. It "blocks" the turn only when the model *chooses* to think harder — the human behavior —
+      and **streams its steps over the `status`/`delegation_*` SSE infra** so the user sees it think.
+      **Implement as an Agent Alloy specialist** (a delegated "Memory" agent) to reuse delegation
+      streaming + depth limits wholesale — which dissolves the "SSE vs blocking agent" question: it's a
+      delegated agent that streams. (Decision to pin: Alloy specialist vs standalone internal tool.)
+- [ ] **Compounding extraction — keep it ephemeral** — during multi-hop recall, synthesize a
+      retrieval-time brief but **don't write durable facts inline** (pollution risk); instead *queue*
+      interesting discoveries for the existing 15-min consolidation, which owns durable writes.
+
+### ⭐ Procedural Memory — a constant thought (encode → replay → activate)
+
+> **Pre-flight verdict: it's wired but inert** — four independent breaks. ① internal tools never
+> record (chat loop → `call_tool_sync` → `execute_internal_tool` bypasses the `tool_executor` recorder;
+> only external MCP tools record). ② `detect_patterns` keys off `(:Conversation)-[:RESULTED_IN]->
+> (:Outcome {success:true})`, but `Outcome` nodes are created **only** in the eval harness — never the
+> live path → zero strategies learned. ③ even if learned, `MemoryBundle.to_context_string` renders
+> turns/facts/entities/goals but **omits strategies** → they never reach the prompt. ④ the
+> consolidation worker runs only via `task memory:worker`; `task dev` doesn't start it. Don't revive the
+> coarse `detect_patterns` ("Use {tools} for {task_type}") — rebuild it **brain-modeled**. Unifies with
+> the **Active Memory Recall** tiers above (Tier-1 watchdog = the reflex core; Tier-3 = deliberate
+> self-query). Seed signal: the persisted steer corrections (`metadata.steered`).
+
+> **Brain model.** (a) *General → specific*: the model already has the general baseline, so store only
+> the **delta** — the project/user/domain "how we do it here," corrections, learned habits. (b) *The
+> asymmetry is encoding + recall, not retention*: agents store durably (no rehearsal needed), but a
+> stored-yet-never-recalled procedure is **functionally forgotten** → engineer **active recall**, not
+> rehearsal. (c) *It's a constant thought*: three always-on loops, not a batch afterthought.
+
+- [ ] **Useful-pattern spec (the first step)** — a pattern is stored only if it passes: (1) a
+      **high-signal event** — corrections/**steers** (`metadata.steered`, the best signal) › explicit
+      rules ("always…/we prefer…") › failure→recovery › repetition › novel successful sequences; (2)
+      **baseline-deviation** — a fast model discards anything a competent agent would already do by
+      default (store the *delta*); (3) **reusable + evidenced** (scoped, backed by a real event).
+      Scope hierarchy `_global → user → project → _self_{agent} → conversation`; recall prefers
+      most-specific.
+- [x] **Loop 1 — Encode (every turn, cheap)** — **Slice 0 shipped.** Stages `correction` candidates
+      (from the persisted `steers_data` — `after_tools`/`steer_round`/`phase`) + `explicit_rule`
+      candidates (`procedural.detect_explicit_rule`, heuristic, no LLM) into a new `procedure_candidates`
+      PG table, from the `_persist_turns` daemon on the streaming chat path (both normal + hard-stop).
+      Count surfaced on `/api/memory/stats`. **Remaining for the loop:** failure-marker capture +
+      repetition detection. [[metadata.steered]]
+- [ ] **Loop 2 — Replay / distill (consolidation = "sleep")** — the worker **replays stored
+      sequences**: extract the **invariant core across instances** (general→specific abstraction),
+      **reflect** on corrected/failed sequences to mint the corrected procedure (reuse
+      `ReflectiveReasoner` + `check_relevance_and_extract_assistant`), **strengthen** replayed ones,
+      **prune** baseline-known ones. Fix ② (emit a success/Outcome signal) + ① (record internal-tool
+      sequences as evidence).
+- [ ] **Loop 3 — Activate (every turn; the hard part) — gate, don't retrieve** — procedural recall ≠
+      content similarity (a conditional trigger→sequence isn't *similar* to the prompt). **Index by
+      trigger, query by situation.** Four modes: **reflex core** (top general/project procedures
+      injected every turn, maintained not searched = Tier-1 watchdog); **activation nerve** (match a
+      *situation descriptor* built from goals+summary+fast-model intent-tag+entities+next-tool against
+      trigger conditions — fires the procedure); **point-of-action** (action-bound procedures inject at
+      the tool-call boundary); **deliberate** (`recall_procedures` self-query = Tier-3). Fix ③ (render
+      the reflex core into `to_context_string`).
+- [ ] **`Procedure` model (richer than `Strategy`)** — `{trigger (NL + situation features),
+      sequence/approach (replayable body), rationale, scope, strength (replay/reinforce count),
+      evidence refs}`. Repurpose the **dead** `learn_strategy`/`reinforce_strategy` (no live callers) as
+      the write/strengthen path. Fix ④ (run/ document the worker).
+
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation
 - [ ] Conversation Summarization — maintain rolling per-session and per-topic summaries; retrieval becomes `recent_turns + relevant_summaries + relevant_facts`

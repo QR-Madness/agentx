@@ -2957,6 +2957,103 @@ class LiveSteeringStoreTest(MockRedisTestBase):
         pipe.delete.assert_called_once_with(_queue_key("r1"))
 
 
+class ProcedureCandidateTest(TestCase):
+    """Procedural memory — encode loop (Slice 0): rule detection + candidate staging."""
+
+    def test_detect_explicit_rule_matches(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.procedural import detect_explicit_rule
+
+        clause = detect_explicit_rule("From now on, always cite your sources. Thanks!")
+        self.assertIsNotNone(clause)
+        self.assertIn("cite", clause.lower())
+        # The clause stops at the sentence boundary (doesn't swallow "Thanks!").
+        self.assertNotIn("Thanks", clause)
+        self.assertIsNotNone(detect_explicit_rule("I prefer concise answers"))
+        self.assertIsNotNone(detect_explicit_rule("make sure to run the tests before pushing"))
+
+    def test_detect_explicit_rule_rejects_ordinary(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.procedural import detect_explicit_rule
+
+        self.assertIsNone(detect_explicit_rule("what's the weather today?"))
+        self.assertIsNone(detect_explicit_rule("build me a login form"))
+        self.assertIsNone(detect_explicit_rule(""))
+
+    def test_stage_candidate_inserts_row(self) -> None:
+        from agentx_ai.kit.agent_memory.memory import procedural as proc_mod
+
+        mock_session = MagicMock()
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_session
+        cm.__exit__.return_value = False
+        with patch.object(proc_mod, "get_embedder", return_value=MagicMock()), \
+             patch.object(proc_mod, "get_postgres_session", return_value=cm):
+            pm = proc_mod.ProceduralMemory()
+            pm.stage_candidate(
+                "conv1", "correction", "do Y not X",
+                context={"after_tools": ["search"]}, channel="proj", agent_id="bold-falcon",
+            )
+        mock_session.execute.assert_called_once()
+        params = mock_session.execute.call_args.args[1]
+        self.assertEqual(params["conv_id"], "conv1")
+        self.assertEqual(params["signal"], "correction")
+        self.assertEqual(params["content"], "do Y not X")
+        self.assertEqual(params["channel"], "proj")
+        self.assertEqual(params["agent_id"], "bold-falcon")
+        self.assertIn("search", params["context"])  # JSON-encoded context string
+
+
+class EntityGraphNodeDictTest(TestCase):
+    """Regression: get_entity_graph must return related entities as mutable dicts.
+
+    A raw neo4j Node rejects item assignment, but the retriever's scoring does
+    `entity["final_score"] = …` — a raw node there raised "'Node' object does not
+    support item assignment", silently breaking recall + 500'ing user-history.
+    """
+
+    class _FakeNode:
+        """Mimics a neo4j Node: dict()-able + .get(), but rejects __setitem__."""
+        def __init__(self, data):
+            self._d = dict(data)
+
+        def keys(self):
+            return self._d.keys()
+
+        def __getitem__(self, k):
+            return self._d[k]
+
+        def get(self, k, default=None):
+            return self._d.get(k, default)
+
+        def __setitem__(self, k, v):
+            raise TypeError("'Node' object does not support item assignment")
+
+    def test_related_entities_are_mutable_dicts(self) -> None:
+        from agentx_ai.kit.agent_memory.memory import semantic as sem_mod
+
+        record = {
+            "entity": self._FakeNode({"id": "e1", "name": "Root"}),
+            "related": [{
+                "entity": self._FakeNode({"id": "e2", "name": "Project X", "type": "Project"}),
+                "relationship": "RELATES_TO",
+                "path_length": 1,
+            }],
+            "facts": [],
+        }
+        mock_session = MagicMock()
+        mock_session.run.return_value = [record]
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_session
+        cm.__exit__.return_value = False
+        with patch.object(sem_mod.Neo4jConnection, "session", return_value=cm):
+            out = sem_mod.SemanticMemory().get_entity_graph(["e1"])
+
+        related_entity = out["related"][0]["entity"]
+        self.assertIsInstance(related_entity, dict)
+        self.assertEqual(related_entity["id"], "e2")
+        related_entity["final_score"] = 1.0  # must not raise (the bug)
+        self.assertEqual(out["related"][0]["relationship"], "RELATES_TO")
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 

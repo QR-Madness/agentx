@@ -99,6 +99,28 @@ CREATE INDEX IF NOT EXISTS idx_tools_timestamp ON tool_invocations USING BRIN (t
 CREATE INDEX IF NOT EXISTS idx_tools_channel ON tool_invocations (channel);
 
 -- ============================================
+-- PROCEDURE CANDIDATES (procedural memory, encode loop)
+-- ============================================
+-- Raw high-signal procedural events staged per turn (corrections/steers,
+-- explicit user rules). Slice 1's consolidation distills these into Procedures;
+-- `status` tracks that lifecycle (pending -> distilled | discarded).
+CREATE TABLE IF NOT EXISTS procedure_candidates (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id UUID NOT NULL,
+    turn_index INTEGER,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    signal VARCHAR(40) NOT NULL,                    -- 'correction' | 'explicit_rule'
+    content TEXT NOT NULL,                          -- the steer / the rule text
+    context JSONB,                                  -- {after_tools, steer_round, ...}
+    channel VARCHAR(100) NOT NULL DEFAULT '_global',
+    agent_id VARCHAR(100),                          -- agent whose behavior this corrects
+    status VARCHAR(20) NOT NULL DEFAULT 'pending'   -- pending | distilled | discarded
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_candidates_status ON procedure_candidates (status, channel);
+CREATE INDEX IF NOT EXISTS idx_proc_candidates_conversation ON procedure_candidates (conversation_id);
+
+-- ============================================
 -- USER PROFILES
 -- ============================================
 -- User preferences and profiles (user-scoped, no channel needed)

@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
 import json
+import re
 
 from typing_extensions import LiteralString
 from sqlalchemy import text
@@ -14,6 +15,40 @@ from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
+
+
+# Cheap, LLM-free detector for an explicit standing rule/preference stated in a
+# user message — a high-signal procedural candidate (the "encode" loop). Lossy-
+# permissive by design: Slice 1's baseline-deviation filter prunes false positives.
+_RULE_TRIGGERS = re.compile(
+    r"\b("
+    r"from now on|going forward|in (?:the )?future|"
+    r"always|never|"
+    r"make sure(?: to)?|be sure to|ensure that|"
+    r"remember to|don'?t forget to|"
+    r"don'?t ever|do not ever|"
+    r"i(?:'d| would)? prefer|i prefer|we prefer|we usually|"
+    r"please always|please never|you should always|you should never"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def detect_explicit_rule(message: str) -> Optional[str]:
+    """Return the rule clause if a message states a standing rule/preference, else None.
+
+    Heuristic only (no LLM): matches imperative/preference phrasing and returns the
+    clause from the trigger to the end of its sentence (capped at 500 chars).
+    """
+    if not message:
+        return None
+    m = _RULE_TRIGGERS.search(message)
+    if not m:
+        return None
+    # Clause = from the trigger phrase to the next sentence boundary (or end).
+    tail = message[m.start():]
+    clause = re.split(r"(?<=[.!?\n])\s", tail, maxsplit=1)[0].strip()
+    return clause[:500] or None
 
 
 class ProceduralMemory:
@@ -114,6 +149,53 @@ class ProceduralMemory:
                 channel=channel,
                 turn_index=turn_index,
             )
+
+    def stage_candidate(
+        self,
+        conversation_id: str,
+        signal: str,
+        content: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+        channel: str = "_global",
+        agent_id: Optional[str] = None,
+        turn_index: Optional[int] = None,
+    ) -> None:
+        """Stage a raw procedural-memory candidate (the encode loop).
+
+        A cheap PG insert of a high-signal event — a steer/correction or an
+        explicit user rule. Slice 1 consolidation distills `pending` rows into
+        scoped Procedures. Mirrors `record_invocation`'s write pattern.
+        """
+        with get_postgres_session() as session:
+            session.execute(
+                text(
+                    """
+                INSERT INTO procedure_candidates
+                (conversation_id, turn_index, signal, content, context, channel, agent_id)
+                VALUES (:conv_id, :turn_idx, :signal, :content, :context, :channel, :agent_id)
+            """
+                ),
+                {
+                    "conv_id": conversation_id,
+                    "turn_idx": turn_index,
+                    "signal": signal,
+                    "content": content,
+                    "context": json.dumps(context) if context else None,
+                    "channel": channel,
+                    "agent_id": agent_id,
+                },
+            )
+
+    def count_candidates(self, *, status: str = "pending", channel: Optional[str] = None) -> int:
+        """Count staged candidates (for observability / stats)."""
+        sql = "SELECT COUNT(*) FROM procedure_candidates WHERE status = :status"
+        params: Dict[str, Any] = {"status": status}
+        if channel:
+            sql += " AND channel = :channel"
+            params["channel"] = channel
+        with get_postgres_session() as session:
+            return int(session.execute(text(sql), params).scalar() or 0)
 
     def learn_strategy(
         self,

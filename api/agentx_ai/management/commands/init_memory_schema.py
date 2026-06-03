@@ -460,7 +460,7 @@ class Command(BaseCommand):
                     AND table_name IN (
                         'conversation_logs', 'memory_timeline', 'tool_invocations',
                         'user_profiles', 'memory_audit_log', 'schema_version',
-                        'user_files', 'artifacts', 'blob_cache'
+                        'user_files', 'artifacts', 'blob_cache', 'procedure_candidates'
                     )
                 """))
                 tables = [r[0] for r in result.fetchall()]

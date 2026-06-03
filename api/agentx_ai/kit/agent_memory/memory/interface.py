@@ -676,6 +676,38 @@ class AgentMemory:
                 metadata={"tool_name": tool_name, "tool_success": success, "tool_latency_ms": latency_ms},
             )
 
+    def stage_procedure_candidate(
+        self,
+        signal: str,
+        content: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
+        turn_index: Optional[int] = None,
+    ) -> bool:
+        """Stage a high-signal procedural candidate (encode loop; Slice 0).
+
+        Best-effort: no-op without a conversation_id, swallows errors so it can
+        never break the turn's persistence. Scoped to this instance's channel.
+        Returns True if the candidate was written (so callers can log/observe).
+        """
+        if not self.conversation_id:
+            return False
+        try:
+            self.procedural.stage_candidate(
+                conversation_id=self.conversation_id,
+                signal=signal,
+                content=content,
+                context=context,
+                channel=self.channel,
+                agent_id=agent_id,
+                turn_index=turn_index,
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"stage_procedure_candidate failed (signal={signal}): {e}")
+            return False
+
     # Retrieval operations
 
     def remember(
