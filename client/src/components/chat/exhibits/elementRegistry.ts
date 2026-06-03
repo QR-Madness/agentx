@@ -13,6 +13,8 @@ import type { ExhibitElement } from '../../../lib/exhibits';
 import type { ElementRenderProps } from './types';
 import { MermaidElement } from './MermaidElement';
 import { ChoiceElement } from './ChoiceElement';
+import { TableElement } from './TableElement';
+import { CitationElement } from './CitationElement';
 
 export type { ElementRenderProps };
 
@@ -21,4 +23,6 @@ export const elementRegistry: Partial<
 > = {
   mermaid: MermaidElement,
   choice: ChoiceElement,
+  table: TableElement,
+  citation: CitationElement,
 };

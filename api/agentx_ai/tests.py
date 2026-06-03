@@ -4707,6 +4707,62 @@ class PresentExhibitToolTest(TestCase):
         self.assertEqual(payload["elements"][0]["type"], "choice")
         self.assertEqual(payload["elements"][0]["options"], ["A", "B"])
 
+    # --- table element --------------------------------------------------
+
+    def test_table_stringifies_and_normalizes_rows(self):
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({"elements": [{
+            "type": "table",
+            "columns": ["Model", "Cost"],
+            "rows": [["opus", 0.4], ["haiku", None, "extra"], ["solo"]],
+        }]})
+        el = ex.elements[0]
+        # cells stringified (0.4 -> "0.4", None -> ""), rows padded/truncated to 2 cols
+        self.assertEqual(el.rows, [["opus", "0.4"], ["haiku", ""], ["solo", ""]])
+
+    def test_table_too_many_columns_rejected(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{
+                "type": "table",
+                "columns": [str(i) for i in range(13)],
+                "rows": [],
+            }]})
+
+    def test_present_exhibit_table_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "table", "columns": ["A", "B"], "rows": [["1", "2"]]}]},
+        )
+        self.assertTrue(result.success)
+
+    # --- citation element -----------------------------------------------
+
+    def test_citation_defaults_passive_and_validates_label(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({"elements": [{
+            "type": "citation",
+            "sources": [
+                {"label": "NLLB", "url": "http://x", "quote": "q", "kind": "active", "source_type": "web"},
+                {"label": "docs"},
+            ],
+        }]})
+        kinds = [(s.label, s.kind) for s in ex.elements[0].sources]
+        self.assertEqual(kinds, [("NLLB", "active"), ("docs", "passive")])
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "citation", "sources": [{"label": "  "}]}]})
+
+    def test_present_exhibit_mixed_table_citation_mermaid(self):
+        result = execute_internal_tool("present_exhibit", {"elements": [
+            {"type": "mermaid", "content": "graph TD; A-->B"},
+            {"type": "table", "columns": ["a"], "rows": [["1"]]},
+            {"type": "citation", "sources": [{"label": "s", "kind": "active"}]},
+        ]})
+        self.assertTrue(result.success)
+        self.assertEqual(self._result_payload(result)["element_count"], 3)
+
     # --- tool-loop wiring -----------------------------------------------
 
     def test_emit_exhibit_event_valid(self):

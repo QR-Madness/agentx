@@ -1,0 +1,105 @@
+/* Structured exhibit table: sticky header, capped scroll, zebra, responsive. */
+
+.exhibit-table-scroll {
+  max-height: 24rem;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 0.5rem;
+}
+
+.exhibit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.exhibit-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.exhibit-table th,
+.exhibit-table td {
+  padding: 0.4rem 0.625rem;
+  border-bottom: 1px solid var(--border-default);
+  vertical-align: top;
+}
+
+.exhibit-table td.is-numeric,
+.exhibit-table th.is-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.exhibit-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-sunken) 45%, transparent);
+}
+
+.exhibit-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.exhibit-table th.is-numeric .exhibit-table-sort {
+  flex-direction: row-reverse;
+}
+.exhibit-table-sort:hover {
+  color: var(--text-primary);
+}
+
+/* Mobile: collapse rows into stacked key:value cards (header hidden). */
+@media (max-width: 640px) {
+  .exhibit-table-scroll {
+    max-height: none;
+    border: 0;
+  }
+  .exhibit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .exhibit-table,
+  .exhibit-table tbody,
+  .exhibit-table tr,
+  .exhibit-table td {
+    display: block;
+    width: 100%;
+  }
+  .exhibit-table tr {
+    border: 1px solid var(--border-default);
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0.5rem;
+  }
+  .exhibit-table td {
+    border-bottom: 0;
+    padding: 0.3rem 0;
+    text-align: left !important;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .exhibit-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .exhibit-table td:empty::after {
+    content: '—';
+    color: var(--text-muted);
+  }
+}

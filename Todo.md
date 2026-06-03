@@ -496,9 +496,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       from stored `present_exhibit` tool turns, last-per-id wins). `PresentExhibitToolTest` (backend)
       + exhibit restore cases (`mapServerMessages.test.ts`). Slice 1 = `mermaid` element + `stack`
       layout only; the model/protocol carry the full tree.
-- [ ] **More element types** — `table`, `text`, `citation` (wire to `memory_context`/`web_search`);
-      absorbs the former "Advanced memory visualization (interactive graph, embedding clusters)" item
-      as one registered element type.
+- [x] **`table` + `citation` elements** — shipped `[v0.21.27]`. `table`: structured tabular data
+      (sortable headers, sticky-header scroll, numeric right-align auto-detect, responsive
+      card-collapse on mobile, expand-to-modal via the `Dialog`) — earns its keep over markdown
+      tables; `columns` ≤12, cells stringified (`None`→`""`) + rows normalized server-side; pure
+      `tableSort.ts` (numeric vs lexical, blanks-last) is unit-tested. `citation`: `active`
+      foldable sources (icon + label + `quote`) vs `passive` archived links, **default passive**
+      (a context-budget control); URLs linked only when `http(s)` (`lib/links.ts`, mirrors
+      `MessageContent`'s gate). Both added to the Pydantic discriminated union + element registry;
+      shared `memoElement` helper (Mermaid/Table/Citation memo on element identity). Tests:
+      backend table/citation cases + `tableSort`/`exhibitFromWire`/component/restore.
+- [ ] **`text` element** + absorbs the former "Advanced memory visualization (interactive graph,
+      embedding clusters)" item as a registered element type.
+- [ ] **Citation tracking (conversation Bibliography)** — aggregate citations across turns, dedupe
+      by `url`, assign stable `[1][2]` numbers reused on recurrence; a Sources rail/drawer. *(Schema
+      is ready: `CitationSource` carries `kind`/`quote`/`source_type`.)*
+- [ ] **Active-citation context-injection** — fold `active` sources' `quote`s back into the agent's
+      context (bounded) so it can reference tracked sources later — the "tracked in the chat" payoff.
+      Pairs with `web_search` → citation auto-capture (snippet → `quote`) and `memory` citations
+      deep-linking into the Memory drawer fact.
 - [x] **Interactive `choice` element (next-turn round-trip)** — shipped `[v0.21.26]`. A `choice`
       element (`{type:'choice', prompt?, options[]}`) renders option buttons; clicking one submits
       it as the user's **next turn** via the existing send path (`ChatPanel.submitChoice`, a

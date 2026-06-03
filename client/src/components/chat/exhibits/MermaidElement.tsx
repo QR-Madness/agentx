@@ -7,7 +7,8 @@
  * never throws: it falls back to the raw source as plain text + an error chip.
  */
 
-import { memo, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { memoElement } from './memoElement';
 import type { ElementRenderProps } from './types';
 
 type MermaidApi = typeof import('mermaid')['default'];
@@ -93,10 +94,6 @@ function MermaidElementImpl({ element }: ElementRenderProps) {
   );
 }
 
-// Memo on element identity only — the shared render contract also carries
-// volatile choice callbacks/flags that must not trigger a (heavy) re-render.
-// `element` identity is stable within a message and changes only on amend.
-export const MermaidElement = memo(
-  MermaidElementImpl,
-  (a, b) => a.element === b.element,
-);
+// Memo on element identity only (the shared contract also carries volatile
+// choice callbacks/flags that must not trigger a heavy mermaid re-render).
+export const MermaidElement = memoElement(MermaidElementImpl);

@@ -46,6 +46,11 @@ same `id` amends that exhibit in place. Element types:
 - `choice` — `{ "type": "choice", "prompt?": "Which DB?", "options": ["PostgreSQL", "Neo4j"] }`
   — interactive options. Clicking one submits it as the user's **next message** (no new
   endpoint); the agent's next turn continues from the answer.
+- `table` — `{ "type": "table", "columns": ["Model", "Cost"], "rows": [["opus", "0.40"]], "caption?": "…" }`
+  — sortable, scrollable, responsive (collapses to cards on mobile), expandable to a modal.
+- `citation` — `{ "type": "citation", "sources": [{ "label": "NLLB", "url?": "https://…", "quote?": "…", "kind": "active"|"passive", "source_type?": "web"|"memory"|"doc" }] }`
+  — `active` sources fold out with their quote; `passive` sources are archived record-keeping
+  links. Default `kind` is `passive`.
 
 The `stack` layout (vertical) is the only layout today.
 

@@ -680,8 +680,16 @@ def scratchpad_note(
         "`prompt`). IMPORTANT: after presenting a choice, present the options and "
         "then STOP — do NOT fabricate the user's answer or call further tools to "
         "proceed past it. Their selection arrives as their next message.\n"
-        "For diagrams, still describe them briefly in your normal reply — an "
-        "exhibit complements your text, it doesn't replace it."
+        "- `table`: genuinely tabular data — `columns` (a handful; wide or huge "
+        "tables render poorly in a chat column, so summarize or split big data) "
+        "and `rows` (each row aligns to the columns).\n"
+        "- `citation`: sources you actually used — a list of `sources`, each with "
+        "a `label` (and optional `url`, `quote`, `source_type`). Mark a source "
+        "`kind:'active'` (with a short `quote`) only if it's a key reference you "
+        "may point back to; otherwise leave it `passive` (record-keeping). Add "
+        "genuinely useful sources only — don't pad.\n"
+        "For diagrams/tables, still describe them briefly in your normal reply — "
+        "an exhibit complements your text, it doesn't replace it."
     ),
     input_schema={
         "type": "object",
@@ -695,8 +703,8 @@ def scratchpad_note(
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["mermaid", "choice"],
-                            "description": "Element type: 'mermaid' (diagram) or 'choice' (pick one).",
+                            "enum": ["mermaid", "choice", "table", "citation"],
+                            "description": "Element type: 'mermaid', 'choice', 'table', or 'citation'.",
                         },
                         "content": {
                             "type": "string",
@@ -711,9 +719,46 @@ def scratchpad_note(
                             "type": "string",
                             "description": "Optional question shown above a 'choice' element's buttons.",
                         },
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Column headers (required for 'table'; keep it to a handful).",
+                        },
+                        "rows": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "string"}},
+                            "description": "Table rows for 'table'; each row aligns to columns.",
+                        },
+                        "caption": {
+                            "type": "string",
+                            "description": "Optional caption shown under a 'table'.",
+                        },
+                        "sources": {
+                            "type": "array",
+                            "description": "Cited sources (required for 'citation').",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string", "description": "Source title/name."},
+                                    "url": {"type": "string", "description": "Optional link."},
+                                    "quote": {"type": "string", "description": "Short relevant excerpt (for active sources)."},
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": ["active", "passive"],
+                                        "description": "'active' (key reference, folds out) or 'passive' (record-keeping). Default passive.",
+                                    },
+                                    "source_type": {
+                                        "type": "string",
+                                        "enum": ["web", "memory", "doc"],
+                                        "description": "Optional provenance hint.",
+                                    },
+                                },
+                                "required": ["label"],
+                            },
+                        },
                         "title": {
                             "type": "string",
-                            "description": "Optional caption for this element.",
+                            "description": "Optional caption/title for this element.",
                         },
                     },
                     "required": ["type"],

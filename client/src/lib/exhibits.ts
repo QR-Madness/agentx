@@ -27,8 +27,33 @@ export interface ChoiceElement {
   title?: string;
 }
 
+/** A structured table (sortable / scrollable / responsive / expandable). */
+export interface TableElement {
+  type: 'table';
+  columns: string[];
+  rows: string[][];
+  caption?: string;
+  title?: string;
+}
+
+/** One cited source. `active` folds out (with a quote); `passive` is record-keeping. */
+export interface CitationSource {
+  label: string;
+  url?: string;
+  quote?: string;
+  kind: 'active' | 'passive';
+  source_type?: 'web' | 'memory' | 'doc';
+}
+
+/** A set of cited sources. */
+export interface CitationElement {
+  type: 'citation';
+  sources: CitationSource[];
+  title?: string;
+}
+
 /** Union of element kinds. Widen as new element types ship. */
-export type ExhibitElement = MermaidElement | ChoiceElement;
+export type ExhibitElement = MermaidElement | ChoiceElement | TableElement | CitationElement;
 
 /** UI-shape exhibit. */
 export interface Exhibit {
@@ -45,6 +70,16 @@ export interface ExhibitWireElement {
   content?: string;
   options?: string[];
   prompt?: string;
+  columns?: string[];
+  rows?: unknown[][];
+  caption?: string;
+  sources?: Array<{
+    label?: string;
+    url?: string;
+    quote?: string;
+    kind?: string;
+    source_type?: string;
+  }>;
   title?: string;
 }
 
@@ -58,7 +93,12 @@ export interface ExhibitWire {
 }
 
 /** Element types the client can render. Unknown types fall back to source-as-code. */
-const KNOWN_ELEMENT_TYPES = new Set<ExhibitElement['type']>(['mermaid', 'choice']);
+const KNOWN_ELEMENT_TYPES = new Set<ExhibitElement['type']>([
+  'mermaid',
+  'choice',
+  'table',
+  'citation',
+]);
 
 export function isKnownElementType(type: string): type is ExhibitElement['type'] {
   return KNOWN_ELEMENT_TYPES.has(type as ExhibitElement['type']);
@@ -68,6 +108,31 @@ export function isKnownElementType(type: string): type is ExhibitElement['type']
 function elementFromWire(el: ExhibitWireElement): ExhibitElement {
   if (el.type === 'choice') {
     return { type: 'choice', prompt: el.prompt, options: el.options ?? [], title: el.title };
+  }
+  if (el.type === 'table') {
+    return {
+      type: 'table',
+      columns: el.columns ?? [],
+      rows: (el.rows ?? []).map((row) => (row ?? []).map((cell) => String(cell ?? ''))),
+      caption: el.caption,
+      title: el.title,
+    };
+  }
+  if (el.type === 'citation') {
+    return {
+      type: 'citation',
+      sources: (el.sources ?? []).map((s) => ({
+        label: s.label ?? '',
+        url: s.url,
+        quote: s.quote,
+        kind: s.kind === 'active' ? 'active' : 'passive',
+        source_type:
+          s.source_type === 'web' || s.source_type === 'memory' || s.source_type === 'doc'
+            ? s.source_type
+            : undefined,
+      })),
+      title: el.title,
+    };
   }
   // mermaid (and any unknown type) — unknown types survive at runtime; the
   // element registry misses and ExhibitBubble shows a source-as-code fallback.

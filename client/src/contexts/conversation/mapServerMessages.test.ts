@@ -195,6 +195,20 @@ describe('mapServerMessages', () => {
     expect(el.type === 'choice' && el.prompt).toBe('Which DB?');
   });
 
+  it('restores present_exhibit table and citation elements', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content:
+          '{"elements":[{"type":"table","columns":["M","Cost"],"rows":[["opus","0.4"]]},{"type":"citation","sources":[{"label":"NLLB","kind":"active"}]}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 't1' },
+      }),
+    ]);
+    const ex = out[0] as ExhibitMessage;
+    expect(ex.exhibit.elements[0].type).toBe('table');
+    expect(ex.exhibit.elements[1].type).toBe('citation');
+  });
+
   it('amends an exhibit in place when the same id is re-presented', () => {
     const out = mapServerMessages([
       msg({

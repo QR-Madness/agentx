@@ -27,10 +27,14 @@ from pydantic import BaseModel, Field, field_validator
 EXHIBIT_SCHEMA_VERSION = 1
 
 # The allow-list. Adding an element type = add it here + a client renderer.
-ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice"})
+ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice", "table", "citation"})
 
 # Upper bound on choice options — keep the rendered button set usable.
 MAX_CHOICE_OPTIONS = 10
+# Wide tables render terribly in a chat column — cap columns hard.
+MAX_TABLE_COLUMNS = 12
+# Citations can be many (record-keeping), but keep a sane ceiling.
+MAX_CITATION_SOURCES = 50
 
 # Recognized mermaid diagram-type keywords (the first non-blank token of a
 # diagram). Used for a cheap server-side sanity check — full syntax validation
@@ -76,9 +80,68 @@ class ChoiceElement(BaseModel):
         return cleaned
 
 
+class TableElement(BaseModel):
+    """A structured table (sortable / scrollable / responsive client-side)."""
+
+    type: Literal["table"]
+    columns: list[str] = Field(min_length=1, max_length=MAX_TABLE_COLUMNS)
+    rows: list[list[str]] = Field(default_factory=list)
+    caption: str | None = None
+    title: str | None = None
+
+    @field_validator("rows", mode="before")
+    @classmethod
+    def _normalize_rows(cls, rows: Any, info: Any) -> list[list[str]]:
+        """Stringify cells (None → ""), pad/truncate each row to the column count.
+
+        Runs **before** pydantic's `str` coercion so numeric/None cells (which a
+        model commonly emits, e.g. `[["opus", 0.4, 1200]]`) don't fail validation.
+        """
+        ncols = len(info.data.get("columns") or [])
+        if ncols == 0 or not isinstance(rows, (list, tuple)):
+            return []
+        out: list[list[str]] = []
+        for row in rows:
+            cells = list(row) if isinstance(row, (list, tuple)) else [row]
+            norm = ["" if c is None else str(c) for c in cells[:ncols]]
+            norm += [""] * (ncols - len(norm))
+            out.append(norm)
+        return out
+
+
+class CitationSource(BaseModel):
+    """One cited source. `active` = a working reference (carries a `quote`, folds
+    out); `passive` = record-keeping (archived). Default passive."""
+
+    label: str
+    url: str | None = None
+    quote: str | None = None
+    kind: Literal["active", "passive"] = "passive"
+    source_type: Literal["web", "memory", "doc"] | None = None
+
+    @field_validator("label")
+    @classmethod
+    def _label_non_blank(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            raise ValueError("citation source needs a non-blank label")
+        return s
+
+
+class CitationElement(BaseModel):
+    """A set of cited sources presented to the user."""
+
+    type: Literal["citation"]
+    sources: list[CitationSource] = Field(min_length=1, max_length=MAX_CITATION_SOURCES)
+    title: str | None = None
+
+
 # Element union — discriminated on `type`; the discriminator enforces the
 # allow-list (an unknown type raises). Widen as new element types ship.
-Element = Annotated[Union[MermaidElement, ChoiceElement], Field(discriminator="type")]
+Element = Annotated[
+    Union[MermaidElement, ChoiceElement, TableElement, CitationElement],
+    Field(discriminator="type"),
+]
 
 
 class Exhibit(BaseModel):

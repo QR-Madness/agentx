@@ -649,9 +649,11 @@ paths:
         workflow is active. See the Multi-Agent docs for delegation event shapes.
         The `exhibit` event carries a declarative, agent-authored content tree
         (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
-        calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram)
-        and `choice` (interactive `options` the user picks from — the selection is sent
-        as the user's next message, no new endpoint).
+        calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),
+        `choice` (interactive `options` the user picks from — the selection is sent as the
+        user's next message, no new endpoint), `table` (sortable/scrollable/responsive/
+        expandable `columns` + `rows`), and `citation` (`sources` split into `active`
+        foldable references with a `quote` vs `passive` record-keeping links).
       requestBody:
         required: true
         content:
