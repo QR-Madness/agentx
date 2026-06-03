@@ -311,6 +311,14 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       durability beyond 30 days.
 - [ ] **Hydrate the Alloy / background-chat paths** too — this slice rehydrates the main streaming
       chat; the multi-agent + queued-chat paths build their own context.
+- [ ] **Stable memory core (kill transient memory injection)** — today the injected memory is
+      **transient**: `views.py` calls `agent.memory.remember(query=message)` **every turn**, so the
+      facts/entities re-rank against the current message and shift turn-to-turn (the agent "sees" a
+      fact one turn, not the next). Inject a **stable, high-salience core** (durable facts/entities for
+      this user/channel) as a persistent preamble block consistent every turn, with query-specific
+      recall as a small *supplement* on top. Goal: minimal transient context. Slots into the same
+      `assemble_turn_context` SYSTEM-preamble budget (and is exactly what the Context Inspector would
+      surface).
 
 ### Memory Area UX Cleanup
 
@@ -423,6 +431,43 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [ ] Message injection into delegated tasks (agent interdiction tools)
 - [ ] Custom window chrome — frameless Tauri window with our own title bar + window controls (minimize / maximize / close) and a drag region, styled to the cosmic theme. **Windows + Linux first; macOS later** (traffic-light insets + native fullscreen need separate handling). Touches `client/src-tauri/tauri.conf.json` (`decorations: false`) + a top-of-app titlebar component using the Tauri window API.
 - [ ] macOS runner for the client release matrix — add a `macos-latest` leg to `.github/workflows/client-release.yml` (currently Windows + Linux only). Builds `.dmg`/`.app` (`tauri_bundles: dmg,app`); `client/src-tauri/tauri.macos.conf.json` already exists. Needs Apple Developer signing + notarization (certs/secrets) for distributable builds — without them the app is unsigned/Gatekeeper-blocked.
+
+### Agent Genome & Cognitive Evolution (intelligence-focused)
+
+> External idea (Copilot, codebase-blind) evaluated against the actual code. The genome's real value
+> is **unification + wiring**: consolidating our scattered cognitive knobs (reasoning strategy,
+> ToT branching, Reflection, temperature, delegation config, tool gating) into one tunable per-profile
+> struct read per task. The JSON schema is trivial; wiring each gene to a real lever — and giving the
+> vague ones (`abstraction_level`, `evidence_strictness`, `tool_bias`) a concrete meaning — is the
+> work. Dependency-ordered; the evolution loop is a *research bet*, not an engineering task.
+
+- [ ] **(1, foundation) Reasoning-quality scoring (LLM-as-judge)** — score an agent's reasoning trace
+      on coherence / groundedness / foresight / abstraction / self-correction, stored per task. The
+      existing `eval_consolidation` harness is **memory-only**, so this is new; reuse the provider layer
+      + Reflection's critique-prompt patterns. Independently valuable (powers the **Context Inspector**
+      + dashboards) even if evolution never ships. Build this first.
+- [ ] **(2) Agent genome — unify cognitive knobs on `AgentProfile`** — a tunable struct
+      (`planning_depth`, `branching_factor`, `abstraction_level`, `self_critique_strength`,
+      `evidence_strictness`, `delegation_aggressiveness`, `tool_bias`) read per task. **Wire genes to
+      existing levers**: `planning_depth`→reasoning strategy + ToT depth / `planner.max_subtasks`;
+      `branching_factor`→ToT beam width; `self_critique_strength`→**Reflection** passes (already exists);
+      `delegation_aggressiveness`→`alloy.*` thresholds. **Operationalize the unwired genes**
+      (`abstraction_level`, `evidence_strictness`→a verification/fact-confidence pass, `tool_bias`→
+      tool-choice prompting). Half maps to machinery we have; the value is one coherent control surface.
+- [ ] **(3) Context-adaptive genome expression** — modulate genes by derived signals (uncertainty,
+      time/risk, tool availability): e.g. high uncertainty → deeper planning, high risk → stricter
+      evidence. Downstream of (2); needs uncertainty/risk signals we'd have to derive (not free).
+- [ ] **(4) Genome presets = "thinking styles"** — named bundles (careful-analyst, creative-strategist,
+      fast-executor) extending the existing `DEFAULT_PROFILES`; Alloy can assign a style to a specialist.
+      Falls out of (2) cheaply.
+- [ ] **(5, EXPLORATORY — research bet, gate it) Offline genome evolution + intelligence control loop**
+      — actor (AgentX) / critic (LLM judge from #1) / environment (a *reasoning* eval harness) →
+      store task→trace→score→genome, mutate, keep top-K, discard worst; plus an SLO controller that
+      nudges genes when the rolling score drifts. **Risks to respect:** LLM-judge scores are noisy +
+      gameable, and auto-tuning a controller off them invites oscillation / reward-hacking. Treat as a
+      time-boxed experiment with a **kill criterion** (must beat a fixed-genome baseline on held-out
+      tasks), not a shippable feature. Depends on (1)+(2). *(Note: the "online self-critique" half of
+      Copilot's #7 already exists as the Reflection strategy.)*
 
 ### Open Platform — De-walling the Garden
 
