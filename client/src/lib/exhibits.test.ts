@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exhibitFromWire } from './exhibits';
+import { exhibitFromWire, citationExhibitFromWebSearch } from './exhibits';
 
 describe('exhibitFromWire', () => {
   it('coerces table cells to strings', () => {
@@ -27,5 +27,34 @@ describe('exhibitFromWire', () => {
       elements: [{ type: 'citation', sources: [{ label: 'A', source_type: 'bogus' }] }],
     });
     expect(ex.elements[0].type === 'citation' && ex.elements[0].sources[0].source_type).toBe(undefined);
+  });
+});
+
+describe('citationExhibitFromWebSearch', () => {
+  it('maps results to passive web sources, deduped by URL', () => {
+    const ex = citationExhibitFromWebSearch(
+      [
+        { title: 'A', url: 'https://a' },
+        { title: 'B', url: 'https://b' },
+        { title: 'A again', url: 'https://a' }, // dup url
+        { title: '', url: '' }, // blank → skipped
+      ],
+      'exh_src_1',
+    );
+    expect(ex).not.toBeNull();
+    expect(ex!.id).toBe('exh_src_1');
+    const el = ex!.elements[0];
+    expect(el.type).toBe('citation');
+    if (el.type === 'citation') {
+      expect(el.sources).toHaveLength(2);
+      expect(el.sources.every((s) => s.kind === 'passive' && s.source_type === 'web')).toBe(true);
+      expect(el.sources.map((s) => s.url)).toEqual(['https://a', 'https://b']);
+    }
+  });
+
+  it('returns null for empty / non-array input', () => {
+    expect(citationExhibitFromWebSearch([], 'x')).toBeNull();
+    expect(citationExhibitFromWebSearch(undefined, 'x')).toBeNull();
+    expect(citationExhibitFromWebSearch([{ title: '', url: '' }], 'x')).toBeNull();
   });
 });

@@ -239,4 +239,51 @@ describe('mapServerMessages', () => {
     expect(out).toHaveLength(1);
     expect(out[0].type).toBe('user');
   });
+
+  it('restores a citation exhibit beneath a successful web_search turn', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"query":"nllb"}',
+        metadata: { tool: 'web_search', tool_call_id: 'w1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: JSON.stringify({
+          success: true,
+          results: [
+            { title: 'NLLB paper', url: 'https://a' },
+            { title: 'HF NLLB', url: 'https://b' },
+          ],
+        }),
+        metadata: { tool: 'web_search', tool_call_id: 'w1', success: true },
+      }),
+    ]);
+    // The web_search tool card, then the derived citation exhibit.
+    const toolCall = out.find((m) => m.type === 'tool_call') as ToolCallMessage;
+    expect(toolCall.toolName).toBe('web_search');
+    const exhibits = out.filter((m) => m.type === 'exhibit') as ExhibitMessage[];
+    expect(exhibits).toHaveLength(1);
+    expect(exhibits[0].exhibit.id).toBe('exh_src_w1');
+    const el = exhibits[0].exhibit.elements[0];
+    expect(el.type === 'citation' && el.sources).toHaveLength(2);
+    // ordering: tool card precedes its citation
+    expect(out.indexOf(toolCall)).toBeLessThan(out.indexOf(exhibits[0]));
+  });
+
+  it('does not synthesize a citation for a failed web_search', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"query":"x"}',
+        metadata: { tool: 'web_search', tool_call_id: 'w2' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: JSON.stringify({ success: false, results: [] }),
+        metadata: { tool: 'web_search', tool_call_id: 'w2', success: false },
+      }),
+    ]);
+    expect(out.filter((m) => m.type === 'exhibit')).toHaveLength(0);
+  });
 });

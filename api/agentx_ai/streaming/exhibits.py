@@ -172,6 +172,50 @@ def mermaid_sanity_error(content: str) -> str | None:
     return None
 
 
+def citation_exhibit_from_web_search(
+    results: Any, *, exhibit_id: str
+) -> Exhibit | None:
+    """Build a passive ``citation`` exhibit from ``web_search`` results.
+
+    Each result becomes a ``passive`` web :class:`CitationSource` (record-keeping,
+    never re-enters model context); sources are de-duped by URL and capped at
+    :data:`MAX_CITATION_SOURCES`. Returns ``None`` when there's nothing to show.
+
+    Shared by the live auto-capture (streaming tool loop) and — mirrored in the
+    client — the history-restore path, so a searched-then-cited turn looks the
+    same live and on reload. The dedupe is the seed of the future Bibliography.
+    """
+    if not isinstance(results, (list, tuple)):
+        return None
+    sources: list[CitationSource] = []
+    seen: set[str] = set()
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        url = (r.get("url") or "").strip()
+        title = (r.get("title") or "").strip()
+        label = title or url
+        if not label:
+            continue
+        key = url or label
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(
+            CitationSource(label=label, url=url or None, source_type="web", kind="passive")
+        )
+        if len(sources) >= MAX_CITATION_SOURCES:
+            break
+    if not sources:
+        return None
+    return Exhibit(
+        schema_version=EXHIBIT_SCHEMA_VERSION,
+        id=exhibit_id,
+        layout="stack",
+        elements=[CitationElement(type="citation", sources=sources)],
+    )
+
+
 def exhibit_from_present_call(arguments: dict[str, Any]) -> Exhibit:
     """Build + validate an :class:`Exhibit` from ``present_exhibit`` tool args.
 

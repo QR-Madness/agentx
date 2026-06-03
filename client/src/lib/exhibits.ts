@@ -149,3 +149,39 @@ export function exhibitFromWire(w: ExhibitWire): Exhibit {
     elements: (w.elements ?? []).map(elementFromWire),
   };
 }
+
+/** Max sources kept when auto-capturing (mirrors backend MAX_CITATION_SOURCES). */
+const MAX_CITATION_SOURCES = 50;
+
+/**
+ * Build a passive `citation` exhibit from `web_search` results — the client
+ * mirror of the backend `citation_exhibit_from_web_search`. Dedupes by URL,
+ * caps, returns `null` when there's nothing to show. Used by the history-restore
+ * path so a searched-then-cited turn looks the same on reload as it did live
+ * (where the backend emits the exhibit directly).
+ */
+export function citationExhibitFromWebSearch(results: unknown, id: string): Exhibit | null {
+  if (!Array.isArray(results)) return null;
+  const sources: CitationSource[] = [];
+  const seen = new Set<string>();
+  for (const r of results) {
+    if (!r || typeof r !== 'object') continue;
+    const row = r as Record<string, unknown>;
+    const url = typeof row.url === 'string' ? row.url.trim() : '';
+    const title = typeof row.title === 'string' ? row.title.trim() : '';
+    const label = title || url;
+    if (!label) continue;
+    const key = url || label;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sources.push({ label, url: url || undefined, kind: 'passive', source_type: 'web' });
+    if (sources.length >= MAX_CITATION_SOURCES) break;
+  }
+  if (sources.length === 0) return null;
+  return {
+    schemaVersion: 1,
+    id,
+    layout: 'stack',
+    elements: [{ type: 'citation', sources }],
+  };
+}

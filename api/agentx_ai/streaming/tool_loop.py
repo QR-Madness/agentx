@@ -124,6 +124,40 @@ def _emit_exhibit_event(tc) -> list[str]:
     return [_sse("exhibit", exhibit.model_dump())]
 
 
+# Tool whose successful results are auto-captured as a passive `citation` exhibit
+# (so web sources surface in the UI without the model having to present them).
+WEB_SEARCH_TOOL_NAME = "web_search"
+
+
+def _emit_web_search_citation(tm) -> list[str]:
+    """Auto-capture a `web_search` tool result as a passive `citation` exhibit.
+
+    Reads the full (un-capped) tool message content — `web_search` keeps results
+    compact (no raw page content) so they're never oversize-routed before we see
+    them. Returns empty when disabled by config, unparseable, failed, or empty.
+    """
+    from ..config import get_config_manager
+
+    if not get_config_manager().get("citations.auto_capture_web_search", True):
+        return []
+    try:
+        data = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+    results = data.get("results") or []
+    if not results:
+        return []
+
+    from .exhibits import citation_exhibit_from_web_search
+
+    exhibit = citation_exhibit_from_web_search(results, exhibit_id=f"exh_src_{tm.tool_call_id}")
+    if exhibit is None:
+        return []
+    return [_sse("exhibit", exhibit.model_dump())]
+
+
 async def _run_delegations(
     delegation_calls: list,
     alloy_executor,
@@ -310,6 +344,12 @@ async def _execute_and_emit_tools(
                 "success": not is_error,
                 "duration_ms": round(tool_avg_time, 2),
             })
+            # Auto-capture web sources as a passive `citation` exhibit, right
+            # after the search's tool_result (so it reads as "searched, then
+            # these are the sources").
+            if tm.name == WEB_SEARCH_TOOL_NAME and not is_error:
+                for event_str in _emit_web_search_citation(tm):
+                    yield event_str
 
         if capture_tool_turns:
             result.tool_turns_data.append({

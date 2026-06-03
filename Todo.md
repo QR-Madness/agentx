@@ -506,15 +506,37 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `MessageContent`'s gate). Both added to the Pydantic discriminated union + element registry;
       shared `memoElement` helper (Mermaid/Table/Citation memo on element identity). Tests:
       backend table/citation cases + `tableSort`/`exhibitFromWire`/component/restore.
+- [x] **Citations that show up: `web_search` auto-capture + capability-aware web tools** — shipped
+      `[v0.21.28]`. **Bug:** citations rendered fine but the model rarely emitted them (no prompt
+      steering → it defaulted to inline links) and passive-only cards were near-invisible. **Fixes:**
+      (1) steering — imperative `present_exhibit` citation bullet + a global-prompt "Citing sources"
+      section (`prompts/defaults.py`); (2) legible render — `CitationElement` always shows a
+      "Sources" header, renders a passive-only list inline (open) with a "+N more" cap;
+      (3) **auto-capture** — a successful `web_search` emits a passive `citation` exhibit
+      (`citation_exhibit_from_web_search`, deduped by URL, id `exh_src_<tool_call_id>`, flag
+      `citations.auto_capture_web_search`) live in `tool_loop` and mirrored on restore in
+      `mapServerMessages`. **Web tools modernized:** Tavily moved to the official `tavily-python`
+      SDK with `web_search`/`web_extract`/`web_map`; a capability pre-check
+      (`resolve_active_search_backend` + `build_tool_schema`/`build_tool_description`,
+      `SEARCH_CAPABILITIES`) advertises only the *active* backend's real tools/knobs to the model
+      (extract/map gated to Tavily but kept executable). Brave stays search-only. Tests:
+      `WebSearchCapabilityTest` (14) + client `citationExhibitFromWebSearch`/`CitationElement`/
+      restore cases. *(Next: Tavily Crawl + Research tools; conversation Bibliography reuses the
+      dedupe helper.)*
 - [ ] **`text` element** + absorbs the former "Advanced memory visualization (interactive graph,
       embedding clusters)" item as a registered element type.
 - [ ] **Citation tracking (conversation Bibliography)** — aggregate citations across turns, dedupe
-      by `url`, assign stable `[1][2]` numbers reused on recurrence; a Sources rail/drawer. *(Schema
-      is ready: `CitationSource` carries `kind`/`quote`/`source_type`.)*
+      by `url`, assign stable `[1][2]` numbers reused on recurrence; a Sources rail/drawer. *(Reuses
+      the shipped `citation_exhibit_from_web_search` per-call dedupe helper; `CitationSource` carries
+      `kind`/`quote`/`source_type`.)*
 - [ ] **Active-citation context-injection** — fold `active` sources' `quote`s back into the agent's
       context (bounded) so it can reference tracked sources later — the "tracked in the chat" payoff.
-      Pairs with `web_search` → citation auto-capture (snippet → `quote`) and `memory` citations
-      deep-linking into the Memory drawer fact.
+      `web_search` → passive citation auto-capture is shipped; the model can promote a result to
+      `active` with a `quote`. Still to do: `memory` citations deep-linking into the Memory drawer
+      fact, and `web_extract` → `active` citation promotion.
+- [ ] **Tavily Crawl + Research tools** — extend the capability-gated web toolset with
+      `web_crawl` (large → oversize-routed) and `web_research` (long-running → likely the
+      background-job path). Slot into the same `SEARCH_CAPABILITIES` advertisement.
 - [x] **Interactive `choice` element (next-turn round-trip)** — shipped `[v0.21.26]`. A `choice`
       element (`{type:'choice', prompt?, options[]}`) renders option buttons; clicking one submits
       it as the user's **next turn** via the existing send path (`ChatPanel.submitChoice`, a

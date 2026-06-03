@@ -9,7 +9,11 @@
 
 import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
-import { exhibitFromWire, type ExhibitWire } from '../../lib/exhibits';
+import {
+  exhibitFromWire,
+  citationExhibitFromWebSearch,
+  type ExhibitWire,
+} from '../../lib/exhibits';
 import type { ServerMessage } from '../../lib/api';
 
 function safeParseJson(str: string): Record<string, unknown> {
@@ -204,6 +208,19 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
             }
           : undefined,
       });
+
+      // Auto-captured citations: live, the backend emits a passive `citation`
+      // exhibit right after a successful web_search; mirror that on restore by
+      // deriving it from the persisted result. Best-effort — a non-parsing or
+      // empty result simply leaves the search card on its own (no crash).
+      const webSearchOk = !!result && ((result.metadata?.success as boolean) ?? true);
+      if (toolName === 'web_search' && webSearchOk && result) {
+        const parsed = safeParseJson(result.content) as { results?: unknown };
+        const exhibit = citationExhibitFromWebSearch(parsed.results, `exh_src_${toolCallId}`);
+        if (exhibit) {
+          out.push({ ...base, id: createMessageId(), type: 'exhibit', exhibit });
+        }
+      }
       continue;
     }
 
