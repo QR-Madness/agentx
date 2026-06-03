@@ -172,6 +172,12 @@ export interface DelegationMessage extends BaseMessage {
 export interface ExhibitMessage extends BaseMessage {
   type: 'exhibit';
   exhibit: Exhibit;
+  /**
+   * Set once the user picks an option from a `choice` element in this exhibit —
+   * renders the choice resolved (disabled, selection marked) and persists via
+   * localStorage. Cleared if the exhibit is amended (re-presented).
+   */
+  answeredValue?: string;
 }
 
 /** Agent handoff message - displayed when an agent transfers conversation to another */

@@ -18,16 +18,19 @@ never raw HTML.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Bump only on a breaking change to the Exhibit wire shape (honors the v0.20
 # "migratable across platforms" rule — every exhibit carries this).
 EXHIBIT_SCHEMA_VERSION = 1
 
 # The allow-list. Adding an element type = add it here + a client renderer.
-ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid"})
+ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice"})
+
+# Upper bound on choice options — keep the rendered button set usable.
+MAX_CHOICE_OPTIONS = 10
 
 # Recognized mermaid diagram-type keywords (the first non-blank token of a
 # diagram). Used for a cheap server-side sanity check — full syntax validation
@@ -48,8 +51,34 @@ class MermaidElement(BaseModel):
     title: str | None = None
 
 
-# Element union — single member today; widen as new element types ship.
-Element = MermaidElement
+class ChoiceElement(BaseModel):
+    """An interactive choice — the user picks an option, which is fed back to
+    the agent as their next message (next-turn round-trip)."""
+
+    type: Literal["choice"]
+    prompt: str | None = None
+    options: list[str] = Field(min_length=1, max_length=MAX_CHOICE_OPTIONS)
+    title: str | None = None
+
+    @field_validator("options")
+    @classmethod
+    def _clean_options(cls, v: list[str]) -> list[str]:
+        """Strip, drop blanks, de-dupe (order-preserving); require ≥1 remains."""
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for opt in v:
+            s = (opt or "").strip()
+            if s and s not in seen:
+                seen.add(s)
+                cleaned.append(s)
+        if not cleaned:
+            raise ValueError("choice element needs at least one non-blank option")
+        return cleaned
+
+
+# Element union — discriminated on `type`; the discriminator enforces the
+# allow-list (an unknown type raises). Widen as new element types ship.
+Element = Annotated[Union[MermaidElement, ChoiceElement], Field(discriminator="type")]
 
 
 class Exhibit(BaseModel):
@@ -59,7 +88,7 @@ class Exhibit(BaseModel):
     id: str
     title: str | None = None
     layout: Literal["stack"] = "stack"
-    elements: list[MermaidElement] = Field(min_length=1)
+    elements: list[Element] = Field(min_length=1)
 
 
 def mermaid_sanity_error(content: str) -> str | None:

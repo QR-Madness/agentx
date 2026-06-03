@@ -9,7 +9,7 @@
 import { elementRegistry } from '../exhibits/elementRegistry';
 import type { BubbleProps } from './types';
 
-export function ExhibitBubble({ message }: BubbleProps<'exhibit'>) {
+export function ExhibitBubble({ message, busy, onSubmitChoice }: BubbleProps<'exhibit'>) {
   const { exhibit } = message;
   return (
     <div className="message-bubble exhibit">
@@ -21,8 +21,19 @@ export function ExhibitBubble({ message }: BubbleProps<'exhibit'>) {
           {exhibit.elements.map((el, i) => {
             const Renderer = elementRegistry[el.type];
             if (Renderer) {
-              return <Renderer key={i} content={el.content} title={el.title} />;
+              return (
+                <Renderer
+                  key={i}
+                  element={el}
+                  messageId={message.id}
+                  answeredValue={message.answeredValue}
+                  busy={busy}
+                  onSubmitChoice={onSubmitChoice}
+                />
+              );
             }
+            // Unknown element type → safe source-as-code fallback, never raw HTML.
+            const raw = 'content' in el ? el.content : JSON.stringify(el, null, 2);
             return (
               <div
                 key={i}
@@ -32,7 +43,7 @@ export function ExhibitBubble({ message }: BubbleProps<'exhibit'>) {
                   Unsupported element: {el.type}
                 </span>
                 <pre className="overflow-x-auto text-xs text-fg-muted">
-                  <code>{el.content}</code>
+                  <code>{raw}</code>
                 </pre>
               </div>
             );

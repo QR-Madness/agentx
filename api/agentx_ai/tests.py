@@ -4657,6 +4657,56 @@ class PresentExhibitToolTest(TestCase):
         )
         self.assertFalse(result.success)
 
+    # --- choice element -------------------------------------------------
+
+    def test_choice_element_builds_and_cleans_options(self):
+        from agentx_ai.streaming.exhibits import ChoiceElement, exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"elements": [{"type": "choice", "prompt": "Pick", "options": ["  A ", "B", "B", ""]}]}
+        )
+        el = ex.elements[0]
+        self.assertIsInstance(el, ChoiceElement)  # discriminator resolved
+        self.assertEqual(el.options, ["A", "B"])  # stripped + de-duped, blanks dropped
+
+    def test_choice_empty_options_rejected(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "choice", "options": ["  "]}]})
+
+    def test_present_exhibit_choice_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "choice", "prompt": "DB?", "options": ["PostgreSQL", "Neo4j"]}]},
+        )
+        self.assertTrue(result.success)
+        self.assertTrue(self._result_payload(result)["success"])
+
+    def test_present_exhibit_mixed_elements(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [
+                {"type": "mermaid", "content": "graph TD; A-->B"},
+                {"type": "choice", "options": ["yes", "no"]},
+            ]},
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(self._result_payload(result)["element_count"], 2)
+
+    def test_emit_exhibit_event_choice(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_exhibit_event
+        tc = SimpleNamespace(
+            id="tc_3",
+            name="present_exhibit",
+            arguments={"elements": [{"type": "choice", "options": ["A", "B"]}]},
+        )
+        events = _emit_exhibit_event(tc)
+        self.assertEqual(len(events), 1)
+        payload = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(payload["elements"][0]["type"], "choice")
+        self.assertEqual(payload["elements"][0]["options"], ["A", "B"])
+
     # --- tool-loop wiring -----------------------------------------------
 
     def test_emit_exhibit_event_valid(self):

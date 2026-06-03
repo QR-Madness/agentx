@@ -179,6 +179,22 @@ describe('mapServerMessages', () => {
     expect(ex.exhibit.elements[0]).toMatchObject({ type: 'mermaid', content: 'graph TD; A-->B' });
   });
 
+  it('restores a present_exhibit choice element', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"elements":[{"type":"choice","prompt":"Which DB?","options":["PostgreSQL","Neo4j"]}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'c1' },
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    const ex = out[0] as ExhibitMessage;
+    const el = ex.exhibit.elements[0];
+    expect(el.type).toBe('choice');
+    expect(el.type === 'choice' && el.options).toEqual(['PostgreSQL', 'Neo4j']);
+    expect(el.type === 'choice' && el.prompt).toBe('Which DB?');
+  });
+
   it('amends an exhibit in place when the same id is re-presented', () => {
     const out = mapServerMessages([
       msg({
@@ -197,7 +213,8 @@ describe('mapServerMessages', () => {
     // One exhibit (amended in place) + the assistant message between them.
     const exhibits = out.filter((m) => m.type === 'exhibit') as ExhibitMessage[];
     expect(exhibits).toHaveLength(1);
-    expect(exhibits[0].exhibit.elements[0].content).toBe('graph TD; A-->C');
+    const el = exhibits[0].exhibit.elements[0];
+    expect(el.type === 'mermaid' && el.content).toBe('graph TD; A-->C');
   });
 
   it('filters out roles it does not render', () => {

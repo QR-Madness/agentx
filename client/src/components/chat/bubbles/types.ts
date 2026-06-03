@@ -14,4 +14,8 @@ export interface BubbleProps<K extends MessageType = MessageType> {
   avatarId?: string;
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
+  /** Submit a choice-element selection (sent as the next user turn). */
+  onSubmitChoice?: (value: string, messageId: string) => void;
+  /** A turn is in flight — interactive elements (choice) render inert. */
+  busy?: boolean;
 }

@@ -8,6 +8,7 @@
  */
 
 import { memo, useEffect, useId, useRef, useState } from 'react';
+import type { ElementRenderProps } from './types';
 
 type MermaidApi = typeof import('mermaid')['default'];
 
@@ -31,12 +32,11 @@ async function getMermaid(): Promise<MermaidApi> {
   return mermaid;
 }
 
-interface MermaidElementProps {
-  content: string;
-  title?: string;
-}
-
-function MermaidElementImpl({ content, title }: MermaidElementProps) {
+function MermaidElementImpl({ element }: ElementRenderProps) {
+  // The registry only routes `mermaid` here; read its fields defensively so the
+  // hooks below stay unconditional (rules of hooks).
+  const content = element.type === 'mermaid' ? element.content : '';
+  const title = element.type === 'mermaid' ? element.title : undefined;
   // useId is stable across renders and unique per instance; mermaid needs a
   // DOM-id-safe render target (no leading digit / colons).
   const baseId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -93,4 +93,10 @@ function MermaidElementImpl({ content, title }: MermaidElementProps) {
   );
 }
 
-export const MermaidElement = memo(MermaidElementImpl);
+// Memo on element identity only — the shared render contract also carries
+// volatile choice callbacks/flags that must not trigger a (heavy) re-render.
+// `element` identity is stable within a message and changes only on amend.
+export const MermaidElement = memo(
+  MermaidElementImpl,
+  (a, b) => a.element === b.element,
+);

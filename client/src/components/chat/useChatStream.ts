@@ -253,8 +253,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         const exhibit = exhibitFromWire(data);
         const existingId = exhibitMessageIdsRef.current.get(exhibit.id);
         if (existingId) {
-          // Amend: re-presented with the same id → replace the card in place.
-          optsRef.current.updateMessage(existingId, { exhibit });
+          // Amend: re-presented with the same id → replace in place and clear any
+          // prior answer so a revised choice is answerable again.
+          optsRef.current.updateMessage(existingId, { exhibit, answeredValue: undefined });
           return;
         }
         // New exhibit: close any preceding prose, then append the card.

@@ -668,19 +668,20 @@ def scratchpad_note(
 @register_tool(
     name="present_exhibit",
     description=(
-        "Present a rendered visual exhibit to the user (e.g. a Mermaid diagram) "
-        "when a picture communicates better than prose — flows, sequences, state "
-        "machines, hierarchies, ER/class relationships. Declare the exhibit as a "
-        "list of typed `elements`; they render in order. You may include several "
-        "elements in one exhibit or call this multiple times in a turn — each "
-        "exhibit is added to the conversation's gallery. To revise an exhibit you "
-        "already presented, call again with the same `id` and the updated content "
-        "(it replaces in place). Only the `mermaid` element type is supported for "
-        "now: `content` is raw Mermaid source starting with a diagram keyword "
-        "(graph, flowchart, sequenceDiagram, classDiagram, stateDiagram, "
-        "erDiagram, gantt, pie, mindmap, ...). Still describe the diagram briefly "
-        "in your normal reply — the exhibit complements your text, it doesn't "
-        "replace it."
+        "Present a rendered exhibit to the user. Declare it as a list of typed "
+        "`elements` (they render in order); you may include several or call this "
+        "multiple times in a turn — each exhibit joins the conversation's gallery. "
+        "Re-call with the same `id` to revise an exhibit in place. Element types:\n"
+        "- `mermaid`: a diagram, when a picture beats prose (flows, sequences, "
+        "state machines, hierarchies, ER/class). `content` is raw Mermaid source "
+        "starting with a diagram keyword (graph, flowchart, sequenceDiagram, "
+        "classDiagram, stateDiagram, erDiagram, gantt, pie, mindmap, ...).\n"
+        "- `choice`: ask the user to pick from `options` (with an optional "
+        "`prompt`). IMPORTANT: after presenting a choice, present the options and "
+        "then STOP — do NOT fabricate the user's answer or call further tools to "
+        "proceed past it. Their selection arrives as their next message.\n"
+        "For diagrams, still describe them briefly in your normal reply — an "
+        "exhibit complements your text, it doesn't replace it."
     ),
     input_schema={
         "type": "object",
@@ -694,19 +695,28 @@ def scratchpad_note(
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["mermaid"],
-                            "description": "Element type. Only 'mermaid' is supported for now.",
+                            "enum": ["mermaid", "choice"],
+                            "description": "Element type: 'mermaid' (diagram) or 'choice' (pick one).",
                         },
                         "content": {
                             "type": "string",
-                            "description": "Raw Mermaid diagram source.",
+                            "description": "Raw Mermaid diagram source (required for 'mermaid').",
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Selectable options (required for 'choice'; 1-10).",
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Optional question shown above a 'choice' element's buttons.",
                         },
                         "title": {
                             "type": "string",
                             "description": "Optional caption for this element.",
                         },
                     },
-                    "required": ["type", "content"],
+                    "required": ["type"],
                 },
             },
             "id": {

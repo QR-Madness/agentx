@@ -414,7 +414,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - [ ] Cross-encoder reranking model for retrieval quality
 - [ ] Streaming memory retrieval during chat
 - [ ] Conversation sharing (read-only shareable links)
-- [ ] Blocking tool call approval (pause stream, user approves/rejects before execution)
+- [ ] Blocking tool call approval (pause stream, user approves/rejects before execution) — the same
+      pause/hold-run/resume subsystem would also enable the **blocking in-run Exhibits `choice`**
+      round-trip (the user's click becomes the `tool_result` and resumes the same turn, vs. the
+      shipped next-turn model). Build once, both benefit.
 - [ ] Server authentication (single access key per server, session resume on reconnect)
 - [ ] Mobile-responsive breakpoints and touch-friendly gestures
 - [ ] Additional themes beyond cosmic (light theme, high contrast, etc.)
@@ -496,9 +499,20 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - [ ] **More element types** — `table`, `text`, `citation` (wire to `memory_context`/`web_search`);
       absorbs the former "Advanced memory visualization (interactive graph, embedding clusters)" item
       as one registered element type.
-- [ ] **Interactive elements that round-trip** — `choice` / `form` the user acts on, feeding back as
-      the next turn via the `tool_result` (the `present_exhibit` tool mechanism is already in place);
-      natural fit with blocking tool-call approval and the ambassador relay.
+- [x] **Interactive `choice` element (next-turn round-trip)** — shipped `[v0.21.26]`. A `choice`
+      element (`{type:'choice', prompt?, options[]}`) renders option buttons; clicking one submits
+      it as the user's **next turn** via the existing send path (`ChatPanel.submitChoice`, a
+      `useCallback`-stable mirror of `handleSend` incl. `workflow_id`, busy-guarded against
+      in-flight runs). Backend: `ChoiceElement` in a Pydantic **discriminated** `Element` union
+      (options stripped/de-duped/non-blank, ≤10); `present_exhibit` schema/description widened.
+      Client: element-renderer contract refactored to pass the full typed element + context
+      (`ElementRenderProps`); `MermaidElement` memo keyed on element identity so choice
+      callbacks/flags don't thrash diagram re-renders; `answeredValue` on the exhibit message
+      disables/marks the choice (persists via localStorage; cleared on amend). Tests: backend
+      choice cases + `ChoiceElement` component test + restore case. Single-agent next-turn model;
+      blocking in-run variant → Backlog.
+- [ ] **`form` (multi-field) interactive element** — multiple inputs submitted together as one
+      turn; builds on the `choice` next-turn mechanism.
 - [ ] **`grid` (and richer) layouts** + a dedicated browsable **Gallery panel** (drawer) listing a
       conversation's exhibits.
 - [ ] **Inline-fence fallback** — also render the model's *native* ` ```mermaid ` fences (no tool

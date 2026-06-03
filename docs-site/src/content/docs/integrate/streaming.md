@@ -39,9 +39,15 @@ When the agent calls the internal `present_exhibit` tool, the turn emits an `exh
 event — a declarative Gallery→Exhibit→Element tree the client renders from an element
 registry — **instead of** a `tool_call`/`tool_result` pair for that call. Every exhibit
 carries a `schema_version`; unknown element `type`s degrade to a source-as-code fallback,
-so a newer server can add element types without breaking older clients. Slice 1 ships the
-`mermaid` element and the `stack` layout. Re-emitting the same `id` amends that exhibit
-in place.
+so a newer server can add element types without breaking older clients. Re-emitting the
+same `id` amends that exhibit in place. Element types:
+
+- `mermaid` — `{ "type": "mermaid", "content": "graph TD; A-->B", "title?": "…" }` — a diagram.
+- `choice` — `{ "type": "choice", "prompt?": "Which DB?", "options": ["PostgreSQL", "Neo4j"] }`
+  — interactive options. Clicking one submits it as the user's **next message** (no new
+  endpoint); the agent's next turn continues from the answer.
+
+The `stack` layout (vertical) is the only layout today.
 
 Multi-agent runs additionally emit `delegation_start`, `delegation_chunk`,
 `delegation_tool_call`, `delegation_tool_result`, and `delegation_complete` — see the

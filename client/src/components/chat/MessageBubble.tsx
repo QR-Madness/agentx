@@ -20,6 +20,8 @@ interface MessageBubbleProps {
   avatarId?: string;
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
+  onSubmitChoice?: (value: string, messageId: string) => void;
+  busy?: boolean;
 }
 
 function MessageBubbleImpl(props: MessageBubbleProps) {
