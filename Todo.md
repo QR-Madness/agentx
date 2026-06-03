@@ -469,6 +469,37 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       tasks), not a shippable feature. Depends on (1)+(2). *(Note: the "online self-critique" half of
       Copilot's #7 already exists as the Reflection strategy.)*
 
+### Settings Advisor + Settings Manifest (the control-plane interface)
+
+> Conceptual frame: there's a **task layer** (agents acting within their config), a **control plane**
+> (config / profiles / genome that shapes cognition), and a **meta layer** (who *writes* the control
+> plane). The user, the Settings Advisor, and the evolution subsystem all act at the meta layer:
+> the Advisor is **human-in-the-loop** control-plane tuning, evolution is the **autonomous** sibling.
+> They share one primitive — *propose a config diff → validate → (optionally) eval its effect* — so
+> the Advisor is the **safe on-ramp** to evolution (ship the confirmed path first).
+
+- [ ] **(keystone) Settings Manifest** — a canonical registry of every config key
+      (`{path, type, default, range, description, "how it works abstractly", affected feature}`).
+      Today this knowledge is scattered as inline comments in `config.py` + ad-hoc UI hints. One
+      manifest collapses **four** items into itself: it feeds the **Settings Advisor**, lets the
+      **settings-overhaul panel** auto-generate a clean UI, supplies the **"document every feature
+      in-UI"** + **Memory Area cleanup** descriptions, and gives `/api/config/update` real validation.
+      Build this first.
+- [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention
+      routing (16.5). Free-rein **read** access: the Settings Manifest, the docs-site (a docs-search
+      tool), and a **conversation-diagnostic** tool (transcript + the **Context Inspector** + logs/
+      metrics) so it can answer "**why did X happen**" and pinpoint the setting responsible. Proposes
+      fixes as a **confirmed `form`/`choice` exhibit** that writes via `/api/config/update` —
+      **read-broad, write-gated** (user confirms; never silent writes). Uses a **long-context model
+      (Opus 1M)** to swallow a whole conversation for diagnosis; budget its own context carefully
+      (reuse `assemble_turn_context`). *(Depends on: Settings Manifest; the `form` exhibit element for
+      rich apply-a-fix UI — `choice` covers simple toggles until then. This agent is the consumer that
+      makes the observability cluster — Context Inspector, SSE status, reasoning scoring — pay off.)*
+- [ ] **Shared "control-plane change" primitive** — a single path that takes a config/genome **diff**,
+      validates it against the manifest, applies it, and (optionally) evals its effect. The Advisor
+      drives it human-confirmed; the evolution subsystem (above) drives it autonomously within bounds.
+      Unifying these means evolution is just "the Advisor on auto, gated" — not a separate machine.
+
 ### Open Platform — De-walling the Garden
 
 > AgentX is today an MCP *consumer* (it eats external tool servers). This track makes it
