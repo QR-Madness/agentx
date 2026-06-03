@@ -279,8 +279,37 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 5. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
    (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
 
+> ⭐ **Major missing capability — File Workspaces & Document RAG** (see section below). Slots near the
+> top once the chat-legibility slice lands: today agents can search learned *memory* + the *web* but
+> can't be handed a file/codebase/folder. Bigger build than 1–5 but capability-defining, and mostly
+> *reuse* — schedule it as its own slice.
+>
 > The **Settings Manifest** (keystone) is the bridge: foundational *and* the precondition for the
-> meta-layer — a reasonable item 6 once 1–5 land, since it directly cleans up settings + validation.
+> meta-layer — reasonable once the above land, since it directly cleans up settings + validation.
+
+### ⭐ File Workspaces & Document RAG (major foundation gap)
+
+> Confirmed absent: no upload endpoint, no file/document store, no workspace, no ingestion. Agents can
+> RAG over their *learned memory* (Neo4j + pgvector) and the *web* (Tavily extract/crawl), but a user
+> can't hand them a PDF / codebase / folder of docs. This is the biggest capability gap — and it's
+> mostly **reuse**, not net-new infra.
+
+- [ ] **Per-conversation (and per-user) file workspace** — upload endpoint (multipart) + a durable
+      file store (local/object) + a `documents` table. Drag-drop/attach in the composer
+      (`ChatPanel`), a Workspace drawer listing the conversation's files.
+- [ ] **Ingestion pipeline (reuse, don't rebuild)** — parse (pdf/text/md/code) → **chunk** (reuse
+      `agent/tool_output_chunker.py`: `chunk_text` / `detect_sections` / `semantic_search_chunks`
+      already exist) → **embed** (reuse `kit/agent_memory/embedding_queue.py` + the configured
+      embedding provider) → store vectors in **pgvector** (a `document_chunks` table mirroring the
+      memory vector store).
+- [ ] **Retrieval tools for the agent** — internal tools mirroring the shipped stored-output pattern
+      (`read_stored_output` / `tool_output_query` / `tool_output_section`): `workspace_search`
+      (semantic), `read_document` (paginated), `list_workspace`. Same registration + oversize handling.
+- [ ] **Sources/citations integration** — a workspace hit auto-captures a `citation` exhibit
+      (`source_type: "doc"`, already in the schema) → flows into the conversation **Bibliography**.
+      Closes the loop with the Exhibits work already shipped.
+- [ ] *(later)* code-aware chunking (AST/symbol-level), folder/repo ingestion, workspace persistence
+      across conversations, and `web_crawl` → workspace (crawl a site *into* the workspace).
 
 ### Chat UX & Tool-Call Rendering (density + observability)
 
