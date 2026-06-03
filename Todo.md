@@ -329,6 +329,13 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       allow-lists. Wire into `task db:init` (create the dir) + `db:status`.
 - [ ] *(later)* code-aware/AST chunking, folder/repo ingestion, `web_crawl` → workspace (crawl a site
       *into* a workspace), cross-workspace search.
+- [ ] *(future)* **Content-addressed store doubles as snapshots / restore points** — because blobs are
+      keyed by sha256 (Git-like), a "snapshot" is just a manifest of hashes and **incremental snapshots
+      are cheap** (only changed blobs written). Generalizes today's bespoke snapshot/restore
+      (`eval_consolidation --snapshot`, memory export/import) into one uniform primitive across **config
+      + memory graph + workspaces + genomes**. This is the **safety net for the meta-layer**: it's what
+      makes the autonomy envelope / evolution *reversible* (the parents can experiment because a bad
+      mutation rolls back). Ties [[autonomy-envelope]] ↔ restore.
 
 ### Chat UX & Tool-Call Rendering (density + observability)
 
