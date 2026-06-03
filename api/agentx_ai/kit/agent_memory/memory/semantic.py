@@ -829,7 +829,17 @@ class SemanticMemory:
             for record in result:
                 if record["entity"]:
                     entities.append(dict(record["entity"]))
-                all_related.extend([r for r in record["related"] if r.get("entity")])
+                # Convert the related entity Node to a plain dict — downstream
+                # scoring (`entity["final_score"] = …`) mutates these, and a raw
+                # neo4j Node rejects item assignment ('Node' object does not
+                # support item assignment), which silently breaks recall.
+                for r in record["related"]:
+                    if r.get("entity"):
+                        all_related.append({
+                            "entity": dict(r["entity"]),
+                            "relationship": r.get("relationship"),
+                            "path_length": r.get("path_length"),
+                        })
                 all_facts.extend([dict(f) for f in record["facts"] if f])
 
             return {
