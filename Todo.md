@@ -256,6 +256,32 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 > Items to consider after prototype is complete
 
+### ▶ FOUNDATION — real next-session priority order (barring the genome/advisor/evolution meta-layer)
+
+> The "fancy" meta-layer (Agent Genome, Settings Advisor, evolution) is captured below but gated on
+> foundation. Do these first; they're user-facing, correctness, or reliability — not strategy.
+
+1. **Chat legibility slice** *(highest visible payoff; the user's most-repeated complaint)* — bundle
+   three from the **Chat UX & Tool-Call Rendering** + **Observability** clusters: (a) **compact,
+   collapsible tool-call rendering** (`chat/bubbles/ToolCallBubble`, `ToolResultBubble`,
+   `ToolExecutionBlock`/`ToolResultBlock` — dense one-liner by default; everything inheriting the
+   block gets it), (b) **web-search query inline** on the collapsed row, (c) **per-phase SSE `status`
+   events** (`streaming/tool_loop.py` emit → `lib/api/streaming.ts` → `useChatStream`) so the chat
+   shows a live activity line instead of a silent "thinking". Mostly client + one focused backend emit.
+2. **Stable memory core** — kill transient memory injection (`remember(query=message)` re-ranks every
+   turn); inject a stable high-salience core + recall as a supplement. Correctness; rides the Slice-6
+   `assemble_turn_context` preamble budget.
+3. **Finish the reliability guarantees** — extend the Slice-5 model fallback to the remaining feature
+   sites (reasoning/drafting/`planner`/`alloy`, still raw `get_provider_for_model`); **hydrate the
+   Alloy + background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm.
+4. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
+   model** (UI gap), and the **full persisted tool outputs** debugging surface (heavier backend).
+5. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
+   (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
+
+> The **Settings Manifest** (keystone) is the bridge: foundational *and* the precondition for the
+> meta-layer — a reasonable item 6 once 1–5 land, since it directly cleans up settings + validation.
+
 ### Chat UX & Tool-Call Rendering (density + observability)
 
 > Tool calls — and everything that inherits the tool-call block (checkpoints, exhibit fallbacks,
