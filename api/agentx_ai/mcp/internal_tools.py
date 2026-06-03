@@ -665,6 +665,177 @@ def scratchpad_note(
     }
 
 
+@register_tool(
+    name="present_exhibit",
+    description=(
+        "Present a rendered exhibit to the user. Declare it as a list of typed "
+        "`elements` (they render in order); you may include several or call this "
+        "multiple times in a turn — each exhibit joins the conversation's gallery. "
+        "Re-call with the same `id` to revise an exhibit in place. Element types:\n"
+        "- `mermaid`: a diagram, when a picture beats prose (flows, sequences, "
+        "state machines, hierarchies, ER/class). `content` is raw Mermaid source "
+        "starting with a diagram keyword (graph, flowchart, sequenceDiagram, "
+        "classDiagram, stateDiagram, erDiagram, gantt, pie, mindmap, ...).\n"
+        "- `choice`: ask the user to pick from `options` (with an optional "
+        "`prompt`). IMPORTANT: after presenting a choice, present the options and "
+        "then STOP — do NOT fabricate the user's answer or call further tools to "
+        "proceed past it. Their selection arrives as their next message.\n"
+        "- `table`: genuinely tabular data — `columns` (a handful; wide or huge "
+        "tables render poorly in a chat column, so summarize or split big data) "
+        "and `rows` (each row aligns to the columns).\n"
+        "- `citation`: sources you actually used — a list of `sources`, each with "
+        "a `label` (and optional `url`, `quote`, `source_type`). Web results from "
+        "`web_search` are recorded as sources automatically, so don't re-list them "
+        "as inline links — instead spotlight a key web source as `kind:'active'` "
+        "(with a short `quote`), and add any non-web sources (docs/memory) you used. "
+        "Sources default to `passive` (record-keeping); `active` is for references "
+        "you may point back to. Don't pad.\n"
+        "For diagrams/tables, still describe them briefly in your normal reply — "
+        "an exhibit complements your text, it doesn't replace it."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "elements": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Ordered list of elements to render in the exhibit.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["mermaid", "choice", "table", "citation"],
+                            "description": "Element type: 'mermaid', 'choice', 'table', or 'citation'.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Raw Mermaid diagram source (required for 'mermaid').",
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Selectable options (required for 'choice'; 1-10).",
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Optional question shown above a 'choice' element's buttons.",
+                        },
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Column headers (required for 'table'; keep it to a handful).",
+                        },
+                        "rows": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "string"}},
+                            "description": "Table rows for 'table'; each row aligns to columns.",
+                        },
+                        "caption": {
+                            "type": "string",
+                            "description": "Optional caption shown under a 'table'.",
+                        },
+                        "sources": {
+                            "type": "array",
+                            "description": "Cited sources (required for 'citation').",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string", "description": "Source title/name."},
+                                    "url": {"type": "string", "description": "Optional link."},
+                                    "quote": {"type": "string", "description": "Short relevant excerpt (for active sources)."},
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": ["active", "passive"],
+                                        "description": "'active' (key reference, folds out) or 'passive' (record-keeping). Default passive.",
+                                    },
+                                    "source_type": {
+                                        "type": "string",
+                                        "enum": ["web", "memory", "doc"],
+                                        "description": "Optional provenance hint.",
+                                    },
+                                },
+                                "required": ["label"],
+                            },
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Optional caption/title for this element.",
+                        },
+                    },
+                    "required": ["type"],
+                },
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional stable id. Reuse it to amend a prior exhibit; omit for a new one.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Optional title for the whole exhibit.",
+            },
+            "layout": {
+                "type": "string",
+                "enum": ["stack"],
+                "description": "How elements are arranged. Only 'stack' (vertical) for now.",
+                "default": "stack",
+            },
+        },
+        "required": ["elements"],
+    },
+)
+def present_exhibit(
+    elements: list[dict[str, Any]],
+    id: str | None = None,
+    title: str | None = None,
+    layout: str = "stack",
+) -> dict[str, Any]:
+    """Validate a declared exhibit and confirm it to the model.
+
+    The exhibit itself is streamed to the client by the tool loop (derived from
+    these same arguments via :func:`exhibits.exhibit_from_present_call`); this
+    handler's job is to validate the declaration and return a result so the
+    model gets feedback (and can re-present on error).
+    """
+    from pydantic import ValidationError
+
+    from ..streaming.exhibits import (
+        ALLOWED_ELEMENT_TYPES,
+        exhibit_from_present_call,
+        mermaid_sanity_error,
+    )
+
+    try:
+        exhibit = exhibit_from_present_call(
+            {"id": id, "title": title, "layout": layout, "elements": elements}
+        )
+    except ValidationError as e:
+        allowed = ", ".join(sorted(ALLOWED_ELEMENT_TYPES))
+        return {
+            "error": (
+                f"Invalid exhibit: {e.error_count()} problem(s). Each element needs "
+                f"a 'type' (one of: {allowed}) and 'content'. Details: {e.errors()[:3]}"
+            ),
+            "success": False,
+        }
+
+    for idx, el in enumerate(exhibit.elements):
+        if el.type == "mermaid":
+            err = mermaid_sanity_error(el.content)
+            if err:
+                return {
+                    "error": f"element[{idx}]: {err}",
+                    "success": False,
+                }
+
+    return {
+        "exhibit_id": exhibit.id,
+        "element_count": len(exhibit.elements),
+        "note": "Exhibit presented to the user.",
+        "success": True,
+    }
+
+
 def _memory_for_ctx():
     """Resolve the AgentMemory for the active tool context, or (None, error)."""
     from .internal_context import current_context
@@ -866,11 +1037,11 @@ def translate_text(text: str, target_language: str) -> dict[str, Any]:
 
 
 # =============================================================================
-# Web search (Tavily primary, Brave REST fallback)
+# Web search / research (Tavily SDK primary, Brave REST fallback)
 # =============================================================================
 
-# Short-TTL in-process cache of identical queries: key -> (expiry_epoch, results)
-_SEARCH_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+# Short-TTL in-process cache of identical queries: key -> (expiry_epoch, payload)
+_SEARCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _SEARCH_TIMEOUT = 15.0
 
 
@@ -908,71 +1079,275 @@ def _http_get_json(url: str, *, headers: dict, params: dict) -> dict[str, Any]:
     raise last_exc  # type: ignore[misc]
 
 
-def _http_post_json(url: str, *, headers: dict, json_body: dict) -> dict[str, Any]:
-    """POST with small retry/backoff on transient errors (timeouts, 429, 5xx)."""
-    import httpx
+# -----------------------------------------------------------------------------
+# Capability registry — the single source of truth for what each web tool
+# advertises (per active backend) and which params its handler forwards. The
+# model only ever sees the *active* backend's real capabilities, assembled at
+# tool-listing time by the pre-check in `get_internal_tools`.
+# -----------------------------------------------------------------------------
 
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            with httpx.Client(timeout=_SEARCH_TIMEOUT) as client:
-                resp = client.post(url, headers=headers, json=json_body)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise httpx.HTTPStatusError(
-                    f"transient {resp.status_code}", request=resp.request, response=resp
-                )
-            resp.raise_for_status()
-            return resp.json()
-        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as e:
-            last_exc = e
-            if attempt < 2:
-                time.sleep(0.5 * (2 ** attempt))
-    raise last_exc  # type: ignore[misc]
+# Ordered backend preference when none is explicitly configured / available.
+_BACKEND_ORDER: tuple[str, ...] = ("tavily", "brave")
+
+# Tavily-only tools — advertised to the model only when Tavily is the active
+# backend, but always registered (so a stale call self-guards instead of 404ing).
+_CAPABILITY_GATED_TOOLS: frozenset[str] = frozenset({"web_extract", "web_map"})
+
+# Tavily `time_range` → Brave `freshness` codes.
+_FRESHNESS_MAP = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}
 
 
-def _tavily_search(query: str, max_results: int) -> list[dict[str, Any]]:
-    """Query Tavily; returns normalized {title, url, snippet} list. Raises on failure."""
+def _enum(values: list[str], desc: str) -> dict[str, Any]:
+    return {"type": "string", "enum": values, "description": desc}
+
+
+def _strarr(desc: str) -> dict[str, Any]:
+    return {"type": "array", "items": {"type": "string"}, "description": desc}
+
+
+# Per-backend, per-tool extra params (beyond each tool's backend-independent base).
+SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "tavily": {
+        "label": "Tavily",
+        "tools": {
+            "web_search": {
+                "summary": (
+                    "search depth, topic (news/finance), time range, domain "
+                    "include/exclude, and an optional LLM-generated answer"
+                ),
+                "params": {
+                    "search_depth": _enum(
+                        ["basic", "advanced"],
+                        "Search depth; 'advanced' digs deeper (slower, costs more).",
+                    ),
+                    "topic": _enum(
+                        ["general", "news", "finance"],
+                        "Search topic; 'news' favors recent reporting.",
+                    ),
+                    "time_range": _enum(
+                        ["day", "week", "month", "year"],
+                        "Restrict to results from the last day/week/month/year.",
+                    ),
+                    "include_domains": _strarr("Only return results from these domains."),
+                    "exclude_domains": _strarr("Never return results from these domains."),
+                    "include_answer": {
+                        "type": "boolean",
+                        "description": "Include a short LLM-generated answer to the query.",
+                    },
+                },
+            },
+            "web_extract": {"summary": "pull the full cleaned content of specific URLs", "params": {}},
+            "web_map": {"summary": "discover a site's URL graph from a base URL", "params": {}},
+        },
+    },
+    "brave": {
+        "label": "Brave",
+        "tools": {
+            "web_search": {
+                "summary": "safe-search level, a freshness window, and a result-type filter",
+                "params": {
+                    "safesearch": _enum(
+                        ["off", "moderate", "strict"], "Adult-content filtering level."
+                    ),
+                    "time_range": _enum(
+                        ["day", "week", "month", "year"],
+                        "Restrict to results from the last day/week/month/year.",
+                    ),
+                    "result_filter": {
+                        "type": "string",
+                        "description": (
+                            "Comma-separated result types to include "
+                            "(e.g. 'web,news,discussions')."
+                        ),
+                    },
+                },
+            },
+        },
+    },
+}
+
+_TOOL_BASE_DESC: dict[str, str] = {
+    "web_search": (
+        "Search the public web and get back a ranked list of results "
+        "({title, url, snippet}). Use for current events, facts you're unsure "
+        "about, documentation lookups, or anything beyond your training data. "
+        "Web results are recorded as sources automatically — no need to repeat "
+        "them as inline links."
+    ),
+    "web_extract": (
+        "Extract the full cleaned text/markdown of one or more specific web pages "
+        "(when a search snippet isn't enough). Pass the `urls` you want to read in "
+        "depth; large content is stored and retrievable."
+    ),
+    "web_map": (
+        "Map a website's structure: given a base `url`, return the graph of "
+        "discovered page URLs (no page content). Use to scope a site before "
+        "extracting specific pages with web_extract."
+    ),
+}
+
+
+def _base_tool_schema(tool: str) -> dict[str, Any]:
+    """Backend-independent core schema for a web tool."""
+    if tool == "web_search":
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query."},
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max results to return (default from config, usually 5).",
+                },
+            },
+            "required": ["query"],
+        }
+    if tool == "web_extract":
+        return {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "One or more page URLs to extract full content from (max 20).",
+                },
+                "extract_depth": _enum(
+                    ["basic", "advanced"], "'advanced' parses more (tables, embeds); slower."
+                ),
+                "format": _enum(["markdown", "text"], "Output format for extracted content."),
+            },
+            "required": ["urls"],
+        }
+    if tool == "web_map":
+        return {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Base URL whose site structure to map."},
+                "max_depth": {
+                    "type": "integer",
+                    "description": "How many links deep to traverse (default 1).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max URLs to return (default 50, capped at 200).",
+                },
+            },
+            "required": ["url"],
+        }
+    return {"type": "object", "properties": {}}
+
+
+def build_tool_schema(tool: str, backend: str) -> dict[str, Any]:
+    """Base schema + the active backend's extra params for `tool`."""
+    schema = _base_tool_schema(tool)
+    caps = SEARCH_CAPABILITIES.get(backend, {}).get("tools", {}).get(tool)
+    if caps:
+        for pname, pschema in caps["params"].items():
+            schema["properties"][pname] = pschema
+    return schema
+
+
+def build_tool_description(tool: str, backend: str) -> str:
+    """Base description + a one-line capability summary for the active backend."""
+    base = _TOOL_BASE_DESC.get(tool, "")
+    caps = SEARCH_CAPABILITIES.get(backend, {}).get("tools", {}).get(tool)
+    label = SEARCH_CAPABILITIES.get(backend, {}).get("label", backend)
+    if caps and caps.get("summary"):
+        return f"{base}\nCapabilities ({label}): {caps['summary']}."
+    return base
+
+
+def _backend_has_key(name: str) -> bool:
+    if name == "tavily":
+        return bool(_resolve_search_key("search.tavily_api_key", "TAVILY_API_KEY"))
+    if name == "brave":
+        return bool(_resolve_search_key("search.brave_api_key", "BRAVE_API_KEY"))
+    return False
+
+
+def resolve_active_search_backend() -> str | None:
+    """The backend `web_search` will hit first: the configured primary if its key
+    is present, else the first backend with a key. None when none is configured."""
+    from ..config import get_config_manager
+
+    primary = (get_config_manager().get("search.backend", "tavily") or "tavily").lower()
+    order = [primary] + [b for b in _BACKEND_ORDER if b != primary]
+    for name in order:
+        if _backend_has_key(name):
+            return name
+    return None
+
+
+# ---- Backends ---------------------------------------------------------------
+
+def _tavily_client():
+    """Lazily build a Tavily SDK client from the resolved key. Raises RuntimeError
+    when the key is missing or the SDK isn't installed (callers convert to error
+    dicts). Sync client matches the synchronous tool-execution path."""
     key = _resolve_search_key("search.tavily_api_key", "TAVILY_API_KEY")
     if not key:
         raise RuntimeError("Tavily API key not configured (search.tavily_api_key / TAVILY_API_KEY)")
-    data = _http_post_json(
-        "https://api.tavily.com/search",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json_body={
-            "query": query,
-            "max_results": max_results,
-            "search_depth": "basic",
-        },
-    )
-    return [
+    try:
+        from tavily import TavilyClient
+    except ImportError as e:  # pragma: no cover - dependency is declared
+        raise RuntimeError(f"tavily-python is not installed: {e}") from e
+    return TavilyClient(api_key=key)
+
+
+def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
+    """Query Tavily via the SDK; forwards only Tavily-supported params. Deliberately
+    omits `include_raw_content` (full content is web_extract's job) so the echoed
+    result stays compact + auto-capturable. Raises on failure."""
+    client = _tavily_client()
+    kwargs: dict[str, Any] = {"max_results": max_results}
+    for p in ("search_depth", "topic", "time_range", "include_domains", "exclude_domains", "include_answer"):
+        if opts.get(p) is not None:
+            kwargs[p] = opts[p]
+    data = client.search(query=query, **kwargs)
+    results = [
         {
             "title": r.get("title", ""),
             "url": r.get("url", ""),
             "snippet": r.get("content", ""),
+            "score": r.get("score"),
+            "published_date": r.get("published_date"),
         }
         for r in (data.get("results") or [])
     ]
+    payload: dict[str, Any] = {"results": results}
+    if data.get("answer"):
+        payload["answer"] = data["answer"]
+    return payload
 
 
-def _brave_search(query: str, max_results: int) -> list[dict[str, Any]]:
-    """Query Brave REST; returns normalized {title, url, snippet} list. Raises on failure."""
+def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
+    """Query Brave REST; forwards only Brave-supported params (mapping
+    time_range→freshness). Raises on failure."""
     key = _resolve_search_key("search.brave_api_key", "BRAVE_API_KEY")
     if not key:
         raise RuntimeError("Brave API key not configured (search.brave_api_key / BRAVE_API_KEY)")
+    params: dict[str, Any] = {"q": query, "count": max_results}
+    if opts.get("safesearch"):
+        params["safesearch"] = opts["safesearch"]
+    if opts.get("time_range") in _FRESHNESS_MAP:
+        params["freshness"] = _FRESHNESS_MAP[opts["time_range"]]
+    if opts.get("result_filter"):
+        params["result_filter"] = opts["result_filter"]
     data = _http_get_json(
         "https://api.search.brave.com/res/v1/web/search",
         headers={"X-Subscription-Token": key, "Accept": "application/json"},
-        params={"q": query, "count": max_results},
+        params=params,
     )
     web = (data.get("web") or {}).get("results") or []
-    return [
+    results = [
         {
             "title": r.get("title", ""),
             "url": r.get("url", ""),
             "snippet": r.get("description", ""),
+            "published_date": r.get("page_age") or r.get("age"),
         }
         for r in web
     ]
+    return {"results": results}
 
 
 _SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
@@ -980,30 +1355,15 @@ _SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
 
 @register_tool(
     name="web_search",
-    description=(
-        "Search the public web and get back a ranked list of results "
-        "({title, url, snippet}). Use this for current events, facts you're "
-        "unsure about, documentation lookups, or anything beyond your training "
-        "data. Returns concise snippets; follow up with a page-fetch tool if you "
-        "need full content."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The search query.",
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Max results to return (default from config, usually 5).",
-            },
-        },
-        "required": ["query"],
-    },
+    description=_TOOL_BASE_DESC["web_search"],
+    input_schema=_base_tool_schema("web_search"),
 )
-def web_search(query: str, max_results: int | None = None) -> dict[str, Any]:
-    """Search the web via the configured backend (Tavily) with Brave fallback."""
+def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[str, Any]:
+    """Search the web via the active backend (Tavily SDK) with Brave fallback.
+
+    Extra keyword params are backend-specific knobs advertised by the capability
+    pre-check; each backend forwards only what it supports and ignores the rest.
+    """
     if not query or not query.strip():
         return {"error": "query is required", "success": False, "results": []}
 
@@ -1016,45 +1376,46 @@ def web_search(query: str, max_results: int | None = None) -> dict[str, Any]:
         max_results = int(cfg.get("search.max_results", 5))
     ttl = int(cfg.get("search.cache_ttl_seconds", 300))
 
-    # Cache check (keyed by backend + normalized query + count)
-    cache_key = f"{backend}:{max_results}:{query.strip().lower()}"
+    # Cache check (keyed by backend + normalized query + count + opts)
+    cache_key = f"{backend}:{max_results}:{query.strip().lower()}:{sorted(opts.items())!r}"
     now = time.time()
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
-        return {
-            "results": cached[1],
-            "count": len(cached[1]),
-            "backend": backend,
-            "cached": True,
-            "success": True,
-        }
+        return {**cached[1], "cached": True, "success": True}
 
     # Backend order: configured primary, then the other (if fallback enabled)
     primary = backend if backend in _SEARCH_BACKENDS else "tavily"
     order = [primary]
     if fallback_enabled:
-        order += [b for b in _SEARCH_BACKENDS if b != primary]
+        order += [b for b in _BACKEND_ORDER if b != primary]
 
     errors: list[str] = []
     for name in order:
         try:
-            results = _SEARCH_BACKENDS[name](query, max_results)
+            payload = _SEARCH_BACKENDS[name](query, max_results, **opts)
         except Exception as e:  # noqa: BLE001 - backend/network failure → try fallback
             errors.append(f"{name}: {e}")
             logger.warning(f"web_search backend '{name}' failed: {e}")
             continue
+        results = payload.get("results") or []
         if not results:
             errors.append(f"{name}: no results")
             continue
-        if ttl > 0:
-            _SEARCH_CACHE[cache_key] = (now + ttl, results)
-        return {
+        response: dict[str, Any] = {
             "results": results,
             "count": len(results),
             "backend": name,
             "cached": False,
             "success": True,
         }
+        if payload.get("answer"):
+            response["answer"] = payload["answer"]
+        if ttl > 0:
+            cacheable = {k: response[k] for k in ("results", "count", "backend")}
+            if "answer" in response:
+                cacheable["answer"] = response["answer"]
+            _SEARCH_CACHE[cache_key] = (now + ttl, cacheable)
+        return response
 
     return {
         "results": [],
@@ -1064,26 +1425,125 @@ def web_search(query: str, max_results: int | None = None) -> dict[str, Any]:
     }
 
 
+@register_tool(
+    name="web_extract",
+    description=_TOOL_BASE_DESC["web_extract"],
+    input_schema=_base_tool_schema("web_extract"),
+)
+def web_extract(
+    urls: list[str] | str,
+    extract_depth: str = "basic",
+    format: str = "markdown",
+    **opts: Any,
+) -> dict[str, Any]:
+    """Extract full page content for specific URLs via the Tavily SDK.
+
+    Tavily-only (no Brave equivalent): returns a clear error when Tavily isn't
+    configured. Large content rides the normal oversize/stored-output handling.
+    """
+    if isinstance(urls, str):
+        urls = [urls]
+    urls = [u for u in (urls or []) if isinstance(u, str) and u.strip()][:20]  # abuse cap
+    if not urls:
+        return {"error": "urls is required", "success": False}
+
+    try:
+        client = _tavily_client()
+    except RuntimeError as e:
+        return {"error": f"web_extract requires Tavily: {e}", "success": False}
+
+    # Normalize to the SDK's accepted values, then pass via an Any-typed kwargs
+    # dict so the Literal-typed SDK params accept our (validated) strings.
+    kwargs: dict[str, Any] = {
+        "urls": urls,
+        "extract_depth": extract_depth if extract_depth in ("basic", "advanced") else "basic",
+        "format": format if format in ("markdown", "text") else "markdown",
+    }
+    try:
+        data = client.extract(**kwargs)
+    except Exception as e:  # noqa: BLE001 - SDK/network failure
+        return {"error": f"Extract failed: {e}", "success": False}
+
+    results = [
+        {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
+        for r in (data.get("results") or [])
+    ]
+    return {
+        "results": results,
+        "failed": data.get("failed_results") or [],
+        "count": len(results),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="web_map",
+    description=_TOOL_BASE_DESC["web_map"],
+    input_schema=_base_tool_schema("web_map"),
+)
+def web_map(url: str, max_depth: int = 1, limit: int = 50, **opts: Any) -> dict[str, Any]:
+    """Map a site's URL graph via the Tavily SDK (Tavily-only). Output is hard-capped."""
+    if not url or not url.strip():
+        return {"error": "url is required", "success": False}
+    limit = max(1, min(int(limit or 50), 200))
+
+    try:
+        client = _tavily_client()
+    except RuntimeError as e:
+        return {"error": f"web_map requires Tavily: {e}", "success": False}
+
+    try:
+        data = client.map(url=url, max_depth=max_depth, limit=limit)
+    except Exception as e:  # noqa: BLE001 - SDK/network failure
+        return {"error": f"Map failed: {e}", "success": False}
+
+    found = data.get("results") or data.get("urls") or []
+    found = found[:limit]
+    return {"base_url": url, "urls": found, "count": len(found), "success": True}
+
+
 # =============================================================================
 # Public API
 # =============================================================================
 
-def get_internal_tools() -> list[ToolInfo]:
-    """
-    Get all registered internal tools as ToolInfo objects.
+_WEB_TOOLS: frozenset[str] = frozenset({"web_search", "web_extract", "web_map"})
 
-    Returns:
-        List of ToolInfo objects compatible with the MCP tool discovery system.
-    """
-    return [
-        ToolInfo(
+
+def _advertise_tool(tool: InternalTool, backend: str | None) -> ToolInfo:
+    """Build the model-facing ToolInfo, tailoring web tools to the active backend."""
+    if backend and tool.name in _WEB_TOOLS:
+        return ToolInfo(
             name=tool.name,
-            description=tool.description,
-            input_schema=tool.input_schema,
+            description=build_tool_description(tool.name, backend),
+            input_schema=build_tool_schema(tool.name, backend),
             server_name=INTERNAL_SERVER_NAME,
         )
-        for tool in _INTERNAL_TOOLS.values()
-    ]
+    return ToolInfo(
+        name=tool.name,
+        description=tool.description,
+        input_schema=tool.input_schema,
+        server_name=INTERNAL_SERVER_NAME,
+    )
+
+
+def get_internal_tools() -> list[ToolInfo]:
+    """
+    Get all registered internal tools as ToolInfo objects (model-facing list).
+
+    Capability pre-check: inventories the active search backend and advertises
+    web tools tailored to it — `web_extract`/`web_map` only when Tavily is active,
+    and `web_search` only when *some* backend is configured. Tools stay registered
+    (executable) regardless; this only governs what the model is told about.
+    """
+    backend = resolve_active_search_backend()
+    tools: list[ToolInfo] = []
+    for tool in _INTERNAL_TOOLS.values():
+        if tool.name in _CAPABILITY_GATED_TOOLS and backend != "tavily":
+            continue
+        if tool.name == "web_search" and backend is None:
+            continue
+        tools.append(_advertise_tool(tool, backend))
+    return tools
 
 
 def find_internal_tool(name: str) -> ToolInfo | None:

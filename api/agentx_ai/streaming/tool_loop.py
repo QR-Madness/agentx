@@ -99,6 +99,65 @@ def _partition_tool_calls(round_tool_calls: list, agent) -> tuple[list, list]:
     return delegation_calls, regular_calls
 
 
+# Internal tool whose calls are surfaced as typed `exhibit` events (rendered
+# by the client's element registry) rather than generic tool_call/tool_result
+# cards. The tool body still runs so the model gets a tool_result.
+EXHIBIT_TOOL_NAME = "present_exhibit"
+
+
+def _emit_exhibit_event(tc) -> list[str]:
+    """Build an `exhibit` SSE from a `present_exhibit` tool call's arguments.
+
+    Returns a single-element list on success, or empty if the declared exhibit
+    is malformed — in which case nothing is shown to the client and the tool
+    body's validation error (returned to the model) drives a re-present.
+    """
+    from pydantic import ValidationError
+
+    from .exhibits import exhibit_from_present_call
+
+    try:
+        exhibit = exhibit_from_present_call(tc.arguments or {})
+    except ValidationError as e:
+        logger.warning(f"present_exhibit args invalid; suppressing exhibit event: {e}")
+        return []
+    return [_sse("exhibit", exhibit.model_dump())]
+
+
+# Tool whose successful results are auto-captured as a passive `citation` exhibit
+# (so web sources surface in the UI without the model having to present them).
+WEB_SEARCH_TOOL_NAME = "web_search"
+
+
+def _emit_web_search_citation(tm) -> list[str]:
+    """Auto-capture a `web_search` tool result as a passive `citation` exhibit.
+
+    Reads the full (un-capped) tool message content — `web_search` keeps results
+    compact (no raw page content) so they're never oversize-routed before we see
+    them. Returns empty when disabled by config, unparseable, failed, or empty.
+    """
+    from ..config import get_config_manager
+
+    if not get_config_manager().get("citations.auto_capture_web_search", True):
+        return []
+    try:
+        data = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+    results = data.get("results") or []
+    if not results:
+        return []
+
+    from .exhibits import citation_exhibit_from_web_search
+
+    exhibit = citation_exhibit_from_web_search(results, exhibit_id=f"exh_src_{tm.tool_call_id}")
+    if exhibit is None:
+        return []
+    return [_sse("exhibit", exhibit.model_dump())]
+
+
 async def _run_delegations(
     delegation_calls: list,
     alloy_executor,
@@ -247,15 +306,19 @@ async def _execute_and_emit_tools(
     capture_tool_turns: bool,
     result: "ToolLoopResult",
     delegation_raw: dict[str, dict[str, Any]],
+    suppress_result_ids: set | None = None,
 ) -> AsyncGenerator[str, None]:
     """Execute the regular (sync) tool calls, emit `tool_result` events, and
     extend `messages` with the round's tool results.
 
     Delegation results (already streamed by `_run_delegations`) are prepended
-    but suppressed from the generic `tool_result` events. When
-    `capture_tool_turns` is set, tool call/result data is captured on `result`
-    for DB persistence.
+    but suppressed from the generic `tool_result` events. Calls in
+    `suppress_result_ids` (e.g. `present_exhibit`, whose output is the typed
+    `exhibit` event) are likewise executed but not echoed as a `tool_result`.
+    When `capture_tool_turns` is set, tool call/result data is captured on
+    `result` for DB persistence.
     """
+    suppress_result_ids = suppress_result_ids or set()
     tool_start_time = time.perf_counter()
     tool_messages = (
         agent._execute_tool_calls(regular_calls, task_context=task_context)
@@ -267,9 +330,13 @@ async def _execute_and_emit_tools(
 
     for tm in tool_messages:
         is_error = tm.content.startswith('{"error"') or tm.content.startswith("Error:")
-        # Skip emitting a generic tool_result for delegations; the
-        # delegation_complete event already carries the result.
-        if tm.tool_call_id not in delegation_tool_call_ids:
+        # Skip emitting a generic tool_result for delegations (the
+        # delegation_complete event carries it) and for exhibits (the
+        # `exhibit` event is the user-facing artifact).
+        if (
+            tm.tool_call_id not in delegation_tool_call_ids
+            and tm.tool_call_id not in suppress_result_ids
+        ):
             yield _sse("tool_result", {
                 "tool": tm.name,
                 "tool_call_id": tm.tool_call_id,
@@ -277,6 +344,12 @@ async def _execute_and_emit_tools(
                 "success": not is_error,
                 "duration_ms": round(tool_avg_time, 2),
             })
+            # Auto-capture web sources as a passive `citation` exhibit, right
+            # after the search's tool_result (so it reads as "searched, then
+            # these are the sources").
+            if tm.name == WEB_SEARCH_TOOL_NAME and not is_error:
+                for event_str in _emit_web_search_citation(tm):
+                    yield event_str
 
         if capture_tool_turns:
             result.tool_turns_data.append({
@@ -414,15 +487,22 @@ async def streaming_tool_loop(
         alloy_executor = getattr(agent, "_active_alloy_executor", None)
         delegation_calls, regular_calls = _partition_tool_calls(round_tool_calls, agent)
 
-        # Emit tool call events (only for non-delegation calls)
+        # Emit tool call events (only for non-delegation calls). `present_exhibit`
+        # calls are surfaced as typed `exhibit` events instead of a tool card.
         for tc in round_tool_calls:
             result.tools_used.append(tc.name)
+        exhibit_tool_call_ids: set = set()
         for tc in regular_calls:
-            yield _sse("tool_call", {
-                "tool": tc.name,
-                "tool_call_id": tc.id,
-                "arguments": tc.arguments,
-            })
+            if tc.name == EXHIBIT_TOOL_NAME:
+                exhibit_tool_call_ids.add(tc.id)
+                for event_str in _emit_exhibit_event(tc):
+                    yield event_str
+            else:
+                yield _sse("tool_call", {
+                    "tool": tc.name,
+                    "tool_call_id": tc.id,
+                    "arguments": tc.arguments,
+                })
 
         # Add assistant message with tool_calls to conversation
         messages.append(Message(
@@ -456,6 +536,7 @@ async def streaming_tool_loop(
             capture_tool_turns=capture_tool_turns,
             result=result,
             delegation_raw=delegation_raw,
+            suppress_result_ids=exhibit_tool_call_ids,
         ):
             yield event_str
 

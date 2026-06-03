@@ -6,6 +6,7 @@ import type {
   ToolCallMessage,
   ToolResultMessage,
   DelegationMessage,
+  ExhibitMessage,
 } from '../../lib/messages';
 
 function msg(partial: Partial<ServerMessage> & { role: ServerMessage['role'] }): ServerMessage {
@@ -155,6 +156,81 @@ describe('mapServerMessages', () => {
     expect(res.content).toBe('orphan');
   });
 
+  it('restores a present_exhibit tool call as an exhibit message', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"id":"d1","title":"Login","elements":[{"type":"mermaid","content":"graph TD; A-->B"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: '{"success":true}',
+        metadata: { tool_call_id: 'e1', success: true },
+      }),
+    ]);
+
+    expect(out).toHaveLength(1); // tool_result is consumed, not shown
+    const ex = out[0] as ExhibitMessage;
+    expect(ex.type).toBe('exhibit');
+    expect(ex.exhibit.id).toBe('d1');
+    expect(ex.exhibit.title).toBe('Login');
+    expect(ex.exhibit.layout).toBe('stack');
+    expect(ex.exhibit.elements[0]).toMatchObject({ type: 'mermaid', content: 'graph TD; A-->B' });
+  });
+
+  it('restores a present_exhibit choice element', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"elements":[{"type":"choice","prompt":"Which DB?","options":["PostgreSQL","Neo4j"]}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'c1' },
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    const ex = out[0] as ExhibitMessage;
+    const el = ex.exhibit.elements[0];
+    expect(el.type).toBe('choice');
+    expect(el.type === 'choice' && el.options).toEqual(['PostgreSQL', 'Neo4j']);
+    expect(el.type === 'choice' && el.prompt).toBe('Which DB?');
+  });
+
+  it('restores present_exhibit table and citation elements', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content:
+          '{"elements":[{"type":"table","columns":["M","Cost"],"rows":[["opus","0.4"]]},{"type":"citation","sources":[{"label":"NLLB","kind":"active"}]}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 't1' },
+      }),
+    ]);
+    const ex = out[0] as ExhibitMessage;
+    expect(ex.exhibit.elements[0].type).toBe('table');
+    expect(ex.exhibit.elements[1].type).toBe('citation');
+  });
+
+  it('amends an exhibit in place when the same id is re-presented', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"id":"keep","elements":[{"type":"mermaid","content":"graph TD; A-->B"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e1' },
+      }),
+      msg({ role: 'assistant', content: 'let me revise that', metadata: { model: 'm' } }),
+      msg({
+        role: 'tool_call',
+        content: '{"id":"keep","elements":[{"type":"mermaid","content":"graph TD; A-->C"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e2' },
+      }),
+    ]);
+
+    // One exhibit (amended in place) + the assistant message between them.
+    const exhibits = out.filter((m) => m.type === 'exhibit') as ExhibitMessage[];
+    expect(exhibits).toHaveLength(1);
+    const el = exhibits[0].exhibit.elements[0];
+    expect(el.type === 'mermaid' && el.content).toBe('graph TD; A-->C');
+  });
+
   it('filters out roles it does not render', () => {
     const out = mapServerMessages([
       msg({ role: 'system', content: 'sys' }),
@@ -162,5 +238,52 @@ describe('mapServerMessages', () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].type).toBe('user');
+  });
+
+  it('restores a citation exhibit beneath a successful web_search turn', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"query":"nllb"}',
+        metadata: { tool: 'web_search', tool_call_id: 'w1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: JSON.stringify({
+          success: true,
+          results: [
+            { title: 'NLLB paper', url: 'https://a' },
+            { title: 'HF NLLB', url: 'https://b' },
+          ],
+        }),
+        metadata: { tool: 'web_search', tool_call_id: 'w1', success: true },
+      }),
+    ]);
+    // The web_search tool card, then the derived citation exhibit.
+    const toolCall = out.find((m) => m.type === 'tool_call') as ToolCallMessage;
+    expect(toolCall.toolName).toBe('web_search');
+    const exhibits = out.filter((m) => m.type === 'exhibit') as ExhibitMessage[];
+    expect(exhibits).toHaveLength(1);
+    expect(exhibits[0].exhibit.id).toBe('exh_src_w1');
+    const el = exhibits[0].exhibit.elements[0];
+    expect(el.type === 'citation' && el.sources).toHaveLength(2);
+    // ordering: tool card precedes its citation
+    expect(out.indexOf(toolCall)).toBeLessThan(out.indexOf(exhibits[0]));
+  });
+
+  it('does not synthesize a citation for a failed web_search', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"query":"x"}',
+        metadata: { tool: 'web_search', tool_call_id: 'w2' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: JSON.stringify({ success: false, results: [] }),
+        metadata: { tool: 'web_search', tool_call_id: 'w2', success: false },
+      }),
+    ]);
+    expect(out.filter((m) => m.type === 'exhibit')).toHaveLength(0);
   });
 });

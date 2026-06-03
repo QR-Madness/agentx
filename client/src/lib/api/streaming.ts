@@ -3,6 +3,7 @@ import { getAuthToken, clearAuthToken, getActiveGatewayToken } from '../storage'
 import { classifyStatus, apiErrorMessage, backendErrorMessage } from './errors';
 import type { ApiError } from './errors';
 import type { ChatRequest, DelegationChunkEvent, DelegationCompleteEvent, DelegationStartEvent, DelegationToolCallEvent, DelegationToolResultEvent } from './types';
+import type { ExhibitWire } from '../exhibits';
 
 /**
  * Callbacks for an SSE chat stream. Shared by `streamChat` (initial POST) and
@@ -101,6 +102,8 @@ export interface StreamCallbacks {
   onDelegationComplete?: (data: DelegationCompleteEvent) => void;
   onDelegationToolCall?: (data: DelegationToolCallEvent) => void;
   onDelegationToolResult?: (data: DelegationToolResultEvent) => void;
+  /** Agent presented a typed exhibit (e.g. a Mermaid diagram) via present_exhibit. */
+  onExhibit?: (data: ExhibitWire) => void;
   onError?: (error: string) => void;
 }
 
@@ -165,6 +168,9 @@ function dispatchSseEvent(
       break;
     case 'delegation_tool_result':
       callbacks.onDelegationToolResult?.(data as unknown as DelegationToolResultEvent);
+      break;
+    case 'exhibit':
+      callbacks.onExhibit?.(data as unknown as ExhibitWire);
       break;
     case 'done':
       callbacks.onDone?.(data as Parameters<NonNullable<StreamCallbacks['onDone']>>[0]);

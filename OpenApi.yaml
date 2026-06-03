@@ -645,8 +645,15 @@ paths:
         server-side and survives client disconnect; the first event is `run_started`
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
         Events: `run_started`, `start`, `memory_context`, `chunk`, `tool_call`,
-        `tool_result`, `done`, `close`, plus `delegation_*` events when a workflow is
-        active. See the Multi-Agent docs for delegation event shapes.
+        `tool_result`, `exhibit`, `done`, `close`, plus `delegation_*` events when a
+        workflow is active. See the Multi-Agent docs for delegation event shapes.
+        The `exhibit` event carries a declarative, agent-authored content tree
+        (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
+        calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),
+        `choice` (interactive `options` the user picks from — the selection is sent as the
+        user's next message, no new endpoint), `table` (sortable/scrollable/responsive/
+        expandable `columns` + `rows`), and `citation` (`sources` split into `active`
+        foldable references with a `quote` vs `passive` record-keeping links).
       requestBody:
         required: true
         content:

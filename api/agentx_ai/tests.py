@@ -4571,3 +4571,402 @@ class SchemaLoaderTest(TestCase):
                 first.isupper() or first[0].isupper(),
                 f"statement does not start with a keyword (leaked comment?): {s[:60]!r}",
             )
+
+
+class PresentExhibitToolTest(TestCase):
+    """Exhibits — the declarative content-part protocol (Slice 1: Mermaid).
+
+    Covers the Exhibit model + validation, the present_exhibit tool body, and
+    the tool-loop wiring that surfaces a present_exhibit call as a typed
+    `exhibit` SSE event (and suppresses its tool_call/tool_result cards).
+    """
+
+    def _result_payload(self, result):
+        """Parse the JSON dict an internal tool returns from its ToolResult."""
+        self.assertTrue(result.content, "tool returned no content")
+        return json.loads(result.content[0]["text"])
+
+    # --- Exhibit model / validation -------------------------------------
+
+    def test_exhibit_from_present_call_defaults(self):
+        from agentx_ai.streaming.exhibits import EXHIBIT_SCHEMA_VERSION, exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"elements": [{"type": "mermaid", "content": "graph TD; A-->B;", "title": "Flow"}]}
+        )
+        self.assertTrue(ex.id.startswith("exh_"))  # generated when omitted
+        self.assertEqual(ex.layout, "stack")
+        self.assertEqual(ex.schema_version, EXHIBIT_SCHEMA_VERSION)
+        self.assertEqual(len(ex.elements), 1)
+        self.assertEqual(ex.elements[0].title, "Flow")
+
+    def test_exhibit_keeps_explicit_id(self):
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"id": "diagram-1", "elements": [{"type": "mermaid", "content": "pie title X"}]}
+        )
+        self.assertEqual(ex.id, "diagram-1")
+
+    def test_exhibit_rejects_unknown_element_type(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "table", "content": "x"}]})
+
+    def test_mermaid_sanity_error(self):
+        from agentx_ai.streaming.exhibits import mermaid_sanity_error
+        self.assertIsNone(mermaid_sanity_error("sequenceDiagram\n A->>B: hi"))
+        self.assertIsNone(mermaid_sanity_error("graph TD; A-->B"))
+        self.assertIsNotNone(mermaid_sanity_error(""))
+        self.assertIsNotNone(mermaid_sanity_error("this is just prose"))
+
+    # --- present_exhibit tool body --------------------------------------
+
+    def test_present_exhibit_tool_registered(self):
+        names = {t.name for t in get_internal_tools()}
+        self.assertIn("present_exhibit", names)
+
+    def test_present_exhibit_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "flowchart LR; A-->B"}]},
+        )
+        self.assertTrue(result.success)
+        payload = self._result_payload(result)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["element_count"], 1)
+
+    def test_present_exhibit_empty_content_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "   "}]},
+        )
+        self.assertFalse(result.success)
+        self.assertFalse(self._result_payload(result)["success"])
+
+    def test_present_exhibit_non_mermaid_keyword_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "just some text, not a diagram"}]},
+        )
+        self.assertFalse(result.success)
+
+    def test_present_exhibit_unknown_type_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "table", "content": "a,b\n1,2"}]},
+        )
+        self.assertFalse(result.success)
+
+    # --- choice element -------------------------------------------------
+
+    def test_choice_element_builds_and_cleans_options(self):
+        from agentx_ai.streaming.exhibits import ChoiceElement, exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"elements": [{"type": "choice", "prompt": "Pick", "options": ["  A ", "B", "B", ""]}]}
+        )
+        el = ex.elements[0]
+        self.assertIsInstance(el, ChoiceElement)  # discriminator resolved
+        self.assertEqual(el.options, ["A", "B"])  # stripped + de-duped, blanks dropped
+
+    def test_choice_empty_options_rejected(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "choice", "options": ["  "]}]})
+
+    def test_present_exhibit_choice_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "choice", "prompt": "DB?", "options": ["PostgreSQL", "Neo4j"]}]},
+        )
+        self.assertTrue(result.success)
+        self.assertTrue(self._result_payload(result)["success"])
+
+    def test_present_exhibit_mixed_elements(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [
+                {"type": "mermaid", "content": "graph TD; A-->B"},
+                {"type": "choice", "options": ["yes", "no"]},
+            ]},
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(self._result_payload(result)["element_count"], 2)
+
+    def test_emit_exhibit_event_choice(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_exhibit_event
+        tc = SimpleNamespace(
+            id="tc_3",
+            name="present_exhibit",
+            arguments={"elements": [{"type": "choice", "options": ["A", "B"]}]},
+        )
+        events = _emit_exhibit_event(tc)
+        self.assertEqual(len(events), 1)
+        payload = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(payload["elements"][0]["type"], "choice")
+        self.assertEqual(payload["elements"][0]["options"], ["A", "B"])
+
+    # --- table element --------------------------------------------------
+
+    def test_table_stringifies_and_normalizes_rows(self):
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({"elements": [{
+            "type": "table",
+            "columns": ["Model", "Cost"],
+            "rows": [["opus", 0.4], ["haiku", None, "extra"], ["solo"]],
+        }]})
+        el = ex.elements[0]
+        # cells stringified (0.4 -> "0.4", None -> ""), rows padded/truncated to 2 cols
+        self.assertEqual(el.rows, [["opus", "0.4"], ["haiku", ""], ["solo", ""]])
+
+    def test_table_too_many_columns_rejected(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{
+                "type": "table",
+                "columns": [str(i) for i in range(13)],
+                "rows": [],
+            }]})
+
+    def test_present_exhibit_table_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "table", "columns": ["A", "B"], "rows": [["1", "2"]]}]},
+        )
+        self.assertTrue(result.success)
+
+    # --- citation element -----------------------------------------------
+
+    def test_citation_defaults_passive_and_validates_label(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({"elements": [{
+            "type": "citation",
+            "sources": [
+                {"label": "NLLB", "url": "http://x", "quote": "q", "kind": "active", "source_type": "web"},
+                {"label": "docs"},
+            ],
+        }]})
+        kinds = [(s.label, s.kind) for s in ex.elements[0].sources]
+        self.assertEqual(kinds, [("NLLB", "active"), ("docs", "passive")])
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "citation", "sources": [{"label": "  "}]}]})
+
+    def test_present_exhibit_mixed_table_citation_mermaid(self):
+        result = execute_internal_tool("present_exhibit", {"elements": [
+            {"type": "mermaid", "content": "graph TD; A-->B"},
+            {"type": "table", "columns": ["a"], "rows": [["1"]]},
+            {"type": "citation", "sources": [{"label": "s", "kind": "active"}]},
+        ]})
+        self.assertTrue(result.success)
+        self.assertEqual(self._result_payload(result)["element_count"], 3)
+
+    # --- tool-loop wiring -----------------------------------------------
+
+    def test_emit_exhibit_event_valid(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import EXHIBIT_TOOL_NAME, _emit_exhibit_event
+        self.assertEqual(EXHIBIT_TOOL_NAME, "present_exhibit")
+        tc = SimpleNamespace(
+            id="tc_1",
+            name="present_exhibit",
+            arguments={"elements": [{"type": "mermaid", "content": "graph TD; A-->B"}]},
+        )
+        events = _emit_exhibit_event(tc)
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].startswith("event: exhibit\n"))
+        payload = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(payload["layout"], "stack")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["elements"][0]["type"], "mermaid")
+
+    def test_emit_exhibit_event_invalid_suppressed(self):
+        """Malformed declaration → no exhibit event (the tool body's error to
+        the model drives a re-present)."""
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_exhibit_event
+        tc = SimpleNamespace(id="tc_2", name="present_exhibit", arguments={"elements": []})
+        self.assertEqual(_emit_exhibit_event(tc), [])
+
+
+class WebSearchCapabilityTest(TestCase):
+    """Capability-aware web tools (Slice 4): the active-backend pre-check that
+    advertises only what the active search backend supports, the Tavily SDK +
+    Brave handlers, and web_search → passive citation auto-capture.
+    """
+
+    # --- Active-backend resolver + advertisement -------------------------
+
+    def test_resolve_active_backend_prefers_configured_primary(self):
+        from agentx_ai.mcp import internal_tools as it
+        fake = MagicMock()
+        fake.get.return_value = "brave"
+        with patch("agentx_ai.config.get_config_manager", return_value=fake), \
+             patch.object(it, "_backend_has_key", lambda n: True):
+            self.assertEqual(it.resolve_active_search_backend(), "brave")
+
+    def test_resolve_active_backend_falls_back_to_keyed(self):
+        from agentx_ai.mcp import internal_tools as it
+        fake = MagicMock()
+        fake.get.return_value = "tavily"  # primary, but no tavily key
+        with patch("agentx_ai.config.get_config_manager", return_value=fake), \
+             patch.object(it, "_backend_has_key", lambda n: n == "brave"):
+            self.assertEqual(it.resolve_active_search_backend(), "brave")
+
+    def test_resolve_active_backend_none_without_keys(self):
+        from agentx_ai.mcp import internal_tools as it
+        fake = MagicMock()
+        fake.get.return_value = "tavily"
+        with patch("agentx_ai.config.get_config_manager", return_value=fake), \
+             patch.object(it, "_backend_has_key", lambda n: False):
+            self.assertIsNone(it.resolve_active_search_backend())
+
+    def test_build_schema_reflects_backend(self):
+        from agentx_ai.mcp import internal_tools as it
+        tav = it.build_tool_schema("web_search", "tavily")["properties"]
+        self.assertIn("topic", tav)
+        self.assertIn("include_domains", tav)
+        self.assertNotIn("safesearch", tav)
+        brave = it.build_tool_schema("web_search", "brave")["properties"]
+        self.assertIn("safesearch", brave)
+        self.assertIn("result_filter", brave)
+        self.assertNotIn("topic", brave)
+        # base params present for both
+        for s in (tav, brave):
+            self.assertIn("query", s)
+            self.assertIn("max_results", s)
+
+    def test_advertisement_gates_tavily_only_tools(self):
+        from agentx_ai.mcp import internal_tools as it
+        with patch.object(it, "resolve_active_search_backend", return_value="tavily"):
+            names = {t.name for t in it.get_internal_tools()}
+            self.assertTrue({"web_search", "web_extract", "web_map"} <= names)
+        with patch.object(it, "resolve_active_search_backend", return_value="brave"):
+            names = {t.name for t in it.get_internal_tools()}
+            self.assertIn("web_search", names)
+            self.assertNotIn("web_extract", names)
+            self.assertNotIn("web_map", names)
+        with patch.object(it, "resolve_active_search_backend", return_value=None):
+            names = {t.name for t in it.get_internal_tools()}
+            self.assertNotIn("web_search", names)
+
+    def test_gated_tools_still_executable_when_not_advertised(self):
+        """A stale web_extract call must still dispatch (self-guards), even when
+        Brave is active and the tool isn't advertised."""
+        from agentx_ai.mcp import internal_tools as it
+        self.assertIsNotNone(it.find_internal_tool("web_extract"))
+        self.assertIsNotNone(it.find_internal_tool("web_map"))
+
+    # --- Backends forward only supported params --------------------------
+
+    def test_tavily_search_forwards_supported_params(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.search.return_value = {
+            "results": [{"title": "T", "url": "https://x", "content": "snip", "score": 0.9}],
+            "answer": "the answer",
+        }
+        with patch.object(it, "_tavily_client", return_value=client):
+            payload = it._tavily_search(
+                "q", 5, topic="news", time_range="week", include_answer=True, safesearch="strict"
+            )
+        kwargs = client.search.call_args.kwargs
+        self.assertEqual(kwargs["query"], "q")
+        self.assertEqual(kwargs["topic"], "news")
+        self.assertEqual(kwargs["time_range"], "week")
+        self.assertTrue(kwargs["include_answer"])
+        self.assertNotIn("safesearch", kwargs)  # not a Tavily param → dropped
+        self.assertEqual(payload["results"][0]["snippet"], "snip")
+        self.assertEqual(payload["answer"], "the answer")
+
+    def test_brave_search_maps_time_range_to_freshness(self):
+        from agentx_ai.mcp import internal_tools as it
+        data = {"web": {"results": [{"title": "T", "url": "https://x", "description": "d"}]}}
+        with patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch.object(it, "_http_get_json", return_value=data) as get:
+            payload = it._brave_search("q", 5, time_range="day", safesearch="strict", topic="news")
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["freshness"], "pd")
+        self.assertEqual(params["safesearch"], "strict")
+        self.assertNotIn("topic", params)  # not a Brave param
+        self.assertEqual(payload["results"][0]["snippet"], "d")
+
+    def test_web_extract_requires_tavily(self):
+        from agentx_ai.mcp import internal_tools as it
+        with patch.object(it, "_tavily_client", side_effect=RuntimeError("no key")):
+            out = it.web_extract(["https://x"])
+        self.assertFalse(out["success"])
+        self.assertIn("requires Tavily", out["error"])
+
+    def test_web_extract_caps_and_returns_content(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.extract.return_value = {
+            "results": [{"url": "https://x", "raw_content": "full text"}],
+            "failed_results": [],
+        }
+        with patch.object(it, "_tavily_client", return_value=client):
+            out = it.web_extract([f"https://x/{i}" for i in range(30)])
+        self.assertTrue(out["success"])
+        self.assertEqual(len(client.extract.call_args.kwargs["urls"]), 20)  # abuse cap
+        self.assertEqual(out["results"][0]["content"], "full text")
+
+    def test_web_map_hard_caps_output(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.map.return_value = {"results": [f"https://x/{i}" for i in range(500)]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            out = it.web_map("https://x", limit=1000)
+        self.assertTrue(out["success"])
+        self.assertEqual(out["count"], 200)  # ceiling
+
+    # --- Auto-capture: web_search → passive citation ----------------------
+
+    def test_citation_exhibit_dedupes_and_caps(self):
+        from agentx_ai.streaming.exhibits import citation_exhibit_from_web_search
+        results = [
+            {"title": "A", "url": "https://a"},
+            {"title": "B", "url": "https://b"},
+            {"title": "A-dup", "url": "https://a"},  # dup url
+            {"title": "", "url": ""},  # blank → skipped
+        ]
+        ex = citation_exhibit_from_web_search(results, exhibit_id="exh_src_1")
+        self.assertIsNotNone(ex)
+        sources = ex.elements[0].sources
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(all(s.kind == "passive" and s.source_type == "web" for s in sources))
+        self.assertIsNone(citation_exhibit_from_web_search([], exhibit_id="x"))
+
+    def test_emit_web_search_citation(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_web_search_citation
+        tm = SimpleNamespace(
+            tool_call_id="tc9",
+            name="web_search",
+            content=json.dumps({"success": True, "results": [{"title": "A", "url": "https://a"}]}),
+        )
+        events = _emit_web_search_citation(tm)
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].startswith("event: exhibit\n"))
+        payload = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(payload["id"], "exh_src_tc9")
+        self.assertEqual(payload["elements"][0]["type"], "citation")
+
+    def test_emit_web_search_citation_skips_failed_and_disabled(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_web_search_citation
+        failed = SimpleNamespace(
+            tool_call_id="z", name="web_search",
+            content=json.dumps({"success": False, "results": []}),
+        )
+        self.assertEqual(_emit_web_search_citation(failed), [])
+        ok = SimpleNamespace(
+            tool_call_id="z2", name="web_search",
+            content=json.dumps({"success": True, "results": [{"title": "A", "url": "https://a"}]}),
+        )
+        fake = MagicMock()
+        fake.get.return_value = False  # citations.auto_capture_web_search off
+        with patch("agentx_ai.config.get_config_manager", return_value=fake):
+            self.assertEqual(_emit_web_search_citation(ok), [])

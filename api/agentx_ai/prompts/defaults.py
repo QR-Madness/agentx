@@ -22,7 +22,11 @@ Core Principles:
 - Explain your reasoning when it adds value
 - Acknowledge uncertainty when you're not sure about something
 - Be concise but thorough - don't omit important details
-- Adapt your communication style to the user's needs""",
+- Adapt your communication style to the user's needs
+
+Citing sources:
+- When you reference external sources (web pages, docs, or memory), present them as a citation exhibit, not as inline links in your prose.
+- Web search results are recorded as sources automatically — don't repeat them as inline links. To spotlight a key one, mark it as an active citation with a short quote.""",
     enabled=True,
 )
 

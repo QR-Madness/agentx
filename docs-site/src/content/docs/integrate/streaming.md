@@ -30,9 +30,38 @@ The response is `Content-Type: text/event-stream`. Events arrive in this order:
 | `chunk` | `{ "content": "token text" }` | Each token |
 | `tool_call` | `{ "tool": "…", "arguments": {…} }` | A tool invocation starts |
 | `tool_result` | `{ "tool": "…", "content": "…" }` | Tool result (truncated to 500 chars) |
+| `exhibit` | `{ "schema_version": 1, "id": "…", "title?": "…", "layout": "stack", "elements": [{ "type": "mermaid", "content": "…" }] }` | A typed, agent-authored exhibit (e.g. a Mermaid diagram) |
 | `done` | `{ "task_id": "…", "thinking": "…", "total_time_ms": …, "session_id": "…" }` | Generation complete |
 | `error` | `{ "error": "message" }` | On failure |
 | `close` | `{}` | Run settled; the tail ends |
+
+When the agent calls the internal `present_exhibit` tool, the turn emits an `exhibit`
+event — a declarative Gallery→Exhibit→Element tree the client renders from an element
+registry — **instead of** a `tool_call`/`tool_result` pair for that call. Every exhibit
+carries a `schema_version`; unknown element `type`s degrade to a source-as-code fallback,
+so a newer server can add element types without breaking older clients. Re-emitting the
+same `id` amends that exhibit in place. Element types:
+
+- `mermaid` — `{ "type": "mermaid", "content": "graph TD; A-->B", "title?": "…" }` — a diagram.
+- `choice` — `{ "type": "choice", "prompt?": "Which DB?", "options": ["PostgreSQL", "Neo4j"] }`
+  — interactive options. Clicking one submits it as the user's **next message** (no new
+  endpoint); the agent's next turn continues from the answer.
+- `table` — `{ "type": "table", "columns": ["Model", "Cost"], "rows": [["opus", "0.40"]], "caption?": "…" }`
+  — sortable, scrollable, responsive (collapses to cards on mobile), expandable to a modal.
+- `citation` — `{ "type": "citation", "sources": [{ "label": "NLLB", "url?": "https://…", "quote?": "…", "kind": "active"|"passive", "source_type?": "web"|"memory"|"doc" }] }`
+  — `active` sources fold out with their quote; `passive` sources are archived record-keeping
+  links. Default `kind` is `passive`. The card always carries a "Sources" header; a passive-only
+  citation (e.g. auto-captured search results) renders its list inline.
+
+**Auto-captured citations.** When the agent calls the internal `web_search` tool, a passive
+`citation` exhibit (one source per result, deduped by URL, `source_type: "web"`) is emitted
+automatically right after that tool's `tool_result` — so web sources surface in the conversation
+without the agent having to present them. The exhibit's `id` is `exh_src_<tool_call_id>`, so it
+restores in place from history. Toggle with the `citations.auto_capture_web_search` config flag
+(default on). The agent is steered to spotlight a key source as `active` (with a quote) rather than
+re-listing web results as inline links.
+
+The `stack` layout (vertical) is the only layout today.
 
 Multi-agent runs additionally emit `delegation_start`, `delegation_chunk`,
 `delegation_tool_call`, `delegation_tool_result`, and `delegation_complete` — see the

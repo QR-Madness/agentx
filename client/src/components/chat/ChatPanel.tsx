@@ -350,6 +350,33 @@ export function ChatPanel() {
     });
   };
 
+  // Submit a choice-element selection as the next user turn. Stable across
+  // composer keystrokes (no `input` in deps) so the memoized transcript — and
+  // mermaid renders — don't churn while the user types. Mirrors handleSend's
+  // full request shape (incl. workflow_id) and guards against an in-flight run.
+  const submitChoice = useCallback(
+    (value: string, messageId: string) => {
+      if (!activeTab || isTyping) return;
+      const userMessage: UserMessage = {
+        id: createMessageId(),
+        type: 'user',
+        content: value,
+        timestamp: new Date().toISOString(),
+      };
+      appendMessage(userMessage);
+      updateMessage(messageId, { answeredValue: value });
+      stream.send({
+        message: value,
+        session_id: activeTab.sessionId || undefined,
+        agent_profile_id: tabProfile?.id,
+        model: activeTab.modelOverride || undefined,
+        use_memory: useMemory,
+        workflow_id: activeTab.workflowId || undefined,
+      });
+    },
+    [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send],
+  );
+
   const handleSendBackground = async () => {
     if (!input.trim() || !activeTab) return;
     const messageText = input;
@@ -575,6 +602,8 @@ export function ChatPanel() {
                 agentName={agentName}
                 avatarId={tabProfile?.avatar}
                 defaultCollapsed={!planRunningById.get(item.step.planId)}
+                onSubmitChoice={submitChoice}
+                busy={isTyping}
               />
             );
           }
@@ -583,12 +612,12 @@ export function ChatPanel() {
           if (message.type === 'plan_execution') {
             return (
               <div key={message.id} data-plan-anchor={message.planId}>
-                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
+                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
               </div>
             );
           }
           return (
-            <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} />
+            <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
           );
         })}
 

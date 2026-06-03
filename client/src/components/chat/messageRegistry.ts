@@ -23,6 +23,7 @@ import { ToolResultBubble } from './bubbles/ToolResultBubble';
 import { MemoryInjectionBubble } from './bubbles/MemoryInjectionBubble';
 import { PlanExecutionBubble } from './bubbles/PlanExecutionBubble';
 import { DelegationBubble } from './bubbles/DelegationBubble';
+import { ExhibitBubble } from './bubbles/ExhibitBubble';
 import { SystemBubble } from './bubbles/SystemBubble';
 import { ErrorBubble } from './bubbles/ErrorBubble';
 
@@ -40,6 +41,7 @@ export const messageRegistry: MessageRegistry = {
   memory_injection: MemoryInjectionBubble,
   plan_execution: PlanExecutionBubble,
   delegation: DelegationBubble,
+  exhibit: ExhibitBubble,
   system: SystemBubble,
   error: ErrorBubble,
 };

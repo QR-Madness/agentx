@@ -18,6 +18,8 @@ interface StepGroupProps {
   avatarId?: string;
   /** Collapsed initially (plan no longer running). */
   defaultCollapsed?: boolean;
+  onSubmitChoice?: (value: string, messageId: string) => void;
+  busy?: boolean;
 }
 
 export function StepGroup({
@@ -26,6 +28,8 @@ export function StepGroup({
   agentName,
   avatarId,
   defaultCollapsed,
+  onSubmitChoice,
+  busy,
 }: StepGroupProps) {
   const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
 
@@ -60,6 +64,8 @@ export function StepGroup({
               message={message}
               agentName={agentName}
               avatarId={avatarId}
+              onSubmitChoice={onSubmitChoice}
+              busy={busy}
             />
           ))}
         </div>

@@ -9,6 +9,11 @@
 
 import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
+import {
+  exhibitFromWire,
+  citationExhibitFromWebSearch,
+  type ExhibitWire,
+} from '../../lib/exhibits';
 import type { ServerMessage } from '../../lib/api';
 
 function safeParseJson(str: string): Record<string, unknown> {
@@ -30,6 +35,9 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
     }
   }
   const consumedResults = new Set<string>();
+  // Exhibit id -> index in `out`, so a re-presented (amended) exhibit replaces
+  // its card in place — last declaration wins, mirroring the live experience.
+  const exhibitIdxById = new Map<string, number>();
 
   const out: ConversationMessage[] = [];
   for (const m of filtered) {
@@ -120,6 +128,31 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       const result = resultsByCallId.get(toolCallId);
       if (result) consumedResults.add(toolCallId);
 
+      if (toolName === 'present_exhibit') {
+        // The exhibit is fully described by the stored tool-call arguments
+        // (the `exhibit` SSE shown live was derived from these same args).
+        const wire: ExhibitWire = {
+          schema_version: 1,
+          id: (args.id as string) || toolCallId,
+          title: args.title as string | undefined,
+          layout: args.layout as string | undefined,
+          elements: (Array.isArray(args.elements) ? args.elements : []) as ExhibitWire['elements'],
+        };
+        const exhibitMsg: ConversationMessage = {
+          ...base,
+          type: 'exhibit',
+          exhibit: exhibitFromWire(wire),
+        };
+        const existingIdx = exhibitIdxById.get(exhibitMsg.exhibit.id);
+        if (existingIdx !== undefined) {
+          out[existingIdx] = exhibitMsg; // amend in place
+        } else {
+          exhibitIdxById.set(exhibitMsg.exhibit.id, out.length);
+          out.push(exhibitMsg);
+        }
+        continue;
+      }
+
       if (toolName === 'delegate_to') {
         const delegationMeta = (result?.metadata?.delegation ?? {}) as {
           raw_content?: string;
@@ -175,6 +208,19 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
             }
           : undefined,
       });
+
+      // Auto-captured citations: live, the backend emits a passive `citation`
+      // exhibit right after a successful web_search; mirror that on restore by
+      // deriving it from the persisted result. Best-effort — a non-parsing or
+      // empty result simply leaves the search card on its own (no crash).
+      const webSearchOk = !!result && ((result.metadata?.success as boolean) ?? true);
+      if (toolName === 'web_search' && webSearchOk && result) {
+        const parsed = safeParseJson(result.content) as { results?: unknown };
+        const exhibit = citationExhibitFromWebSearch(parsed.results, `exh_src_${toolCallId}`);
+        if (exhibit) {
+          out.push({ ...base, id: createMessageId(), type: 'exhibit', exhibit });
+        }
+      }
       continue;
     }
 
