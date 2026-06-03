@@ -143,12 +143,27 @@
 
 .assistant-header {
   margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .assistant-name {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent-primary);
+}
+
+/* "stopped" tag — the turn was cut short by a hard-stop; content is partial. */
+.assistant-stopped-tag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  color: var(--text-warning, #eab308);
+  background: rgba(234, 179, 8, 0.15);
 }
 
 /* Tool call/result messages - no avatar, full width */

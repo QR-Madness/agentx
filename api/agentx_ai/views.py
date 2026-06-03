@@ -1357,10 +1357,76 @@ async def agent_chat_stream(request):
             # Stream tokens with tool-use loop
             full_content = ""
             tool_turns_data = []  # Collect tool call/result data for DB persistence
+            steers_data: list[dict] = []  # Mid-turn steers folded in (for persistence)
+            # Holds the standard-path loop result; hoisted so the hard-stop
+            # (GeneratorExit) handler can persist partial progress up to the stop.
+            loop_result = None
+            persisted = False  # Guard so turns are stored exactly once
             max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
             total_tokens_input = 0
             total_tokens_output = 0
             plan_summary = None  # Set on the plan-execution path; persisted on the assistant turn
+
+            def _persist_turns(*, content, asst_metadata, token_count, model, agent_id):
+                """Persist this turn (user → tools → steers → assistant) in a
+                background thread. Shared by the normal-completion and the
+                hard-stop (GeneratorExit) paths; guarded to run exactly once."""
+                nonlocal persisted
+                if persisted:
+                    return
+                persisted = True
+
+                def _run():
+                    try:
+                        mem = agent.memory
+                        if mem is None:
+                            return
+                        from .kit.agent_memory.connections import get_postgres_session
+                        from sqlalchemy import text as sa_text
+                        from .streaming.persistence import (
+                            build_user_turn, build_tool_turns,
+                            build_steer_turns, build_assistant_turn,
+                        )
+
+                        # Max existing turn_index for this conversation (avoid collisions).
+                        next_index = 0
+                        try:
+                            with get_postgres_session() as pg:
+                                row = pg.execute(
+                                    sa_text("SELECT COALESCE(MAX(turn_index), -1) FROM conversation_logs WHERE conversation_id = :cid"),
+                                    {"cid": conv_id},
+                                ).scalar()
+                                next_index = (row or 0) + 1
+                        except Exception:
+                            pass
+
+                        idx = next_index
+                        turns = [build_user_turn(conv_id, message, idx)]
+                        idx += 1
+                        tool_turns, idx = build_tool_turns(conv_id, tool_turns_data, idx)
+                        turns += tool_turns
+                        steer_turns = build_steer_turns(
+                            conv_id, steers_data, idx,
+                            agent_id=getattr(agent_profile, "agent_id", None),
+                            agent_name=getattr(agent_profile, "name", None),
+                        )
+                        turns += steer_turns
+                        idx += len(steer_turns)
+                        asst = build_assistant_turn(
+                            conv_id, content, idx,
+                            metadata=asst_metadata, token_count=token_count,
+                            model=model, agent_id=agent_id,
+                        )
+                        if asst is not None:
+                            turns.append(asst)
+                        for t in turns:
+                            mem.store_turn(t)
+                        logger.debug(f"Stored {len(turns)} turns in memory for conversation {conv_id}")
+                    except Exception as mem_err:
+                        logger.warning(f"Failed to store turns in memory: {mem_err}")
+
+                import threading
+                threading.Thread(target=_run, daemon=True).start()
 
             # Hard limit for context to prevent corruption (leave room for output)
             max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
@@ -1496,6 +1562,7 @@ async def agent_chat_stream(request):
 
                 full_content = loop_result.content
                 tool_turns_data = loop_result.tool_turns_data
+                steers_data = loop_result.steers
                 total_tokens_input = loop_result.tokens_in
                 total_tokens_output = loop_result.tokens_out
 
@@ -1580,138 +1647,83 @@ async def agent_chat_stream(request):
             yield "event: close\ndata: {}\n\n"
             logger.debug("Close event sent, stream should terminate now")
 
-            # Store turns in memory in a background thread so the response closes immediately
+            # Persist the completed turn (background thread; closes the stream now).
             if use_memory and agent.memory:
-                import threading
+                asst_metadata = {
+                    "model": model_id,
+                    "provider": provider.name,
+                    "latency_ms": total_time,
+                    "tokens_input": estimated_input,
+                    "tokens_output": estimated_output,
+                    "context_window": context_window,
+                    "context_used": final_context_tokens,
+                }
+                if cost is not None:
+                    asst_metadata["cost_estimate"] = cost["cost_total"]
+                    asst_metadata["cost_currency"] = cost["currency"]
+                    asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
+                if parsed.thinking:
+                    asst_metadata["thinking"] = parsed.thinking
+                if plan_summary is not None:
+                    asst_metadata["plan"] = plan_summary
+                # Stamp the display name so consolidation can attribute facts to
+                # this agent by name (agent_id stays source of truth).
+                _agent_name = getattr(agent_profile, "name", None)
+                if _agent_name:
+                    asst_metadata["agent_name"] = _agent_name
 
-                user_turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-user"
-                asst_turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-asst"
-
-                def _store_turns():
-                    try:
-                        # Capture a narrowed local; the closure can't narrow the
-                        # Optional agent.memory property across calls.
-                        mem = agent.memory
-                        if mem is None:
-                            return
-                        from .kit.agent_memory.models import Turn
-                        from .kit.agent_memory.connections import get_postgres_session
-                        from sqlalchemy import text as sa_text
-
-                        # Query max existing turn_index for this conversation to avoid collisions
-                        next_index = 0
-                        try:
-                            with get_postgres_session() as pg:
-                                row = pg.execute(
-                                    sa_text("SELECT COALESCE(MAX(turn_index), -1) FROM conversation_logs WHERE conversation_id = :cid"),
-                                    {"cid": conv_id},
-                                ).scalar()
-                                next_index = (row or 0) + 1
-                        except Exception:
-                            pass  # Fallback to 0 if DB query fails
-
-                        idx = next_index
-
-                        user_turn = Turn(
-                            id=user_turn_id,
-                            conversation_id=conv_id,
-                            role="user",
-                            content=message,
-                            index=idx,
-                        )
-                        mem.store_turn(user_turn)
-                        idx += 1
-
-                        # Store tool call/result turns
-                        for td in tool_turns_data:
-                            turn_id = f"{conv_id}-{uuid.uuid4().hex[:8]}-{td['type']}"
-                            if td['type'] == 'tool_call':
-                                turn = Turn(
-                                    id=turn_id,
-                                    conversation_id=conv_id,
-                                    role="tool_call",
-                                    content=json.dumps(td.get('arguments', {})),
-                                    index=idx,
-                                    metadata={
-                                        "tool": td['tool'],
-                                        "tool_call_id": td['tool_call_id'],
-                                    },
-                                )
-                            else:  # tool_result
-                                tr_metadata = {
-                                    "tool": td['tool'],
-                                    "tool_call_id": td['tool_call_id'],
-                                    "success": td.get('success', True),
-                                    "duration_ms": td.get('duration_ms'),
-                                }
-                                if td.get('delegation'):
-                                    # Carry the full specialist output + delegation
-                                    # context so a restored conversation can rebuild
-                                    # the delegation card.
-                                    tr_metadata["delegation"] = td['delegation']
-                                turn = Turn(
-                                    id=turn_id,
-                                    conversation_id=conv_id,
-                                    role="tool_result",
-                                    content=td.get('content', ''),
-                                    index=idx,
-                                    metadata=tr_metadata,
-                                )
-                            mem.store_turn(turn)
-                            idx += 1
-
-                        # Store assistant turn with thinking in metadata.
-                        # Skip empty assistant turns — these happen when the
-                        # supervisor delegated and stopped without wrap-up
-                        # commentary; storing a blank row makes the final
-                        # message "disappear" on conversation restore.
-                        if parsed.content.strip():
-                            asst_metadata = {
-                                "model": model_id,
-                                "provider": provider.name,
-                                "latency_ms": total_time,
-                                "tokens_input": estimated_input,
-                                "tokens_output": estimated_output,
-                                "context_window": context_window,
-                                "context_used": final_context_tokens,
-                            }
-                            if cost is not None:
-                                asst_metadata["cost_estimate"] = cost["cost_total"]
-                                asst_metadata["cost_currency"] = cost["currency"]
-                                asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
-                            if parsed.thinking:
-                                asst_metadata["thinking"] = parsed.thinking
-                            if plan_summary is not None:
-                                asst_metadata["plan"] = plan_summary
-                            # Stamp the display name so consolidation can attribute
-                            # facts to this agent by name (agent_id stays source of truth).
-                            agent_name = getattr(agent_profile, "name", None)
-                            if agent_name:
-                                asst_metadata["agent_name"] = agent_name
-
-                            assistant_turn = Turn(
-                                id=asst_turn_id,
-                                conversation_id=conv_id,
-                                role="assistant",
-                                content=parsed.content,
-                                index=idx,
-                                token_count=(estimated_input + estimated_output) or None,
-                                model=model_id,
-                                metadata=asst_metadata,
-                                agent_id=getattr(agent_profile, "agent_id", None),
-                            )
-                            mem.store_turn(assistant_turn)
-                            logger.debug(f"Stored {2 + len(tool_turns_data)} turns in memory for conversation {conv_id}")
-                        else:
-                            logger.debug(f"Skipped empty assistant turn for conversation {conv_id}")
-                    except Exception as mem_err:
-                        logger.warning(f"Failed to store turns in memory: {mem_err}")
-
-                threading.Thread(target=_store_turns, daemon=True).start()
+                _persist_turns(
+                    content=parsed.content,
+                    asst_metadata=asst_metadata,
+                    token_count=(estimated_input + estimated_output) or None,
+                    model=model_id,
+                    agent_id=getattr(agent_profile, "agent_id", None),
+                )
                 logger.debug("Background thread started for memory storage")
 
             logger.debug("Generator returning, stream should close")
             return  # Close the stream immediately
+
+        except GeneratorExit:
+            # Hard stop: the user hit Stop, so _drive_run called gen.aclose().
+            # Save progress *up to the stop* — user + completed tools + steers +
+            # the partial assistant text — then re-raise. No yield on this path.
+            if use_memory and agent.memory and loop_result is not None and not persisted:
+                try:
+                    from .agent.output_parser import parse_output as _parse_output
+                    from .providers.pricing import estimate_cost as _estimate_cost
+
+                    partial = _parse_output(loop_result.content)
+                    interrupted_meta = {
+                        "model": model_id,
+                        "provider": provider.name,
+                        "latency_ms": (time.time() - start_time) * 1000,
+                        "tokens_input": loop_result.tokens_in,
+                        "tokens_output": loop_result.tokens_out,
+                        "interrupted": True,
+                    }
+                    _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out)
+                    if _icost is not None:
+                        interrupted_meta["cost_estimate"] = _icost["cost_total"]
+                        interrupted_meta["cost_currency"] = _icost["currency"]
+                        interrupted_meta["pricing_snapshot"] = _icost["pricing_snapshot"]
+                    if partial.thinking:
+                        interrupted_meta["thinking"] = partial.thinking
+                    _ian = getattr(agent_profile, "name", None)
+                    if _ian:
+                        interrupted_meta["agent_name"] = _ian
+
+                    _persist_turns(
+                        content=partial.content,
+                        asst_metadata=interrupted_meta,
+                        token_count=(loop_result.tokens_in + loop_result.tokens_out) or None,
+                        model=model_id,
+                        agent_id=getattr(agent_profile, "agent_id", None),
+                    )
+                    logger.info(f"Persisted partial turn on hard-stop for {conv_id}")
+                except Exception as ge_err:
+                    logger.warning(f"Partial persist on stop failed: {ge_err}")
+            raise
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")

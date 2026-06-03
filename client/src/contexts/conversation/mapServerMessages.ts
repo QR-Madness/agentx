@@ -47,7 +47,13 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
     };
 
     if (m.role === 'user') {
-      out.push({ ...base, type: 'user', content: m.content });
+      out.push({
+        ...base,
+        type: 'user',
+        content: m.content,
+        // Sent mid-turn to steer a running agent (live steering).
+        steered: m.metadata?.steered === true,
+      });
       continue;
     }
 
@@ -117,6 +123,8 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         // resolved to a display name server-side. Falls back to the generic
         // header name when absent (single-agent or pre-attribution rows).
         agentName: m.metadata?.agent_name as string | undefined,
+        // Turn was cut short by a hard-stop; persisted partial text.
+        interrupted: m.metadata?.interrupted === true,
       });
       continue;
     }

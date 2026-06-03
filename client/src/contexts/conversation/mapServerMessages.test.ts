@@ -39,6 +39,24 @@ describe('mapServerMessages', () => {
     expect(assistant.tokensOutput).toBe(5);
   });
 
+  it('restores a steered user turn and an interrupted assistant turn', () => {
+    const out = mapServerMessages([
+      msg({ role: 'user', content: 'also check Y', metadata: { steered: true } }),
+      msg({ role: 'assistant', content: 'partial…', metadata: { model: 'm', interrupted: true } }),
+    ]);
+    expect(out[0]).toMatchObject({ type: 'user', content: 'also check Y', steered: true });
+    expect((out[1] as AssistantMessage).interrupted).toBe(true);
+  });
+
+  it('leaves steered/interrupted falsy when metadata is absent', () => {
+    const out = mapServerMessages([
+      msg({ role: 'user', content: 'hi' }),
+      msg({ role: 'assistant', content: 'yo', metadata: { model: 'm' } }),
+    ]);
+    expect((out[0] as { steered?: boolean }).steered).toBe(false);
+    expect((out[1] as AssistantMessage).interrupted).toBe(false);
+  });
+
   it('carries agent attribution (agent_name) onto the assistant message', () => {
     const out = mapServerMessages([
       msg({

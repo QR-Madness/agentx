@@ -63,6 +63,8 @@ export interface AssistantMessage extends BaseMessage {
   profileId?: string;
   agentName?: string;
   branchId?: string;
+  /** Turn was cut short by a hard-stop (Stop button); content is partial. */
+  interrupted?: boolean;
 }
 
 export interface ToolCallMessage extends BaseMessage {

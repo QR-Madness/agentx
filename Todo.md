@@ -411,9 +411,16 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [x] **Client** — shipped. Composer stays **live during streaming** (`ChatPanel` shows Stop **+**
       Steer; Enter routes to `stream.steer`); the `steer` event appends a `steered` user bubble via
       `useChatStream.onSteer` (flush-then-append, dedupe by id) so live + re-attached clients match.
-- [ ] **Persist the steer as a real turn** — v1 keeps the steer in the 2h run-bus replay + the
-      influenced response; it is **not** written to `conversation_logs`, so a cold reload won't show the
-      steer bubble. Follow-up.
+- [x] **Persist the steer as a real turn** — shipped. Folded steers are captured on
+      `ToolLoopResult.steers` and persisted as `user` turns (`metadata.steered` + `steer_round`/
+      `after_tools`/`phase` — a procedural-memory signal); restored on reload (`mapServerMessages`
+      `steered`). Turn-shaping extracted to pure builders in `streaming/persistence.py`.
+- [x] **Hard-stop persists the partial turn** — shipped. A Stop (`GeneratorExit` in `generate_sse`)
+      saves progress up to the stop (user + completed tools + steers + partial assistant text,
+      `metadata.interrupted`) via the same `_persist_turns` orchestrator; the assistant bubble restores
+      with a "stopped" tag. Detach/tab-close still persists normally (run plays on). **Follow-ups:**
+      procedural *consumption* (consolidation mining `metadata.steered`), plan-execution-path steer +
+      partial capture, background chat-queue jobs, richer `tool_call_id` linkage.
 - [ ] **Shares plumbing** — the same boundary still wants to power **Blocking tool-call approval** +
       the in-run **Exhibit `choice`** round-trip (see Future Enhancements). The drain boundary +
       `current_run_id` contextvar are now in place to build on.

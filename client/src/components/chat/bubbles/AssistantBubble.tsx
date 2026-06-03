@@ -17,6 +17,11 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate }: 
       <div className="message-body">
         <div className="assistant-header">
           <span className="assistant-name">{displayName}</span>
+          {message.interrupted && (
+            <span className="assistant-stopped-tag" title="Generation was stopped; this response is partial">
+              stopped
+            </span>
+          )}
         </div>
 
         {message.thinking && (

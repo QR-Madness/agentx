@@ -37,6 +37,9 @@ class ToolLoopResult:
     tokens_in: int = 0
     tokens_out: int = 0
     tool_turns_data: list[dict] = field(default_factory=list)
+    # Mid-turn steers folded in (for persistence). Each: {content, round,
+    # after_tools, phase} where phase is "tool_boundary" or "would_end".
+    steers: list[dict] = field(default_factory=list)
 
 
 def _prepare_round_context(
@@ -486,6 +489,10 @@ async def streaming_tool_loop(
                     messages.append(Message(role=MessageRole.ASSISTANT, content=round_content))
                 for sm in steer_msgs:
                     messages.append(Message(role=MessageRole.USER, content=sm))
+                    result.steers.append({
+                        "content": sm, "round": tool_round,
+                        "after_tools": [], "phase": "would_end",
+                    })
                 emit_status("thinking")
                 continue
 
@@ -574,5 +581,10 @@ async def streaming_tool_loop(
 
         # Fold any mid-turn steer messages in as a fresh user turn at this safe
         # boundary so the next round responds to them (queued live-steering).
+        round_tool_names = [tc.name for tc in round_tool_calls]
         for sm in drain_steer_messages():
             messages.append(Message(role=MessageRole.USER, content=sm))
+            result.steers.append({
+                "content": sm, "round": tool_round,
+                "after_tools": round_tool_names, "phase": "tool_boundary",
+            })

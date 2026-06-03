@@ -2779,6 +2779,83 @@ class StreamingToolLoopTest(TestCase):
             any(m.role == MessageRole.USER and m.content == "do Z instead" for m in messages)
         )
         self.assertEqual(result.final_content, "final")
+        # would-end steer is captured on the result for persistence.
+        self.assertEqual(len(result.steers), 1)
+        self.assertEqual(result.steers[0]["phase"], "would_end")
+        self.assertEqual(result.steers[0]["content"], "do Z instead")
+        self.assertEqual(result.steers[0]["after_tools"], [])
+
+    def test_steer_captured_on_result_at_boundary(self) -> None:
+        """A boundary steer is captured on result.steers with the round's tools."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "x"})])],
+            [StreamChunk(content="final answer")],
+        ])
+        agent = self._FakeAgent()
+        with patch(
+            "agentx_ai.streaming.tool_loop.drain_steer_messages",
+            side_effect=[["also check Y"], []],
+        ):
+            _events, result = self._run(
+                provider, agent, [],
+                [{"type": "function", "function": {"name": "search"}}],
+            )
+        self.assertEqual(len(result.steers), 1)
+        self.assertEqual(result.steers[0]["phase"], "tool_boundary")
+        self.assertEqual(result.steers[0]["after_tools"], ["search"])
+        self.assertEqual(result.steers[0]["round"], 0)
+
+
+class SteerPersistenceTest(TestCase):
+    """Pure turn-builders extracted from views._store_turns (streaming/persistence.py)."""
+
+    def test_build_steer_turns_shape_and_metadata(self) -> None:
+        from agentx_ai.streaming.persistence import build_steer_turns
+
+        steers = [
+            {"content": "also check Y", "round": 0, "after_tools": ["search"], "phase": "tool_boundary"},
+            {"content": "do Z", "round": 1, "after_tools": [], "phase": "would_end"},
+        ]
+        turns = build_steer_turns("conv1", steers, 5, agent_id="bold-falcon", agent_name="Mobius")
+        self.assertEqual([t.index for t in turns], [5, 6])
+        self.assertTrue(all(t.role == "user" for t in turns))
+        self.assertTrue(all(t.agent_id is None for t in turns))  # producing agent unknown
+        m0 = turns[0].metadata
+        self.assertEqual(m0["steered"], True)
+        self.assertEqual(m0["steer_round"], 0)
+        self.assertEqual(m0["after_tools"], ["search"])
+        self.assertEqual(m0["phase"], "tool_boundary")
+        self.assertEqual(m0["steered_agent_id"], "bold-falcon")
+        self.assertEqual(m0["steered_agent_name"], "Mobius")
+        self.assertEqual(turns[1].content, "do Z")
+
+    def test_build_assistant_turn_skips_blank(self) -> None:
+        from agentx_ai.streaming.persistence import build_assistant_turn
+
+        self.assertIsNone(build_assistant_turn("c", "   ", 3, metadata={}))
+        turn = build_assistant_turn(
+            "c", "hello", 3, metadata={"interrupted": True}, token_count=10, model="m", agent_id="a",
+        )
+        self.assertIsNotNone(turn)
+        self.assertEqual(turn.role, "assistant")
+        self.assertEqual(turn.index, 3)
+        self.assertEqual(turn.metadata["interrupted"], True)
+        self.assertEqual(turn.agent_id, "a")
+
+    def test_build_tool_turns_roles_and_index(self) -> None:
+        from agentx_ai.streaming.persistence import build_tool_turns
+
+        data = [
+            {"type": "tool_call", "tool": "search", "tool_call_id": "t1", "arguments": {"q": "x"}},
+            {"type": "tool_result", "tool": "search", "tool_call_id": "t1", "content": "ok", "success": True},
+        ]
+        turns, next_index = build_tool_turns("c", data, 1)
+        self.assertEqual([t.role for t in turns], ["tool_call", "tool_result"])
+        self.assertEqual([t.index for t in turns], [1, 2])
+        self.assertEqual(next_index, 3)
+        self.assertEqual(turns[1].metadata["success"], True)
 
 
 class StatusEmitterTest(TestCase):
