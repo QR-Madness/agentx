@@ -9,6 +9,7 @@
 
 import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
+import { exhibitFromWire, type ExhibitWire } from '../../lib/exhibits';
 import type { ServerMessage } from '../../lib/api';
 
 function safeParseJson(str: string): Record<string, unknown> {
@@ -30,6 +31,9 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
     }
   }
   const consumedResults = new Set<string>();
+  // Exhibit id -> index in `out`, so a re-presented (amended) exhibit replaces
+  // its card in place — last declaration wins, mirroring the live experience.
+  const exhibitIdxById = new Map<string, number>();
 
   const out: ConversationMessage[] = [];
   for (const m of filtered) {
@@ -119,6 +123,31 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       const args = safeParseJson(m.content);
       const result = resultsByCallId.get(toolCallId);
       if (result) consumedResults.add(toolCallId);
+
+      if (toolName === 'present_exhibit') {
+        // The exhibit is fully described by the stored tool-call arguments
+        // (the `exhibit` SSE shown live was derived from these same args).
+        const wire: ExhibitWire = {
+          schema_version: 1,
+          id: (args.id as string) || toolCallId,
+          title: args.title as string | undefined,
+          layout: args.layout as string | undefined,
+          elements: (Array.isArray(args.elements) ? args.elements : []) as ExhibitWire['elements'],
+        };
+        const exhibitMsg: ConversationMessage = {
+          ...base,
+          type: 'exhibit',
+          exhibit: exhibitFromWire(wire),
+        };
+        const existingIdx = exhibitIdxById.get(exhibitMsg.exhibit.id);
+        if (existingIdx !== undefined) {
+          out[existingIdx] = exhibitMsg; // amend in place
+        } else {
+          exhibitIdxById.set(exhibitMsg.exhibit.id, out.length);
+          out.push(exhibitMsg);
+        }
+        continue;
+      }
 
       if (toolName === 'delegate_to') {
         const delegationMeta = (result?.metadata?.delegation ?? {}) as {

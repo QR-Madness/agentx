@@ -4571,3 +4571,115 @@ class SchemaLoaderTest(TestCase):
                 first.isupper() or first[0].isupper(),
                 f"statement does not start with a keyword (leaked comment?): {s[:60]!r}",
             )
+
+
+class PresentExhibitToolTest(TestCase):
+    """Exhibits — the declarative content-part protocol (Slice 1: Mermaid).
+
+    Covers the Exhibit model + validation, the present_exhibit tool body, and
+    the tool-loop wiring that surfaces a present_exhibit call as a typed
+    `exhibit` SSE event (and suppresses its tool_call/tool_result cards).
+    """
+
+    def _result_payload(self, result):
+        """Parse the JSON dict an internal tool returns from its ToolResult."""
+        self.assertTrue(result.content, "tool returned no content")
+        return json.loads(result.content[0]["text"])
+
+    # --- Exhibit model / validation -------------------------------------
+
+    def test_exhibit_from_present_call_defaults(self):
+        from agentx_ai.streaming.exhibits import EXHIBIT_SCHEMA_VERSION, exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"elements": [{"type": "mermaid", "content": "graph TD; A-->B;", "title": "Flow"}]}
+        )
+        self.assertTrue(ex.id.startswith("exh_"))  # generated when omitted
+        self.assertEqual(ex.layout, "stack")
+        self.assertEqual(ex.schema_version, EXHIBIT_SCHEMA_VERSION)
+        self.assertEqual(len(ex.elements), 1)
+        self.assertEqual(ex.elements[0].title, "Flow")
+
+    def test_exhibit_keeps_explicit_id(self):
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"id": "diagram-1", "elements": [{"type": "mermaid", "content": "pie title X"}]}
+        )
+        self.assertEqual(ex.id, "diagram-1")
+
+    def test_exhibit_rejects_unknown_element_type(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "table", "content": "x"}]})
+
+    def test_mermaid_sanity_error(self):
+        from agentx_ai.streaming.exhibits import mermaid_sanity_error
+        self.assertIsNone(mermaid_sanity_error("sequenceDiagram\n A->>B: hi"))
+        self.assertIsNone(mermaid_sanity_error("graph TD; A-->B"))
+        self.assertIsNotNone(mermaid_sanity_error(""))
+        self.assertIsNotNone(mermaid_sanity_error("this is just prose"))
+
+    # --- present_exhibit tool body --------------------------------------
+
+    def test_present_exhibit_tool_registered(self):
+        names = {t.name for t in get_internal_tools()}
+        self.assertIn("present_exhibit", names)
+
+    def test_present_exhibit_valid(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "flowchart LR; A-->B"}]},
+        )
+        self.assertTrue(result.success)
+        payload = self._result_payload(result)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["element_count"], 1)
+
+    def test_present_exhibit_empty_content_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "   "}]},
+        )
+        self.assertFalse(result.success)
+        self.assertFalse(self._result_payload(result)["success"])
+
+    def test_present_exhibit_non_mermaid_keyword_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "mermaid", "content": "just some text, not a diagram"}]},
+        )
+        self.assertFalse(result.success)
+
+    def test_present_exhibit_unknown_type_errors(self):
+        result = execute_internal_tool(
+            "present_exhibit",
+            {"elements": [{"type": "table", "content": "a,b\n1,2"}]},
+        )
+        self.assertFalse(result.success)
+
+    # --- tool-loop wiring -----------------------------------------------
+
+    def test_emit_exhibit_event_valid(self):
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import EXHIBIT_TOOL_NAME, _emit_exhibit_event
+        self.assertEqual(EXHIBIT_TOOL_NAME, "present_exhibit")
+        tc = SimpleNamespace(
+            id="tc_1",
+            name="present_exhibit",
+            arguments={"elements": [{"type": "mermaid", "content": "graph TD; A-->B"}]},
+        )
+        events = _emit_exhibit_event(tc)
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0].startswith("event: exhibit\n"))
+        payload = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(payload["layout"], "stack")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["elements"][0]["type"], "mermaid")
+
+    def test_emit_exhibit_event_invalid_suppressed(self):
+        """Malformed declaration → no exhibit event (the tool body's error to
+        the model drives a re-present)."""
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_exhibit_event
+        tc = SimpleNamespace(id="tc_2", name="present_exhibit", arguments={"elements": []})
+        self.assertEqual(_emit_exhibit_event(tc), [])

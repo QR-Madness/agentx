@@ -665,6 +665,120 @@ def scratchpad_note(
     }
 
 
+@register_tool(
+    name="present_exhibit",
+    description=(
+        "Present a rendered visual exhibit to the user (e.g. a Mermaid diagram) "
+        "when a picture communicates better than prose — flows, sequences, state "
+        "machines, hierarchies, ER/class relationships. Declare the exhibit as a "
+        "list of typed `elements`; they render in order. You may include several "
+        "elements in one exhibit or call this multiple times in a turn — each "
+        "exhibit is added to the conversation's gallery. To revise an exhibit you "
+        "already presented, call again with the same `id` and the updated content "
+        "(it replaces in place). Only the `mermaid` element type is supported for "
+        "now: `content` is raw Mermaid source starting with a diagram keyword "
+        "(graph, flowchart, sequenceDiagram, classDiagram, stateDiagram, "
+        "erDiagram, gantt, pie, mindmap, ...). Still describe the diagram briefly "
+        "in your normal reply — the exhibit complements your text, it doesn't "
+        "replace it."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "elements": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Ordered list of elements to render in the exhibit.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["mermaid"],
+                            "description": "Element type. Only 'mermaid' is supported for now.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Raw Mermaid diagram source.",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Optional caption for this element.",
+                        },
+                    },
+                    "required": ["type", "content"],
+                },
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional stable id. Reuse it to amend a prior exhibit; omit for a new one.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Optional title for the whole exhibit.",
+            },
+            "layout": {
+                "type": "string",
+                "enum": ["stack"],
+                "description": "How elements are arranged. Only 'stack' (vertical) for now.",
+                "default": "stack",
+            },
+        },
+        "required": ["elements"],
+    },
+)
+def present_exhibit(
+    elements: list[dict[str, Any]],
+    id: str | None = None,
+    title: str | None = None,
+    layout: str = "stack",
+) -> dict[str, Any]:
+    """Validate a declared exhibit and confirm it to the model.
+
+    The exhibit itself is streamed to the client by the tool loop (derived from
+    these same arguments via :func:`exhibits.exhibit_from_present_call`); this
+    handler's job is to validate the declaration and return a result so the
+    model gets feedback (and can re-present on error).
+    """
+    from pydantic import ValidationError
+
+    from ..streaming.exhibits import (
+        ALLOWED_ELEMENT_TYPES,
+        exhibit_from_present_call,
+        mermaid_sanity_error,
+    )
+
+    try:
+        exhibit = exhibit_from_present_call(
+            {"id": id, "title": title, "layout": layout, "elements": elements}
+        )
+    except ValidationError as e:
+        allowed = ", ".join(sorted(ALLOWED_ELEMENT_TYPES))
+        return {
+            "error": (
+                f"Invalid exhibit: {e.error_count()} problem(s). Each element needs "
+                f"a 'type' (one of: {allowed}) and 'content'. Details: {e.errors()[:3]}"
+            ),
+            "success": False,
+        }
+
+    for idx, el in enumerate(exhibit.elements):
+        if el.type == "mermaid":
+            err = mermaid_sanity_error(el.content)
+            if err:
+                return {
+                    "error": f"element[{idx}]: {err}",
+                    "success": False,
+                }
+
+    return {
+        "exhibit_id": exhibit.id,
+        "element_count": len(exhibit.elements),
+        "note": "Exhibit presented to the user.",
+        "success": True,
+    }
+
+
 def _memory_for_ctx():
     """Resolve the AgentMemory for the active tool context, or (None, error)."""
     from .internal_context import current_context

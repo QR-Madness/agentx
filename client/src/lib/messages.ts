@@ -2,6 +2,8 @@
  * Message Type System — Discriminated union for all conversation message types
  */
 
+import type { Exhibit } from './exhibits';
+
 export type MessageType =
   | 'user'
   | 'assistant'
@@ -12,6 +14,7 @@ export type MessageType =
   | 'plan_execution'
   | 'agent_handoff'
   | 'delegation'
+  | 'exhibit'
   | 'error';
 
 /**
@@ -160,6 +163,17 @@ export interface DelegationMessage extends BaseMessage {
   completedAt?: string;
 }
 
+/**
+ * Exhibit message — a typed, declarative artifact the agent presented via the
+ * `present_exhibit` tool (e.g. a Mermaid diagram). Rendered in one bubble by
+ * `ExhibitBubble` via the element registry. Keyed by `exhibit.id` so an amend
+ * (re-presenting the same id) replaces in place.
+ */
+export interface ExhibitMessage extends BaseMessage {
+  type: 'exhibit';
+  exhibit: Exhibit;
+}
+
 /** Agent handoff message - displayed when an agent transfers conversation to another */
 export interface AgentHandoffMessage extends BaseMessage {
   type: 'agent_handoff';
@@ -184,6 +198,7 @@ export type ConversationMessage =
   | PlanExecutionMessage
   | AgentHandoffMessage
   | DelegationMessage
+  | ExhibitMessage
   | SystemMessage
   | ErrorMessage;
 
@@ -231,6 +246,10 @@ export function isAgentHandoffMessage(msg: ConversationMessage): msg is AgentHan
 
 export function isDelegationMessage(msg: ConversationMessage): msg is DelegationMessage {
   return msg.type === 'delegation';
+}
+
+export function isExhibitMessage(msg: ConversationMessage): msg is ExhibitMessage {
+  return msg.type === 'exhibit';
 }
 
 /**

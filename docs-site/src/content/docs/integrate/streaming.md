@@ -30,9 +30,18 @@ The response is `Content-Type: text/event-stream`. Events arrive in this order:
 | `chunk` | `{ "content": "token text" }` | Each token |
 | `tool_call` | `{ "tool": "…", "arguments": {…} }` | A tool invocation starts |
 | `tool_result` | `{ "tool": "…", "content": "…" }` | Tool result (truncated to 500 chars) |
+| `exhibit` | `{ "schema_version": 1, "id": "…", "title?": "…", "layout": "stack", "elements": [{ "type": "mermaid", "content": "…" }] }` | A typed, agent-authored exhibit (e.g. a Mermaid diagram) |
 | `done` | `{ "task_id": "…", "thinking": "…", "total_time_ms": …, "session_id": "…" }` | Generation complete |
 | `error` | `{ "error": "message" }` | On failure |
 | `close` | `{}` | Run settled; the tail ends |
+
+When the agent calls the internal `present_exhibit` tool, the turn emits an `exhibit`
+event — a declarative Gallery→Exhibit→Element tree the client renders from an element
+registry — **instead of** a `tool_call`/`tool_result` pair for that call. Every exhibit
+carries a `schema_version`; unknown element `type`s degrade to a source-as-code fallback,
+so a newer server can add element types without breaking older clients. Slice 1 ships the
+`mermaid` element and the `stack` layout. Re-emitting the same `id` amends that exhibit
+in place.
 
 Multi-agent runs additionally emit `delegation_start`, `delegation_chunk`,
 `delegation_tool_call`, `delegation_tool_result`, and `delegation_complete` — see the

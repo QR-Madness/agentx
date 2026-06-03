@@ -469,24 +469,42 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 - [ ] **Egress / webhooks** — outbound events so external systems can react to agent activity
       (run lifecycle, new facts, goal completion).
 
-### Rich Agent-Authored Content (typed content-part protocol)
+### Exhibits — Rich Agent-Authored Content (declarative content-part protocol)
 
-> The agent emits structured content *parts* on the stream (the way it already emits
-> `tool_call` / `tool_result`), and the client renders registered components — rather than the agent
-> hand-rolling raw HTML (a security/consistency liability). Visual sibling to the 16.6 Ambassador
-> Agent (which mediates via voice/briefing); this mediates visually. Same typed structure doubles as
-> the export/integration payload above.
+> The agent presents structured content the client renders from a registry — rather than
+> hand-rolling raw HTML (a security/consistency liability). Vocabulary: a **Gallery** (a
+> conversation's array of exhibits) → **Exhibit** (one declaratively-arranged unit, amendable by
+> stable `id`) → **Element** (typed building block). Producer is the declarative internal
+> `present_exhibit` tool (not fence-scraping) — the same mechanism interactive elements need.
+> Visual sibling to the 16.6 Ambassador Agent (which mediates via voice/briefing); this mediates
+> visually. Same typed structure doubles as the export/integration payload above.
 
-- [ ] **Content-part protocol** — typed parts (`text`, `card`, `diagram`, `table`, `choice`,
-      `citation`) over the chat stream + a client part-registry mapping type → render component.
-- [ ] **Mermaid diagrams** — lightweight agent-authored diagrams; text-emittable by the model, so it
-      ships *ahead* of the generative avatar (which is blocked by image capabilities).
-- [ ] **Interactive parts that round-trip** — `choice` / `form` cards the user acts on, feeding back
-      as the next turn; natural fit with blocking tool-call approval and the ambassador relay.
-- [ ] **Render allow-list + sandboxing** — "agent presents arbitrary content" is an injection
-      surface; constrain renderable types and sanitize.
-- [ ] Absorbs the former "Advanced memory visualization (interactive graph, embedding clusters)" item
-      as one registered part type.
+- [x] **Content-part protocol (Exhibits) + Mermaid element** — shipped `[v0.21.25]`. Declarative
+      Gallery→Exhibit→Element model with a `schema_version` envelope and an `exhibit` SSE event.
+      Producer: internal `present_exhibit({ id?, title?, layout?, elements:[...] })` tool
+      (`mcp/internal_tools.py`); `streaming/exhibits.py` owns the Pydantic models +
+      `ALLOWED_ELEMENT_TYPES` allow-list + validation. `streaming/tool_loop.py` surfaces a
+      `present_exhibit` call as a typed `exhibit` event (suppressing its `tool_call`/`tool_result`
+      cards) while the tool body still returns a result so the model can re-present on error.
+      Client: `lib/exhibits.ts` types, `onExhibit` streaming callback, `useChatStream` upsert-by-id
+      (amend in place), `ExhibitBubble` + `elementRegistry` (unknown type → safe source-as-code
+      fallback) + `messageRegistry` entry, `MermaidElement` (dynamic-imported mermaid@11,
+      `securityLevel:'strict'`, error fallback), and `mapServerMessages` restore (rebuilds exhibits
+      from stored `present_exhibit` tool turns, last-per-id wins). `PresentExhibitToolTest` (backend)
+      + exhibit restore cases (`mapServerMessages.test.ts`). Slice 1 = `mermaid` element + `stack`
+      layout only; the model/protocol carry the full tree.
+- [ ] **More element types** — `table`, `text`, `citation` (wire to `memory_context`/`web_search`);
+      absorbs the former "Advanced memory visualization (interactive graph, embedding clusters)" item
+      as one registered element type.
+- [ ] **Interactive elements that round-trip** — `choice` / `form` the user acts on, feeding back as
+      the next turn via the `tool_result` (the `present_exhibit` tool mechanism is already in place);
+      natural fit with blocking tool-call approval and the ambassador relay.
+- [ ] **`grid` (and richer) layouts** + a dedicated browsable **Gallery panel** (drawer) listing a
+      conversation's exhibits.
+- [ ] **Inline-fence fallback** — also render the model's *native* ` ```mermaid ` fences (no tool
+      call) by parsing them into exhibits, for models that under-reach for the tool.
+- [ ] **Exhibits in delegation streams** — extend the typed event to `delegation_chunk` so a
+      specialist's diagrams surface too.
 
 ### Translation Quality Overhaul (pluggable `TranslationKit` backend)
 

@@ -24,6 +24,7 @@ import {
   type ConversationMessage,
   type DelegationMessage,
   type DelegationToolEvent,
+  type ExhibitMessage,
   type MemoryInjectionMessage,
   type PlanExecutionMessage,
   type PlanStepRef,
@@ -32,6 +33,7 @@ import {
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
+import { exhibitFromWire } from '../../lib/exhibits';
 import type { PlanRecord } from '../../contexts/PlansContext';
 
 /** Mutators from PlansContext, plumbed in so the global registry tracks plans. */
@@ -106,6 +108,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const activeToolCallsRef = useRef<Map<string, { messageId: string; toolName: string }>>(new Map());
   const activePlanRef = useRef<{ messageId: string; planId: string; subtasks: PlanSubtask[] } | null>(null);
   const activeDelegationsRef = useRef<Map<string, ActiveDelegation>>(new Map());
+  // Exhibit id -> its message id, so re-presenting the same id amends the
+  // existing card in place (declarative reconcile) instead of stacking a new one.
+  const exhibitMessageIdsRef = useRef<Map<string, string>>(new Map());
   // Subtask affinity stamped onto messages produced inside the current step.
   // Set on subtask_start, cleared on subtask_complete/failed and plan end —
   // so synthesis content (streamed after the last subtask) stays untagged.
@@ -155,6 +160,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     activeToolCallsRef.current = new Map();
     activePlanRef.current = null;
     activeDelegationsRef.current = new Map();
+    exhibitMessageIdsRef.current = new Map();
     currentStepRef.current = null;
     dispatch({ type: 'send_started' });
   }, []);
@@ -241,6 +247,28 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         }
         activeToolCallsRef.current.delete(data.tool_call_id);
         dispatch({ type: 'tool_call_resolved', toolCallId: data.tool_call_id });
+      },
+
+      onExhibit: (data) => {
+        const exhibit = exhibitFromWire(data);
+        const existingId = exhibitMessageIdsRef.current.get(exhibit.id);
+        if (existingId) {
+          // Amend: re-presented with the same id → replace the card in place.
+          optsRef.current.updateMessage(existingId, { exhibit });
+          return;
+        }
+        // New exhibit: close any preceding prose, then append the card.
+        flushLiveContent();
+        const messageId = createMessageId();
+        exhibitMessageIdsRef.current.set(exhibit.id, messageId);
+        const msg: ExhibitMessage = {
+          id: messageId,
+          type: 'exhibit',
+          timestamp: new Date().toISOString(),
+          exhibit,
+          planStep: currentStepRef.current ?? undefined,
+        };
+        optsRef.current.appendMessage(msg);
       },
 
       onPlanStart: (data) => {

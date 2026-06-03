@@ -6,6 +6,7 @@ import type {
   ToolCallMessage,
   ToolResultMessage,
   DelegationMessage,
+  ExhibitMessage,
 } from '../../lib/messages';
 
 function msg(partial: Partial<ServerMessage> & { role: ServerMessage['role'] }): ServerMessage {
@@ -153,6 +154,50 @@ describe('mapServerMessages', () => {
     const res = out[0] as ToolResultMessage;
     expect(res.type).toBe('tool_result');
     expect(res.content).toBe('orphan');
+  });
+
+  it('restores a present_exhibit tool call as an exhibit message', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"id":"d1","title":"Login","elements":[{"type":"mermaid","content":"graph TD; A-->B"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: '{"success":true}',
+        metadata: { tool_call_id: 'e1', success: true },
+      }),
+    ]);
+
+    expect(out).toHaveLength(1); // tool_result is consumed, not shown
+    const ex = out[0] as ExhibitMessage;
+    expect(ex.type).toBe('exhibit');
+    expect(ex.exhibit.id).toBe('d1');
+    expect(ex.exhibit.title).toBe('Login');
+    expect(ex.exhibit.layout).toBe('stack');
+    expect(ex.exhibit.elements[0]).toMatchObject({ type: 'mermaid', content: 'graph TD; A-->B' });
+  });
+
+  it('amends an exhibit in place when the same id is re-presented', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"id":"keep","elements":[{"type":"mermaid","content":"graph TD; A-->B"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e1' },
+      }),
+      msg({ role: 'assistant', content: 'let me revise that', metadata: { model: 'm' } }),
+      msg({
+        role: 'tool_call',
+        content: '{"id":"keep","elements":[{"type":"mermaid","content":"graph TD; A-->C"}]}',
+        metadata: { tool: 'present_exhibit', tool_call_id: 'e2' },
+      }),
+    ]);
+
+    // One exhibit (amended in place) + the assistant message between them.
+    const exhibits = out.filter((m) => m.type === 'exhibit') as ExhibitMessage[];
+    expect(exhibits).toHaveLength(1);
+    expect(exhibits[0].exhibit.elements[0].content).toBe('graph TD; A-->C');
   });
 
   it('filters out roles it does not render', () => {
