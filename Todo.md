@@ -471,12 +471,17 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 ### Settings Advisor + Settings Manifest (the control-plane interface)
 
-> Conceptual frame: there's a **task layer** (agents acting within their config), a **control plane**
-> (config / profiles / genome that shapes cognition), and a **meta layer** (who *writes* the control
-> plane). The user, the Settings Advisor, and the evolution subsystem all act at the meta layer:
-> the Advisor is **human-in-the-loop** control-plane tuning, evolution is the **autonomous** sibling.
-> They share one primitive — *propose a config diff → validate → (optionally) eval its effect* — so
-> the Advisor is the **safe on-ramp** to evolution (ship the confirmed path first).
+> Conceptual frame — the **family model**: **parents** = the Settings Advisor *and* evolution as one
+> governance layer with standing authority over the **children** (agents), who act only within the
+> config/genome the parents give them (children may *petition* — failures, low reasoning scores,
+> uncertainty — but the parents decide). The **user is an associate of the parents** — a *peer*, not a
+> boss and not a child: co-decides, gets explanations, sets the **bounds** the parents may act within,
+> and keeps ultimate veto. So evolution is not a separate machine — it's **the parents doing long-term
+> child-rearing autonomously *within those bounds***; the Advisor is the same governance acting in the
+> moment / with the associate. Both run one primitive: *propose a config/genome diff → validate against
+> the manifest → (optionally) eval its effect → apply (auto if within bounds, else escalate)*.
+> The Advisor's voice follows from "associate": transparent peer — "here's what I see, here's what I'd
+> do, your call" — never subservient, never commanding.
 
 - [ ] **(keystone) Settings Manifest** — a canonical registry of every config key
       (`{path, type, default, range, description, "how it works abstractly", affected feature}`).
@@ -499,6 +504,15 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       validates it against the manifest, applies it, and (optionally) evals its effect. The Advisor
       drives it human-confirmed; the evolution subsystem (above) drives it autonomously within bounds.
       Unifying these means evolution is just "the Advisor on auto, gated" — not a separate machine.
+- [ ] **Autonomy envelope (the safety keystone)** — a per-system policy object the *associate* (user)
+      grants the *parents*: which genes/settings may be auto-tuned and within which ranges, what is
+      always escalate-and-confirm (cost, API keys, destructive resets, model swaps), and the
+      log/notify behavior. This is what makes evolution **bounded child-rearing** rather than an
+      unsupervised mutation loop, and gives the Advisor its collegial-but-empowered footing. Low-risk →
+      act + log; high-risk → escalate to the associate. Every control-plane change is checked against it.
+- [ ] **Child→parent petition channel** — agents emit governance signals (repeated failures, low
+      reasoning scores, high uncertainty, tool errors) that the parents consume as inputs for tuning a
+      child. The children do the work and surface what's hurting them; the parents decide the fix.
 
 ### Open Platform — De-walling the Garden
 
