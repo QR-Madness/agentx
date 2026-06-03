@@ -58,12 +58,27 @@
 
 .user-header {
   margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .user-name {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+/* "steered" tag — marks a turn sent mid-stream to course-correct the agent. */
+.user-steered-tag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  color: var(--accent-color, #8b5cf6);
+  background: var(--surface-overlay, rgba(139, 92, 246, 0.15));
 }
 
 .message-bubble.user .message-text {

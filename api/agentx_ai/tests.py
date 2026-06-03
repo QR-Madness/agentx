@@ -2731,6 +2731,55 @@ class StreamingToolLoopTest(TestCase):
         running = next(c for c in mock_status.call_args_list if c.args[0] == "running_tool")
         self.assertIn("search", running.kwargs.get("label", ""))
 
+    def test_steer_folds_at_tool_boundary(self) -> None:
+        """A steer drained after a tool round is folded in as a USER message."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "x"})])],
+            [StreamChunk(content="final answer")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        # Boundary drain (after the tool round) yields the steer; the would-end
+        # drain on the final round yields nothing.
+        with patch(
+            "agentx_ai.streaming.tool_loop.drain_steer_messages",
+            side_effect=[["also check Y"], []],
+        ):
+            self._run(
+                provider, agent, messages,
+                [{"type": "function", "function": {"name": "search"}}],
+            )
+        steered = [m for m in messages if m.role == MessageRole.USER and m.content == "also check Y"]
+        self.assertEqual(len(steered), 1)
+
+    def test_steer_continues_at_would_end(self) -> None:
+        """A steer arriving when the model would finish runs another round."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="partial")],   # round 0: no tools → would end
+            [StreamChunk(content="final")],     # round 1: after steer folded in
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        with patch(
+            "agentx_ai.streaming.tool_loop.drain_steer_messages",
+            side_effect=[["do Z instead"], []],
+        ):
+            _events, result = self._run(provider, agent, messages, None)
+        # Ran a second round rather than ending after the first.
+        self.assertEqual(provider._call, 2)
+        # The answer-so-far + the steer were folded in coherently.
+        self.assertTrue(
+            any(m.role == MessageRole.ASSISTANT and m.content == "partial" for m in messages)
+        )
+        self.assertTrue(
+            any(m.role == MessageRole.USER and m.content == "do Z instead" for m in messages)
+        )
+        self.assertEqual(result.final_content, "final")
+
 
 class StatusEmitterTest(TestCase):
     """Unit tests for the run-scoped status emitter (streaming/status.py)."""
@@ -2796,6 +2845,39 @@ class StatusEmitterTest(TestCase):
         self.assertEqual(payload["detail"], "query")
         self.assertEqual(payload["group"], "recalling")
         self.assertEqual(payload["progress"], 0.5)
+
+
+class LiveSteeringStoreTest(MockRedisTestBase):
+    """ChatRunStore steer-queue push/drain (live steering)."""
+
+    @property
+    def store(self):
+        from agentx_ai.streaming.chat_run import store
+        return store
+
+    def test_push_steer_rpushes_and_caps(self) -> None:
+        from agentx_ai.streaming.chat_run import STEER_MAXLEN, _queue_key
+        self.mock_redis.exists.return_value = 1
+        ok = self.store.push_steer("r1", "also check Y")
+        self.assertTrue(ok)
+        self.mock_redis.rpush.assert_called_once_with(_queue_key("r1"), "also check Y")
+        # Trimmed to the most-recent STEER_MAXLEN entries.
+        self.mock_redis.ltrim.assert_called_once_with(_queue_key("r1"), -STEER_MAXLEN, -1)
+
+    def test_push_steer_false_when_run_gone(self) -> None:
+        self.mock_redis.exists.return_value = 0
+        self.assertFalse(self.store.push_steer("missing", "hi"))
+        self.mock_redis.rpush.assert_not_called()
+
+    def test_drain_steer_reads_and_clears_atomically(self) -> None:
+        from agentx_ai.streaming.chat_run import _queue_key
+        pipe = MagicMock()
+        pipe.execute.return_value = [[b"first", b"second"], 1]
+        self.mock_redis.pipeline.return_value = pipe
+        out = self.store.drain_steer("r1")
+        self.assertEqual(out, ["first", "second"])
+        pipe.lrange.assert_called_once_with(_queue_key("r1"), 0, -1)
+        pipe.delete.assert_called_once_with(_queue_key("r1"))
 
 
 class ContextGateTest(TestCase):

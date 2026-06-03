@@ -38,6 +38,7 @@ RUN_KEY_PREFIX = "chat_run"
 RUN_INDEX_PREFIX = "chat_run:index"    # per-user ZSET of run_ids for enumeration
 RUN_TTL_SECONDS = 2 * 60 * 60          # 2h — outlives a reasonable reopen window
 EVENTS_MAXLEN = 5000                   # cap buffered events per run
+STEER_MAXLEN = 10                      # cap pending steer messages per run
 TAIL_BLOCK_MS = 2000                   # XREAD block timeout while tailing
 STALE_RUNNING_SECONDS = 15 * 60        # a "running" run older than this is orphaned
 MAX_INDEX = 50                         # cap runs retained per user in the index
@@ -55,6 +56,10 @@ def _redis():
 
 def _events_key(run_id: str) -> str:
     return f"{RUN_KEY_PREFIX}:{run_id}:events"
+
+
+def _queue_key(run_id: str) -> str:
+    return f"{RUN_KEY_PREFIX}:{run_id}:queue"
 
 
 def _state_key(run_id: str) -> str:
@@ -179,6 +184,36 @@ class ChatRunStore:
             return _decode(value) == "1"
         except Exception:
             return False
+
+    def push_steer(self, run_id: str, message: str) -> bool:
+        """Queue a steer message for an in-flight run. False if the run is gone."""
+        try:
+            client = _redis()
+            if not client.exists(_state_key(run_id)):
+                return False
+            key = _queue_key(run_id)
+            client.rpush(key, message)
+            # Keep only the most recent STEER_MAXLEN pending messages.
+            client.ltrim(key, -STEER_MAXLEN, -1)
+            client.expire(key, RUN_TTL_SECONDS)
+            return True
+        except Exception as e:
+            logger.warning(f"chat_run push_steer failed: {e}")
+            return False
+
+    def drain_steer(self, run_id: str) -> list[str]:
+        """Atomically read + clear the run's pending steer messages (in order)."""
+        try:
+            client = _redis()
+            key = _queue_key(run_id)
+            pipe = client.pipeline()
+            pipe.lrange(key, 0, -1)
+            pipe.delete(key)
+            items, _ = pipe.execute()
+            return [_decode(m) for m in items]
+        except Exception as e:
+            logger.warning(f"chat_run drain_steer failed: {e}")
+            return []
 
     def list_runs(self, user_id: str, *, limit: int = MAX_INDEX) -> list[dict]:
         """Return this user's runs newest-first, pruning stale index entries."""

@@ -366,6 +366,14 @@
   border: 1px solid var(--accent-color, #8b5cf6);
 }
 
+/* Steer send (shown beside Stop while a turn streams): outlined, not filled, so
+   it reads as "fold into the running turn" rather than "start a new one". */
+.send-button.steer {
+  background: var(--surface-overlay, rgba(139, 92, 246, 0.18));
+  color: var(--accent-color, #8b5cf6);
+  border: 1px solid var(--accent-color, #8b5cf6);
+}
+
 /* === Background-armed chip === */
 .bg-armed-chip {
   display: flex;

@@ -268,12 +268,14 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
    ~~web-search query inline~~ — `web_search`/`web_research` show the quoted `query` + result count on
    the collapsed row. (c) ~~per-phase SSE `status` events~~ — coarse feed on the run-bus
    `emit_status()` seam (see the Observability cluster; deep sub-phases now a drop-in).
-2. **Live steering — message interruption / queue** *(essential; today you can't course-correct a
-   running agent — only let it finish or hard-cancel)* — inject a message into an **in-flight** turn
-   without killing it. The cooperative-cancel plumbing (`streaming/chat_run.py` Redis state +
-   `is_cancel_requested`, polled at event boundaries) is the foundation; add a per-run **steer queue**
-   drained at the tool-result boundary in `streaming/tool_loop.py`. Shares the pause/hold-run/resume
-   subsystem with blocking tool approval + the status-emitter channel. See cluster below.
+2. ~~**Live steering — message interruption / queue**~~ — **v1 shipped (queue mode).** A steer
+   (`POST /agent/chat/runs/{id}/steer`) is pushed to a per-run Redis queue (`chat_run.push_steer`),
+   drained by `streaming_tool_loop` (`streaming/steering.py`, run resolved via the `current_run_id`
+   contextvar) at the tool-result boundary **and** at the would-end (continues the turn instead of
+   ending), folded in as a fresh user turn. Echoed as a `steer` bus event so all clients show the
+   bubble inline; client composer stays live (Stop **+** Steer). **Follow-ups:** hard interrupt (abort
+   the in-flight provider stream) + persisting the steer as a real `conversation_logs` turn. See
+   cluster below.
 3. **Stable memory core** — kill transient memory injection (`remember(query=message)` re-ranks every
    turn); inject a stable high-salience core + recall as a supplement. Correctness; rides the Slice-6
    `assemble_turn_context` preamble budget.
@@ -396,23 +398,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > instead" without throwing away the whole run. Steering mid-run is essential for long/agentic turns,
 > and it's the most-forgotten gap. Foundation #2 — this is the design cluster for it.
 
-- [ ] **Inject-into-running-turn** — `POST /api/agent/chat/runs/{run_id}/steer` (body
-      `{message, mode}`) appends the user's message to a per-run **steer queue** (Redis list
-      `chat_run:{run_id}:queue`, alongside the existing `chat_run:{run_id}` state in
-      `streaming/chat_run.py`). Reuses the detached-run registry — no new lifecycle.
-- [ ] **Drain at safe boundaries** — the streaming tool loop (`streaming/tool_loop.py`) polls the
-      queue at **tool-result boundaries** (the same spot the cancel flag is checked) and folds queued
-      messages into the next provider call as a fresh user turn, so the agent **re-plans with the new
-      instruction mid-trajectory** instead of only after the turn ends.
-- [ ] **Two modes** — **interrupt** (drain ASAP / abort the current tool wait + re-prompt) vs.
-      **queue** (let the current step finish, apply before the next round). Mirrors the cancel UX.
-- [ ] **Client** — keep the composer **live during streaming**; a message sent while a run streams
-      calls `steer` instead of opening a new turn. Surface a small "steering…" affordance;
-      `useChatStream` wires the new event(s); reconciles with the `run_started`/`attach` recovery path.
-- [ ] **Shares plumbing** — the same pause/hold-run/resume machinery powers **Blocking tool-call
-      approval** + the in-run **Exhibit `choice`** round-trip (see Future Enhancements), and the
-      **status-emitter channel** (Observability slice above) rides the same loop boundary. Generalizes
-      today's hard-cancel and the delegated-task **Message injection** item. Build the boundary once.
+- [x] **Inject-into-running-turn** — shipped. `POST /api/agent/chat/runs/{run_id}/steer` (`{message,
+      mode}`, owner-only) pushes to a per-run **steer queue** (`chat_run.push_steer` →
+      `chat_run:{run_id}:queue`) **and** echoes a `steer` bus event so all clients render the bubble.
+- [x] **Drain at safe boundaries** — shipped. `streaming_tool_loop` drains (`streaming/steering.py`,
+      run resolved via the `current_run_id` contextvar) at the **tool-result boundary** *and* at the
+      **would-end** (folds the answer-so-far + steer, then `continue`s instead of ending), so the agent
+      re-plans mid-trajectory or keeps going after a steer.
+- [ ] **Two modes** — only **queue** (fold at the next safe boundary) shipped; the `mode` field is
+      carried but **interrupt** (abort the in-flight provider stream / tool wait + re-prompt) is a
+      follow-up.
+- [x] **Client** — shipped. Composer stays **live during streaming** (`ChatPanel` shows Stop **+**
+      Steer; Enter routes to `stream.steer`); the `steer` event appends a `steered` user bubble via
+      `useChatStream.onSteer` (flush-then-append, dedupe by id) so live + re-attached clients match.
+- [ ] **Persist the steer as a real turn** — v1 keeps the steer in the 2h run-bus replay + the
+      influenced response; it is **not** written to `conversation_logs`, so a cold reload won't show the
+      steer bubble. Follow-up.
+- [ ] **Shares plumbing** — the same boundary still wants to power **Blocking tool-call approval** +
+      the in-run **Exhibit `choice`** round-trip (see Future Enhancements). The drain boundary +
+      `current_run_id` contextvar are now in place to build on.
 
 ### Conversation Context & Checkpoints
 
@@ -775,6 +779,7 @@ covers ~80% of this via its own tool loop:
 - [ ] Negative/Correction Tracking — when `correction_detection_enabled`, mark superseded facts `temporal_context: "past"`, link corrections to originals, prioritize corrections in retrieval
 - [ ] Fact Staleness Detection — add `expected_stability: transient|stable|permanent` and surface staleness warnings (relates to Fact Transience above)
 - [ ] Multi-hop Entity Traversal — add a lightweight path-finding retrieval mode over the entity graph (e.g. User → works_at → Company → has_project → Project → uses_tool → Tool)
+- [ ] Memory graph relationship connections - add a connection tool to link entitys to facts in the memory graph
 
 ### MCP Tools (migrated from docs/future-feature-pool)
 - [ ] Conversation MCP Tool — expose memory as MCP tools for external agents: `memory_recall(query, filters?)`, `memory_store(fact)`, `conversation_summary(conversation_id?)`

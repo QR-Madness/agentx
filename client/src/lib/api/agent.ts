@@ -53,4 +53,20 @@ export const agentApi = {
       method: 'POST',
     });
   },
+
+  /**
+   * Steer a running turn: fold a message into the in-flight run. It's drained at
+   * the next safe boundary (after a tool round, or instead of ending) and folded
+   * in as a fresh user turn so the agent course-corrects without stopping.
+   */
+  async steerChatRun(
+    runId: string,
+    message: string,
+    mode: 'queue' = 'queue',
+  ): Promise<{ run_id: string; steer_accepted: boolean }> {
+    return apiRequest(`/api/agent/chat/runs/${encodeURIComponent(runId)}/steer`, {
+      method: 'POST',
+      body: JSON.stringify({ message, mode }),
+    });
+  },
 };

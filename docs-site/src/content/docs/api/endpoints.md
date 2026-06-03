@@ -389,6 +389,7 @@ SSE events in order:
 | `start` | `{"task_id": "...", "model": "..."}` | Generation begins |
 | `chunk` | `{"content": "token text"}` | Each token |
 | `status` | `{"phase": "running_tool", "label": "Running web_search…", "detail"?, "group"?, "progress"?}` | Coarse per-phase activity (`recalling`/`composing`/`thinking`/`running_tool`/`reading`) for a live status line; rides the run bus, so it replays on re-attach |
+| `steer` | `{"id": "...", "message": "..."}` | A user steered the running turn (folded in as a fresh user turn at the next safe boundary); echoed so every client shows the steer bubble inline |
 | `tool_call` | `{"tool": "name", "arguments": {...}}` | Tool invocation starts |
 | `tool_result` | `{"tool": "name", "content": "..."}` | Tool result (truncated to 500 chars) |
 | `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "..."}` | Generation complete |
@@ -429,6 +430,14 @@ POST /api/agent/chat/runs/{run_id}/cancel
 ```
 
 Cooperatively cancels a detached run; the runner checks the flag at SSE-event boundaries and stops pulling from the provider. Returns `{"run_id": "...", "cancel_requested": bool}`.
+
+### Steer a Run (live steering)
+
+```
+POST /api/agent/chat/runs/{run_id}/steer
+```
+
+Body: `{"message": "...", "mode"?: "queue"}`. Folds a message into an in-flight turn **without stopping it**: the message is queued and the streaming tool loop drains it at the next safe boundary (after a tool round, or instead of ending) and folds it in as a fresh user turn so the agent course-corrects. Owner-only (it injects content). The message is echoed onto the run's event bus as a `steer` event so every connected client (live + re-attached) shows the steer bubble inline. Returns `{"run_id": "...", "steer_accepted": bool}`. `400` blank message, `403` not the owner, `404` unknown run, `409` run not active.
 
 ### Agent Status
 

@@ -644,13 +644,14 @@ paths:
         its Docker-style `agent_id`. Responds with `text/event-stream`. The run is executed detached
         server-side and survives client disconnect; the first event is `run_started`
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
-        Events: `run_started`, `start`, `memory_context`, `chunk`, `status`, `tool_call`,
-        `tool_result`, `exhibit`, `done`, `close`, plus `delegation_*` events when a
-        workflow is active. See the Multi-Agent docs for delegation event shapes.
+        Events: `run_started`, `start`, `memory_context`, `chunk`, `status`, `steer`,
+        `tool_call`, `tool_result`, `exhibit`, `done`, `close`, plus `delegation_*` events
+        when a workflow is active. See the Multi-Agent docs for delegation event shapes.
         The `status` event (`{ phase, label, detail?, group?, progress? }`) is a coarse
         per-phase activity feed (`recalling`/`composing`/`thinking`/`running_tool`/`reading`)
         the client shows as a live line; it rides the run's event bus so it replays on
-        re-attach.
+        re-attach. The `steer` event (`{ id, message }`) echoes a user message folded into
+        the running turn via the steer endpoint (live steering).
         The `exhibit` event carries a declarative, agent-authored content tree
         (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
         calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),
@@ -785,6 +786,59 @@ paths:
                     type: boolean
         '405':
           description: POST required
+
+  /agent/chat/runs/{run_id}/steer:
+    post:
+      tags: [Agent]
+      operationId: agentChatRunSteer
+      summary: Live-steer a running chat run
+      description: >-
+        Fold a message into an in-flight turn without stopping it. The message is
+        queued; the streaming tool loop drains it at the next safe boundary (after
+        a tool round, or instead of ending) and folds it in as a fresh user turn so
+        the agent course-corrects. Owner-only. The message is echoed onto the run's
+        event bus as a `steer` event so every connected client shows the steer
+        bubble inline.
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                mode:
+                  type: string
+                  enum: [queue]
+                  default: queue
+      responses:
+        '200':
+          description: Steer queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                  steer_accepted:
+                    type: boolean
+        '400':
+          description: Missing message / invalid body
+        '403':
+          description: Not the run owner
+        '404':
+          description: Run not found
+        '409':
+          description: Run is not active
 
   /agent/status:
     get:

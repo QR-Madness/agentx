@@ -116,6 +116,8 @@ export interface StreamCallbacks {
     group?: string;
     progress?: number;
   }) => void;
+  /** A user steered the running turn mid-stream — echoed so every client shows it. */
+  onSteer?: (data: { id: string; message: string }) => void;
   onError?: (error: string) => void;
 }
 
@@ -186,6 +188,9 @@ function dispatchSseEvent(
       break;
     case 'status':
       callbacks.onStatus?.(data as Parameters<NonNullable<StreamCallbacks['onStatus']>>[0]);
+      break;
+    case 'steer':
+      callbacks.onSteer?.(data as Parameters<NonNullable<StreamCallbacks['onSteer']>>[0]);
       break;
     case 'done':
       callbacks.onDone?.(data as Parameters<NonNullable<StreamCallbacks['onDone']>>[0]);

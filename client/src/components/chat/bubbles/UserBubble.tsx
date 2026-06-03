@@ -41,6 +41,11 @@ export function UserBubble({ message, onEdit }: BubbleProps<'user'>) {
       <div className="message-body">
         <div className="user-header">
           <span className="user-name">You</span>
+          {message.steered && (
+            <span className="user-steered-tag" title="Sent to steer the running agent">
+              steered
+            </span>
+          )}
         </div>
         <div className="message-text">{renderWithMentions(message.content, profiles)}</div>
         <div className="message-meta">

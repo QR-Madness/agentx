@@ -16,6 +16,7 @@ from typing import Any, AsyncGenerator, Optional
 from ..providers.base import Message, MessageRole
 from .helpers import estimate_tokens, truncate_tool_messages
 from .status import emit_status
+from .steering import drain_steer_messages
 from .trajectory_compression import compress_trajectory
 
 logger = logging.getLogger(__name__)
@@ -471,8 +472,23 @@ async def streaming_tool_loop(
                 round_content += chunk.content
                 yield _sse("chunk", {"content": chunk.content})
 
-        # No tool calls means we're done
+        # No tool calls means the model is ready to finish — unless the user
+        # steered mid-turn, in which case fold the steer in and keep going so
+        # the agent course-corrects within the same turn.
         if not round_tool_calls:
+            steer_msgs = drain_steer_messages()
+            if steer_msgs:
+                # Keep the transcript coherent: the answer-so-far becomes an
+                # assistant turn, then the steer is a fresh user turn, then we
+                # loop for the agent's response. The chunks already streamed; the
+                # client flushes its live bubble on the `steer` event.
+                if round_content:
+                    messages.append(Message(role=MessageRole.ASSISTANT, content=round_content))
+                for sm in steer_msgs:
+                    messages.append(Message(role=MessageRole.USER, content=sm))
+                emit_status("thinking")
+                continue
+
             result.final_content = round_content
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
             # Surface empty completions explicitly so downstream code
@@ -555,3 +571,8 @@ async def streaming_tool_loop(
         # Tools done; the next round digests their output (and may compress the
         # trajectory first). Surface that gap before the round-top "Thinking…".
         emit_status("reading")
+
+        # Fold any mid-turn steer messages in as a fresh user turn at this safe
+        # boundary so the next round responds to them (queued live-steering).
+        for sm in drain_steer_messages():
+            messages.append(Message(role=MessageRole.USER, content=sm))

@@ -69,6 +69,8 @@ interface UseChatStreamApi {
   attach: (runId: string) => void;
   /** User-initiated cancel: abort + cancel the run server-side. */
   stop: () => void;
+  /** Steer the running turn: fold a message in without stopping the run. */
+  steer: (message: string) => void;
   /** Tab switch / unmount: drop the connection but leave the run running. */
   detach: () => void;
 }
@@ -191,6 +193,19 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         dispatch({
           type: 'status_changed',
           activity: { label: data.label, group: data.group, progress: data.progress },
+        });
+      },
+
+      onSteer: (data) => {
+        // Close the in-flight assistant bubble first (like onToolCall), so the
+        // steer user turn slots in between it and the agent's continuation.
+        flushLiveContent();
+        optsRef.current.appendMessage({
+          id: data.id,
+          type: 'user',
+          content: data.message,
+          timestamp: new Date().toISOString(),
+          steered: true,
         });
       },
 
@@ -635,5 +650,15 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     dispatch({ type: 'stream_ended' });
   }, [finalizeDanglingDelegations]);
 
-  return { state, send, attach, stop, detach };
+  // User typed while the turn streams: fold the message into the running run.
+  // The steer bubble is appended when the server echoes the `steer` event back
+  // (onSteer), so live + re-attached clients stay consistent. No-op until the
+  // run_started event has given us a run id.
+  const steer = useCallback((message: string) => {
+    const runId = currentRunIdRef.current;
+    if (!runId || !message.trim()) return;
+    api.steerChatRun(runId, message.trim()).catch(() => { /* best-effort */ });
+  }, []);
+
+  return { state, send, attach, stop, steer, detach };
 }

@@ -45,6 +45,8 @@ export interface UserMessage extends BaseMessage {
   editedAt?: string;
   /** Agent IDs mentioned via @ in the message (for multi-agent routing) */
   targetAgentIds?: string[];
+  /** Sent mid-turn to steer a running agent (vs. starting a new turn). */
+  steered?: boolean;
 }
 
 export interface AssistantMessage extends BaseMessage {

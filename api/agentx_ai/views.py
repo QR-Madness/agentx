@@ -1798,6 +1798,50 @@ def agent_chat_run_cancel(request, run_id):
     return JsonResponse({"run_id": run_id, "cancel_requested": requested})
 
 
+@csrf_exempt
+def agent_chat_run_steer(request, run_id):
+    """
+    POST /api/agent/chat/runs/<run_id>/steer — fold a message into a running turn.
+
+    Body: {"message": str, "mode"?: "queue"}. The message is queued; the
+    streaming tool loop drains it at the next safe boundary (after a tool round,
+    or instead of ending) and folds it in as a fresh user turn so the agent
+    course-corrects without the run being thrown away. The message is also
+    echoed onto the run's event bus as a `steer` event so every connected client
+    (live + re-attached) shows the user's steer bubble inline.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        body = json.loads(request.body or "{}")
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    message = (body.get("message") or "").strip()
+    if not message:
+        return JsonResponse({"error": "message is required"}, status=400)
+
+    from .streaming.chat_run import store
+    from .streaming.tool_loop import _sse
+
+    state = store.get_state(run_id)
+    if state is None:
+        return JsonResponse({"error": "run not found"}, status=404)
+    if state.get("status") != "running":
+        return JsonResponse({"error": "run is not active"}, status=409)
+    # Steering injects content into the turn, so it's owner-only.
+    if state.get("user_id", "default") != _bg_user_id(request):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    accepted = store.push_steer(run_id, message)
+    if accepted:
+        import uuid
+        steer_id = uuid.uuid4().hex[:16]
+        store.append_event(run_id, _sse("steer", {"id": steer_id, "message": message}))
+    return JsonResponse({"run_id": run_id, "steer_accepted": accepted})
+
+
 def agent_chat_runs(request):
     """
     GET /api/agent/chat/runs — list this user's detached chat runs (newest first).

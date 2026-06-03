@@ -431,10 +431,23 @@ export function ChatPanel() {
     }
   };
 
-  // Unified submit: routes to the background queue when armed, else streams.
+  // Steer the running turn: fold the typed message into the in-flight run
+  // instead of starting a new one. The steer bubble is appended when the server
+  // echoes the `steer` event back, so we just clear the composer here.
+  const handleSteer = () => {
+    if (!input.trim()) return;
+    stream.steer(input);
+    setInput('');
+    closeMention();
+  };
+
+  // Unified submit: steer while a turn streams, else background-queue when
+  // armed, else start a new streaming turn.
   const submit = () => {
     if (!input.trim()) return;
-    if (bgArmed) {
+    if (isTyping) {
+      handleSteer();
+    } else if (bgArmed) {
       handleSendBackground();
       setBgArmed(false);
     } else {
@@ -780,9 +793,12 @@ export function ChatPanel() {
             }}
             onClick={(e) => refreshMention(input, e.currentTarget.selectionStart ?? input.length)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message... (Shift+Enter for new line)"
+            placeholder={
+              isTyping
+                ? 'Steer the running agent... (Shift+Enter for new line)'
+                : 'Type your message... (Shift+Enter for new line)'
+            }
             rows={1}
-            disabled={isTyping}
           />
           <MentionAutocomplete
             isOpen={mention.open}
@@ -794,16 +810,26 @@ export function ChatPanel() {
             onClose={closeMention}
           />
           {isTyping ? (
-            <button
-              className="stop-button"
-              onClick={() => {
-                stream.stop();
-                setStreaming(false);
-              }}
-              title="Stop generating"
-            >
-              <Square size={16} />
-            </button>
+            <>
+              <button
+                className="stop-button"
+                onClick={() => {
+                  stream.stop();
+                  setStreaming(false);
+                }}
+                title="Stop generating"
+              >
+                <Square size={16} />
+              </button>
+              <button
+                className="send-button steer"
+                onClick={submit}
+                disabled={!input.trim()}
+                title="Steer the running agent"
+              >
+                <Send size={18} />
+              </button>
+            </>
           ) : (
             <button
               className={`send-button ${bgArmed ? 'armed' : ''}`}
