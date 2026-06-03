@@ -1091,7 +1091,9 @@ _BACKEND_ORDER: tuple[str, ...] = ("tavily", "brave")
 
 # Tavily-only tools — advertised to the model only when Tavily is the active
 # backend, but always registered (so a stale call self-guards instead of 404ing).
-_CAPABILITY_GATED_TOOLS: frozenset[str] = frozenset({"web_extract", "web_map"})
+_CAPABILITY_GATED_TOOLS: frozenset[str] = frozenset(
+    {"web_extract", "web_map", "web_crawl", "web_research"}
+)
 
 # Tavily `time_range` → Brave `freshness` codes.
 _FRESHNESS_MAP = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}
@@ -1138,6 +1140,11 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
             },
             "web_extract": {"summary": "pull the full cleaned content of specific URLs", "params": {}},
             "web_map": {"summary": "discover a site's URL graph from a base URL", "params": {}},
+            "web_crawl": {"summary": "follow links from a base URL and extract pages", "params": {}},
+            "web_research": {
+                "summary": "agentic deep-research report with citations (slow; minutes)",
+                "params": {},
+            },
         },
     },
     "brave": {
@@ -1183,6 +1190,18 @@ _TOOL_BASE_DESC: dict[str, str] = {
         "Map a website's structure: given a base `url`, return the graph of "
         "discovered page URLs (no page content). Use to scope a site before "
         "extracting specific pages with web_extract."
+    ),
+    "web_crawl": (
+        "Crawl a website from a base `url`, following links and extracting page "
+        "content (bounded by depth/breadth/limit). Use when you need many pages of "
+        "a site, not just one; large output is stored and retrievable."
+    ),
+    "web_research": (
+        "Run an agentic deep-research task on a `query`: the provider explores "
+        "multiple sources and returns a synthesized report with citations. "
+        "SLOW (can take minutes) — use only for genuinely involved research, not a "
+        "quick lookup (use web_search for those). The report is stored; its sources "
+        "are recorded automatically."
     ),
 }
 
@@ -1232,6 +1251,35 @@ def _base_tool_schema(tool: str) -> dict[str, Any]:
                 },
             },
             "required": ["url"],
+        }
+    if tool == "web_crawl":
+        return {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Base URL to crawl from."},
+                "max_depth": {"type": "integer", "description": "Link depth to follow (default 1)."},
+                "limit": {
+                    "type": "integer",
+                    "description": "Max pages to return (default 20, capped at 50).",
+                },
+                "instructions": {
+                    "type": "string",
+                    "description": "Optional natural-language guidance for what to crawl.",
+                },
+            },
+            "required": ["url"],
+        }
+    if tool == "web_research":
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The research question."},
+                "depth": _enum(
+                    ["auto", "mini", "pro"],
+                    "Research effort: 'mini' (fast), 'pro' (deep), 'auto' (provider decides).",
+                ),
+            },
+            "required": ["query"],
         }
     return {"type": "object", "properties": {}}
 
@@ -1502,11 +1550,96 @@ def web_map(url: str, max_depth: int = 1, limit: int = 50, **opts: Any) -> dict[
     return {"base_url": url, "urls": found, "count": len(found), "success": True}
 
 
+@register_tool(
+    name="web_crawl",
+    description=_TOOL_BASE_DESC["web_crawl"],
+    input_schema=_base_tool_schema("web_crawl"),
+)
+def web_crawl(
+    url: str,
+    max_depth: int = 1,
+    limit: int = 20,
+    instructions: str | None = None,
+    **opts: Any,
+) -> dict[str, Any]:
+    """Crawl a site from a base URL via the Tavily SDK (Tavily-only). Page count
+    is hard-capped; large content rides the existing oversize/stored-output path."""
+    if not url or not url.strip():
+        return {"error": "url is required", "success": False}
+    limit = max(1, min(int(limit or 20), 50))
+
+    try:
+        client = _tavily_client()
+    except RuntimeError as e:
+        return {"error": f"web_crawl requires Tavily: {e}", "success": False}
+
+    kwargs: dict[str, Any] = {"url": url, "max_depth": max_depth, "limit": limit}
+    if instructions and instructions.strip():
+        kwargs["instructions"] = instructions
+    try:
+        data = client.crawl(**kwargs)
+    except Exception as e:  # noqa: BLE001 - SDK/network failure
+        return {"error": f"Crawl failed: {e}", "success": False}
+
+    pages = [
+        {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
+        for r in (data.get("results") or [])
+    ][:limit]
+    return {"base_url": url, "pages": pages, "count": len(pages), "success": True}
+
+
+@register_tool(
+    name="web_research",
+    description=_TOOL_BASE_DESC["web_research"],
+    input_schema=_base_tool_schema("web_research"),
+)
+def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]:
+    """Agentic deep research via the Tavily SDK (Tavily-only). Long-running, so it
+    runs with a bounded timeout and is gated by `web_research.enabled` (default on);
+    a truly long research is the background-job path (future). Returns a report plus
+    normalized `results` ({title, url}) so its sources are auto-captured as citations.
+    """
+    from ..config import get_config_manager
+
+    if not query or not query.strip():
+        return {"error": "query is required", "success": False}
+    if not get_config_manager().get("web_research.enabled", True):
+        return {"error": "web_research is disabled (web_research.enabled)", "success": False}
+
+    model = depth if depth in ("auto", "mini", "pro") else "auto"
+    try:
+        client = _tavily_client()
+    except RuntimeError as e:
+        return {"error": f"web_research requires Tavily: {e}", "success": False}
+
+    try:
+        data = client.research(input=query, model=model, timeout=120)
+    except Exception as e:  # noqa: BLE001 - SDK/network/timeout failure
+        return {"error": f"Research failed: {e}", "success": False}
+
+    if not isinstance(data, dict):
+        return {"error": "Research returned no structured result", "success": False}
+
+    # Normalize whatever citation-like list the report carries into {title, url}
+    # so the tool-loop auto-capture (shared with web_search) can record sources.
+    raw_sources = data.get("results") or data.get("citations") or data.get("sources") or []
+    results = []
+    for s in raw_sources:
+        if isinstance(s, dict):
+            results.append({"title": s.get("title") or s.get("url", ""), "url": s.get("url", "")})
+        elif isinstance(s, str):
+            results.append({"title": s, "url": s})
+    report = data.get("answer") or data.get("report") or data.get("output") or ""
+    return {"report": report, "results": results, "count": len(results), "success": True}
+
+
 # =============================================================================
 # Public API
 # =============================================================================
 
-_WEB_TOOLS: frozenset[str] = frozenset({"web_search", "web_extract", "web_map"})
+_WEB_TOOLS: frozenset[str] = frozenset(
+    {"web_search", "web_extract", "web_map", "web_crawl", "web_research"}
+)
 
 
 def _advertise_tool(tool: InternalTool, backend: str | None) -> ToolInfo:

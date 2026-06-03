@@ -53,9 +53,9 @@ same `id` amends that exhibit in place. Element types:
   links. Default `kind` is `passive`. The card always carries a "Sources" header; a passive-only
   citation (e.g. auto-captured search results) renders its list inline.
 
-**Auto-captured citations.** When the agent calls the internal `web_search` tool, a passive
-`citation` exhibit (one source per result, deduped by URL, `source_type: "web"`) is emitted
-automatically right after that tool's `tool_result` — so web sources surface in the conversation
+**Auto-captured citations.** When the agent calls the internal `web_search` (or `web_research`)
+tool, a passive `citation` exhibit (one source per result, deduped by URL, `source_type: "web"`) is
+emitted automatically right after that tool's `tool_result` — so web sources surface in the conversation
 without the agent having to present them. The exhibit's `id` is `exh_src_<tool_call_id>`, so it
 restores in place from history. Toggle with the `citations.auto_capture_web_search` config flag
 (default on). The agent is steered to spotlight a key source as `active` (with a quote) rather than

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
+import { SourcesPanel } from '../bibliography/SourcesPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
@@ -32,6 +33,14 @@ export function PlansModalContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
       <PlansPanel />
+    </div>
+  );
+}
+
+export function SourcesDrawerContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <SourcesPanel />
     </div>
   );
 }

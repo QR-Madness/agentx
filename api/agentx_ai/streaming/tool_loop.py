@@ -124,9 +124,11 @@ def _emit_exhibit_event(tc) -> list[str]:
     return [_sse("exhibit", exhibit.model_dump())]
 
 
-# Tool whose successful results are auto-captured as a passive `citation` exhibit
-# (so web sources surface in the UI without the model having to present them).
+# Tools whose successful results are auto-captured as a passive `citation` exhibit
+# (so web sources surface in the UI without the model having to present them). Both
+# return a normalized `results: [{title, url}]` list.
 WEB_SEARCH_TOOL_NAME = "web_search"
+_AUTO_CITATION_TOOLS: frozenset[str] = frozenset({"web_search", "web_research"})
 
 
 def _emit_web_search_citation(tm) -> list[str]:
@@ -346,8 +348,8 @@ async def _execute_and_emit_tools(
             })
             # Auto-capture web sources as a passive `citation` exhibit, right
             # after the search's tool_result (so it reads as "searched, then
-            # these are the sources").
-            if tm.name == WEB_SEARCH_TOOL_NAME and not is_error:
+            # these are the sources"). Fires for web_search and web_research.
+            if tm.name in _AUTO_CITATION_TOOLS and not is_error:
                 for event_str in _emit_web_search_citation(tm):
                     yield event_str
 

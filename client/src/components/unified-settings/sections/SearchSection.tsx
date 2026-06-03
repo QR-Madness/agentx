@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { Globe, RefreshCw, Save, Eye, EyeOff, Wifi } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
-import { Button, Input, SectionHeader } from '../../ui';
+import { Badge, Button, Input, SectionHeader } from '../../ui';
 
 type Backend = 'tavily' | 'brave';
 
@@ -183,8 +183,14 @@ export default function SearchSection() {
           {/* Tavily API key */}
           <div className="setting-row">
             <label className="setting-label">
-              <span>Tavily API Key</span>
-              <span className="setting-hint">From tavily.com — generous free tier</span>
+              <span className="flex items-center gap-1.5">
+                Tavily API Key
+                <Badge variant="accent" size="sm">Recommended</Badge>
+              </span>
+              <span className="setting-hint">
+                From tavily.com — generous free tier; unlocks web_extract / web_map / web_crawl /
+                web_research
+              </span>
             </label>
             <div className="api-key-input">
               <Input

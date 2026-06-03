@@ -389,6 +389,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `[:RELATES_TO {type}]` (jobs.py `_batch_store_relationships`) while `queries/neo4j_schemas.cypher`
       documents specific types (`RELATED_TO`, `WORKS_FOR`, …). Pick one model and align graph
       traversals/queries.
+- [ ] Global Default Model (ultimate fallback model) not Configurable
 - [ ] Store Consolidation costs
 - [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
 - [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
@@ -534,9 +535,32 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
       `web_search` → passive citation auto-capture is shipped; the model can promote a result to
       `active` with a `quote`. Still to do: `memory` citations deep-linking into the Memory drawer
       fact, and `web_extract` → `active` citation promotion.
-- [ ] **Tavily Crawl + Research tools** — extend the capability-gated web toolset with
-      `web_crawl` (large → oversize-routed) and `web_research` (long-running → likely the
-      background-job path). Slot into the same `SEARCH_CAPABILITIES` advertisement.
+- [x] **Tavily Crawl + Research tools** — shipped `[v0.21.29]`. `web_crawl` (page-capped, large
+      content oversize-routed) and `web_research` (agentic deep research; bounded ~120 s timeout +
+      `web_research.enabled` flag; sources auto-captured as citations) added under the
+      `SEARCH_CAPABILITIES` capability gate (Tavily-only, advertised only when active, self-guarding).
+      Tests: `WebResearchToolsTest`.
+- [ ] **Per-turn web search/research credit budget** — Tavily burns credits fast. Allot each turn a
+      **credit budget** (config `search.credits_per_turn`, e.g. 15) that web tools spend by a
+      **weighted cost** (cheap `web_search` ~1, `web_extract` ~2, `web_crawl` ~5, `web_research` ~10
+      — tunable, mirroring real API cost). **Every web tool result returns `credits_remaining`** for
+      the turn so the model self-rations; once exhausted, calls return a clear "search budget
+      exhausted (0 credits left this turn)" error instead of looping. This both caps spend *and*
+      encourages smart tool use (the model sees the meter). Track the per-turn tally in the tool loop
+      / internal context (reset each turn).
+- [ ] **Truly long `web_research` → background job** — move minutes-long research off the synchronous
+      tool path onto the `/api/chat/background` queue so it can't block a turn.
+- [x] **Universal model fallback (never hard-fail a feature turn)** — shipped `[v0.21.29]`.
+      `registry.resolve_with_fallback` / `complete_with_fallback`: a feature whose model is
+      unconfigured **or unreachable** falls back to the active agent-profile model → global default →
+      first healthy provider (kill-switch `models.fallback_enabled`; best-effort health cache). Wired
+      memory extraction stages, recall, recap, trajectory + tool-output compression; main chat stays
+      strict. Plus bulk/inherited memory-stage models (`feature_default_model` → per-stage override →
+      inherit). Tests: `ModelFallbackTest`.
+- [ ] **Configure the global default model (UI gap)** — two latent keys exist
+      (`preferences.default_model`, `models.defaults.chat`) with **no settings editor**. Live turns
+      are safe (agent profiles carry a model = the fallback floor), but background consolidation has
+      no floor without one. Add a picker in settings.
 - [x] **Interactive `choice` element (next-turn round-trip)** — shipped `[v0.21.26]`. A `choice`
       element (`{type:'choice', prompt?, options[]}`) renders option buttons; clicking one submits
       it as the user's **next turn** via the existing send path (`ChatPanel.submitChoice`, a

@@ -14,6 +14,7 @@ import {
   Settings,
   Database,
   Wrench,
+  BookMarked,
   Languages,
   Brain,
   Zap,
@@ -134,6 +135,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       id: 'plans-drawer',
       type: 'drawer',
       component: 'plans',
+      position: 'right',
+      size: 'xxl',
+    });
+  };
+
+  const openSources = () => {
+    openModal({
+      id: 'sources-drawer',
+      type: 'drawer',
+      component: 'sources',
       position: 'right',
       size: 'xxl',
     });
@@ -333,6 +344,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openMemory(); }}>
               <Database size={16} />
               <span>Memory</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openSources(); }}>
+              <BookMarked size={16} />
+              <span>Sources</span>
             </button>
             {authRequired && isAuthenticated && (
               <>

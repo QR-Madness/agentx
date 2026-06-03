@@ -48,6 +48,10 @@ DEFAULT_CONFIG = {
             "extraction": None,
         },
         "overrides": {},
+        # When a feature's configured model is unavailable (provider unconfigured
+        # or unreachable), fall back to the active agent model / default model
+        # instead of hard-failing the turn. Kill-switch for the universal fallback.
+        "fallback_enabled": True,
     },
     "llm_settings": {
         "default_temperature": 0.7,
@@ -131,6 +135,12 @@ DEFAULT_CONFIG = {
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
         "brave_api_key": None,
+    },
+    "web_research": {
+        # Tavily agentic deep-research tool (slow; minutes). Experimental — a
+        # genuinely long research wants the background-job path. Off ⇒ the tool
+        # returns a disabled error rather than blocking the turn.
+        "enabled": True,
     },
 }
 

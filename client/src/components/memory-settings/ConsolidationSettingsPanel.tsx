@@ -64,6 +64,27 @@ export function ConsolidationSettingsPanel({
     }
   };
 
+  // The stage models that inherit `feature_default_model` when left empty.
+  const STAGE_MODEL_KEYS: (keyof ConsolidationSettings)[] = [
+    'extraction_model',
+    'relevance_filter_model',
+    'combined_extraction_model',
+    'trajectory_compression_model',
+    'entity_linking_model',
+    'contradiction_model',
+    'correction_model',
+  ];
+
+  // "Apply to all stages": clear every stage model so they all inherit the bulk
+  // default; the user can then override individual stages as needed.
+  const applyDefaultToAllStages = () => {
+    setLocalSettings(prev => {
+      const next: Record<string, unknown> = { ...prev };
+      for (const k of STAGE_MODEL_KEYS) next[k as string] = '';
+      return next as Partial<ConsolidationSettings>;
+    });
+  };
+
   const handleConsolidate = async () => {
     setConsolidating(true);
     try {
@@ -196,11 +217,36 @@ export function ConsolidationSettingsPanel({
         </div>
       </SettingsSection>
 
+      <SettingsSection title="Default model for all memory stages">
+        <div className="settings-grid">
+          <div className="setting-row">
+            <ModelSelector
+              label="Default model"
+              value={localSettings.feature_default_model || ''}
+              onChange={v => handleChange('feature_default_model', v)}
+              showDefault={false}
+              compact
+            />
+          </div>
+          <p className="setting-hint">
+            Stages left blank below inherit this model; if this is blank too, they inherit your
+            default chat model. Set it once to point all of memory at one model.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={applyDefaultToAllStages}
+            title="Clear every stage below so they all use this default"
+          >
+            Apply to all stages
+          </Button>
+        </div>
+      </SettingsSection>
+
       <SettingsSection title="Extraction">
         <div className="settings-grid">
           <div className="setting-row">
             <ModelSelector
-              label="Model"
+              label="Model (blank = inherit default)"
               value={localSettings.extraction_model || ''}
               onChange={v => handleChange('extraction_model', v)}
               onProviderChange={v => handleChange('extraction_provider', v)}

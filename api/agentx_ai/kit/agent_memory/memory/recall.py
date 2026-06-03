@@ -836,7 +836,7 @@ class RecallLayer:
             from ....providers.registry import get_registry
 
             registry = get_registry()
-            provider, model_id = registry.get_provider_for_model(
+            provider, model_id, _ = registry.resolve_with_fallback(
                 settings.recall_hyde_model
             )
 
@@ -948,7 +948,7 @@ class RecallLayer:
             from ....providers.registry import get_registry
 
             registry = get_registry()
-            provider, model_id = registry.get_provider_for_model(
+            provider, model_id, _ = registry.resolve_with_fallback(
                 settings.recall_self_query_model
             )
 
