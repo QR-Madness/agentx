@@ -970,6 +970,10 @@ export interface ConsolidationActiveInfo {
 }
 
 export interface ConsolidationSettings {
+  // Bulk default for every stage model: a stage left empty inherits this; if this
+  // is empty too, stages inherit the global default chat model.
+  feature_default_model: string;
+
   // Extraction
   extraction_enabled: boolean;
   extraction_provider: string;
