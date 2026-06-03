@@ -608,6 +608,24 @@ Implemented `Session` and `SessionManager`:
 - **Plan + streaming reliability** (18.10): output token-budget clamp, "Plans in Progress" drawer + in-chat step annotation, and **detached chat runs** — runs drive a Redis-Streams fan-out on a daemon thread so they survive client disconnect, with `attach`/`cancel`/`runs` endpoints
 - **Client error contract + foundation cleanup** (18.11): `ApiError` with status-derived `kind`, toast system, `useApi` hook factory, Tailwind v4 + `ui/` primitive library, and god-component / `lib/api` / `ConversationContext` splits with a Vitest harness
 - **Wave 3 UX** (18.12): Start-page recents, renamable conversations, improved conversation + agent-profile selectors, splash screen, README trim
+- **Dashboard + usage metrics** (18.5, `v0.21.9`/`v0.21.10`): `GET /api/metrics/usage` aggregates `conversation_logs` into totals / by-model / by-agent / daily series; Dashboard hero `UsageMetricsSection` (projected-month KPI, dual-axis tokens+cost chart, Top-Models + Per-Agent tables) and a slim `SystemStatusStrip` of subsystem pills
+- **Extraction eval-harness + cleanup** (18.6): procedural-memory eval cases, non-destructive snapshot/restore, persisted eval runs for cross-model comparison; `dedupe_entities` management command; correction regex pre-filter retired in favor of the LLM gate
+- **Working-memory follow-ups** (18.9): `scratchpad_note` tool + read-back, `forget`/`remember_this`/provenance fact actions, cached cross-conversation `recap` summary
+- **Per-profile internal-tool gating UI** (18.9.x): `ToolAccessSection` in the Profile Editor (allow-all/limit mode + per-server checklist + blocked-tools list), fully-qualified `server.tool` matching
+
+---
+
+### Exhibits — Rich Agent-Authored Content + Web Research (Slices 1–5, `v0.21.25`–`v0.21.29`)
+
+> A declarative content-part protocol: the agent calls an internal `present_exhibit` tool and the
+> client renders typed **Elements** from a registry (never raw HTML). Gallery → Exhibit → Element,
+> with a `schema_version` envelope and amend-by-`id` reconciliation (live + on restore).
+
+- **Slice 1 — protocol + `mermaid`** (`v0.21.25`): `exhibit` SSE event, `streaming/exhibits.py` Pydantic models + `ALLOWED_ELEMENT_TYPES` allow-list; client `elementRegistry`/`ExhibitBubble` with unknown-type source-as-code fallback + `mapServerMessages` restore
+- **Slice 2 — `choice`** (`v0.21.26`): interactive options submitted as the user's next turn (no new endpoint)
+- **Slice 3 — `table` + `citation`** (`v0.21.27`): sortable/scrollable/responsive/expand-to-modal table; `active` (foldable, quoted) vs `passive` (archived) citations
+- **Slice 4 — citation auto-capture + capability-aware web tools** (`v0.21.28`): citation steering + legible render + auto-captured passive citations from `web_search`; Tavily moved to the official `tavily-python` SDK; a capability pre-check advertises only the *active* backend's real tools/knobs (`SEARCH_CAPABILITIES`)
+- **Slice 5 — model reliability + Tavily suite + Bibliography** (`v0.21.29`): universal model fallback (`resolve_with_fallback`/`complete_with_fallback` — a feature falls back to the agent-profile model → global default → first healthy provider; main chat stays strict) + bulk/inherited memory-stage models (`feature_default_model`); Tavily `web_crawl`/`web_research` (capability-gated, research bounded-timeout); a static client-only conversation **Bibliography** ("Sources" drawer)
 
 ---
 

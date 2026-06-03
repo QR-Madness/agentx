@@ -3,14 +3,14 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Prototype
-**Last Updated**: 2026-05-29
+**Last Updated**: 2026-06-03
 
 **NOTE**: UI must be highly responsive between PC and mobile devices.
 
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.24** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.29** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -245,110 +245,58 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 > **18.12** Wave 3 entry-surface UX (Start recents, renamable conversations, selector redesigns,
 > splash, README trim).
 
-### 18.x Open / Deferred
+### 18.x Shipped — moved to [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
-- [x] **Dashboard redesign** (clean/mean/powerful) — shipped `[v0.21.10]`. Dropped the two
-      4-card status grids + maintenance banner for a slim `SystemStatusStrip` of
-      colored pills (API · Neo4j · PG · Redis · Providers · MCP · Agent) with a `Details`
-      toggle that expands the full subsystem breakdown inline (same hooks; same data).
-      `UsageMetricsSection` is now the hero: added a **Projected Month** KPI tile
-      (client-side MTD × days-in-month / days-elapsed), swapped the daily chart for a
-      dual-axis recharts `ComposedChart` (tokens bars + cost line), and added side-by-side
-      **Top Models** and **Per-Agent** leaderboard tables. Backend: `usage_metrics` view
-      gained a `by_agent` aggregation (`GROUP BY COALESCE(agent_id,'_default')`); type +
-      OpenAPI + endpoints doc updated. Agent display names resolved via
-      `useAgentProfile().profiles` (slug → name), fallback to slug / `Default agent`.
-- [x] **Dashboard token + turn metrics** (18.5) — shipped `[v0.21.9]`. New read-only
-      `GET /api/metrics/usage?days=` endpoint (`views.usage_metrics`) aggregates assistant turns from
-      `conversation_logs` (`metadata` JSONB → tokens/cost/latency, `idx_logs_timestamp` window) into
-      totals + by-model + daily series, with graceful `unavailable` degradation. Client adds
-      `metricsApi.getUsageMetrics` + `useUsageMetrics` and a Dashboard **Usage & Cost** section
-      (`components/dashboard/UsageMetricsSection.tsx`) with summary tiles + recharts bar/area charts
-      (7/14/30-day toggle). Shared formatters extracted to `lib/format.ts` (reused by `MetadataBar`).
-      Note: the earlier "no further backend work needed" assessment was inaccurate — `/api/memory/stats`
-      only counts Neo4j nodes, so the aggregation endpoint had to be added.
-- [-] **Extraction eval-harness follow-ups** (18.6):
-  - [x] Procedural-memory eval cases (tool-usage/strategy learning) — shipped `[v0.21.21]`.
-        `eval_consolidation` now carries procedural cases (any `EvalCase` with a
-        `tool_sequence`): seeds a tool trajectory + success/failure `Outcome` **directly**
-        (bypassing the extraction LLM — embedding-only), runs `detect_patterns()`, and scores
-        the learned `Strategy` via the `SUCCEEDED_IN` edge back to the eval conversation
-        (strategies aren't channel-tagged). Includes a negative case (`proc_failed_run`) that
-        asserts the detector's `WHERE success:true` gate learns nothing. **Note:** the
-        *production* agent loop never writes `:Outcome` nodes, so `detect_patterns()` is a
-        no-op outside this eval — wiring that into the live loop is a separate follow-up
-        (see Backlog/Phase 15-16 procedural tracking).
-  - [x] Snapshot/restore instead of `--wipe` — shipped `[v0.21.23]`. `eval_consolidation --snapshot`
-        exports the whole cluster (every user, with embeddings) to `data/eval_snapshots/<ts>.json`,
-        wipes, runs, then restores it in a `finally` (survives an eval error); bypasses the sterility
-        gate non-destructively. Provider usability is validated **before** the wipe (fail-fast).
-        `--restore <file>` is a standalone recovery path. Reuses the `[v0.21.22]` portability module.
-        Covered by `EvalSnapshotRestoreTest`.
-  - [x] Persist eval runs (model, per-case scores, tokens) for cross-model / cross-prompt
-        comparison — shipped `[v0.21.21]`. `--save`/`--no-save` (default on) + `--output-dir`
-        write `data/eval_runs/<ts>-<run4>_<model>_<full|quick>.json` (per-case results,
-        `summary.by_kind`, full `ConsolidationMetrics`) and append `index.jsonl`. Extraction
-        vs procedural tallies are kept **separate** — extraction quality varies by model, but
-        procedural is embedding-only and constant across models, so a single number would
-        muddy comparison.
-- [x] **Extraction cleanup** (18.6) — shipped. Two changes land together:
-      (a) `python manage.py dedupe_entities` (Django management command, wired via
-      `task db:dedupe:entities[:apply]`) collapses pre-resolution-fix duplicates in
-      Neo4j. Default is dry-run inside an explicit transaction (rollback); `--apply`
-      commits. Survivor pick: salience DESC → access_count DESC → first_seen ASC.
-      `--cross-channel` adds a per-user pass that prefers `_global` survivors to fold
-      duplicates spread across `_default`/`_self_*`/`_alloy_*` (matches recall's
-      `[active_channel, _self_<id>, _global]` lookup order). Uses
-      `apoc.create.relationship` to rewrite incoming/outgoing edges, then a
-      parallel-rel collapse on the survivor.
-      (b) `check_correction()` retires the 10-pattern `CORRECTION_PATTERNS` regex
-      pre-filter in `extraction/service.py` — every gated turn now goes straight to
-      the correction LLM, which already returns `CORRECTION: NO` for non-matches.
-      The cheap `< 10 chars` / `constants.skip_patterns` guard stays purely as a cost
-      gate. Tests in `tests_memory.py::CorrectionDetectionTest` rewritten against a
-      mocked provider; new `DedupeEntitiesAliasMergeTest` covers the alias-merge
-      helper.
-- [x] **Working-memory follow-ups** (18.9) — redundancy-pruned after review and shipped in waves:
-  - [x] `scratchpad_note` tool + read-back (folds in `inspect_working_memory`) — shipped `[v0.21.18]`.
-        New `agent/scratchpad_storage.py` mirrors checkpoint storage (Redis, re-injected each turn so
-        it survives compression); the tool's no-arg/`read` mode returns notes + checkpoints + active
-        goals (never the transcript). Injected next to checkpoints in `views.py`. Also removed the
-        dead `push_thought`/`get_thoughts`/`set_active_goal`/`get_active_goal` helpers in `working.py`.
-  - [x] `forget` (soft-supersede) + salience boost ("remember this") + "where did I learn this?"
-        provenance — shipped `[v0.21.19]`. `salience` threaded through `update_fact`; new
-        `AgentMemory.boost_salience`/`forget_fact`/`get_fact_provenance` (+ `episodic.get_turn_by_id`);
-        `_internal.remember_this`/`_internal.forget` tools; `POST /api/memory/facts/{id}/remember`,
-        `.../forget`, `GET .../provenance`; Memory-drawer fact actions (Remember / Source / Forget).
-  - [x] cached `user_recap_summary` rolling summary — shipped `[v0.21.20]`. New
-        `kit/agent_memory/recap.py` builds a durable cross-conversation recap (recent turns + facts →
-        the configured summary model) and caches it in Redis (`user_recap:{user_id}:{channel}`, 30-day
-        TTL); refreshed at the end of `consolidate_episodic_to_semantic` (gated by
-        `user_recap_enabled`). `recall_user_history` + `POST /api/memory/user-history` now fill their
-        `summary` field from the cache, surfaced as a "Recap" block in `UserHistoryView`.
-  - **Cut after review (already covered):** active-goals header (the memory bundle already injects a
-        `## Active Goals` section), model-driven pin/anchor turns (duplicates `checkpoint`).
-- [x] **Per-profile internal-tool gating UI** (18.9.x) — shipped. New
-      `ToolAccessSection` inside the Profile Editor (under the existing
-      `Enable Tools` toggle) surfaces `AgentProfile.allowed_tools` /
-      `blocked_tools` with a "Allow all / Limit to selected" mode chip
-      (mirrors the Toolkit AccessView UX), a per-server grouped checklist
-      pulled from `useMCPTools()`, and a separate Blocked-tools chip list
-      with a `<details>` add-to-block picker. `_internal.<name>` group is
-      pinned first so users can opt in/out of `checkpoint`,
-      `recall_user_history`, etc. Read-only "Enabled for: X, Y" badges in
-      the Toolkit Tools Browser surface the gating from the other side.
-      Backend now matches on fully-qualified `server.tool` keys
-      (`Agent._get_tools_for_provider`) — the docstrings already promised
-      this; legacy bare-name entries log a startup warning via
-      `profiles._warn_unqualified_tool_names`. Also fixed a stale TS type:
-      `MCPTool.server` is now populated (was always blank — backend returns
-      `server_name`). New `ToolGatingTest` + `ProfileUnqualifiedToolWarningTest`
-      in `tests.py` cover FQ matching, allow/block precedence,
-      internal-tool gating, and the warning path.
+> Dashboard redesign + usage metrics (`[v0.21.9]`/`[v0.21.10]`), extraction eval-harness + cleanup
+> (18.6: procedural cases, snapshot/restore, persisted eval runs, `dedupe_entities`), working-memory
+> follow-ups (`scratchpad_note`, `forget`/`remember_this`/provenance, cached recap), and the
+> per-profile internal-tool gating UI (18.9.x). All shipped — see roadmap.
 
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete
+
+### Chat UX & Tool-Call Rendering (density + observability)
+
+> Tool calls — and everything that inherits the tool-call block (checkpoints, exhibit fallbacks,
+> web-search cards) — dominate the transcript and hide what matters. Make the chat readable.
+
+- [ ] **Compact tool-call rendering** — the tool-call block is bulky and space-hungry; redesign it
+      to a dense, collapsible one-liner by default (icon + tool + key arg), expandable on demand.
+      Everything inheriting the block (checkpoints, web-search, exhibit source-fallbacks) gets the
+      slimmer treatment.
+- [ ] **Web-search shows its query inline** — you currently can't see what the agent searched
+      without drilling into the card. Surface the query (+ result count) on the collapsed row; pair
+      with the auto-captured Sources so results are one glance away.
+- [ ] **Full tool-call outputs (persisted)** — only a small slice of a tool result is shown today,
+      but full outputs are valuable for debugging agent thinking. Persist complete outputs
+      (PostgreSQL or similar) and let the UI expand to the whole thing (lazy-loaded), beyond the
+      streamed/truncated preview.
+
+### Backend Observability — live operation status over SSE
+
+- [ ] **Per-phase status events** — between "message sent" and the response, the UI just says
+      "thinking" then dumps the answer. Emit granular status over the existing SSE stream so the
+      client *always* knows the backend phase: recalling/embedding, composing context, reasoning
+      step N, building a tool call, running a tool, compressing, synthesizing, etc. A typed `status`
+      event (phase + human label) the chat renders as a live activity line.
+
+### Conversation Context & Checkpoints
+
+- [ ] **Include prior conversation context every turn (near-verbatim)** — new turns currently carry
+      **zero** prior context, so the agent has no memory of the conversation it's in. Conversations
+      should be replayed near-verbatim into context on every turn (windowed/compressed only past the
+      context budget); a user who wants a clean slate starts a new chat. **Critical — a correctness
+      bug, not polish.**
+- [ ] **Context-window-based checkpoint triggering** — `checkpoint` sometimes fires early off a
+      fixed message count; trigger it on **context-window pressure** (a % of the model's window)
+      instead of a raw message tally, so it tracks real context growth.
+
+### Memory Area UX Cleanup
+
+- [ ] **Redesign the Memory area** (drastic cleanup, mirroring the agent-profile editor pass) and
+      **document every feature in-UI** — each control gets a clear, abstract description of what it
+      does and how it works, so the panel is legible without reading the code.
 
 - [x] **Bulletproof fact→entity linking** — root cause of facts not showing under their entities was a
       silent name-resolution gap in consolidation: facts linked entities only via an exact batch-map
@@ -483,96 +431,31 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.24** (prot
 > Visual sibling to the 16.6 Ambassador Agent (which mediates via voice/briefing); this mediates
 > visually. Same typed structure doubles as the export/integration payload above.
 
-- [x] **Content-part protocol (Exhibits) + Mermaid element** — shipped `[v0.21.25]`. Declarative
-      Gallery→Exhibit→Element model with a `schema_version` envelope and an `exhibit` SSE event.
-      Producer: internal `present_exhibit({ id?, title?, layout?, elements:[...] })` tool
-      (`mcp/internal_tools.py`); `streaming/exhibits.py` owns the Pydantic models +
-      `ALLOWED_ELEMENT_TYPES` allow-list + validation. `streaming/tool_loop.py` surfaces a
-      `present_exhibit` call as a typed `exhibit` event (suppressing its `tool_call`/`tool_result`
-      cards) while the tool body still returns a result so the model can re-present on error.
-      Client: `lib/exhibits.ts` types, `onExhibit` streaming callback, `useChatStream` upsert-by-id
-      (amend in place), `ExhibitBubble` + `elementRegistry` (unknown type → safe source-as-code
-      fallback) + `messageRegistry` entry, `MermaidElement` (dynamic-imported mermaid@11,
-      `securityLevel:'strict'`, error fallback), and `mapServerMessages` restore (rebuilds exhibits
-      from stored `present_exhibit` tool turns, last-per-id wins). `PresentExhibitToolTest` (backend)
-      + exhibit restore cases (`mapServerMessages.test.ts`). Slice 1 = `mermaid` element + `stack`
-      layout only; the model/protocol carry the full tree.
-- [x] **`table` + `citation` elements** — shipped `[v0.21.27]`. `table`: structured tabular data
-      (sortable headers, sticky-header scroll, numeric right-align auto-detect, responsive
-      card-collapse on mobile, expand-to-modal via the `Dialog`) — earns its keep over markdown
-      tables; `columns` ≤12, cells stringified (`None`→`""`) + rows normalized server-side; pure
-      `tableSort.ts` (numeric vs lexical, blanks-last) is unit-tested. `citation`: `active`
-      foldable sources (icon + label + `quote`) vs `passive` archived links, **default passive**
-      (a context-budget control); URLs linked only when `http(s)` (`lib/links.ts`, mirrors
-      `MessageContent`'s gate). Both added to the Pydantic discriminated union + element registry;
-      shared `memoElement` helper (Mermaid/Table/Citation memo on element identity). Tests:
-      backend table/citation cases + `tableSort`/`exhibitFromWire`/component/restore.
-- [x] **Citations that show up: `web_search` auto-capture + capability-aware web tools** — shipped
-      `[v0.21.28]`. **Bug:** citations rendered fine but the model rarely emitted them (no prompt
-      steering → it defaulted to inline links) and passive-only cards were near-invisible. **Fixes:**
-      (1) steering — imperative `present_exhibit` citation bullet + a global-prompt "Citing sources"
-      section (`prompts/defaults.py`); (2) legible render — `CitationElement` always shows a
-      "Sources" header, renders a passive-only list inline (open) with a "+N more" cap;
-      (3) **auto-capture** — a successful `web_search` emits a passive `citation` exhibit
-      (`citation_exhibit_from_web_search`, deduped by URL, id `exh_src_<tool_call_id>`, flag
-      `citations.auto_capture_web_search`) live in `tool_loop` and mirrored on restore in
-      `mapServerMessages`. **Web tools modernized:** Tavily moved to the official `tavily-python`
-      SDK with `web_search`/`web_extract`/`web_map`; a capability pre-check
-      (`resolve_active_search_backend` + `build_tool_schema`/`build_tool_description`,
-      `SEARCH_CAPABILITIES`) advertises only the *active* backend's real tools/knobs to the model
-      (extract/map gated to Tavily but kept executable). Brave stays search-only. Tests:
-      `WebSearchCapabilityTest` (14) + client `citationExhibitFromWebSearch`/`CitationElement`/
-      restore cases. *(Next: Tavily Crawl + Research tools; conversation Bibliography reuses the
-      dedupe helper.)*
+**Shipped (Slices 1–5, `[v0.21.25]`–`[v0.21.29]`) → [roadmap.md](docs-site/src/content/docs/roadmap.md):**
+protocol + `present_exhibit` tool, `mermaid`/`choice`/`table`/`citation` elements, `web_search` +
+`web_research` citation auto-capture, capability-aware Tavily web tools (search/extract/map/crawl/
+research via the `tavily-python` SDK), universal model fallback + bulk/inherited memory-stage models,
+and the static client-only conversation **Bibliography** ("Sources" drawer).
+
+Open:
 - [ ] **`text` element** + absorbs the former "Advanced memory visualization (interactive graph,
       embedding clusters)" item as a registered element type.
-- [ ] **Citation tracking (conversation Bibliography)** — aggregate citations across turns, dedupe
-      by `url`, assign stable `[1][2]` numbers reused on recurrence; a Sources rail/drawer. *(Reuses
-      the shipped `citation_exhibit_from_web_search` per-call dedupe helper; `CitationSource` carries
-      `kind`/`quote`/`source_type`.)*
 - [ ] **Active-citation context-injection** — fold `active` sources' `quote`s back into the agent's
-      context (bounded) so it can reference tracked sources later — the "tracked in the chat" payoff.
-      `web_search` → passive citation auto-capture is shipped; the model can promote a result to
-      `active` with a `quote`. Still to do: `memory` citations deep-linking into the Memory drawer
-      fact, and `web_extract` → `active` citation promotion.
-- [x] **Tavily Crawl + Research tools** — shipped `[v0.21.29]`. `web_crawl` (page-capped, large
-      content oversize-routed) and `web_research` (agentic deep research; bounded ~120 s timeout +
-      `web_research.enabled` flag; sources auto-captured as citations) added under the
-      `SEARCH_CAPABILITIES` capability gate (Tavily-only, advertised only when active, self-guarding).
-      Tests: `WebResearchToolsTest`.
+      context (bounded) so it can reference tracked sources later (the "tracked in the chat" payoff).
+      Still to do: `memory` citations deep-linking into the Memory drawer fact, and `web_extract` →
+      `active` citation promotion.
 - [ ] **Per-turn web search/research credit budget** — Tavily burns credits fast. Allot each turn a
       **credit budget** (config `search.credits_per_turn`, e.g. 15) that web tools spend by a
-      **weighted cost** (cheap `web_search` ~1, `web_extract` ~2, `web_crawl` ~5, `web_research` ~10
-      — tunable, mirroring real API cost). **Every web tool result returns `credits_remaining`** for
-      the turn so the model self-rations; once exhausted, calls return a clear "search budget
-      exhausted (0 credits left this turn)" error instead of looping. This both caps spend *and*
-      encourages smart tool use (the model sees the meter). Track the per-turn tally in the tool loop
-      / internal context (reset each turn).
+      **weighted cost** (`web_search` ~1, `web_extract` ~2, `web_crawl` ~5, `web_research` ~10 —
+      tunable, mirroring real API cost). **Every web tool result returns `credits_remaining`** so the
+      model self-rations; once exhausted, calls return a clear "budget exhausted" error instead of
+      looping. Track the per-turn tally in the tool loop / internal context (reset each turn).
 - [ ] **Truly long `web_research` → background job** — move minutes-long research off the synchronous
       tool path onto the `/api/chat/background` queue so it can't block a turn.
-- [x] **Universal model fallback (never hard-fail a feature turn)** — shipped `[v0.21.29]`.
-      `registry.resolve_with_fallback` / `complete_with_fallback`: a feature whose model is
-      unconfigured **or unreachable** falls back to the active agent-profile model → global default →
-      first healthy provider (kill-switch `models.fallback_enabled`; best-effort health cache). Wired
-      memory extraction stages, recall, recap, trajectory + tool-output compression; main chat stays
-      strict. Plus bulk/inherited memory-stage models (`feature_default_model` → per-stage override →
-      inherit). Tests: `ModelFallbackTest`.
 - [ ] **Configure the global default model (UI gap)** — two latent keys exist
       (`preferences.default_model`, `models.defaults.chat`) with **no settings editor**. Live turns
       are safe (agent profiles carry a model = the fallback floor), but background consolidation has
       no floor without one. Add a picker in settings.
-- [x] **Interactive `choice` element (next-turn round-trip)** — shipped `[v0.21.26]`. A `choice`
-      element (`{type:'choice', prompt?, options[]}`) renders option buttons; clicking one submits
-      it as the user's **next turn** via the existing send path (`ChatPanel.submitChoice`, a
-      `useCallback`-stable mirror of `handleSend` incl. `workflow_id`, busy-guarded against
-      in-flight runs). Backend: `ChoiceElement` in a Pydantic **discriminated** `Element` union
-      (options stripped/de-duped/non-blank, ≤10); `present_exhibit` schema/description widened.
-      Client: element-renderer contract refactored to pass the full typed element + context
-      (`ElementRenderProps`); `MermaidElement` memo keyed on element identity so choice
-      callbacks/flags don't thrash diagram re-renders; `answeredValue` on the exhibit message
-      disables/marks the choice (persists via localStorage; cleared on amend). Tests: backend
-      choice cases + `ChoiceElement` component test + restore case. Single-agent next-turn model;
-      blocking in-run variant → Backlog.
 - [ ] **`form` (multi-field) interactive element** — multiple inputs submitted together as one
       turn; builds on the `choice` next-turn mechanism.
 - [ ] **`grid` (and richer) layouts** + a dedicated browsable **Gallery panel** (drawer) listing a
