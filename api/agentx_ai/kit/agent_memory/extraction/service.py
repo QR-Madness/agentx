@@ -138,12 +138,33 @@ class ExtractionService:
 
         model, temperature, max_tokens = stage_config[stage]
 
+        # Inheritance (Slice 5): an empty/"inherit" stage model resolves to the
+        # bulk `feature_default_model`, then the global default chat model — so a
+        # fresh install follows the user's main model instead of assuming a
+        # specific local provider.
+        model = self._resolve_stage_model(model)
+
         try:
-            provider, model_id = self.registry.get_provider_for_model(model)
+            # resolve_with_fallback adds the universal safety net: an unconfigured
+            # or unreachable provider falls back to the default chat model rather
+            # than hard-failing consolidation.
+            provider, model_id, _ = self.registry.resolve_with_fallback(model)
             return provider, model_id, temperature, max_tokens
         except ValueError as e:
             logger.warning(f"Provider for {stage} not available: {e}")
             raise
+
+    def _resolve_stage_model(self, model: str) -> str:
+        """Resolve a stage's model through inheritance: explicit stage value →
+        `feature_default_model` (bulk) → global default chat model. Empty or the
+        literal "inherit" means "not set"."""
+        for candidate in (model, getattr(self.settings, "feature_default_model", "")):
+            c = (candidate or "").strip()
+            if c and c.lower() != "inherit":
+                return c
+        from ....config import get_config_manager
+        dm = get_config_manager().get("preferences.default_model")
+        return str(dm) if dm else (model or "")
 
     async def check_relevance(self, text: str) -> RelevanceResult:
         """

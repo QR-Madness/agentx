@@ -123,7 +123,7 @@ async def build_and_cache_user_recap(
         "session.rolling_summary.model", "anthropic:claude-haiku-4-5-20251001"
     )
     try:
-        provider, model_id = get_registry().get_provider_for_model(model)
+        provider, model_id, _ = get_registry().resolve_with_fallback(model)
     except Exception as e:  # noqa: BLE001 — no provider configured
         logger.debug(f"recap: no provider for model {model}: {e}")
         return None

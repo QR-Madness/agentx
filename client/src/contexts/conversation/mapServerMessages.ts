@@ -214,7 +214,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       // deriving it from the persisted result. Best-effort — a non-parsing or
       // empty result simply leaves the search card on its own (no crash).
       const webSearchOk = !!result && ((result.metadata?.success as boolean) ?? true);
-      if (toolName === 'web_search' && webSearchOk && result) {
+      if ((toolName === 'web_search' || toolName === 'web_research') && webSearchOk && result) {
         const parsed = safeParseJson(result.content) as { results?: unknown };
         const exhibit = citationExhibitFromWebSearch(parsed.results, `exh_src_${toolCallId}`);
         if (exhibit) {

@@ -119,7 +119,9 @@ def _generate_knowledge_block(
         )
 
         registry = get_registry()
-        provider, model_id = registry.get_provider_for_model(config["model"])
+        # Fallback-aware: a missing/unreachable compression model degrades to the
+        # default chat model instead of breaking the in-flight turn.
+        provider, model_id, _ = registry.resolve_with_fallback(config["model"])
 
         messages = [Message(role=MessageRole.USER, content=prompt)]
 

@@ -4,6 +4,7 @@ Provider registry for managing model providers and configurations.
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -50,6 +51,12 @@ class ProviderRegistry:
         self._provider_configs: dict[str, ProviderConfig] = {}
         # Injectable ConfigManager (defaults to the global singleton on use).
         self._config_manager = config_manager
+        # Best-effort provider health cache for the fallback path: name ->
+        # (expiry_epoch, is_healthy). Populated by health_check() and by
+        # complete_with_fallback() observing real call outcomes. Only used to
+        # *skip* a known-down provider; the execution-time retry is the real
+        # guarantee for the "configured but unreachable" case.
+        self._provider_health: dict[str, tuple[float, bool]] = {}
 
         # Load configuration if provided
         if config_path and config_path.exists():
@@ -232,7 +239,125 @@ class ProviderRegistry:
             )
 
         return self.get_provider(provider_name), model_id
-    
+
+    # ──────────────────────────────────────────────
+    #  Model fallback — never hard-fail a feature turn
+    # ──────────────────────────────────────────────
+
+    _HEALTH_TTL = 30.0  # seconds a cached health verdict stays authoritative
+
+    def _config(self) -> ConfigManager:
+        return self._config_manager or get_config_manager()
+
+    def _fallback_enabled(self) -> bool:
+        return bool(self._config().get("models.fallback_enabled", True))
+
+    def _default_chat_model(self) -> Optional[str]:
+        """The global default chat model (floor when there's no active turn).
+
+        Reads either latent global-default key (`preferences.default_model` or
+        `models.defaults.chat`) — neither has a settings UI yet (Todo backlog), so
+        on live turns the real floor is the agent profile's model, threaded in as
+        `preferred_fallback`; this only matters for profile-less background work.
+        """
+        cfg = self._config()
+        val = cfg.get("preferences.default_model") or cfg.get("models.defaults.chat")
+        return str(val) if val else None
+
+    def mark_provider_health(self, name: str, healthy: bool) -> None:
+        """Record a provider's reachability (observed via a real call or a ping)."""
+        self._provider_health[name] = (time.time() + self._HEALTH_TTL, healthy)
+
+    def _is_cached_unhealthy(self, name: str) -> bool:
+        entry = self._provider_health.get(name)
+        return entry is not None and entry[0] > time.time() and not entry[1]
+
+    def _fallback_chain(self, model: str, preferred_fallback: Optional[str]) -> list[str]:
+        """Ordered, de-duped `provider:model` candidates: requested → the active
+        agent model (caller's known-good) → global default model. Empty/invalid
+        entries are dropped."""
+        chain: list[str] = []
+        for m in (model, preferred_fallback, self._default_chat_model()):
+            if m and ":" in m and m not in chain:
+                chain.append(m)
+        return chain
+
+    def resolve_with_fallback(
+        self, model: str, *, preferred_fallback: Optional[str] = None
+    ) -> tuple[ModelProvider, str, Optional[str]]:
+        """Resolve a `provider:model`, falling back when its provider is
+        unconfigured or cached-unhealthy.
+
+        Returns ``(provider, model_id, note)`` where ``note`` is a human string
+        describing a substitution (None when the requested model was used). Honors
+        the ``models.fallback_enabled`` kill-switch (strict resolve when off).
+        """
+        if not self._fallback_enabled():
+            provider, model_id = self.get_provider_for_model(model)
+            return provider, model_id, None
+
+        for cand in self._fallback_chain(model, preferred_fallback):
+            provider_name, model_id = cand.split(":", 1)
+            if provider_name not in self._provider_configs:
+                continue
+            if self._is_cached_unhealthy(provider_name):
+                continue
+            note = None if cand == model else f"requested '{model}' unavailable; using '{cand}'"
+            if note:
+                logger.warning(f"model fallback: {note}")
+            return self.get_provider(provider_name), model_id, note
+
+        # Nothing configured/healthy in the chain — strict resolve gives a clear error.
+        provider, model_id = self.get_provider_for_model(model)
+        return provider, model_id, None
+
+    async def complete_with_fallback(
+        self,
+        model: str,
+        messages: list,
+        *,
+        preferred_fallback: Optional[str] = None,
+        **kwargs: Any,
+    ):
+        """Complete with the requested model, transparently retrying down the
+        fallback chain on an unconfigured **or unreachable** provider.
+
+        This is the universal "never crash the turn" wrapper: it catches both
+        resolution failures and runtime provider errors (timeout/5xx/connection),
+        updating the health cache as it goes. Raises only if every candidate fails.
+        """
+        if not self._fallback_enabled():
+            provider, model_id = self.get_provider_for_model(model)
+            return await provider.complete(messages, model_id, **kwargs)
+
+        chain = self._fallback_chain(model, preferred_fallback)
+        last_exc: Optional[Exception] = None
+        tried: list[str] = []
+        for cand in chain:
+            provider_name, model_id = cand.split(":", 1)
+            if provider_name not in self._provider_configs:
+                continue
+            try:
+                provider = self.get_provider(provider_name)
+                result = await provider.complete(messages, model_id, **kwargs)
+            except Exception as e:  # noqa: BLE001 - try the next candidate
+                self.mark_provider_health(provider_name, False)
+                last_exc = e
+                tried.append(f"{cand}: {e}")
+                logger.warning(f"model '{cand}' failed ({e}); trying fallback")
+                continue
+            self.mark_provider_health(provider_name, True)
+            if cand != model:
+                logger.warning(f"model fallback: requested '{model}' unavailable; used '{cand}'")
+            return result
+
+        if last_exc is not None:
+            raise last_exc
+        raise ModelNotFoundError(
+            f"No usable model for '{model}' (no configured providers in the fallback chain).",
+            model=model,
+        )
+
     def list_providers(self) -> list[str]:
         """List configured providers."""
         return list(self._provider_configs.keys())
@@ -275,7 +400,11 @@ class ProviderRegistry:
                 return {"status": "error", "error": str(e)}
 
         results = await asyncio.gather(*[_check(n) for n in names])
-        return dict(zip(names, results))
+        health = dict(zip(names, results))
+        # Feed the fallback path's best-effort health cache.
+        for name, res in health.items():
+            self.mark_provider_health(name, res.get("status") == "healthy")
+        return health
 
     async def aclose(self) -> None:
         """Close all cached provider instances, releasing their HTTP/SDK clients.

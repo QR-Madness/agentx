@@ -61,8 +61,13 @@ class ToolOutputCompressor:
         }
 
     def _get_provider(self, model: str) -> Tuple[Any, str]:
-        """Get provider and resolved model_id for compression."""
-        return self.registry.get_provider_for_model(model)
+        """Get provider and resolved model_id for compression.
+
+        Fallback-aware: a missing/unreachable (or provider-prefix-less) compression
+        model degrades to the default chat model rather than failing the turn.
+        """
+        provider, model_id, _ = self.registry.resolve_with_fallback(model)
+        return provider, model_id
 
     async def compress(
         self,

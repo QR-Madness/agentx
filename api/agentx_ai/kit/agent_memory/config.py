@@ -140,6 +140,13 @@ class Settings(BaseSettings):
     # All consolidation stages can be configured independently.
     # Models use provider:model format (e.g., "lmstudio:model", "anthropic:claude-3-5-haiku-latest")
 
+    # Bulk default for every memory stage model below: a stage left empty (or set
+    # to "inherit") resolves to this; if this is also empty, to the global default
+    # chat model (see ExtractionService._resolve_stage_model). Lets a user point
+    # all of memory at one model in a single setting, overriding individual stages
+    # only where they want to. Empty = inherit the default chat model.
+    feature_default_model: str = ""
+
     # --- Extraction (main fact/entity extraction) ---
     extraction_enabled: bool = True
     extraction_model: str = "lmstudio:google/gemma-3-4b"  # Gemma 3 4B - good at structured output
@@ -349,6 +356,9 @@ def get_consolidation_settings() -> Dict[str, Any]:
     settings = get_settings()
 
     return {
+        # Bulk default for all stage models (empty = inherit the default chat model).
+        "feature_default_model": settings.feature_default_model,
+
         # Extraction (model uses provider:model format, e.g., "lmstudio:google/gemma-3-4b")
         "extraction_enabled": settings.extraction_enabled,
         "extraction_model": settings.extraction_model,

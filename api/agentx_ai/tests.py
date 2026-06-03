@@ -4970,3 +4970,162 @@ class WebSearchCapabilityTest(TestCase):
         fake.get.return_value = False  # citations.auto_capture_web_search off
         with patch("agentx_ai.config.get_config_manager", return_value=fake):
             self.assertEqual(_emit_web_search_citation(ok), [])
+
+
+class ModelFallbackTest(TestCase):
+    """Slice 5 — universal model fallback (registry) + memory stage inheritance.
+
+    A feature whose configured model is unavailable (provider unconfigured or
+    unreachable) must fall back to the active/default model instead of crashing
+    the turn; the main chat path stays strict.
+    """
+
+    def _registry(self, *, configured, default_model="anthropic:claude-haiku-4-5",
+                  fallback_enabled=True):
+        from unittest.mock import MagicMock
+        from agentx_ai.providers.registry import ProviderRegistry
+        from agentx_ai.providers.base import ProviderConfig
+        cfg = MagicMock()
+        vals = {
+            "models.fallback_enabled": fallback_enabled,
+            "preferences.default_model": default_model,
+        }
+        cfg.get.side_effect = lambda k, d=None: vals.get(k, d)
+        cfg.get_provider_value.side_effect = lambda *a, **k: None
+        reg = ProviderRegistry(config_manager=cfg)
+        reg._provider_configs = {n: ProviderConfig(api_key="x") for n in configured}
+        reg.get_provider = lambda n: f"<provider:{n}>"  # type: ignore[assignment]
+        return reg
+
+    def test_configured_model_used_as_is(self):
+        reg = self._registry(configured=["anthropic"])
+        provider, model_id, note = reg.resolve_with_fallback("anthropic:claude-opus-4-8")
+        self.assertEqual(model_id, "claude-opus-4-8")
+        self.assertIsNone(note)
+
+    def test_unconfigured_provider_falls_back_to_default(self):
+        reg = self._registry(configured=["anthropic"])
+        provider, model_id, note = reg.resolve_with_fallback("lmstudio:gemma")
+        self.assertEqual(model_id, "claude-haiku-4-5")  # the default chat model
+        self.assertIsNotNone(note)
+
+    def test_preferred_fallback_wins_over_global_default(self):
+        reg = self._registry(configured=["anthropic", "openai"])
+        provider, model_id, note = reg.resolve_with_fallback(
+            "lmstudio:gemma", preferred_fallback="openai:gpt-4o"
+        )
+        self.assertEqual(model_id, "gpt-4o")  # the active agent model, not the global default
+
+    def test_cached_unhealthy_provider_is_skipped(self):
+        reg = self._registry(configured=["lmstudio", "anthropic"])
+        reg.mark_provider_health("lmstudio", False)
+        provider, model_id, note = reg.resolve_with_fallback("lmstudio:gemma")
+        self.assertEqual(model_id, "claude-haiku-4-5")  # skipped lmstudio → default
+        self.assertIsNotNone(note)
+
+    def test_kill_switch_restores_strict_behavior(self):
+        from agentx_ai.exceptions import ModelNotFoundError
+        reg = self._registry(configured=["anthropic"], fallback_enabled=False)
+        with self.assertRaises(ModelNotFoundError):
+            reg.resolve_with_fallback("lmstudio:gemma")
+
+    def test_complete_with_fallback_retries_on_runtime_error(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+        reg = self._registry(configured=["lmstudio", "anthropic"])
+
+        good = AsyncMock(return_value="OK")
+        bad = AsyncMock(side_effect=RuntimeError("LM Studio down"))
+        providers = {
+            "lmstudio": type("P", (), {"complete": bad})(),
+            "anthropic": type("P", (), {"complete": good})(),
+        }
+        reg.get_provider = lambda n: providers[n]  # type: ignore[assignment]
+
+        result = asyncio.run(reg.complete_with_fallback("lmstudio:gemma", ["m"]))
+        self.assertEqual(result, "OK")  # retried onto the healthy default
+        bad.assert_awaited_once()
+        good.assert_awaited_once()
+        # lmstudio is now cached-unhealthy from the observed failure
+        self.assertTrue(reg._is_cached_unhealthy("lmstudio"))
+
+    def test_stage_model_inheritance(self):
+        from unittest.mock import MagicMock, patch
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        svc = ExtractionService.__new__(ExtractionService)
+        # explicit wins
+        svc._settings = MagicMock(feature_default_model="anthropic:bulk")
+        with patch.object(type(svc), "settings", property(lambda s: s._settings)):
+            self.assertEqual(svc._resolve_stage_model("lmstudio:explicit"), "lmstudio:explicit")
+            # empty stage → feature_default_model (bulk)
+            self.assertEqual(svc._resolve_stage_model(""), "anthropic:bulk")
+            self.assertEqual(svc._resolve_stage_model("inherit"), "anthropic:bulk")
+        # empty stage + empty bulk → global default chat model
+        svc._settings = MagicMock(feature_default_model="")
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda k, d=None: "anthropic:main" if k == "preferences.default_model" else d
+        with patch.object(type(svc), "settings", property(lambda s: s._settings)), \
+             patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            self.assertEqual(svc._resolve_stage_model(""), "anthropic:main")
+
+
+class WebResearchToolsTest(TestCase):
+    """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
+
+    def test_crawl_research_advertised_only_for_tavily(self):
+        from agentx_ai.mcp import internal_tools as it
+        from unittest.mock import patch
+        with patch.object(it, "resolve_active_search_backend", return_value="tavily"):
+            names = {t.name for t in it.get_internal_tools()}
+            self.assertIn("web_crawl", names)
+            self.assertIn("web_research", names)
+        with patch.object(it, "resolve_active_search_backend", return_value="brave"):
+            names = {t.name for t in it.get_internal_tools()}
+            self.assertNotIn("web_crawl", names)
+            self.assertNotIn("web_research", names)
+        # still executable (self-guarding) regardless of advertisement
+        self.assertIsNotNone(it.find_internal_tool("web_crawl"))
+        self.assertIsNotNone(it.find_internal_tool("web_research"))
+
+    def test_crawl_requires_tavily_and_caps_pages(self):
+        from agentx_ai.mcp import internal_tools as it
+        from unittest.mock import patch, MagicMock
+        with patch.object(it, "_tavily_client", side_effect=RuntimeError("no key")):
+            out = it.web_crawl("https://x")
+        self.assertFalse(out["success"])
+        self.assertIn("requires Tavily", out["error"])
+
+        client = MagicMock()
+        client.crawl.return_value = {"results": [{"url": f"https://x/{i}", "raw_content": "c"} for i in range(200)]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            out = it.web_crawl("https://x", limit=1000)
+        self.assertTrue(out["success"])
+        self.assertEqual(out["count"], 50)  # hard cap
+
+    def test_research_disabled_flag(self):
+        from agentx_ai.mcp import internal_tools as it
+        from unittest.mock import patch, MagicMock
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda k, d=None: False if k == "web_research.enabled" else d
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            out = it.web_research("q")
+        self.assertFalse(out["success"])
+        self.assertIn("disabled", out["error"])
+
+    def test_research_normalizes_sources_for_autocapture(self):
+        from agentx_ai.mcp import internal_tools as it
+        from unittest.mock import patch, MagicMock
+        client = MagicMock()
+        client.research.return_value = {
+            "answer": "a report",
+            "citations": [{"title": "A", "url": "https://a"}, "https://b"],
+        }
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda k, d=None: True if k == "web_research.enabled" else d
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch.object(it, "_tavily_client", return_value=client):
+            out = it.web_research("q", depth="pro")
+        self.assertTrue(out["success"])
+        self.assertEqual(out["report"], "a report")
+        self.assertEqual(out["results"][0]["url"], "https://a")
+        self.assertEqual(out["results"][1]["url"], "https://b")  # bare string normalized
