@@ -388,6 +388,7 @@ SSE events in order:
 | `run_started` | `{"run_id": "..."}` | First event — identifies the detached run for re-attach |
 | `start` | `{"task_id": "...", "model": "..."}` | Generation begins |
 | `chunk` | `{"content": "token text"}` | Each token |
+| `status` | `{"phase": "running_tool", "label": "Running web_search…", "detail"?, "group"?, "progress"?}` | Coarse per-phase activity (`recalling`/`composing`/`thinking`/`running_tool`/`reading`) for a live status line; rides the run bus, so it replays on re-attach |
 | `tool_call` | `{"tool": "name", "arguments": {...}}` | Tool invocation starts |
 | `tool_result` | `{"tool": "name", "content": "..."}` | Tool result (truncated to 500 chars) |
 | `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "..."}` | Generation complete |

@@ -644,9 +644,13 @@ paths:
         its Docker-style `agent_id`. Responds with `text/event-stream`. The run is executed detached
         server-side and survives client disconnect; the first event is `run_started`
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
-        Events: `run_started`, `start`, `memory_context`, `chunk`, `tool_call`,
+        Events: `run_started`, `start`, `memory_context`, `chunk`, `status`, `tool_call`,
         `tool_result`, `exhibit`, `done`, `close`, plus `delegation_*` events when a
         workflow is active. See the Multi-Agent docs for delegation event shapes.
+        The `status` event (`{ phase, label, detail?, group?, progress? }`) is a coarse
+        per-phase activity feed (`recalling`/`composing`/`thinking`/`running_tool`/`reading`)
+        the client shows as a live line; it rides the run's event bus so it replays on
+        re-attach.
         The `exhibit` event carries a declarative, agent-authored content tree
         (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
         calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),

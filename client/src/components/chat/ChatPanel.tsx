@@ -649,7 +649,9 @@ export function ChatPanel() {
               ) : (
                 <div className="stream-spinner">
                   <div className="stream-spinner-ring" />
-                  <span className="stream-spinner-text">Thinking...</span>
+                  <span className="stream-spinner-text">
+                    {stream.state.activity?.label || 'Thinking...'}
+                  </span>
                 </div>
               )}
             </div>

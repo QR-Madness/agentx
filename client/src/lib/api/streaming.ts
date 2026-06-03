@@ -104,6 +104,18 @@ export interface StreamCallbacks {
   onDelegationToolResult?: (data: DelegationToolResultEvent) => void;
   /** Agent presented a typed exhibit (e.g. a Mermaid diagram) via present_exhibit. */
   onExhibit?: (data: ExhibitWire) => void;
+  /**
+   * Per-phase activity status (Recalling memory… / Running web_search… / …) so the
+   * chat shows a live line instead of a silent "thinking". `phase` is a stable slug;
+   * `detail`/`group`/`progress` are optional headroom for deep sub-phases.
+   */
+  onStatus?: (data: {
+    phase: string;
+    label: string;
+    detail?: string;
+    group?: string;
+    progress?: number;
+  }) => void;
   onError?: (error: string) => void;
 }
 
@@ -171,6 +183,9 @@ function dispatchSseEvent(
       break;
     case 'exhibit':
       callbacks.onExhibit?.(data as unknown as ExhibitWire);
+      break;
+    case 'status':
+      callbacks.onStatus?.(data as Parameters<NonNullable<StreamCallbacks['onStatus']>>[0]);
       break;
     case 'done':
       callbacks.onDone?.(data as Parameters<NonNullable<StreamCallbacks['onDone']>>[0]);

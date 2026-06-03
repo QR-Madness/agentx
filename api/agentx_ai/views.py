@@ -22,6 +22,7 @@ from .streaming import (
     estimate_tokens,
     resolve_with_priority,
 )
+from .streaming.status import emit_status
 from .utils.decorators import lazy_singleton
 from .kit.translation import get_translation_kit  # shared lazy singleton (HTTP + internal tools)
 from .exceptions import AgentXError
@@ -1157,6 +1158,7 @@ async def agent_chat_stream(request):
             memory_bundle = None
             if use_memory and agent.memory:
                 try:
+                    emit_status("recalling")
                     memory_bundle = agent.memory.remember(
                         query=message,  # Use full message for memory retrieval
                         top_k=agent.config.memory_top_k,
@@ -1207,6 +1209,7 @@ async def agent_chat_stream(request):
             # count-trim + extend.
             _cfg = get_config_manager()
             from .agent.context import ContextManager, ContextConfig
+            emit_status("composing")
             messages = ContextManager(ContextConfig()).assemble_turn_context(
                 system_blocks=messages,
                 history=[m for m in context if m.role != MessageRole.SYSTEM],

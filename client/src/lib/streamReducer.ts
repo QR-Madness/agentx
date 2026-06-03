@@ -45,6 +45,11 @@ export interface StreamState {
   activePlan: ActivePlan | null;
   /** Active delegation cards keyed by delegation_id. */
   activeDelegations: Map<string, ActiveDelegation>;
+  /**
+   * Current per-phase activity line (e.g. "Running web_search…"), or null when
+   * idle / prose is streaming. `group`/`progress` are headroom for deep sub-phases.
+   */
+  activity: { label: string; group?: string; progress?: number } | null;
 }
 
 export const initialStreamState: StreamState = {
@@ -53,6 +58,7 @@ export const initialStreamState: StreamState = {
   activeToolCalls: new Map(),
   activePlan: null,
   activeDelegations: new Map(),
+  activity: null,
 };
 
 export type StreamAction =
@@ -68,6 +74,7 @@ export type StreamAction =
   | { type: 'delegation_chunk_appended'; delegationId: string; content: string }
   | { type: 'delegation_tool_event_appended'; delegationId: string; events: DelegationToolEvent[] }
   | { type: 'delegation_finished'; delegationId: string }
+  | { type: 'status_changed'; activity: { label: string; group?: string; progress?: number } | null }
   | { type: 'stream_ended' };
 
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
@@ -82,10 +89,16 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         activeToolCalls: new Map(),
         activePlan: null,
         activeDelegations: new Map(),
+        activity: null,
       };
 
     case 'chunk_appended':
-      return { ...state, liveContent: state.liveContent + action.content };
+      // First prose token of a phase clears the activity line — the answer itself
+      // is now visible, so no spinner/label. Later status events re-set it.
+      return { ...state, liveContent: state.liveContent + action.content, activity: null };
+
+    case 'status_changed':
+      return { ...state, activity: action.activity };
 
     case 'live_content_flushed':
       // Always clears, regardless of whether content was whitespace-only.
@@ -162,6 +175,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
         phase: 'idle',
         liveContent: '',
         activeDelegations: new Map(),
+        activity: null,
       };
 
     default:

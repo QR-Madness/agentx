@@ -187,6 +187,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         dispatch({ type: 'chunk_appended', content });
       },
 
+      onStatus: (data) => {
+        dispatch({
+          type: 'status_changed',
+          activity: { label: data.label, group: data.group, progress: data.progress },
+        });
+      },
+
       onMemoryContext: (data) => {
         const hasAny =
           (data.facts?.length ?? 0) > 0 ||

@@ -2712,6 +2712,91 @@ class StreamingToolLoopTest(TestCase):
         self.assertIn(MessageRole.TOOL, roles)
         self.assertEqual(len(agent.executed), 1)
 
+    def test_emits_status_phases(self) -> None:
+        """A tool round publishes status: thinking → running_tool → reading → thinking."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "x"})])],
+            [StreamChunk(content="final answer")],
+        ])
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.emit_status") as mock_status:
+            self._run(
+                provider, agent, [], [{"type": "function", "function": {"name": "search"}}],
+            )
+        phases = [call.args[0] for call in mock_status.call_args_list]
+        self.assertEqual(phases, ["thinking", "running_tool", "reading", "thinking"])
+        # running_tool carries the tool name in its label.
+        running = next(c for c in mock_status.call_args_list if c.args[0] == "running_tool")
+        self.assertIn("search", running.kwargs.get("label", ""))
+
+
+class StatusEmitterTest(TestCase):
+    """Unit tests for the run-scoped status emitter (streaming/status.py)."""
+
+    def setUp(self) -> None:
+        from agentx_ai.streaming import status as status_mod
+        self.status = status_mod
+        # Isolate throttle state between tests.
+        self.status._last_emit.clear()
+
+    def _patch_bus(self):
+        from agentx_ai.streaming import chat_run
+        return patch.object(chat_run.store, "append_event")
+
+    @staticmethod
+    def _payload(sse_event: str) -> dict:
+        for line in sse_event.splitlines():
+            if line.startswith("data:"):
+                return json.loads(line[len("data:"):].strip())
+        return {}
+
+    def test_noop_without_run(self) -> None:
+        """No contextvar + no run_id arg → nothing published."""
+        self.assertIsNone(self.status.current_run_id.get())
+        with self._patch_bus() as append:
+            self.status.emit_status("thinking")
+        append.assert_not_called()
+
+    def test_emits_with_explicit_run_id(self) -> None:
+        with self._patch_bus() as append:
+            self.status.emit_status("thinking", run_id="r1")
+        append.assert_called_once()
+        rid, sse = append.call_args.args
+        self.assertEqual(rid, "r1")
+        self.assertTrue(sse.startswith("event: status\n"))
+        payload = self._payload(sse)
+        self.assertEqual(payload["phase"], "thinking")
+        self.assertEqual(payload["label"], "Thinking…")  # default from STATUS_PHASES
+
+    def test_resolves_from_contextvar(self) -> None:
+        token = self.status.current_run_id.set("r2")
+        try:
+            with self._patch_bus() as append:
+                self.status.emit_status("composing")
+        finally:
+            self.status.current_run_id.reset(token)
+        self.assertEqual(append.call_args.args[0], "r2")
+
+    def test_throttle_coalesces_same_phase(self) -> None:
+        with self._patch_bus() as append:
+            self.status.emit_status("thinking", run_id="r3")
+            self.status.emit_status("thinking", run_id="r3")  # immediate repeat → dropped
+            self.status.emit_status("running_tool", label="Running x…", run_id="r3")
+            self.status.emit_status("running_tool", label="Running y…", run_id="r3")  # label change → kept
+        self.assertEqual(append.call_count, 3)
+
+    def test_optional_fields_in_payload(self) -> None:
+        with self._patch_bus() as append:
+            self.status.emit_status(
+                "embedding", detail="query", group="recalling", progress=0.5, run_id="r4",
+            )
+        payload = self._payload(append.call_args.args[1])
+        self.assertEqual(payload["detail"], "query")
+        self.assertEqual(payload["group"], "recalling")
+        self.assertEqual(payload["progress"], 0.5)
+
 
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""

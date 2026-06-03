@@ -244,8 +244,13 @@ def start_chat_run(
 
 def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
     """Consume the generator in a fresh event loop, fanning events into Redis."""
+    from .status import clear_run_throttle, current_run_id
 
     async def _run() -> None:
+        # Make the run resolvable ambiently so any phase in the generator's call
+        # tree (recall, context assembly, tool loop) can publish a `status` event
+        # via `emit_status()` without threading run_id through every signature.
+        token = current_run_id.set(run_id)
         gen = gen_factory()
         cancelled = False
         session_seen = False
@@ -268,6 +273,8 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
             # Always terminate the tail and settle status, even on aclose/raise.
             store.append_event(run_id, CLOSE_EVENT)
             store.mark(run_id, "cancelled" if cancelled else "done")
+            current_run_id.reset(token)
+            clear_run_throttle(run_id)
 
     try:
         asyncio.run(_run())

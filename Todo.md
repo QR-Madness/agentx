@@ -265,18 +265,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
    three from the **Chat UX & Tool-Call Rendering** + **Observability** clusters: (a) **compact,
    collapsible tool-call rendering** (`chat/bubbles/ToolCallBubble`, `ToolResultBubble`,
    `ToolExecutionBlock`/`ToolResultBlock` — dense one-liner by default; everything inheriting the
-   block gets it), (b) **web-search query inline** on the collapsed row, (c) **per-phase SSE `status`
-   events** (`streaming/tool_loop.py` emit → `lib/api/streaming.ts` → `useChatStream`) so the chat
-   shows a live activity line instead of a silent "thinking". Mostly client + one focused backend emit.
-2. **Stable memory core** — kill transient memory injection (`remember(query=message)` re-ranks every
+   block gets it), (b) **web-search query inline** on the collapsed row, ~~(c) **per-phase SSE
+   `status` events**~~ — **shipped (coarse)**: live activity line on the run-bus `emit_status()` seam
+   (see the Observability cluster; deep sub-phases now a drop-in). (a)+(b) remain — the quick client
+   win.
+2. **Live steering — message interruption / queue** *(essential; today you can't course-correct a
+   running agent — only let it finish or hard-cancel)* — inject a message into an **in-flight** turn
+   without killing it. The cooperative-cancel plumbing (`streaming/chat_run.py` Redis state +
+   `is_cancel_requested`, polled at event boundaries) is the foundation; add a per-run **steer queue**
+   drained at the tool-result boundary in `streaming/tool_loop.py`. Shares the pause/hold-run/resume
+   subsystem with blocking tool approval + the status-emitter channel. See cluster below.
+3. **Stable memory core** — kill transient memory injection (`remember(query=message)` re-ranks every
    turn); inject a stable high-salience core + recall as a supplement. Correctness; rides the Slice-6
    `assemble_turn_context` preamble budget.
-3. **Finish the reliability guarantees** — extend the Slice-5 model fallback to the remaining feature
+4. **Finish the reliability guarantees** — extend the Slice-5 model fallback to the remaining feature
    sites (reasoning/drafting/`planner`/`alloy`, still raw `get_provider_for_model`); **hydrate the
    Alloy + background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm.
-4. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
+5. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
    model** (UI gap), and the **full persisted tool outputs** debugging surface (heavier backend).
-5. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
+6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
    (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
 
 > ⭐ **Major missing capability — File Workspaces & Document RAG** (see section below). Slots near the
@@ -356,11 +363,23 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 ### Backend Observability — live operation status over SSE
 
-- [ ] **Per-phase status events** — between "message sent" and the response, the UI just says
-      "thinking" then dumps the answer. Emit granular status over the existing SSE stream so the
-      client *always* knows the backend phase: recalling/embedding, composing context, reasoning
-      step N, building a tool call, running a tool, compressing, synthesizing, etc. A typed `status`
-      event (phase + human label) the chat renders as a live activity line.
+- [x] **Per-phase status events (coarse)** — shipped. A typed `status` event
+      (`{phase, label, detail?, group?, progress?}`) gives the chat a live activity line
+      (`recalling` → `composing` → `thinking` → `running_tool` → `reading`) instead of a silent
+      "thinking". **Key realization:** the chat path doesn't go through `Agent.run` — `generate_sse`
+      inlines the phases and the live client *tails the run's Redis event bus* (`chat_run`), not the
+      generator. So all status routes through one ambient `emit_status()` (`streaming/status.py`, run
+      resolved from a `ContextVar` set in `chat_run._drive_run`) that appends straight to the bus —
+      replays on re-attach for free, throttled/coalesced. Emit points: `views.py::generate_sse`
+      (recalling/composing) + `streaming/tool_loop.py` (thinking/running_tool/reading, shared with plan
+      exec). Client: `onStatus` → `streamReducer` `activity` → the `ChatPanel` spinner line.
+- [ ] **Per-phase status events (deep sub-phases)** — the deferred fine grain: `embedding` /
+      `reranking` inside `remember()`/`RecallLayer`, `reasoning_step N` inside the reasoner. Now a
+      **drop-in** `emit_status("embedding", …)` — phases are reserved in `STATUS_PHASES` and the
+      `{detail, group, progress}` contract fields + client `activity` shape already carry them. Only
+      real work: the **embedding daemon thread** can't see the `ContextVar`, so its queued job must
+      carry `run_id` → `emit_status(…, run_id=job.run_id)` (the explicit arg already exists). Rides the
+      **same tool-loop boundary as Live Steering** (below); build the boundary once.
 - [ ] **Context Inspector ("what's in the model's head this turn")** *(my idea, from the Slice-6
       context work)* — now that `assemble_turn_context` builds one well-defined message list, expose it:
       a per-turn debug view showing exactly what was sent to the model (system preamble blocks:
@@ -368,6 +387,31 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       **per-block token counts** and the budget breakdown (verbatim vs reserved vs window). Pairs with
       the per-tab context bar + the "full tool outputs" item — the single best lens for debugging agent
       behavior. Cheap to surface (the assembler already has all of it); gate behind a dev/inspect toggle.
+
+### Live Steering — message interruption & queue (steer a running agent)
+
+> Today a turn is fire-and-forget: once it starts you can only let it finish or **hard-cancel** it
+> (`/runs/{run_id}/cancel`). You can't say "wait, also check X" or "stop — you're off track, do Y
+> instead" without throwing away the whole run. Steering mid-run is essential for long/agentic turns,
+> and it's the most-forgotten gap. Foundation #2 — this is the design cluster for it.
+
+- [ ] **Inject-into-running-turn** — `POST /api/agent/chat/runs/{run_id}/steer` (body
+      `{message, mode}`) appends the user's message to a per-run **steer queue** (Redis list
+      `chat_run:{run_id}:queue`, alongside the existing `chat_run:{run_id}` state in
+      `streaming/chat_run.py`). Reuses the detached-run registry — no new lifecycle.
+- [ ] **Drain at safe boundaries** — the streaming tool loop (`streaming/tool_loop.py`) polls the
+      queue at **tool-result boundaries** (the same spot the cancel flag is checked) and folds queued
+      messages into the next provider call as a fresh user turn, so the agent **re-plans with the new
+      instruction mid-trajectory** instead of only after the turn ends.
+- [ ] **Two modes** — **interrupt** (drain ASAP / abort the current tool wait + re-prompt) vs.
+      **queue** (let the current step finish, apply before the next round). Mirrors the cancel UX.
+- [ ] **Client** — keep the composer **live during streaming**; a message sent while a run streams
+      calls `steer` instead of opening a new turn. Surface a small "steering…" affordance;
+      `useChatStream` wires the new event(s); reconciles with the `run_started`/`attach` recovery path.
+- [ ] **Shares plumbing** — the same pause/hold-run/resume machinery powers **Blocking tool-call
+      approval** + the in-run **Exhibit `choice`** round-trip (see Future Enhancements), and the
+      **status-emitter channel** (Observability slice above) rides the same loop boundary. Generalizes
+      today's hard-cancel and the delegated-task **Message injection** item. Build the boundary once.
 
 ### Conversation Context & Checkpoints
 

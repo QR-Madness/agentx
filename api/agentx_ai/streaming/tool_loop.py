@@ -15,6 +15,7 @@ from typing import Any, AsyncGenerator, Optional
 
 from ..providers.base import Message, MessageRole
 from .helpers import estimate_tokens, truncate_tool_messages
+from .status import emit_status
 from .trajectory_compression import compress_trajectory
 
 logger = logging.getLogger(__name__)
@@ -450,7 +451,9 @@ async def streaming_tool_loop(
         ) and emit_trajectory_info:
             yield _sse("info", {"type": "trajectory_compressed"})
 
-        # Stream completion from provider
+        # Stream completion from provider. Announce the wait so the client shows
+        # "Thinking…" until the first token arrives (it clears `status` on `chunk`).
+        emit_status("thinking")
         async for chunk in provider.stream(
             messages, model_id,
             temperature=temperature,
@@ -497,9 +500,11 @@ async def streaming_tool_loop(
         for tc in regular_calls:
             if tc.name == EXHIBIT_TOOL_NAME:
                 exhibit_tool_call_ids.add(tc.id)
+                emit_status("running_tool", label="Presenting…")
                 for event_str in _emit_exhibit_event(tc):
                     yield event_str
             else:
+                emit_status("running_tool", label=f"Running {tc.name}…")
                 yield _sse("tool_call", {
                     "tool": tc.name,
                     "tool_call_id": tc.id,
@@ -546,3 +551,7 @@ async def streaming_tool_loop(
             f"Tool round {tool_round + 1}: executed "
             f"{', '.join(tc.name for tc in round_tool_calls)}"
         )
+
+        # Tools done; the next round digests their output (and may compress the
+        # trajectory first). Surface that gap before the round-top "Thinking…".
+        emit_status("reading")
