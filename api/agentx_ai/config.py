@@ -112,9 +112,22 @@ DEFAULT_CONFIG = {
     "session": {
         "rolling_summary": {
             "enabled": True,
+            # Now a *floor*: always keep at least this many recent turns verbatim,
+            # even under context-budget pressure (was a hard message-count cap).
             "recent_window": 8,
             "model": "anthropic:claude-haiku-4-5-20251001",
         },
+    },
+    "context": {
+        # Fraction of the model's real context window kept for the verbatim
+        # conversation transcript (the rest is reserved for the response + tools).
+        # Drives both per-turn assembly and the rolling-summary token trigger, so
+        # compression is context-window-based, not message-count-based.
+        "verbatim_budget_ratio": 0.7,
+        # Floor of most-recent turns always kept verbatim.
+        "recent_floor": 4,
+        # Max turns pulled from durable history when rehydrating a cold session.
+        "rehydrate_max_turns": 400,
     },
     "alloy": {
         "max_delegation_depth": 3,

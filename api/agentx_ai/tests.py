@@ -5129,3 +5129,131 @@ class WebResearchToolsTest(TestCase):
         self.assertEqual(out["report"], "a report")
         self.assertEqual(out["results"][0]["url"], "https://a")
         self.assertEqual(out["results"][1]["url"], "https://b")  # bare string normalized
+
+
+class ConversationContextTest(TestCase):
+    """Slice 6 — rehydrate verbatim transcript + context-window-based assembly."""
+
+    def test_load_recent_turns_chronological_and_budgeted(self):
+        from agentx_ai.agent.conversation_history import load_recent_turns
+        from agentx_ai.providers.base import MessageRole
+        # reader returns newest-first (role, content)
+        rows = [("assistant", "A3"), ("user", "U3"), ("assistant", "A2"),
+                ("user", "U2"), ("assistant", "A1"), ("user", "U1")]
+        msgs = load_recent_turns("c", token_budget=10_000, reader=lambda c, n: rows)
+        self.assertEqual([m.content for m in msgs], ["U1", "A1", "U2", "A2", "U3", "A3"])
+        self.assertEqual(msgs[0].role, MessageRole.USER)
+        # Tiny budget still keeps at least the most-recent turn.
+        one = load_recent_turns("c", token_budget=1, reader=lambda c, n: rows)
+        self.assertEqual([m.content for m in one], ["A3"])
+
+    def test_hydrate_is_idempotent_and_fills_empty_session(self):
+        from agentx_ai.agent.session import Session
+        from agentx_ai.agent.conversation_history import hydrate_session_from_history
+        rows = [("assistant", "A1"), ("user", "U1")]
+        reader = lambda c, n: rows  # noqa: E731
+        s = Session(id="c1")
+        n = hydrate_session_from_history(s, "c1", token_budget=10_000, reader=reader)
+        self.assertEqual(n, 2)
+        self.assertEqual([m.content for m in s.messages], ["U1", "A1"])
+        # Second call no-ops (already populated / hydrated flag).
+        self.assertEqual(hydrate_session_from_history(s, "c1", token_budget=10_000, reader=reader), 0)
+        # A session that already has live messages is never clobbered.
+        s2 = Session(id="c2")
+        from agentx_ai.providers.base import Message, MessageRole
+        s2.add_message(Message(role=MessageRole.USER, content="live"))
+        self.assertEqual(hydrate_session_from_history(s2, "c2", token_budget=10_000, reader=reader), 0)
+        self.assertEqual([m.content for m in s2.messages], ["live"])
+
+    def test_assemble_turn_context_budget_fit(self):
+        from agentx_ai.agent.context import ContextManager, ContextConfig
+        from agentx_ai.providers.base import Message, MessageRole
+        mgr = ContextManager(ContextConfig())
+        sys = [Message(role=MessageRole.SYSTEM, content="S")]
+        history = [Message(role=MessageRole.USER if i % 2 == 0 else MessageRole.ASSISTANT,
+                           content="x" * 400) for i in range(20)]
+        new = Message(role=MessageRole.USER, content="now")
+        # Large window: everything fits.
+        out = mgr.assemble_turn_context(
+            system_blocks=sys, history=history, new_message=new,
+            context_window=1_000_000, reserved_tokens=1000, verbatim_ratio=0.7, recent_floor=4)
+        self.assertEqual(len(out), 1 + 20 + 1)
+        self.assertEqual(out[0].content, "S")
+        self.assertEqual(out[-1].content, "now")
+        # Tiny window: keeps system + floor of recent turns + new.
+        out2 = mgr.assemble_turn_context(
+            system_blocks=sys, history=history, new_message=new,
+            context_window=300, reserved_tokens=100, verbatim_ratio=0.7, recent_floor=4)
+        kept = [m for m in out2 if m.role != MessageRole.SYSTEM and m.content != "now"]
+        self.assertEqual(len(kept), 4)  # floor honored
+        self.assertEqual([m.content for m in kept], [m.content for m in history[-4:]])
+
+    def test_maybe_update_summary_is_token_triggered(self):
+        import asyncio
+        from unittest.mock import patch, AsyncMock
+        from agentx_ai.agent.session import SessionManager
+        from agentx_ai.providers.base import Message, MessageRole
+
+        mgr = SessionManager()
+        s = mgr.create(session_id="c")
+        for i in range(12):
+            s.add_message(Message(role=MessageRole.USER if i % 2 == 0 else MessageRole.ASSISTANT,
+                                  content="y" * 400))
+
+        with patch("agentx_ai.agent.context.ContextManager._summarize_messages",
+                   new=AsyncMock(return_value="SUMMARY")), \
+             patch("agentx_ai.agent.conversation_summary_storage.set_summary") as set_sum:
+            # High threshold → nothing aged out.
+            none = asyncio.run(mgr.maybe_update_summary("c", token_threshold=10_000_000, recent_floor=4))
+            self.assertFalse(none)
+            # Low threshold → summarize + trim + persist.
+            did = asyncio.run(mgr.maybe_update_summary("c", token_threshold=300, recent_floor=4))
+            self.assertTrue(did)
+            self.assertEqual(s.summary, "SUMMARY")
+            self.assertEqual(len(s.messages), 4)  # trimmed to the recent floor
+            set_sum.assert_called_once()
+
+
+class CheckpointMechanicsTest(TestCase):
+    """Slice 6 — checkpoint anchor-preserving eviction + replace."""
+
+    class _FakeRedis:
+        def __init__(self):
+            self.store: dict[str, list] = {}
+        def delete(self, k):
+            self.store.pop(k, None)
+        def rpush(self, k, *vals):
+            self.store.setdefault(k, []).extend(vals)
+        def llen(self, k):
+            return len(self.store.get(k, []))
+        def lrange(self, k, a, b):
+            items = self.store.get(k, [])
+            return items[a:] if b == -1 else items[a:b + 1]
+        def expire(self, k, ttl):
+            pass
+
+    def test_anchor_preserving_eviction(self):
+        from unittest.mock import patch
+        import json
+        from agentx_ai.agent import checkpoint_storage as cs
+        fake = self._FakeRedis()
+        with patch.object(cs, "_redis", return_value=fake):
+            for i in range(12):  # exceed MAX (8)
+                cs.add_checkpoint("conv", summary=f"cp{i}")
+            items = [json.loads(x) for x in fake.store[cs._key("conv")]]
+        self.assertEqual(len(items), cs.MAX_CHECKPOINTS_PER_CONVERSATION)
+        # First (anchor) preserved + most-recent tail.
+        self.assertEqual(items[0]["summary"], "cp0")
+        self.assertEqual(items[-1]["summary"], "cp11")
+
+    def test_replace_supersedes(self):
+        from unittest.mock import patch
+        import json
+        from agentx_ai.agent import checkpoint_storage as cs
+        fake = self._FakeRedis()
+        with patch.object(cs, "_redis", return_value=fake):
+            cs.add_checkpoint("conv", summary="old1")
+            cs.add_checkpoint("conv", summary="old2")
+            cs.add_checkpoint("conv", summary="fresh", replace=True)
+            items = [json.loads(x) for x in fake.store[cs._key("conv")]]
+        self.assertEqual([i["summary"] for i in items], ["fresh"])

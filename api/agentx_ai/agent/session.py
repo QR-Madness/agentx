@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _estimate_tokens(text: str) -> int:
+    """Rough char→token estimate (mirrors ContextManager.estimate_tokens)."""
+    return len(text or "") // 4 + 10
+
+
 @dataclass
 class Session:
     """
@@ -197,16 +202,22 @@ class SessionManager:
         
         return result
     
-    async def maybe_update_summary(self, session_id: str) -> bool:
+    async def maybe_update_summary(
+        self,
+        session_id: str,
+        *,
+        token_threshold: int,
+        recent_floor: int = 4,
+    ) -> bool:
         """
-        Refresh the rolling conversation summary for a session if needed.
+        Refresh the rolling summary when the verbatim transcript exceeds the token
+        budget — **context-window-based**, not a fixed message count.
 
-        Older non-system messages (everything beyond the most recent
-        ``recent_window`` turns) are folded into ``session.summary`` via an LLM
-        call. The recent window remains in ``session.messages`` verbatim so the
-        model loses no nuance on the latest exchange.
-
-        Returns True if the summary was updated, False otherwise.
+        Walks newest→oldest keeping recent turns within ``token_threshold`` (always
+        ≥ ``recent_floor``); the older overflow is folded into ``session.summary``
+        via an LLM call (rolling the prior summary in), **persisted** so it survives
+        a cold rebuild, and trimmed from the in-memory session so it stays lean.
+        Returns True if the summary was updated.
         """
         from ..config import get_config_manager
 
@@ -218,12 +229,23 @@ class SessionManager:
         if session is None:
             return False
 
-        recent_window = int(cfg.get("session.rolling_summary.recent_window", 8))
         non_system = [m for m in session.messages if m.role != MessageRole.SYSTEM]
-        if len(non_system) <= recent_window:
+        if len(non_system) <= recent_floor:
             return False
 
-        aged_out = non_system[:-recent_window]
+        # Keep the most-recent turns that fit the token budget (>= floor); the rest
+        # age out into the summary.
+        used = 0
+        keep = 0
+        for m in reversed(non_system):
+            used += _estimate_tokens(m.content)
+            keep += 1
+            if keep >= recent_floor and used >= token_threshold:
+                break
+        if keep >= len(non_system):
+            return False  # everything fits within budget — nothing to summarize
+
+        aged_out = non_system[: len(non_system) - keep]
         if not aged_out:
             return False
 
@@ -252,7 +274,16 @@ class SessionManager:
 
         if not new_summary:
             return False
+
         session.summary = new_summary
+        # Drop the summarized turns from the live session (durable copy stays in
+        # conversation_logs); keep only the recent verbatim tail.
+        session.messages = non_system[len(non_system) - keep:]
+        try:
+            from .conversation_summary_storage import set_summary
+            set_summary(session_id, new_summary)
+        except Exception as e:  # pragma: no cover - Redis offline
+            logger.debug(f"summary persist skipped: {e}")
         return True
 
     def _cleanup_old_sessions(self) -> int:
