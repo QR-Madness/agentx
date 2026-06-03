@@ -280,6 +280,13 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       client *always* knows the backend phase: recalling/embedding, composing context, reasoning
       step N, building a tool call, running a tool, compressing, synthesizing, etc. A typed `status`
       event (phase + human label) the chat renders as a live activity line.
+- [ ] **Context Inspector ("what's in the model's head this turn")** *(my idea, from the Slice-6
+      context work)* — now that `assemble_turn_context` builds one well-defined message list, expose it:
+      a per-turn debug view showing exactly what was sent to the model (system preamble blocks:
+      checkpoints / scratchpad / summary / memory; the verbatim transcript that fit; the new turn) with
+      **per-block token counts** and the budget breakdown (verbatim vs reserved vs window). Pairs with
+      the per-tab context bar + the "full tool outputs" item — the single best lens for debugging agent
+      behavior. Cheap to surface (the assembler already has all of it); gate behind a dev/inspect toggle.
 
 ### Conversation Context & Checkpoints
 
@@ -310,6 +317,36 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [ ] **Redesign the Memory area** (drastic cleanup, mirroring the agent-profile editor pass) and
       **document every feature in-UI** — each control gets a clear, abstract description of what it
       does and how it works, so the panel is legible without reading the code.
+
+### Engineering Hardening (observed while in the code, Slices 5–6)
+
+> Grounded tech-debt / consistency items noticed during the model-fallback + context work.
+
+- [ ] **Extend the universal model fallback to the remaining feature sites** — Slice 5 wired
+      `resolve_with_fallback` into memory/recall/recap/compression, but **reasoning** (CoT/ToT/ReAct/
+      Reflection), **drafting** (speculative/pipeline/candidate), `agent/planner.py`, and
+      `alloy/executor.py` still call `registry.get_provider_for_model` directly, so a missing/unreachable
+      model there can still hard-fail those features. Route them through `resolve_with_fallback`
+      (passing the agent model as `preferred_fallback`) for the same "never crash the turn" guarantee.
+- [ ] **Consolidate token estimation (4 copies)** — `estimate_tokens` now exists in
+      `streaming/helpers.py`, `agent/context.py`, `agent/session.py`, and `agent/conversation_history.py`,
+      all the same rough `len/4`. Unify into one shared util — and consider using **`tiktoken`** (already
+      pulled in transitively by `tavily-python`) for accurate counts, which would tighten the new
+      context budget.
+- [ ] **Retire dead/legacy context knobs** — now that assembly is token-based: `Session.auto_summarize_at`
+      has a dead `pass` branch, `Session.max_messages` is a vestigial count cap, `ContextConfig` defaults
+      are stale (`summary_model="gpt-3.5-turbo"`, unused `tokens_per_message_estimate`), and the old
+      `ContextManager.prepare_context` is superseded by `assemble_turn_context`. Prune them and make the
+      budget-header nudge reference the configurable `context.verbatim_budget_ratio` (it hardcodes "70%").
+- [ ] **Proactive provider-health refresh for the fallback path** — `registry._provider_health` (used to
+      skip a known-down provider) is only populated when something calls `/api/providers/health` (the
+      dashboard poll). A small periodic background refresh would make the "unreachable" fallback tier
+      proactive instead of only learning from a failed call.
+- [ ] **Decouple transcript persistence from memory extraction (optional)** — "No Memorization"
+      conversations persist **nothing** to `conversation_logs`, so they can't be rehydrated or browsed
+      after a restart. A transcript-only durable record (independent of memory *extraction*) would let
+      them survive a cold session while still honoring "don't learn from this." Weigh against the
+      toggle's intent (some users may want zero persistence).
 
 - [x] **Bulletproof fact→entity linking** — root cause of facts not showing under their entities was a
       silent name-resolution gap in consolidation: facts linked entities only via an exact batch-map
