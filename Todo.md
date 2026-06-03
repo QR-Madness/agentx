@@ -261,14 +261,13 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > The "fancy" meta-layer (Agent Genome, Settings Advisor, evolution) is captured below but gated on
 > foundation. Do these first; they're user-facing, correctness, or reliability — not strategy.
 
-1. **Chat legibility slice** *(highest visible payoff; the user's most-repeated complaint)* — bundle
-   three from the **Chat UX & Tool-Call Rendering** + **Observability** clusters: (a) **compact,
-   collapsible tool-call rendering** (`chat/bubbles/ToolCallBubble`, `ToolResultBubble`,
-   `ToolExecutionBlock`/`ToolResultBlock` — dense one-liner by default; everything inheriting the
-   block gets it), (b) **web-search query inline** on the collapsed row, ~~(c) **per-phase SSE
-   `status` events**~~ — **shipped (coarse)**: live activity line on the run-bus `emit_status()` seam
-   (see the Observability cluster; deep sub-phases now a drop-in). (a)+(b) remain — the quick client
-   win.
+1. ~~**Chat legibility slice**~~ — **shipped.** (a) ~~compact collapsible tool-call rendering~~ — slim
+   one-row card (tool-type icon + name + key arg/query + folded `· N results · 1.2s` meta; status =
+   colored left border; footer/output relocated into the expanded view), `ToolExecutionBlock` so every
+   inheritor (tool_call/tool_result bubbles, delegation nested tools, checkpoints) gets it. (b)
+   ~~web-search query inline~~ — `web_search`/`web_research` show the quoted `query` + result count on
+   the collapsed row. (c) ~~per-phase SSE `status` events~~ — coarse feed on the run-bus
+   `emit_status()` seam (see the Observability cluster; deep sub-phases now a drop-in).
 2. **Live steering — message interruption / queue** *(essential; today you can't course-correct a
    running agent — only let it finish or hard-cancel)* — inject a message into an **in-flight** turn
    without killing it. The cooperative-cancel plumbing (`streaming/chat_run.py` Redis state +
@@ -349,13 +348,15 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > Tool calls — and everything that inherits the tool-call block (checkpoints, exhibit fallbacks,
 > web-search cards) — dominate the transcript and hide what matters. Make the chat readable.
 
-- [ ] **Compact tool-call rendering** — the tool-call block is bulky and space-hungry; redesign it
-      to a dense, collapsible one-liner by default (icon + tool + key arg), expandable on demand.
-      Everything inheriting the block (checkpoints, web-search, exhibit source-fallbacks) gets the
-      slimmer treatment.
-- [ ] **Web-search shows its query inline** — you currently can't see what the agent searched
-      without drilling into the card. Surface the query (+ result count) on the collapsed row; pair
-      with the auto-captured Sources so results are one glance away.
+- [x] **Compact tool-call rendering** — shipped. `ToolExecutionBlock` is now a slim one-row card by
+      default (tool-type lead icon + name + key arg/query + folded `· N results · 1.2s` meta; status =
+      colored left border; Call ID / args JSON / result footer + View Output relocated into the
+      expanded view). Every inheritor (tool_call/tool_result bubbles, delegation nested tools,
+      checkpoints, `recall_user_history`) gets it.
+- [x] **Web-search shows its query inline** — shipped. `web_search`/`web_research` surface the quoted
+      `query` + parsed result count on the collapsed row (`ToolExecutionBlock` `primaryPreview` +
+      `resultCount`). The auto-captured Sources/citation exhibit stays a separate row (linking them is
+      a follow-up).
 - [ ] **Full tool-call outputs (persisted)** — only a small slice of a tool result is shown today,
       but full outputs are valuable for debugging agent thinking. Persist complete outputs
       (PostgreSQL or similar) and let the UI expand to the whole thing (lazy-loaded), beyond the

@@ -3,7 +3,7 @@
  */
 
 .tool-execution-block {
-  margin: 0.5rem 0;
+  margin: 0.25rem 0;
   border-radius: 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
@@ -33,7 +33,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.3rem 0.6rem;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -47,8 +47,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
@@ -110,49 +110,38 @@
 
 .tool-execution-name {
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--text-primary);
+  flex-shrink: 0;
 }
 
 .tool-execution-preview {
   font-size: 0.75rem;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
-/* Status badge */
-.tool-execution-status {
+/* Inline meta on the collapsed row — `·`-separated count / duration / status. */
+.tool-execution-meta {
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 4px;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-shrink: 0;
   font-size: 0.6875rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
-.tool-execution-status.status-pending {
-  background: rgba(234, 179, 8, 0.15);
-  color: #eab308;
-}
-
-.tool-execution-status.status-running {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.tool-execution-status.status-completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.tool-execution-status.status-failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+/* Dot between meta items; plus a leading dot only when a preview precedes the
+   group (so the recall row `3 messages · 2 facts` has no stray leading dot). */
+.tool-execution-meta > span:not(:first-child)::before,
+.tool-execution-preview + .tool-execution-meta::before {
+  content: '·';
+  margin-right: 0.5rem;
+  color: var(--text-tertiary);
 }
 
 /* Toggle button */
@@ -224,14 +213,14 @@
   overflow-y: auto;
 }
 
-/* Result footer */
+/* Result footer — now nested inside the expanded details, below the args JSON. */
 .tool-execution-result {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.75rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
   border-top: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
 }
 
 .result-summary {

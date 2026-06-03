@@ -6,15 +6,79 @@ import { useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  Loader2,
-  CheckCircle,
-  XCircle,
   ExternalLink,
+  Search,
+  Globe,
+  Flag,
+  StickyNote,
+  History,
+  MessageSquare,
+  Languages,
+  Brain,
+  Trash2,
+  LayoutGrid,
+  FileText,
+  Users,
+  Wrench,
+  type LucideIcon,
 } from 'lucide-react';
 import { useModal } from '../../contexts/ModalContext';
 import { UserHistoryView } from '../memory/UserHistoryView';
 import type { UserHistoryFact, UserHistoryTurn } from '../../lib/api';
 import './ToolExecutionBlock.css';
+
+/** Lead icon per internal tool — a glanceable type cue on the collapsed row. */
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  web_search: Search,
+  web_research: Globe,
+  web_extract: Globe,
+  web_map: Globe,
+  web_crawl: Globe,
+  checkpoint: Flag,
+  scratchpad_note: StickyNote,
+  recall_user_history: History,
+  read_user_message: MessageSquare,
+  translate_text: Languages,
+  detect_language: Languages,
+  remember_this: Brain,
+  forget: Trash2,
+  present_exhibit: LayoutGrid,
+  read_stored_output: FileText,
+  list_stored_outputs: FileText,
+  tool_output_query: FileText,
+  tool_output_section: FileText,
+  tool_output_path: FileText,
+  delegate_to: Users,
+};
+
+function toolIconFor(toolName: string): LucideIcon {
+  return TOOL_ICONS[toolName] ?? Wrench;
+}
+
+/** Tools whose `query` arg is the meaningful preview (shown verbatim, quoted). */
+const QUERY_TOOLS = new Set(['web_search', 'web_research']);
+
+/** The single most informative arg to show on the collapsed row. */
+function primaryPreview(toolName: string, args: Record<string, unknown>): string {
+  if (QUERY_TOOLS.has(toolName) && typeof args.query === 'string' && args.query.trim()) {
+    return `"${args.query}"`;
+  }
+  const entries = Object.entries(args);
+  if (entries.length === 0) return '';
+  const [k, v] = entries[0];
+  return `${k}: ${JSON.stringify(v).slice(0, 40)}`;
+}
+
+/** Result count for a web_search/web_research result, or null when unparseable. */
+function resultCount(content: string | undefined): number | null {
+  if (!content) return null;
+  try {
+    const data = JSON.parse(content);
+    return Array.isArray(data?.results) ? data.results.length : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Parse a `recall_user_history` tool result into turns + facts, or null when
@@ -94,16 +158,16 @@ export function ToolExecutionBlock({
       <div className="tool-execution-block status-completed tool-recall-card">
         <div className="tool-execution-header" onClick={() => setExpanded(!expanded)}>
           <div className="tool-execution-icon">
-            <CheckCircle size={14} />
+            <History size={14} />
           </div>
           <div className="tool-execution-info">
             <span className="tool-execution-name">User history recall</span>
-            {!expanded && (
-              <span className="tool-execution-preview">
-                ({userHistory.turns.length} message{userHistory.turns.length === 1 ? '' : 's'}
-                {userHistory.facts.length ? `, ${userHistory.facts.length} facts` : ''})
+            <span className="tool-execution-meta">
+              <span>
+                {userHistory.turns.length} message{userHistory.turns.length === 1 ? '' : 's'}
               </span>
-            )}
+              {userHistory.facts.length > 0 && <span>{userHistory.facts.length} facts</span>}
+            </span>
           </div>
           <button className="tool-execution-toggle">
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -124,15 +188,10 @@ export function ToolExecutionBlock({
     );
   }
 
-  const argCount = Object.keys(args).length;
-  const argsPreview =
-    argCount > 0
-      ? Object.entries(args)
-          .slice(0, 2)
-          .map(([k, v]) => `${k}: ${JSON.stringify(v).slice(0, 20)}`)
-          .join(', ')
-      : 'No arguments';
-
+  const preview = primaryPreview(toolName, args);
+  const ToolIcon = toolIconFor(toolName);
+  const isActive = status === 'pending' || status === 'running';
+  const results = QUERY_TOOLS.has(toolName) ? resultCount(result?.content) : null;
   const contentSize = result?.content ? formatBytes(result.content.length) : null;
 
   const handleViewOutput = (e: React.MouseEvent) => {
@@ -156,17 +215,16 @@ export function ToolExecutionBlock({
     <div className={`tool-execution-block ${statusInfo.className}`}>
       <div className="tool-execution-header" onClick={() => setExpanded(!expanded)}>
         <div className="tool-execution-icon">
-          {status === 'pending' && <Loader2 size={14} className="animate-pulse" />}
-          {status === 'running' && <Loader2 size={14} className="animate-spin" />}
-          {status === 'completed' && <CheckCircle size={14} />}
-          {status === 'failed' && <XCircle size={14} />}
+          <ToolIcon size={14} className={isActive ? 'animate-pulse' : undefined} />
         </div>
         <div className="tool-execution-info">
           <span className="tool-execution-name">{toolName}</span>
-          {!expanded && <span className="tool-execution-preview">({argsPreview})</span>}
-        </div>
-        <div className={`tool-execution-status ${statusInfo.className}`}>
-          <span>{statusInfo.label}</span>
+          {preview && <span className="tool-execution-preview">{preview}</span>}
+          <span className="tool-execution-meta">
+            {isActive && <span>{statusInfo.label}</span>}
+            {results !== null && <span>{results} result{results === 1 ? '' : 's'}</span>}
+            {result?.durationMs !== undefined && <span>{formatDuration(result.durationMs)}</span>}
+          </span>
         </div>
         <button className="tool-execution-toggle">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -183,26 +241,25 @@ export function ToolExecutionBlock({
             <span className="label">Arguments:</span>
             <pre className="args-json">{JSON.stringify(args, null, 2)}</pre>
           </div>
-        </div>
-      )}
-
-      {(status === 'completed' || status === 'failed') && result && (
-        <div className="tool-execution-result">
-          <div className="result-summary">
-            {result.success ? (
-              <span className="result-success">Success</span>
-            ) : (
-              <span className="result-failure">Failed</span>
-            )}
-            {result.durationMs !== undefined && (
-              <span className="result-duration">{formatDuration(result.durationMs)}</span>
-            )}
-            {contentSize && <span className="result-size">{contentSize}</span>}
-          </div>
-          <button className="view-output-btn" onClick={handleViewOutput}>
-            <ExternalLink size={12} />
-            <span>View Output</span>
-          </button>
+          {(status === 'completed' || status === 'failed') && result && (
+            <div className="tool-execution-result">
+              <div className="result-summary">
+                {result.success ? (
+                  <span className="result-success">Success</span>
+                ) : (
+                  <span className="result-failure">Failed</span>
+                )}
+                {result.durationMs !== undefined && (
+                  <span className="result-duration">{formatDuration(result.durationMs)}</span>
+                )}
+                {contentSize && <span className="result-size">{contentSize}</span>}
+              </div>
+              <button className="view-output-btn" onClick={handleViewOutput}>
+                <ExternalLink size={12} />
+                <span>View Output</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
