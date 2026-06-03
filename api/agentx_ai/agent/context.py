@@ -127,6 +127,54 @@ class ContextManager:
         
         return system_messages + messages_to_include + [new_message]
     
+    def assemble_turn_context(
+        self,
+        *,
+        system_blocks: list[Message],
+        history: list[Message],
+        new_message: Message,
+        context_window: int,
+        reserved_tokens: int,
+        verbatim_ratio: float = 0.7,
+        recent_floor: int = 4,
+    ) -> list[Message]:
+        """Build the final, budget-fit message list for one turn (sync, no LLM).
+
+        Keeps every ``system_block`` (the base prompt + checkpoints/scratchpad/
+        summary/memory/participants — the caller is responsible for bounding their
+        size), then fits as much **recent** verbatim ``history`` as the token budget
+        allows, dropping the oldest overflow (which a rolling-summary system block,
+        if present, already covers). Always keeps at least ``recent_floor`` of the
+        most recent turns even under pressure. Output ordering:
+        ``system_blocks + fitted_history + [new_message]``.
+
+        The budget is ``min(verbatim_ratio · window, window − reserved_tokens)`` so
+        verbatim history can't crowd out the reserved response/tool tokens, and the
+        whole prompt stays within a sane fraction of the real context window.
+        """
+        input_budget = min(
+            int(context_window * verbatim_ratio),
+            context_window - reserved_tokens,
+        )
+        system_tokens = self.estimate_tokens(system_blocks)
+        new_tokens = self.estimate_tokens([new_message])
+        remaining = input_budget - system_tokens - new_tokens
+
+        if remaining <= 0:
+            # Preamble alone is over budget — still keep a floor of recent turns.
+            floor = history[-recent_floor:] if recent_floor > 0 else []
+            return system_blocks + floor + [new_message]
+
+        fitted: list[Message] = []
+        used = 0
+        for msg in reversed(history):  # newest → oldest
+            tokens = self.estimate_tokens([msg])
+            if fitted and used + tokens > remaining and len(fitted) >= recent_floor:
+                break
+            fitted.insert(0, msg)
+            used += tokens
+        return system_blocks + fitted + [new_message]
+
     async def _summarize_messages(self, messages: list[Message]) -> str:
         """Summarize a list of messages."""
         if not messages:

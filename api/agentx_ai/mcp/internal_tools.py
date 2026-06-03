@@ -534,6 +534,15 @@ def recall_user_history(
                 "description": "Optional one-line description of what's next.",
                 "default": "",
             },
+            "replace": {
+                "type": "boolean",
+                "description": (
+                    "Replace your prior checkpoints with this one (supersede the "
+                    "running anchor set) instead of appending. Use when earlier "
+                    "checkpoints are now stale so they don't pile up or contradict."
+                ),
+                "default": False,
+            },
         },
         "required": ["summary"],
     },
@@ -542,6 +551,7 @@ def checkpoint(
     summary: str,
     decisions: list[str] | None = None,
     next_step: str = "",
+    replace: bool = False,
 ) -> dict[str, Any]:
     """Persist a checkpoint anchor for the current conversation."""
     from .internal_context import current_context
@@ -562,6 +572,7 @@ def checkpoint(
         summary=summary,
         decisions=decisions,
         next_step=next_step,
+        replace=bool(replace),
     )
     total = len(list_checkpoints(ctx.conversation_id))
 

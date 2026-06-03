@@ -283,14 +283,27 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 ### Conversation Context & Checkpoints
 
-- [ ] **Include prior conversation context every turn (near-verbatim)** — new turns currently carry
-      **zero** prior context, so the agent has no memory of the conversation it's in. Conversations
-      should be replayed near-verbatim into context on every turn (windowed/compressed only past the
-      context budget); a user who wants a clean slate starts a new chat. **Critical — a correctness
-      bug, not polish.**
-- [ ] **Context-window-based checkpoint triggering** — `checkpoint` sometimes fires early off a
-      fixed message count; trigger it on **context-window pressure** (a % of the model's window)
-      instead of a raw message tally, so it tracks real context growth.
+- [x] **Include prior conversation context every turn (near-verbatim)** — shipped `[v0.21.30]`. The
+      in-memory `SessionManager` is now **rehydrated** from the durable `conversation_logs` transcript
+      on a cold session (`agent/conversation_history.py`, before the new turn), so resumed/restored
+      conversations keep their history. Per-turn context is assembled by
+      `ContextManager.assemble_turn_context` — SYSTEM preamble + recent **verbatim** transcript up to
+      `context.verbatim_budget_ratio` (0.7) of the model's real window, oldest overflow covered by the
+      rolling summary. The memory recall's old current-conversation turn-dump (a band-aid) is dropped
+      to avoid double-injection. Tests: `ConversationContextTest`.
+- [x] **Context-window-based summary/compression triggering** — shipped `[v0.21.30]`. The rolling
+      summary (what fired "early" on a fixed message count) is now **token-triggered**:
+      `SessionManager.maybe_update_summary` summarizes aged-out turns only when the verbatim transcript
+      crosses `verbatim_budget_ratio` of the window (keeping a `recent_floor`), and the summary is
+      **persisted** in Redis so it survives a cold rebuild. (The model-authored `checkpoint` tool has
+      no auto-trigger — also hardened: anchor-preserving eviction + a `replace` mode.)
+- [ ] **Redis/Postgres-backed live session store** — rehydrate-from-logs (shipped) re-reads the DB on
+      a cold session; a durable session store would survive restarts without the per-turn read and
+      across workers.
+- [ ] **Rolling summary as a first-class `conversations` column** (vs. the current Redis TTL) for
+      durability beyond 30 days.
+- [ ] **Hydrate the Alloy / background-chat paths** too — this slice rehydrates the main streaming
+      chat; the multi-agent + queued-chat paths build their own context.
 
 ### Memory Area UX Cleanup
 

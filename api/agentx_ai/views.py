@@ -1023,6 +1023,17 @@ async def agent_chat_stream(request):
                 )
                 logger.info(f"Cached large user message: {cached_message_key} ({len(message):,} chars)")
 
+        # Rehydrate a cold session (new process / evicted / restored-from-history)
+        # from the durable conversation_logs transcript, BEFORE adding the new turn
+        # — otherwise resumed conversations carry zero prior context. Idempotent;
+        # the per-turn assembly below does the precise token-budget fit, so we load
+        # generously here (capped by the loader's row ceiling).
+        try:
+            from .agent.conversation_history import hydrate_session_from_history
+            hydrate_session_from_history(session, session.id, token_budget=10_000_000)
+        except Exception as _hy_err:  # pragma: no cover - DB offline
+            logger.debug(f"Session rehydration skipped: {_hy_err}")
+
         # Store full message in session for memory/history purposes
         session.add_message(Message(role=MessageRole.USER, content=message))
         context = session.get_messages()[:-1]
@@ -1152,15 +1163,15 @@ async def agent_chat_stream(request):
                         time_window_hours=agent.config.memory_time_window_hours,
                     )
                     if memory_bundle:
-                        # Restrict the auto-injected turn dump to the current
-                        # conversation. Cross-conversation history is opt-in via
-                        # the ``recall_user_history`` internal tool — auto-
-                        # dumping it polluted context and caused smaller models
-                        # to hallucinate against unrelated prior threads.
+                        # Inject memory **facts/entities** only — the verbatim
+                        # transcript is now rehydrated + assembled below, so the
+                        # old current-conversation turn dump (`max_turns`,
+                        # `current_conversation_id`) is redundant and would
+                        # double-inject the same turns in a second shape. Cross-
+                        # conversation recall stays opt-in via `recall_user_history`.
                         memory_context = memory_bundle.to_context_string(
                             turn_char_limit=agent.config.memory_recall_turn_chars,
-                            max_turns=agent.config.memory_recall_max_turns,
-                            current_conversation_id=conv_id,
+                            max_turns=0,
                         )
                         if memory_context:
                             messages.append(Message(
@@ -1171,29 +1182,40 @@ async def agent_chat_stream(request):
                 except Exception as mem_err:
                     logger.warning(f"Failed to retrieve memories: {mem_err}")
 
-            # Inject rolling session summary (covers turns older than the
-            # recent window). The recent window itself stays verbatim below.
+            # Resolve the model's real context window (provider caps + config
+            # override) — drives the token-budget assembly below and downstream.
+            from .config import get_context_limit_overrides, get_config_manager
+            caps = provider.get_capabilities(model_id)
+            overrides = get_context_limit_overrides(model_id, provider.name)
+            context_window = overrides.get("context_window") or caps.context_window
+            max_output_override = overrides.get("max_output_tokens")
+            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
+
+            # Inject the (persisted) rolling summary as a system block — it covers
+            # turns older than the verbatim budget. No message-count trim; the
+            # assembler fits the transcript to the real window.
             if session.summary:
-                from .config import get_config_manager
-                cfg = get_config_manager()
-                recent_window = int(
-                    cfg.get("session.rolling_summary.recent_window", 8)
-                )
                 messages.append(Message(
                     role=MessageRole.SYSTEM,
                     content=f"Earlier conversation summary: {session.summary}",
                 ))
-                # Keep only the most recent N non-system messages from history.
-                non_system = [m for m in context if m.role != MessageRole.SYSTEM]
-                if len(non_system) > recent_window:
-                    trimmed = non_system[-recent_window:]
-                    system_msgs = [m for m in context if m.role == MessageRole.SYSTEM]
-                    context = system_msgs + trimmed
 
-            if context:
-                messages.extend(context)
-            # Use truncated/cached version for the LLM context
-            messages.append(Message(role=MessageRole.USER, content=message_for_context))
+            # One budget-fit assembly (context-window-based, not message-count):
+            # keep every system block, fit the most recent verbatim transcript
+            # within a fraction of the window, drop the oldest overflow (covered by
+            # the summary), then append the new user turn. Replaces the old scattered
+            # count-trim + extend.
+            _cfg = get_config_manager()
+            from .agent.context import ContextManager, ContextConfig
+            messages = ContextManager(ContextConfig()).assemble_turn_context(
+                system_blocks=messages,
+                history=[m for m in context if m.role != MessageRole.SYSTEM],
+                new_message=Message(role=MessageRole.USER, content=message_for_context),
+                context_window=context_window,
+                reserved_tokens=max_output_tokens + 2000,
+                verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
+                recent_floor=int(_cfg.get("context.recent_floor", 4)),
+            )
 
             # Get MCP tools for function calling
             tools = agent._get_tools_for_provider()
@@ -1225,17 +1247,8 @@ async def agent_chat_stream(request):
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
             prompt_profile_name = prompt_profile.name if prompt_profile else None
 
-            # Get context limits: provider capabilities as primary, config as override
-            from .config import get_context_limit_overrides
-            caps = provider.get_capabilities(model_id)
-            overrides = get_context_limit_overrides(model_id, provider.name)
-            context_window = overrides.get("context_window") or caps.context_window
-            # An explicit per-model override is authoritative (user set it on
-            # purpose); a capability-reported value gets clamped below to the
-            # ceiling, since some providers report max_output == context_window.
-            max_output_override = overrides.get("max_output_tokens")
-            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
-
+            # Context limits (window + max output) were resolved above, before the
+            # token-budget assembly. Just log them here.
             logger.info(
                 f"Using context limits for {provider.name}/{model_id}: "
                 f"window={context_window:,}, max_output={max_output_tokens:,}"
@@ -1490,9 +1503,15 @@ async def agent_chat_stream(request):
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
 
-            # Roll up older turns into session.summary (best-effort).
+            # Roll up older turns into session.summary when the verbatim transcript
+            # crosses the context-window budget (best-effort; persisted for resume).
             try:
-                await agent._session_manager.maybe_update_summary(session.id)
+                _vr = float(get_config_manager().get("context.verbatim_budget_ratio", 0.7))
+                await agent._session_manager.maybe_update_summary(
+                    session.id,
+                    token_threshold=int(context_window * _vr),
+                    recent_floor=int(get_config_manager().get("context.recent_floor", 4)),
+                )
             except Exception as e:
                 logger.warning(f"Rolling summary update failed: {e}")
 

@@ -36,8 +36,18 @@ def add_checkpoint(
     summary: str,
     decisions: Optional[list[str]] = None,
     next_step: str = "",
+    replace: bool = False,
 ) -> dict[str, Any]:
-    """Append a checkpoint to the conversation. Returns the stored entry."""
+    """Record a checkpoint. Returns the stored entry.
+
+    ``replace=True`` clears prior checkpoints first (supersede the running anchor
+    set) so the model can keep one coherent, current set instead of piling up
+    stale, contradictory ``next_step``s.
+
+    Eviction is **anchor-preserving**: past the cap we keep the *first* checkpoint
+    (the original intent/goal — usually the most valuable anchor) plus the most
+    recent ``MAX-1``, rather than blindly dropping the oldest.
+    """
     entry = {
         "summary": summary.strip(),
         "decisions": [d.strip() for d in (decisions or []) if d and d.strip()],
@@ -47,9 +57,16 @@ def add_checkpoint(
 
     try:
         client = _redis()
-        client.rpush(_key(conversation_id), json.dumps(entry))
-        client.ltrim(_key(conversation_id), -MAX_CHECKPOINTS_PER_CONVERSATION, -1)
-        client.expire(_key(conversation_id), CHECKPOINT_TTL_SECONDS)
+        key = _key(conversation_id)
+        if replace:
+            client.delete(key)
+        client.rpush(key, json.dumps(entry))
+        if int(cast(int, client.llen(key)) or 0) > MAX_CHECKPOINTS_PER_CONVERSATION:
+            items = list(cast(list, client.lrange(key, 0, -1)) or [])
+            kept = [items[0]] + items[-(MAX_CHECKPOINTS_PER_CONVERSATION - 1):]
+            client.delete(key)
+            client.rpush(key, *kept)
+        client.expire(key, CHECKPOINT_TTL_SECONDS)
     except Exception as e:  # pragma: no cover — Redis offline
         logger.warning(f"Failed to store checkpoint: {e}")
 
