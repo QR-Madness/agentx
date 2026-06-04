@@ -17,6 +17,7 @@ import {
   MemoryChannel,
   MemoryEntity,
   MemoryFact,
+  MemoryFactEntity,
   MemoryFactPatch,
   FactForgetResult,
   FactProvenance,
@@ -366,6 +367,21 @@ export function useMemoryStrategies(channel: string, page: number) {
   };
 }
 
+export function useMemoryProcedures(channel: string, page: number) {
+  const { data, loading, error, refresh } = useApi(
+    () => api.listMemoryProcedures({ channel, page }),
+    [channel, page]
+  );
+  return {
+    procedures: data?.procedures ?? [],
+    total: data?.total ?? 0,
+    hasNext: data?.has_next ?? false,
+    loading,
+    error,
+    refresh,
+  };
+}
+
 export function useMemoryStats(opts?: UseApiOptions) {
   const { data, loading, error, refresh } = useApi<MemoryStats>(
     () => api.getMemoryStats(),
@@ -484,6 +500,54 @@ export function useForgetMemoryFact() {
       setLoading(false);
     }
   }, []);
+
+  return { mutate, loading, error };
+}
+
+export function useLinkFactEntity() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(
+    async (factId: string, entityId: string): Promise<MemoryFactEntity[] | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await api.linkFactEntity(factId, entityId);
+        return result.entities;
+      } catch (err) {
+        setError(err as ApiError);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  return { mutate, loading, error };
+}
+
+export function useUnlinkFactEntity() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(
+    async (factId: string, entityId: string): Promise<MemoryFactEntity[] | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await api.unlinkFactEntity(factId, entityId);
+        return result.entities;
+      } catch (err) {
+        setError(err as ApiError);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   return { mutate, loading, error };
 }

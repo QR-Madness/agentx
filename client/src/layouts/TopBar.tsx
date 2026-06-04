@@ -122,11 +122,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
   const openMemory = () => {
     openModal({
-      id: 'memory-drawer',
-      type: 'drawer',
+      id: 'memory',
+      type: 'modal',
       component: 'memory',
-      position: 'right',
-      size: 'xxl',
+      size: 'full',
     });
   };
 

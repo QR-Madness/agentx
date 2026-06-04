@@ -62,7 +62,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 
 - 3 primary pages: Start, Dashboard, AgentX — routed via `RootLayout` + `TopBar`; plus gate pages `AuthPage` (when `AGENTX_AUTH_ENABLED`) and `VersionMismatchPage` (protocol mismatch)
 - Browser-style conversation tabs via `ConversationContext` (add, close, switch, rename, reorder)
-- Former tabs (Settings, Memory, Tools) → right-side drawer panels from toolbar icons
+- Former tabs → toolbar-icon surfaces: Settings, Tools, and **Memory** open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources remain right-side drawers
 - Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`)
 - `ServerContext` provides app-wide server state; `lib/api` is the typed API client (a facade over domain modules in `lib/api/`); `lib/hooks.ts` has React data hooks
 - `AgentProfileContext` manages agent profiles (name, model, temperature, reasoning strategy, memory channel)
@@ -213,8 +213,10 @@ Base URL: `http://localhost:12319/api/`
 | `/api/memory/channels` | GET | List memory channels |
 | `/api/memory/entities` | GET | List entities (filter: `?channel=`, `?type=`) |
 | `/api/memory/entities/graph` | GET | Get entity relationship graph |
-| `/api/memory/facts` | GET | List facts (filter: `?channel=`, `?entity_id=`) |
+| `/api/memory/facts` | GET | List facts (filter: `?channel=`, `?entity_id=`); each fact carries `entities[]` ({id,name,type}) for its ABOUT'd entities |
+| `/api/memory/facts/{id}/entities` | POST/DELETE | Link/unlink an entity to a fact (`{entity_id}`, ABOUT edge); returns the fact's updated entity list |
 | `/api/memory/strategies` | GET | List procedural strategies |
+| `/api/memory/procedures` | GET | List distilled procedures (Slice 1 — trigger/body/scope/strength) |
 | `/api/memory/stats` | GET | Memory system statistics |
 | `/api/metrics/usage` | GET | Aggregated token/cost/latency usage from `conversation_logs` (`?days=` 1–90, default 14): totals, by-model, daily series |
 | `/api/memory/checkpoints` | GET/DELETE | List or clear a conversation's model-authored checkpoints (`?conversation_id=`) |
@@ -307,6 +309,14 @@ The `ExtractionService` (`kit/agent_memory/extraction/service.py`) provides LLM-
 - Uses `nvidia/nemotron-3-nano` by default for extraction (configurable via `combined_extraction_model` setting)
 - Consolidation jobs (`consolidation/jobs.py`) call extractors every 15 minutes
 - Gracefully degrades to empty results when no provider is configured
+
+### Procedural Memory (encode → distill → reflex-core)
+Learns the project/user/domain "how we work here" **delta** (not baseline behavior a capable model already does). Three loops:
+- **Encode (Slice 0, every turn, cheap):** stages high-signal `procedure_candidates` PG rows — `correction` (from persisted steers) + `explicit_rule` (`procedural.detect_explicit_rule`, heuristic). `status='pending'`.
+- **Distill (Slice 1, consolidation):** the async `distill_procedures` job (`consolidation/jobs.py`, registered in the registry default pipeline + the autonomous worker) reads pending candidates, groups by derived scope (corrections with an `agent_id` → `_self_{agent_id}`; explicit rules stay on their channel), runs `ExtractionService.distill_procedure` (baseline-deviation filter with explicit-rule deference), and **strengthens** a cosine-similar existing `Procedure` (`procedural_dedupe_threshold`) instead of duplicating. Candidates flip to `distilled`/`discarded` (+`distilled_into`). Repurposes the (dead) `learn_strategy`/`reinforce_strategy` write pattern as `learn_procedure`/`reinforce_procedure` on a new Neo4j `Procedure` node (`models.Procedure`: `trigger`/`body`/`rationale`/`scope`/`strength`/`evidence_refs`; `procedure_embeddings` vector index).
+- **Activate — reflex core (Slice 1):** `ProceduralMemory.get_reflex_procedures` (top-`strength` over recall channels, *maintained not searched*) is attached at the `interface.remember()` boundary and rendered by `MemoryBundle.to_context_string` ("Learned Procedures"). Gated by `reflex_core_enabled`/`reflex_core_limit`.
+- **Worker:** `ConsolidationWorker.run()` now awaits coroutine jobs (it was silently dropping the async `consolidate`); `task dev` runs the worker; manual `task memory:distill-procedures`. Inspect via `GET /api/memory/procedures` + `procedures` on `/api/memory/stats`.
+- Deferred: trigger-indexed activation (activation-nerve/point-of-action/deliberate `recall_procedures`), tool-sequence procedures (needs internal-tool recording + a live Outcome signal), ReflectiveReasoner correction-reflection.
 
 ### Context Gating
 Large tool outputs (>12K chars) are compressed and stored for retrieval:

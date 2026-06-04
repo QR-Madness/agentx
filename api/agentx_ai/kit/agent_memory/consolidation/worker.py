@@ -1,5 +1,7 @@
 """Background worker for memory consolidation jobs."""
 
+import asyncio
+import inspect
 import time
 import signal
 import logging
@@ -16,7 +18,8 @@ from .jobs import (
     apply_memory_decay,
     cleanup_old_memories,
     manage_audit_partitions,
-    promote_to_global
+    promote_to_global,
+    distill_procedures,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +65,10 @@ class ConsolidationWorker:
             "audit_partitions": {
                 "func": manage_audit_partitions,
                 "interval_minutes": settings.job_audit_partitions_interval
+            },
+            "distill_procedures": {
+                "func": distill_procedures,
+                "interval_minutes": settings.job_distill_procedures_interval
             }
         }
 
@@ -179,6 +186,12 @@ class ConsolidationWorker:
 
                     try:
                         result = job_config["func"]()
+                        # Async jobs (consolidate, distill_procedures) return a
+                        # coroutine — run it to completion. Without this the
+                        # autonomous worker silently drops async jobs (they never
+                        # execute and the un-awaited coroutine is GC'd).
+                        if inspect.iscoroutine(result):
+                            result = asyncio.run(result)
                         # Extract items processed if the job returns a count
                         if isinstance(result, int):
                             items_processed = result

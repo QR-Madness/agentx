@@ -624,6 +624,13 @@ export interface MemoryEntity {
   aliases?: string[];
 }
 
+/** A lightweight entity reference carried on a fact's ABOUT links (#538). */
+export interface MemoryFactEntity {
+  id: string;
+  name: string;
+  type: string;
+}
+
 export interface MemoryFact {
   id: string;
   claim: string;
@@ -634,6 +641,8 @@ export interface MemoryFact {
   created_at: string;
   promoted_from?: string;
   entity_ids: string[];
+  /** Entities this fact is ABOUT — {id,name,type}; powers the Mentioned entities section. */
+  entities?: MemoryFactEntity[];
 }
 
 export interface MemoryFactPatch {
@@ -715,6 +724,29 @@ export interface FactsResponse extends PaginatedResponse<MemoryFact> {
 
 export interface StrategiesResponse extends PaginatedResponse<MemoryStrategy> {
   strategies: MemoryStrategy[];
+}
+
+/**
+ * A distilled procedure (procedural memory): the "how we work here" delta the
+ * `distill_procedures` job mints from corrections/steers + explicit user rules.
+ */
+export interface MemoryProcedure {
+  id: string;
+  trigger: string;
+  body: string;
+  rationale: string;
+  scope: string;
+  agent_id?: string | null;
+  strength: number;
+  signal_kinds: string[];
+  /** `cand:<id>` and `conv:<conversation_id>` provenance refs. */
+  evidence_refs: string[];
+  channel: string;
+  last_reinforced?: string;
+}
+
+export interface ProceduresResponse extends PaginatedResponse<MemoryProcedure> {
+  procedures: MemoryProcedure[];
 }
 
 export interface EntityGraph {

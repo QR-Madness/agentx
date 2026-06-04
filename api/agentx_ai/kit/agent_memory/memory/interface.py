@@ -708,6 +708,37 @@ class AgentMemory:
             logger.warning(f"stage_procedure_candidate failed (signal={signal}): {e}")
             return False
 
+    def _attach_reflex_procedures(
+        self, bundle: "MemoryBundle", channels: List[str]
+    ) -> None:
+        """Populate ``bundle.procedures`` with the reflex core (Slice 1).
+
+        Gated by ``reflex_core_enabled`` and bounded by ``reflex_core_limit`` so it
+        can be disabled and can't blow the memory token budget.
+        """
+        if not getattr(self._settings, "reflex_core_enabled", True):
+            return
+        limit = int(getattr(self._settings, "reflex_core_limit", 5))
+        bundle.procedures = self.procedural.get_reflex_procedures(channels, limit=limit)
+
+    def get_reflex_procedures(self, *, limit: int = 5) -> List[Dict[str, Any]]:
+        """Reflex-core procedures for this instance's default recall channels."""
+        return self.procedural.get_reflex_procedures(
+            self._default_recall_channels(), limit=limit
+        )
+
+    def list_procedures(
+        self, channel: str = "_global", offset: int = 0, limit: int = 20
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """List distilled procedures for this user (inspection surface)."""
+        return self.procedural.list_procedures(
+            self.user_id, channel=channel, offset=offset, limit=limit
+        )
+
+    def count_procedures(self, *, channel: Optional[str] = None) -> int:
+        """Count distilled procedures (observability / stats)."""
+        return self.procedural.count_procedures(channel=channel)
+
     # Retrieval operations
 
     def remember(
@@ -783,6 +814,18 @@ class AgentMemory:
                     strategy_weights=strategy_weights,
                     conversation_id=self.conversation_id,
                 )
+
+            # Reflex core (Slice 1): always-on "how we work here" procedures,
+            # *maintained, not searched* — attached at the remember() boundary so
+            # it appears every turn regardless of which recall technique built the
+            # bundle (procedural recall is trigger-conditional, not content-similar).
+            if result is not None and include_procedural:
+                try:
+                    self._attach_reflex_procedures(
+                        result, channels or self._default_recall_channels()
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Reflex-core attach skipped: {e}")
 
             # Calculate counts for event
             turns_count = len(result.relevant_turns) if result else 0

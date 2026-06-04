@@ -93,13 +93,18 @@ tasks:
 # ============================================================================
 
   dev:
-    desc: "Start full dev environment (Docker + API + Client)"
+    desc: "Start full dev environment (Docker + API + Client + memory worker)"
     deps: [check, db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
       - defer: { task: db:down }
-      - bunx concurrently -n "API,CLIENT" -c "blue.bold,magenta.bold"
+      # WORKER runs the autonomous consolidation loop (consolidate, distill_procedures,
+      # …) so procedural/semantic memory actually accrues during development.
+      - bunx concurrently -n "API,CLIENT,WORKER" -c "blue.bold,magenta.bold,green.bold"
           "cd api && uv run uvicorn agentx_api.asgi:application --host 127.0.0.1 --port 12319 --reload"
           "cd client && bun run tauri dev"
+          "uv run python -m agentx_ai.kit.agent_memory.consolidation.worker"
 
   dev:api:
     desc: "Start only the API server (assumes Docker running)"
@@ -377,6 +382,14 @@ tasks:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
       - uv run python -m agentx_ai.kit.agent_memory.consolidation.worker
+
+  memory:distill-procedures:
+    desc: "Distill pending procedure candidates into scoped Procedures (Slice 1, on-demand)"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py distill_procedures
 
   memory:export:
     desc: "Export agent memory to a round-trippable JSON file. Pass --channel/--output/--no-embeddings via CLI_ARGS."

@@ -1,10 +1,30 @@
 """Data models for the agent memory system."""
 
+import re
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
+
+
+# Distilled procedure triggers are stored condition-phrased and usually already
+# lead with a condition word ("when presenting a recommendation"). Capitalize
+# when they do; only prepend "When " when they don't — avoids the doubled
+# "When when …" wart in rendered procedures. (Render-only; storage is untouched.)
+_TRIGGER_CONDITION_LEAD = re.compile(
+    r"^(when|whenever|before|after|while|if|once|upon|during|as)\b", re.IGNORECASE
+)
+
+
+def _prefix_trigger(trigger: str) -> str:
+    """Headline form of a procedure trigger, de-doubling a leading condition word."""
+    t = (trigger or "").strip()
+    if not t:
+        return t
+    if _TRIGGER_CONDITION_LEAD.match(t):
+        return t[0].upper() + t[1:]
+    return f"When {t}"
 
 
 def _coerce_datetime(value: Any) -> Any:
@@ -180,6 +200,35 @@ class Strategy(BaseModel):
         return _coerce_datetime(v)
 
 
+class Procedure(BaseModel):
+    """A distilled, scoped procedural rule — the project/user/domain "how we do it
+    here" delta a general model wouldn't already do by default (Slice 1).
+
+    Richer than ``Strategy`` (which keys a tool sequence off a context pattern):
+    a ``Procedure`` carries a natural-language trigger + a replayable body and is
+    strengthened (not duplicated) as the same pattern recurs.
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    trigger: str  # NL condition that activates this — "when presenting a recommendation"
+    trigger_features: Dict[str, Any] = Field(default_factory=dict)  # situation features (later activation)
+    body: str  # the replayable approach / instruction
+    rationale: str = ""  # why this is the right behavior
+    scope: str = "_global"  # channel scope (_global | user | project | _self_{agent})
+    agent_id: Optional[str] = None
+    strength: int = 1  # replay/reinforce count
+    evidence_refs: List[str] = Field(default_factory=list)  # candidate ids + conversation ids
+    signal_kinds: List[str] = Field(default_factory=list)  # e.g. ["correction", "explicit_rule"]
+    embedding: Optional[List[float]] = None
+    created_at: Optional[datetime] = None
+    last_reinforced: Optional[datetime] = None
+
+    @field_validator("created_at", "last_reinforced", mode="before")
+    @classmethod
+    def _coerce_dt(cls, v: Any) -> Any:
+        return _coerce_datetime(v)
+
+
 class MemoryBundle(BaseModel):
     """Aggregated retrieval result for context injection."""
 
@@ -187,6 +236,7 @@ class MemoryBundle(BaseModel):
     entities: List[Dict[str, Any]] = Field(default_factory=list)
     facts: List[Dict[str, Any]] = Field(default_factory=list)
     strategies: List[Dict[str, Any]] = Field(default_factory=list)
+    procedures: List[Dict[str, Any]] = Field(default_factory=list)
     active_goals: List[Dict[str, Any]] = Field(default_factory=list)
     user_context: Dict[str, Any] = Field(default_factory=dict)
 
@@ -250,5 +300,19 @@ class MemoryBundle(BaseModel):
                 for g in self.active_goals
             )
             sections.append(f"## Active Goals\n{goals_text}")
+
+        # Reflex core (Slice 1): the always-on "how we work here" procedures — the
+        # delta a general model wouldn't already do by default. Maintained, not
+        # searched, so it's injected every turn (see ProceduralMemory.get_reflex_procedures).
+        if self.procedures:
+            def _format_proc(p: Dict[str, Any]) -> str:
+                trigger = (p.get("trigger") or "").strip()
+                body = (p.get("body") or "").strip()
+                return f"- {_prefix_trigger(trigger)}: {body}" if trigger else f"- {body}"
+
+            procs_text = "\n".join(_format_proc(p) for p in self.procedures)
+            sections.append(
+                f"## Learned Procedures (how we work here)\n{procs_text}"
+            )
 
         return "\n\n".join(sections)

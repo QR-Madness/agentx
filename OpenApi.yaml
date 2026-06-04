@@ -1981,6 +1981,85 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /memory/facts/{fact_id}/entities:
+    post:
+      tags: [Memory]
+      operationId: memoryFactLinkEntity
+      summary: Link an entity to a fact (ABOUT edge)
+      description: >-
+        Creates a manual `(:Fact)-[:ABOUT {method:'manual'}]->(:Entity)` link.
+        User-scoped on both nodes. Returns the fact's updated `{id,name,type}`
+        entity list.
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entity_id]
+              properties:
+                entity_id:
+                  type: string
+                  description: The entity to link this fact to.
+      responses:
+        '200':
+          description: Updated entity list for the fact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        type: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Memory]
+      operationId: memoryFactUnlinkEntity
+      summary: Unlink an entity from a fact
+      description: >-
+        Removes the `(:Fact)-[:ABOUT]->(:Entity)` link. User-scoped. Returns the
+        fact's remaining `{id,name,type}` entity list.
+      parameters:
+        - $ref: '#/components/parameters/FactId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entity_id]
+              properties:
+                entity_id:
+                  type: string
+                  description: The entity to unlink from this fact.
+      responses:
+        '200':
+          description: Remaining entity list for the fact
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        type: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /memory/facts/{fact_id}/provenance:
     get:
       tags: [Memory]
@@ -2038,6 +2117,56 @@ paths:
                       $ref: '#/components/schemas/Strategy'
                   total:
                     type: integer
+
+  /memory/procedures:
+    get:
+      tags: [Memory]
+      operationId: memoryProcedures
+      summary: List distilled procedures
+      description: >
+        Distilled procedural memory (Slice 1): the "how we work here" deltas the
+        `distill_procedures` consolidation job mints from corrections/steers and
+        explicit user rules. Each carries a natural-language trigger + replayable body.
+      parameters:
+        - $ref: '#/components/parameters/ChannelQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Procedures (paginated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  procedures:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        trigger: { type: string }
+                        body: { type: string }
+                        rationale: { type: string }
+                        scope: { type: string }
+                        agent_id: { type: string, nullable: true }
+                        strength: { type: integer }
+                        signal_kinds:
+                          type: array
+                          items: { type: string }
+                        evidence_refs:
+                          type: array
+                          items: { type: string }
+                          description: "`cand:<id>` and `conv:<conversation_id>` provenance refs"
+                        channel: { type: string }
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  has_next:
+                    type: boolean
 
   /memory/stats:
     get:
@@ -3298,6 +3427,20 @@ components:
           nullable: true
         access_count:
           type: integer
+        entity_ids:
+          type: array
+          description: IDs of entities this fact is ABOUT.
+          items:
+            type: string
+        entities:
+          type: array
+          description: Entities this fact is ABOUT — powers the Mentioned entities section.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              type: { type: string }
 
     Strategy:
       type: object

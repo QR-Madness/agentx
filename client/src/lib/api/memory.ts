@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryExport, MemoryImportResult, MemoryFact, MemoryFactPatch, MemoryStats, StrategiesResponse, UserHistoryResponse } from './types';
+import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryExport, MemoryFactEntity, MemoryImportResult, MemoryFact, MemoryFactPatch, MemoryStats, ProceduresResponse, StrategiesResponse, UserHistoryResponse } from './types';
 
 export const memoryApi = {
   // === Memory Explorer ===
@@ -60,6 +60,19 @@ export const memoryApi = {
     return apiRequest(`/api/memory/strategies${queryString ? `?${queryString}` : ''}`);
   },
 
+  async listMemoryProcedures(params: {
+    channel?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<ProceduresResponse> {
+    const query = new URLSearchParams();
+    if (params.channel) query.set('channel', params.channel);
+    if (params.page) query.set('page', params.page.toString());
+    if (params.limit) query.set('limit', params.limit.toString());
+    const queryString = query.toString();
+    return apiRequest(`/api/memory/procedures${queryString ? `?${queryString}` : ''}`);
+  },
+
   async getMemoryStats(): Promise<MemoryStats> {
     return apiRequest('/api/memory/stats');
   },
@@ -93,6 +106,22 @@ export const memoryApi = {
 
   async getFactProvenance(factId: string): Promise<FactProvenance> {
     return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/provenance`);
+  },
+
+  /** Link an entity to a fact (ABOUT edge). Returns the fact's updated entity list (#905). */
+  async linkFactEntity(factId: string, entityId: string): Promise<{ entities: MemoryFactEntity[] }> {
+    return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/entities`, {
+      method: 'POST',
+      body: JSON.stringify({ entity_id: entityId }),
+    });
+  },
+
+  /** Unlink an entity from a fact. Returns the fact's remaining entity list (#905). */
+  async unlinkFactEntity(factId: string, entityId: string): Promise<{ entities: MemoryFactEntity[] }> {
+    return apiRequest(`/api/memory/facts/${encodeURIComponent(factId)}/entities`, {
+      method: 'DELETE',
+      body: JSON.stringify({ entity_id: entityId }),
+    });
   },
 
   async updateMemoryEntity(entityId: string, patch: MemoryEntityPatch): Promise<{ entity: MemoryEntity }> {

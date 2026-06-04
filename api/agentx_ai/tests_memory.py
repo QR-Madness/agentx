@@ -4415,3 +4415,219 @@ class BackfillAgentAttributionRenameTest(TestCase):
         self.assertIsNone(self._rename("User works at Acme", "Mobius"))
         # "agential" must not match the \bagent\b boundary.
         self.assertIsNone(self._rename("Agentic workflows are useful", "Mobius"))
+
+
+class ProcedureReflexRenderTest(TestCase):
+    """Reflex core: distilled procedures render into the prompt context (Fix ③)."""
+
+    def test_to_context_string_renders_procedures(self) -> None:
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+
+        bundle = MemoryBundle(procedures=[
+            {"trigger": "presenting a recommendation", "body": "give options with rationales", "strength": 3},
+            {"trigger": "", "body": "lead with the conclusion, then the reasoning", "strength": 1},
+        ])
+        text_out = bundle.to_context_string()
+        self.assertIn("Learned Procedures", text_out)
+        self.assertIn("When presenting a recommendation: give options with rationales", text_out)
+        # Triggerless procedure still renders as a bare bullet.
+        self.assertIn("- lead with the conclusion, then the reasoning", text_out)
+
+    def test_empty_procedures_omitted(self) -> None:
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+
+        self.assertNotIn("Learned Procedures", MemoryBundle().to_context_string())
+
+    def test_trigger_with_leading_condition_word_not_doubled(self) -> None:
+        """A trigger that already begins with 'when' must not render 'When when …'."""
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+
+        bundle = MemoryBundle(procedures=[
+            {"trigger": "when presenting a recommendation", "body": "give options", "strength": 2},
+            {"trigger": "before finalizing an analysis", "body": "list assumptions", "strength": 1},
+        ])
+        text_out = bundle.to_context_string()
+        self.assertNotIn("When when", text_out)
+        self.assertNotIn("when when", text_out)
+        # Leading condition word is preserved (just capitalized), not re-prefixed.
+        self.assertIn("- When presenting a recommendation: give options", text_out)
+        self.assertIn("- Before finalizing an analysis: list assumptions", text_out)
+
+    def test_prefix_trigger_helper(self) -> None:
+        """_prefix_trigger de-doubles condition words but prefixes plain phrases."""
+        from agentx_ai.kit.agent_memory.models import _prefix_trigger
+
+        self.assertEqual(_prefix_trigger("when doing a web search"), "When doing a web search")
+        self.assertEqual(_prefix_trigger("presenting results"), "When presenting results")
+        self.assertEqual(_prefix_trigger("Whenever asked"), "Whenever asked")
+        self.assertEqual(_prefix_trigger(""), "")
+
+
+class ProcedureWritePathTest(TestCase):
+    """ProceduralMemory.learn_procedure / reinforce_procedure / get_reflex_procedures."""
+
+    def _procedural(self):
+        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
+        pm = ProceduralMemory()
+        pm.embedder = MagicMock()
+        pm.embedder.embed_single.return_value = [0.1] * 1024
+        return pm
+
+    def test_learn_procedure_creates_node(self) -> None:
+        mock_neo4j = create_mock_neo4j_session()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as sess:
+            sess.return_value = mock_neo4j
+            pm = self._procedural()
+            proc = pm.learn_procedure(
+                trigger="when presenting a recommendation",
+                body="give options with rationales",
+                rationale="user prefers to weigh alternatives",
+                scope="_global",
+                signal_kinds=["explicit_rule"],
+                evidence_refs=["cand:1"],
+                conversation_ids=["conv-1"],
+                user_id="default",
+            )
+        cypher = mock_neo4j.run.call_args[0][0]
+        self.assertIn("CREATE (p:Procedure", cypher)
+        self.assertIn("HAS_PROCEDURE", cypher)
+        self.assertEqual(proc.trigger, "when presenting a recommendation")
+        self.assertEqual(proc.strength, 1)
+
+    def test_reinforce_procedure_increments_strength(self) -> None:
+        mock_neo4j = create_mock_neo4j_session()
+        mock_neo4j.run.return_value.single.return_value = {"updated_id": "proc-1"}
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as sess:
+            sess.return_value = mock_neo4j
+            pm = self._procedural()
+            ok = pm.reinforce_procedure("proc-1", evidence_refs=["cand:2"], signal_kinds=["correction"])
+        cypher = mock_neo4j.run.call_args[0][0]
+        self.assertTrue(ok)
+        self.assertIn("p.strength = coalesce(p.strength, 1) + 1", cypher)
+
+    def test_get_reflex_procedures_returns_dicts(self) -> None:
+        mock_neo4j = create_mock_neo4j_session()
+        mock_neo4j.run.return_value = [
+            {"trigger": "t1", "body": "b1", "scope": "_global", "strength": 5},
+        ]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as sess:
+            sess.return_value = mock_neo4j
+            pm = self._procedural()
+            out = pm.get_reflex_procedures(["_global"], limit=5)
+        self.assertEqual(out[0]["body"], "b1")
+
+    def test_get_reflex_procedures_empty_channels(self) -> None:
+        pm = self._procedural()
+        self.assertEqual(pm.get_reflex_procedures([], limit=5), [])
+
+
+class ProcedureDistillStageTest(TestCase):
+    """ExtractionService.distill_procedure parses keep/discard from the LLM."""
+
+    def _service_with_response(self, content: str):
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        ext = ExtractionService()
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=MagicMock(content=content))
+        ext._get_provider_for_stage = MagicMock(return_value=(provider, "model", 0.2, 1000))
+        return ext
+
+    def test_distill_keep(self) -> None:
+        ext = self._service_with_response(
+            '{"keep": true, "trigger": "when presenting a recommendation", "body": "give options with rationales", "rationale": "user preference"}'
+        )
+        result = asyncio.run(ext.distill_procedure(
+            [{"signal": "explicit_rule", "content": "always give me options with rationales"}], "_global"
+        ))
+        self.assertTrue(result.keep)
+        self.assertEqual(result.trigger, "when presenting a recommendation")
+        self.assertEqual(result.body, "give options with rationales")
+
+    def test_distill_discard(self) -> None:
+        ext = self._service_with_response('{"keep": false, "trigger": "", "body": "", "rationale": ""}')
+        result = asyncio.run(ext.distill_procedure(
+            [{"signal": "correction", "content": "be accurate"}], "_global"
+        ))
+        self.assertFalse(result.keep)
+
+    def test_distill_keep_without_body_is_discard(self) -> None:
+        ext = self._service_with_response('{"keep": true, "trigger": "x", "body": "", "rationale": "y"}')
+        result = asyncio.run(ext.distill_procedure(
+            [{"signal": "correction", "content": "x"}], "_global"
+        ))
+        self.assertFalse(result.keep)
+
+
+class ProcedureDistillJobTest(TestCase):
+    """distill_procedures consolidation job: create / discard / reinforce + candidate marking."""
+
+    def _row(self, **kw):
+        from types import SimpleNamespace
+        base = dict(id=1, conversation_id="conv-1", signal="explicit_rule",
+                    content="always summarize trade-offs before recommending",
+                    channel="_global", agent_id=None)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def _run_job(self, *, rows, distill_result, find_result=None, reinforce_ok=True):
+        jobs_mod = 'agentx_ai.kit.agent_memory.consolidation.jobs'
+
+        pg = create_mock_postgres_session()
+        pg.execute.return_value.fetchall.return_value = rows
+
+        ext = MagicMock()
+        ext.distill_procedure = AsyncMock(return_value=distill_result)
+
+        proc = MagicMock()
+        proc.find_procedures.return_value = find_result or []
+        proc.reinforce_procedure.return_value = reinforce_ok
+        proc.learn_procedure.return_value = MagicMock(id="proc-new")
+
+        with patch(f'{jobs_mod}.get_postgres_session', return_value=pg), \
+             patch(f'{jobs_mod}.get_extraction_service', return_value=ext), \
+             patch(f'{jobs_mod}._resolve_user_for_conversation', return_value="default"), \
+             patch('agentx_ai.kit.agent_memory.memory.procedural.ProceduralMemory', return_value=proc):
+            from agentx_ai.kit.agent_memory.consolidation.jobs import distill_procedures
+            result = asyncio.run(distill_procedures())
+        return result, proc
+
+    def test_creates_procedure_and_marks_distilled(self) -> None:
+        from agentx_ai.kit.agent_memory.extraction.service import ProcedureDistillResult
+        keep = ProcedureDistillResult(keep=True, trigger="when recommending",
+                                      body="summarize trade-offs first", rationale="user preference")
+        result, proc = self._run_job(rows=[self._row()], distill_result=keep)
+        self.assertEqual(result["procedures_created"], 1)
+        proc.learn_procedure.assert_called_once()
+        proc.mark_candidates.assert_called_with([1], "distilled", distilled_into="proc-new")
+
+    def test_discards_baseline(self) -> None:
+        from agentx_ai.kit.agent_memory.extraction.service import ProcedureDistillResult
+        discard = ProcedureDistillResult(keep=False)
+        result, proc = self._run_job(rows=[self._row(signal="correction")], distill_result=discard)
+        self.assertEqual(result["discarded"], 1)
+        proc.mark_candidates.assert_called_with([1], "discarded")
+        proc.learn_procedure.assert_not_called()
+
+    def test_reinforces_existing(self) -> None:
+        from agentx_ai.kit.agent_memory.extraction.service import ProcedureDistillResult
+        keep = ProcedureDistillResult(keep=True, trigger="when recommending",
+                                      body="summarize trade-offs first", rationale="user preference")
+        result, proc = self._run_job(
+            rows=[self._row()], distill_result=keep,
+            find_result=[MagicMock(id="existing-1")], reinforce_ok=True,
+        )
+        self.assertEqual(result["procedures_reinforced"], 1)
+        proc.reinforce_procedure.assert_called_once()
+        proc.learn_procedure.assert_not_called()
+        proc.mark_candidates.assert_called_with([1], "distilled", distilled_into="existing-1")
+
+    def test_correction_routes_to_self_channel(self) -> None:
+        from agentx_ai.kit.agent_memory.extraction.service import ProcedureDistillResult
+        keep = ProcedureDistillResult(keep=True, trigger="t", body="b", rationale="r")
+        result, proc = self._run_job(
+            rows=[self._row(signal="correction", agent_id="bold-cosmic-falcon")],
+            distill_result=keep,
+        )
+        # Scope passed to distill + write should be the agent's self-channel.
+        scope_arg = proc.learn_procedure.call_args.kwargs["scope"]
+        self.assertEqual(scope_arg, "_self_bold-cosmic-falcon")

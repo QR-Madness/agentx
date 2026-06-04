@@ -24,6 +24,9 @@ FOR (t:Turn) REQUIRE t.id IS UNIQUE;
 CREATE CONSTRAINT strategy_id IF NOT EXISTS
 FOR (s:Strategy) REQUIRE s.id IS UNIQUE;
 
+CREATE CONSTRAINT procedure_id IF NOT EXISTS
+FOR (p:Procedure) REQUIRE p.id IS UNIQUE;
+
 // Note: AgentParticipant nodes (Phase 16.5) are declared in migration
 // 0003_agent_participant_nodes.cypher, not here — incremental schema lives
 // with its migration, mirroring how Document/Artifact live in 0002.
@@ -47,6 +50,7 @@ CREATE INDEX turn_channel IF NOT EXISTS FOR (t:Turn) ON (t.channel);
 CREATE INDEX entity_channel IF NOT EXISTS FOR (e:Entity) ON (e.channel);
 CREATE INDEX fact_channel IF NOT EXISTS FOR (f:Fact) ON (f.channel);
 CREATE INDEX strategy_channel IF NOT EXISTS FOR (s:Strategy) ON (s.channel);
+CREATE INDEX procedure_channel IF NOT EXISTS FOR (p:Procedure) ON (p.channel);
 CREATE INDEX conversation_channel IF NOT EXISTS FOR (c:Conversation) ON (c.channel);
 CREATE INDEX goal_channel IF NOT EXISTS FOR (g:Goal) ON (g.channel);
 
@@ -110,6 +114,16 @@ OPTIONS {
     }
 };
 
+// Procedure embeddings (procedural memory, Slice 1 — distilled corrections/rules)
+CREATE VECTOR INDEX procedure_embeddings IF NOT EXISTS
+FOR (p:Procedure) ON (p.embedding)
+OPTIONS {
+    indexConfig: {
+        `vector.dimensions`: 1024,
+        `vector.similarity_function`: 'cosine'
+    }
+};
+
 // ============================================
 // EPISODIC MEMORY SCHEMA
 // ============================================
@@ -150,16 +164,13 @@ OPTIONS {
 //   - access_count: integer
 //   - properties: map (flexible key-value)
 
-// Relationship types between entities:
-//   - RELATED_TO {type, weight, source}
-//   - PART_OF
-//   - LOCATED_IN
-//   - WORKS_FOR
-//   - KNOWS
-//   - CREATED_BY
-//   - REFERENCES
-//   - CAUSED
-//   - PRECEDES
+// Entity-to-entity relationships — canonical edge:
+//   (:Entity)-[:RELATES_TO {type, weight, source, channel, created_at}]->(:Entity)
+//   Consolidation (`_batch_store_relationships`) writes a single Neo4j relationship
+//   type, RELATES_TO; the *semantic* label lives in the `type` PROPERTY (e.g.
+//   "works for", "part of", "depends on", "created by"). Traversals/readers surface
+//   it via coalesce(r.type, type(r)). Manual fact↔entity links use the [:ABOUT] edge
+//   ((:Fact)-[:ABOUT {method:'manual'}]->(:Entity)).
 
 // ============================================
 // PROCEDURAL MEMORY SCHEMA

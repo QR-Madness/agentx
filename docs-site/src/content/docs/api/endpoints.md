@@ -897,6 +897,23 @@ GET /api/memory/strategies
 | `page` | int | 1 | Page number |
 | `limit` | int | 20 | Items per page (max 100) |
 
+### List Procedures
+
+```
+GET /api/memory/procedures
+```
+
+Distilled procedural memory — the "how we work here" deltas the `distill_procedures`
+consolidation job mints from corrections/steers and explicit user rules. Each procedure has a
+natural-language `trigger`, a replayable `body`, a `rationale`, a `scope` (channel), and a
+`strength` (replay/reinforce count).
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `channel` | string | `_all` | Filter by channel |
+| `page` | int | 1 | Page number |
+| `limit` | int | 20 | Items per page (max 100) |
+
 ### Memory Stats
 
 ```
@@ -1054,6 +1071,7 @@ Scriptable equivalent: `task memory:import -- --input snapshot.json --mode repla
 | `/api/memory/facts/{fact_id}` | GET | Single fact detail |
 | `/api/memory/facts/{fact_id}/remember` | POST | Boost a fact's salience ("remember this"); `{to?}` clamped to [0,1] |
 | `/api/memory/facts/{fact_id}/forget` | POST | Forget a fact — soft-retire (default) or `{hard:true}` to delete |
+| `/api/memory/facts/{fact_id}/entities` | POST/DELETE | Link/unlink an entity to a fact (`{entity_id}`, ABOUT edge); returns the fact's updated `{id,name,type}` entity list |
 | `/api/memory/facts/{fact_id}/provenance` | GET | Where the fact was learned (origin conversation + turn snippet) |
 | `/api/memory/consolidate/stream` | GET | Consolidation progress via SSE |
 | `/api/memory/checkpoints` | GET/DELETE | List or clear a conversation's model-authored checkpoints (`?conversation_id=`) |

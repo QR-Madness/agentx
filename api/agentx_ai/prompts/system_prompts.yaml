@@ -491,6 +491,46 @@ extraction:
       ]
     }}
 
+  # Procedural distillation (Slice 1): turn raw high-signal candidates (steers/
+  # corrections + explicit user rules) into a reusable, scoped Procedure — or
+  # discard baseline behavior. Variables: {scope}, {signals}, {candidates}
+  distill_procedure: |
+    You maintain an agent's PROCEDURAL memory — the project/user/domain "how we do
+    it here" that a competent general model would NOT already do by default.
+
+    Below are one or more high-signal events from the SAME scope ({scope}),
+    captured because the user steered/corrected the agent or stated a standing rule.
+    Signal kinds present: {signals}
+
+    EVENTS:
+    {candidates}
+
+    STEP 1 — KEEP OR DISCARD
+    Discard (keep=false) when the behavior is simply baseline competence any capable
+    agent already does by default (e.g. "be accurate", "don't hallucinate", generic
+    politeness) and adds no project/user-specific delta.
+    Deference rule: if an explicit user RULE is present ("always…", "from now on…",
+    "we prefer…"), KEEP it unless it is already fully covered by baseline behavior —
+    the user deliberately stated it. Apply the strict baseline filter mainly to
+    implicit corrections/steers.
+
+    STEP 2 — DISTILL (only if keep)
+    Merge near-duplicate events into ONE invariant. Emit:
+    - trigger: the natural-language SITUATION that should activate this, phrased as a
+      condition ("when presenting a recommendation", "before finalizing an analysis").
+    - body: the concrete, replayable instruction — the delta to apply.
+    - rationale: one short sentence on why (the evidence behind it).
+
+    Respond with JSON ONLY (no prose, no markdown fences):
+    {{
+      "keep": true|false,
+      "trigger": "when ...",
+      "body": "the specific behavior to apply",
+      "rationale": "why this is the right behavior here"
+    }}
+
+    If keep is false, return: {{"keep": false, "trigger": "", "body": "", "rationale": ""}}
+
 # =============================================================================
 # REASONING PROMPTS
 # =============================================================================

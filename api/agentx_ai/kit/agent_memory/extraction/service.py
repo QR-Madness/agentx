@@ -9,6 +9,7 @@ using configured model providers. Supports multiple consolidation stages:
 - User correction handling
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -81,6 +82,16 @@ class CombinedExtractionResult(BaseModel):
     error: Optional[str] = None
 
 
+class ProcedureDistillResult(BaseModel):
+    """Result of distilling procedure candidates into a reusable Procedure (Slice 1)."""
+    keep: bool = False
+    trigger: str = ""
+    body: str = ""
+    rationale: str = ""
+    success: bool = True
+    error: Optional[str] = None
+
+
 class ExtractionService:
     """
     Service for LLM-based extraction from text.
@@ -131,6 +142,7 @@ class ExtractionService:
             'correction': (s.correction_model, s.correction_temperature, s.correction_max_tokens),
             'entity_linking': (s.entity_linking_model, 0.2, 500),
             'combined': (s.combined_extraction_model, s.combined_extraction_temperature, s.combined_extraction_max_tokens),
+            'procedural': (s.procedural_distill_model, s.procedural_distill_temperature, s.procedural_distill_max_tokens),
         }
 
         if stage not in stage_config:
@@ -164,7 +176,16 @@ class ExtractionService:
                 return c
         from ....config import get_config_manager
         dm = get_config_manager().get("preferences.default_model")
-        return str(dm) if dm else (model or "")
+        if dm:
+            return str(dm)
+        # Still nothing — fall back to the bulk extraction model (a concrete,
+        # sensible memory default) rather than leaking the "inherit" sentinel to
+        # the registry (it isn't a valid provider:model).
+        c = (model or "").strip()
+        if c and c.lower() != "inherit":
+            return c
+        bulk = (getattr(self.settings, "combined_extraction_model", "") or "").strip()
+        return bulk if bulk and bulk.lower() != "inherit" else ""
 
     async def check_relevance(self, text: str) -> RelevanceResult:
         """
@@ -322,6 +343,78 @@ class ExtractionService:
         except Exception as e:
             logger.warning(f"Correction check failed: {e}")
             return CorrectionResult(success=False, error=str(e))
+
+    async def distill_procedure(
+        self, candidates: List[Dict[str, Any]], scope: str
+    ) -> ProcedureDistillResult:
+        """Distill a same-scope batch of procedure candidates into one Procedure.
+
+        Applies the baseline-deviation filter (discard what a competent agent does
+        by default) with signal-aware deference (explicit user rules are kept unless
+        already covered). Returns ``keep=False`` to discard the batch.
+
+        Each candidate dict carries ``signal`` ('correction' | 'explicit_rule') and
+        ``content`` (the steer / rule text).
+        """
+        if not candidates:
+            return ProcedureDistillResult(keep=False)
+
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('procedural')
+        except ValueError as e:
+            logger.warning(f"Procedural distill model not available: {e}")
+            return ProcedureDistillResult(keep=False, success=False, error=str(e))
+
+        signals = sorted({(c.get("signal") or "").strip() for c in candidates if c.get("signal")})
+        candidates_text = "\n".join(
+            f"- [{c.get('signal', 'event')}] {(c.get('content') or '').strip()}"
+            for c in candidates
+        )
+        loader = get_prompt_loader()
+        prompt = loader.get(
+            "extraction.distill_procedure",
+            scope=scope,
+            signals=", ".join(signals) or "unknown",
+            candidates=candidates_text,
+        )
+
+        messages = [Message(role=MessageRole.USER, content=prompt)]
+
+        try:
+            result = await asyncio.wait_for(
+                provider.complete(
+                    messages,
+                    model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ),
+                timeout=self.settings.procedural_distill_timeout_s,
+            )
+            content = parse_output(result.content).content
+            ok, parsed, err = validate_json_output(content)
+            if not ok or not isinstance(parsed, dict):
+                logger.debug(f"Distill response not valid JSON: {err}: {content[:120]}")
+                return ProcedureDistillResult(keep=False, success=False, error=err or "parse_error")
+
+            keep = bool(parsed.get("keep"))
+            body = (parsed.get("body") or "").strip()
+            if keep and not body:
+                # Model said keep but gave nothing actionable — treat as discard.
+                keep = False
+            return ProcedureDistillResult(
+                keep=keep,
+                trigger=(parsed.get("trigger") or "").strip(),
+                body=body,
+                rationale=(parsed.get("rationale") or "").strip(),
+                success=True,
+            )
+        except asyncio.TimeoutError:
+            msg = f"distill model timed out after {self.settings.procedural_distill_timeout_s}s"
+            logger.warning(f"Procedure distillation failed: {msg}")
+            return ProcedureDistillResult(keep=False, success=False, error=msg)
+        except Exception as e:
+            logger.warning(f"Procedure distillation failed: {e}")
+            return ProcedureDistillResult(keep=False, success=False, error=str(e))
 
     async def check_contradictions(
         self,

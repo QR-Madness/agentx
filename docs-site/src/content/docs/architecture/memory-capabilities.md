@@ -17,6 +17,7 @@ each one and how it feeds the others.
 | Conversation capture | episodic | shipped | `AgentMemory.store_turn` (`memory/episodic.py`) | active (+ `agent_id` on assistant turns) |
 | Semantic facts & entities | semantic | shipped | `learn_fact`, `upsert_entity` (`memory/semantic.py`) | per subject |
 | Procedural strategies | procedural | shipped | `record_tool_usage`, `detect_patterns` (`memory/procedural.py`) | active / `_self_` |
+| Procedural distillation + reflex core | procedural | shipped | encode (`stage_procedure_candidate`) → distill (`distill_procedures`) → `learn_procedure` + `get_reflex_procedures` (`memory/procedural.py`) | `_self_{agent_id}` (corrections) / channel (rules) |
 | Working memory | working | shipped | `WorkingMemory` (Redis, TTL) | active |
 | Goal tracking | semantic | shipped | `add_goal` / `complete_goal`; `TaskPlanner` | active |
 | Relevance + extraction | extraction | shipped | `ExtractionService.check_relevance_and_extract[_assistant]` | — |
@@ -31,6 +32,7 @@ each one and how it feeds the others.
 | Salience decay | lifecycle | shipped | decay job (`consolidation/`) | all |
 | Entity dedupe | lifecycle | shipped | `dedupe_entities` (mgmt cmd) | per/cross channel |
 | Deterministic link backfill | lifecycle | shipped | `link_facts_to_entities` (`entity_linking` job) | all |
+| Manual fact↔entity link | lifecycle | shipped | `link_fact_to_entity` / `unlink_fact_from_entity` (`memory/semantic.py`); `POST/DELETE /api/memory/facts/{id}/entities` | per fact |
 | Agent-attribution backfill | lifecycle | shipped | `backfill_agent_attribution` (mgmt cmd) | `_self_{agent_id}` |
 | Portability (export/import) | ops | shipped | `MemoryExporter` / `MemoryImporter` | per channel / `_all` |
 | Debug harness | ops | shipped | `debug_attribution` (mgmt cmd) | scenario-scoped |
@@ -54,6 +56,9 @@ graph TD
     SEM --> RECALL[RecallLayer<br/>5 techniques]
     GLOB --> RECALL
     RECALL -->|"[active, _self_, _global]"| AGENT[Agent prompt]
+    T -->|steer / explicit rule| PC[(procedure_candidates<br/>encode)]
+    PC -->|distill_procedures| PROC[(Procedures<br/>trigger + body)]
+    PROC -->|reflex core: top-strength| AGENT
 ```
 
 ## Capabilities by area
@@ -64,7 +69,12 @@ graph TD
   write-path contract the rest of attribution relies on. → feeds **Consolidation**.
 - **Semantic** — entities, facts, and relationships. Facts link to entities via `[:ABOUT]`;
   agents are first-class entities here (see **Multi-agent attribution**). → read by **Recall**.
-- **Procedural** — tool-usage trajectories and learned strategies (`detect_patterns`).
+- **Procedural** — tool-usage trajectories and learned strategies (`detect_patterns`), plus
+  **distilled procedures** (the "how we work here" delta): the encode loop stages
+  `procedure_candidates` from steers/corrections + explicit user rules, the `distill_procedures`
+  consolidation job mints scoped `Procedure` nodes (trigger + replayable body, strengthened not
+  duplicated), and the **reflex core** (`get_reflex_procedures`) injects the top-strength ones into
+  every prompt. → feeds the **Agent prompt** directly.
 - **Working** — short-lived Redis context with TTL refresh.
 - **Goals** — `add_goal`/`complete_goal`, linked from `TaskPlanner` so plans track intent.
 

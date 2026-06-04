@@ -193,6 +193,21 @@ class Settings(BaseSettings):
     combined_extraction_temperature: float = 0.3  # Slightly higher for reasoning
     combined_extraction_max_tokens: int = 2000
 
+    # --- Procedural distillation (Slice 1: candidates -> Procedures) ---
+    # "inherit" follows feature_default_model ("default model for all memory
+    # stages") -> global default -> bulk combined_extraction_model, so this stage
+    # tracks the user's chosen memory model even though the client's "apply to all
+    # stages" doesn't yet list it. resolve_with_fallback adds the provider safety net.
+    procedural_distill_model: str = "inherit"
+    procedural_distill_temperature: float = 0.2
+    procedural_distill_max_tokens: int = 1000
+    procedural_distill_timeout_s: int = 90  # bound the LLM call so a dead provider can't stall the job
+    procedural_dedupe_threshold: float = 0.85  # cosine >= -> reinforce instead of create
+    procedural_distill_batch_limit: int = 100  # max pending candidates per run
+    # Reflex core (always-on procedure injection into the prompt)
+    reflex_core_enabled: bool = True
+    reflex_core_limit: int = 5
+
     # --- Confidence Calibration (map LLM certainty to calibrated scores) ---
     confidence_explicit: float = 0.95  # User directly stated
     confidence_implied: float = 0.85   # Strongly implied
@@ -244,6 +259,7 @@ class Settings(BaseSettings):
     job_audit_partitions_interval: int = 1440  # 24 hours
     job_promote_interval: int = 60  # Same as patterns
     job_entity_linking_interval: int = 30  # Run after consolidation
+    job_distill_procedures_interval: int = 30  # Distill procedure candidates
 
     # Worker health settings
     worker_heartbeat_interval: int = 30  # seconds
@@ -379,6 +395,16 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "combined_extraction_temperature": settings.combined_extraction_temperature,
         "combined_extraction_max_tokens": settings.combined_extraction_max_tokens,
 
+        # Procedural distillation (Slice 1) + reflex core
+        "procedural_distill_model": settings.procedural_distill_model,
+        "procedural_distill_temperature": settings.procedural_distill_temperature,
+        "procedural_distill_max_tokens": settings.procedural_distill_max_tokens,
+        "procedural_distill_timeout_s": settings.procedural_distill_timeout_s,
+        "procedural_dedupe_threshold": settings.procedural_dedupe_threshold,
+        "procedural_distill_batch_limit": settings.procedural_distill_batch_limit,
+        "reflex_core_enabled": settings.reflex_core_enabled,
+        "reflex_core_limit": settings.reflex_core_limit,
+
         # Entity linking
         "entity_linking_enabled": settings.entity_linking_enabled,
         "entity_linking_similarity_threshold": settings.entity_linking_similarity_threshold,
@@ -395,6 +421,7 @@ def get_consolidation_settings() -> Dict[str, Any]:
         "job_consolidate_interval": settings.job_consolidate_interval,
         "job_promote_interval": settings.job_promote_interval,
         "job_entity_linking_interval": settings.job_entity_linking_interval,
+        "job_distill_procedures_interval": settings.job_distill_procedures_interval,
 
         # Fact verification pipeline
         "link_autocreate_stub_entities": settings.link_autocreate_stub_entities,

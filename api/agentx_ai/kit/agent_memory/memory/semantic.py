@@ -892,6 +892,80 @@ class SemanticMemory:
                 channel=channel
             )
 
+    def _fact_entities(self, session, fact_id: str, user_id: str) -> List[Dict[str, Any]]:
+        """Return the {id,name,type} entities a fact is ABOUT (shared by link/unlink)."""
+        result = session.run(
+            """
+            MATCH (f:Fact {id: $fact_id})
+            WHERE f.user_id = $user_id
+            OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
+            WITH [x IN collect(e) WHERE x IS NOT NULL | {id: x.id, name: x.name, type: x.type}] AS entities
+            RETURN entities
+            """,
+            fact_id=fact_id,
+            user_id=user_id,
+        )
+        record = result.single()
+        return record["entities"] if record else []
+
+    def link_fact_to_entity(
+        self, fact_id: str, entity_id: str, user_id: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Create a manual (f:Fact)-[:ABOUT]->(e:Entity) link (#905).
+
+        User-scoped on both nodes so links never cross users. Returns the fact's
+        full {id,name,type} entity list after linking, or None if either node is
+        missing for this user.
+        """
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                """
+                MATCH (f:Fact {id: $fact_id})
+                WHERE f.user_id = $user_id
+                MATCH (e:Entity {id: $entity_id})
+                WHERE e.user_id = $user_id
+                MERGE (f)-[r:ABOUT]->(e)
+                ON CREATE SET r.method = 'manual', r.created_at = datetime()
+                RETURN f.id AS fid
+                """,
+                fact_id=fact_id,
+                entity_id=entity_id,
+                user_id=user_id,
+            )
+            if result.single() is None:
+                return None
+            return self._fact_entities(session, fact_id, user_id)
+
+    def unlink_fact_from_entity(
+        self, fact_id: str, entity_id: str, user_id: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Remove a (f:Fact)-[:ABOUT]->(e:Entity) link (#905). User-scoped.
+
+        Returns the fact's remaining entity list, or None if the fact is missing
+        for this user.
+        """
+        with Neo4jConnection.session() as session:
+            exists = session.run(
+                "MATCH (f:Fact {id: $fact_id}) WHERE f.user_id = $user_id RETURN f.id AS fid",
+                fact_id=fact_id,
+                user_id=user_id,
+            ).single()
+            if exists is None:
+                return None
+            session.run(
+                """
+                MATCH (f:Fact {id: $fact_id})-[r:ABOUT]->(e:Entity {id: $entity_id})
+                WHERE f.user_id = $user_id AND e.user_id = $user_id
+                DELETE r
+                """,
+                fact_id=fact_id,
+                entity_id=entity_id,
+                user_id=user_id,
+            )
+            return self._fact_entities(session, fact_id, user_id)
+
     def list_entities(
         self,
         user_id: str,
@@ -1037,12 +1111,18 @@ class SemanticMemory:
             count_record = count_result.single()
             total = count_record["total"] if count_record else 0
 
-            # Get paginated results with entity names
+            # Get paginated results with the ABOUT'd entities. Project both the
+            # id list (back-compat: `entity_ids` is part of the MemoryFact
+            # contract) and richer `{id,name,type}` objects so the client can
+            # render a clickable "Mentioned entities" section (#538).
             result = session.run(cast(LiteralString, f"""
                 MATCH (f:Fact)
                 WHERE {where_clause}
                 OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
-                WITH f, collect(e.id) AS entity_ids
+                WITH f, collect(e) AS es
+                WITH f,
+                     [x IN es WHERE x IS NOT NULL | x.id] AS entity_ids,
+                     [x IN es WHERE x IS NOT NULL | {{id: x.id, name: x.name, type: x.type}}] AS entities
                 RETURN f.id AS id,
                        f.claim AS claim,
                        f.confidence AS confidence,
@@ -1051,7 +1131,8 @@ class SemanticMemory:
                        f.source_turn_id AS source_turn_id,
                        f.created_at AS created_at,
                        f.promoted_from AS promoted_from,
-                       entity_ids
+                       entity_ids,
+                       entities
                 ORDER BY f.confidence DESC, f.created_at DESC
                 SKIP $offset
                 LIMIT $limit
@@ -1154,11 +1235,14 @@ class SemanticMemory:
             )
             facts = [dict(record) for record in facts_result]
 
-            # Get relationships to other entities
+            # Get relationships to other entities. Consolidation stores edges as
+            # (:Entity)-[:RELATES_TO {type}]->(:Entity), carrying the *semantic*
+            # label in the `type` property — so prefer it over the generic Neo4j
+            # rel type (which is always "RELATES_TO"); falls back for legacy edges (#542).
             rel_result = session.run("""
                 MATCH (e:Entity {id: $entity_id})-[r]->(target:Entity)
                 WHERE e.user_id = $user_id AND target.user_id = $user_id
-                RETURN type(r) AS type,
+                RETURN coalesce(r.type, type(r)) AS type,
                        target.id AS target_id,
                        target.name AS target_name,
                        target.type AS target_type

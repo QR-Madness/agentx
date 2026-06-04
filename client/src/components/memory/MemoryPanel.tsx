@@ -370,6 +370,11 @@ export const MemoryPanel: React.FC = () => {
                     onClose={() => setSelectedFact(null)}
                     onDeleted={() => { setSelectedFact(null); refreshFacts(); }}
                     onUpdated={updated => { setSelectedFact(updated); refreshFacts(); }}
+                    onNavigateEntity={id => {
+                      setSelectedFact(null);
+                      setActiveSection('entities');
+                      setSelectedEntityId(id);
+                    }}
                   />
                 ) : activeSection === 'strategies' && selectedStrategy ? (
                   <StrategyDetail

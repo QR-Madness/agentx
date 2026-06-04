@@ -1,37 +1,95 @@
 // ─── Fact detail panel ─────────────────────────────────────────────────────
 
 import { useState, useCallback, useEffect } from 'react';
-import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle, Star, Archive, History } from 'lucide-react';
+import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle, Star, Archive, History, Link2, Plus, Search } from 'lucide-react';
 import {
   useUpdateMemoryFact,
   useDeleteMemoryFact,
   useRememberMemoryFact,
   useForgetMemoryFact,
   useFactProvenance,
+  useLinkFactEntity,
+  useUnlinkFactEntity,
+  useMemoryEntities,
 } from '../../lib/hooks';
-import type { MemoryFact, FactProvenance } from '../../lib/api';
+import type { MemoryFact, MemoryFactEntity, FactProvenance } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
 import { Button } from '../ui';
 
+// Searchable entity picker — mounts only while the user is adding a link, so
+// the entities fetch doesn't fire on every fact selection. Scoped to the fact's
+// channel (the API also folds in _global); excludes already-linked entities.
+function EntityPicker({
+  channel, exclude, onPick, onCancel, busy,
+}: {
+  channel: string;
+  exclude: Set<string>;
+  onPick: (entityId: string) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const [search, setSearch] = useState('');
+  const { entities, loading } = useMemoryEntities(channel, 1, search);
+  const candidates = entities.filter(e => !exclude.has(e.id)).slice(0, 8);
+
+  return (
+    <div className="entity-picker">
+      <div className="entity-picker-search">
+        <Search size={14} />
+        <input
+          autoFocus
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search entities to link…"
+        />
+        <Button variant="ghost" onClick={onCancel}><X size={14} /></Button>
+      </div>
+      <div className="entity-picker-results">
+        {loading ? (
+          <div className="entity-picker-empty"><RefreshCw size={14} className="spin" /></div>
+        ) : candidates.length === 0 ? (
+          <div className="entity-picker-empty">No matching entities</div>
+        ) : candidates.map(e => (
+          <button
+            key={e.id}
+            className="entity-picker-item"
+            disabled={busy}
+            onClick={() => onPick(e.id)}
+          >
+            <span className="entity-chip-name">{e.name}</span>
+            <span className="entity-chip-type">{e.type}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function FactDetail({
-  fact, onClose, onDeleted, onUpdated,
+  fact, onClose, onDeleted, onUpdated, onNavigateEntity,
 }: {
   fact: MemoryFact;
   onClose: () => void;
   onDeleted: () => void;
   onUpdated: (f: MemoryFact) => void;
+  onNavigateEntity: (entityId: string) => void;
 }) {
   const { mutate: updateFact, loading: saving } = useUpdateMemoryFact();
   const { mutate: deleteFact, loading: deleting } = useDeleteMemoryFact();
   const { mutate: rememberFact, loading: remembering } = useRememberMemoryFact();
   const { mutate: forgetFact, loading: forgetting } = useForgetMemoryFact();
   const { fetch: fetchProvenance, loading: loadingProvenance } = useFactProvenance();
+  const { mutate: linkEntity, loading: linking } = useLinkFactEntity();
+  const { mutate: unlinkEntity, loading: unlinking } = useUnlinkFactEntity();
 
   const [editMode, setEditMode] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [forgetConfirm, setForgetConfirm] = useState(false);
   const [remembered, setRemembered] = useState(false);
   const [provenance, setProvenance] = useState<FactProvenance | null>(null);
+  const [picking, setPicking] = useState(false);
+
+  const entities: MemoryFactEntity[] = fact.entities ?? [];
   const [editClaim, setEditClaim] = useState(fact.claim);
   const [editConfidence, setEditConfidence] = useState(Math.round((fact.confidence || 0) * 100));
   const [editSource, setEditSource] = useState(fact.source);
@@ -47,7 +105,24 @@ export function FactDetail({
     setForgetConfirm(false);
     setRemembered(false);
     setProvenance(null);
+    setPicking(false);
   }, [fact.id]);
+
+  // Link/unlink update the fact's entity list; the endpoint returns the fresh
+  // list, so we optimistically push it back up via onUpdated (no single-fact GET).
+  const applyEntities = useCallback((next: MemoryFactEntity[]) => {
+    onUpdated({ ...fact, entities: next, entity_ids: next.map(e => e.id) });
+  }, [fact, onUpdated]);
+
+  const handleLink = useCallback(async (entityId: string) => {
+    const next = await linkEntity(fact.id, entityId);
+    if (next) { applyEntities(next); setPicking(false); }
+  }, [fact.id, linkEntity, applyEntities]);
+
+  const handleUnlink = useCallback(async (entityId: string) => {
+    const next = await unlinkEntity(fact.id, entityId);
+    if (next) applyEntities(next);
+  }, [fact.id, unlinkEntity, applyEntities]);
 
   const handleSave = useCallback(async () => {
     const result = await updateFact(fact.id, {
@@ -153,6 +228,52 @@ export function FactDetail({
             <div className="info-row"><span className="label">Source</span><span className="value badge">{fact.source}</span></div>
             <div className="info-row"><span className="label">Channel</span><span className="value">{fact.channel}</span></div>
             <div className="info-row"><span className="label">Created</span><span className="value">{formatTimestamp(fact.created_at)}</span></div>
+          </div>
+
+          <div className="mentioned-entities">
+            <div className="mentioned-entities-head">
+              <span className="label"><Link2 size={13} /> Mentioned entities</span>
+              {!picking && (
+                <Button variant="ghost" onClick={() => setPicking(true)} disabled={linking}>
+                  <Plus size={14} /> Link
+                </Button>
+              )}
+            </div>
+            {entities.length === 0 && !picking ? (
+              <p className="mentioned-entities-empty">No entities linked to this fact.</p>
+            ) : (
+              <div className="entity-chips">
+                {entities.map(e => (
+                  <span key={e.id} className="entity-chip">
+                    <button
+                      className="entity-chip-link"
+                      onClick={() => onNavigateEntity(e.id)}
+                      title={`View ${e.name}`}
+                    >
+                      <span className="entity-chip-name">{e.name}</span>
+                      <span className="entity-chip-type">{e.type}</span>
+                    </button>
+                    <button
+                      className="entity-chip-remove"
+                      onClick={() => handleUnlink(e.id)}
+                      disabled={unlinking}
+                      title="Unlink"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {picking && (
+              <EntityPicker
+                channel={fact.channel}
+                exclude={new Set(entities.map(e => e.id))}
+                onPick={handleLink}
+                onCancel={() => setPicking(false)}
+                busy={linking}
+              />
+            )}
           </div>
 
           <div className="detail-actions">

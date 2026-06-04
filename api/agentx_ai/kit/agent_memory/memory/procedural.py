@@ -3,18 +3,21 @@
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
 import json
+import logging
 import re
 
 from typing_extensions import LiteralString
 from sqlalchemy import text
 
-from ..models import Strategy
+from ..models import Strategy, Procedure
 from ..connections import Neo4jConnection, get_postgres_session
 from ..embeddings import get_embedder
-from ..query_utils import CypherFilterBuilder, convert_record_datetimes
+from ..query_utils import CypherFilterBuilder, convert_record_datetimes, convert_all_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
+
+logger = logging.getLogger(__name__)
 
 
 # Cheap, LLM-free detector for an explicit standing rule/preference stated in a
@@ -196,6 +199,353 @@ class ProceduralMemory:
             params["channel"] = channel
         with get_postgres_session() as session:
             return int(session.execute(text(sql), params).scalar() or 0)
+
+    # ------------------------------------------------------------------
+    # Procedures (Slice 1) — distilled, scoped rules (the "how we work here"
+    # delta). Distinct from the tool-sequence ``Strategy`` machinery above:
+    # a Procedure has an NL trigger + replayable body and is strengthened, not
+    # duplicated, as the same pattern recurs.
+    # ------------------------------------------------------------------
+
+    def _safe_embed(self, text_value: str) -> Optional[List[float]]:
+        """Embed text, degrading to None if no embedder is available.
+
+        Keeps procedural writes working (sans vector dedupe/search) on a box
+        with no embedding model — consistent with the rest of the kit.
+        """
+        try:
+            return self.embedder.embed_single(text_value)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Procedure embedding skipped (no embedder?): {e}")
+            return None
+
+    def mark_candidates(
+        self,
+        candidate_ids: List[int],
+        status: str,
+        *,
+        distilled_into: Optional[str] = None,
+    ) -> None:
+        """Bulk-update staged candidates' lifecycle (``distilled`` | ``discarded``)."""
+        if not candidate_ids:
+            return
+        with get_postgres_session() as session:
+            session.execute(
+                text(
+                    """
+                UPDATE procedure_candidates
+                SET status = :status, distilled_into = :distilled_into
+                WHERE id = ANY(:ids)
+            """
+                ),
+                {
+                    "status": status,
+                    "distilled_into": distilled_into,
+                    "ids": candidate_ids,
+                },
+            )
+
+    def learn_procedure(
+        self,
+        *,
+        trigger: str,
+        body: str,
+        rationale: str = "",
+        scope: str = "_global",
+        agent_id: Optional[str] = None,
+        signal_kinds: Optional[List[str]] = None,
+        evidence_refs: Optional[List[str]] = None,
+        conversation_ids: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+    ) -> Procedure:
+        """Write a distilled Procedure node (Slice 1 — the encode→distill output).
+
+        Repurposes the write pattern of the dead ``learn_strategy`` for the new
+        richer Procedure model: NL trigger + replayable body, scoped, with
+        evidence back-references.
+        """
+        procedure = Procedure(
+            trigger=trigger,
+            body=body,
+            rationale=rationale,
+            scope=scope,
+            agent_id=agent_id,
+            signal_kinds=signal_kinds or [],
+            evidence_refs=evidence_refs or [],
+            embedding=self._safe_embed(f"{trigger}\n{body}"),
+            created_at=datetime.now(timezone.utc),
+            last_reinforced=datetime.now(timezone.utc),
+        )
+
+        with Neo4jConnection.session() as session:
+            session.run(
+                """
+                CREATE (p:Procedure {
+                    id: $id,
+                    trigger: $trigger,
+                    trigger_features: $trigger_features,
+                    body: $body,
+                    rationale: $rationale,
+                    channel: $scope,
+                    scope: $scope,
+                    agent_id: $agent_id,
+                    strength: 1,
+                    evidence_refs: $evidence_refs,
+                    signal_kinds: $signal_kinds,
+                    embedding: $embedding,
+                    user_id: $user_id,
+                    created_at: datetime(),
+                    last_reinforced: datetime()
+                })
+
+                // Link to user
+                WITH p
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:HAS_PROCEDURE]->(p)
+
+                // Link to evidence conversations
+                WITH p
+                UNWIND $conversation_ids AS conv_id
+                OPTIONAL MATCH (c:Conversation {id: conv_id})
+                FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
+                    MERGE (p)-[:DISTILLED_FROM]->(c)
+                )
+            """,
+                id=procedure.id,
+                trigger=procedure.trigger,
+                trigger_features=json.dumps(procedure.trigger_features),
+                body=procedure.body,
+                rationale=procedure.rationale,
+                scope=procedure.scope,
+                agent_id=procedure.agent_id,
+                evidence_refs=procedure.evidence_refs,
+                signal_kinds=procedure.signal_kinds,
+                embedding=procedure.embedding,
+                user_id=user_id,
+                conversation_ids=conversation_ids or [],
+            )
+
+        return procedure
+
+    def reinforce_procedure(
+        self,
+        procedure_id: str,
+        *,
+        evidence_refs: Optional[List[str]] = None,
+        signal_kinds: Optional[List[str]] = None,
+        channel: Optional[str] = None,
+    ) -> bool:
+        """Strengthen an existing Procedure (replay): ``strength += 1``, merge
+        evidence + signal kinds, bump ``last_reinforced``. Repurposes the dead
+        ``reinforce_strategy`` write pattern."""
+        with Neo4jConnection.session() as session:
+            filters = CypherFilterBuilder("p")
+            filters.add_channel_filter(channel)
+            result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
+                MATCH (p:Procedure {{id: $id}})
+                WHERE true {filters.build_inline()}
+                SET p.strength = coalesce(p.strength, 1) + 1,
+                    p.last_reinforced = datetime(),
+                    p.evidence_refs = coalesce(p.evidence_refs, []) +
+                        [x IN $evidence_refs WHERE NOT x IN coalesce(p.evidence_refs, [])],
+                    p.signal_kinds = coalesce(p.signal_kinds, []) +
+                        [x IN $signal_kinds WHERE NOT x IN coalesce(p.signal_kinds, [])]
+                RETURN p.id AS updated_id
+            """,
+                ),
+                id=procedure_id,
+                channel=channel,
+                evidence_refs=evidence_refs or [],
+                signal_kinds=signal_kinds or [],
+            )
+            record = result.single()
+            return record is not None and record["updated_id"] is not None
+
+    def find_procedures(
+        self,
+        query: str,
+        *,
+        channels: Optional[List[str]] = None,
+        top_k: int = 5,
+        min_score: Optional[float] = None,
+    ) -> List[Procedure]:
+        """Vector-search procedures by ``trigger + body`` similarity (used for
+        dedupe-on-write and the deferred deliberate-recall mode). ``min_score``
+        filters to cosine-similar matches (dedupe). Returns [] when no embedder is
+        available."""
+        embedding = self._safe_embed(query)
+        if embedding is None:
+            return []
+
+        with Neo4jConnection.session() as session:
+            conditions = []
+            if channels:
+                conditions.append("p.channel IN $channels")
+            if min_score is not None:
+                conditions.append("score >= $min_score")
+            where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            try:
+                result = session.run(
+                    cast(
+                        LiteralString,
+                        f"""
+                    CALL db.index.vector.queryNodes('procedure_embeddings', $k, $embedding)
+                    YIELD node AS p, score
+                    {where_clause}
+                    RETURN p.id AS id,
+                           p.trigger AS trigger,
+                           p.body AS body,
+                           p.rationale AS rationale,
+                           p.scope AS scope,
+                           p.agent_id AS agent_id,
+                           p.strength AS strength,
+                           p.evidence_refs AS evidence_refs,
+                           p.signal_kinds AS signal_kinds,
+                           score
+                    ORDER BY score DESC
+                """,
+                    ),
+                    k=top_k * 2,
+                    embedding=embedding,
+                    channels=channels,
+                    min_score=min_score,
+                )
+                procedures = []
+                for record in result:
+                    procedures.append(
+                        Procedure(
+                            id=record["id"],
+                            trigger=record["trigger"] or "",
+                            body=record["body"] or "",
+                            rationale=record["rationale"] or "",
+                            scope=record["scope"] or "_global",
+                            agent_id=record["agent_id"],
+                            strength=record["strength"] or 1,
+                            evidence_refs=record["evidence_refs"] or [],
+                            signal_kinds=record["signal_kinds"] or [],
+                        )
+                    )
+                return procedures[:top_k]
+            except Exception as e:  # noqa: BLE001
+                # Most commonly the vector index doesn't exist yet (schema not
+                # initialized). Degrade to "no match" so distillation still creates
+                # the procedure rather than aborting the whole job.
+                logger.warning(f"find_procedures skipped (vector search unavailable): {e}")
+                return []
+
+    def get_reflex_procedures(
+        self,
+        channels: List[str],
+        *,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """The reflex core: top-``strength`` procedures across the recall channels.
+
+        Non-vector and *maintained, not searched* — injected every turn regardless
+        of query content (procedural recall is trigger-conditional, not content-
+        similar). Returns lightweight dicts for prompt rendering.
+        """
+        if not channels:
+            return []
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                """
+                MATCH (p:Procedure)
+                WHERE p.channel IN $channels
+                RETURN p.trigger AS trigger,
+                       p.body AS body,
+                       p.scope AS scope,
+                       coalesce(p.strength, 1) AS strength
+                ORDER BY strength DESC, p.last_reinforced DESC
+                LIMIT $limit
+            """,
+                channels=channels,
+                limit=limit,
+            )
+            return [dict(record) for record in result]
+
+    def count_procedures(self, *, channel: Optional[str] = None) -> int:
+        """Count stored procedures (observability / stats)."""
+        with Neo4jConnection.session() as session:
+            filters = CypherFilterBuilder("p")
+            filters.add_channel_filter(channel)
+            result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
+                MATCH (p:Procedure)
+                WHERE true {filters.build_inline()}
+                RETURN count(p) AS total
+            """,
+                ),
+                channel=channel,
+            )
+            record = result.single()
+            return int(record["total"]) if record else 0
+
+    def list_procedures(
+        self, user_id: str, channel: str = "_global", offset: int = 0, limit: int = 20
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """List procedures with pagination (mirrors ``list_strategies``)."""
+        with Neo4jConnection.session() as session:
+            conditions = ["p.user_id = $user_id"]
+            if channel == "_all":
+                pass
+            elif channel and channel != "_global":
+                conditions.append("(p.channel = $channel OR p.channel = '_global')")
+            else:
+                conditions.append("p.channel = '_global'")
+            where_clause = " AND ".join(conditions)
+
+            count_result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
+                MATCH (p:Procedure)
+                WHERE {where_clause}
+                RETURN count(p) AS total
+            """,
+                ),
+                user_id=user_id,
+                channel=channel,
+            )
+            record = count_result.single()
+            total = record["total"] if record else 0
+
+            result = session.run(
+                cast(
+                    LiteralString,
+                    f"""
+                MATCH (p:Procedure)
+                WHERE {where_clause}
+                RETURN p.id AS id,
+                       p.trigger AS trigger,
+                       p.body AS body,
+                       p.rationale AS rationale,
+                       p.scope AS scope,
+                       p.agent_id AS agent_id,
+                       coalesce(p.strength, 1) AS strength,
+                       p.signal_kinds AS signal_kinds,
+                       p.evidence_refs AS evidence_refs,
+                       p.channel AS channel,
+                       p.last_reinforced AS last_reinforced
+                ORDER BY p.strength DESC, p.last_reinforced DESC
+                SKIP $offset
+                LIMIT $limit
+            """,
+                ),
+                user_id=user_id,
+                channel=channel,
+                offset=offset,
+                limit=limit,
+            )
+            # convert_all_datetimes (not the allowlist variant) so last_reinforced
+            # and any future temporal field serialize cleanly.
+            procedures = [convert_all_datetimes(dict(record)) for record in result]
+            return procedures, total
 
     def learn_strategy(
         self,

@@ -1836,6 +1836,168 @@ def detect_patterns() -> Dict[str, Any]:
     return {"items_processed": patterns_extracted}
 
 
+def _derive_procedure_scope(signal: str, channel: Optional[str], agent_id: Optional[str]) -> str:
+    """Channel a distilled Procedure should live in.
+
+    An implicit *correction* aimed at a specific agent routes to that agent's
+    ``_self_{agent_id}`` (reusing the subject-channel convention) so it doesn't
+    leak to other agents via a shared channel. An explicit user *rule* is a
+    standing preference that should apply across the channel, so it inherits the
+    candidate's channel (often ``_global``).
+    """
+    if signal == "correction" and agent_id:
+        return _resolve_subject_channel("agent", channel or "_global", agent_id)
+    return channel or "_global"
+
+
+def _resolve_user_for_conversation(conversation_id: Any) -> str:
+    """Resolve the owning user_id for a conversation (defaults to 'default')."""
+    try:
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                """
+                MATCH (u:User)-[:HAS_CONVERSATION]->(c:Conversation {id: $id})
+                RETURN u.id AS uid LIMIT 1
+            """,
+                id=str(conversation_id),
+            ).single()
+            if rec and rec["uid"]:
+                return rec["uid"]
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"User resolve for conversation {conversation_id} failed: {e}")
+    return "default"
+
+
+async def distill_procedures(progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    """Distill pending ``procedure_candidates`` into scoped Procedures (Loop 2).
+
+    Reads high-signal candidates (corrections/steers + explicit user rules), drops
+    what a competent agent already does by default (baseline-deviation, signal-aware),
+    and distills the survivors into durable, scoped Procedure nodes — strengthening a
+    near-duplicate instead of creating a duplicate. The dedupe-on-write step makes a
+    re-run after a mid-job crash converge rather than double-create (the Procedure
+    write is Neo4j, the candidate mark is PostgreSQL — no cross-store transaction).
+    """
+    from ..memory.procedural import ProceduralMemory
+
+    procedural = ProceduralMemory()
+    extraction_service = get_extraction_service()
+    dedupe_threshold = settings.procedural_dedupe_threshold
+    batch_limit = settings.procedural_distill_batch_limit
+
+    created = 0
+    reinforced = 0
+    discarded = 0
+    errors: List[str] = []
+
+    with get_postgres_session() as pg:
+        from sqlalchemy import text as _sa_text
+        rows = pg.execute(
+            _sa_text(
+                """
+            SELECT id, conversation_id, signal, content, channel, agent_id
+            FROM procedure_candidates
+            WHERE status = 'pending'
+            ORDER BY channel, agent_id, id
+            LIMIT :lim
+        """
+            ),
+            {"lim": batch_limit},
+        ).fetchall()
+
+    if not rows:
+        return {
+            "items_processed": 0,
+            "procedures_created": 0,
+            "procedures_reinforced": 0,
+            "discarded": 0,
+        }
+
+    # Group candidates by the scope (channel) their procedure will live in.
+    groups: Dict[str, List[Any]] = {}
+    for r in rows:
+        scope = _derive_procedure_scope(r.signal, r.channel, r.agent_id)
+        groups.setdefault(scope, []).append(r)
+
+    if progress_callback:
+        progress_callback("discovery", {"candidates": len(rows), "scopes": len(groups)})
+
+    for scope, cands in groups.items():
+        cand_ids = [int(c.id) for c in cands]
+        batch = [{"signal": c.signal, "content": c.content} for c in cands]
+        signals = sorted({c.signal for c in cands if c.signal})
+
+        try:
+            result = await extraction_service.distill_procedure(batch, scope)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"distill[{scope}]: {e}")
+            continue
+
+        if not result.success:
+            # Transient provider issue — leave candidates pending so a later run retries.
+            errors.append(f"distill[{scope}]: {result.error}")
+            continue
+
+        if not result.keep:
+            procedural.mark_candidates(cand_ids, "discarded")
+            discarded += len(cand_ids)
+            continue
+
+        user_id = _resolve_user_for_conversation(cands[0].conversation_id)
+        evidence = [f"cand:{cid}" for cid in cand_ids] + [
+            f"conv:{c.conversation_id}" for c in cands
+        ]
+        conv_ids = list({str(c.conversation_id) for c in cands})
+        agent_id = next((c.agent_id for c in cands if c.agent_id), None)
+
+        # Dedupe-on-write: a cosine-similar existing procedure in scope is
+        # strengthened instead of duplicated.
+        existing = procedural.find_procedures(
+            f"{result.trigger}\n{result.body}",
+            channels=[scope],
+            top_k=1,
+            min_score=dedupe_threshold,
+        )
+        try:
+            if existing and procedural.reinforce_procedure(
+                existing[0].id,
+                evidence_refs=evidence,
+                signal_kinds=signals,
+                channel=scope,
+            ):
+                reinforced += 1
+                procedural.mark_candidates(cand_ids, "distilled", distilled_into=existing[0].id)
+            else:
+                proc = procedural.learn_procedure(
+                    trigger=result.trigger,
+                    body=result.body,
+                    rationale=result.rationale,
+                    scope=scope,
+                    agent_id=agent_id,
+                    signal_kinds=signals,
+                    evidence_refs=evidence,
+                    conversation_ids=conv_ids,
+                    user_id=user_id,
+                )
+                created += 1
+                procedural.mark_candidates(cand_ids, "distilled", distilled_into=proc.id)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"write[{scope}]: {e}")
+            continue
+
+    logger.info(
+        f"Procedure distillation: {created} created, {reinforced} reinforced, "
+        f"{discarded} discarded from {len(rows)} candidates"
+    )
+    return {
+        "items_processed": len(rows),
+        "procedures_created": created,
+        "procedures_reinforced": reinforced,
+        "discarded": discarded,
+        "errors": errors,
+    }
+
+
 def apply_memory_decay() -> Dict[str, Any]:
     """
     Apply time-based decay to memory salience scores.

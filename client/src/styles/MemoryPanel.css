@@ -1,5 +1,28 @@
 /* Memory Explorer Tab Styles */
 
+/* Full-screen modal host (Phase 18: Memory moved from an xxl drawer to a
+   centered full-screen modal). The drawer's .modal-content-wrapper used
+   min-height:100vh, which overflows a centered 85vh dialog — so give the panel
+   a definite height that fills the dialog and lets it scroll internally. */
+.memory-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 85vh;
+}
+
+.memory-modal-content > .memory-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  /* On phones the dialog is 100dvh (a definite height), so fill it. */
+  .memory-modal-content {
+    height: 100%;
+  }
+}
+
 .memory-tab {
   padding: 32px 40px;
   overflow-y: auto;
@@ -1041,6 +1064,39 @@
   margin-top: 2px;
 }
 
+/* Empty state for a graph list group (e.g. no procedures yet). */
+.graph-list-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 12px 10px;
+}
+
+.graph-btn-type.procedure {
+  color: #2dd4bf;
+}
+
+/* Procedure-centered graph node variants (scope / agent / evidence conversation). */
+.graph-node.procedure.center {
+  border-color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.graph-node.agent {
+  border-color: #f59e0b;
+}
+
+.graph-node.conversation {
+  border-color: #64748b;
+  border-style: dashed;
+}
+
+.graph-node.procedure .graph-node-type,
+.graph-node.scope .graph-node-type,
+.graph-node.agent .graph-node-type,
+.graph-node.conversation .graph-node-type {
+  color: var(--text-muted);
+}
+
 /* Full-height card variant (for graph/jobs) */
 .memory-list-container.full-height {
   flex: 1;
@@ -1111,6 +1167,159 @@
 
 .info-row .value.badge {
   font-size: 12px;
+}
+
+/* Mentioned entities (Fact → Entity, #538 / link tool #905) */
+.mentioned-entities {
+  margin-bottom: 24px;
+}
+
+.mentioned-entities-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.mentioned-entities-head .label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mentioned-entities-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.entity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.entity-chip-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.entity-chip-link:hover {
+  background: var(--bg-hover);
+}
+
+.entity-chip-name {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.entity-chip-type {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.entity-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.entity-chip-remove:hover:not(:disabled) {
+  color: var(--status-error);
+  background: var(--bg-hover);
+}
+
+.entity-chip-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Inline entity picker (link tool) */
+.entity-picker {
+  margin-top: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-void);
+  overflow: hidden;
+}
+
+.entity-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.entity-picker-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.entity-picker-results {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.entity-picker-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.entity-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.entity-picker-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.entity-picker-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Entity Sections */

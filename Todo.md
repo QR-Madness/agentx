@@ -459,9 +459,20 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 
 ### Memory Area UX Cleanup
 
-- [ ] **Redesign the Memory area** (drastic cleanup, mirroring the agent-profile editor pass) and
-      **document every feature in-UI** — each control gets a clear, abstract description of what it
-      does and how it works, so the panel is legible without reading the code.
+- [~] **Redesign the Memory area** — Memory moved from a cramped right-side `xxl` drawer to a
+      **full-screen modal** (`type:'modal', size:'full'`, mirroring Settings/Toolkit; own
+      `.memory-modal-content` host with a definite height so the panel fills the dialog and scrolls
+      internally). Also fixed the procedure "When when …" render doubling (shared `procedureHeadline`/
+      `_prefix_trigger` helpers, render-only). **Still TODO:** the *drastic cleanup* +
+      **document every feature in-UI** (per-control abstract descriptions) — deferred from this pass.
+- [ ] **Memory-mending agent (memory janitor)** — an agent that actively explores the memory graph
+      and *repairs* it: find orphaned facts (no `[:ABOUT]`), broken/dangling links, duplicate or
+      contradictory entities/facts, stale context, and weakly-connected clusters; propose/apply mends
+      (link, merge, supersede, prune). Build on the new manual fact↔entity link + the existing
+      lifecycle ops (`dedupe_entities`, `link_facts_to_entities`, `check_contradictions`,
+      `promote_to_global`) and the Fact→Entity surfacing. Likely an **Agent Alloy specialist**
+      ("Memory" agent) so it reuses delegation + can run on a schedule; surface proposed mends in the
+      Memory explorer for review/approve. (Requested follow-up to the Memory Explorer pass.)
 
 ### Engineering Hardening (observed while in the code, Slices 5–6)
 
@@ -535,14 +546,15 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       config, settings module wiring) and `types-redis` so the test suite gets real type coverage, then
       drop the file-level `# pyright: ...=false` directives. Watch for new stricter-typing fallout on
       Django models. Source already type-checks clean at baseline 0.
-- [ ] **Memory panel: Fact→Entity display** — `client/src/components/memory/FactDetail.tsx` ignores
-      `entity_ids` entirely (Entity→Fact works in EntityDetail; the reverse is missing). Have
-      `/api/memory/facts` return `{id,name,type}` for ABOUT'd entities (query already does
-      `OPTIONAL MATCH (f)-[:ABOUT]->(e)`) and add a clickable "Mentioned entities" section.
-- [ ] **Entity-relationship type consistency** — consolidation stores all entity↔entity relations as
-      `[:RELATES_TO {type}]` (jobs.py `_batch_store_relationships`) while `queries/neo4j_schemas.cypher`
-      documents specific types (`RELATED_TO`, `WORKS_FOR`, …). Pick one model and align graph
-      traversals/queries.
+- [x] **Memory panel: Fact→Entity display** — shipped. `list_facts` now returns `entities[]`
+      ({id,name,type}) alongside `entity_ids`; `FactDetail` renders a clickable "Mentioned entities"
+      section that navigates to the entity (`MemoryPanel` onNavigateEntity). Folded together with the
+      link tool below.
+- [x] **Entity-relationship type consistency** — shipped. Doc'd the canonical edge as
+      `(:Entity)-[:RELATES_TO {type, …}]->(:Entity)` in `queries/neo4j_schemas.cypher` (the named
+      types `WORKS_FOR`/`RELATED_TO`/… were never written — zero live readers). Also fixed
+      `get_entity_facts_and_relationships` to surface the semantic `r.type` property via
+      `coalesce(r.type, type(r))` so the graph view stops labelling every edge "RELATES_TO".
 - [ ] Global Default Model (ultimate fallback model) not Configurable
 - [ ] Store Consolidation costs
 - [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
@@ -840,6 +852,12 @@ covers ~80% of this via its own tool loop:
 > coarse `detect_patterns` ("Use {tools} for {task_type}") — rebuild it **brain-modeled**. Unifies with
 > the **Active Memory Recall** tiers above (Tier-1 watchdog = the reflex core; Tier-3 = deliberate
 > self-query). Seed signal: the persisted steer corrections (`metadata.steered`).
+>
+> **Slice 1 update:** ③ and ④ **fixed** (reflex-core renders into the prompt; the autonomous worker now
+> awaits coroutine jobs — it was silently dropping the async `consolidate` — and `task dev` runs it).
+> The new corrections/rules → `Procedure` path runs the brain-modeled distill (encode → distill →
+> reflex-core activation). ① and ② (internal-tool sequence evidence + a live Outcome/success signal,
+> which feed tool-**sequence** procedures) remain for a later slice.
 
 > **Brain model.** (a) *General → specific*: the model already has the general baseline, so store only
 > the **delta** — the project/user/domain "how we do it here," corrections, learned habits. (b) *The
@@ -860,24 +878,34 @@ covers ~80% of this via its own tool loop:
       PG table, from the `_persist_turns` daemon on the streaming chat path (both normal + hard-stop).
       Count surfaced on `/api/memory/stats`. **Remaining for the loop:** failure-marker capture +
       repetition detection. [[metadata.steered]]
-- [ ] **Loop 2 — Replay / distill (consolidation = "sleep")** — the worker **replays stored
-      sequences**: extract the **invariant core across instances** (general→specific abstraction),
-      **reflect** on corrected/failed sequences to mint the corrected procedure (reuse
-      `ReflectiveReasoner` + `check_relevance_and_extract_assistant`), **strengthen** replayed ones,
-      **prune** baseline-known ones. Fix ② (emit a success/Outcome signal) + ① (record internal-tool
-      sequences as evidence).
-- [ ] **Loop 3 — Activate (every turn; the hard part) — gate, don't retrieve** — procedural recall ≠
+- [~] **Loop 2 — Replay / distill (consolidation = "sleep")** — **Slice 1 shipped** the candidate→
+      Procedure half: the async `distill_procedures` consolidation job (`consolidation/jobs.py`, in the
+      registry default pipeline + autonomous worker) reads pending `procedure_candidates`, groups by
+      derived scope (corrections with an `agent_id` route to `_self_{agent_id}`; explicit rules stay on
+      their channel), runs `ExtractionService.distill_procedure` (baseline-deviation filter with
+      signal-aware deference — explicit rules are kept unless redundant), and **strengthens** a
+      cosine-similar existing Procedure (`procedural_dedupe_threshold`) instead of duplicating; candidates
+      flip to `distilled`/`discarded` (+`distilled_into`). **Remaining:** tool-**sequence** replay /
+      invariant-core abstraction, `ReflectiveReasoner` correction-reflection, Fix ② (emit a success/
+      Outcome signal) + Fix ① (record internal-tool sequences as evidence).
+- [~] **Loop 3 — Activate (every turn; the hard part) — gate, don't retrieve** — procedural recall ≠
       content similarity (a conditional trigger→sequence isn't *similar* to the prompt). **Index by
       trigger, query by situation.** Four modes: **reflex core** (top general/project procedures
-      injected every turn, maintained not searched = Tier-1 watchdog); **activation nerve** (match a
-      *situation descriptor* built from goals+summary+fast-model intent-tag+entities+next-tool against
-      trigger conditions — fires the procedure); **point-of-action** (action-bound procedures inject at
-      the tool-call boundary); **deliberate** (`recall_procedures` self-query = Tier-3). Fix ③ (render
-      the reflex core into `to_context_string`).
-- [ ] **`Procedure` model (richer than `Strategy`)** — `{trigger (NL + situation features),
-      sequence/approach (replayable body), rationale, scope, strength (replay/reinforce count),
-      evidence refs}`. Repurpose the **dead** `learn_strategy`/`reinforce_strategy` (no live callers) as
-      the write/strengthen path. Fix ④ (run/ document the worker).
+      injected every turn, maintained not searched = Tier-1 watchdog) — **shipped in Slice 1**
+      (`ProceduralMemory.get_reflex_procedures` top-`strength` over recall channels, attached at the
+      `remember()` boundary, rendered by `MemoryBundle.to_context_string`, gated by `reflex_core_enabled`/
+      `reflex_core_limit`; Fix ③ done); **activation nerve** (match a *situation descriptor* built from
+      goals+summary+fast-model intent-tag+entities+next-tool against trigger conditions — fires the
+      procedure); **point-of-action** (action-bound procedures inject at the tool-call boundary);
+      **deliberate** (`recall_procedures` self-query = Tier-3) — all three remain.
+- [x] **`Procedure` model (richer than `Strategy`)** — **Slice 1.** New Neo4j `Procedure` node +
+      `models.Procedure` `{trigger (NL) + trigger_features, body (replayable), rationale, scope, strength
+      (replay/reinforce count), evidence_refs, signal_kinds}` with `procedure_embeddings` vector index;
+      `learn_procedure`/`reinforce_procedure`/`find_procedures`/`list_procedures` reuse the (dead)
+      `learn_strategy`/`reinforce_strategy` write pattern. Inspect via `GET /api/memory/procedures` +
+      `/api/memory/stats` `procedures` count. Fix ④ done — `ConsolidationWorker` now awaits coroutine
+      jobs (the autonomous `consolidate` was silently no-op'ing) and `task dev` runs the worker; manual
+      `task memory:distill-procedures`.
 
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation
@@ -886,7 +914,11 @@ covers ~80% of this via its own tool loop:
 - [ ] Negative/Correction Tracking — when `correction_detection_enabled`, mark superseded facts `temporal_context: "past"`, link corrections to originals, prioritize corrections in retrieval
 - [ ] Fact Staleness Detection — add `expected_stability: transient|stable|permanent` and surface staleness warnings (relates to Fact Transience above)
 - [ ] Multi-hop Entity Traversal — add a lightweight path-finding retrieval mode over the entity graph (e.g. User → works_at → Company → has_project → Project → uses_tool → Tool)
-- [ ] Memory graph relationship connections - add a connection tool to link entitys to facts in the memory graph
+- [x] Memory graph relationship connections — shipped as a Fact↔Entity link tool. Backend
+      `link_fact_to_entity`/`unlink_fact_from_entity` (user-scoped ABOUT MERGE/DELETE) +
+      `POST/DELETE /api/memory/facts/{id}/entities`; `FactDetail` "Mentioned entities" section has a
+      searchable, channel-scoped entity picker (link) + per-chip unlink, optimistically updating the
+      fact. (Deferred: drag-to-connect directly on the ReactFlow canvas.)
 
 ### MCP Tools (migrated from docs/future-feature-pool)
 - [ ] Conversation MCP Tool — expose memory as MCP tools for external agents: `memory_recall(query, filters?)`, `memory_store(fact)`, `conversation_summary(conversation_id?)`

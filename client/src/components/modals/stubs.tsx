@@ -22,8 +22,12 @@ interface ModalContentProps {
 }
 
 export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
+  // Full-screen Memory explorer. Uses its own host (not the drawer-oriented
+  // .modal-content-wrapper, whose min-height:100vh overflows a centered modal);
+  // .memory-modal-content gives a definite height so the panel fills the dialog
+  // and scrolls internally (nav fixed, content scrolls).
   return (
-    <div className="modal-content-wrapper">
+    <div className="memory-modal-content">
       <MemoryPanel />
     </div>
   );

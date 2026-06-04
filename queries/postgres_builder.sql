@@ -114,8 +114,12 @@ CREATE TABLE IF NOT EXISTS procedure_candidates (
     context JSONB,                                  -- {after_tools, steer_round, ...}
     channel VARCHAR(100) NOT NULL DEFAULT '_global',
     agent_id VARCHAR(100),                          -- agent whose behavior this corrects
-    status VARCHAR(20) NOT NULL DEFAULT 'pending'   -- pending | distilled | discarded
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending | distilled | discarded
+    distilled_into VARCHAR(64)                      -- Procedure id this candidate fed (Slice 1)
 );
+
+-- Migrate pre-Slice-1 deployments (CREATE TABLE IF NOT EXISTS won't add the column).
+ALTER TABLE procedure_candidates ADD COLUMN IF NOT EXISTS distilled_into VARCHAR(64);
 
 CREATE INDEX IF NOT EXISTS idx_proc_candidates_status ON procedure_candidates (status, channel);
 CREATE INDEX IF NOT EXISTS idx_proc_candidates_conversation ON procedure_candidates (conversation_id);

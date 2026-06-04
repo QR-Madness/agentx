@@ -19,6 +19,7 @@ from .jobs import (
     manage_audit_partitions,
     promote_to_global,
     link_facts_to_entities,
+    distill_procedures,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,12 @@ class JobRegistry:
                 func=link_facts_to_entities,
                 interval_minutes=settings.job_entity_linking_interval,
                 description="Link facts to existing entities via embedding similarity",
+            ),
+            "distill_procedures": JobDefinition(
+                name="distill_procedures",
+                func=distill_procedures,
+                interval_minutes=settings.job_distill_procedures_interval,
+                description="Distill procedure candidates (corrections/rules) into scoped Procedures",
             ),
         }
 
@@ -432,14 +439,15 @@ class JobRegistry:
         Run the consolidation pipeline (multiple jobs).
 
         Args:
-            jobs: List of job names to run. If None, runs consolidate, patterns, promote.
+            jobs: List of job names to run. If None, runs consolidate, patterns,
+                promote, distill_procedures.
             progress: Optional ConsolidationProgress instance for pub/sub broadcasting.
 
         Returns:
             Combined results from all jobs
         """
         if jobs is None:
-            jobs = ["consolidate", "patterns", "promote"]
+            jobs = ["consolidate", "patterns", "promote", "distill_procedures"]
 
         results: Dict[str, Any] = {}
         errors: List[str] = []

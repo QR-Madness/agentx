@@ -3535,6 +3535,43 @@ def memory_fact_forget(request, fact_id):
         return json_error(str(e), status=500)
 
 
+@csrf_exempt
+def memory_fact_entities(request, fact_id):
+    """
+    POST   /api/memory/facts/{id}/entities - Link an entity to a fact (ABOUT) (#905).
+    DELETE /api/memory/facts/{id}/entities - Unlink an entity from a fact.
+
+    Body: {"entity_id": "..."}. Returns the fact's updated {id,name,type} entity list.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method not in ('POST', 'DELETE'):
+        return json_error("POST or DELETE only", status=405)
+
+    try:
+        data, error = parse_json_body(request)
+        if error is not None:
+            return error
+        entity_id = (data or {}).get("entity_id") if isinstance(data, dict) else None
+        if not entity_id or not isinstance(entity_id, str):
+            return json_error("entity_id is required")
+
+        from .kit.agent_memory.memory.semantic import SemanticMemory
+        semantic = SemanticMemory()
+
+        if request.method == 'POST':
+            entities = semantic.link_fact_to_entity(fact_id, entity_id, DEFAULT_USER_ID)
+        else:
+            entities = semantic.unlink_fact_from_entity(fact_id, entity_id, DEFAULT_USER_ID)
+
+        if entities is None:
+            return json_error("Fact or entity not found", status=404)
+        return JsonResponse({"entities": entities})
+    except Exception as e:
+        logger.error(f"Error in memory_fact_entities: {e}")
+        return json_error(str(e), status=500)
+
+
 def memory_fact_provenance(request, fact_id):
     """GET /api/memory/facts/{id}/provenance - Where was this fact learned?"""
     if request.method == 'OPTIONS':
@@ -3643,6 +3680,54 @@ def memory_strategies(request):
 
     except Exception as e:
         logger.error(f"Error listing strategies: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def memory_procedures(request):
+    """
+    GET /api/memory/procedures - List distilled procedures with pagination (Slice 1).
+
+    Procedures are the "how we work here" deltas distilled from corrections/steers
+    and explicit user rules by the `distill_procedures` consolidation job.
+
+    Query params:
+        - channel: Filter by channel (default: "_all")
+        - page: Page number, 1-indexed (default: 1)
+        - limit: Items per page, max 100 (default: 20)
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        channel = request.GET.get('channel', '_all')
+        page = max(1, int(request.GET.get('page', 1)))
+        limit = min(100, max(1, int(request.GET.get('limit', 20))))
+        offset = (page - 1) * limit
+
+        from .kit.agent_memory.memory.procedural import ProceduralMemory
+        procedural = ProceduralMemory()
+
+        procedures, total = procedural.list_procedures(
+            user_id=DEFAULT_USER_ID,
+            channel=channel,
+            offset=offset,
+            limit=limit,
+        )
+
+        return JsonResponse({
+            "procedures": procedures,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_next": (page * limit) < total,
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing procedures: {e}")
         return JsonResponse({"error": str(e)}, status=500)
 
 
@@ -3780,7 +3865,7 @@ def memory_stats(request):
             # Get totals - query each type separately since they have different structures
             # Entity, Fact, Strategy have user_id property
             # Turn is linked via User -> Conversation -> Turn
-            totals = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
+            totals = {"entities": 0, "facts": 0, "strategies": 0, "procedures": 0, "turns": 0}
 
             entity_count = session.run("""
                 MATCH (e:Entity {user_id: $user_id})
@@ -3799,6 +3884,13 @@ def memory_stats(request):
                 RETURN count(s) AS cnt
             """, user_id=DEFAULT_USER_ID).single()
             totals["strategies"] = strategy_count["cnt"] if strategy_count else 0
+
+            # Distilled procedures (Slice 1 — procedural memory).
+            procedure_count = session.run("""
+                MATCH (p:Procedure {user_id: $user_id})
+                RETURN count(p) AS cnt
+            """, user_id=DEFAULT_USER_ID).single()
+            totals["procedures"] = procedure_count["cnt"] if procedure_count else 0
 
             # Turn is linked through Conversation, not directly to user_id property
             turn_count = session.run("""
@@ -4380,7 +4472,7 @@ async def consolidate_stream(request):
         try:
             if trigger:
                 progress = ConsolidationProgress(
-                    jobs=jobs or ["consolidate", "patterns", "promote"],
+                    jobs=jobs or ["consolidate", "patterns", "promote", "distill_procedures"],
                     triggered_by="manual_stream",
                 )
 
