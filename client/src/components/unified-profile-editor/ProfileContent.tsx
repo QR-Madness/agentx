@@ -77,6 +77,72 @@ function AccordionCard({
   );
 }
 
+const MAX_TAGS = 4;
+const MAX_TAG_LEN = 24;
+
+/** Chip-style editor for an agent's trait/role tags (max 4). */
+function TagsField({ tags, setTags }: { tags: string[]; setTags: (t: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+
+  const commit = () => {
+    const tag = draft.trim().slice(0, MAX_TAG_LEN);
+    setDraft('');
+    if (!tag) return;
+    if (tags.length >= MAX_TAGS) return;
+    if (tags.some(t => t.toLowerCase() === tag.toLowerCase())) return;
+    setTags([...tags, tag]);
+  };
+
+  const removeAt = (i: number) => setTags(tags.filter((_, idx) => idx !== i));
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Backspace' && !draft && tags.length) {
+      removeAt(tags.length - 1);
+    }
+  };
+
+  const full = tags.length >= MAX_TAGS;
+
+  return (
+    <div className="profile-form-group">
+      <label>Tags</label>
+      <div className="profile-tags-editor">
+        {tags.map((tag, i) => (
+          <span key={`${tag}-${i}`} className="profile-tag-chip">
+            {tag}
+            <button
+              type="button"
+              className="profile-tag-remove"
+              onClick={() => removeAt(i)}
+              aria-label={`Remove tag ${tag}`}
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        {!full && (
+          <input
+            type="text"
+            className="profile-tag-input"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={commit}
+            maxLength={MAX_TAG_LEN}
+            placeholder={tags.length ? 'Add tag…' : 'e.g. research, fast, writer'}
+          />
+        )}
+      </div>
+      <span className="profile-form-hint">
+        Up to {MAX_TAGS} short labels (traits, roles) shown in the agent selector. Press Enter to add.
+      </span>
+    </div>
+  );
+}
+
 interface ProfileContentProps {
   profile: AgentProfile | null;
   onSaved: (profileId: string) => void;
@@ -96,6 +162,7 @@ export function ProfileContent({
     name, setName,
     avatar, setAvatar,
     description, setDescription,
+    tags, setTags,
     defaultModel, setDefaultModel,
     temperature, setTemperature,
     reasoningStrategy, setReasoningStrategy,
@@ -264,6 +331,8 @@ export function ProfileContent({
                         Shown to other agents when deciding whether to delegate here.
                       </span>
                     </div>
+
+                    <TagsField tags={tags} setTags={setTags} />
                   </AccordionCard>
 
                   <AccordionCard value="model" icon={<Cpu size={14} />} title="Model &amp; Generation">

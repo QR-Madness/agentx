@@ -8,6 +8,7 @@ interface RawAgentProfile {
   agent_id?: string;
   avatar?: string;
   description?: string;
+  tags?: string[];
   default_model?: string;
   temperature: number;
   prompt_profile_id?: string;
@@ -32,6 +33,7 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
     agentId: p.agent_id || p.id,
     avatar: p.avatar,
     description: p.description,
+    tags: p.tags ?? [],
     defaultModel: p.default_model,
     temperature: p.temperature,
     promptProfileId: p.prompt_profile_id,

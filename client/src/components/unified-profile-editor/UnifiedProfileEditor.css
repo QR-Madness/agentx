@@ -362,6 +362,69 @@
   margin-left: 24px;
 }
 
+/* ── Tags editor (trait/role chips) ── */
+.profile-tags-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--glass-layer-2);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-tags-editor:focus-within {
+  border-color: rgba(139, 92, 246, 0.5);
+  box-shadow: var(--border-glow-subtle);
+}
+
+.profile-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 10px;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.profile-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.profile-tag-remove:hover {
+  background: rgba(139, 92, 246, 0.3);
+  color: var(--text-primary);
+}
+
+.profile-tags-editor .profile-tag-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 2px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+}
+
 /* ── Avatar picker ── */
 .profile-avatar-picker {
   display: flex;

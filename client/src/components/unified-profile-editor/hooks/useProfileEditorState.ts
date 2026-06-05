@@ -22,6 +22,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('sparkles');
   const [description, setDescription] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
   const [temperature, setTemperature] = useState(0.7);
   const [reasoningStrategy, setReasoningStrategy] = useState<ReasoningStrategy>('auto');
@@ -47,6 +48,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setName(profile.name);
       setAvatar(profile.avatar ?? 'sparkles');
       setDescription(profile.description ?? '');
+      setTags(profile.tags ?? []);
       setDefaultModel(profile.defaultModel ?? '');
       setTemperature(profile.temperature);
       setReasoningStrategy(profile.reasoningStrategy);
@@ -62,6 +64,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setName('');
       setAvatar('sparkles');
       setDescription('');
+      setTags([]);
       setDefaultModel('');
       setTemperature(0.7);
       setReasoningStrategy('auto');
@@ -119,6 +122,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
         name: name.trim(),
         avatar,
         description: description.trim() || undefined,
+        tags,
         default_model: defaultModel || undefined,
         temperature,
         reasoning_strategy: reasoningStrategy,
@@ -171,6 +175,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     name, setName,
     avatar, setAvatar,
     description, setDescription,
+    tags, setTags,
     defaultModel, setDefaultModel,
     temperature, setTemperature,
     reasoningStrategy, setReasoningStrategy,

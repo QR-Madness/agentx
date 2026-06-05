@@ -10,7 +10,7 @@ from enum import Enum
 import random
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +63,13 @@ class AgentProfile(BaseModel):
     agent_id: str = Field(default_factory=generate_agent_id, description="Unique human-friendly agent identifier (Docker-style)")
     avatar: Optional[str] = Field(None, description="Avatar icon name (e.g., 'sparkles', 'brain')")
     description: Optional[str] = Field(None, description="Description of this profile's purpose")
+    # Short, free-form labels surfacing the agent's traits/roles (e.g. "research",
+    # "fast", "writer"). Shown as chips in the agent selector. Capped at 4 so the
+    # selector row stays readable; each is trimmed and length-limited.
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Up to 4 short trait/role labels shown in the agent selector",
+    )
 
     # Model settings
     default_model: Optional[str] = Field(None, description="Default model to use for this profile")
@@ -120,6 +127,31 @@ class AgentProfile(BaseModel):
     is_default: bool = Field(False, description="Whether this is the default profile")
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, v: object) -> list[str]:
+        """Trim, drop blanks, length-limit, de-dupe (case-insensitive), cap at 4."""
+        if not v:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        if not isinstance(v, (list, tuple)):
+            return []
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in v:
+            tag = str(item).strip()[:24]
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(tag)
+            if len(out) >= 4:
+                break
+        return out
 
     @property
     def self_channel(self) -> str:

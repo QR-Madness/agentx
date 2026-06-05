@@ -3164,6 +3164,11 @@ components:
         description:
           type: string
           nullable: true
+        tags:
+          type: array
+          description: Up to 4 short trait/role labels shown in the agent selector.
+          items:
+            type: string
         default_model:
           type: string
         temperature:

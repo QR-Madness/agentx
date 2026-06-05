@@ -378,6 +378,8 @@ export interface AgentProfile {
   agentId: string;  // Docker-style stable identifier (used by Alloy workflows)
   avatar?: string;
   description?: string;
+  // Up to 4 short trait/role labels shown as chips in the agent selector.
+  tags?: string[];
   defaultModel?: string;
   temperature: number;
   promptProfileId?: string;
@@ -404,6 +406,7 @@ export interface AgentProfileCreate {
   name: string;
   avatar?: string;
   description?: string;
+  tags?: string[];
   default_model?: string;
   temperature?: number;
   prompt_profile_id?: string;

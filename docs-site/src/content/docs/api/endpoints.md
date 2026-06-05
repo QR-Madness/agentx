@@ -541,6 +541,7 @@ POST   /api/agent/profiles/{profile_id}/set-default
   "agent_id": "bold-cosmic-falcon",
   "avatar": null,
   "description": "General-purpose assistant",
+  "tags": ["research", "fast"],
   "default_model": "lmstudio:llama3.2",
   "temperature": 0.7,
   "prompt_profile_id": "default",

@@ -65,7 +65,9 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
     const q = query.trim().toLowerCase();
     if (!q) return profiles;
     return profiles.filter(p =>
-      p.name.toLowerCase().includes(q) || (p.defaultModel ?? '').toLowerCase().includes(q),
+      p.name.toLowerCase().includes(q) ||
+      (p.defaultModel ?? '').toLowerCase().includes(q) ||
+      (p.tags ?? []).some(t => t.toLowerCase().includes(q)),
     );
   }, [profiles, query]);
 
@@ -212,6 +214,13 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
                     {isSupervisor && <span className="agent-item-badge">supervisor</span>}
                   </span>
                   <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
+                  {profile.tags && profile.tags.length > 0 && (
+                    <span className="agent-item-tags">
+                      {profile.tags.map(tag => (
+                        <span key={tag} className="agent-item-tag">{tag}</span>
+                      ))}
+                    </span>
+                  )}
                 </div>
                 {isSupervisor && <Crown size={13} className="agent-item-check" />}
               </div>
@@ -243,6 +252,13 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
               {profile.isDefault && <span className="agent-item-badge">default</span>}
             </span>
             <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
+            {profile.tags && profile.tags.length > 0 && (
+              <span className="agent-item-tags">
+                {profile.tags.map(tag => (
+                  <span key={tag} className="agent-item-tag">{tag}</span>
+                ))}
+              </span>
+            )}
           </div>
           {isActive && <Check size={14} className="agent-item-check" />}
           <button className="agent-item-edit" onClick={(e) => handleEdit(e, profile.id)} title="Edit profile">
