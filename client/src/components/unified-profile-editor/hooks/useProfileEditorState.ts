@@ -35,6 +35,11 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [allowedTools, setAllowedTools] = useState<string[] | null>(null);
   const [blockedTools, setBlockedTools] = useState<string[]>([]);
   const [availableForDelegation, setAvailableForDelegation] = useState(true);
+  // Phase 16.6 — ambassador section: when enabled, this profile can act as a
+  // parallel conversation interpreter (briefs turns without entering the chat).
+  const [ambassadorEnabled, setAmbassadorEnabled] = useState(false);
+  const [ambassadorBriefingPrompt, setAmbassadorBriefingPrompt] = useState('');
+  const [ambassadorVerbosity, setAmbassadorVerbosity] = useState<'brief' | 'normal' | 'deep'>('normal');
   const [baseTemplateId, setBaseTemplateId] = useState('');
   const [baseTemplate, setBaseTemplate] = useState<PromptTemplate | null>(null);
   const [saving, setSaving] = useState(false);
@@ -60,6 +65,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setAllowedTools(profile.allowedTools ?? null);
       setBlockedTools(profile.blockedTools ?? []);
       setAvailableForDelegation(profile.availableForDelegation ?? true);
+      setAmbassadorEnabled(profile.ambassador?.enabled ?? false);
+      setAmbassadorBriefingPrompt(profile.ambassador?.briefingPrompt ?? '');
+      setAmbassadorVerbosity(profile.ambassador?.verbosity ?? 'normal');
     } else {
       setName('');
       setAvatar('sparkles');
@@ -76,6 +84,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setAllowedTools(null);
       setBlockedTools([]);
       setAvailableForDelegation(true);
+      setAmbassadorEnabled(false);
+      setAmbassadorBriefingPrompt('');
+      setAmbassadorVerbosity('normal');
     }
     setError(null);
   }, [profile]);
@@ -137,6 +148,14 @@ export function useProfileEditorState(profile: AgentProfile | null) {
         allowed_tools: allowedTools,
         blocked_tools: blockedTools,
         available_for_delegation: availableForDelegation,
+        // Send the ambassador section when enabled; null clears it otherwise.
+        ambassador: ambassadorEnabled
+          ? {
+              enabled: true,
+              briefing_prompt: ambassadorBriefingPrompt.trim(),
+              verbosity: ambassadorVerbosity,
+            }
+          : null,
       };
       let saved: AgentProfile;
       if (isEditing && profileId) {
@@ -186,6 +205,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
+    ambassadorEnabled, setAmbassadorEnabled,
+    ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
+    ambassadorVerbosity, setAmbassadorVerbosity,
     baseTemplateId, setBaseTemplateId,
     baseTemplate,
     systemPromptRef,

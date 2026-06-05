@@ -17,6 +17,7 @@ import {
   X,
   Zap,
   Share2,
+  Radio,
   AlertCircle,
 } from 'lucide-react';
 import { type AgentProfile, type ModelInfo } from '../../lib/api';
@@ -173,6 +174,9 @@ export function ProfileContent({
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
+    ambassadorEnabled, setAmbassadorEnabled,
+    ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
+    ambassadorVerbosity, setAmbassadorVerbosity,
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
@@ -498,6 +502,63 @@ export function ProfileContent({
                       <code> delegate_to </code> tool (requires ad-hoc delegation enabled
                       in Settings → Multi-Agent).
                     </span>
+                  </AccordionCard>
+
+                  {/* Ambassador — Phase 16.6 */}
+                  <AccordionCard value="ambassador" icon={<Radio size={14} />} title="Ambassador">
+                    <label className="profile-toggle-row">
+                      <span className="profile-toggle-label">
+                        <Radio size={15} />
+                        Act as ambassador
+                      </span>
+                      <div className="profile-toggle-right">
+                        <input
+                          type="checkbox"
+                          checked={ambassadorEnabled}
+                          onChange={e => setAmbassadorEnabled(e.target.checked)}
+                          className="profile-toggle-input"
+                        />
+                        <span className={`profile-toggle-switch ${ambassadorEnabled ? 'active' : ''}`} />
+                      </div>
+                    </label>
+                    <span className="profile-form-hint">
+                      An ambassador runs <em>parallel</em> to a conversation and briefs you on a
+                      turn — without entering the chat. Use the <code> CC </code> button on any
+                      reply. Pick the global default in Settings → Ambassador.
+                    </span>
+
+                    {ambassadorEnabled && (
+                      <>
+                        <div className="profile-form-field" style={{ marginTop: 12 }}>
+                          <label className="profile-form-label">Briefing verbosity</label>
+                          <select
+                            className="profile-select"
+                            value={ambassadorVerbosity}
+                            onChange={e =>
+                              setAmbassadorVerbosity(e.target.value as 'brief' | 'normal' | 'deep')
+                            }
+                          >
+                            <option value="brief">Brief — one or two sentences</option>
+                            <option value="normal">Normal — a short paragraph</option>
+                            <option value="deep">Deep — reasoning, tensions, open questions</option>
+                          </select>
+                        </div>
+                        <div className="profile-form-field" style={{ marginTop: 12 }}>
+                          <label className="profile-form-label">Briefing instructions</label>
+                          <textarea
+                            value={ambassadorBriefingPrompt}
+                            onChange={e => setAmbassadorBriefingPrompt(e.target.value)}
+                            placeholder="What should the ambassador surface or emphasize when briefing a turn? (optional)"
+                            rows={4}
+                            className="profile-system-prompt"
+                          />
+                          <span className="profile-form-hint">
+                            Layered onto the ambassador's persona (this profile's model + system
+                            prompt still apply).
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </AccordionCard>
                 </Accordion.Root>
               </Tabs.Content>

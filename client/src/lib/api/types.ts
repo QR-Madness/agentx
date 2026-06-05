@@ -444,6 +444,14 @@ export interface AgentProfileCreate {
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;
+  // Phase 16.6 — ambassador section (snake_case body). null clears it.
+  ambassador?: {
+    enabled: boolean;
+    briefing_prompt?: string;
+    verbosity?: 'brief' | 'normal' | 'deep';
+    speech_model?: string | null;
+    voice?: string | null;
+  } | null;
   is_default?: boolean;
 }
 
