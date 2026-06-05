@@ -1053,7 +1053,17 @@ def translate_text(text: str, target_language: str) -> dict[str, Any]:
 
 # Short-TTL in-process cache of identical queries: key -> (expiry_epoch, payload)
 _SEARCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_SEARCH_TIMEOUT = 15.0
+_SEARCH_TIMEOUT = 15.0  # default cap; overridable via `search.timeout`
+
+
+def _search_timeout() -> float:
+    """Per-call wall-clock cap for web_search backends (seconds)."""
+    from ..config import get_config_manager
+
+    try:
+        return float(get_config_manager().get("search.timeout", _SEARCH_TIMEOUT) or _SEARCH_TIMEOUT)
+    except (TypeError, ValueError):
+        return _SEARCH_TIMEOUT
 
 
 def _resolve_search_key(config_key: str, env_var: str) -> str | None:
@@ -1075,7 +1085,7 @@ def _http_get_json(url: str, *, headers: dict, params: dict) -> dict[str, Any]:
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
-            with httpx.Client(timeout=_SEARCH_TIMEOUT) as client:
+            with httpx.Client(timeout=_search_timeout()) as client:
                 resp = client.get(url, headers=headers, params=params)
             if resp.status_code == 429 or resp.status_code >= 500:
                 raise httpx.HTTPStatusError(
@@ -1357,7 +1367,9 @@ def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     omits `include_raw_content` (full content is web_extract's job) so the echoed
     result stays compact + auto-capturable. Raises on failure."""
     client = _tavily_client()
-    kwargs: dict[str, Any] = {"max_results": max_results}
+    # Cap the call so a slow/hung search can't block the turn (the Tavily SDK
+    # otherwise defaults to ~60s). Brave is capped in `_http_get_json`.
+    kwargs: dict[str, Any] = {"max_results": max_results, "timeout": _search_timeout()}
     for p in ("search_depth", "topic", "time_range", "include_domains", "exclude_domains", "include_answer"):
         if opts.get(p) is not None:
             kwargs[p] = opts[p]

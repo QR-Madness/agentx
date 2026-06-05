@@ -145,6 +145,10 @@ DEFAULT_CONFIG = {
         "fallback_enabled": True,      # fall back to the other backend on error/empty
         "max_results": 5,
         "cache_ttl_seconds": 300,      # short-TTL in-process cache of identical queries
+        # Hard per-call wall-clock cap (seconds). web_search runs synchronously in
+        # the tool loop, so an unbounded call (Tavily's SDK default is ~60s) blocks
+        # the turn and stalls Stop until it returns. Cap both backends here.
+        "timeout": 15,
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
         "brave_api_key": None,
