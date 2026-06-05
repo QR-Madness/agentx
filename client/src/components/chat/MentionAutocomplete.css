@@ -56,6 +56,27 @@
   min-width: 0;
 }
 
+.mention-ac-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-left: auto;
+  max-width: 50%;
+}
+
+.mention-ac-tag {
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--accent-primary, var(--cosmic-cyan));
+  background: color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 28%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
 .mention-ac-name {
   font-size: 0.85rem;
   color: var(--text-primary);

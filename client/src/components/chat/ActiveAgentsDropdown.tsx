@@ -18,7 +18,7 @@ interface ActiveAgentsDropdownProps {
 
 export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgentsDropdownProps) {
   const { tabs, activeTabId, switchTab, addTab } = useConversation();
-  const { activeProfile } = useAgentProfile();
+  const { profiles, activeProfile } = useAgentProfile();
 
   const activeTabs = tabs.filter(t => t.isStreaming);
   const inactiveTabs = tabs.filter(t => !t.isStreaming);
@@ -33,7 +33,10 @@ export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgent
     onClose();
   };
 
-  const AvatarIcon = getAvatarIcon(activeProfile?.avatar);
+  // Resolve the agent profile driving a given tab (falling back to the active
+  // profile) so each row shows the right avatar + trait/role tags.
+  const profileForTab = (profileId: string | null) =>
+    (profileId ? profiles.find(p => p.id === profileId) : null) ?? activeProfile;
 
   return (
     <DropdownPortal
@@ -57,22 +60,33 @@ export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgent
             <Radio size={12} className="section-icon active" />
             <span>Active</span>
           </div>
-          {activeTabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`agents-item ${tab.id === activeTabId ? 'current' : ''}`}
-              onClick={() => handleSelect(tab.id)}
-            >
-              <div className="agents-item-avatar streaming">
-                <AvatarIcon size={14} />
-              </div>
-              <div className="agents-item-info">
-                <span className="agents-item-title">{tab.title}</span>
-                <span className="agents-item-status">Streaming...</span>
-              </div>
-              <span className="agents-item-pulse" />
-            </button>
-          ))}
+          {activeTabs.map(tab => {
+            const tabProfile = profileForTab(tab.profileId);
+            const TabAvatar = getAvatarIcon(tabProfile?.avatar);
+            return (
+              <button
+                key={tab.id}
+                className={`agents-item ${tab.id === activeTabId ? 'current' : ''}`}
+                onClick={() => handleSelect(tab.id)}
+              >
+                <div className="agents-item-avatar streaming">
+                  <TabAvatar size={14} />
+                </div>
+                <div className="agents-item-info">
+                  <span className="agents-item-title">{tab.title}</span>
+                  <span className="agents-item-status">Streaming...</span>
+                  {tabProfile?.tags && tabProfile.tags.length > 0 && (
+                    <span className="agents-item-tags">
+                      {tabProfile.tags.map(tag => (
+                        <span key={tag} className="agents-item-tag">{tag}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+                <span className="agents-item-pulse" />
+              </button>
+            );
+          })}
         </>
       )}
 
@@ -83,23 +97,34 @@ export function ActiveAgentsDropdown({ isOpen, onClose, anchorRef }: ActiveAgent
             <MessageSquare size={12} className="section-icon" />
             <span>Conversations</span>
           </div>
-          {inactiveTabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`agents-item ${tab.id === activeTabId ? 'current' : ''}`}
-              onClick={() => handleSelect(tab.id)}
-            >
-              <div className="agents-item-avatar">
-                <AvatarIcon size={14} />
-              </div>
-              <div className="agents-item-info">
-                <span className="agents-item-title">{tab.title}</span>
-                {tab.sessionId && (
-                  <span className="agents-item-session">{tab.sessionId.slice(0, 8)}</span>
-                )}
-              </div>
-            </button>
-          ))}
+          {inactiveTabs.map(tab => {
+            const tabProfile = profileForTab(tab.profileId);
+            const TabAvatar = getAvatarIcon(tabProfile?.avatar);
+            return (
+              <button
+                key={tab.id}
+                className={`agents-item ${tab.id === activeTabId ? 'current' : ''}`}
+                onClick={() => handleSelect(tab.id)}
+              >
+                <div className="agents-item-avatar">
+                  <TabAvatar size={14} />
+                </div>
+                <div className="agents-item-info">
+                  <span className="agents-item-title">{tab.title}</span>
+                  {tab.sessionId && (
+                    <span className="agents-item-session">{tab.sessionId.slice(0, 8)}</span>
+                  )}
+                  {tabProfile?.tags && tabProfile.tags.length > 0 && (
+                    <span className="agents-item-tags">
+                      {tabProfile.tags.map(tag => (
+                        <span key={tag} className="agents-item-tag">{tag}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </>
       )}
 

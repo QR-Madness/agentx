@@ -111,6 +111,25 @@
   font-family: monospace;
 }
 
+.agents-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.agents-item-tag {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--accent-primary, var(--cosmic-cyan));
+  background: color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 28%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
 .agents-item-pulse {
   width: 8px;
   height: 8px;

@@ -65,6 +65,13 @@ export function MentionAutocomplete({
                 <span className="mention-ac-name">{profile.name}</span>
                 <span className="mention-ac-id">{profile.agentId}</span>
               </div>
+              {profile.tags && profile.tags.length > 0 && (
+                <span className="mention-ac-tags">
+                  {profile.tags.slice(0, 3).map(tag => (
+                    <span key={tag} className="mention-ac-tag">{tag}</span>
+                  ))}
+                </span>
+              )}
             </div>
           );
         })}

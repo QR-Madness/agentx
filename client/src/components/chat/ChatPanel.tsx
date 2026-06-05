@@ -291,7 +291,10 @@ export function ChatPanel() {
     if (!mention.open) return [];
     const q = mention.query.toLowerCase();
     return profiles.filter(
-      p => p.name.toLowerCase().includes(q) || p.agentId.toLowerCase().includes(q),
+      p =>
+        p.name.toLowerCase().includes(q) ||
+        p.agentId.toLowerCase().includes(q) ||
+        (p.tags ?? []).some(t => t.toLowerCase().includes(q)),
     );
   }, [mention.open, mention.query, profiles]);
 
