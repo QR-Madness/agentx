@@ -53,15 +53,41 @@ class Subtask:
     goal_id: Optional[str] = None  # For future subtask-level goal tracking
 
     def to_dict(self) -> dict:
-        """Serialize for Redis storage."""
+        """Serialize for Redis storage.
+
+        Includes the full structure (type, dependencies, tools_needed,
+        complexity, goal_id) so a plan can be round-tripped and resumed
+        after a process death — not just rendered.
+        """
         return {
             "id": self.id,
             "description": self.description,
             "type": self.type.value,
             "dependencies": self.dependencies,
+            "estimated_complexity": self.estimated_complexity.value,
+            "tools_needed": self.tools_needed,
             "completed": self.completed,
             "result": self.result,
+            "goal_id": self.goal_id,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Subtask":
+        """Rehydrate a Subtask from its ``to_dict`` form (lenient about missing
+        optional keys so older snapshots still load)."""
+        return cls(
+            id=int(data["id"]),
+            description=data.get("description", ""),
+            type=SubtaskType(data.get("type", SubtaskType.GENERATION.value)),
+            dependencies=list(data.get("dependencies", [])),
+            estimated_complexity=TaskComplexity(
+                data.get("estimated_complexity", TaskComplexity.SIMPLE.value)
+            ),
+            tools_needed=list(data.get("tools_needed", [])),
+            completed=bool(data.get("completed", False)),
+            result=data.get("result"),
+            goal_id=data.get("goal_id"),
+        )
 
 
 @dataclass
@@ -81,7 +107,21 @@ class TaskPlan:
             "complexity": self.complexity.value,
             "steps": [s.to_dict() for s in self.steps],
             "reasoning_strategy": self.reasoning_strategy,
+            "estimated_tokens": self.estimated_tokens,
+            "goal_id": self.goal_id,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TaskPlan":
+        """Rehydrate a TaskPlan from its ``to_dict`` form (for plan resumption)."""
+        return cls(
+            task=data.get("task", ""),
+            complexity=TaskComplexity(data.get("complexity", TaskComplexity.SIMPLE.value)),
+            steps=[Subtask.from_dict(s) for s in data.get("steps", [])],
+            reasoning_strategy=data.get("reasoning_strategy", "auto"),
+            estimated_tokens=int(data.get("estimated_tokens", 0) or 0),
+            goal_id=data.get("goal_id"),
+        )
 
     def get_next_subtask(self) -> Optional[Subtask]:
         """Get the next subtask that can be executed."""

@@ -3242,6 +3242,136 @@ class SubtaskGoalTrackingTest(TestCase):
         agent._dispatch.assert_not_called()
 
 
+class PlanSerializationTest(TestCase):
+    """Phase 15.7 #3 (B1) — durable plan serialization + resume rebuild."""
+
+    @staticmethod
+    def _plan():
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+        steps = [
+            Subtask(id=0, description="gather premises", type=SubtaskType.RESEARCH,
+                    tools_needed=["web_search"], estimated_complexity=TaskComplexity.MODERATE),
+            Subtask(id=1, description="weigh trade-offs", type=SubtaskType.ANALYSIS,
+                    dependencies=[0]),
+            Subtask(id=2, description="state conclusion", type=SubtaskType.GENERATION,
+                    dependencies=[1]),
+        ]
+        return TaskPlan(task="reach a conclusion", complexity=TaskComplexity.COMPLEX,
+                        steps=steps, reasoning_strategy="tot", estimated_tokens=42)
+
+    def test_plan_round_trips_through_dict(self) -> None:
+        """to_dict → from_dict preserves the full structure needed to resume."""
+        from agentx_ai.agent.planner import TaskPlan
+
+        plan = self._plan()
+        plan.goal_id = "goal-1"
+        plan.steps[1].goal_id = "goal-1-b"
+
+        rebuilt = TaskPlan.from_dict(plan.to_dict())
+
+        self.assertEqual(rebuilt.task, plan.task)
+        self.assertEqual(rebuilt.complexity, plan.complexity)
+        self.assertEqual(rebuilt.reasoning_strategy, "tot")
+        self.assertEqual(rebuilt.estimated_tokens, 42)
+        self.assertEqual(rebuilt.goal_id, "goal-1")
+        self.assertEqual(len(rebuilt.steps), 3)
+        s0 = rebuilt.steps[0]
+        self.assertEqual(s0.type, plan.steps[0].type)
+        self.assertEqual(s0.tools_needed, ["web_search"])
+        self.assertEqual(s0.estimated_complexity, plan.steps[0].estimated_complexity)
+        self.assertEqual(rebuilt.steps[1].dependencies, [0])
+        self.assertEqual(rebuilt.steps[1].goal_id, "goal-1-b")
+
+    def test_load_plan_overlays_live_status(self) -> None:
+        """load_plan rebuilds the skeleton and overlays per-subtask status:
+        terminal steps are restored completed (with reconstructed sentinels),
+        a running step is reset so it re-executes, and get_next_subtask points
+        at the right place."""
+        import json
+        from agentx_ai.agent.plan_state import PlanStateStore
+
+        plan = self._plan()
+        snapshot = {
+            "status": "active",
+            "plan_json": json.dumps(plan.to_dict()),
+            "subtask:0:status": "complete",
+            "subtask:0:result": "premises gathered",
+            "subtask:1:status": "running",  # died mid-flight → must re-run
+        }
+
+        store = PlanStateStore("sess-1")
+        with patch.object(PlanStateStore, "get_status", return_value=snapshot):
+            rebuilt = store.load_plan("p1")
+
+        self.assertIsNotNone(rebuilt)
+        assert rebuilt is not None
+        self.assertTrue(rebuilt.steps[0].completed)
+        self.assertEqual(rebuilt.steps[0].result, "premises gathered")
+        self.assertFalse(rebuilt.steps[1].completed)   # running reset
+        self.assertIsNone(rebuilt.steps[1].result)
+        self.assertFalse(rebuilt.steps[2].completed)   # pending
+        # Next executable subtask is #1 (its dep #0 is satisfied).
+        nxt = rebuilt.get_next_subtask()
+        self.assertIsNotNone(nxt)
+        assert nxt is not None
+        self.assertEqual(nxt.id, 1)
+
+    def test_load_plan_reconstructs_failure_sentinels(self) -> None:
+        """Failed/skipped/abandoned terminal states are re-derived to the same
+        sentinel strings the executor uses (so dependency-skip + synthesis match)."""
+        import json
+        from agentx_ai.agent.plan_state import PlanStateStore
+
+        plan = self._plan()
+        snapshot = {
+            "status": "active",
+            "plan_json": json.dumps(plan.to_dict()),
+            "subtask:0:status": "failed",
+            "subtask:0:error": "network down",
+            "subtask:1:status": "skipped",
+            "subtask:2:status": "pending",
+        }
+        store = PlanStateStore("sess-1")
+        with patch.object(PlanStateStore, "get_status", return_value=snapshot):
+            rebuilt = store.load_plan("p1")
+
+        assert rebuilt is not None
+        self.assertTrue(rebuilt.steps[0].result.startswith("[FAILED"))
+        self.assertIn("network down", rebuilt.steps[0].result)
+        self.assertTrue(rebuilt.steps[1].result.startswith("[SKIPPED"))
+
+    def test_load_plan_returns_none_when_not_resumable(self) -> None:
+        """Missing state, a finished plan, and a pre-B1 snapshot all yield None."""
+        from agentx_ai.agent.plan_state import PlanStateStore
+
+        store = PlanStateStore("sess-1")
+        with patch.object(PlanStateStore, "get_status", return_value=None):
+            self.assertIsNone(store.load_plan("p1"))
+        with patch.object(PlanStateStore, "get_status", return_value={"status": "complete"}):
+            self.assertIsNone(store.load_plan("p1"))
+        # Active but no structural blob (legacy state) → can't safely resume.
+        with patch.object(PlanStateStore, "get_status", return_value={"status": "active"}):
+            self.assertIsNone(store.load_plan("p1"))
+
+    def test_is_resumable_reflects_remaining_work(self) -> None:
+        import json
+        from agentx_ai.agent.plan_state import PlanStateStore
+
+        plan = self._plan()
+        base = {"status": "active", "plan_json": json.dumps(plan.to_dict())}
+        store = PlanStateStore("sess-1")
+
+        # All terminal → nothing to resume.
+        done = {**base, "subtask:0:status": "complete", "subtask:1:status": "complete",
+                "subtask:2:status": "complete"}
+        with patch.object(PlanStateStore, "get_status", return_value=done):
+            self.assertFalse(store.is_resumable("p1"))
+        # One still pending → resumable.
+        partial = {**base, "subtask:0:status": "complete"}
+        with patch.object(PlanStateStore, "get_status", return_value=partial):
+            self.assertTrue(store.is_resumable("p1"))
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 

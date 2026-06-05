@@ -5,14 +5,23 @@ Tracks active plan progress using Redis Hashes with automatic TTL expiration.
 State tracking is best-effort — execution continues even if Redis is unavailable.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
+
+if TYPE_CHECKING:
+    from .planner import TaskPlan
 
 logger = logging.getLogger(__name__)
 
 PLAN_KEY_PREFIX = "plan"
 PLAN_TTL_SECONDS = 3600  # 1 hour, matching working memory
+
+# Subtask statuses that count as terminal — a subtask in any of these is done
+# (for good or ill) and is not re-executed on resume. "running"/"pending" are
+# non-terminal, so a process that died mid-subtask re-runs that subtask.
+_TERMINAL_STATUSES = {"complete", "failed", "skipped", "abandoned"}
 
 
 def _get_redis_client():
@@ -50,6 +59,10 @@ class PlanStateStore:
                 "completed_count": "0",
                 "created_at": now,
                 "updated_at": now,
+                # Full structural snapshot so the plan can be rebuilt and
+                # resumed after a process death (the per-subtask flat fields
+                # below stay the live source of truth for status/result/UI).
+                "plan_json": json.dumps(plan.to_dict()),
             }
 
             for step in plan.steps:
@@ -101,6 +114,72 @@ class PlanStateStore:
         except Exception as e:
             logger.warning(f"Failed to read plan state: {e}")
             return None
+
+    @staticmethod
+    def _overlay_result(status: str, stored_result: Optional[str], error: Optional[str]) -> Optional[str]:
+        """Reconstruct a subtask's in-memory ``result`` from its persisted status.
+
+        Only "complete" stores a real result; the other terminal states are
+        re-derived to the same sentinel strings the executor uses, so the
+        rebuilt plan's dependency-skip and synthesis logic behave identically.
+        """
+        if status == "complete":
+            return stored_result
+        if status == "failed":
+            return f"[FAILED: {error}]" if error else "[FAILED]"
+        if status == "skipped":
+            return "[SKIPPED: all dependencies failed]"
+        if status == "abandoned":
+            return "[ABANDONED: plan cancelled]"
+        return None  # pending / running → not yet produced
+
+    def load_plan(self, plan_id: str) -> Optional["TaskPlan"]:
+        """Rebuild a ``TaskPlan`` from Redis for resumption.
+
+        Reconstructs the structural skeleton from the ``plan_json`` snapshot,
+        then overlays each subtask's *live* status/result so completed work is
+        preserved and only non-terminal subtasks re-execute. Returns ``None``
+        when there's no resumable state (missing, expired, or already finished).
+        """
+        from .planner import TaskPlan
+
+        data = self.get_status(plan_id)
+        if not data:
+            return None
+        # Only an active plan is resumable; a complete/failed/cancelled plan is done.
+        if data.get("status") != "active":
+            return None
+        raw = data.get("plan_json")
+        if not raw:
+            # Pre-B1 snapshot without the structural blob — can't safely resume.
+            return None
+
+        try:
+            plan = TaskPlan.from_dict(json.loads(raw))
+        except Exception as e:
+            logger.warning(f"Failed to rebuild plan {plan_id} from snapshot: {e}")
+            return None
+
+        for step in plan.steps:
+            status = data.get(f"subtask:{step.id}:status", "pending")
+            if status in _TERMINAL_STATUSES:
+                step.completed = True
+                step.result = self._overlay_result(
+                    status,
+                    data.get(f"subtask:{step.id}:result"),
+                    data.get(f"subtask:{step.id}:error"),
+                )
+            else:
+                # running/pending → reset so it re-executes cleanly on resume.
+                step.completed = False
+                step.result = None
+
+        return plan
+
+    def is_resumable(self, plan_id: str) -> bool:
+        """True when a plan still has executable (non-terminal) work to resume."""
+        plan = self.load_plan(plan_id)
+        return plan is not None and not plan.is_complete()
 
     def mark_complete(self, plan_id: str, status: str = "complete") -> None:
         """Mark plan as complete or failed."""
