@@ -16,7 +16,7 @@ import {
 import type { ModelInfo } from '../../lib/api';
 import {
   fetchModelsOnce, invalidateModelCache,
-} from './ModelSelector';
+} from './modelCatalog';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import {
   backdropVariants, containerVariants,

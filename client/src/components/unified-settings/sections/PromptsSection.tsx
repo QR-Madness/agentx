@@ -11,7 +11,7 @@ import {
 import { api } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Button, SectionHeader } from '../../ui';
-import { ModelSelector } from '../../common/ModelSelector';
+import { ModelPickerField } from '../../common/ModelPickerField';
 
 export default function PromptsSection() {
   const { notifyError, notifySuccess } = useNotify();
@@ -118,20 +118,16 @@ export default function PromptsSection() {
             </label>
           </div>
 
-          {/* Model selection - now using ModelSelector component */}
+          {/* Model selection */}
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Enhancement Model"
               value={promptEnhanceSettings.model}
               onChange={(modelId) => setPromptEnhanceSettings(prev => ({
                 ...prev,
                 model: modelId
               }))}
-              onProviderChange={(provider) => {
-                console.log('Provider changed to:', provider);
-              }}
               showDefault={false}
-              compact
             />
           </div>
 

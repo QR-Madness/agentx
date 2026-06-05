@@ -59,7 +59,7 @@ import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
-import { fetchModelsOnce } from '../common/ModelSelector';
+import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
 

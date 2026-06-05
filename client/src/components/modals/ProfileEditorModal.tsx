@@ -20,7 +20,7 @@ import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
 import { api, apiErrorMessage, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
 import { PromptLibraryModal } from './PromptLibraryModal';
-import { ModelSelector } from '../common/ModelSelector';
+import { ModelPickerField } from '../common/ModelPickerField';
 import './ProfileEditorModal.css';
 import { Button } from '../ui';
 
@@ -342,7 +342,8 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
           </div>
 
           {/* Model Selection */}
-          <ModelSelector
+          <ModelPickerField
+            label="Model"
             value={defaultModel}
             onChange={setDefaultModel}
             showDefault

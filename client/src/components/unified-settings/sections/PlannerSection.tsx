@@ -14,7 +14,7 @@ import {
 import { api } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Button, SectionHeader } from '../../ui';
-import { ModelSelector } from '../../common/ModelSelector';
+import { ModelPickerField } from '../../common/ModelPickerField';
 
 type ComplexityThreshold = 'simple' | 'moderate' | 'complex';
 
@@ -135,12 +135,11 @@ export default function PlannerSection() {
           </div>
 
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Planner Model"
               value={settings.model}
               onChange={(modelId) => setSettings(prev => ({ ...prev, model: modelId }))}
               showDefault={true}
-              compact
             />
           </div>
 

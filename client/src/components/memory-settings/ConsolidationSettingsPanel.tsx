@@ -2,7 +2,7 @@ import { useState, useEffect, useId } from 'react';
 import { RefreshCw, Zap, X, RotateCcw, Save } from 'lucide-react';
 import { useConsolidationSettings } from '../../lib/hooks';
 import { ConsolidationSettings, api } from '../../lib/api';
-import { ModelSelector } from '../common/ModelSelector';
+import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Button, Checkbox, Label } from '../ui';
 import { SettingsSection } from './fields/SettingsSection';
@@ -220,12 +220,11 @@ export function ConsolidationSettingsPanel({
       <SettingsSection title="Default model for all memory stages">
         <div className="settings-grid">
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Default model"
               value={localSettings.feature_default_model || ''}
               onChange={v => handleChange('feature_default_model', v)}
               showDefault={false}
-              compact
             />
           </div>
           <p className="setting-hint">
@@ -245,13 +244,12 @@ export function ConsolidationSettingsPanel({
       <SettingsSection title="Extraction">
         <div className="settings-grid">
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Model (blank = inherit default)"
               value={localSettings.extraction_model || ''}
               onChange={v => handleChange('extraction_model', v)}
               onProviderChange={v => handleChange('extraction_provider', v)}
               showDefault={false}
-              compact
             />
           </div>
           <SliderField
@@ -290,12 +288,11 @@ export function ConsolidationSettingsPanel({
             onChange={v => handleChange('relevance_filter_enabled', v)}
           />
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Model"
               value={localSettings.relevance_filter_model || ''}
               onChange={v => handleChange('relevance_filter_model', v)}
               showDefault={false}
-              compact
             />
           </div>
           <SliderField
@@ -336,12 +333,11 @@ export function ConsolidationSettingsPanel({
       >
         <div className="settings-grid">
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Model"
               value={localSettings.combined_extraction_model || ''}
               onChange={v => handleChange('combined_extraction_model', v)}
               showDefault={false}
-              compact
             />
             <Button
               variant="ghost"
@@ -381,12 +377,11 @@ export function ConsolidationSettingsPanel({
             onChange={v => handleChange('trajectory_compression_enabled', v)}
           />
           <div className="setting-row">
-            <ModelSelector
+            <ModelPickerField
               label="Model"
               value={localSettings.trajectory_compression_model || ''}
               onChange={v => handleChange('trajectory_compression_model', v)}
               showDefault={false}
-              compact
             />
           </div>
           <SliderField
@@ -438,12 +433,11 @@ export function ConsolidationSettingsPanel({
           />
           {localSettings.entity_linking_use_llm_disambiguation && (
             <div className="setting-row">
-              <ModelSelector
+              <ModelPickerField
                 label="Disambiguation Model"
                 value={localSettings.entity_linking_model || ''}
                 onChange={v => handleChange('entity_linking_model', v)}
                 showDefault={false}
-                compact
               />
             </div>
           )}
@@ -503,12 +497,11 @@ export function ConsolidationSettingsPanel({
           {localSettings.contradiction_detection_enabled && (
             <>
               <div className="setting-row">
-                <ModelSelector
+                <ModelPickerField
                   label="Contradiction Model"
                   value={localSettings.contradiction_model || ''}
                   onChange={v => handleChange('contradiction_model', v)}
                   showDefault={false}
-                  compact
                 />
               </div>
               <SliderField
@@ -533,12 +526,11 @@ export function ConsolidationSettingsPanel({
           {localSettings.correction_detection_enabled && (
             <>
               <div className="setting-row">
-                <ModelSelector
+                <ModelPickerField
                   label="Correction Model"
                   value={localSettings.correction_model || ''}
                   onChange={v => handleChange('correction_model', v)}
                   showDefault={false}
-                  compact
                 />
               </div>
               <SliderField

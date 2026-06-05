@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { RefreshCw, Save, Search } from 'lucide-react';
 import { useRecallSettings } from '../../lib/hooks';
 import { RecallSettings } from '../../lib/api';
-import { ModelSelector } from '../common/ModelSelector';
+import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Button } from '../ui';
 import { SettingsSection } from './fields/SettingsSection';
@@ -171,13 +171,12 @@ export function RecallSettingsPanel() {
         <SettingsSection title="HyDE Settings">
           <div className="settings-grid">
             <div className="setting-row">
-              <ModelSelector
+              <ModelPickerField
                 label="Model"
                 value={localSettings.recall_hyde_model ?? ''}
                 onChange={v => handleChange('recall_hyde_model', v)}
                 onProviderChange={v => handleChange('recall_hyde_provider', v)}
                 showDefault={false}
-                compact
               />
             </div>
             <SliderField
@@ -194,13 +193,12 @@ export function RecallSettingsPanel() {
         <SettingsSection title="Self-Query Settings">
           <div className="settings-grid">
             <div className="setting-row">
-              <ModelSelector
+              <ModelPickerField
                 label="Model"
                 value={localSettings.recall_self_query_model ?? ''}
                 onChange={v => handleChange('recall_self_query_model', v)}
                 onProviderChange={v => handleChange('recall_self_query_provider', v)}
                 showDefault={false}
-                compact
               />
             </div>
           </div>

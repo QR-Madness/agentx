@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { Zap, Clock, Cpu, User, DollarSign } from 'lucide-react';
-import { fetchModelsOnce } from '../common/ModelSelector';
+import { fetchModelsOnce } from '../common/modelCatalog';
 import { formatCost, formatLatency, getModelShortName } from '../../lib/format';
 import './MetadataBar.css';
 

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { type AgentProfile, type ModelInfo } from '../../lib/api';
 import { AVATAR_OPTIONS } from '../../lib/avatars';
-import { fetchModelsOnce } from '../common/ModelSelector';
+import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';

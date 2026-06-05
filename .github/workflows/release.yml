@@ -1,19 +1,27 @@
-name: Build Client Artifacts
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Client release version (e.g. 0.21.25, 0.22.0-beta.1)"
+        description: "Release version (e.g. 0.21.25, 0.22.0-beta.1)"
         required: true
         type: string
+      prerelease:
+        description: "Mark the GitHub Release as a pre-release (the project is still in Alpha)"
+        required: false
+        type: boolean
+        default: true
 
-# Build installers as workflow artifacts, then draft a GitHub Release (client-v*)
-# with checksums + supported-server notes. The release is a DRAFT (publish manually).
+# One-click headless release: build the desktop installers + publish the API image,
+# then publish a single GitHub Release (tag v*) whose body is the root
+# Release-Notes.md wrapped in the annotated supported-server / downloads / checksum
+# template. Version is baked into the artifacts/image only — not committed back.
 permissions:
   contents: read
 
 env:
+  IMAGE: qrmadness/agentx-api
   CARGO_TERM_COLOR: always
   # Run JS-based actions on Node 24 (Node 20 is being removed from runners).
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -22,6 +30,8 @@ jobs:
   validate-version:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Validate version format
         run: |
           VERSION="${{ inputs.version }}"
@@ -38,6 +48,23 @@ jobs:
             echo "::error::Invalid version format '$VERSION'. Expected semver (e.g. 0.21.25 or 0.22.0-beta.1)"
             exit 1
           fi
+
+      - name: Guard release notes match the baked version
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Release-Notes.md must declare the version it documents via a marker on
+          # the first line: `<!-- release-version: X.Y.Z -->`. Refuse to ship a stale
+          # notes file under a new version.
+          MARKER=$(grep -m1 -oE 'release-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' Release-Notes.md | sed -E 's/release-version:[[:space:]]*//')
+          if [ -z "$MARKER" ]; then
+            echo "::error::Release-Notes.md is missing a '<!-- release-version: X.Y.Z -->' marker."
+            exit 1
+          fi
+          if [ "$MARKER" != "$VERSION" ]; then
+            echo "::error::Release-Notes.md is for v${MARKER}, but you're releasing v${VERSION}. Update Release-Notes.md (notes + marker) first."
+            exit 1
+          fi
+          echo "✓ Release-Notes.md marker matches v${VERSION}"
 
   test:
     needs: validate-version
@@ -67,7 +94,7 @@ jobs:
         working-directory: client
         run: bun run test
 
-  build:
+  build-client:
     needs: test
     strategy:
       fail-fast: false
@@ -189,16 +216,80 @@ jobs:
             client/src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: ignore
 
-  release:
-    needs: build
+  publish-api:
+    needs: validate-version
     runs-on: ubuntu-latest
-    # Only this job needs write access — to create the draft release.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Bump versions.yaml api.version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Scope the replace to the api: block so client.version, protocol_version
+          # and min_client_version are left untouched. The image self-reports this
+          # via agentx_ai/__init__.py (which reads versions.yaml).
+          bun -e "
+            let t = await Bun.file('versions.yaml').text();
+            t = t.replace(/(api:[\s\S]*?\n  version:\s*)\"[^\"]*\"/, '\$1\"${VERSION}\"');
+            await Bun.write('versions.yaml', t);
+          "
+          echo '--- versions.yaml (version lines) ---'
+          grep -nE '^\s+version:' versions.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ inputs.version }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.title=AgentX API
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.source=https://github.com/QR-Madness/agentx
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sync Docker Hub repo overview
+        # Non-fatal: the image is already pushed by this point. The description
+        # API needs a Docker Hub password or a PAT with Read/Write/Delete scope —
+        # if the token lacks it, the overview can be pasted manually from
+        # deploy/dockerhub-overview.md instead.
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          readme-filepath: ./deploy/dockerhub-overview.md
+          short-description: "AgentX API — AI agent platform server (MCP, reasoning, layered memory)"
+
+  release:
+    needs: [build-client, publish-api]
+    runs-on: ubuntu-latest
+    # Only this job needs write access — to publish the release.
     permissions:
       contents: write
     steps:
-      # Checkout FIRST: reading versions.yaml (the compatibility contract) needs the
-      # repo, and checkout cleans the workspace — running it after the download would
-      # wipe release-artifacts/.
+      # Checkout FIRST: reading versions.yaml + Release-Notes.md needs the repo, and
+      # checkout cleans the workspace — running it after the download would wipe
+      # release-artifacts/.
       - uses: actions/checkout@v4
 
       # Reuse the bun-based versions.yaml idiom used by the build job.
@@ -261,10 +352,16 @@ jobs:
           MIN_CLIENT="${{ steps.compat.outputs.min_client_version }}"
           API_VERSION="${{ steps.compat.outputs.api_version }}"
 
+          # The human-written body lives in Release-Notes.md. Strip every HTML comment
+          # (the release-version marker + the authoring instructions) so only the prose
+          # lands in the release; the validate-version job already asserted the marker
+          # matches this VERSION. Non-greedy + multiline-safe, then drop leading blanks.
+          perl -0777 -pe 's/<!--.*?-->//gs' Release-Notes.md | sed '/./,$!d' > body.md
+
           {
-            echo "## AgentX Client v${VERSION}"
+            echo "## AgentX v${VERSION}"
             echo ""
-            echo "Desktop client for the AgentX platform. Point it at your AgentX API server on first run."
+            cat body.md
             echo ""
             echo "### Supported server"
             echo ""
@@ -281,8 +378,17 @@ jobs:
             echo "| Linux (RPM) | \`*_linux-rpm.rpm\` |"
             echo "| Windows (installer) | \`*_windows-x64.exe\` |"
             echo "| Windows (MSI) | \`*_windows-x64.msi\` |"
+            echo "| Android | Build from source — see the [Mobile (Android) guide](https://agentx.thejpnet.net/docs/development/mobile) |"
             echo ""
-            echo "See the [self-hosting guide](https://github.com/QR-Madness/agentx/blob/master/docs-site/src/content/docs/deployment/self-hosting.md) for connecting the client to a server."
+            echo "See the [self-hosting guide](https://agentx.thejpnet.net/docs/deployment/self-hosting) for connecting the client to a server."
+            echo ""
+            echo "### Docker image (API server)"
+            echo ""
+            echo '```bash'
+            echo "docker pull ${IMAGE}:${VERSION}"
+            echo '```'
+            echo ""
+            echo "Published to Docker Hub as \`${IMAGE}:${VERSION}\` and \`${IMAGE}:latest\` (linux/amd64)."
             echo ""
             echo "### SHA-256 checksums"
             echo ""
@@ -294,13 +400,14 @@ jobs:
           echo "=== notes.md ==="
           cat notes.md
 
-      - name: Draft GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: client-v${{ inputs.version }}
-          name: AgentX Client v${{ inputs.version }}
-          draft: true
-          prerelease: ${{ contains(inputs.version, '-') }}
+          tag_name: v${{ inputs.version }}
+          name: AgentX v${{ inputs.version }} (Alpha)
+          draft: false
+          # Alpha project: default to pre-release; also force it for any -suffix version.
+          prerelease: ${{ inputs.prerelease || contains(inputs.version, '-') }}
           body_path: notes.md
           fail_on_unmatched_files: false
           files: |

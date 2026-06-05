@@ -963,7 +963,20 @@ tasks:
         else
           echo "  ✓ Git working tree clean"
         fi
-        
+
+        # Check Release-Notes.md is for the current baked version. The release action
+        # injects this file verbatim and refuses to ship if its marker != the version
+        # being baked; catch a stale notes file here, before triggering the action.
+        NOTES_VERSION=$(grep -m1 -oE 'release-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' Release-Notes.md 2>/dev/null | sed -E 's/release-version:[[:space:]]*//')
+        BAKED_VERSION=$(grep -A2 '^api:' versions.yaml | grep -m1 -oE 'version:[[:space:]]*"[^"]*"' | sed -E 's/version:[[:space:]]*"([^"]*)"/\1/')
+        if [ -z "$NOTES_VERSION" ]; then
+          ISSUES="${ISSUES}\n  ❌ Release-Notes.md missing a '<!-- release-version: X.Y.Z -->' marker"
+        elif [ "$NOTES_VERSION" != "$BAKED_VERSION" ]; then
+          ISSUES="${ISSUES}\n  ❌ Release-Notes.md version ($NOTES_VERSION) != versions.yaml ($BAKED_VERSION)"
+        else
+          echo "  ✓ Release-Notes.md matches v$BAKED_VERSION"
+        fi
+
         # Check tests pass
         echo "  ⏳ Running tests..."
         if uv run python api/manage.py test agentx_ai.tests --verbosity=0 2>/dev/null; then
@@ -1442,7 +1455,7 @@ tasks:
         echo "✓ deploy bundle sources present and base compose is image-based"
 
   docker:publish:
-    desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev). CI uses .github/workflows/api-release.yml"
+    desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev). CI uses .github/workflows/release.yml"
     silent: true
     vars:
       IMAGE: '{{.IMAGE | default "qrmadness/agentx-api"}}'

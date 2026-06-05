@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - The client is cross-platform, thus UI should be highly responsive and use comfortable hit-regions.
 - Following API & Client v.0.20 (see versions.yaml for the authoritative version), all changes should be migratable for existing platforms.
+- **Version + notes travel with the work.** Any notable/user-facing change must **bump the version and update the release notes in the same commit** — bump `versions.yaml` (patch, via `task versions:sync` to propagate to all manifests), bump the `<!-- release-version: X.Y.Z -->` marker in root `Release-Notes.md` to match, and add the change to the `Release-Notes.md` body (it always describes the *next* release). This is a continuous dev habit, not a release-time step: `task release:check` asserts the marker matches `versions.yaml`, so the repo stays release-ready at all times. See [Build & Release](#build--release).
 
 
 ## Project Overview
@@ -174,9 +175,26 @@ task api:shell          # Django interactive shell
 ```bash
 task client:build       # Build Tauri app for production
 task client:build:web   # Build web assets only (TypeScript check + Vite build)
-task release:check      # Verify release readiness (clean tree, tests, TS compile)
+task release:check      # Verify release readiness (clean tree, tests, TS compile, Release-Notes.md matches versions.yaml)
 task models:download    # Pre-download HuggingFace models (NLLB-200, language detection)
 ```
+
+**Releasing** is one headless action: `.github/workflows/release.yml` (`workflow_dispatch`
+with a single `version` input) builds the desktop installers (3-platform matrix) **and**
+publishes the API Docker image (`qrmadness/agentx-api:{version}` + `:latest`), then
+publishes a single GitHub Release (tag `v{version}`). The human-written notes live in the
+root **`Release-Notes.md`** — its body is injected verbatim into the annotated
+supported-server / downloads / Docker / SHA-256-checksum template. A `<!-- release-version:
+X.Y.Z -->` marker on its first line is asserted against the baked version (both by the
+workflow and by `task release:check`), so a stale notes file can't ship. Version bumps are
+**bake-only** (carried into artifacts/image, not committed back — bump the repo separately
+via `task versions:sync`).
+
+> **Release hygiene:** the repo is kept release-ready continuously — see the
+> version+notes rule in [Development Notices](#development-notices). Because every
+> notable change already bumped `versions.yaml` + `Release-Notes.md` (marker and
+> body), cutting a release is genuinely one click and never ships a stale version or
+> notes file.
 
 ## API Endpoints
 
