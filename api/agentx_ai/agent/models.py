@@ -8,7 +8,7 @@ model settings, and behavior configuration.
 from datetime import datetime
 from enum import Enum
 import random
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -48,6 +48,33 @@ class ReasoningStrategy(str, Enum):
     TOT = "tot"  # Tree of Thought
     REACT = "react"
     REFLECTION = "reflection"
+
+
+class AmbassadorConfig(BaseModel):
+    """Extra profile section turning a normal agent into a conversation
+    **ambassador** — a dedicated agent that runs *parallel* to a conversation
+    and briefs the user on it without ever entering (polluting) the main
+    transcript. An ambassador is configured like any other agent profile
+    (model, temperature, persona) plus this block, which tunes *how* it briefs.
+
+    The foundation only uses the briefing knobs; ``speech_model``/``voice`` are
+    a deliberate seam for future spoken briefings (left null, not implemented).
+    """
+    enabled: bool = Field(
+        False, description="Whether this profile may act as a conversation ambassador"
+    )
+    briefing_prompt: str = Field(
+        "",
+        description="Extra instructions layered onto the briefing: what to surface / how to brief",
+    )
+    verbosity: Literal["brief", "normal", "deep"] = Field(
+        "normal", description="How detailed the briefing should be"
+    )
+    # Future speech seam — leave null; not implemented in the foundation.
+    speech_model: Optional[str] = Field(
+        None, description="Future: TTS/speech model id for spoken briefings"
+    )
+    voice: Optional[str] = Field(None, description="Future: voice id for spoken briefings")
 
 
 class AgentProfile(BaseModel):
@@ -121,6 +148,13 @@ class AgentProfile(BaseModel):
     available_for_delegation: bool = Field(
         True,
         description="Whether other agents may delegate to this profile (ad-hoc delegation)",
+    )
+
+    # Ambassador (Phase 16.6): optional extra section turning this profile into a
+    # parallel, non-polluting conversation interpreter. None = not an ambassador.
+    ambassador: Optional[AmbassadorConfig] = Field(
+        None,
+        description="Extra section configuring this profile as a conversation ambassador",
     )
 
     # Metadata

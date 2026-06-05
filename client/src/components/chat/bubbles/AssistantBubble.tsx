@@ -5,7 +5,7 @@ import { MetadataBar } from '../MetadataBar';
 import { getAvatarIcon } from '../../../lib/avatars';
 import type { BubbleProps } from './types';
 
-export function AssistantBubble({ message, agentName, avatarId, onRegenerate }: BubbleProps<'assistant'>) {
+export function AssistantBubble({ message, agentName, avatarId, onRegenerate, onAmbassador, ambassadorStatus }: BubbleProps<'assistant'>) {
   const displayName = message.agentName || agentName || 'Assistant';
   const AvatarIcon = getAvatarIcon(avatarId);
 
@@ -45,6 +45,8 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate }: 
           isAssistant={true}
           timestamp={new Date(message.timestamp)}
           onRegenerate={onRegenerate}
+          onAmbassador={onAmbassador ? () => onAmbassador(message) : undefined}
+          ambassadorStatus={ambassadorStatus}
         />
       </div>
     </div>

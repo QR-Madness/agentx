@@ -1898,6 +1898,108 @@ async def agent_chat_attach(request):
     return response
 
 
+# ---------------------------------------------------------------------------
+# Ambassador (Phase 16.6) — a dedicated agent that runs *parallel* to a
+# conversation and briefs the user on a turn without polluting the main
+# transcript. Briefings stream via the detached-run infra (reconnect/replay/
+# cancel for free) and persist to the `ambassador:` Redis sidecar.
+# ---------------------------------------------------------------------------
+
+
+@csrf_exempt
+def ambassador_brief_turn(request):
+    """
+    POST /api/agent/ambassador/brief-turn
+
+    Body: {conversation_id, message_id, assistant_text, user_text?}. Kicks off a
+    parallel, detached briefing of one turn and returns its {run_id}. The run is
+    NOT indexed into the conversation-recovery list (indexed=False) so it never
+    appears in /api/agent/chat/runs. Tail it via /api/agent/ambassador/stream.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    conversation_id = data.get("conversation_id")
+    message_id = data.get("message_id")
+    assistant_text = data.get("assistant_text") or ""
+    user_text = data.get("user_text") or ""
+    if not conversation_id or not message_id:
+        return JsonResponse(
+            {"error": "conversation_id and message_id are required"}, status=400
+        )
+    if not assistant_text.strip():
+        return JsonResponse({"error": "assistant_text is required"}, status=400)
+
+    from .agent.ambassador import get_ambassador
+    from .streaming.chat_run import start_chat_run
+
+    def gen_factory():
+        return get_ambassador().brief_turn(
+            conversation_id,
+            message_id,
+            assistant_text=assistant_text,
+            user_text=user_text,
+        )
+
+    run_id = start_chat_run(
+        gen_factory,
+        user_id=_bg_user_id(request),
+        message=f"ambassador:{message_id}",
+        session_id=conversation_id,
+        indexed=False,  # keep the sidecar run out of conversation-recovery surfaces
+    )
+    return JsonResponse({"run_id": run_id})
+
+
+async def ambassador_stream(request):
+    """
+    GET /api/agent/ambassador/stream?run_id=<id>
+
+    Tail a detached ambassador briefing run: replays buffered `ambassador_*`
+    events then follows live. Emits `run_missing` if the buffer expired (the
+    client then falls back to the persisted briefing from the history endpoint).
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    run_id = request.GET.get("run_id")
+    if not run_id:
+        return JsonResponse({"error": "run_id required"}, status=400)
+
+    from .streaming.chat_run import tail_chat_run
+
+    async def _client_stream():
+        async for ev in tail_chat_run(run_id, last_id="0"):
+            yield ev
+
+    response = StreamingHttpResponse(_client_stream(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+@csrf_exempt
+def ambassador_briefings(request, conversation_id):
+    """
+    GET /api/agent/ambassador/<conversation_id>
+
+    Return all persisted ambassador briefings for a conversation (sidecar
+    replay) so a cold/reopened panel repopulates after reload or tab-switch.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+
+    from .agent import ambassador_storage
+
+    briefings = ambassador_storage.list_briefings(conversation_id)
+    return JsonResponse({"conversation_id": conversation_id, "briefings": briefings})
+
+
 @csrf_exempt
 def agent_chat_run_cancel(request, run_id):
     """
@@ -5262,6 +5364,7 @@ def agent_profiles_list(request):
                     "allowed_tools": list(p.allowed_tools) if p.allowed_tools is not None else None,
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "available_for_delegation": p.available_for_delegation,
+                    "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "is_default": p.is_default,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -5307,6 +5410,7 @@ def agent_profiles_list(request):
                     "allowed_tools": list(created.allowed_tools) if created.allowed_tools is not None else None,
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "available_for_delegation": created.available_for_delegation,
+                    "ambassador": created.ambassador.model_dump() if created.ambassador else None,
                     "is_default": created.is_default,
                     "created_at": created.created_at.isoformat() if created.created_at else None,
                     "updated_at": created.updated_at.isoformat() if created.updated_at else None,
@@ -5356,6 +5460,7 @@ def agent_profile_detail(request, profile_id):
                 "allowed_tools": list(profile.allowed_tools) if profile.allowed_tools is not None else None,
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "available_for_delegation": profile.available_for_delegation,
+                "ambassador": profile.ambassador.model_dump() if profile.ambassador else None,
                 "is_default": profile.is_default,
                 "created_at": profile.created_at.isoformat() if profile.created_at else None,
                 "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
@@ -5390,6 +5495,7 @@ def agent_profile_detail(request, profile_id):
                 "allowed_tools": list(updated.allowed_tools) if updated.allowed_tools is not None else None,
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "available_for_delegation": updated.available_for_delegation,
+                "ambassador": updated.ambassador.model_dump() if updated.ambassador else None,
                 "is_default": updated.is_default,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,

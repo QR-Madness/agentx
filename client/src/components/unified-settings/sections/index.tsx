@@ -17,7 +17,8 @@ import {
   Brain,
   ListTree,
   Globe,
-  Users
+  Users,
+  Radio
 } from 'lucide-react';
 
 export interface Section {
@@ -88,6 +89,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Users size={18} />,
         component: lazy(() => import('./AlloySection')),
         keywords: ['delegation', 'delegate', 'alloy', 'multi-agent', 'ad-hoc', 'parallel', 'fan-out']
+      },
+      {
+        id: 'ambassador',
+        label: 'Ambassador',
+        icon: <Radio size={18} />,
+        component: lazy(() => import('./AmbassadorSection')),
+        keywords: ['ambassador', 'briefing', 'summarize', 'parallel', 'interpreter', 'cc']
       },
       {
         id: 'memory-overview',

@@ -6156,3 +6156,124 @@ class CheckpointMechanicsTest(TestCase):
             cs.add_checkpoint("conv", summary="fresh", replace=True)
             items = [json.loads(x) for x in fake.store[cs._key("conv")]]
         self.assertEqual([i["summary"] for i in items], ["fresh"])
+
+
+class _FakeKVRedis:
+    """Minimal dict-backed Redis for the string+set ops the sidecar/summary use."""
+
+    def __init__(self):
+        self.kv: dict = {}
+        self.sets: dict[str, set] = {}
+
+    def set(self, k, v):
+        self.kv[k] = v
+
+    def get(self, k):
+        return self.kv.get(k)
+
+    def expire(self, k, ttl):
+        pass
+
+    def delete(self, *keys):
+        for k in keys:
+            self.kv.pop(k, None)
+            self.sets.pop(k, None)
+
+    def sadd(self, k, *vals):
+        self.sets.setdefault(k, set()).update(vals)
+
+    def smembers(self, k):
+        return set(self.sets.get(k, set()))
+
+    def srem(self, k, *vals):
+        self.sets.get(k, set()).difference_update(vals)
+
+
+class AmbassadorStorageTest(TestCase):
+    """Ambassador sidecar (16.6) — keying, round-trip, and the no-pollution
+    invariant: a briefing never lands in the rolling-summary key the main agent
+    reads on rehydration."""
+
+    def test_prefix_isolated_from_summary(self):
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.agent import conversation_summary_storage as cs
+        # The whole no-pollution guarantee rests on disjoint key prefixes.
+        self.assertEqual(a.AMBASSADOR_PREFIX, "ambassador:")
+        self.assertNotEqual(a.AMBASSADOR_PREFIX, cs.SUMMARY_PREFIX)
+        self.assertFalse(a.AMBASSADOR_PREFIX.startswith(cs.SUMMARY_PREFIX))
+
+    def test_roundtrip_and_list(self):
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            a.set_summary("conv1", "m1", "Brief one.")
+            a.set_status("conv1", "m2", "streaming", run_id="r2")
+            a.append_chunk("conv1", "m2", "partial")
+            b1 = a.get_briefing("conv1", "m1")
+            allb = a.list_briefings("conv1")
+        self.assertEqual(b1["status"], "done")
+        self.assertEqual(b1["summary"], "Brief one.")
+        ids = {b["message_id"] for b in allb}
+        self.assertEqual(ids, {"m1", "m2"})
+        m2 = next(b for b in allb if b["message_id"] == "m2")
+        self.assertEqual(m2["summary"], "partial")
+        self.assertEqual(m2["run_id"], "r2")
+
+    def test_briefing_does_not_pollute_rolling_summary(self):
+        # Share one fake Redis between both modules: writing a briefing must NOT
+        # make it readable as the conversation's rolling summary (what the main
+        # agent restores on a cold session).
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.agent import conversation_summary_storage as cs
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake), \
+                patch.object(cs, "_redis", return_value=fake):
+            a.set_summary("convX", "mX", "Ambassador-only briefing text.")
+            leaked = cs.get_summary("convX")
+        self.assertIsNone(leaked)
+
+
+class AmbassadorServiceTest(TestCase):
+    """Ambassador service (16.6) — bulletproof graceful degradation."""
+
+    def test_empty_provider_degrades_without_raising(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        svc = AmbassadorService()
+        reg = MagicMock()
+        reg.resolve_with_fallback.side_effect = ValueError("no provider")
+        svc._registry = reg
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(ambassador_storage, "set_status"), \
+                patch.object(ambassador_storage, "set_summary"):
+            events = asyncio.run(
+                _collect(svc.brief_turn("conv", "msg", assistant_text="hi"))
+            )
+        # Never raised; settled on an empty_provider 'done' the client can show.
+        joined = "".join(events)
+        self.assertIn("ambassador_done", joined)
+        self.assertIn("empty_provider", joined)
+        self.assertNotIn("Traceback", joined)
+
+
+class ChatRunIndexingTest(TestCase):
+    """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user
+    recovery list that backs /api/agent/chat/runs."""
+
+    def test_indexed_false_skips_recovery_index(self):
+        from agentx_ai.streaming import chat_run
+        client = MagicMock()
+        with patch.object(chat_run, "_redis", return_value=client):
+            chat_run.store.create("run-amb", user_id="u1", indexed=False)
+        client.zadd.assert_not_called()
+
+    def test_indexed_true_writes_recovery_index(self):
+        from agentx_ai.streaming import chat_run
+        client = MagicMock()
+        with patch.object(chat_run, "_redis", return_value=client):
+            chat_run.store.create("run-chat", user_id="u1", indexed=True)
+        client.zadd.assert_called_once()

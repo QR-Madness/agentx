@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, RotateCcw, Check } from 'lucide-react';
+import { Copy, RotateCcw, Check, Radio, Loader2 } from 'lucide-react';
 import './MessageActions.css';
 
 interface MessageActionsProps {
@@ -7,6 +7,9 @@ interface MessageActionsProps {
   isAssistant: boolean;
   timestamp: Date;
   onRegenerate?: () => void;
+  /** CC the Ambassador to brief this turn (16.6). */
+  onAmbassador?: () => void;
+  ambassadorStatus?: 'idle' | 'streaming' | 'done' | 'error';
 }
 
 /**
@@ -40,6 +43,8 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
   isAssistant,
   timestamp,
   onRegenerate,
+  onAmbassador,
+  ambassadorStatus = 'idle',
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -73,6 +78,20 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
             title="Regenerate response"
           >
             <RotateCcw size={14} />
+          </button>
+        )}
+        {isAssistant && onAmbassador && (
+          <button
+            className="message-action-btn"
+            onClick={onAmbassador}
+            title="CC the Ambassador to brief this turn"
+            data-active={ambassadorStatus === 'done' || undefined}
+          >
+            {ambassadorStatus === 'streaming' ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Radio size={14} />
+            )}
           </button>
         )}
       </div>

@@ -21,6 +21,13 @@ interface RawAgentProfile {
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;
+  ambassador?: {
+    enabled?: boolean;
+    briefing_prompt?: string;
+    verbosity?: 'brief' | 'normal' | 'deep';
+    speech_model?: string | null;
+    voice?: string | null;
+  } | null;
   is_default: boolean;
   created_at?: string;
   updated_at?: string;
@@ -45,6 +52,15 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
     allowedTools: p.allowed_tools ?? null,
     blockedTools: p.blocked_tools ?? [],
     availableForDelegation: p.available_for_delegation ?? true,
+    ambassador: p.ambassador
+      ? {
+          enabled: p.ambassador.enabled ?? false,
+          briefingPrompt: p.ambassador.briefing_prompt,
+          verbosity: p.ambassador.verbosity,
+          speechModel: p.ambassador.speech_model,
+          voice: p.ambassador.voice,
+        }
+      : undefined,
     isDefault: p.is_default,
     createdAt: p.created_at || '',
     updatedAt: p.updated_at || '',

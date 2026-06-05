@@ -26,6 +26,7 @@ import { metricsApi } from './metrics';
 import { jobsApi } from './jobs';
 import { historyApi } from './history';
 import { streamingApi } from './streaming';
+import { ambassadorApi } from './ambassador';
 
 /**
  * The API client singleton. Flat method surface (`api.health()`, `api.chat()`,
@@ -51,10 +52,17 @@ export const api = {
   ...jobsApi,
   ...historyApi,
   ...streamingApi,
+  ...ambassadorApi,
 };
 
 // Public surface re-exports (preserve the `'.../lib/api'` specifier).
 export * from './types';
+export type {
+  AmbassadorBriefing,
+  AmbassadorStatus,
+  AmbassadorStreamCallbacks,
+  BriefTurnRequest,
+} from './ambassador';
 export * from './errors';
 export * from './version';
 export { setAuthRequired } from './core';

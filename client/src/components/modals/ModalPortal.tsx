@@ -20,6 +20,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   memory: lazy(() => import('./stubs').then(m => ({ default: m.MemoryModalContent }))),
   plans: lazy(() => import('./stubs').then(m => ({ default: m.PlansModalContent }))),
   sources: lazy(() => import('./stubs').then(m => ({ default: m.SourcesDrawerContent }))),
+  ambassador: lazy(() => import('./stubs').then(m => ({ default: m.AmbassadorDrawerContent }))),
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
   translation: lazy(() => import('./stubs').then(m => ({ default: m.TranslationModalContent }))),
   profileEditor: lazy(() => import('./stubs').then(m => ({ default: m.ProfileEditorModal }))),

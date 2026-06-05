@@ -23,7 +23,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 | Phases 1-11, 13, 14, 17 | **Complete** | See [roadmap.md](docs-site/src/content/docs/roadmap.md) |
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
-| Phase 16: Multi-Agent Conversations | **In Progress** | ~65% (16.0–16.5 shipped; Factory UI + ambassador deferred) |
+| Phase 16: Multi-Agent Conversations | **In Progress** | ~70% (16.0–16.5 + 16.6 ambassador foundation shipped; Factory UI + ambassador speech/dictation deferred) |
 | Phase 18: UX + Memory Tuning | **In Progress** | ~98% (18.9 done; eval procedural cases + run persistence done; memory import/export shipped `[v0.21.22]` → eval snapshot/restore now unblocked) |
 
 ---
@@ -246,27 +246,47 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       `architecture/memory-capabilities.md` is generated from or validated against, so the
       manifest can't silently drift from code (the deferred half of the drift decision).
 
-### 16.6 Ambassador Agent (dual-presentation layer) — deferred sub-phase
+### 16.6 Ambassador Agent (dual-presentation layer) — foundation shipped `[v0.21.32]`
 
-> **Concept**: A customizable "ambassador" agent that mediates the human↔agent
-> exchange as a *second presentation layer* alongside the chat UI — enriching
-> communication with zero flow-disruption. Not a thin voice feature; a relay.
+> **Concept**: A customizable "ambassador" agent that runs *parallel* to a
+> conversation as the **middleman of information** between the conversation and the
+> user — a dedicated interpreter for large-context / complex situations that reads
+> the conversation on demand **without polluting** the main transcript or the
+> agent's context. Not a thin voice feature; a relay. An ambassador is a normal
+> (reliable) agent profile **plus an `ambassador` section** — customized like any
+> other profile.
 
-- [ ] Activation toggle for the ambassador (per-conversation or global).
+**Shipped (foundation):**
+- [x] **Per-turn briefing core**: a CC button on each assistant reply CCs the
+      ambassador to brief *that turn*; a right-side **Ambassador** panel (subscribed
+      to the active conversation) streams + persists the briefing.
+- [x] **Parallel + non-polluting**: dedicated endpoints (`/api/agent/ambassador/*`)
+      on the detached-run infra (reconnect/replay/cancel) writing to a Redis
+      **sidecar** under the `ambassador:` prefix — never `conversation_logs` /
+      `conv_summary:`; `start_chat_run(indexed=False)` keeps the run out of the
+      conversation-recovery list. Reads conversation context `SELECT`-only.
+- [x] **Profile section**: `AgentProfile.ambassador` (`AmbassadorConfig`:
+      enabled/briefing_prompt/verbosity + null speech seam); global default picked
+      in **Settings → Ambassador** (`ambassador.profile_id`).
+- [x] **Bulletproofing**: graceful empty-provider/error degradation
+      (`resolve_with_fallback`, never raises); idempotent re-CC; reload/tab-switch
+      replay from the sidecar. Tests: storage round-trip, pollution regression,
+      recovery-isolation, graceful degradation.
+
+**Deferred (seams in place):**
+- [ ] **Activation toggle per-conversation** (today: global default + the active
+      tab's context).
 - [ ] **Outbound (you → agent)**: capture continuous dictation while recording;
       on manual stop, convert the captured speech into a drafted message you
       **review/edit before send** (never auto-sends).
 - [ ] Relay arbitrary additional inputs you attach alongside the dictated
       message — file inputs remain available (reuse the existing input path).
-- [ ] **Inbound (agent → you)**: when an agent's final message lands, the
-      ambassador produces a spoken/condensed **briefing** of the message plus any
-      key elements sent with it (attachments, tool artifacts, citations).
-- [ ] Customizable ambassador behavior (verbosity, persona, what to summarize vs.
-      read verbatim, which key elements to surface).
-- [ ] Zero UI flow-disruption: the ambassador augments, never blocks, the chat
-      UI — design it as a parallel channel, not a modal step.
-- Design later as its own sub-phase; sits naturally on the Alloy/multi-agent
-  track (an ambassador is a specialist role mediating the conversation).
+- [ ] **Spoken briefing (inbound)**: a spoken/condensed briefing of the message
+      plus key elements (attachments, tool artifacts, citations) via an OpenRouter
+      TTS/speech model — wired through the profile's `ambassador.speech_model`/`voice`.
+- [ ] **Free-form Q&A**: ask the ambassador anything about the conversation from
+      the panel (the same brief-turn seam, a different prompt).
+- [ ] Token-streaming the briefing (today a single `provider.complete`).
 
 ### Design Notes
 

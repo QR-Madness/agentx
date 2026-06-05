@@ -159,6 +159,19 @@ DEFAULT_CONFIG = {
         # returns a disabled error rather than blocking the turn.
         "enabled": True,
     },
+    "ambassador": {
+        # Phase 16.6 — a dedicated agent that runs *parallel* to a conversation
+        # and briefs the user on a turn without entering (polluting) the main
+        # transcript. Identity/model/persona come from the chosen agent profile;
+        # these are feature-level knobs only.
+        "enabled": True,
+        # Global default ambassador profile id. None ⇒ fall back to the default
+        # agent profile. (An ambassador is any profile with an `ambassador` section.)
+        "profile_id": None,
+        # How many recent user/assistant turns to read (read-only) for grounding.
+        "max_context_turns": 8,
+        "max_tokens": 600,
+    },
 }
 
 

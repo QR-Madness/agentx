@@ -439,6 +439,20 @@ POST /api/agent/chat/runs/{run_id}/steer
 
 Body: `{"message": "...", "mode"?: "queue"}`. Folds a message into an in-flight turn **without stopping it**: the message is queued and the streaming tool loop drains it at the next safe boundary (after a tool round, or instead of ending) and folds it in as a fresh user turn so the agent course-corrects. Owner-only (it injects content). The message is echoed onto the run's event bus as a `steer` event so every connected client (live + re-attached) shows the steer bubble inline. Returns `{"run_id": "...", "steer_accepted": bool}`. `400` blank message, `403` not the owner, `404` unknown run, `409` run not active.
 
+### Ambassador — Brief a Turn
+
+```
+POST /api/agent/ambassador/brief-turn
+GET  /api/agent/ambassador/stream?run_id=<id>
+GET  /api/agent/ambassador/{conversation_id}
+```
+
+The **Ambassador** (Phase 16.6) is a dedicated agent that runs *parallel* to a conversation and briefs you on a single turn — a middleman between the conversation and you for large-context / complex situations — **without polluting** the conversation. It is any agent profile with an `ambassador` section; the global default is `config.ambassador.profile_id` (falls back to the default agent profile).
+
+- **`POST /brief-turn`** — body `{conversation_id, message_id, assistant_text, user_text?}`. Starts a parallel briefing of one turn and returns `{run_id}`. The run is detached and **un-indexed** (`indexed=false`), so it never appears in `/agent/chat/runs`. It reads conversation context read-only and writes only to a Redis **sidecar** (the `ambassador:` key prefix) — never `conversation_logs` or the rolling summary, so nothing it produces re-enters the main agent's context.
+- **`GET /stream?run_id=`** — tail the briefing's namespaced SSE: `ambassador_start`, `ambassador_chunk`, `ambassador_done` (status `done` | `empty_provider`), `ambassador_error`; `run_missing` if the buffer expired. Cancel via `POST /api/agent/chat/runs/{run_id}/cancel`. A missing/unreachable provider degrades gracefully to an `empty_provider` notice rather than failing.
+- **`GET /{conversation_id}`** — replay all persisted briefings for a conversation (`{conversation_id, briefings: [{message_id, status, summary, error?, run_id?, created_at, updated_at}]}`) so a reopened panel repopulates after reload or tab-switch.
+
 ### Agent Status
 
 ```

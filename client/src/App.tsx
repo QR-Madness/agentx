@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
 import { ConversationProvider } from './contexts/ConversationContext';
+import { AmbassadorProvider } from './contexts/AmbassadorContext';
 import { PlansProvider } from './contexts/PlansContext';
 import { UIChromeProvider } from './contexts/UIChromeContext';
 import { AgentProfileProvider } from './contexts/AgentProfileContext';
@@ -96,7 +97,8 @@ function App() {
                 <AgentProfileProvider>
                   <AlloyWorkflowProvider>
                     <ConversationProvider>
-                      <PlansProvider>
+                      <AmbassadorProvider>
+                       <PlansProvider>
                         <ModalProvider>
                           <UIChromeProvider>
                             <ErrorBoundary>
@@ -107,7 +109,8 @@ function App() {
                             {showWindowControls && <ResizeHandles />}
                           </UIChromeProvider>
                         </ModalProvider>
-                      </PlansProvider>
+                       </PlansProvider>
+                      </AmbassadorProvider>
                     </ConversationProvider>
                   </AlloyWorkflowProvider>
                 </AgentProfileProvider>

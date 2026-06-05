@@ -41,6 +41,7 @@ import {
   type UserMessage,
   type PlanExecutionMessage,
   type ExhibitMessage,
+  type AssistantMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
@@ -57,6 +58,7 @@ import {
 } from '../../lib/planResume';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/modelCatalog';
@@ -78,6 +80,7 @@ export function ChatPanel() {
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
   const { openModal } = useModal();
+  const { ccTurn, briefingForMessage } = useAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
 
@@ -98,6 +101,44 @@ export function ChatPanel() {
       props: { runId: traceRun.id },
     });
   }, [traceRun, openModal]);
+
+  // CC the Ambassador to brief one assistant turn: open the (subscribed) panel
+  // AND kick off the parallel briefing. The ambassador reads the conversation
+  // read-only and writes only to its sidecar — the transcript is untouched.
+  const handleAmbassador = useCallback(
+    (message: AssistantMessage) => {
+      const conversationId = activeTab?.sessionId;
+      if (!conversationId) {
+        notifyError('The ambassador can brief a turn once the conversation has been saved.');
+        return;
+      }
+      // Nearest preceding user message gives the ambassador the turn's prompt.
+      const msgs = activeTab?.messages ?? [];
+      const idx = msgs.findIndex((m) => m.id === message.id);
+      let userText = '';
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        if (msgs[i]?.type === 'user') {
+          userText = (msgs[i] as { content?: string }).content ?? '';
+          break;
+        }
+      }
+      openModal({ id: 'ambassador-drawer', type: 'drawer', position: 'right', component: 'ambassador', size: 'xxl' });
+      ccTurn(conversationId, message, userText);
+    },
+    [activeTab?.sessionId, activeTab?.messages, openModal, ccTurn, notifyError],
+  );
+
+  const ambassadorStatusFor = useCallback(
+    (messageId: string): 'idle' | 'streaming' | 'done' | 'error' => {
+      const b = briefingForMessage(activeTab?.sessionId, messageId);
+      if (!b) return 'idle';
+      if (b.status === 'streaming') return 'streaming';
+      if (b.status === 'done') return 'done';
+      if (b.status === 'error' || b.status === 'empty_provider') return 'error';
+      return 'idle';
+    },
+    [briefingForMessage, activeTab?.sessionId],
+  );
 
   const activeWorkflow = activeTab?.workflowId
     ? getWorkflowById(activeTab.workflowId)
@@ -734,7 +775,16 @@ export function ChatPanel() {
             );
           }
           return (
-            <MessageBubble key={message.id} message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              agentName={agentName}
+              avatarId={tabProfile?.avatar}
+              onSubmitChoice={submitChoice}
+              onAmbassador={handleAmbassador}
+              ambassadorStatus={message.type === 'assistant' ? ambassadorStatusFor(message.id) : undefined}
+              busy={isTyping}
+            />
           );
         })}
 

@@ -7,6 +7,7 @@ import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react'
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
 import { SourcesPanel } from '../bibliography/SourcesPanel';
+import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
@@ -45,6 +46,14 @@ export function SourcesDrawerContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="modal-content-wrapper">
       <SourcesPanel />
+    </div>
+  );
+}
+
+export function AmbassadorDrawerContent({ onClose: _onClose }: ModalContentProps) {
+  return (
+    <div className="modal-content-wrapper">
+      <AmbassadorPanel />
     </div>
   );
 }

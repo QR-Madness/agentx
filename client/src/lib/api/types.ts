@@ -410,9 +410,21 @@ export interface AgentProfile {
   // Phase 16.4: when true, other agents may delegate to this profile (ad-hoc
   // delegation). Defaults true server-side.
   availableForDelegation?: boolean;
+  // Phase 16.6: optional ambassador section — present when this profile can act
+  // as a parallel conversation interpreter.
+  ambassador?: AmbassadorSection;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Phase 16.6 — the extra profile section that makes an agent an ambassador. */
+export interface AmbassadorSection {
+  enabled: boolean;
+  briefingPrompt?: string;
+  verbosity?: 'brief' | 'normal' | 'deep';
+  speechModel?: string | null;
+  voice?: string | null;
 }
 
 export interface AgentProfileCreate {
@@ -623,6 +635,12 @@ export interface ConfigUpdate {
     allow_adhoc_delegation?: boolean;
     max_parallel_delegations?: number;
     max_delegation_depth?: number;
+  };
+  ambassador?: {
+    enabled?: boolean;
+    profile_id?: string | null;
+    max_context_turns?: number;
+    max_tokens?: number;
   };
 }
 

@@ -16,6 +16,10 @@ export interface BubbleProps<K extends MessageType = MessageType> {
   onEdit?: (content: string) => void;
   /** Submit a choice-element selection (sent as the next user turn). */
   onSubmitChoice?: (value: string, messageId: string) => void;
+  /** CC the Ambassador to brief this assistant turn (16.6). */
+  onAmbassador?: (message: Extract<ConversationMessage, { type: 'assistant' }>) => void;
+  /** Current ambassador-briefing status for this turn (drives the button state). */
+  ambassadorStatus?: 'idle' | 'streaming' | 'done' | 'error';
   /** A turn is in flight — interactive elements (choice) render inert. */
   busy?: boolean;
 }

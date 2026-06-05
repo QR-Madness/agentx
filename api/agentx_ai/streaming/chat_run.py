@@ -97,6 +97,7 @@ class ChatRunStore:
         user_id: str = "default",
         message: str = "",
         session_id: Optional[str] = None,
+        indexed: bool = True,
     ) -> None:
         try:
             client = _redis()
@@ -114,12 +115,16 @@ class ChatRunStore:
             )
             client.expire(_state_key(run_id), RUN_TTL_SECONDS)
             # Index per user so the run is enumerable for recovery surfaces.
-            index_key = _index_key(user_id)
-            score = datetime.now(timezone.utc).timestamp() * 1000
-            client.zadd(index_key, {run_id: score})
-            # Trim to the most-recent MAX_INDEX entries (drop lowest scores).
-            client.zremrangebyrank(index_key, 0, -(MAX_INDEX + 1))
-            client.expire(index_key, RUN_TTL_SECONDS)
+            # Sidecar runs (e.g. the Ambassador's parallel briefing) pass
+            # indexed=False so they stay tailable/cancellable but never surface
+            # in `list_runs` -> /api/agent/chat/runs (Relay inbox / selector).
+            if indexed:
+                index_key = _index_key(user_id)
+                score = datetime.now(timezone.utc).timestamp() * 1000
+                client.zadd(index_key, {run_id: score})
+                # Trim to the most-recent MAX_INDEX entries (drop lowest scores).
+                client.zremrangebyrank(index_key, 0, -(MAX_INDEX + 1))
+                client.expire(index_key, RUN_TTL_SECONDS)
         except Exception as e:
             logger.warning(f"chat_run create failed: {e}")
 
@@ -263,10 +268,22 @@ def start_chat_run(
     user_id: str = "default",
     message: str = "",
     session_id: Optional[str] = None,
+    indexed: bool = True,
 ) -> str:
-    """Create run state and spawn the detached runner thread. Returns run_id."""
+    """Create run state and spawn the detached runner thread. Returns run_id.
+
+    ``indexed=False`` keeps the run out of the per-user recovery index (used by
+    sidecar runs like the Ambassador briefing, which must not pollute the
+    conversation recovery surfaces).
+    """
     run_id = uuid4().hex[:16]
-    store.create(run_id, user_id=user_id, message=message, session_id=session_id)
+    store.create(
+        run_id,
+        user_id=user_id,
+        message=message,
+        session_id=session_id,
+        indexed=indexed,
+    )
     threading.Thread(
         target=_drive_run,
         args=(run_id, gen_factory),

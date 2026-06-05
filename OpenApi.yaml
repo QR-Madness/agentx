@@ -787,6 +787,130 @@ paths:
         '405':
           description: POST required
 
+  /agent/ambassador/brief-turn:
+    post:
+      tags: [Agent]
+      operationId: ambassadorBriefTurn
+      summary: Brief one turn with the Ambassador (16.6)
+      description: >-
+        Start a parallel **Ambassador** briefing of a single conversation turn. The
+        ambassador is a dedicated agent (any agent profile with an `ambassador`
+        section; the global default is `config.ambassador.profile_id`) that runs
+        *parallel* to the conversation and never pollutes it: it reads conversation
+        context read-only and writes only to a Redis sidecar (the `ambassador:` key
+        prefix), never `conversation_logs`. Runs detached and **un-indexed**
+        (`indexed=False`) so it never appears in `/agent/chat/runs`. Returns the
+        `run_id`; tail it via `/agent/ambassador/stream`. Cancel via
+        `/agent/chat/runs/{run_id}/cancel`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, message_id, assistant_text]
+              properties:
+                conversation_id:
+                  type: string
+                message_id:
+                  type: string
+                  description: Stable client message id the briefing is keyed by
+                assistant_text:
+                  type: string
+                  description: The assistant reply to brief
+                user_text:
+                  type: string
+                  description: The preceding user message (turn prompt), for grounding
+      responses:
+        '200':
+          description: Briefing run started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+        '400':
+          description: Missing required fields
+        '405':
+          description: POST required
+
+  /agent/ambassador/stream:
+    get:
+      tags: [Agent]
+      operationId: ambassadorStream
+      summary: Tail an Ambassador briefing run
+      description: >-
+        Replays then follows a briefing run's namespaced SSE events
+        (`ambassador_start`, `ambassador_chunk`, `ambassador_done`,
+        `ambassador_error`). Emits `run_missing` if the run buffer expired (client
+        falls back to the persisted briefing from `/agent/ambassador/{conversation_id}`).
+      parameters:
+        - name: run_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing run_id
+
+  /agent/ambassador/{conversation_id}:
+    get:
+      tags: [Agent]
+      operationId: ambassadorBriefings
+      summary: List a conversation's Ambassador briefings
+      description: >-
+        Replays all persisted per-turn briefings for a conversation from the sidecar
+        so a cold/reopened panel repopulates after reload or tab-switch.
+      parameters:
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Briefings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id:
+                    type: string
+                  briefings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message_id:
+                          type: string
+                        status:
+                          type: string
+                          description: streaming | done | error | empty_provider | cancelled
+                        summary:
+                          type: string
+                        error:
+                          type: string
+                          nullable: true
+                        run_id:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+                        updated_at:
+                          type: string
+        '405':
+          description: GET required
+
   /agent/chat/runs/{run_id}/steer:
     post:
       tags: [Agent]

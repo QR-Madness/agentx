@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.31 -->
+<!-- release-version: 0.21.32 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -26,6 +26,13 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 - **Sturdier plan execution.** Plans restore and resume cleanly across a cold
   conversation load, terminate faithfully on Stop (interrupted vs. failed), and
   offer a resume nudge with the remaining lifetime.
+- **Ambassador (foundation).** A new dedicated agent that runs *parallel* to a
+  conversation and briefs you on a turn — without entering the conversation. Hit
+  the new CC button on any reply and a right-side **Ambassador** panel streams a
+  plain-language briefing of that turn, persisted per-conversation. The ambassador
+  is just an agent profile with an extra "ambassador" section, picked globally in
+  Settings → Ambassador. Briefings never touch the transcript or the agent's
+  context; future spoken briefings slot onto the same seam.
 
 ### Fixes
 

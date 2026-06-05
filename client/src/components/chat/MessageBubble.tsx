@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import type { ConversationMessage } from '../../lib/messages';
+import type { AssistantMessage, ConversationMessage } from '../../lib/messages';
 import { messageRegistry } from './messageRegistry';
 import { UnknownBubble } from './bubbles/UnknownBubble';
 import './MessageBubble.css';
@@ -21,6 +21,8 @@ interface MessageBubbleProps {
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
   onSubmitChoice?: (value: string, messageId: string) => void;
+  onAmbassador?: (message: AssistantMessage) => void;
+  ambassadorStatus?: 'idle' | 'streaming' | 'done' | 'error';
   busy?: boolean;
 }
 
