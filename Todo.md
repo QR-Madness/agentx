@@ -75,6 +75,27 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > compression, failure skip, synthesis), `Agent.run`/streaming integration, SSE plan events,
 > and mid-execution cancellation. Only the deferred follow-ups below remain.
 
+### 15.10 Execution safety (part 1) — shipped
+
+- [x] **"Stuck in web_search"** — `_tavily_search` called the SDK with no timeout (SDK default
+      ~60s), blocking the synchronous tool loop and stalling Stop. Capped via `search.timeout`
+      (default 15s) on both backends.
+- [x] **Clean termination + faithful resume.** `PlanExecutor` wraps its loop in `try/finally`:
+      a hard Stop (GeneratorExit) mid-subtask resets the in-flight subtask to `pending` and marks
+      the plan `interrupted` (resumable) instead of stuck `running`; cooperative cancel
+      `clear_cancel`s the flag. `views.py` Stop handler persists the interrupted plan card (was
+      persisting nothing on the plan path). Client `mapServerMessages` trusts the persisted plan
+      status (was rewriting incomplete plans to `failed`, hiding the resume offer); `interrupted`
+      added across the status union + resume detection. Covered by `PlanTerminationTest`.
+- [ ] **Deferred — prompt mid-tool cancel.** Truly-instant Stop *during* a tool call needs
+      off-thread tool execution; the first attempt (`run_in_executor` + `asyncio.shield` in
+      `streaming_tool_loop`) **deadlocked `gen.aclose()`** (Stop hung, turns never persisted) and was
+      reverted (branch `feat/plan-executor-hardening`). Current behavior: Stop is cooperative and
+      lands after the current (now wall-clock-capped) tool returns. Revisit with a design that
+      doesn't block generator close, and reproduce the hang in a test *first*.
+- [ ] **Deferred dev-tooling:** `task plan:inspect <session> <plan_id>` + a shared state-machine
+      source-of-truth module (statuses + transitions) imported by executor/state-store/views/client.
+
 ### 15.9 Main-agent plan composition — shipped
 
 - [x] **Plans wouldn't compose** (the separate planner was context-blind + brittle). Root cause:

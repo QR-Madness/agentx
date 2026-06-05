@@ -908,6 +908,10 @@ paths:
                     type: string
                   status:
                     type: string
+                    description: >
+                      active | complete | cancelled | failed | interrupted.
+                      active/interrupted are resumable (interrupted = hard-stopped
+                      with work left).
                   task:
                     type: string
                   complexity:
