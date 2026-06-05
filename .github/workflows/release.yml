@@ -400,6 +400,8 @@ jobs:
             echo ""
             echo "Published to Docker Hub as \`${IMAGE}:latest\` (linux/amd64) — this release is v${VERSION} (see the image's \`org.opencontainers.image.version\` label). The repo is kept to a single \`latest\` tag to stay storage-lean."
             echo ""
+            echo "For a self-contained isolated deployment (API + Neo4j + PostgreSQL + Redis), download **\`agentx-deploy.tar.gz\`** below: \`tar xzf agentx-deploy.tar.gz && cd agentx-deploy && cp .env.example .env\` then \`docker compose up -d\`."
+            echo ""
             echo "### SHA-256 checksums"
             echo ""
             echo '```text'
@@ -409,6 +411,19 @@ jobs:
 
           echo "=== notes.md ==="
           cat notes.md
+
+      - name: Assemble deployment bundle
+        # Mirrors `task deploy:bundle`: the self-contained isolated-cluster bundle
+        # (image-based compose + GPU overlay + .env template + README) that the
+        # Docker Hub overview tells users to "grab from the latest release". Attached
+        # below so that instruction is actually true.
+        run: |
+          BUNDLE=agentx-deploy
+          rm -rf "$BUNDLE" && mkdir -p "$BUNDLE"
+          cp docker-compose.yml docker-compose.gpu.yml "$BUNDLE/"
+          cp deploy/.env.example deploy/README.md "$BUNDLE/"
+          tar -czf agentx-deploy.tar.gz "$BUNDLE"
+          echo "=== bundle ==="; ls -la agentx-deploy.tar.gz; tar -tzf agentx-deploy.tar.gz
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -427,3 +442,4 @@ jobs:
             release-artifacts/**/*.exe
             release-artifacts/**/*.msi
             release-artifacts/checksums-sha256.txt
+            agentx-deploy.tar.gz
