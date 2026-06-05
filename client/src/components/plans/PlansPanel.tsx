@@ -232,11 +232,28 @@ export function PlansPanel() {
 
   const handleCancel = async (plan: PlanRecord) => {
     const tab = tabs.find(t => t.id === plan.tabId);
-    if (!tab?.sessionId) return;
-    try {
-      await api.cancelPlan(plan.planId, tab.sessionId);
-    } catch {
-      /* best-effort — the SSE plan_cancelled event drives the terminal state */
+    // Reflect intent immediately — the cooperative plan-cancel only lands at the
+    // next subtask boundary (which is slow for a long research step), so without
+    // this the button looks dead.
+    upsertPlan({ ...plan, status: 'cancelled' });
+    if (tab) {
+      updateTab(plan.tabId, {
+        messages: tab.messages.map((m: ConversationMessage) =>
+          m.type === 'plan_execution' && m.planId === plan.planId
+            ? { ...m, status: 'cancelled' }
+            : m,
+        ),
+      });
+    }
+    // Hard-stop the live detached run if we have it (aborts at the next event
+    // boundary — finer-grained than the per-subtask cooperative flag); always
+    // also set the cooperative plan flag so a re-attached/other client stops too.
+    const runId = tab?.activeRun?.runId;
+    if (runId) {
+      try { await api.cancelChatRun(runId); } catch { /* best-effort */ }
+    }
+    if (tab?.sessionId) {
+      try { await api.cancelPlan(plan.planId, tab.sessionId); } catch { /* best-effort */ }
     }
   };
 

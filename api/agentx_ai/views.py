@@ -2062,7 +2062,15 @@ async def agent_plan_resume(request, plan_id):
     plan = store.load_plan(plan_id)
     if plan is None:
         return JsonResponse(
-            {'error': 'plan not resumable (missing, expired, or already finished)',
+            {'error': 'plan not resumable (missing, expired, or already cancelled)',
+             'plan_id': plan_id, 'session_id': session_id},
+            status=404,
+        )
+    if plan.is_complete():
+        # Active in Redis but every subtask is already terminal — nothing to run.
+        # Guard so resume never emits a hollow synthesis from no fresh work.
+        return JsonResponse(
+            {'error': 'plan already finished (no remaining subtasks to resume)',
              'plan_id': plan_id, 'session_id': session_id},
             status=404,
         )

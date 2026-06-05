@@ -39,6 +39,7 @@ import { getActiveMention, applyMention, extractMentionedAgentIds } from '../../
 import { MentionAutocomplete } from './MentionAutocomplete';
 import {
   type UserMessage,
+  type ConversationMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
@@ -385,6 +386,14 @@ export function ChatPanel() {
   const handleResumePlan = useCallback(
     (planId: string) => {
       if (!activeTab?.sessionId || isTyping) return;
+      // Drop the stale interrupted card for this plan so the resumed run's fresh
+      // snapshot card replaces it (the `plan_resumed` event paints completed +
+      // pending steps) instead of stacking a duplicate beside the old "0/N" one.
+      updateTab(activeTab.id, {
+        messages: activeTab.messages.filter(
+          (m: ConversationMessage) => !(m.type === 'plan_execution' && m.planId === planId),
+        ),
+      });
       stream.resume(planId, {
         session_id: activeTab.sessionId,
         agent_profile_id: tabProfile?.id,
@@ -392,7 +401,7 @@ export function ChatPanel() {
         use_memory: useMemory,
       });
     },
-    [activeTab?.sessionId, activeTab?.modelOverride, isTyping, tabProfile?.id, useMemory, stream.resume],
+    [activeTab, isTyping, tabProfile?.id, useMemory, stream.resume, updateTab],
   );
 
   const handleSendBackground = async () => {
