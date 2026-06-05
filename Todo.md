@@ -75,6 +75,23 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > compression, failure skip, synthesis), `Agent.run`/streaming integration, SSE plan events,
 > and mid-execution cancellation. Only the deferred follow-ups below remain.
 
+### 15.9 Main-agent plan composition — shipped
+
+- [x] **Plans wouldn't compose** (the separate planner was context-blind + brittle). Root cause:
+      the chat path called `TaskPlanner.plan(message)` with **no conversation context**, using a
+      rigid `SUBTASK N:`/`TYPE:` prompt that `_parse_plan` regex-scraped — any model that answered
+      in markdown/JSON/prose matched zero blocks → single-step fallback → `len(steps) > 1` false →
+      never decomposed (lowering `complexity_threshold` couldn't help; the failure is downstream of
+      the rank gate). Fix: the chat path now composes the plan with the **main agent model** via
+      `TaskPlanner.compose_with_model(provider, model_id, messages, …)` — it reuses the
+      already-assembled turn context (system prompt + memory + history) and takes a **structured
+      JSON plan** back (`_extract_json_object`, tolerant of fenced/embedded JSON; coercion helpers
+      for type/deps/tools; `_normalize_steps` for ids/deps/cap). The model decides whether to
+      decompose (returns `{"plan": null}` → normal single-pass turn). A cheap `_assess_complexity`
+      heuristic gates whether the extra call runs at all (SIMPLE/trivial turns skip it; the config
+      `planner.complexity_threshold` still tunes moderate-vs-complex). The legacy `plan()` +
+      `SUBTASK` path stays for non-chat callers. Covered by `PlannerComposeTest`.
+
 ### 15.8 Fixes — shipped `[v0.21.8]`
 
 - [x] **Executor looped on one subtask** ("step 3 of 9"). `Subtask.id` was used as a list index

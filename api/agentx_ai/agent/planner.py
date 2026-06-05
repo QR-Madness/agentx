@@ -5,6 +5,7 @@ The planner breaks down complex tasks into manageable subtasks
 and determines the best approach for each.
 """
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -20,6 +21,90 @@ if TYPE_CHECKING:
     from ..kit.agent_memory import AgentMemory
 
 logger = logging.getLogger(__name__)
+
+
+# Instruction appended to the *main agent's* assembled turn context to compose a
+# plan with full conversation/memory awareness, returning structured JSON (no
+# brittle regex format). The model itself decides whether to decompose.
+_COMPOSE_INSTRUCTION = """Before answering, decide whether the user's latest request genuinely benefits from being broken into multiple sequential steps, or whether a single response handles it well.
+
+Respond with ONLY a JSON object — no prose, no markdown fence — in one of these two forms:
+- A single response suffices: {{"plan": null}}
+- Multiple steps genuinely help: {{"plan": [{{"description": "<what this step accomplishes>", "type": "research|analysis|generation|tool_use|decision|verification", "depends": [<0-based indices of earlier steps this needs>], "tools": ["<tool_name>", ...]}}]}}
+
+Guidelines:
+- Use the FEWEST steps that genuinely help (at most {max}). Strongly prefer {{"plan": null}} unless the task has real multi-step structure.
+- `depends` are 0-based indices into the plan array, pointing only at EARLIER steps.
+- `tools` names the tools a step will need; use [] or omit when none.
+
+The request to assess:
+{task}"""
+
+
+def _extract_json_object(text: str) -> Optional[dict]:
+    """Best-effort extract a single JSON object from an LLM response.
+
+    Handles raw JSON, ```json fenced blocks, and JSON embedded in prose (scans
+    for the first balanced ``{...}``). Returns None when nothing usable parses.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    fence = re.search(r"```(?:json)?\s*(.+?)```", s, re.DOTALL | re.IGNORECASE)
+    if fence:
+        s = fence.group(1).strip()
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+    # Scan for the first balanced top-level object (braces in string values are
+    # rare in our plan JSON; the fast path above covers clean output anyway).
+    start = s.find("{")
+    while start != -1:
+        depth = 0
+        for i in range(start, len(s)):
+            if s[i] == "{":
+                depth += 1
+            elif s[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(s[start:i + 1])
+                        if isinstance(obj, dict):
+                            return obj
+                    except Exception:
+                        pass
+                    break
+        start = s.find("{", start + 1)
+    return None
+
+
+def _coerce_subtask_type(v: object) -> "SubtaskType":
+    try:
+        return SubtaskType(str(v).strip().lower())
+    except Exception:
+        return SubtaskType.GENERATION
+
+
+def _coerce_int_list(v: object) -> list[int]:
+    if not isinstance(v, (list, tuple)):
+        return []
+    out: list[int] = []
+    for x in v:
+        try:
+            out.append(int(x))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+def _coerce_str_list(v: object) -> list[str]:
+    if isinstance(v, str):
+        return [v.strip()] if v.strip() else []
+    if not isinstance(v, (list, tuple)):
+        return []
+    return [str(x).strip() for x in v if str(x).strip()]
 
 
 class TaskComplexity(str, Enum):
@@ -293,6 +378,78 @@ class TaskPlanner:
             )
             return self._create_goal_for_plan(plan, memory)
     
+    async def compose_with_model(
+        self,
+        provider,
+        model_id: str,
+        base_messages: list[Message],
+        task: str,
+        *,
+        memory: Optional["AgentMemory"] = None,
+    ) -> Optional[TaskPlan]:
+        """Decompose ``task`` using the *caller's* model + already-assembled context.
+
+        Unlike :meth:`plan`, this reuses the **main agent's** provider/model and
+        the full turn context (system prompt + memory bundle + history) rather
+        than a separate, context-blind planner call, and takes a structured JSON
+        plan back instead of regex-scraping ``SUBTASK`` prose. The model decides
+        whether decomposition is warranted — it returns ``{"plan": null}`` (or a
+        single step) when not.
+
+        Returns a normalized :class:`TaskPlan` when the model proposes >1 step,
+        else ``None`` (caller falls through to a normal single-pass turn).
+        """
+        instruction = _COMPOSE_INSTRUCTION.format(task=task, max=self.max_subtasks or 6)
+        messages = list(base_messages) + [Message(role=MessageRole.USER, content=instruction)]
+
+        try:
+            result = await provider.complete(
+                messages, model_id,
+                temperature=self.temperature, max_tokens=self.max_tokens,
+            )
+        except Exception as e:
+            logger.warning(f"Model-composed planning failed ({e}); single-pass turn")
+            return None
+
+        data = _extract_json_object(result.content)
+        if not data:
+            logger.info("Planner pre-pass: no JSON plan in model output; single-pass turn")
+            return None
+
+        raw = data.get("plan")
+        if not isinstance(raw, list) or len(raw) < 2:
+            # Model judged one response enough ({"plan": null} or a single step).
+            return None
+
+        steps: list[Subtask] = []
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                continue
+            desc = str(item.get("description") or item.get("task") or "").strip()
+            if not desc:
+                continue
+            steps.append(Subtask(
+                id=i,
+                description=desc[:500],
+                type=_coerce_subtask_type(item.get("type")),
+                dependencies=_coerce_int_list(item.get("depends") or item.get("dependencies")),
+                tools_needed=_coerce_str_list(item.get("tools") or item.get("tools_needed")),
+            ))
+
+        if len(steps) < 2:
+            return None
+
+        steps = self._normalize_steps(steps)
+        plan = TaskPlan(
+            task=task,
+            complexity=TaskComplexity.COMPLEX,
+            steps=steps,
+            reasoning_strategy=self._select_strategy(steps),
+            estimated_tokens=result.usage.get("total_tokens", 0) if result.usage else 0,
+        )
+        logger.info(f"Planner pre-pass: main model composed {len(steps)} subtasks")
+        return self._create_goal_for_plan(plan, memory)
+
     def _assess_complexity(self, task: str) -> TaskComplexity:
         """Assess the complexity of a task.
 

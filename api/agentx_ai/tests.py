@@ -3439,6 +3439,100 @@ class PlanSerializationTest(TestCase):
             self.assertTrue(store.is_resumable("p1"))
 
 
+class PlannerComposeTest(TestCase):
+    """Main-agent plan composition: tolerant JSON extraction + compose_with_model."""
+
+    class _Result:
+        def __init__(self, content, usage=None):
+            self.content = content
+            self.usage = usage or {}
+
+    class _FakeProvider:
+        def __init__(self, content):
+            self._content = content
+
+        async def complete(self, messages, model_id, **kw):
+            return PlannerComposeTest._Result(self._content)
+
+    class _BoomProvider:
+        async def complete(self, messages, model_id, **kw):
+            raise RuntimeError("provider down")
+
+    def _compose(self, content):
+        import asyncio
+        from agentx_ai.agent.planner import TaskPlanner
+        planner = TaskPlanner(max_subtasks=6)
+        return asyncio.run(
+            planner.compose_with_model(self._FakeProvider(content), "m", [], "the task", memory=None)
+        )
+
+    # ---- JSON extraction ----
+    def test_extract_raw_json(self):
+        from agentx_ai.agent.planner import _extract_json_object
+        self.assertEqual(_extract_json_object('{"plan": null}'), {"plan": None})
+
+    def test_extract_fenced_json(self):
+        from agentx_ai.agent.planner import _extract_json_object
+        text = 'Sure!\n```json\n{"plan": [1, 2]}\n```\nhope that helps'
+        self.assertEqual(_extract_json_object(text), {"plan": [1, 2]})
+
+    def test_extract_embedded_json(self):
+        from agentx_ai.agent.planner import _extract_json_object
+        text = 'Here is the plan: {"plan": [{"description": "x"}]} — done.'
+        self.assertEqual(_extract_json_object(text), {"plan": [{"description": "x"}]})
+
+    def test_extract_garbage_returns_none(self):
+        from agentx_ai.agent.planner import _extract_json_object
+        self.assertIsNone(_extract_json_object("no json here at all"))
+        self.assertIsNone(_extract_json_object(""))
+
+    # ---- compose_with_model ----
+    def test_compose_multi_step_builds_normalized_plan(self):
+        import json as _json
+        from agentx_ai.agent.planner import SubtaskType
+        content = _json.dumps({"plan": [
+            {"description": "gather evidence", "type": "research", "depends": [], "tools": ["web_search"]},
+            {"description": "weigh trade-offs", "type": "analysis", "depends": [0]},
+            {"description": "state conclusion", "type": "generation", "depends": [1]},
+        ]})
+        plan = self._compose(content)
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual([s.id for s in plan.steps], [0, 1, 2])
+        self.assertEqual(plan.steps[0].type, SubtaskType.RESEARCH)
+        self.assertEqual(plan.steps[0].tools_needed, ["web_search"])
+        self.assertEqual(plan.steps[1].dependencies, [0])
+
+    def test_compose_plan_null_returns_none(self):
+        self.assertIsNone(self._compose('{"plan": null}'))
+
+    def test_compose_single_step_returns_none(self):
+        # One step isn't worth a plan — the model declined to decompose.
+        self.assertIsNone(self._compose('{"plan": [{"description": "just answer"}]}'))
+
+    def test_compose_no_json_returns_none(self):
+        self.assertIsNone(self._compose("I'll just answer directly, no plan needed."))
+
+    def test_compose_provider_error_returns_none(self):
+        import asyncio
+        from agentx_ai.agent.planner import TaskPlanner
+        planner = TaskPlanner(max_subtasks=6)
+        plan = asyncio.run(
+            planner.compose_with_model(self._BoomProvider(), "m", [], "task", memory=None)
+        )
+        self.assertIsNone(plan)
+
+    def test_compose_caps_and_reindexes(self):
+        # >max_subtasks gets capped; out-of-range deps are dropped by normalize.
+        import json as _json
+        steps = [{"description": f"step {i}", "type": "generation",
+                  "depends": [i - 1] if i else []} for i in range(9)]
+        plan = self._compose(_json.dumps({"plan": steps}))
+        assert plan is not None
+        self.assertEqual(len(plan.steps), 6)  # planner.max_subtasks
+        self.assertEqual([s.id for s in plan.steps], list(range(6)))
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 

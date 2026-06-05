@@ -1479,6 +1479,13 @@ async def agent_chat_stream(request):
             _threshold_rank = {"simple": 0, "moderate": 1, "complex": 2}
             planner_threshold_rank = _threshold_rank.get(planner_threshold_name, 2)
 
+            # Planning is composed by the MAIN agent model (it has the full
+            # system prompt + memory + conversation context), returning a
+            # structured JSON plan — not a separate, context-blind planner call
+            # with a brittle SUBTASK regex. A cheap local complexity heuristic
+            # gates whether we even spend the extra call: trivial/simple turns
+            # skip it, and the model itself opts out ({"plan": null}) otherwise.
+            plan = None
             if planner_enabled:
                 planner = TaskPlanner(
                     planner_model,
@@ -1487,24 +1494,18 @@ async def agent_chat_stream(request):
                     prompt_override=planner_prompt_override,
                     max_subtasks=planner_max_subtasks,
                 )
-                plan = await planner.plan(message, memory=agent.memory if use_memory else None)
-            else:
-                # Bypass planning entirely; build a single-step plan to keep
-                # the simple-path branch happy.
-                from .agent.planner import Subtask, TaskPlan, SubtaskType
-                plan = TaskPlan(
-                    task=message,
-                    complexity=TaskComplexity.SIMPLE,
-                    steps=[Subtask(id=0, description=message, type=SubtaskType.GENERATION)],
-                    reasoning_strategy="cot",
-                )
+                assessed = planner._assess_complexity(message)
+                if (
+                    assessed != TaskComplexity.SIMPLE
+                    and _threshold_rank.get(assessed.value, 0) >= planner_threshold_rank
+                ):
+                    emit_status("composing", "Planning approach")
+                    plan = await planner.compose_with_model(
+                        provider, model_id, messages, message,
+                        memory=agent.memory if use_memory else None,
+                    )
 
-            plan_rank = _threshold_rank.get(plan.complexity.value, 0)
-            decompose = (
-                planner_enabled
-                and plan_rank >= planner_threshold_rank
-                and len(plan.steps) > 1
-            )
+            decompose = plan is not None and len(plan.steps) > 1
             if decompose:
                 # Plan execution path — delegate to PlanExecutor
                 from .agent.plan_state import PlanStateStore
