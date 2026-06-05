@@ -28,21 +28,11 @@ function sourceIcon(s: CitationSource): LucideIcon {
   return (s.source_type && SOURCE_ICON[s.source_type]) || Link2;
 }
 
-/** A link when http(s), else inert text. */
-function SourceLabel({ source }: { source: CitationSource }) {
-  if (isHttpUrl(source.url)) {
-    return (
-      <a
-        href={source.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-accent hover:underline"
-      >
-        {source.label}
-      </a>
-    );
-  }
-  return <span>{source.label}</span>;
+/** Prefer the human page title; fall back to the host for bare-URL sources. */
+function sourceText(s: CitationSource): string {
+  if (s.label && s.label.trim()) return s.label;
+  if (isHttpUrl(s.url)) return urlHost(s.url);
+  return s.url || 'source';
 }
 
 function ActiveSource({ source }: { source: CitationSource }) {
@@ -77,34 +67,65 @@ function ActiveSource({ source }: { source: CitationSource }) {
   );
 }
 
-/** Compact passive list, capped to PASSIVE_PREVIEW with a "+N more" expander. */
+/** One passive source rendered as a compact numbered chip. */
+function SourceChip({ source, n }: { source: CitationSource; n: number }) {
+  const Icon = sourceIcon(source);
+  const text = sourceText(source);
+  const host = isHttpUrl(source.url) ? urlHost(source.url) : null;
+  // Number + icon are decorative — keep them out of the link's accessible name.
+  const inner = (
+    <>
+      <span aria-hidden="true" className="shrink-0 font-mono text-[10px] text-fg-muted tabular-nums">
+        {n}
+      </span>
+      <Icon
+        size={12}
+        aria-hidden="true"
+        className="shrink-0 text-fg-muted transition-colors group-hover:text-accent"
+      />
+      <span className="truncate">{text}</span>
+    </>
+  );
+  const cls =
+    'group inline-flex max-w-[14rem] items-center gap-1.5 rounded-full border border-line ' +
+    'bg-surface-sunken px-2.5 py-1 text-xs text-fg-secondary transition-colors ' +
+    'hover:border-line-strong hover:text-fg';
+  if (isHttpUrl(source.url)) {
+    return (
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cls}
+        title={`${text}${host ? ` — ${host}` : ''}\n${source.url}`}
+      >
+        {inner}
+      </a>
+    );
+  }
+  return <span className={cls} title={text}>{inner}</span>;
+}
+
+/** Passive sources as a wrapped row of chips, capped with a "+N more" toggle. */
 function PassiveSources({ sources }: { sources: CitationSource[] }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? sources : sources.slice(0, PASSIVE_PREVIEW);
   const hidden = sources.length - shown.length;
   return (
-    <ul className="flex flex-col gap-1 pl-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       {shown.map((s, i) => (
-        <li key={i} className="flex min-w-0 items-center gap-1.5 text-sm text-fg-secondary">
-          <Link2 size={12} className="shrink-0 text-fg-muted" />
-          <SourceLabel source={s} />
-          {isHttpUrl(s.url) && (
-            <span className="truncate text-xs text-fg-muted">{urlHost(s.url)}</span>
-          )}
-        </li>
+        <SourceChip key={i} source={s} n={i + 1} />
       ))}
       {hidden > 0 && (
-        <li>
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="text-xs font-medium text-accent hover:underline"
-          >
-            +{hidden} more
-          </button>
-        </li>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="rounded-full border border-dashed border-line px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          +{hidden} more
+        </button>
       )}
-    </ul>
+    </div>
   );
 }
 
@@ -115,10 +136,10 @@ function CitationElementImpl({ element }: ElementRenderProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-sm font-medium text-fg">
-        <BookMarked size={14} className="shrink-0 text-fg-muted" />
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+        <BookMarked size={12} className="shrink-0" />
         <span>{element.title || 'Sources'}</span>
-        <span className="text-xs font-normal text-fg-muted">({element.sources.length})</span>
+        <span className="font-normal normal-case tracking-normal">· {element.sources.length}</span>
       </div>
 
       {active.length > 0 && (

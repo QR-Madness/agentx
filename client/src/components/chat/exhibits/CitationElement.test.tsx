@@ -17,7 +17,7 @@ describe('CitationElement', () => {
   it('always shows a Sources header with the total count', () => {
     render(<CitationElement element={mixed} messageId="m1" />);
     expect(screen.getByText(/^Sources$/)).toBeInTheDocument();
-    expect(screen.getByText('(3)')).toBeInTheDocument();
+    expect(screen.getByText('· 3')).toBeInTheDocument();
   });
 
   it('shows an active source quote when folded out', () => {
