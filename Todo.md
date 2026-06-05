@@ -96,9 +96,21 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       `kit/agent_memory/embedding_queue.py`), so concurrent subtasks' recall/embedding bursts are
       serialized safely. Remaining work is the parallel scheduler in `PlanExecutor` itself.
 - [ ] Per-subtask reasoning strategy selection (use `_select_strategy` per subtask type)
-- [ ] Subtask-level goal tracking (create subgoals via `parent_goal_id`)
+- [x] Subtask-level goal tracking (create subgoals via `parent_goal_id`) — shipped. The
+      planner's `_create_goal_for_plan` creates a child `Goal(parent_goal_id=plan.goal_id)`
+      per subtask (skipped for single-step plans) and stamps `step.goal_id`; `PlanExecutor`
+      closes each out through the agent hook seam (`_complete_subtask_goal` →
+      `on_goal_complete` → `MemoryRecorder.complete_goal`) on complete/fail/abandon.
+      Certified by `SubtaskGoalTrackingTest`.
 - [x] Plan cancellation mid-execution — shipped. `PlanExecutor` checks `state.is_cancel_requested(plan_id)` between subtasks (`plan_executor.py:84,163`) and marks the plan `cancelled`; `POST /api/agent/plans/cancel` sets the flag.
-- [ ] Plan resumption from Redis state after disconnect
+- [ ] Plan resumption from Redis state after disconnect — **in progress** (single-agent first).
+      Slices: B1 durable full-plan serialization (`Subtask`/`TaskPlan` `to_dict`/`from_dict` +
+      `PlanStateStore.create` writes a `plan_json` snapshot; `load_plan` rebuilds + overlays live
+      status), B2 `execute_streaming(resume_plan_id=…)` emitting a `plan_resumed` snapshot then
+      continuing the loop (dedup is automatic — terminal subtasks are pre-marked), B3 a
+      `POST /api/agent/plans/{plan_id}/resume` endpoint + a "Resume" affordance in `PlansPanel`,
+      B4 docs. **Alloy plan resumption is a separate follow-up** (needs `_active_alloy_executor`
+      re-attached for the per-subtask `delegate_to` injection).
 
 ---
 

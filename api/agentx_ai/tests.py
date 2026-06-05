@@ -3145,6 +3145,103 @@ class PlanExecutorResultTest(TestCase):
         self.assertEqual(pr.steers[0]["content"], "do Y")
 
 
+class SubtaskGoalTrackingTest(TestCase):
+    """Phase 15.7 #1 — subtask-level goal tracking.
+
+    The planner creates a child goal per subtask (linked to the plan's parent
+    goal) and the executor closes each one out through the agent hook seam.
+    These tests certify the full chain without a live memory backend.
+    """
+
+    @staticmethod
+    def _multi_step_plan():
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+        steps = [
+            Subtask(id=0, description="gather the premises", type=SubtaskType.RESEARCH),
+            Subtask(id=1, description="weigh the trade-offs", type=SubtaskType.ANALYSIS,
+                    dependencies=[0]),
+            Subtask(id=2, description="state the conclusion", type=SubtaskType.GENERATION,
+                    dependencies=[1]),
+        ]
+        return TaskPlan(task="reach a reasoned conclusion", complexity=TaskComplexity.COMPLEX,
+                        steps=steps)
+
+    def test_planner_creates_child_goal_per_subtask(self) -> None:
+        """A multi-step plan gets a parent goal plus one child goal per step,
+        each carrying parent_goal_id; every step.goal_id is populated."""
+        from agentx_ai.agent.planner import TaskPlanner
+
+        plan = self._multi_step_plan()
+        memory = MagicMock()
+        planner = TaskPlanner()
+
+        result = planner._create_goal_for_plan(plan, memory)
+
+        # Parent + 3 children added.
+        self.assertEqual(memory.add_goal.call_count, 4)
+        self.assertIsNotNone(result.goal_id)
+        # Each child references the parent and is wired back onto its step.
+        child_goals = [c.args[0] for c in memory.add_goal.call_args_list[1:]]
+        for step, goal in zip(result.steps, child_goals):
+            self.assertEqual(goal.parent_goal_id, result.goal_id)
+            self.assertEqual(step.goal_id, goal.id)
+
+    def test_planner_single_step_skips_child_goals(self) -> None:
+        """A single-step plan only creates the parent goal — the lone step is
+        already represented by it (no redundant subgoal)."""
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+        from agentx_ai.agent.planner import TaskPlanner
+
+        plan = TaskPlan(
+            task="answer directly",
+            complexity=TaskComplexity.SIMPLE,
+            steps=[Subtask(id=0, description="answer", type=SubtaskType.GENERATION)],
+        )
+        memory = MagicMock()
+
+        result = TaskPlanner()._create_goal_for_plan(plan, memory)
+
+        memory.add_goal.assert_called_once()
+        self.assertIsNone(result.steps[0].goal_id)
+
+    def test_planner_no_memory_is_noop(self) -> None:
+        """Without a memory backend the plan is returned untouched."""
+        from agentx_ai.agent.planner import TaskPlanner
+
+        plan = self._multi_step_plan()
+        result = TaskPlanner()._create_goal_for_plan(plan, memory=None)
+        self.assertIsNone(result.goal_id)
+        self.assertTrue(all(s.goal_id is None for s in result.steps))
+
+    def test_executor_completes_subtask_goal_through_hook(self) -> None:
+        """A subtask with a goal_id routes completion through the agent's hook
+        seam (on_goal_complete → MemoryRecorder.complete_goal)."""
+        from agentx_ai.agent.plan_executor import PlanExecutor
+        from agentx_ai.agent.planner import Subtask, SubtaskType
+
+        agent = MagicMock()
+        ex = PlanExecutor(agent, MagicMock())
+        subtask = Subtask(id=0, description="step", type=SubtaskType.GENERATION)
+        subtask.goal_id = "g-1"
+
+        ex._complete_subtask_goal(subtask, "completed", "done")
+
+        agent._dispatch.assert_called_once_with("on_goal_complete", "g-1", "completed", "done")
+
+    def test_executor_no_goal_id_skips_dispatch(self) -> None:
+        """A subtask without a goal_id never fires the hook."""
+        from agentx_ai.agent.plan_executor import PlanExecutor
+        from agentx_ai.agent.planner import Subtask, SubtaskType
+
+        agent = MagicMock()
+        ex = PlanExecutor(agent, MagicMock())
+        subtask = Subtask(id=0, description="step", type=SubtaskType.GENERATION)  # goal_id=None
+
+        ex._complete_subtask_goal(subtask, "completed", "done")
+
+        agent._dispatch.assert_not_called()
+
+
 class ContextGateTest(TestCase):
     """Tests for context gate loop prevention and iterative chunking."""
 
