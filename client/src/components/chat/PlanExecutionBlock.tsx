@@ -11,7 +11,7 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import type { PlanSubtask } from '../../lib/messages';
-import { PlanProgressBar, SubtaskList } from '../plans/PlanSubtaskList';
+import { PlanProgressBar, SubtaskList, freezeSubtasks } from '../plans/PlanSubtaskList';
 import './PlanExecutionBlock.css';
 
 export interface PlanExecutionBlockProps {
@@ -27,6 +27,8 @@ export interface PlanExecutionBlockProps {
   onResume?: (planId: string) => void;
   /** Whether resume is currently offered (interrupted + not mid-stream). */
   canResume?: boolean;
+  /** This card is part of the live stream — keep the running spinner animated. */
+  live?: boolean;
 }
 
 export function PlanExecutionBlock({
@@ -40,11 +42,16 @@ export function PlanExecutionBlock({
   completedCount,
   onResume,
   canResume,
+  live,
 }: PlanExecutionBlockProps) {
   const [expanded, setExpanded] = useState(true);
 
   const completed = completedCount ?? subtasks.filter(s => s.status === 'completed').length;
   const showResume = !!(canResume && onResume);
+  // Freeze the spinner on a non-live card: terminal plans skip the running step,
+  // an interrupted-but-resumable one shows it pending (it re-runs on resume).
+  const mode = live ? 'live' : status === 'running' ? 'resumable' : 'terminal';
+  const shownSubtasks = freezeSubtasks(subtasks, mode);
 
   return (
     <div className="plan-execution-block">
@@ -75,7 +82,7 @@ export function PlanExecutionBlock({
             <span className="task-text">{task}</span>
           </div>
 
-          <SubtaskList subtasks={subtasks} />
+          <SubtaskList subtasks={shownSubtasks} />
 
           {showResume && (
             <button

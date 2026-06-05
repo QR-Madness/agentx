@@ -31,7 +31,7 @@ import {
   type PlanRecordStatus,
 } from '../../contexts/PlansContext';
 import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
-import { PlanProgressBar, SubtaskItem } from './PlanSubtaskList';
+import { PlanProgressBar, SubtaskItem, freezeSubtasks } from './PlanSubtaskList';
 import '../chat/PlanExecutionBlock.css';
 import './PlansPanel.css';
 
@@ -56,18 +56,25 @@ function formatElapsed(ms: number): string {
 function PlanBlock({
   plan,
   now,
+  live,
   onCancel,
   onJump,
   defaultExpanded,
 }: {
   plan: PlanRecord;
   now: number;
+  live: boolean;
   onCancel: (plan: PlanRecord) => void;
   onJump: (detail: JumpToStepDetail) => void;
   defaultExpanded: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const running = plan.status === 'running';
+  // Freeze the spinner unless this plan is actively streaming.
+  const shownSubtasks = freezeSubtasks(
+    plan.subtasks,
+    live ? 'live' : running ? 'resumable' : 'terminal',
+  );
   const elapsedMs = running
     ? now - new Date(plan.startedAt).getTime()
     : plan.totalTimeMs ?? 0;
@@ -107,9 +114,9 @@ function PlanBlock({
           <div className="plan-block-progress-text">
             {plan.completedCount}/{plan.subtaskCount} steps complete
           </div>
-          {plan.subtasks.length > 0 ? (
+          {shownSubtasks.length > 0 ? (
             <ul className="plan-subtasks">
-              {plan.subtasks.map((s: PlanSubtask) => (
+              {shownSubtasks.map((s: PlanSubtask) => (
                 <li
                   key={s.subtaskId}
                   className="plan-step-jump"
@@ -292,6 +299,7 @@ export function PlansPanel() {
                   key={p.planId}
                   plan={p}
                   now={now}
+                  live={livePlans.has(p.planId)}
                   onCancel={handleCancel}
                   onJump={handleJump}
                   defaultExpanded
@@ -307,6 +315,7 @@ export function PlansPanel() {
                   key={p.planId}
                   plan={p}
                   now={now}
+                  live={false}
                   onCancel={handleCancel}
                   onJump={handleJump}
                   defaultExpanded={false}

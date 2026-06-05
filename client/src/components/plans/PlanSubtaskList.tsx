@@ -74,6 +74,25 @@ export function SubtaskList({ subtasks }: { subtasks: PlanSubtask[] }) {
 
 export type PlanVisualStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'stale';
 
+/**
+ * Freeze the live spinner on a non-streaming plan. A `running` subtask only
+ * genuinely spins while the plan is actively streaming; on a cancelled/finished
+ * (`terminal`) or interrupted-but-resumable (`resumable`) plan that same icon is
+ * misleading — it implies work is happening when nothing is.
+ *
+ *  - `live`      → unchanged (a real subtask is running).
+ *  - `resumable` → `running` shown as `pending` (it will re-run on resume).
+ *  - `terminal`  → `running` shown as `skipped` (it never finished, won't).
+ */
+export function freezeSubtasks(
+  subtasks: PlanSubtask[],
+  mode: 'live' | 'resumable' | 'terminal',
+): PlanSubtask[] {
+  if (mode === 'live') return subtasks;
+  const next: PlanSubtask['status'] = mode === 'resumable' ? 'pending' : 'skipped';
+  return subtasks.map(s => (s.status === 'running' ? { ...s, status: next } : s));
+}
+
 /** Maps the (wider) plan status to the progress-fill modifier class. */
 export function progressFillClass(status: PlanVisualStatus): string {
   if (status === 'completed') return 'complete';
