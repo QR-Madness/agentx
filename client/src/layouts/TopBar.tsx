@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   MessagesSquare,
+  Radio,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
@@ -144,6 +145,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       id: 'sources-drawer',
       type: 'drawer',
       component: 'sources',
+      position: 'right',
+      size: 'xxl',
+    });
+  };
+
+  const openAmbassador = () => {
+    openModal({
+      id: 'ambassador-drawer',
+      type: 'drawer',
+      component: 'ambassador',
       position: 'right',
       size: 'xxl',
     });
@@ -347,6 +358,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openSources(); }}>
               <BookMarked size={16} />
               <span>Sources</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openAmbassador(); }}>
+              <Radio size={16} />
+              <span>Ambassador</span>
             </button>
             {authRequired && isAuthenticated && (
               <>

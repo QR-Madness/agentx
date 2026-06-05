@@ -31,6 +31,7 @@ import {
   Search,
   KeyRound,
   LogOut,
+  Radio,
 } from 'lucide-react';
 import { useModal } from '../../contexts/ModalContext';
 import { useConversation } from '../../contexts/ConversationContext';
@@ -82,6 +83,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
       { id: 'open-tools', label: 'Open Tools', icon: <Wrench size={16} />, keywords: 'toolkit mcp servers', run: open({ id: 'toolkit', type: 'modal', component: 'tools', size: 'full' }) },
       { id: 'open-memory', label: 'Open Memory', icon: <Database size={16} />, keywords: 'facts entities recall', run: open({ id: 'memory-drawer', type: 'drawer', component: 'memory', position: 'right', size: 'xxl' }) },
       { id: 'open-sources', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: 'citations bibliography references links', run: open({ id: 'sources-drawer', type: 'drawer', component: 'sources', position: 'right', size: 'xxl' }) },
+      { id: 'open-ambassador', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: 'ambassador briefing summarize interpret turn parallel', run: open({ id: 'ambassador-drawer', type: 'drawer', component: 'ambassador', position: 'right', size: 'xxl' }) },
       { id: 'open-plans', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: 'tasks subtasks progress', run: open({ id: 'plans-drawer', type: 'drawer', component: 'plans', position: 'right', size: 'xxl' }) },
       { id: 'open-translation', label: 'Open Translation', icon: <Languages size={16} />, keywords: 'translate language nllb', run: open({ id: 'translation-modal', type: 'modal', component: 'translation', size: 'lg' }) },
       { id: 'open-profile', label: 'Edit agent profile', icon: <BrainCircuit size={16} />, keywords: 'agent model temperature prompt', run: open({ id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full' }) },
