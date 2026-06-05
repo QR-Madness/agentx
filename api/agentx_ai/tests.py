@@ -3144,6 +3144,73 @@ class PlanExecutorResultTest(TestCase):
         self.assertEqual(len(pr.steers), 1)
         self.assertEqual(pr.steers[0]["content"], "do Y")
 
+    def test_execute_streaming_resume_skips_completed_subtasks(self) -> None:
+        """Resuming a partially-complete plan emits plan_resumed (not plan_start),
+        re-runs only the not-yet-terminal subtasks, and reuses the existing
+        Redis state (no fresh create)."""
+        import json as _json
+        from types import SimpleNamespace
+        from agentx_ai.agent.plan_executor import PlanExecutor, PlanResult
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+
+        # 3 subtasks; #0 already complete (as if restored by load_plan).
+        steps = [
+            Subtask(id=0, description="step 0", type=SubtaskType.GENERATION),
+            Subtask(id=1, description="step 1", type=SubtaskType.GENERATION, dependencies=[0]),
+            Subtask(id=2, description="step 2", type=SubtaskType.GENERATION, dependencies=[1]),
+        ]
+        steps[0].completed = True
+        steps[0].result = "already done"
+        plan = TaskPlan(task="t", complexity=TaskComplexity.COMPLEX, steps=steps)
+
+        agent = MagicMock()
+        agent._active_alloy_executor = None
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+
+        ran: list = []
+
+        async def fake_loop(provider, model_id, messages, tools, ag, *, result=None,
+                            task_context=None, **kw):
+            # Record which subtask ran (its description rides in task_context).
+            ran.append(task_context)
+            if result is not None:
+                result.final_content = f"out:{task_context}"
+            return
+            yield  # async generator
+
+        class _FakeProvider:
+            async def stream(self, messages, model_id, **kw):
+                yield SimpleNamespace(content="synth")
+
+        ex = PlanExecutor(agent, state)
+        events: list[str] = []
+
+        async def _drive():
+            async for ev in ex.execute_streaming(
+                plan, _FakeProvider(), "m", None, result=PlanResult(),
+                resume_plan_id="resumed-id",
+            ):
+                events.append(ev)
+
+        with patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_loop):
+            asyncio.run(_drive())
+
+        # Reused the existing state — no fresh create.
+        state.create.assert_not_called()
+        self.assertEqual(ex.plan_id, "resumed-id")
+
+        # First event is a plan_resumed snapshot, never plan_start.
+        self.assertIn("event: plan_resumed", events[0])
+        self.assertFalse(any("event: plan_start" in e for e in events))
+        # The snapshot marks #0 complete and #1/#2 pending.
+        payload = _json.loads(events[0].split("data: ", 1)[1])
+        statuses = {s["subtask_id"]: s["status"] for s in payload["subtasks"]}
+        self.assertEqual(statuses, {0: "complete", 1: "pending", 2: "pending"})
+
+        # Only the two remaining subtasks executed (in dependency order).
+        self.assertEqual(ran, ["step 1", "step 2"])
+
 
 class SubtaskGoalTrackingTest(TestCase):
     """Phase 15.7 #1 — subtask-level goal tracking.

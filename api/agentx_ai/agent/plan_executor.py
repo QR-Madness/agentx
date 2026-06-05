@@ -90,6 +90,40 @@ class PlanExecutor:
             n += 1
         return n
 
+    @staticmethod
+    def _subtask_status(step: Subtask) -> str:
+        """Derive a UI status from a subtask's terminal result sentinel.
+
+        Mirrors the snapshot statuses the chat-stream persistence uses so a
+        resumed plan renders identically to a fresh one.
+        """
+        if not step.completed:
+            return "pending"
+        result = step.result or ""
+        if result.startswith("[FAILED"):
+            return "failed"
+        if result.startswith("[SKIPPED"):
+            return "skipped"
+        if result.startswith("[ABANDONED"):
+            return "abandoned"
+        return "complete"
+
+    @classmethod
+    def _subtask_snapshot(cls, plan: TaskPlan) -> list[dict]:
+        """Render the full subtask list for a ``plan_resumed`` event so a fresh
+        client (which never saw ``plan_start``) can paint already-done steps."""
+        snapshot = []
+        for step in plan.steps:
+            result = step.result or ""
+            snapshot.append({
+                "subtask_id": step.id,
+                "description": step.description,
+                "type": step.type.value,
+                "status": cls._subtask_status(step),
+                "result_preview": result[:200] if cls._subtask_status(step) == "complete" else "",
+            })
+        return snapshot
+
     # ------------------------------------------------------------------
     # Synchronous execution (for Agent.run)
     # ------------------------------------------------------------------
@@ -175,6 +209,7 @@ class PlanExecutor:
         max_context_tokens: int = 100000,
         conversation_context: Optional[list[Message]] = None,
         result: Optional[PlanResult] = None,
+        resume_plan_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Execute a plan as an async generator, yielding SSE event strings.
@@ -183,27 +218,47 @@ class PlanExecutor:
         reads the run's outputs off the ``result`` it passed in (a ``PlanResult``;
         one is created internally if omitted).
 
+        When ``resume_plan_id`` is set, the plan is assumed to be one rebuilt by
+        ``PlanStateStore.load_plan`` (terminal subtasks already marked complete).
+        Resumption reuses the existing Redis state (no fresh ``create``), emits a
+        ``plan_resumed`` snapshot instead of ``plan_start``, then runs the same
+        loop — which naturally skips completed subtasks and continues from the
+        first non-terminal one, so no completed work is replayed.
+
         Yields:
-            SSE-formatted event strings (plan_start, subtask_start, chunk,
-            tool_call, tool_result, subtask_complete, subtask_failed,
+            SSE-formatted event strings (plan_start | plan_resumed, subtask_start,
+            chunk, tool_call, tool_result, subtask_complete, subtask_failed,
             plan_complete)
         """
         self.conversation_context = conversation_context or []
-        plan_id = uuid4().hex[:8]
+        resuming = resume_plan_id is not None
+        plan_id = resume_plan_id if resuming else uuid4().hex[:8]
         self.plan_id = plan_id
         start_time = time.time()
-        self.state.create(plan_id, plan)
+        if not resuming:
+            self.state.create(plan_id, plan)
 
         # Single caller-owned outputs object (full_content, tools, tokens, steers).
         self._result = result if result is not None else PlanResult()
         self._result.plan_id = plan_id
 
-        yield _sse("plan_start", {
-            "plan_id": plan_id,
-            "task": plan.task[:200],
-            "subtask_count": len(plan.steps),
-            "complexity": plan.complexity.value,
-        })
+        if resuming:
+            yield _sse("plan_resumed", {
+                "plan_id": plan_id,
+                "task": plan.task[:200],
+                "subtask_count": len(plan.steps),
+                "complexity": plan.complexity.value,
+                "completed_count": self._completed_count(plan),
+                "progress": plan.get_progress(),
+                "subtasks": self._subtask_snapshot(plan),
+            })
+        else:
+            yield _sse("plan_start", {
+                "plan_id": plan_id,
+                "task": plan.task[:200],
+                "subtask_count": len(plan.steps),
+                "complexity": plan.complexity.value,
+            })
 
         cancelled = False
         while not plan.is_complete():
