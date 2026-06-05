@@ -255,10 +255,15 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          # Publish ONLY :latest — each image is ~4GB, so we don't keep per-version
-          # tags accumulating. Version provenance lives in the OCI labels below + the
-          # GitHub Release tag. The prune step keeps the repo at a single tag.
+          # Publish ONLY :latest — each image is ~4GB, so we don't accumulate a
+          # per-version tag every release. Version provenance lives in the OCI labels
+          # below + the GitHub Release tag.
           tags: ${{ env.IMAGE }}:latest
+          # Single-arch single-manifest push. Disabling provenance/SBOM attestations
+          # avoids the extra attestation manifest that Docker Hub intermittently 400s
+          # on for large images (and drops the *.dockerbuild build-record artifact).
+          provenance: false
+          sbom: false
           labels: |
             org.opencontainers.image.title=AgentX API
             org.opencontainers.image.version=${{ inputs.version }}
