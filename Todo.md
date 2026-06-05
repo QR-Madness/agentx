@@ -314,6 +314,28 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       with SHA-256 checksums, supported-server notes (protocol/min-client/api version from
       `versions.yaml`), and the installers attached. Download links on `deployment/self-hosting`.
 - [ ] Shared-infra local clusters (one DB stack, namespaced) — deferred per the isolation-axis design.
+- [ ] **Cloudflare gateway for isolated clusters** — the gateway overlay (Nginx + cloudflared tunnel,
+      `docker-compose.gateway.yml` + `clusters/template/cloudflared/config.yml.example`) is wired only
+      for **local** clusters (`cluster:up` includes it when `nginx.conf` exists; documented in
+      `deployment/clusters`). The **isolated** bundle (`task deploy:bundle` → ships only
+      `docker-compose.yml` + `docker-compose.gpu.yml`) has **no** gateway/cloudflared option, and
+      `deploy/.env.example`/README never mention public exposure — yet isolated is the production path.
+      Decide: ship a `docker-compose.gateway.yml` + a `cloudflared/config.yml.example` in the bundle
+      (image-based, no `build.yml` overlay) and document `AGENTX_PUBLIC_HOST`/`AGENTX_GATEWAY_TOKEN`
+      in `deployment/self-hosting`, or explicitly state isolated = bring-your-own-reverse-proxy.
+- [ ] **cloudflared SSE/streaming timeout** — in `clusters/template/cloudflared/config.yml.example`
+      the comment credits `noHappyEyeballs: true` with holding streaming (chat SSE) connections open
+      past ~100s, but that flag is IPv4/IPv6 connection racing, not a response/idle timeout. Verify
+      long SSE streams actually survive the tunnel + nginx; if they get cut, set the real knobs
+      (nginx `proxy_read_timeout`/buffering off for SSE; confirm cloudflared has no hard cap) and fix
+      the misleading comment.
+- [ ] **Isolated-deploy doc accuracy** (from the v0.21.31 isolated-cluster smoke test):
+      - `deploy/README.md` + `deploy/dockerhub-overview.md` say first boot downloads "~5 GB" of
+        models; observed it's really ~2.3 GB (the `BAAI/bge-m3` embedding model) — translation
+        (`NLLB`) is **lazy** (`/api/health` showed `translation: not_loaded`). Correct the figure.
+      - Add a note that **Docker Desktop** only bind-mounts host-shared paths, so the bundle must be
+        unpacked under a shared dir (e.g. `$HOME`, not `/tmp`) or `compose up` fails with
+        "mounts denied". (Native docker engine is unaffected.)
 
 ---
 
