@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # AgentX API Server Dockerfile
 # Build: docker build -t agentx-api .
 # Run: docker run -p 12319:12319 --env-file .env agentx-api
@@ -6,44 +7,35 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# System dependencies (curl is used by the healthcheck).
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for Python package management
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# uv for Python package management — pinned official binary (reproducible, and
+# faster/less flaky than piping the install script through curl).
+COPY --from=ghcr.io/astral-sh/uv:0.9.11 /uv /uvx /bin/
 
-# Copy dependency files first for better caching
+# Node + npx (needed for local/stdio MCP tool servers) straight from the official
+# image — pinned and self-contained, no nvm download/cache cruft in the layer.
+COPY --from=node:24.15.0-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24.15.0-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node -v && npm -v && npx -v
+
+# uv install behavior: compile bytecode for faster cold starts; copy (not hardlink)
+# out of the cache mount since it lives on a different filesystem.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# Dependency layer first for caching. The (large) uv download cache rides a
+# BuildKit cache mount, so it speeds rebuilds without bloating the image layer.
 COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
-# Install nvm, node + npm (npx needed for local MCP tools) - Reference: https://nodejs.org/en/download
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-
-# Install specific Node version (MUST BE SPECIFIC to target node directory on the path)
-ENV NODE_VERSION=24.15.0
-ENV NVM_DIR=/root/.nvm
-
-RUN chmod +x "$HOME/.nvm/nvm.sh"
-RUN \. $NVM_DIR/nvm.sh \
-    && nvm install $NODE_VERSION \
-    && nvm alias default $NODE_VERSION \
-    && nvm use default
-
-# Add Node's bin to PATH
-ENV NODE_PATH=$NVM_DIR/v$NODE_VERSION/lib/node_modules
-ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
-
-# Validate installations
-RUN node -v
-RUN npm -v
-RUN npx -v
-
-# LONG STEP - 5-15 mins - Install Python dependencies (production only)
-RUN uv sync --frozen --no-dev
-
-# Copy application code
+# Copy application code.
 # Preserve api/ structure so versions.yaml path calculation works.
 # api/defaults/ rides along here and is the seed source for the entrypoint.
 COPY api/ ./api/
@@ -67,8 +59,10 @@ ENV PYTHONPATH=/app/api
 # Expose API port
 EXPOSE 12319
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check. First boot eagerly loads the embedding + translation models
+# (several GB), so give startup a long grace period before marking the container
+# unhealthy — compose `depends_on: condition: service_healthy` waits on this.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=5 \
     CMD curl -f http://localhost:12319/api/health || exit 1
 
 # Self-init entrypoint runs first (seed config + migrate + schema init), then

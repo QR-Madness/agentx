@@ -19,8 +19,6 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
-- **One-click releases.** Desktop installers and the API Docker image now build and
-  publish from a single GitHub Action, with release notes authored in-repo.
 - **Unified model picker.** Memory, planner, and prompt-enhancement settings now use
   the same full filterable model picker as the agent-profile editor (provider and
   capability filters, search, context/pricing metadata) — the old inline dropdown
