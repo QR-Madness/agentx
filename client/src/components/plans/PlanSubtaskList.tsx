@@ -25,14 +25,19 @@ export const STATUS_ICONS: Record<PlanSubtask['status'], typeof Circle> = {
 export function SubtaskItem({
   subtask,
   emphasized,
+  as = 'li',
 }: {
   subtask: PlanSubtask;
   emphasized?: boolean;
+  /** Element to render as. Use 'div' when nesting inside another <li> (e.g. the
+   *  drawer's jump-wrapper) to avoid invalid <li>-in-<li> DOM nesting. */
+  as?: 'li' | 'div';
 }) {
   const Icon = STATUS_ICONS[subtask.status];
+  const El = as;
 
   return (
-    <li className={`subtask-item ${subtask.status}${emphasized ? ' current' : ''}`}>
+    <El className={`subtask-item ${subtask.status}${emphasized ? ' current' : ''}`}>
       <span className={`subtask-status-icon ${subtask.status}`}>
         <Icon size={14} />
       </span>
@@ -48,7 +53,7 @@ export function SubtaskItem({
           <div className="subtask-error">{subtask.error}</div>
         )}
       </div>
-    </li>
+    </El>
   );
 }
 

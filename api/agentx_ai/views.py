@@ -1276,9 +1276,13 @@ async def agent_chat_stream(request):
             except Exception as bh_err:
                 logger.debug(f"Token budget header skipped: {bh_err}")
 
-            # Send start event with enhanced metadata
+            # Send start event with enhanced metadata. Includes session_id so the
+            # client can persist it on the tab at turn *start* (not just on done)
+            # — otherwise a first-turn plan that's cancelled/interrupted mid-run
+            # has no session id to target cancel/resume against.
             start_data = {
                 'task_id': task_id,
+                'session_id': conv_id,
                 'model': model_id,
                 'model_display_name': model_id,
                 'profile_name': prompt_profile_name,

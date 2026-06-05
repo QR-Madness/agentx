@@ -12,6 +12,7 @@ import type { ExhibitWire } from '../exhibits';
 export interface StreamCallbacks {
   onStart?: (data: {
     task_id: string;
+    session_id?: string;
     model: string;
     model_display_name?: string;
     profile_name?: string;

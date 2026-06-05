@@ -116,7 +116,7 @@ function PlanBlock({
                   onClick={() => onJump({ tabId: plan.tabId, planId: plan.planId, subtaskId: s.subtaskId })}
                   title="Jump to this step in the conversation"
                 >
-                  <SubtaskItem subtask={s} emphasized={s.status === 'running'} />
+                  <SubtaskItem subtask={s} emphasized={s.status === 'running'} as="div" />
                   <CornerDownRight className="plan-step-jump-icon" size={12} />
                 </li>
               ))}
@@ -205,7 +205,23 @@ export function PlansPanel() {
           if (!res.found) return settle('stale');
           if (res.status === 'complete') return settle('completed', res.completed_count);
           if (res.status === 'cancelled') return settle('cancelled', res.completed_count);
-          // "active" with no live stream means the run was interrupted.
+          if (res.resumable) {
+            // Interrupted but resumable — keep it 'running' so the in-conversation
+            // Resume affordance stays available; just refresh progress. (Flipping
+            // it to cancelled/stale here is what made Resume disappear.)
+            if (tab) {
+              updateTab(rec.tabId, {
+                messages: tab.messages.map((m: ConversationMessage) =>
+                  m.type === 'plan_execution' && m.planId === rec.planId
+                    ? { ...m, completedCount: res.completed_count ?? m.completedCount }
+                    : m,
+                ),
+              });
+            }
+            upsertPlan({ ...rec, status: 'running', completedCount: res.completed_count ?? rec.completedCount });
+            return;
+          }
+          // "active" but not resumable (expired snapshot) — the run is dead.
           settle('stale', res.completed_count);
         })
         .catch(() => settle('stale'));

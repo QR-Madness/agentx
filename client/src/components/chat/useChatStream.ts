@@ -177,6 +177,13 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         optsRef.current.onRunChanged?.(data.run_id);
       },
 
+      onStart: (data) => {
+        // Persist the session id on the tab at turn *start* (not just on done),
+        // so a plan cancelled/interrupted mid-run still has a session to target
+        // cancel/resume against — critical on a brand-new conversation's first turn.
+        if (data.session_id) optsRef.current.onSessionId?.(data.session_id);
+      },
+
       onRunMissing: () => {
         // The run buffer expired (or was orphaned) — let the caller restore
         // from server history instead of replaying.
