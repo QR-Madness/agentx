@@ -103,14 +103,22 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       `on_goal_complete` → `MemoryRecorder.complete_goal`) on complete/fail/abandon.
       Certified by `SubtaskGoalTrackingTest`.
 - [x] Plan cancellation mid-execution — shipped. `PlanExecutor` checks `state.is_cancel_requested(plan_id)` between subtasks (`plan_executor.py:84,163`) and marks the plan `cancelled`; `POST /api/agent/plans/cancel` sets the flag.
-- [ ] Plan resumption from Redis state after disconnect — **in progress** (single-agent first).
-      Slices: B1 durable full-plan serialization (`Subtask`/`TaskPlan` `to_dict`/`from_dict` +
-      `PlanStateStore.create` writes a `plan_json` snapshot; `load_plan` rebuilds + overlays live
-      status), B2 `execute_streaming(resume_plan_id=…)` emitting a `plan_resumed` snapshot then
-      continuing the loop (dedup is automatic — terminal subtasks are pre-marked), B3 a
-      `POST /api/agent/plans/{plan_id}/resume` endpoint + a "Resume" affordance in `PlansPanel`,
-      B4 docs. **Alloy plan resumption is a separate follow-up** (needs `_active_alloy_executor`
-      re-attached for the per-subtask `delegate_to` injection).
+- [x] Plan resumption from Redis state after disconnect — shipped (**single-agent**). B1 durable
+      full-plan serialization (`Subtask`/`TaskPlan` `to_dict`/`from_dict`; `PlanStateStore.create`
+      writes a `plan_json` snapshot; `load_plan` rebuilds + overlays live status, `is_resumable`).
+      B2 `PlanExecutor.execute_streaming(resume_plan_id=…)` emits a `plan_resumed` snapshot then
+      continues the loop (dedup is automatic — terminal subtasks are pre-marked). B3
+      `POST /api/agent/plans/{plan_id}/resume` (rebuilds a single-agent Agent + hydrated context,
+      detached run, persists synthesis; `GET .../status` now reports `resumable`) + an
+      in-conversation "Resume plan" affordance on the plan card (`PlanExecutionBlock`, via
+      `useChatStream.resume` → `streamingApi.resumePlan`). B4 docs.
+      Covered by `PlanSerializationTest` + the resume streaming test. **Alloy plan resumption
+      remains a separate follow-up** (needs `_active_alloy_executor` re-attached for the
+      per-subtask `delegate_to` injection).
+- [ ] Alloy plan resumption — resume a workflow-scoped plan. The resume endpoint must rebuild the
+      `AlloyExecutor` (`workflow_id` from the plan/Redis) and attach it as `_active_alloy_executor`
+      so resumed subtasks keep the `delegate_to` tool; otherwise a supervisor subtask loses
+      delegation on resume. Deferred from the single-agent resume slice above.
 
 ---
 

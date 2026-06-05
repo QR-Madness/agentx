@@ -920,6 +920,11 @@ paths:
                     nullable: true
                   cancel_requested:
                     type: boolean
+                  resumable:
+                    type: boolean
+                    description: >
+                      True when the plan is active with non-terminal work left and
+                      carries a structural snapshot — POST .../resume would continue it.
                   subtasks:
                     type: array
                     items:
@@ -927,6 +932,58 @@ paths:
                       additionalProperties: true
         '400':
           description: Missing session_id
+
+  /agent/plans/{plan_id}/resume:
+    post:
+      tags: [Agent]
+      operationId: agentPlanResume
+      summary: Resume an interrupted plan
+      description: >
+        Rebuilds the plan from Redis (`PlanStateStore.load_plan`) and continues
+        executing only its not-yet-terminal subtasks, streaming Server-Sent Events
+        the same way the chat endpoint does (first event `plan_resumed`, then
+        subtask events → `plan_complete` → `done`). The run is detached
+        (survives client disconnect, re-attachable) and the final synthesis is
+        persisted as an assistant turn. Single-agent only for now (alloy plan
+        resumption is a follow-up). Returns 404 when the plan is not resumable
+        (missing, expired, or already finished).
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+                agent_profile_id:
+                  type: string
+                model:
+                  type: string
+                temperature:
+                  type: number
+                  format: float
+                use_memory:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: SSE stream of the resumed run
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing session_id or invalid JSON
+        '404':
+          description: Plan not resumable (missing, expired, or already finished)
 
   /chat/background:
     get:

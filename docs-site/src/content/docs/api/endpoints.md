@@ -464,6 +464,24 @@ GET /api/agent/plans/{plan_id}/status?session_id=<sid>
 Reads the Redis-tracked state of a plan (status, completed count, per-subtask
 state) so a client can reconcile a persisted "running" plan after a reload.
 Returns `{ "found": false }` with HTTP 200 when the state has expired (1h TTL).
+The `resumable` flag is `true` when the plan is active with non-terminal work
+left and carries a structural snapshot.
+
+### Resume Plan
+
+```
+POST /api/agent/plans/{plan_id}/resume
+```
+
+Resumes an interrupted plan. Rebuilds it from Redis (`PlanStateStore.load_plan`)
+and continues executing only its not-yet-terminal subtasks, streaming SSE the
+same way the chat endpoint does (first event `plan_resumed`, then subtask events
+→ `plan_complete` → `done`). The run is detached (survives client disconnect)
+and the synthesis is persisted as an assistant turn. Single-agent only for now
+(alloy plan resumption is a follow-up). Returns `404` when the plan is not
+resumable (missing, expired, or already finished).
+
+Body: `{ "session_id": str, "agent_profile_id"?: str, "model"?: str, "temperature"?: number, "use_memory"?: bool }`
 
 ---
 
