@@ -13,16 +13,19 @@ import { api } from '../../../lib/api';
 import type { AgentProfile } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Button, SectionHeader } from '../../ui';
+import { ModelPickerField } from '../../common/ModelPickerField';
 
 interface AmbassadorSettings {
   enabled: boolean;
-  profile_id: string; // '' = use the default agent profile
+  profile_id: string; // '' = use the default agent profile (persona)
+  model: string; // '' = use the profile's model / floor
   max_context_turns: number;
 }
 
 const DEFAULT_SETTINGS: AmbassadorSettings = {
   enabled: true,
   profile_id: '',
+  model: '',
   max_context_turns: 8,
 };
 
@@ -47,10 +50,12 @@ export default function AmbassadorSection() {
       setProfiles(profileRes.profiles);
       const a = (config.ambassador || {}) as Partial<AmbassadorSettings> & {
         profile_id?: string | null;
+        model?: string | null;
       };
       setSettings({
         enabled: a.enabled ?? true,
         profile_id: a.profile_id || '',
+        model: a.model || '',
         max_context_turns: a.max_context_turns ?? 8,
       });
     } catch (error) {
@@ -66,8 +71,9 @@ export default function AmbassadorSection() {
       await api.updateConfig({
         ambassador: {
           enabled: settings.enabled,
-          // Empty → null so the backend falls back to the default agent profile.
+          // Empty → null so the backend falls back to the default agent profile / model floor.
           profile_id: settings.profile_id.trim() ? settings.profile_id : null,
+          model: settings.model.trim() ? settings.model : null,
           max_context_turns: settings.max_context_turns,
         },
       });
@@ -132,6 +138,15 @@ export default function AmbassadorSection() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="setting-row">
+            <ModelPickerField
+              label="Ambassador Model"
+              value={settings.model}
+              onChange={(modelId) => setSettings((prev) => ({ ...prev, model: modelId }))}
+              showDefault={true}
+            />
           </div>
 
           <div className="setting-row">

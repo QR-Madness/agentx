@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 # Rough token budget per grounding turn (mirrors conversation_history estimates).
 _TOKENS_PER_TURN = 400
 
+# Built-in model floor — used only when neither the settings override nor the
+# chosen profile specify a model. resolve_with_fallback degrades from here.
+_DEFAULT_MODEL = "anthropic:claude-haiku-4-5-20251001"
+
 _DEFAULT_PERSONA = (
     "You are an Ambassador: a dedicated interpreter standing beside the user, "
     "briefing them on a single turn of a conversation they are observing. You are "
@@ -87,6 +91,7 @@ class AmbassadorService:
         return {
             "enabled": config.get("ambassador.enabled", True),
             "profile_id": config.get("ambassador.profile_id", None),
+            "model": config.get("ambassador.model") or None,
             "max_context_turns": config.get("ambassador.max_context_turns", 8),
             "max_tokens": config.get("ambassador.max_tokens", 600),
         }
@@ -181,12 +186,17 @@ class AmbassadorService:
             return
 
         profile = self._resolve_profile(cfg["profile_id"])
-        model = getattr(profile, "default_model", None) if profile else None
+        # Precedence: the explicit settings model (Settings → Ambassador) wins;
+        # else the chosen profile's model; else the built-in floor.
+        profile_model = getattr(profile, "default_model", None) if profile else None
+        model = cfg["model"] or profile_model or _DEFAULT_MODEL
         temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
 
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(model)
-        except ValueError as e:
+            provider, model_id, _ = self.registry.resolve_with_fallback(
+                model, preferred_fallback=_DEFAULT_MODEL
+            )
+        except Exception as e:  # noqa: BLE001 — any resolution failure degrades gracefully
             logger.warning(f"Ambassador provider unavailable: {e}")
             note = "No model provider is configured for the ambassador."
             store.set_summary(conversation_id, message_id, note, status="empty_provider")

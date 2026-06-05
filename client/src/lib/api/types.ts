@@ -647,6 +647,7 @@ export interface ConfigUpdate {
   ambassador?: {
     enabled?: boolean;
     profile_id?: string | null;
+    model?: string | null;
     max_context_turns?: number;
     max_tokens?: number;
   };

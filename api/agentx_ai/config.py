@@ -168,6 +168,9 @@ DEFAULT_CONFIG = {
         # Global default ambassador profile id. None ⇒ fall back to the default
         # agent profile. (An ambassador is any profile with an `ambassador` section.)
         "profile_id": None,
+        # Explicit ambassador model override (authoritative when set). None ⇒ use
+        # the chosen profile's model, else a built-in floor. Set via Settings → Ambassador.
+        "model": None,
         # How many recent user/assistant turns to read (read-only) for grounding.
         "max_context_turns": 8,
         "max_tokens": 600,

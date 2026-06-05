@@ -5225,6 +5225,18 @@ def config_update(request):
         config.set(f"alloy.{key}", value)
         updated_keys.append(f"alloy.{key}")
 
+    # Update Ambassador settings (16.6). profile_id/model accept explicit None
+    # (means "fall back to the default profile / model floor").
+    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens")
+    ambassador_settings = data.get("ambassador", {})
+    for key, value in ambassador_settings.items():
+        if key not in _AMBASSADOR_KEYS:
+            continue
+        if value is None and key not in ("profile_id", "model"):
+            continue
+        config.set(f"ambassador.{key}", value)
+        updated_keys.append(f"ambassador.{key}")
+
     # Persist to disk
     if not config.save():
         return JsonResponse({
