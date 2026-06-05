@@ -228,6 +228,8 @@ export interface PlanStatusResponse {
   // True when the plan is active with non-terminal work left and carries a
   // structural snapshot — i.e. POST .../resume would actually continue it.
   resumable?: boolean;
+  // Seconds until the Redis snapshot expires (how long it stays resumable).
+  ttl_seconds?: number | null;
   subtasks?: PlanStatusSubtask[];
 }
 

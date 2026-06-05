@@ -21,7 +21,6 @@ interface MessageBubbleProps {
   onRegenerate?: () => void;
   onEdit?: (content: string) => void;
   onSubmitChoice?: (value: string, messageId: string) => void;
-  onResumePlan?: (planId: string) => void;
   busy?: boolean;
 }
 

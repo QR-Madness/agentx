@@ -2014,6 +2014,8 @@ def agent_plan_status(request, plan_id):
         # True when the plan is active with non-terminal work left and carries a
         # structural snapshot — i.e. POST .../resume would actually continue it.
         "resumable": store.is_resumable(plan_id),
+        # Seconds until the Redis snapshot expires (how long it stays resumable).
+        "ttl_seconds": store.get_ttl(plan_id),
         "subtasks": [subtasks[k] for k in sorted(subtasks)],
     })
 

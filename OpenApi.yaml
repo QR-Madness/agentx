@@ -925,6 +925,12 @@ paths:
                     description: >
                       True when the plan is active with non-terminal work left and
                       carries a structural snapshot — POST .../resume would continue it.
+                  ttl_seconds:
+                    type: integer
+                    nullable: true
+                    description: >
+                      Seconds until the Redis snapshot expires (how long it stays
+                      resumable); null when the key is missing or has no expiry.
                   subtasks:
                     type: array
                     items:

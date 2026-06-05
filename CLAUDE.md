@@ -248,7 +248,7 @@ Additional endpoint groups (added since v0.18 — see `urls.py` for the full set
 | `/api/prompts/templates*`, `/api/prompts/enhance` | GET/POST/PUT/DELETE | Prompt template CRUD + LLM prompt enhancer |
 | `/api/conversations`, `/api/conversations/{id}/messages` | GET | Conversation history |
 | `/api/agent/plans/cancel` | POST | Cancel active plan execution |
-| `/api/agent/plans/{plan_id}/status` | GET | Read Redis-tracked plan state (`?session_id=`); `{found:false}` on TTL expiry; `resumable` flags an interrupted plan with work left |
+| `/api/agent/plans/{plan_id}/status` | GET | Read Redis-tracked plan state (`?session_id=`); `{found:false}` on TTL expiry; `resumable` flags an interrupted plan with work left; `ttl_seconds` = how long the snapshot stays resumable. On conversation load the client auto-appends a `choice` exhibit (`exh_resume_{plan_id}`, shows the remaining lifetime) that **nudges the model** to continue the interrupted plan (a normal turn with the done/remaining steps — not a `PlanExecutor` re-run) |
 | `/api/agent/plans/{plan_id}/resume` | POST | Resume an interrupted plan (`{session_id, agent_profile_id?, model?}`): rebuilds the plan from Redis (`PlanStateStore.load_plan`) and streams only its not-yet-terminal subtasks (SSE, first event `plan_resumed`) as a detached run; persists the synthesis (no duplicate user turn). Single-agent only (alloy resume deferred); 404 when not resumable |
 
 ## Environment Configuration

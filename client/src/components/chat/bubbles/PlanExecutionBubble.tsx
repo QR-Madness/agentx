@@ -1,10 +1,7 @@
 import { PlanExecutionBlock } from '../PlanExecutionBlock';
 import type { BubbleProps } from './types';
 
-export function PlanExecutionBubble({ message, onResumePlan, busy }: BubbleProps<'plan_execution'>) {
-  // An interrupted plan (persisted 'running' but no live stream) can be
-  // resumed; suppress while another turn is streaming.
-  const canResume = message.status === 'running' && !busy;
+export function PlanExecutionBubble({ message, busy }: BubbleProps<'plan_execution'>) {
   // Only animate the running spinner while this plan is actually streaming.
   const live = message.status === 'running' && !!busy;
   return (
@@ -18,8 +15,6 @@ export function PlanExecutionBubble({ message, onResumePlan, busy }: BubbleProps
         subtasks={message.subtasks}
         totalTimeMs={message.totalTimeMs}
         completedCount={message.completedCount}
-        onResume={onResumePlan}
-        canResume={canResume}
         live={live}
       />
     </div>

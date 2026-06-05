@@ -181,6 +181,20 @@ class PlanStateStore:
         plan = self.load_plan(plan_id)
         return plan is not None and not plan.is_complete()
 
+    def get_ttl(self, plan_id: str) -> Optional[int]:
+        """Remaining time-to-live (seconds) for the plan's Redis key.
+
+        Returns the seconds until the snapshot expires (how long it stays
+        resumable), or ``None`` when the key is missing or has no expiry.
+        """
+        try:
+            client = _get_redis_client()
+            ttl = client.ttl(self._key(plan_id))
+            return int(ttl) if ttl is not None and ttl >= 0 else None
+        except Exception as e:
+            logger.warning(f"Failed to read TTL for plan {plan_id}: {e}")
+            return None
+
     def mark_complete(self, plan_id: str, status: str = "complete") -> None:
         """Mark plan as complete or failed."""
         try:

@@ -39,10 +39,22 @@ import { getActiveMention, applyMention, extractMentionedAgentIds } from '../../
 import { MentionAutocomplete } from './MentionAutocomplete';
 import {
   type UserMessage,
-  type ConversationMessage,
+  type PlanExecutionMessage,
+  type ExhibitMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
+import type { Exhibit } from '../../lib/exhibits';
+import {
+  RESUME_CONFIRM,
+  RESUME_DISMISS,
+  resumeExhibitId,
+  isResumeExhibitId,
+  planIdFromResumeExhibit,
+  buildResumeNudge,
+  expiryLabel,
+  ttlPhrase,
+} from '../../lib/planResume';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
 import { latestRun } from '../../lib/alloyTrace';
@@ -361,6 +373,40 @@ export function ChatPanel() {
   const submitChoice = useCallback(
     (value: string, messageId: string) => {
       if (!activeTab || isTyping) return;
+
+      // Resume-plan exhibit: "Dismiss" just resolves the card; "Resume plan"
+      // re-checks Redis, then nudges the model with the done/remaining steps
+      // (no PlanExecutor re-run — the agent continues the work itself).
+      const src = activeTab.messages.find(m => m.id === messageId);
+      if (src?.type === 'exhibit' && isResumeExhibitId(src.exhibit.id)) {
+        updateMessage(messageId, { answeredValue: value });
+        if (value === RESUME_DISMISS || !activeTab.sessionId) return;
+        const planId = planIdFromResumeExhibit(src.exhibit.id);
+        const sessionId = activeTab.sessionId;
+        api.getPlanStatus(planId, sessionId)
+          .then(res => {
+            if (!res.found || !res.resumable) {
+              notifyError('That plan can no longer be resumed (it expired or finished).');
+              return;
+            }
+            const nudge = buildResumeNudge(res);
+            appendMessage({
+              id: createMessageId(), type: 'user', content: nudge,
+              timestamp: new Date().toISOString(),
+            });
+            stream.send({
+              message: nudge,
+              session_id: sessionId,
+              agent_profile_id: tabProfile?.id,
+              model: activeTab.modelOverride || undefined,
+              use_memory: useMemory,
+              workflow_id: activeTab.workflowId || undefined,
+            });
+          })
+          .catch(() => notifyError('Could not check the plan status.'));
+        return;
+      }
+
       const userMessage: UserMessage = {
         id: createMessageId(),
         type: 'user',
@@ -378,30 +424,7 @@ export function ChatPanel() {
         workflow_id: activeTab.workflowId || undefined,
       });
     },
-    [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send],
-  );
-
-  // Resume an interrupted plan from its in-conversation card. Needs the tab's
-  // session (the plan state is keyed by it); no-op while a turn is streaming.
-  const handleResumePlan = useCallback(
-    (planId: string) => {
-      if (!activeTab?.sessionId || isTyping) return;
-      // Drop the stale interrupted card for this plan so the resumed run's fresh
-      // snapshot card replaces it (the `plan_resumed` event paints completed +
-      // pending steps) instead of stacking a duplicate beside the old "0/N" one.
-      updateTab(activeTab.id, {
-        messages: activeTab.messages.filter(
-          (m: ConversationMessage) => !(m.type === 'plan_execution' && m.planId === planId),
-        ),
-      });
-      stream.resume(planId, {
-        session_id: activeTab.sessionId,
-        agent_profile_id: tabProfile?.id,
-        model: activeTab.modelOverride || undefined,
-        use_memory: useMemory,
-      });
-    },
-    [activeTab, isTyping, tabProfile?.id, useMemory, stream.resume, updateTab],
+    [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send, notifyError],
   );
 
   const handleSendBackground = async () => {
@@ -556,6 +579,59 @@ export function ChatPanel() {
     return () => window.removeEventListener('agentx:jump-to-step', handler);
   }, [activeTabId]);
 
+  // Auto-offer to resume an interrupted plan: when this conversation has a plan
+  // card still 'running' whose Redis snapshot is still resumable, append a
+  // one-time `choice` exhibit (id exh_resume_{planId}) nudging the user to
+  // continue it. The exhibit itself (persisted, possibly answered) is the dedupe
+  // — once offered it's never re-added.
+  const resumeCheckedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const tab = activeTab;
+    if (!tab?.sessionId || isTyping) return;
+    const candidatePlanIds = Array.from(new Set(
+      tab.messages
+        .filter((m): m is PlanExecutionMessage => m.type === 'plan_execution' && m.status === 'running')
+        .map(m => m.planId),
+    ));
+    for (const planId of candidatePlanIds) {
+      const key = `${tab.id}:${planId}`;
+      if (resumeCheckedRef.current.has(key)) continue;
+      const alreadyOffered = tab.messages.some(
+        m => m.type === 'exhibit' && m.exhibit.id === resumeExhibitId(planId),
+      );
+      resumeCheckedRef.current.add(key);
+      if (alreadyOffered) continue;
+      api.getPlanStatus(planId, tab.sessionId)
+        .then(res => {
+          if (!res.found || !res.resumable) return;
+          const total = res.subtask_count ?? res.subtasks?.length ?? 0;
+          const done = res.completed_count ?? 0;
+          const until = expiryLabel(res.ttl_seconds);
+          const phrase = ttlPhrase(res.ttl_seconds);
+          const lifetime = until ? ` It stays resumable for ${phrase} (until ${until}).` : '';
+          const exhibit: Exhibit = {
+            schemaVersion: 1,
+            id: resumeExhibitId(planId),
+            title: 'Interrupted plan',
+            layout: 'stack',
+            elements: [{
+              type: 'choice',
+              title: 'Interrupted plan',
+              prompt: `An earlier plan was interrupted (${done}/${total} steps done).${lifetime} Resume it?`,
+              options: [RESUME_CONFIRM, RESUME_DISMISS],
+            }],
+          };
+          const msg: ExhibitMessage = {
+            id: createMessageId(), type: 'exhibit',
+            timestamp: new Date().toISOString(), exhibit,
+          };
+          appendMessage(msg);
+        })
+        .catch(() => { /* best-effort nudge */ });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.id, activeTab?.sessionId, activeTab?.messages, isTyping]);
+
   if (!activeTab) {
     return (
       <div className="chat-panel-empty">
@@ -652,7 +728,7 @@ export function ChatPanel() {
           if (message.type === 'plan_execution') {
             return (
               <div key={message.id} data-plan-anchor={message.planId}>
-                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} onResumePlan={handleResumePlan} />
+                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
               </div>
             );
           }
