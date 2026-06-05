@@ -255,9 +255,10 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ inputs.version }}
-            ${{ env.IMAGE }}:latest
+          # Publish ONLY :latest — each image is ~4GB, so we don't keep per-version
+          # tags accumulating. Version provenance lives in the OCI labels below + the
+          # GitHub Release tag. The prune step keeps the repo at a single tag.
+          tags: ${{ env.IMAGE }}:latest
           labels: |
             org.opencontainers.image.title=AgentX API
             org.opencontainers.image.version=${{ inputs.version }}
@@ -266,9 +267,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Note: the Docker Hub repo overview/description is maintained manually from
-      # deploy/dockerhub-overview.md — the description API needs a privileged token
-      # (account password / scoped PAT) that the push token doesn't carry.
+      - name: Sync Docker Hub repo overview
+        # Bakes deploy/dockerhub-overview.md into the repo's Docker Hub overview.
+        # Needs DOCKERHUB_TOKEN to be a Read/Write/Delete PAT. Non-fatal: a cosmetic
+        # overview sync should never block a release.
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          readme-filepath: ./deploy/dockerhub-overview.md
+          short-description: "AgentX API — AI agent platform server (MCP, reasoning, layered memory)"
 
   release:
     needs: [build-client, publish-api]
@@ -380,10 +390,10 @@ jobs:
             echo "### Docker image (API server)"
             echo ""
             echo '```bash'
-            echo "docker pull ${IMAGE}:${VERSION}"
+            echo "docker pull ${IMAGE}:latest"
             echo '```'
             echo ""
-            echo "Published to Docker Hub as \`${IMAGE}:${VERSION}\` and \`${IMAGE}:latest\` (linux/amd64)."
+            echo "Published to Docker Hub as \`${IMAGE}:latest\` (linux/amd64) — this release is v${VERSION} (see the image's \`org.opencontainers.image.version\` label). The repo is kept to a single \`latest\` tag to stay storage-lean."
             echo ""
             echo "### SHA-256 checksums"
             echo ""
