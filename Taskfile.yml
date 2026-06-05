@@ -391,6 +391,14 @@ tasks:
     cmds:
       - uv run python api/manage.py distill_procedures
 
+  plan:inspect:
+    desc: "Inspect a plan's Redis state + the session's conversation_logs rows (restore/resume debugging). e.g. task plan:inspect -- <session_id> <plan_id>"
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py plan_inspect {{.CLI_ARGS}}
+
   memory:export:
     desc: "Export agent memory to a round-trippable JSON file. Pass --channel/--output/--no-embeddings via CLI_ARGS."
     deps: [db:up]

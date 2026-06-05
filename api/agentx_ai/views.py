@@ -1428,9 +1428,35 @@ async def agent_chat_stream(request):
                         )
                         if asst is not None:
                             turns.append(asst)
+                        # Persist each turn independently and durably. `store_turn`
+                        # embeds, then writes Neo4j→PG, re-raising on ANY failure —
+                        # so a single failing shared resource (the embedder, or
+                        # Neo4j) drops the PostgreSQL `conversation_logs` row that
+                        # restore reads, leaving the conversation un-openable (404).
+                        # On failure, fall back to writing the conversation_logs row
+                        # directly (no embedding/graph needed) so restore always has
+                        # the user + assistant turns. Isolate failures per turn.
+                        stored = 0
                         for t in turns:
-                            mem.store_turn(t)
-                        logger.debug(f"Stored {len(turns)} turns in memory for conversation {conv_id}")
+                            try:
+                                mem.store_turn(t)
+                                stored += 1
+                            except Exception as turn_err:
+                                logger.warning(
+                                    "store_turn failed for %s turn (idx %s) in %s: %s; "
+                                    "falling back to direct conversation_logs write",
+                                    t.role, t.index, conv_id, turn_err,
+                                )
+                                try:
+                                    mem.episodic.store_turn_log(t, channel=mem.channel)
+                                    stored += 1
+                                except Exception as log_err:
+                                    logger.error(
+                                        "Durable conversation_logs write also failed for "
+                                        "%s turn (idx %s) in %s: %s",
+                                        t.role, t.index, conv_id, log_err,
+                                    )
+                        logger.debug(f"Stored {stored}/{len(turns)} turns in memory for conversation {conv_id}")
 
                         # Procedural memory — encode loop (Slice 0): stage the
                         # highest-signal candidates from this turn. Corrections

@@ -112,7 +112,13 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       // Render whatever was persisted, even if empty — silently dropping
       // legacy rows hides messages from conversations stored before the
       // write-side empty-skip landed. New empty rows are blocked at
-      // _store_turns() time.
+      // _store_turns() time. Exception: when this turn carried a plan card
+      // (above) AND has no text (an interrupted plan stopped before synthesis),
+      // skip the trailing assistant bubble so we don't render an empty bubble
+      // under the card — the plan card already represents the turn.
+      if (planMeta?.plan_id && !m.content?.trim()) {
+        continue;
+      }
       out.push({
         ...base,
         type: 'assistant',

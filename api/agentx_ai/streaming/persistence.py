@@ -133,11 +133,14 @@ def build_assistant_turn(
 
     Blank assistant rows make the final message "disappear" on conversation
     restore (e.g. a supervisor that delegated without wrap-up), so they're
-    skipped — the caller passes the already-assembled metadata dict.
+    skipped — the caller passes the already-assembled metadata dict. Exception:
+    a turn carrying a plan card (``metadata["plan"]``) is meaningful even with
+    no text (an interrupted plan stopped before synthesis), so it's kept — else
+    the card + its resume offer would be lost on restore.
     """
     from ..kit.agent_memory.models import Turn
 
-    if not content.strip():
+    if not content.strip() and not metadata.get("plan"):
         return None
     return Turn(
         id=turn_id or _turn_id(conv_id, "asst"),

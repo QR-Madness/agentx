@@ -2844,6 +2844,20 @@ class SteerPersistenceTest(TestCase):
         self.assertEqual(turn.metadata["interrupted"], True)
         self.assertEqual(turn.agent_id, "a")
 
+    def test_build_assistant_turn_keeps_blank_plan_card(self) -> None:
+        """A turn carrying a plan card is meaningful even with no text (an
+        interrupted plan stopped before synthesis); dropping it would lose the
+        card + its resume offer on restore."""
+        from agentx_ai.streaming.persistence import build_assistant_turn
+
+        plan_meta = {"plan": {"plan_id": "p1", "status": "interrupted", "subtasks": []}}
+        kept = build_assistant_turn("c", "", 4, metadata=plan_meta)
+        self.assertIsNotNone(kept)
+        self.assertEqual(kept.role, "assistant")
+        self.assertEqual(kept.metadata["plan"]["status"], "interrupted")
+        # Blank with no plan card is still skipped.
+        self.assertIsNone(build_assistant_turn("c", "", 4, metadata={"interrupted": True}))
+
     def test_build_tool_turns_roles_and_index(self) -> None:
         from agentx_ai.streaming.persistence import build_tool_turns
 

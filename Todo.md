@@ -87,14 +87,46 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       persisting nothing on the plan path). Client `mapServerMessages` trusts the persisted plan
       status (was rewriting incomplete plans to `failed`, hiding the resume offer); `interrupted`
       added across the status union + resume detection. Covered by `PlanTerminationTest`.
-- [ ] **Deferred — prompt mid-tool cancel.** Truly-instant Stop *during* a tool call needs
+- [x] **Plan conversations 404 on restore (the "first turn not persisted" bug).** `store_turn`
+      embeds then writes Neo4j→PG and **re-raises on any failure**, so one failing shared resource
+      (the embedder, or Neo4j) dropped the PostgreSQL `conversation_logs` row that restore reads —
+      leaving the conversation un-openable ("Failed to restore"). The plan-turn persist loop now
+      isolates failures **per turn** and, on `store_turn` failure, falls back to a direct
+      `conversation_logs` write (no embedding/graph needed) so restore always has the user +
+      assistant rows (`views.py::_persist_turns._run`).
+- [x] **Resume offer never appeared.** An interrupted plan that stops *before synthesis* has blank
+      assistant content, so `build_assistant_turn` dropped it (skip-empty rule) → the plan card +
+      its resume nudge were lost on restore. Now a turn carrying `metadata["plan"]` is kept even
+      when blank (`streaming/persistence.py`), and `mapServerMessages` no longer renders an empty
+      assistant bubble under the card. Covered by `build_assistant_turn` + `mapServerMessages` tests.
+- [x] **Cooperative mid-loop cancel.** `streaming_tool_loop` now takes a `cancel_check` (default:
+      the ambient run-cancel flag via `current_run_id`) checked at each round boundary and before
+      tool execution, so Stop/Cancel lands *between rounds* within a subtask, not only at subtask
+      boundaries. `PlanExecutor` passes a check that also ORs the plan-cancel flag. Purely
+      cooperative — **no `run_in_executor`/`shield`/ThreadPoolExecutor** (see below).
+- [x] **Resume context re-attachment.** Plan subtask tool calls/results aren't persisted (only the
+      synthesis is), so a plan cancelled *before synthesis* left the resuming model with just the
+      question + plan card — no view of what earlier steps produced. The resume nudge
+      (`buildResumeNudge`, `client/src/lib/planResume.ts`) now carries each completed step's
+      **result** (from the `/status` Redis snapshot, ~1500-char capped) so prior context rides into
+      the resume turn. (Durable per-step tool-turn persistence beyond Redis's 1h TTL is a separate,
+      larger follow-up — see deferred below.)
+- [ ] **Deferred — persist plan subtask tool turns.** Capture per-subtask tool calls/results,
+      aggregate them in `PlanResult`, and write them to `conversation_logs` so a restored plan shows
+      its tool cards faithfully and survives beyond the Redis TTL. (Today only the user turn + final
+      synthesis/plan-card are stored; `hydrate_session_from_history` also skips tool rows.)
+- [x] **Dev-tooling:** `task plan:inspect <session_id> [plan_id]` — dumps the Redis plan state
+      (status/subtasks/cancel/ttl/resumable) **and** the session's `conversation_logs` rows
+      (turn_index/role/content-len/has-plan), the observability that root-caused the restore bug.
+- [ ] **Deferred — prompt mid-tool cancel.** Truly-instant Stop *during* a single tool call needs
       off-thread tool execution; the first attempt (`run_in_executor` + `asyncio.shield` in
       `streaming_tool_loop`) **deadlocked `gen.aclose()`** (Stop hung, turns never persisted) and was
-      reverted (branch `feat/plan-executor-hardening`). Current behavior: Stop is cooperative and
-      lands after the current (now wall-clock-capped) tool returns. Revisit with a design that
-      doesn't block generator close, and reproduce the hang in a test *first*.
-- [ ] **Deferred dev-tooling:** `task plan:inspect <session> <plan_id>` + a shared state-machine
-      source-of-truth module (statuses + transitions) imported by executor/state-store/views/client.
+      reverted. The dead `feat/plan-executor-hardening` branch was **retired** (its only unique
+      content was that deadlocking approach + it lacked the `search.timeout` fix); rebuild from
+      scratch with a design that doesn't block generator close, and reproduce the hang in a test
+      *first*. The cooperative between-rounds check above is the salvaged-safe half.
+- [ ] **Deferred — shared plan state-machine module** (statuses + transitions) imported by
+      executor/state-store/views/client, to kill the `complete`/`completed` wire-vocab drift.
 
 ### 15.9 Main-agent plan composition — shipped
 

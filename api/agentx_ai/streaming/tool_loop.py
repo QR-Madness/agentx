@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Callable, Optional
 
 from ..providers.base import Message, MessageRole
 from .helpers import estimate_tokens, truncate_tool_messages
@@ -25,6 +25,26 @@ logger = logging.getLogger(__name__)
 def _sse(event: str, data: dict) -> str:
     """Format a Server-Sent Event string."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _ambient_cancel_check() -> bool:
+    """Resolve the current detached run and report whether it's been cancelled.
+
+    Used as the default ``cancel_check`` so every turn (not just plans) stops
+    promptly when the user hits Stop/Cancel — checked at the round boundaries
+    (existing await/yield points), so it's purely cooperative: no threads, no
+    ``asyncio.shield`` (that off-thread approach deadlocked ``gen.aclose()`` and
+    was reverted). No run in context ⇒ never cancelled.
+    """
+    try:
+        from .status import current_run_id
+        rid = current_run_id.get()
+        if not rid:
+            return False
+        from .chat_run import store
+        return store.is_cancel_requested(rid)
+    except Exception:
+        return False
 
 
 @dataclass
@@ -404,6 +424,7 @@ async def streaming_tool_loop(
     truncate_on_overflow: bool = True,
     capture_tool_turns: bool = False,
     result: Optional[ToolLoopResult] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Async generator running the streaming tool-use loop.
@@ -440,9 +461,23 @@ async def streaming_tool_loop(
     if result is None:
         result = ToolLoopResult()
 
+    # Cancellation seam: the default checks the ambient run's cancel flag (Stop);
+    # the plan executor passes a check that also ORs the plan-cancel flag. Purely
+    # cooperative — checked at round boundaries (existing await/yield points).
+    check_cancel = cancel_check or _ambient_cancel_check
+
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
         round_content = ""
+
+        # Stop promptly between rounds (before spending another model call) when
+        # the run/plan was cancelled. `return` — not `break` — so callers skip the
+        # post-loop "no tool calls" synthesis; partial content is already on
+        # `result`.
+        if check_cancel():
+            logger.info("tool loop: cancellation observed at round %d; stopping", tool_round)
+            result.final_content = round_content
+            return
 
         # Trajectory compression + truncation + high-usage warning
         if _prepare_round_context(
@@ -556,6 +591,16 @@ async def streaming_tool_loop(
             delegation_raw=delegation_raw,
         ):
             yield event_str
+
+        # Bail before running tools if cancellation arrived during the model
+        # stream / delegations — the model produced tool calls, but a cancelled
+        # run shouldn't spend (potentially slow) tool time. The provider's
+        # call→result contract is unsent here (we never emitted these as a
+        # completed round), so returning is safe.
+        if check_cancel():
+            logger.info("tool loop: cancellation observed before tools (round %d); stopping", tool_round)
+            result.final_content = round_content
+            return
 
         # Execute remaining tools (sync), emit result events, extend messages
         delegation_tool_call_ids = {tc.id for tc in delegation_calls}

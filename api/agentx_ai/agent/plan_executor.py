@@ -513,6 +513,15 @@ class PlanExecutor:
                 existing.append(delegation_tool)
             subtask_tools = existing
 
+        # Stop a subtask mid-tool-round on EITHER the plan-cancel flag (Cancel
+        # button) or the ambient run-cancel flag (Stop) — not just at subtask
+        # boundaries. Cooperative: checked between rounds inside the loop.
+        from ..streaming.tool_loop import _ambient_cancel_check
+        _plan_id = self.plan_id
+
+        def _subtask_cancel() -> bool:
+            return self.state.is_cancel_requested(_plan_id) or _ambient_cancel_check()
+
         loop_result = ToolLoopResult()
         async for event_str in streaming_tool_loop(
             provider, model_id, messages, subtask_tools, self.agent,
@@ -523,6 +532,7 @@ class PlanExecutor:
             task_context=subtask.description,
             emit_trajectory_info=False,
             result=loop_result,
+            cancel_check=_subtask_cancel,
         ):
             yield event_str
 

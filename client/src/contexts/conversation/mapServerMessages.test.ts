@@ -71,6 +71,29 @@ describe('mapServerMessages', () => {
     expect(plan).toBeTruthy();
     expect(plan.status).toBe('interrupted');
     expect(plan.planId).toBe('p1');
+    // The plan card represents the turn — no empty assistant bubble underneath it.
+    expect(out.some(m => m.type === 'assistant')).toBe(false);
+    expect(out.filter(m => m.type === 'plan_execution')).toHaveLength(1);
+  });
+
+  it('keeps the assistant bubble when a plan turn also has synthesis text', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: 'Here is the synthesis.',
+        metadata: {
+          plan: {
+            plan_id: 'p3', status: 'completed', task: 't', complexity: 'complex',
+            subtask_count: 1, completed_count: 1,
+            subtasks: [{ id: 0, description: 's0', status: 'completed' }],
+          },
+        },
+      }),
+    ]);
+    expect(out.filter(m => m.type === 'plan_execution')).toHaveLength(1);
+    const asst = out.find(m => m.type === 'assistant') as { content: string };
+    expect(asst).toBeTruthy();
+    expect(asst.content).toBe('Here is the synthesis.');
   });
 
   it('falls back to the completed/failed heuristic when a plan has no status', () => {
