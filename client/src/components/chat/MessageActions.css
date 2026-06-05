@@ -13,7 +13,7 @@
   transition: opacity 0.2s ease;
 }
 
-.message:hover .message-timestamp-hover {
+.message-bubble:hover .message-timestamp-hover {
   opacity: 1;
 }
 
@@ -24,7 +24,12 @@
   transition: opacity 0.2s ease;
 }
 
-.message:hover .message-actions {
+.message-bubble:hover .message-actions {
+  opacity: 1;
+}
+
+/* Keyboard accessibility: reveal actions when one is focused, not just on hover. */
+.message-actions:focus-within {
   opacity: 1;
 }
 
