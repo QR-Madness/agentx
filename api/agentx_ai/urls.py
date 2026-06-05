@@ -43,6 +43,7 @@ urlpatterns = [
     path("agent/status", views.agent_status, name="agent-status"),
     path("agent/plans/cancel", views.agent_plan_cancel, name="agent-plan-cancel"),
     path("agent/plans/<str:plan_id>/status", views.agent_plan_status, name="agent-plan-status"),
+    path("agent/plans/<str:plan_id>/resume", views.agent_plan_resume, name="agent-plan-resume"),
     # Tool output storage endpoints
     path("tool-outputs", views.tool_outputs_list, name="tool-outputs-list"),
     path("tool-outputs/<str:storage_key>", views.tool_outputs_detail, name="tool-outputs-detail"),

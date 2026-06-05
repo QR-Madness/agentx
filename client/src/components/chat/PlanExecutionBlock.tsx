@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  PlayCircle,
 } from 'lucide-react';
 import type { PlanSubtask } from '../../lib/messages';
 import { PlanProgressBar, SubtaskList } from '../plans/PlanSubtaskList';
@@ -22,9 +23,14 @@ export interface PlanExecutionBlockProps {
   subtasks: PlanSubtask[];
   totalTimeMs?: number;
   completedCount?: number;
+  /** When set, an interrupted plan offers a Resume action (continues remaining subtasks). */
+  onResume?: (planId: string) => void;
+  /** Whether resume is currently offered (interrupted + not mid-stream). */
+  canResume?: boolean;
 }
 
 export function PlanExecutionBlock({
+  planId,
   task,
   complexity,
   subtaskCount,
@@ -32,10 +38,13 @@ export function PlanExecutionBlock({
   subtasks,
   totalTimeMs,
   completedCount,
+  onResume,
+  canResume,
 }: PlanExecutionBlockProps) {
   const [expanded, setExpanded] = useState(true);
 
   const completed = completedCount ?? subtasks.filter(s => s.status === 'completed').length;
+  const showResume = !!(canResume && onResume);
 
   return (
     <div className="plan-execution-block">
@@ -67,6 +76,17 @@ export function PlanExecutionBlock({
           </div>
 
           <SubtaskList subtasks={subtasks} />
+
+          {showResume && (
+            <button
+              type="button"
+              className="plan-resume-btn"
+              onClick={(e) => { e.stopPropagation(); onResume!(planId); }}
+              title="Continue this plan's remaining steps"
+            >
+              <PlayCircle size={13} /> Resume plan
+            </button>
+          )}
         </div>
       )}
 

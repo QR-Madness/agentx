@@ -380,6 +380,21 @@ export function ChatPanel() {
     [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send],
   );
 
+  // Resume an interrupted plan from its in-conversation card. Needs the tab's
+  // session (the plan state is keyed by it); no-op while a turn is streaming.
+  const handleResumePlan = useCallback(
+    (planId: string) => {
+      if (!activeTab?.sessionId || isTyping) return;
+      stream.resume(planId, {
+        session_id: activeTab.sessionId,
+        agent_profile_id: tabProfile?.id,
+        model: activeTab.modelOverride || undefined,
+        use_memory: useMemory,
+      });
+    },
+    [activeTab?.sessionId, activeTab?.modelOverride, isTyping, tabProfile?.id, useMemory, stream.resume],
+  );
+
   const handleSendBackground = async () => {
     if (!input.trim() || !activeTab) return;
     const messageText = input;
@@ -628,7 +643,7 @@ export function ChatPanel() {
           if (message.type === 'plan_execution') {
             return (
               <div key={message.id} data-plan-anchor={message.planId}>
-                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
+                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} onResumePlan={handleResumePlan} />
               </div>
             );
           }

@@ -108,6 +108,47 @@ class PlanExecutor:
             return "abandoned"
         return "complete"
 
+    @staticmethod
+    def _resume_plan_summary(plan: TaskPlan, plan_id: str) -> dict:
+        """Build the durable plan-card metadata for a resumed plan.
+
+        Mirrors the shape the chat path persists under ``asst_metadata["plan"]``
+        (keys ``id``/``status`` with values completed|failed|skipped, plus
+        ``error``) so a resumed plan's card renders identically on reload.
+        """
+        def _status(result: Optional[str]) -> str:
+            if not result:
+                return "completed"
+            if result.startswith("[FAILED"):
+                return "failed"
+            if result.startswith(("[SKIPPED", "[ABANDONED")):
+                return "skipped"
+            return "completed"
+
+        return {
+            "plan_id": plan_id,
+            "task": plan.task,
+            "complexity": plan.complexity.value,
+            "subtask_count": len(plan.steps),
+            "completed_count": sum(
+                1 for s in plan.steps
+                if s.result and not s.result.startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
+            ),
+            "subtasks": [
+                {
+                    "id": s.id,
+                    "description": s.description,
+                    "type": s.type.value,
+                    "status": _status(s.result),
+                    "result_preview": (s.result or "")[:200]
+                    if not (s.result or "").startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
+                    else "",
+                    "error": s.result if (s.result or "").startswith("[FAILED") else None,
+                }
+                for s in plan.steps
+            ],
+        }
+
     @classmethod
     def _subtask_snapshot(cls, plan: TaskPlan) -> list[dict]:
         """Render the full subtask list for a ``plan_resumed`` event so a fresh

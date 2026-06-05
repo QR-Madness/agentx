@@ -2,7 +2,7 @@ import { getBaseUrl, registerStreamController } from './core';
 import { getAuthToken, clearAuthToken, getActiveGatewayToken } from '../storage';
 import { classifyStatus, apiErrorMessage, backendErrorMessage } from './errors';
 import type { ApiError } from './errors';
-import type { ChatRequest, DelegationChunkEvent, DelegationCompleteEvent, DelegationStartEvent, DelegationToolCallEvent, DelegationToolResultEvent } from './types';
+import type { ChatRequest, DelegationChunkEvent, DelegationCompleteEvent, DelegationStartEvent, DelegationToolCallEvent, DelegationToolResultEvent, PlanResumeRequest } from './types';
 import type { ExhibitWire } from '../exhibits';
 
 /**
@@ -65,6 +65,23 @@ export interface StreamCallbacks {
     task: string;
     subtask_count: number;
     complexity: string;
+  }) => void;
+  /** First event of a resumed run — a snapshot of the already-done subtasks so
+   *  a fresh client (that never saw plan_start) can paint the plan card. */
+  onPlanResumed?: (data: {
+    plan_id: string;
+    task: string;
+    subtask_count: number;
+    complexity: string;
+    completed_count: number;
+    progress: number;
+    subtasks: Array<{
+      subtask_id: number;
+      description: string;
+      type: string;
+      status: string;
+      result_preview: string;
+    }>;
   }) => void;
   onSubtaskStart?: (data: {
     plan_id: string;
@@ -152,6 +169,9 @@ function dispatchSseEvent(
       break;
     case 'plan_start':
       callbacks.onPlanStart?.(data as Parameters<NonNullable<StreamCallbacks['onPlanStart']>>[0]);
+      break;
+    case 'plan_resumed':
+      callbacks.onPlanResumed?.(data as Parameters<NonNullable<StreamCallbacks['onPlanResumed']>>[0]);
       break;
     case 'subtask_start':
       callbacks.onSubtaskStart?.(data as Parameters<NonNullable<StreamCallbacks['onSubtaskStart']>>[0]);
@@ -297,6 +317,39 @@ export const streamingApi = {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(request),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw await streamErrorFromResponse(response);
+        await pumpSseResponse(response, controller, callbacks);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          callbacks.onError?.(apiErrorMessage(error));
+        }
+      });
+
+    return { abort: () => controller.abort() };
+  },
+
+  /**
+   * Resume an interrupted plan: continues its not-yet-terminal subtasks,
+   * streaming the same event surface as a chat turn (first event is
+   * `plan_resumed`). The run is detached server-side like streamChat.
+   */
+  resumePlan(
+    planId: string,
+    body: PlanResumeRequest,
+    callbacks: StreamCallbacks,
+  ): { abort: () => void } {
+    const baseUrl = getBaseUrl();
+    const controller = new AbortController();
+    registerStreamController(controller);
+
+    fetch(`${baseUrl}/api/agent/plans/${encodeURIComponent(planId)}/resume`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     })
       .then(async (response) => {

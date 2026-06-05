@@ -2006,8 +2006,204 @@ def agent_plan_status(request, plan_id):
         "subtask_count": _int("subtask_count"),
         "completed_count": _int("completed_count"),
         "cancel_requested": data.get("cancel_requested") == "1",
+        # True when the plan is active with non-terminal work left and carries a
+        # structural snapshot — i.e. POST .../resume would actually continue it.
+        "resumable": store.is_resumable(plan_id),
         "subtasks": [subtasks[k] for k in sorted(subtasks)],
     })
+
+
+@csrf_exempt
+async def agent_plan_resume(request, plan_id):
+    """
+    POST /api/agent/plans/<plan_id>/resume — resume an interrupted plan.
+
+    Body: ``{session_id, agent_profile_id?, model?, temperature?, use_memory?}``
+
+    Rebuilds the plan from Redis (``PlanStateStore.load_plan``) and continues
+    executing only the not-yet-terminal subtasks, streaming SSE the same way the
+    chat endpoint does (``plan_resumed`` → subtask events → ``plan_complete`` →
+    ``done``). The run is detached (survives client disconnect) and the final
+    synthesis is persisted as an assistant turn so the completed plan survives a
+    reload. **Single-agent only** for now — alloy plan resumption is a follow-up
+    (the per-subtask ``delegate_to`` injection needs the workflow executor
+    re-attached).
+    """
+    if request.method == 'OPTIONS':
+        resp = JsonResponse({}, status=200)
+        resp['Access-Control-Allow-Headers'] = 'Content-Type'
+        return resp
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except (ValueError, UnicodeDecodeError) as e:
+        return JsonResponse({'error': f'Invalid JSON: {e}'}, status=400)
+
+    session_id = data.get("session_id")
+    if not session_id:
+        return JsonResponse({'error': 'session_id required'}, status=400)
+    agent_profile_id = data.get("agent_profile_id")
+    model = data.get("model")
+    temperature = data.get("temperature")
+    use_memory = data.get("use_memory", True)
+
+    from .agent.plan_state import PlanStateStore
+
+    store = PlanStateStore(session_id)
+    # Pre-check synchronously so a non-resumable plan returns a clean 404 rather
+    # than an SSE stream that immediately errors.
+    plan = store.load_plan(plan_id)
+    if plan is None:
+        return JsonResponse(
+            {'error': 'plan not resumable (missing, expired, or already finished)',
+             'plan_id': plan_id, 'session_id': session_id},
+            status=404,
+        )
+
+    async def generate_sse():
+        import time
+        from .agent import Agent, AgentConfig
+        from .agent.session import get_session_manager
+        from .agent.profiles import get_profile_manager
+        from .agent.plan_executor import PlanExecutor, PlanResult
+
+        start_time = time.time()
+        try:
+            profile_manager = get_profile_manager()
+            agent_profile = (
+                profile_manager.get_profile(agent_profile_id) if agent_profile_id
+                else profile_manager.get_default_profile()
+            )
+
+            config_kwargs: dict = {"enable_memory": use_memory}
+            resolved_model = resolve_with_priority(
+                model, agent_profile.default_model if agent_profile else None,
+            )
+            if resolved_model:
+                config_kwargs["default_model"] = resolved_model
+            if agent_profile is not None:
+                if agent_profile.allowed_tools is not None:
+                    config_kwargs["allowed_tools"] = list(agent_profile.allowed_tools)
+                if agent_profile.blocked_tools:
+                    config_kwargs["blocked_tools"] = list(agent_profile.blocked_tools)
+                if agent_profile.agent_id:
+                    config_kwargs.setdefault("agent_id", agent_profile.agent_id)
+                config_kwargs["memory_channel"] = agent_profile.memory_channel
+
+            agent = Agent(AgentConfig(**config_kwargs))
+            agent._session_manager = get_session_manager()
+            session = agent._session_manager.get_or_create(session_id)
+            try:
+                from .agent.conversation_history import hydrate_session_from_history
+                hydrate_session_from_history(session, session.id, token_budget=10_000_000)
+            except Exception as _hy:  # pragma: no cover - DB offline
+                logger.debug(f"Resume rehydration skipped: {_hy}")
+
+            conv_id = session.id
+            if use_memory and agent.memory:
+                agent.memory.conversation_id = conv_id
+
+            provider, model_id = agent.registry.get_provider_for_model(
+                agent.config.default_model
+            )
+            tools = agent._get_tools_for_provider()
+            context = session.get_messages()  # inherited framing for synthesis
+
+            effective_temperature = cast(float, resolve_with_priority(
+                temperature,
+                agent_profile.temperature if agent_profile else None,
+                0.7,
+            ))
+
+            result = PlanResult()
+            executor = PlanExecutor(agent, store)
+            async for ev in executor.execute_streaming(
+                plan, provider, model_id, tools,
+                temperature=effective_temperature,
+                conversation_context=context,
+                result=result,
+                resume_plan_id=plan_id,
+            ):
+                yield ev
+
+            # Persist the synthesis as an assistant turn (no user turn — the
+            # original interrupted turn was already persisted) so the finished
+            # plan survives a reload with its plan card intact.
+            full_content = result.full_content
+            if use_memory and agent.memory and full_content.strip():
+                try:
+                    from .streaming.persistence import build_assistant_turn
+                    from .kit.agent_memory.connections import get_postgres_session
+                    from sqlalchemy import text as sa_text
+
+                    next_index = 0
+                    try:
+                        with get_postgres_session() as pg:
+                            row = pg.execute(
+                                sa_text("SELECT COALESCE(MAX(turn_index), -1) FROM conversation_logs WHERE conversation_id = :cid"),
+                                {"cid": conv_id},
+                            ).scalar()
+                            next_index = (row or 0) + 1
+                    except Exception:
+                        pass
+
+                    asst_meta = {
+                        "model": model_id,
+                        "provider": provider.name,
+                        "latency_ms": (time.time() - start_time) * 1000,
+                        "resumed": True,
+                        "plan": executor._resume_plan_summary(plan, result.plan_id),
+                    }
+                    _an = getattr(agent_profile, "name", None)
+                    if _an:
+                        asst_meta["agent_name"] = _an
+                    turn = build_assistant_turn(
+                        conv_id, full_content, next_index,
+                        metadata=asst_meta,
+                        model=model_id,
+                        agent_id=getattr(agent_profile, "agent_id", None),
+                    )
+                    if turn is not None:
+                        agent.memory.store_turn(turn)
+                except Exception as _pe:
+                    logger.warning(f"Resume persist failed: {_pe}")
+
+            yield f"event: done\ndata: {json.dumps({
+                'session_id': conv_id,
+                'agent_name': getattr(agent_profile, 'name', None) or 'AgentX',
+                'agent_id': getattr(agent_profile, 'agent_id', None),
+                'model': model_id,
+                'provider': provider.name,
+                'total_time_ms': (time.time() - start_time) * 1000,
+                'resumed': True,
+            })}\n\n"
+            yield "event: close\ndata: {}\n\n"
+            return
+        except Exception as e:
+            logger.error(f"Plan resume error: {e}")
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            return
+
+    from .streaming.chat_run import start_chat_run, tail_chat_run
+
+    run_id = start_chat_run(
+        generate_sse,
+        user_id=_bg_user_id(request),
+        message=f"[resume plan {plan_id}]",
+        session_id=session_id,
+    )
+
+    async def _client_stream():
+        yield f"event: run_started\ndata: {json.dumps({'run_id': run_id})}\n\n"
+        async for ev in tail_chat_run(run_id):
+            yield ev
+
+    response = StreamingHttpResponse(_client_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 # ============== Background Chat Endpoints ==============

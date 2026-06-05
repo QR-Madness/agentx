@@ -225,7 +225,19 @@ export interface PlanStatusResponse {
   subtask_count?: number;
   completed_count?: number;
   cancel_requested?: boolean;
+  // True when the plan is active with non-terminal work left and carries a
+  // structural snapshot — i.e. POST .../resume would actually continue it.
+  resumable?: boolean;
   subtasks?: PlanStatusSubtask[];
+}
+
+/** Body for POST /api/agent/plans/{plan_id}/resume. */
+export interface PlanResumeRequest {
+  session_id: string;
+  agent_profile_id?: string;
+  model?: string;
+  temperature?: number;
+  use_memory?: boolean;
 }
 
 export interface BackgroundChatRequest {

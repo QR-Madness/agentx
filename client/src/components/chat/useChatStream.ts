@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useReducer, useRef } from 'react';
-import { api, type ChatRequest } from '../../lib/api';
+import { api, type ChatRequest, type PlanResumeRequest } from '../../lib/api';
 import type { StreamCallbacks } from '../../lib/api/streaming';
 import { useNotify } from '../../contexts/NotificationContext';
 import {
@@ -65,6 +65,8 @@ interface UseChatStreamOpts {
 interface UseChatStreamApi {
   state: StreamState;
   send: (req: ChatRequest) => void;
+  /** Resume an interrupted plan by id (continues its remaining subtasks). */
+  resume: (planId: string, body: PlanResumeRequest) => void;
   /** Re-attach to an in-flight detached run (replays + follows live). */
   attach: (runId: string) => void;
   /** User-initiated cancel: abort + cancel the run server-side. */
@@ -321,6 +323,52 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           subtaskCount: data.subtask_count,
           completedCount: 0,
           subtasks: [],
+          startedAt: msg.timestamp,
+        });
+      },
+
+      onPlanResumed: (data) => {
+        // A resumed run never emitted plan_start; paint the card pre-filled
+        // with the snapshot of already-done subtasks, then the normal
+        // subtask_start/complete events drive the remaining ones.
+        const mapStatus = (s: string): PlanSubtask['status'] =>
+          s === 'complete' ? 'completed'
+            : s === 'abandoned' ? 'skipped'
+              : (s as PlanSubtask['status']);
+        const subtasks: PlanSubtask[] = data.subtasks.map(s => ({
+          subtaskId: s.subtask_id,
+          description: s.description,
+          subtaskType: s.type,
+          status: mapStatus(s.status),
+          resultPreview: s.result_preview || undefined,
+        }));
+        const messageId = createMessageId();
+        activePlanRef.current = { messageId, planId: data.plan_id, subtasks };
+        currentStepRef.current = null;
+        dispatch({ type: 'plan_started', messageId });
+        const msg: PlanExecutionMessage = {
+          id: messageId,
+          type: 'plan_execution',
+          timestamp: new Date().toISOString(),
+          planId: data.plan_id,
+          task: data.task,
+          complexity: data.complexity,
+          subtaskCount: data.subtask_count,
+          status: 'running',
+          completedCount: data.completed_count,
+          subtasks,
+        };
+        optsRef.current.appendMessage(msg);
+        optsRef.current.plans?.upsertPlan({
+          planId: data.plan_id,
+          tabId: optsRef.current.tabId ?? 'unknown',
+          tabTitle: optsRef.current.tabTitle,
+          task: data.task,
+          complexity: data.complexity,
+          status: 'running',
+          subtaskCount: data.subtask_count,
+          completedCount: data.completed_count,
+          subtasks,
           startedAt: msg.timestamp,
         });
       },
@@ -614,6 +662,16 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     abortRef.current = api.attachChatRun(runId, buildCallbacks());
   }, [reset, buildCallbacks]);
 
+  // Resume an interrupted plan: continue its remaining subtasks as a fresh
+  // detached run (first event is plan_resumed, which paints the card from the
+  // saved snapshot). Mirrors `send` — same callback surface and run tracking.
+  const resume = useCallback((planId: string, body: PlanResumeRequest) => {
+    abortRef.current?.abort();
+    reset();
+    currentRunIdRef.current = null;
+    abortRef.current = api.resumePlan(planId, body, buildCallbacks());
+  }, [reset, buildCallbacks]);
+
   // Tab switch / unmount: drop the connection but leave the server run alive
   // and the activeRun id intact so it can be re-attached. Does NOT mark the
   // plan cancelled — it really is still running.
@@ -660,5 +718,5 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     api.steerChatRun(runId, message.trim()).catch(() => { /* best-effort */ });
   }, []);
 
-  return { state, send, attach, stop, steer, detach };
+  return { state, send, resume, attach, stop, steer, detach };
 }

@@ -291,3 +291,25 @@
   align-items: center;
   gap: 0.25rem;
 }
+
+/* Resume affordance — shown on an interrupted plan card */
+.plan-resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent-primary, var(--cosmic-cyan));
+  background: color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 30%, transparent);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.plan-resume-btn:hover {
+  background: color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary, var(--cosmic-cyan)) 45%, transparent);
+}
