@@ -1,0 +1,44 @@
+# Keep the build context small + stable. The Dockerfile only needs:
+#   pyproject.toml, uv.lock, api/, queries/, versions.yaml, docker/
+# Everything below is irrelevant to the API image and was otherwise shipped to
+# the builder (and folded into cache keys) on every build.
+
+# VCS / CI / editor
+.git
+.github
+.gitignore
+*.swp
+.DS_Store
+
+# Local runtime data — DB bind-mounts + the multi-GB HuggingFace model cache
+data/
+clusters/
+
+# Frontend / docs — never part of the API image
+client/
+docs-site/
+dist/
+
+# Python caches / virtualenvs / test noise
+**/__pycache__/
+**/*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Node
+**/node_modules/
+
+# Deploy bundle sources + compose overlays (not needed inside the image)
+deploy/
+docker-compose*.yml
+
+# Env / secrets / logs / local plans
+.env
+.env.*
+!.env.example
+*.log
+*.tar.gz
