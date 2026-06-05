@@ -1370,6 +1370,11 @@ async def agent_chat_stream(request):
             total_tokens_input = 0
             total_tokens_output = 0
             plan_summary = None  # Set on the plan-execution path; persisted on the assistant turn
+            # Hoisted so the hard-stop (GeneratorExit) handler can persist an
+            # interrupted plan's card + token counts (the plan path doesn't use
+            # `loop_result`). Assigned in the `if decompose:` branch below.
+            plan_result = None
+            plan_obj = None
 
             def _persist_turns(*, content, asst_metadata, token_count, model, agent_id):
                 """Persist this turn (user → tools → steers → assistant) in a
@@ -1517,6 +1522,7 @@ async def agent_chat_stream(request):
 
                 state_store = PlanStateStore(conv_id)
                 executor = PlanExecutor(agent, state_store)
+                plan_obj = plan  # for the hard-stop interrupted-plan persist path
 
                 # Pass the chat-request context (system framing + prior
                 # turns), excluding the trailing current-user message which
@@ -1559,6 +1565,7 @@ async def agent_chat_stream(request):
 
                 plan_summary = {
                     "plan_id": plan_result.plan_id,
+                    "status": "completed",  # reached here ⇒ the plan ran to completion
                     "task": plan.task,
                     "complexity": plan.complexity.value,
                     "subtask_count": len(plan.steps),
@@ -1765,6 +1772,36 @@ async def agent_chat_stream(request):
                     logger.info(f"Persisted partial turn on hard-stop for {conv_id}")
                 except Exception as ge_err:
                     logger.warning(f"Partial persist on stop failed: {ge_err}")
+            elif use_memory and agent.memory and plan_result is not None and plan_obj is not None and not persisted:
+                # Plan path: the GeneratorExit guard above never matched (loop_result
+                # is None on the plan path). Persist the interrupted plan card +
+                # the plan-path token counts so it survives reload and offers resume.
+                try:
+                    from .agent.plan_executor import PlanExecutor as _PE
+                    interrupted_meta = {
+                        "model": model_id,
+                        "provider": provider.name,
+                        "latency_ms": (time.time() - start_time) * 1000,
+                        "tokens_input": plan_result.tokens_in,
+                        "tokens_output": plan_result.tokens_out,
+                        "interrupted": True,
+                        "plan": _PE._resume_plan_summary(
+                            plan_obj, plan_result.plan_id, status="interrupted"
+                        ),
+                    }
+                    _ipn = getattr(agent_profile, "name", None)
+                    if _ipn:
+                        interrupted_meta["agent_name"] = _ipn
+                    _persist_turns(
+                        content=plan_result.full_content or "",
+                        asst_metadata=interrupted_meta,
+                        token_count=(plan_result.tokens_in + plan_result.tokens_out) or None,
+                        model=model_id,
+                        agent_id=getattr(agent_profile, "agent_id", None),
+                    )
+                    logger.info(f"Persisted interrupted plan card on hard-stop for {conv_id}")
+                except Exception as ge_err:
+                    logger.warning(f"Interrupted-plan persist on stop failed: {ge_err}")
             raise
 
         except Exception as e:

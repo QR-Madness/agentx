@@ -18,7 +18,7 @@ export interface PlanExecutionBlockProps {
   task: string;
   complexity: string;
   subtaskCount: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   subtasks: PlanSubtask[];
   totalTimeMs?: number;
   completedCount?: number;
@@ -40,8 +40,10 @@ export function PlanExecutionBlock({
 
   const completed = completedCount ?? subtasks.filter(s => s.status === 'completed').length;
   // Freeze the spinner on a non-live card: terminal plans skip the running step,
-  // an interrupted-but-resumable one shows it pending (it re-runs on resume).
-  const mode = live ? 'live' : status === 'running' ? 'resumable' : 'terminal';
+  // a resumable one (running/interrupted) shows it pending (it re-runs on resume).
+  const mode = live
+    ? 'live'
+    : (status === 'running' || status === 'interrupted') ? 'resumable' : 'terminal';
   const shownSubtasks = freezeSubtasks(subtasks, mode);
 
   return (

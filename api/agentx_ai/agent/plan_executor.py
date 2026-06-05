@@ -109,12 +109,13 @@ class PlanExecutor:
         return "complete"
 
     @staticmethod
-    def _resume_plan_summary(plan: TaskPlan, plan_id: str) -> dict:
-        """Build the durable plan-card metadata for a resumed plan.
+    def _resume_plan_summary(plan: TaskPlan, plan_id: str, status: str = "interrupted") -> dict:
+        """Build the durable plan-card metadata for an interrupted/resumed plan.
 
         Mirrors the shape the chat path persists under ``asst_metadata["plan"]``
-        (keys ``id``/``status`` with values completed|failed|skipped, plus
-        ``error``) so a resumed plan's card renders identically on reload.
+        (per-subtask ``id``/``status`` with values completed|failed|skipped, plus
+        ``error``) so the card renders identically on reload, and carries a
+        top-level ``status`` (e.g. ``interrupted``) the client maps faithfully.
         """
         def _status(result: Optional[str]) -> str:
             if not result:
@@ -127,6 +128,7 @@ class PlanExecutor:
 
         return {
             "plan_id": plan_id,
+            "status": status,
             "task": plan.task,
             "complexity": plan.complexity.value,
             "subtask_count": len(plan.steps),
@@ -188,46 +190,62 @@ class PlanExecutor:
         self.state.create(plan_id, plan)
 
         cancelled = False
-        while not plan.is_complete():
-            if self.state.is_cancel_requested(plan_id):
-                cancelled = True
-                break
+        inflight: Optional[Subtask] = None
+        terminated_cleanly = False
+        try:
+            while not plan.is_complete():
+                if self.state.is_cancel_requested(plan_id):
+                    cancelled = True
+                    break
 
-            subtask = plan.get_next_subtask()
-            if subtask is None:
-                logger.warning("Plan deadlocked — no executable subtask found")
-                break
+                subtask = plan.get_next_subtask()
+                if subtask is None:
+                    logger.warning("Plan deadlocked — no executable subtask found")
+                    break
 
-            self.state.update_subtask(plan_id, subtask.id, "running")
+                self.state.update_subtask(plan_id, subtask.id, "running")
+                inflight = subtask
 
-            try:
-                result = self._execute_subtask_sync(plan, subtask)
-                plan.mark_complete(subtask.id, result)
-                self.state.update_subtask(plan_id, subtask.id, "complete", result=result)
-                self._complete_subtask_goal(
-                    subtask, "completed", result[:500] if result else None
-                )
-                logger.info(f"Subtask {subtask.id} complete: {subtask.description[:60]}")
-            except Exception as e:
-                logger.error(f"Subtask {subtask.id} failed: {e}")
-                self._handle_failure(plan, plan_id, subtask, e)
+                try:
+                    result = self._execute_subtask_sync(plan, subtask)
+                    plan.mark_complete(subtask.id, result)
+                    self.state.update_subtask(plan_id, subtask.id, "complete", result=result)
+                    self._complete_subtask_goal(
+                        subtask, "completed", result[:500] if result else None
+                    )
+                    inflight = None
+                    logger.info(f"Subtask {subtask.id} complete: {subtask.description[:60]}")
+                except Exception as e:
+                    logger.error(f"Subtask {subtask.id} failed: {e}")
+                    self._handle_failure(plan, plan_id, subtask, e)
+                    inflight = None
 
-            # Safety net (parity with execute_streaming): a selected subtask must
-            # reach a terminal state, else get_next_subtask could re-select it
-            # forever (defends against the historical id/index mismatch loop).
-            if not subtask.completed:
-                logger.error(
-                    f"Subtask {subtask.id} did not reach a terminal state; "
-                    f"force-failing to prevent a loop."
-                )
-                self._handle_failure(
-                    plan, plan_id, subtask,
-                    RuntimeError("subtask did not complete"),
-                )
+                # Safety net (parity with execute_streaming): a selected subtask must
+                # reach a terminal state, else get_next_subtask could re-select it
+                # forever (defends against the historical id/index mismatch loop).
+                if not subtask.completed:
+                    logger.error(
+                        f"Subtask {subtask.id} did not reach a terminal state; "
+                        f"force-failing to prevent a loop."
+                    )
+                    self._handle_failure(
+                        plan, plan_id, subtask,
+                        RuntimeError("subtask did not complete"),
+                    )
+                    inflight = None
+
+            terminated_cleanly = True
+        finally:
+            # Parity with execute_streaming: an interrupt (CancelledError/
+            # KeyboardInterrupt) mid-subtask leaves a resumable state.
+            if not terminated_cleanly and not cancelled and inflight is not None:
+                self.state.update_subtask(plan_id, inflight.id, "pending")
+                self.state.mark_interrupted(plan_id)
 
         if cancelled:
             self._abandon_pending_subtasks(plan, plan_id)
             self.state.mark_complete(plan_id, status="cancelled")
+            self.state.clear_cancel(plan_id)
             return "[CANCELLED]"
 
         final_answer = self._compose_answer_sync(plan)
@@ -302,87 +320,109 @@ class PlanExecutor:
             })
 
         cancelled = False
-        while not plan.is_complete():
-            if self.state.is_cancel_requested(plan_id):
-                cancelled = True
-                break
+        # The subtask currently between "running" and a terminal state. Non-None
+        # only while one is genuinely in-flight, so a hard Stop (GeneratorExit) /
+        # CancelledError mid-subtask can leave a clean, resumable state.
+        inflight: Optional[Subtask] = None
+        terminated_cleanly = False
+        try:
+            while not plan.is_complete():
+                if self.state.is_cancel_requested(plan_id):
+                    cancelled = True
+                    break
 
-            subtask = plan.get_next_subtask()
-            if subtask is None:
-                logger.warning("Plan deadlocked — no executable subtask found")
-                break
+                subtask = plan.get_next_subtask()
+                if subtask is None:
+                    logger.warning("Plan deadlocked — no executable subtask found")
+                    break
 
-            self.state.update_subtask(plan_id, subtask.id, "running")
-            yield _sse("subtask_start", {
-                "plan_id": plan_id,
-                "subtask_id": subtask.id,
-                "description": subtask.description,
-                "type": subtask.type.value,
-                "progress": plan.get_progress(),
-            })
-
-            try:
-                self._last_subtask_content = ""
-                self._last_subtask_content_source = "final"
-                async for event_str in self._execute_subtask_streaming(
-                    plan, subtask, provider, model_id, tools,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    max_context_tokens=max_context_tokens,
-                ):
-                    yield event_str
-
-                subtask_content = self._last_subtask_content
-                plan.mark_complete(subtask.id, subtask_content)
-                self.state.update_subtask(plan_id, subtask.id, "complete", result=subtask_content)
-                self._complete_subtask_goal(
-                    subtask, "completed", subtask_content[:500] if subtask_content else None
-                )
-
-                yield _sse("subtask_complete", {
+                self.state.update_subtask(plan_id, subtask.id, "running")
+                inflight = subtask
+                yield _sse("subtask_start", {
                     "plan_id": plan_id,
                     "subtask_id": subtask.id,
-                    "result_preview": subtask_content[:200] if subtask_content else "",
-                    "progress": plan.get_progress(),
-                })
-                logger.info(
-                    f"Subtask {subtask.id} complete [{self._last_subtask_content_source}]: "
-                    f"{subtask.description[:60]}"
-                )
-
-            except Exception as e:
-                logger.error(f"Subtask {subtask.id} failed: {e}")
-                self._handle_failure(plan, plan_id, subtask, e)
-                yield _sse("subtask_failed", {
-                    "plan_id": plan_id,
-                    "subtask_id": subtask.id,
-                    "error": str(e)[:500],
+                    "description": subtask.description,
+                    "type": subtask.type.value,
                     "progress": plan.get_progress(),
                 })
 
-            # Safety net: a selected subtask must always reach a terminal state.
-            # If it somehow didn't, force-fail it so get_next_subtask can't re-select
-            # it forever (defends against the historical id/index mismatch loop).
-            if not subtask.completed:
-                logger.error(
-                    f"Subtask {subtask.id} did not reach a terminal state; "
-                    f"force-failing to prevent a loop."
-                )
-                self._handle_failure(
-                    plan, plan_id, subtask,
-                    RuntimeError("subtask did not complete"),
-                )
-                yield _sse("subtask_failed", {
-                    "plan_id": plan_id,
-                    "subtask_id": subtask.id,
-                    "error": "subtask did not complete",
-                    "progress": plan.get_progress(),
-                })
+                try:
+                    self._last_subtask_content = ""
+                    self._last_subtask_content_source = "final"
+                    async for event_str in self._execute_subtask_streaming(
+                        plan, subtask, provider, model_id, tools,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        max_context_tokens=max_context_tokens,
+                    ):
+                        yield event_str
+
+                    subtask_content = self._last_subtask_content
+                    plan.mark_complete(subtask.id, subtask_content)
+                    self.state.update_subtask(plan_id, subtask.id, "complete", result=subtask_content)
+                    self._complete_subtask_goal(
+                        subtask, "completed", subtask_content[:500] if subtask_content else None
+                    )
+                    inflight = None
+
+                    yield _sse("subtask_complete", {
+                        "plan_id": plan_id,
+                        "subtask_id": subtask.id,
+                        "result_preview": subtask_content[:200] if subtask_content else "",
+                        "progress": plan.get_progress(),
+                    })
+                    logger.info(
+                        f"Subtask {subtask.id} complete [{self._last_subtask_content_source}]: "
+                        f"{subtask.description[:60]}"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Subtask {subtask.id} failed: {e}")
+                    self._handle_failure(plan, plan_id, subtask, e)
+                    inflight = None
+                    yield _sse("subtask_failed", {
+                        "plan_id": plan_id,
+                        "subtask_id": subtask.id,
+                        "error": str(e)[:500],
+                        "progress": plan.get_progress(),
+                    })
+
+                # Safety net: a selected subtask must always reach a terminal state.
+                # If it somehow didn't, force-fail it so get_next_subtask can't re-select
+                # it forever (defends against the historical id/index mismatch loop).
+                if not subtask.completed:
+                    logger.error(
+                        f"Subtask {subtask.id} did not reach a terminal state; "
+                        f"force-failing to prevent a loop."
+                    )
+                    self._handle_failure(
+                        plan, plan_id, subtask,
+                        RuntimeError("subtask did not complete"),
+                    )
+                    inflight = None
+                    yield _sse("subtask_failed", {
+                        "plan_id": plan_id,
+                        "subtask_id": subtask.id,
+                        "error": "subtask did not complete",
+                        "progress": plan.get_progress(),
+                    })
+
+            terminated_cleanly = True
+        finally:
+            # Hard Stop (GeneratorExit) / CancelledError mid-subtask: leave a
+            # resumable state instead of a stuck 'running'. Reset the in-flight
+            # subtask so resume re-runs it, and mark the plan interrupted. Skipped
+            # on clean completion and on cooperative cancel (handled below).
+            # GeneratorExit re-raises naturally after this (no return/suppress).
+            if not terminated_cleanly and not cancelled and inflight is not None:
+                self.state.update_subtask(plan_id, inflight.id, "pending")
+                self.state.mark_interrupted(plan_id)
 
         if cancelled:
             self._abandon_pending_subtasks(plan, plan_id)
             total_time = (time.time() - start_time) * 1000
             self.state.mark_complete(plan_id, status="cancelled")
+            self.state.clear_cancel(plan_id)  # observed → safe to clear
             yield _sse("plan_cancelled", {
                 "plan_id": plan_id,
                 "subtask_count": len(plan.steps),

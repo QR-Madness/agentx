@@ -590,7 +590,8 @@ export function ChatPanel() {
     if (!tab?.sessionId || isTyping) return;
     const candidatePlanIds = Array.from(new Set(
       tab.messages
-        .filter((m): m is PlanExecutionMessage => m.type === 'plan_execution' && m.status === 'running')
+        .filter((m): m is PlanExecutionMessage =>
+          m.type === 'plan_execution' && (m.status === 'running' || m.status === 'interrupted'))
         .map(m => m.planId),
     ));
     for (const planId of candidatePlanIds) {

@@ -48,6 +48,52 @@ describe('mapServerMessages', () => {
     expect((out[1] as AssistantMessage).interrupted).toBe(true);
   });
 
+  it('restores an interrupted plan card with its persisted status (for resume)', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: '',
+        metadata: {
+          model: 'm',
+          plan: {
+            plan_id: 'p1', status: 'interrupted', task: 't', complexity: 'complex',
+            subtask_count: 3, completed_count: 1,
+            subtasks: [
+              { id: 0, description: 's0', status: 'completed' },
+              { id: 1, description: 's1', status: 'pending' },
+              { id: 2, description: 's2', status: 'pending' },
+            ],
+          },
+        },
+      }),
+    ]);
+    const plan = out.find(m => m.type === 'plan_execution') as { status: string; planId: string };
+    expect(plan).toBeTruthy();
+    expect(plan.status).toBe('interrupted');
+    expect(plan.planId).toBe('p1');
+  });
+
+  it('falls back to the completed/failed heuristic when a plan has no status', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: 'done',
+        metadata: {
+          plan: {
+            plan_id: 'p2', task: 't', complexity: 'complex',
+            subtask_count: 2, completed_count: 2,
+            subtasks: [
+              { id: 0, description: 's0', status: 'completed' },
+              { id: 1, description: 's1', status: 'completed' },
+            ],
+          },
+        },
+      }),
+    ]);
+    const plan = out.find(m => m.type === 'plan_execution') as { status: string };
+    expect(plan.status).toBe('completed');
+  });
+
   it('leaves steered/interrupted falsy when metadata is absent', () => {
     const out = mapServerMessages([
       msg({ role: 'user', content: 'hi' }),

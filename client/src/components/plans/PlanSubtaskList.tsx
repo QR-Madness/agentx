@@ -72,7 +72,7 @@ export function SubtaskList({ subtasks }: { subtasks: PlanSubtask[] }) {
   );
 }
 
-export type PlanVisualStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'stale';
+export type PlanVisualStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'stale' | 'interrupted';
 
 /**
  * Freeze the live spinner on a non-streaming plan. A `running` subtask only

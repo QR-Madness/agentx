@@ -23,6 +23,10 @@ PLAN_TTL_SECONDS = 3600  # 1 hour, matching working memory
 # non-terminal, so a process that died mid-subtask re-runs that subtask.
 _TERMINAL_STATUSES = {"complete", "failed", "skipped", "abandoned"}
 
+# Plan statuses from which a plan can be resumed: "active" (in-flight) and
+# "interrupted" (hard-stopped — Stop/GeneratorExit — with non-terminal work left).
+_RESUMABLE_STATUSES = {"active", "interrupted"}
+
 
 def _get_redis_client():
     """Get Redis client from memory connections (lazy import)."""
@@ -102,6 +106,7 @@ class PlanStateStore:
 
             if status == "complete":
                 client.hincrby(key, "completed_count", 1)
+            logger.info("plan=%s subtask=%s status=%s", plan_id, subtask_id, status)
         except Exception as e:
             logger.warning(f"Failed to update subtask {subtask_id} state: {e}")
 
@@ -146,8 +151,9 @@ class PlanStateStore:
         data = self.get_status(plan_id)
         if not data:
             return None
-        # Only an active plan is resumable; a complete/failed/cancelled plan is done.
-        if data.get("status") != "active":
+        # `active` (in-flight) and `interrupted` (hard-stopped with work left) are
+        # resumable; a complete/failed/cancelled plan is done.
+        if data.get("status") not in _RESUMABLE_STATUSES:
             return None
         raw = data.get("plan_json")
         if not raw:
@@ -196,14 +202,28 @@ class PlanStateStore:
             return None
 
     def mark_complete(self, plan_id: str, status: str = "complete") -> None:
-        """Mark plan as complete or failed."""
+        """Mark the plan's terminal/transition status (complete|failed|cancelled|interrupted)."""
         try:
             client = _get_redis_client()
             key = self._key(plan_id)
             now = datetime.now(timezone.utc).isoformat()
             client.hset(key, mapping={"status": status, "updated_at": now})
+            logger.info("plan=%s status=%s", plan_id, status)
         except Exception as e:
             logger.warning(f"Failed to mark plan {status}: {e}")
+
+    def mark_interrupted(self, plan_id: str) -> None:
+        """Mark a plan as hard-stopped with work left — resumable (see _RESUMABLE_STATUSES)."""
+        self.mark_complete(plan_id, status="interrupted")
+
+    def clear_cancel(self, plan_id: str) -> None:
+        """Best-effort clear the cancel flag (call only AFTER it's been observed,
+        so a still-running executor can't miss the cancel request)."""
+        try:
+            client = _get_redis_client()
+            client.hdel(self._key(plan_id), "cancel_requested")
+        except Exception as e:
+            logger.warning(f"Failed to clear cancel flag for plan {plan_id}: {e}")
 
     def request_cancel(self, plan_id: str) -> bool:
         """Flag a plan for cancellation. Returns True if the flag was written."""
@@ -214,6 +234,7 @@ class PlanStateStore:
                 return False
             client.hset(key, "cancel_requested", "1")
             client.expire(key, PLAN_TTL_SECONDS)
+            logger.info("plan=%s CANCEL requested", plan_id)
             return True
         except Exception as e:
             logger.warning(f"Failed to request cancel for plan {plan_id}: {e}")

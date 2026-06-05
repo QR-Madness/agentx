@@ -3439,6 +3439,71 @@ class PlanSerializationTest(TestCase):
             self.assertTrue(store.is_resumable("p1"))
 
 
+class PlanTerminationTest(TestCase):
+    """Clean termination: a hard Stop (GeneratorExit) mid-subtask leaves a
+    resumable state (in-flight subtask reset to pending, plan 'interrupted')
+    instead of a stuck 'running'."""
+
+    def test_executor_stop_marks_interrupted_and_resets_subtask(self) -> None:
+        from agentx_ai.agent.plan_executor import PlanExecutor, PlanResult
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+
+        plan = TaskPlan(
+            task="t", complexity=TaskComplexity.COMPLEX,
+            steps=[Subtask(id=0, description="s0", type=SubtaskType.GENERATION)],
+        )
+        agent = MagicMock()
+        agent._active_alloy_executor = None
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+
+        async def fake_loop(provider, model_id, messages, tools, ag, *, result=None, **kw):
+            yield 'event: chunk\ndata: {"content": "x"}\n\n'
+            await asyncio.Event().wait()  # suspend so aclose() can inject GeneratorExit
+
+        class _Prov:
+            async def stream(self, *a, **k):
+                if False:
+                    yield
+
+        async def _drive():
+            ex = PlanExecutor(agent, state)
+            agen = ex.execute_streaming(plan, _Prov(), "m", None, result=PlanResult())
+            await agen.__anext__()  # plan_start
+            await agen.__anext__()  # subtask_start (subtask 0 now inflight)
+            await agen.__anext__()  # first chunk from the subtask loop
+            await agen.aclose()     # Stop → GeneratorExit mid-subtask
+
+        with patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_loop):
+            asyncio.run(_drive())
+
+        reset_calls = [
+            c for c in state.update_subtask.call_args_list
+            if len(c.args) >= 3 and c.args[1] == 0 and c.args[2] == "pending"
+        ]
+        self.assertTrue(reset_calls, "in-flight subtask was not reset to pending")
+        state.mark_interrupted.assert_called_once()
+
+    def test_load_plan_accepts_interrupted_status(self) -> None:
+        from agentx_ai.agent.plan_state import PlanStateStore
+        from agentx_ai.agent.planner import TaskPlan, Subtask, SubtaskType, TaskComplexity
+
+        plan = TaskPlan(task="t", complexity=TaskComplexity.COMPLEX, steps=[
+            Subtask(id=0, description="s0", type=SubtaskType.GENERATION),
+            Subtask(id=1, description="s1", type=SubtaskType.GENERATION, dependencies=[0]),
+        ])
+        snapshot = {
+            "status": "interrupted",
+            "plan_json": json.dumps(plan.to_dict()),
+            "subtask:0:status": "pending",
+            "subtask:1:status": "pending",
+        }
+        store = PlanStateStore("sess")
+        with patch.object(PlanStateStore, "get_status", return_value=snapshot):
+            self.assertIsNotNone(store.load_plan("p1"))
+            self.assertTrue(store.is_resumable("p1"))
+
+
 class PlannerComposeTest(TestCase):
     """Main-agent plan composition: tolerant JSON extraction + compose_with_model."""
 

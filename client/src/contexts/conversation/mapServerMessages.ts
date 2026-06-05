@@ -7,7 +7,7 @@
  * delegation card with full specialist output).
  */
 
-import type { ConversationMessage, PlanSubtask } from '../../lib/messages';
+import type { ConversationMessage, PlanSubtask, PlanExecutionMessage } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
 import {
   exhibitFromWire,
@@ -65,6 +65,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       const planMeta = m.metadata?.plan as
         | {
             plan_id: string;
+            status?: string;
             task: string;
             complexity: string;
             subtask_count: number;
@@ -98,7 +99,11 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           task: planMeta.task,
           complexity: planMeta.complexity,
           subtaskCount: planMeta.subtask_count,
-          status: completedCount >= planMeta.subtask_count ? 'completed' : 'failed',
+          // Trust the persisted plan status (e.g. 'interrupted' so the resume
+          // offer can fire); fall back to the heuristic only for older records
+          // saved before a top-level status was written.
+          status: (planMeta.status as PlanExecutionMessage['status'])
+            ?? (completedCount >= planMeta.subtask_count ? 'completed' : 'failed'),
           subtasks,
           completedCount,
         });
