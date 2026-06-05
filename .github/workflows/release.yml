@@ -248,20 +248,22 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push (amd64)
+      # Build and LOAD the image into the local docker daemon (no push here). The
+      # image is ~4.4GB; pushing it straight from buildx intermittently 400s on
+      # Docker Hub's registry for the big PyTorch blob, so we push separately with
+      # a retry loop (classic `docker push` resumes missing blobs each attempt).
+      - name: Build image (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          push: true
+          load: true
+          push: false
           # Publish ONLY :latest — each image is ~4GB, so we don't accumulate a
           # per-version tag every release. Version provenance lives in the OCI labels
           # below + the GitHub Release tag.
           tags: ${{ env.IMAGE }}:latest
-          # Single-arch single-manifest push. Disabling provenance/SBOM attestations
-          # avoids the extra attestation manifest that Docker Hub intermittently 400s
-          # on for large images (and drops the *.dockerbuild build-record artifact).
           provenance: false
           sbom: false
           labels: |
@@ -271,6 +273,23 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Push image (with retry)
+        run: |
+          set -e
+          for attempt in 1 2 3 4 5; do
+            echo "::group::docker push attempt ${attempt}"
+            if docker push "${IMAGE}:latest"; then
+              echo "::endgroup::"
+              echo "✓ pushed ${IMAGE}:latest on attempt ${attempt}"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "push attempt ${attempt} failed; retrying in 20s…"
+            sleep 20
+          done
+          echo "::error::docker push failed after 5 attempts"
+          exit 1
 
       - name: Sync Docker Hub repo overview
         # Bakes deploy/dockerhub-overview.md into the repo's Docker Hub overview.
