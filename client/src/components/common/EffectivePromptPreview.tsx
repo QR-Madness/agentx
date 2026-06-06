@@ -11,6 +11,7 @@ import { ChevronDown } from 'lucide-react';
 import { api } from '../../lib/api';
 import { composeStack, estimateTokens } from '../../lib/promptStack';
 import type { PromptLayer } from '../../lib/api/types';
+import { HighlightedPrompt } from '../unified-settings/sections/prompt-stack/ComposedPreview';
 import './EffectivePromptPreview.css';
 
 interface EffectivePromptPreviewProps {
@@ -69,7 +70,7 @@ export function EffectivePromptPreview({ name, agentPrompt }: EffectivePromptPre
           ) : (
             <>
               <div className="effective-preview__note">Core prompt — tools &amp; sections are added at runtime.</div>
-              <pre className="effective-preview__text">{composed || '(empty)'}</pre>
+              <pre className="effective-preview__text">{composed ? <HighlightedPrompt text={composed} /> : '(empty)'}</pre>
             </>
           )}
         </div>

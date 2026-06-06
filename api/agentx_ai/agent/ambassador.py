@@ -159,6 +159,12 @@ def _draft_persona(agent_name: str = "") -> str:
     )
 
 
+def _sub_placeholders(text: str, *, agent_name: str = "") -> str:
+    """Apply the whitelisted prompt placeholders ({agent_name}/{date}/{time})."""
+    from ..prompts.placeholders import substitute_placeholders
+    return substitute_placeholders(text, agent_name=agent_name)
+
+
 def _persona_override(amb, field: str) -> Optional[str]:
     """A non-blank functional-persona override on the ambassador config, else None."""
     if not amb:
@@ -262,7 +268,7 @@ class AmbassadorService:
             parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         if amb and getattr(amb, "briefing_prompt", "").strip():
             parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
-        return "\n\n".join(parts)
+        return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
 
     def _build_draft_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
@@ -270,7 +276,7 @@ class AmbassadorService:
         parts = [base]
         if profile and getattr(profile, "system_prompt", None):
             parts.append(f"Personality:\n{profile.system_prompt.strip()}")
-        return "\n\n".join(parts)
+        return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
 
     def _build_qa_prompt(
         self,
@@ -332,7 +338,7 @@ class AmbassadorService:
         parts.append(_VERBOSITY_HINT.get(verbosity, _VERBOSITY_HINT["normal"]))
         if amb and getattr(amb, "briefing_prompt", "").strip():
             parts.append(f"Additional briefing instructions:\n{amb.briefing_prompt.strip()}")
-        return "\n\n".join(parts)
+        return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
 
     def _render_artifacts(self, artifacts: Optional[dict], agent_label: str) -> str:
         """Compact, prose-able summary of what the agent *did* this turn (tools it

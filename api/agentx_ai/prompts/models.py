@@ -255,4 +255,7 @@ class PromptConfig(BaseModel):
         if self.additional_context:
             parts.append(self.additional_context)
 
-        return "\n\n".join(parts) if parts else ""
+        composed = "\n\n".join(parts) if parts else ""
+        # Substitute the whitelisted `{token}` placeholders ({agent_name}/{date}/{time}).
+        from .placeholders import substitute_placeholders
+        return substitute_placeholders(composed, agent_name=self.agent_name or "")

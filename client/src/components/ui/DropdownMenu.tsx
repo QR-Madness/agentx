@@ -69,7 +69,9 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 min-w-[12rem] overflow-hidden rounded-xl p-1.5',
+        // Above the legacy app modals (z-1000/1001) so a dropdown opened from
+        // inside a full-screen modal (e.g. the profile editor) isn't trapped behind it.
+        'z-[1100] min-w-[12rem] overflow-hidden rounded-xl p-1.5',
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
         'shadow-lg backdrop-blur-sm',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',

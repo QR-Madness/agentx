@@ -3,18 +3,25 @@
  *
  * A controlled textarea with an approximate token/char count, an in-place
  * **Enhance** action (rewrites the content via the prompt enhancer, with one-click
- * undo), and an optional **Insert from library** button (the host owns the library
- * surface and inserts by REPLACING the value). Shared by the agent-profile editor
- * and the ambassador "Communications" prompt.
+ * undo), an **Insert placeholder** menu ({agent_name}/{date}/{time}, substituted at
+ * compose time), and an optional **Insert from library** button (the host owns the
+ * library surface and inserts by REPLACING the value).
  */
 
-import { useState, forwardRef } from 'react';
-import { Sparkles, Undo2, Library } from 'lucide-react';
+import { useState, useRef, forwardRef } from 'react';
+import { Sparkles, Undo2, Library, Braces } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { estimateTokens } from '../../lib/promptStack';
+import { PROMPT_PLACEHOLDERS } from '../../lib/promptPlaceholders';
 import { Button } from '../ui';
 import { Textarea } from '../ui/Field';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/DropdownMenu';
 import './PromptEditor.css';
 
 interface PromptEditorProps {
@@ -35,6 +42,30 @@ export const PromptEditor = forwardRef<HTMLTextAreaElement, PromptEditorProps>(f
   const { notifyError } = useNotify();
   const [enhancing, setEnhancing] = useState(false);
   const [preEnhance, setPreEnhance] = useState<string | null>(null);
+  const innerRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const setRefs = (node: HTMLTextAreaElement | null) => {
+    innerRef.current = node;
+    if (typeof ref === 'function') ref(node);
+    else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
+  };
+
+  const insertToken = (token: string) => {
+    const ta = innerRef.current;
+    if (preEnhance !== null) setPreEnhance(null);
+    if (!ta) {
+      onChange(value + token);
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = value.slice(0, start) + token + value.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + token.length;
+    });
+  };
 
   const handleEnhance = async () => {
     if (!value.trim() || enhancing) return;
@@ -63,6 +94,21 @@ export const PromptEditor = forwardRef<HTMLTextAreaElement, PromptEditorProps>(f
       <div className="prompt-editor__toolbar">
         {label && <label className="prompt-editor__label">{label}</label>}
         <div className="prompt-editor__actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="sm" title="Insert a placeholder (substituted at runtime)">
+                <Braces size={14} /> Placeholder
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {PROMPT_PLACEHOLDERS.map((p) => (
+                <DropdownMenuItem key={p.token} onSelect={() => insertToken(p.token)}>
+                  <code style={{ fontSize: '0.78rem' }}>{p.token}</code>
+                  <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.description}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {preEnhance !== null ? (
             <Button type="button" variant="ghost" size="sm" onClick={handleUndo}>
               <Undo2 size={14} /> Undo enhance
@@ -88,7 +134,7 @@ export const PromptEditor = forwardRef<HTMLTextAreaElement, PromptEditorProps>(f
         </div>
       </div>
       <Textarea
-        ref={ref}
+        ref={setRefs}
         value={value}
         rows={rows}
         spellCheck={false}

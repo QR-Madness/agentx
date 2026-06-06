@@ -509,10 +509,17 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       alongside the layer stack + library-insert. Plan a deprecation/removal once nothing depends on it.
 - [ ] **Client tests for the new logic**: autosave baseline-diff, `EffectivePromptPreview` compose
       order, `OverridablePromptField` reset/diff — only `promptStack` has unit coverage today.
-- [ ] **Theme leak straggler**: `.profile-avatar-option.selected` uses raw `--cosmic-violet` (not a
-      semantic token) — fold into the theme-enforcement sweep.
-- [ ] **Ambassador persona-override placeholders**: an overridden functional persona loses the
-      default's `agent_name` weaving — offer a `{agent}` placeholder (or always append the name rule).
+- [x] ~~Theme leak straggler (`.profile-avatar-option.selected` → `--cosmic-violet`)~~ — **not a leak.**
+      `--cosmic-violet` is a theme-adaptive *alias* (defined per theme = the accent), so it follows
+      themes correctly. Optional cosmetic cleanup: rename the legacy alias to `--accent-primary`
+      app-wide (15+ files) — zero visual change, low priority.
+- [x] **Prompt placeholders** `[v0.21.55]`: whitelist `{agent_name}`/`{date}`/`{time}` substituted
+      at compose time (`prompts/placeholders.py`, applied in `compose_system_prompt` + the ambassador
+      persona builders — so an override's `{agent_name}` now resolves). Client: `PromptEditor` "Insert
+      placeholder" menu (`lib/promptPlaceholders.ts`) + preview highlighting (`HighlightedPrompt`).
+      Tests: `PromptPlaceholderTest`. Also raised `DropdownMenu` z-index above the legacy modals
+      (same class of bug as the Dialog fix). **Follow-up:** add the insert-placeholder affordance to
+      the global `LayerCard` editor too (substitution + highlight already work there).
 - [ ] **`SKILL.md` standardization (parked, user-flagged)**: adopt the standard skills-file pattern;
       let the prompt/layer machinery host composable skills; guard so profile-typing/layering never
       gates a user's skill access. Its own initiative.

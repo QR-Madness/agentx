@@ -6764,6 +6764,32 @@ class PromptLayerApiTest(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
+class PromptPlaceholderTest(TestCase):
+    """Whitelisted `{token}` substitution in composed prompts."""
+
+    def test_substitute_only_whitelisted_tokens(self):
+        from agentx_ai.prompts.placeholders import substitute_placeholders
+        from datetime import datetime
+        out = substitute_placeholders(
+            "I am {agent_name}. Today is {date}. Keep literal {json_key}.",
+            agent_name="Mobius",
+            now=datetime(2026, 6, 6, 9, 30),
+        )
+        self.assertIn("I am Mobius.", out)
+        self.assertIn("Today is 2026-06-06.", out)
+        self.assertIn("{json_key}", out)  # unknown braces untouched
+
+    def test_compose_system_prompt_substitutes_agent_name(self):
+        from agentx_ai.prompts.models import PromptConfig, GlobalPrompt
+        cfg = PromptConfig(
+            global_prompt=GlobalPrompt(content="You are {agent_name}, be helpful."),
+            agent_name="Echo",
+        )
+        composed = cfg.compose_system_prompt()
+        self.assertIn("You are Echo, be helpful.", composed)
+        self.assertNotIn("{agent_name}", composed)
+
+
 class AgentProfileKindTest(TestCase):
     """Ambassador-as-profile-kind: default isolation (agent vs ambassador),
     persistence, migration/seed safety, and chat-routing exclusion."""

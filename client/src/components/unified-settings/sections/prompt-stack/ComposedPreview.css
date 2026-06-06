@@ -1,0 +1,9 @@
+/* Placeholder-token highlight, used by HighlightedPrompt wherever it renders
+   (composed preview, effective-prompt preview). Imported by ComposedPreview.tsx. */
+.prompt-placeholder-token {
+  color: var(--accent-primary);
+  background: var(--accent-tint-soft, rgba(124, 138, 255, 0.12));
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+}
