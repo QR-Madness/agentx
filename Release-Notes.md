@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.45 -->
+<!-- release-version: 0.21.46 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -72,10 +72,19 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   layers (core principles, citing sources, reasoning-vs-results, structured thinking, concise
   output, safety) ship a default you can override per-layer; untouched layers keep receiving
   release improvements while your edits stay pinned and are never silently overwritten. This
-  is the plumbing for the upcoming block-based prompt editor — behavior is unchanged for now
-  (the default stack reproduces the previous default prompt exactly). The stack is now exposed
+  is the plumbing for the block-based prompt editor — behavior is unchanged by default
+  (the default stack reproduces the previous default prompt exactly). The stack is exposed
   over a full REST API (`/api/prompts/layers` — list/create/update/delete/reorder, plus
-  per-layer reset and update-acknowledge), with typed client methods, ready for the editor UI.
+  per-layer reset and update-acknowledge), with typed client methods.
+- **Block-based system-prompt editor.** **Settings → Intelligence → System Prompt** is a new
+  two-pane composer: a stack of editable layer cards beside a live composed preview. Drag to
+  reorder, toggle layers on/off, and edit any layer inline with **autosave** — changes persist
+  immediately. Built-in layers show a default until you override them (marked **● edited**); a
+  one-click **Reset** restores the shipped default, and when an update ships a new default
+  underneath your edit you get a **▲ update** badge and a **diff view** to **Keep yours**,
+  **Adopt the new default**, or **load it into the editor to merge**. Add your own **custom
+  layers** too. Your edits are always kept separate from the defaults and never silently
+  overwritten.
 
 ### Fixes
 

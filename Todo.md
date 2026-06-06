@@ -463,10 +463,15 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       schema + paths, spec lints clean), endpoints.md. Tests: `PromptLayerApiTest` (list/create/
       patch/delete/reset/reorder/404 via RequestFactory). Compose-preview enrichment (dynamic
       injections + active agent) deferred to the editor (Phase 3).
-- [ ] **3 — block-stack editor UI** (Settings → Prompts): two-pane composer — draggable layer
-      cards (collapse, kind badge, enable, ● modified / ▲ update dots), inline edit w/ debounced
-      autosave, **reset-to-default** + **diff modal** (override vs new default: Keep / Adopt /
-      Merge), live composed preview + token count.
+- [x] **3 — block-stack editor UI** `[v0.21.46]` (Settings → Intelligence → **System Prompt**):
+      side-by-side two-pane composer — draggable layer cards (`@dnd-kit`, collapse via
+      framer-motion, Built-in/Custom badge, enable Switch, ● edited / ▲ update dots), inline
+      `Textarea` edit w/ 600ms debounced autosave + ~token count, **reset-to-default**, **diff
+      modal** (`diff` lib; update: Keep[ack] / Adopt[reset] / Load-default merge-assist; edited:
+      Reset), live composed preview (client `composeStack` mirrors backend, unit-tested) + custom
+      layer add/delete. Narrow widths collapse to one column + Preview dialog. New: `SystemPromptSection`
+      + `prompt-stack/{LayerCard,ComposedPreview,LayerDiffModal}` + `PromptStack.css` +
+      `lib/promptStack.ts`(+test). Libs added: `@dnd-kit/*`, `diff`.
 - [ ] **4 — snippet library**: reframe `template_manager` as insert-as-layer + enhancer-in-place;
       drop the misleading "replaces PromptProfile/PromptSection" framing.
 

@@ -1,0 +1,273 @@
+/**
+ * Prompt Stack editor — the block-based system-prompt composer.
+ * Token-driven (semantic vars) so it follows theme switches; mirrors the glass
+ * treatment of `.section-card` in UnifiedSettings.css.
+ */
+
+.prompt-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Two-pane layout: stack | live preview ── */
+.prompt-stack__panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 20px;
+  align-items: start;
+}
+
+.prompt-stack__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prompt-stack__preview-col {
+  position: sticky;
+  top: 0;
+}
+
+/* Collapse to a single column on narrow widths; preview becomes an on-demand modal. */
+@media (max-width: 1024px) {
+  .prompt-stack__panes {
+    grid-template-columns: 1fr;
+  }
+  .prompt-stack__preview-col {
+    display: none;
+  }
+}
+.prompt-stack__preview-toggle {
+  display: none;
+}
+@media (max-width: 1024px) {
+  .prompt-stack__preview-toggle {
+    display: inline-flex;
+  }
+}
+
+/* ── Layer card ── */
+.layer-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+.layer-card:hover {
+  border-color: var(--border-strong, var(--accent-primary));
+}
+.layer-card[data-dragging='true'] {
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.35));
+  border-color: var(--accent-primary);
+}
+.layer-card[data-disabled='true'] {
+  opacity: 0.6;
+}
+
+.layer-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.layer-card__handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+.layer-card__handle:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+.layer-card__handle:active {
+  cursor: grabbing;
+}
+
+.layer-card__title-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.layer-card__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.layer-card__chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.layer-card__chevron[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+.layer-card__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.layer-card__dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.layer-card__dot--modified {
+  color: var(--accent-primary);
+}
+.layer-card__dot--update {
+  color: var(--text-warning, var(--accent-primary));
+}
+
+.layer-card__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Expanded editor body ── */
+.layer-card__body {
+  overflow: hidden;
+}
+.layer-card__body-inner {
+  padding: 0 12px 12px 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.layer-card__editor {
+  width: 100%;
+  min-height: 140px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.layer-card__editor-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.layer-card__count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.layer-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Live preview pane ── */
+.prompt-stack__preview {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 220px);
+}
+.prompt-stack__preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-default);
+}
+.prompt-stack__preview-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.prompt-stack__preview-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.prompt-stack__preview-body {
+  padding: 14px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.prompt-stack__preview-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Footer (add layer) ── */
+.prompt-stack__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Diff modal ── */
+.layer-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.layer-diff__row {
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.layer-diff__row--add {
+  background: var(--feedback-success-tint, rgba(34, 197, 94, 0.15));
+  color: var(--text-success, inherit);
+}
+.layer-diff__row--del {
+  background: var(--feedback-error-tint, rgba(239, 68, 68, 0.15));
+  color: var(--text-error, inherit);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+.layer-diff__legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}

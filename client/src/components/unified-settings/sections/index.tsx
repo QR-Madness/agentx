@@ -18,7 +18,8 @@ import {
   ListTree,
   Globe,
   Users,
-  Radio
+  Radio,
+  SquareStack
 } from 'lucide-react';
 
 export interface Section {
@@ -69,6 +70,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
     label: 'Intelligence',
     icon: <Brain size={16} />,
     sections: [
+      {
+        id: 'prompt-stack',
+        label: 'System Prompt',
+        icon: <SquareStack size={18} />,
+        component: lazy(() => import('./SystemPromptSection')),
+        keywords: ['system prompt', 'layers', 'stack', 'persona', 'global prompt', 'composer', 'behavior']
+      },
       {
         id: 'prompts',
         label: 'Prompt Enhancement',
