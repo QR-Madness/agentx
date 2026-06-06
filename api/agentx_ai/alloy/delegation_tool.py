@@ -97,6 +97,6 @@ def build_adhoc_delegation_tool(self_agent_id: str) -> dict:
         if getattr(p, "agent_id", None)
         and p.agent_id != self_agent_id
         and getattr(p, "available_for_delegation", True)
-        and p.kind == "agent"  # ambassadors are not chat agents → never delegation targets
+        and getattr(p, "kind", "agent") == "agent"  # ambassadors are not chat agents → never delegation targets
     ]
     return _build_descriptor(entries)
