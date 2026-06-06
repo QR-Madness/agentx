@@ -1732,6 +1732,189 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /prompts/layers:
+    get:
+      tags: [Prompts]
+      operationId: promptsLayers
+      summary: List the layered global-prompt stack
+      responses:
+        '200':
+          description: The prompt-layer stack plus the composed result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptLayer'
+                  composed:
+                    type: string
+    post:
+      tags: [Prompts]
+      operationId: promptsLayerCreate
+      summary: Create a custom layer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layer:
+                    $ref: '#/components/schemas/PromptLayer'
+
+  /prompts/layers/reorder:
+    post:
+      tags: [Prompts]
+      operationId: promptsLayersReorder
+      summary: Reorder the stack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order]
+              properties:
+                order:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Reordered stack
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptLayer'
+
+  /prompts/layers/{layer_id}:
+    patch:
+      tags: [Prompts]
+      operationId: promptsLayerUpdate
+      summary: Update a layer (content sets the override; title/enabled as given)
+      parameters:
+        - name: layer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                title:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated layer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layer:
+                    $ref: '#/components/schemas/PromptLayer'
+        '404':
+          description: Layer not found
+    delete:
+      tags: [Prompts]
+      operationId: promptsLayerDelete
+      summary: Delete a custom layer (built-ins can't be deleted)
+      parameters:
+        - name: layer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: string
+        '400':
+          description: Not found or not deletable (built-in)
+
+  /prompts/layers/{layer_id}/reset:
+    post:
+      tags: [Prompts]
+      operationId: promptsLayerReset
+      summary: Reset a built-in's override to the shipped default
+      parameters:
+        - name: layer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reset layer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layer:
+                    $ref: '#/components/schemas/PromptLayer'
+        '404':
+          description: Layer not found
+
+  /prompts/layers/{layer_id}/acknowledge:
+    post:
+      tags: [Prompts]
+      operationId: promptsLayerAcknowledge
+      summary: Mark a bumped built-in default as seen (keep override, clear badge)
+      parameters:
+        - name: layer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Acknowledged layer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layer:
+                    $ref: '#/components/schemas/PromptLayer'
+        '404':
+          description: Layer not found
+
   /prompts/sections:
     get:
       tags: [Prompts]
@@ -3629,6 +3812,43 @@ components:
           type: string
         enabled:
           type: boolean
+
+    PromptLayer:
+      type: object
+      description: One editable block in the layered global-prompt stack.
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+          enum: [builtin, custom]
+        default:
+          type: string
+          nullable: true
+          description: Shipped default (built-ins only); the sidecar
+        default_version:
+          type: integer
+        override:
+          type: string
+          nullable: true
+          description: User edit; null means "use the default"
+        base_version:
+          type: integer
+          nullable: true
+        effective:
+          type: string
+          description: override ?? default — what actually ships
+        enabled:
+          type: boolean
+        order:
+          type: integer
+        modified:
+          type: boolean
+        update_available:
+          type: boolean
+          description: A release changed the default underneath the user's override
 
     PromptTemplate:
       type: object

@@ -341,6 +341,27 @@ export interface GlobalPrompt {
   enabled: boolean;
 }
 
+/** One block in the layered global-prompt stack ("Prompt Stack"). */
+export interface PromptLayer {
+  id: string;
+  title: string;
+  kind: 'builtin' | 'custom';
+  /** Shipped default (built-ins only); the sidecar. */
+  default: string | null;
+  default_version: number;
+  /** User edit; null means "use the default". */
+  override: string | null;
+  base_version: number | null;
+  /** override ?? default — what actually ships. */
+  effective: string;
+  enabled: boolean;
+  order: number;
+  /** Has an override that differs from the shipped default. */
+  modified: boolean;
+  /** A release changed the default underneath the user's override. */
+  update_available: boolean;
+}
+
 // === Prompt Template Types ===
 
 export type TemplateType = 'system' | 'user' | 'snippet';

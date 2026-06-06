@@ -68,6 +68,12 @@ urlpatterns = [
     path("prompts/sections", views.prompts_sections, name="prompts-sections"),
     path("prompts/compose", views.prompts_compose, name="prompts-compose"),
     path("prompts/mcp-tools", views.prompts_mcp_tools, name="prompts-mcp-tools"),
+    # Prompt layer (stack) endpoints — `reorder` before the <layer_id> catch-all
+    path("prompts/layers", views.prompts_layers, name="prompts-layers"),
+    path("prompts/layers/reorder", views.prompts_layers_reorder, name="prompts-layers-reorder"),
+    path("prompts/layers/<str:layer_id>", views.prompts_layer_detail, name="prompts-layer-detail"),
+    path("prompts/layers/<str:layer_id>/reset", views.prompts_layer_reset, name="prompts-layer-reset"),
+    path("prompts/layers/<str:layer_id>/acknowledge", views.prompts_layer_acknowledge, name="prompts-layer-acknowledge"),
     # Prompt template endpoints
     path("prompts/templates", views.prompts_templates_list, name="prompts-templates-list"),
     path("prompts/templates/tags", views.prompts_templates_tags, name="prompts-templates-tags"),

@@ -455,9 +455,14 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       kept as back-compat shims over the store (`set_singleton_override` upsert). Scope: governs
       only the conversational prompt — `SystemPromptLoader` feature prompts untouched. Tests:
       parity, no-duplication, override→live, shim, singleton idempotency.
-- [ ] **2 — layer API**: `GET/POST/PATCH/DELETE /api/prompts/layers`, `/{id}/reset`,
-      `/{id}/acknowledge`, `/layers/reorder`, compose preview (reflect the stack + dynamic
-      injections + active agent).
+- [x] **2 — layer API** `[v0.21.45]`: `GET/POST /api/prompts/layers` (list `{layers, composed}`
+      / create custom), `PATCH/DELETE /api/prompts/layers/{id}` (content→override, title,
+      enabled / delete custom), `POST /{id}/reset`, `POST /{id}/acknowledge`, `POST
+      /layers/reorder`. Typed client (`promptsApi.{list,create,update,delete,reset,acknowledge,
+      reorder}PromptLayer(s)` + `PromptLayer` type). Docs: CLAUDE.md table, OpenApi (`PromptLayer`
+      schema + paths, spec lints clean), endpoints.md. Tests: `PromptLayerApiTest` (list/create/
+      patch/delete/reset/reorder/404 via RequestFactory). Compose-preview enrichment (dynamic
+      injections + active agent) deferred to the editor (Phase 3).
 - [ ] **3 — block-stack editor UI** (Settings → Prompts): two-pane composer — draggable layer
       cards (collapse, kind badge, enable, ● modified / ▲ update dots), inline edit w/ debounced
       autosave, **reset-to-default** + **diff modal** (override vs new default: Keep / Adopt /

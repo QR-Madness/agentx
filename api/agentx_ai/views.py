@@ -2814,6 +2814,146 @@ def prompts_mcp_tools(request):
     })
 
 
+# ============== Prompt Layer (Stack) Endpoints ==============
+
+
+def _serialize_layer(layer) -> dict:
+    """Wire shape for a PromptLayer — carries both content fields + derived flags
+    so the editor can render the override/default diff and update/modified badges."""
+    return {
+        "id": layer.id,
+        "title": layer.title,
+        "kind": layer.kind,
+        "default": layer.default,
+        "default_version": layer.default_version,
+        "override": layer.override,
+        "base_version": layer.base_version,
+        "effective": layer.effective,
+        "enabled": layer.enabled,
+        "order": layer.order,
+        "modified": layer.modified,
+        "update_available": layer.update_available,
+    }
+
+
+@csrf_exempt
+def prompts_layers(request):
+    """List the prompt-layer stack, or create a custom layer.
+
+    GET  → {layers: [...], composed: "<full stack>"}
+    POST → create a custom layer ({title, content?}) → {layer}
+    """
+    from .prompts import get_layer_store
+
+    store = get_layer_store()
+
+    if request.method == 'GET':
+        layers = store.list_layers()
+        return JsonResponse({
+            "layers": [_serialize_layer(layer) for layer in layers],
+            "composed": store.compose(),
+        })
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+        title = (data.get('title') or '').strip()
+        if not title:
+            return JsonResponse({'error': 'Missing required field: title'}, status=400)
+        layer = store.create_custom(title, data.get('content', '') or '')
+        return JsonResponse({"layer": _serialize_layer(layer)}, status=201)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def prompts_layer_detail(request, layer_id):
+    """Update or delete a single layer.
+
+    PATCH  → apply any of {content, title, enabled}; content sets the override
+             (built-in) or the body (custom); title/enabled as given → {layer}
+    DELETE → delete a custom layer (built-ins can't be deleted)
+    """
+    from .prompts import get_layer_store
+
+    store = get_layer_store()
+
+    if request.method == 'PATCH':
+        if store.get(layer_id) is None:
+            return JsonResponse({'error': 'Layer not found'}, status=404)
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+        if 'enabled' in data:
+            store.set_enabled(layer_id, bool(data['enabled']))
+        if data.get('title') is not None:
+            store.update_custom(layer_id, title=data['title'])  # no-op for built-ins
+        if 'content' in data:
+            store.set_override(layer_id, data['content'] or '')
+
+        layer = store.get(layer_id)
+        return JsonResponse({"layer": _serialize_layer(layer)})
+
+    if request.method == 'DELETE':
+        if store.delete_custom(layer_id):
+            return JsonResponse({"deleted": layer_id})
+        return JsonResponse(
+            {'error': 'Layer not found or not deletable (built-in)'}, status=400
+        )
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def prompts_layer_reset(request, layer_id):
+    """Reset a built-in layer's override (back to riding the shipped default)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    from .prompts import get_layer_store
+
+    store = get_layer_store()
+    if store.get(layer_id) is None:
+        return JsonResponse({'error': 'Layer not found'}, status=404)
+    return JsonResponse({"layer": _serialize_layer(store.reset(layer_id))})
+
+
+@csrf_exempt
+def prompts_layer_acknowledge(request, layer_id):
+    """Mark a bumped built-in default as seen (keep the override, clear the badge)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    from .prompts import get_layer_store
+
+    store = get_layer_store()
+    if store.get(layer_id) is None:
+        return JsonResponse({'error': 'Layer not found'}, status=404)
+    return JsonResponse({"layer": _serialize_layer(store.acknowledge(layer_id))})
+
+
+@csrf_exempt
+def prompts_layers_reorder(request):
+    """Reorder the stack from a full/partial list of ids (`{order: [id, ...]}`)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+    from .prompts import get_layer_store
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+    order = data.get('order')
+    if not isinstance(order, list):
+        return JsonResponse({'error': 'Missing required field: order (list of ids)'}, status=400)
+
+    store = get_layer_store()
+    layers = store.reorder([str(layer_id) for layer_id in order])
+    return JsonResponse({"layers": [_serialize_layer(layer) for layer in layers]})
+
+
 # ============== Prompt Template Endpoints ==============
 
 

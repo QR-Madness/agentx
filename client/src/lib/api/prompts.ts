@@ -1,7 +1,49 @@
 import { request as apiRequest } from './core';
-import type { GlobalPrompt, PromptProfile, PromptSection } from './types';
+import type { GlobalPrompt, PromptLayer, PromptProfile, PromptSection } from './types';
 
 export const promptsApi = {
+  // === Prompt Stack (layers) ===
+
+  async listPromptLayers(): Promise<{ layers: PromptLayer[]; composed: string }> {
+    return apiRequest('/api/prompts/layers');
+  },
+
+  async createPromptLayer(title: string, content = ''): Promise<{ layer: PromptLayer }> {
+    return apiRequest('/api/prompts/layers', {
+      method: 'POST',
+      body: JSON.stringify({ title, content }),
+    });
+  },
+
+  async updatePromptLayer(
+    layerId: string,
+    patch: { content?: string; title?: string; enabled?: boolean },
+  ): Promise<{ layer: PromptLayer }> {
+    return apiRequest(`/api/prompts/layers/${layerId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  async deletePromptLayer(layerId: string): Promise<{ deleted: string }> {
+    return apiRequest(`/api/prompts/layers/${layerId}`, { method: 'DELETE' });
+  },
+
+  async resetPromptLayer(layerId: string): Promise<{ layer: PromptLayer }> {
+    return apiRequest(`/api/prompts/layers/${layerId}/reset`, { method: 'POST' });
+  },
+
+  async acknowledgePromptLayer(layerId: string): Promise<{ layer: PromptLayer }> {
+    return apiRequest(`/api/prompts/layers/${layerId}/acknowledge`, { method: 'POST' });
+  },
+
+  async reorderPromptLayers(order: string[]): Promise<{ layers: PromptLayer[] }> {
+    return apiRequest('/api/prompts/layers/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ order }),
+    });
+  },
+
   // === Prompts ===
 
   async listPromptProfiles(): Promise<{ profiles: PromptProfile[] }> {

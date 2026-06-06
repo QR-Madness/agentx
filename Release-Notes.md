@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.44 -->
+<!-- release-version: 0.21.45 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -73,7 +73,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   output, safety) ship a default you can override per-layer; untouched layers keep receiving
   release improvements while your edits stay pinned and are never silently overwritten. This
   is the plumbing for the upcoming block-based prompt editor — behavior is unchanged for now
-  (the default stack reproduces the previous default prompt exactly).
+  (the default stack reproduces the previous default prompt exactly). The stack is now exposed
+  over a full REST API (`/api/prompts/layers` — list/create/update/delete/reorder, plus
+  per-layer reset and update-acknowledge), with typed client methods, ready for the editor UI.
 
 ### Fixes
 

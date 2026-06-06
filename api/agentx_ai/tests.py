@@ -6680,6 +6680,90 @@ class PromptStackCompositionTest(TestCase):
         self.assertIn("SHIMMED CORE", body["global_prompt"]["content"])
 
 
+class PromptLayerApiTest(TestCase):
+    """Phase 2 — the layer REST API (list/create/patch/delete/reset/reorder),
+    exercised against a fake-config store via RequestFactory (no auth middleware)."""
+
+    def setUp(self):
+        from django.test import RequestFactory
+        from agentx_ai.prompts import layers
+        self.rf = RequestFactory()
+        self.fake = _FakeConfigManager()
+        with patch.object(layers, "get_config_manager", return_value=self.fake):
+            self.store = layers.LayerStore()
+
+    def _call(self, view, request, **kwargs):
+        with patch("agentx_ai.prompts.get_layer_store", return_value=self.store):
+            return view(request, **kwargs)
+
+    def _json(self, resp):
+        import json as _json
+        return _json.loads(resp.content)
+
+    def _post(self, path, payload):
+        import json as _json
+        return self.rf.post(path, data=_json.dumps(payload), content_type="application/json")
+
+    def test_list_returns_layers_and_composed(self):
+        from agentx_ai import views
+        body = self._json(self._call(views.prompts_layers, self.rf.get("/api/prompts/layers")))
+        ids = {layer["id"] for layer in body["layers"]}
+        self.assertIn("core-principles", ids)
+        self.assertIn("safety-constraints", ids)
+        self.assertIn("Core Principles", body["composed"])
+        # Serialized shape carries the diff/badge fields.
+        core = next(layer for layer in body["layers"] if layer["id"] == "core-principles")
+        self.assertEqual(core["kind"], "builtin")
+        self.assertFalse(core["modified"])
+        self.assertFalse(core["update_available"])
+
+    def test_create_patch_and_delete_custom(self):
+        from agentx_ai import views
+        created = self._json(self._call(views.prompts_layers, self._post("/x", {"title": "Tone", "content": "Be terse."})))
+        cid = created["layer"]["id"]
+        self.assertEqual(created["layer"]["kind"], "custom")
+        # PATCH content + disable.
+        patched = self._json(self._call(
+            views.prompts_layer_detail,
+            self.rf.patch("/x", data='{"content": "Be VERY terse.", "enabled": false}', content_type="application/json"),
+            layer_id=cid,
+        ))
+        self.assertEqual(patched["layer"]["effective"], "Be VERY terse.")
+        self.assertFalse(patched["layer"]["enabled"])
+        # DELETE removes it; deleting a built-in is rejected.
+        self.assertEqual(self._call(views.prompts_layer_detail, self.rf.delete("/x"), layer_id=cid).status_code, 200)
+        self.assertEqual(self._call(views.prompts_layer_detail, self.rf.delete("/x"), layer_id="core-principles").status_code, 400)
+
+    def test_patch_builtin_override_and_reset(self):
+        from agentx_ai import views
+        self._call(
+            views.prompts_layer_detail,
+            self.rf.patch("/x", data='{"content": "MINE"}', content_type="application/json"),
+            layer_id="core-principles",
+        )
+        self.assertEqual(self.store.get("core-principles").effective, "MINE")
+        reset = self._json(self._call(views.prompts_layer_reset, self.rf.post("/x"), layer_id="core-principles"))
+        self.assertIsNone(reset["layer"]["override"])
+
+    def test_reorder(self):
+        from agentx_ai import views
+        body = self._json(self._call(
+            views.prompts_layers_reorder,
+            self._post("/x", {"order": ["safety-constraints", "core-principles"]}),
+        ))
+        first = body["layers"][0]
+        self.assertEqual(first["id"], "safety-constraints")
+
+    def test_patch_missing_layer_404(self):
+        from agentx_ai import views
+        resp = self._call(
+            views.prompts_layer_detail,
+            self.rf.patch("/x", data='{"content": "x"}', content_type="application/json"),
+            layer_id="does-not-exist",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
 class ChatRunIndexingTest(TestCase):
     """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user
     recovery list that backs /api/agent/chat/runs."""

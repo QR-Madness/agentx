@@ -229,8 +229,13 @@ Base URL: `http://localhost:12319/api/`
 | `/api/agent/status` | GET | Get current agent status |
 | `/api/prompts/profiles` | GET | List all prompt profiles |
 | `/api/prompts/profiles/{id}` | GET | Get profile detail with composed preview |
-| `/api/prompts/global` | GET | Get global prompt |
-| `/api/prompts/global/update` | POST | Update global prompt |
+| `/api/prompts/global` | GET | Get global prompt (back-compat shim — returns the composed layer stack) |
+| `/api/prompts/global/update` | POST | Update global prompt (shim — persists the blob as the reserved `legacy-global` layer) |
+| `/api/prompts/layers` | GET/POST | List the layered global-prompt stack (`{layers, composed}`) or create a custom layer (`{title, content?}`) |
+| `/api/prompts/layers/reorder` | POST | Reorder the stack (`{order: [id, …]}`) |
+| `/api/prompts/layers/{id}` | PATCH/DELETE | Update a layer (`{content?, title?, enabled?}` — content sets the override) or delete a custom layer (built-ins can't be deleted) |
+| `/api/prompts/layers/{id}/reset` | POST | Reset a built-in's override (back to the shipped default) |
+| `/api/prompts/layers/{id}/acknowledge` | POST | Mark a bumped built-in default as seen (keep the override, clear the update badge) |
 | `/api/prompts/sections` | GET | List all prompt sections |
 | `/api/prompts/compose` | GET | Preview composed system prompt |
 | `/api/prompts/mcp-tools` | GET | Get auto-generated MCP tools prompt |

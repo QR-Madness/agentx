@@ -727,6 +727,10 @@ Returns the full profile with all sections and the composed prompt preview.
 GET /api/prompts/global
 ```
 
+> **Now a back-compat shim.** The global system prompt is composed from a durable
+> **layer stack** (see *Prompt Stack* below). This endpoint returns the composed stack;
+> `global/update` persists the posted blob as the reserved `legacy-global` layer.
+
 **Response:**
 ```json
 {
@@ -748,6 +752,41 @@ POST /api/prompts/global/update
 {
   "content": "Always be helpful and concise.",
   "enabled": true
+}
+```
+
+### Prompt Stack (Layers)
+
+The conversational global system prompt is composed from an ordered stack of editable
+**layers**. Built-in layers ship a versioned `default` (the sidecar); the user's edit is
+stored separately as an `override` (`effective = override ?? default`). Untouched built-ins
+keep receiving release improvements; edited layers are pinned and never silently overwritten.
+A released bump to a built-in's `default` surfaces `update_available` (review the diff, then
+**acknowledge** to keep your text or **reset** to adopt the new default).
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/prompts/layers` | GET / POST | List the stack (`{layers, composed}`) or create a custom layer (`{title, content?}`) |
+| `/api/prompts/layers/reorder` | POST | Reorder the stack (`{order: [id, …]}`) |
+| `/api/prompts/layers/{id}` | PATCH / DELETE | Update (`{content?, title?, enabled?}` — `content` sets the override) or delete a custom layer (built-ins can't be deleted) |
+| `/api/prompts/layers/{id}/reset` | POST | Reset a built-in's override back to the shipped default |
+| `/api/prompts/layers/{id}/acknowledge` | POST | Mark a bumped built-in default as seen (keep the override, clear the badge) |
+
+**Layer shape:**
+```json
+{
+  "id": "core-principles",
+  "title": "Core Principles",
+  "kind": "builtin",
+  "default": "You are an intelligent AI assistant…",
+  "default_version": 1,
+  "override": null,
+  "base_version": null,
+  "effective": "You are an intelligent AI assistant…",
+  "enabled": true,
+  "order": 0,
+  "modified": false,
+  "update_available": false
 }
 ```
 
