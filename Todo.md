@@ -427,6 +427,36 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > follow-ups (`scratchpad_note`, `forget`/`remember_this`/provenance, cached recap), and the
 > per-profile internal-tool gating UI (18.9.x). All shipped — see roadmap.
 
+### 18.13 Layered Prompt Composer ("Prompt Stack") — In Progress
+
+> Replace the single-base-prompt model with a durable, block-based stack of editable
+> prompt **layers**. Each built-in layer ships a `default` (sidecar, owned by the app,
+> updated by releases) + an optional user `override`; effective = override ?? default,
+> so untouched layers keep getting release improvements while edits are pinned and
+> never silently overwritten. Locked decisions: **global stack only** (per-agent prompt
+> stays in the profile editor, read-only in preview), **debounced autosave**, **no named
+> presets in v1** (retire legacy prompt-profiles into the stack). Fixes the original
+> durability bug — the old global/sections edits were in-memory only and lost on restart.
+
+- [x] **1a — model + store** `[v0.21.43]`: `PromptLayer` (default/override/`default_version`/
+      `base_version`; `effective`/`modified`/`update_available`); `BUILTIN_LAYERS` (global
+      prompt split into versioned blocks); `LayerStore` durable via `ConfigManager`
+      (`prompts.layers`, write-through) — override/reset/acknowledge/enable/reorder + custom
+      CRUD + `compose()`. Tests: precedence, override persists, default-change → update/ack/
+      reset, custom CRUD/reorder/compose.
+- [ ] **1b — wire + migrate**: point `compose_system_prompt`/`PromptManager` at `LayerStore`;
+      migrate the current global prompt + sections into the stack on first boot (no data loss);
+      keep old `/prompts/global*` + `/sections*` as back-compat shims.
+- [ ] **2 — layer API**: `GET/POST/PATCH/DELETE /api/prompts/layers`, `/{id}/reset`,
+      `/{id}/acknowledge`, `/layers/reorder`, compose preview (reflect the stack + dynamic
+      injections + active agent).
+- [ ] **3 — block-stack editor UI** (Settings → Prompts): two-pane composer — draggable layer
+      cards (collapse, kind badge, enable, ● modified / ▲ update dots), inline edit w/ debounced
+      autosave, **reset-to-default** + **diff modal** (override vs new default: Keep / Adopt /
+      Merge), live composed preview + token count.
+- [ ] **4 — snippet library**: reframe `template_manager` as insert-as-layer + enhancer-in-place;
+      drop the misleading "replaces PromptProfile/PromptSection" framing.
+
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete
