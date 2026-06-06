@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api } from '../lib/api';
-import type { AmbassadorBriefing, AmbassadorStatus } from '../lib/api';
+import type { AmbassadorBriefing, AmbassadorStatus, AmbassadorTurnArtifacts } from '../lib/api';
 import type { AssistantMessage } from '../lib/messages';
 
 interface AmbassadorContextValue {
@@ -31,11 +31,21 @@ interface AmbassadorContextValue {
     messageId: string,
   ) => AmbassadorBriefing | undefined;
   /** CC the ambassador to brief one assistant turn. Idempotent per message id. */
-  ccTurn: (conversationId: string, message: AssistantMessage, userText: string) => void;
+  ccTurn: (conversationId: string, message: AssistantMessage, opts: CcTurnOptions) => void;
   /** Cancel an in-flight briefing. */
   cancel: (conversationId: string, messageId: string) => void;
   /** Replay persisted briefings from the server sidecar. */
   refresh: (conversationId: string) => Promise<void>;
+}
+
+/** Everything a CC needs beyond the message itself (caller-resolved). */
+export interface CcTurnOptions {
+  /** The preceding user message (turn prompt), for grounding. */
+  userText: string;
+  /** What the agent did this turn (tools/sources/exhibits). */
+  artifacts?: AmbassadorTurnArtifacts;
+  /** Resolved display name of the briefed agent (so the briefing names it). */
+  agentName?: string;
 }
 
 const AmbassadorContext = createContext<AmbassadorContextValue | null>(null);
@@ -85,7 +95,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const ccTurn = useCallback(
-    (conversationId: string, message: AssistantMessage, userText: string) => {
+    (conversationId: string, message: AssistantMessage, opts: CcTurnOptions) => {
+      const { userText, artifacts, agentName } = opts;
       const messageId = message.id;
       // Idempotent: re-CC refreshes the same record rather than duplicating.
       setBriefing(conversationId, messageId, {
@@ -101,6 +112,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
           message_id: messageId,
           assistant_text: message.content,
           user_text: userText,
+          agent_name: agentName || message.agentName,
+          artifacts,
         })
         .then(({ run_id }) => {
           setBriefing(conversationId, messageId, { run_id });

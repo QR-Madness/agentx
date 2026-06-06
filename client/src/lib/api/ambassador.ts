@@ -21,11 +21,49 @@ export interface AmbassadorBriefing {
   updated_at?: string;
 }
 
+/** One tool the agent ran during the turn (compacted for grounding). */
+export interface AmbassadorToolArtifact {
+  name: string;
+  /** Compact arg summary — e.g. the query/url/path. */
+  detail?: string;
+  ok?: boolean;
+  /** Truncated result preview (a hint, never the full output). */
+  result?: string;
+}
+
+/** One source the turn cited (from a citation exhibit). */
+export interface AmbassadorSource {
+  label: string;
+  url?: string;
+}
+
+/** A non-citation artifact the turn presented (table, diagram, choice). */
+export interface AmbassadorExhibitArtifact {
+  kind: string;
+  title?: string;
+  detail?: string;
+}
+
+/**
+ * The substance of a turn beyond the agent's prose — what it actually *did*
+ * (searched, pulled sources, built a table). Lets the ambassador interpret the
+ * turn instead of merely paraphrasing the reply. Compacted + capped client-side.
+ */
+export interface AmbassadorTurnArtifacts {
+  tools?: AmbassadorToolArtifact[];
+  sources?: AmbassadorSource[];
+  exhibits?: AmbassadorExhibitArtifact[];
+}
+
 export interface BriefTurnRequest {
   conversation_id: string;
   message_id: string;
   assistant_text: string;
   user_text?: string;
+  /** Display name of the briefed agent, so the briefing speaks of it by name. */
+  agent_name?: string;
+  /** What the agent actually did this turn (tools, sources, exhibits). */
+  artifacts?: AmbassadorTurnArtifacts;
 }
 
 export interface AmbassadorStreamCallbacks {

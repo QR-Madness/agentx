@@ -61,6 +61,10 @@ export type {
   AmbassadorBriefing,
   AmbassadorStatus,
   AmbassadorStreamCallbacks,
+  AmbassadorTurnArtifacts,
+  AmbassadorToolArtifact,
+  AmbassadorSource,
+  AmbassadorExhibitArtifact,
   BriefTurnRequest,
 } from './ambassador';
 export * from './errors';

@@ -821,6 +821,40 @@ paths:
                 user_text:
                   type: string
                   description: The preceding user message (turn prompt), for grounding
+                agent_name:
+                  type: string
+                  description: Display name of the briefed agent, so the briefing speaks of it by name
+                artifacts:
+                  type: object
+                  description: >-
+                    What the agent actually did this turn (tools it ran, sources it
+                    cited, exhibits it built), compacted client-side, so the briefing
+                    grounds on the turn's substance rather than only its prose.
+                  properties:
+                    tools:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name: { type: string }
+                          detail: { type: string, description: Compact arg summary (query/url/path) }
+                          ok: { type: boolean }
+                          result: { type: string, description: Truncated result preview }
+                    sources:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          label: { type: string }
+                          url: { type: string }
+                    exhibits:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          kind: { type: string, description: 'table | diagram | choice' }
+                          title: { type: string }
+                          detail: { type: string }
       responses:
         '200':
           description: Briefing run started

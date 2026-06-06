@@ -47,25 +47,74 @@ _TOKENS_PER_TURN = 400
 # chosen profile specify a model. resolve_with_fallback degrades from here.
 _DEFAULT_MODEL = "anthropic:claude-haiku-4-5-20251001"
 
-_DEFAULT_PERSONA = (
-    "You are an Ambassador: a person standing beside the user, quietly telling them "
-    "what just happened in a conversation they're watching. You are NOT a participant "
-    "— you don't continue or answer the conversation, you just tell the user about it.\n\n"
-    "Talk like a human talking out loud. Speak in plain, natural, flowing sentences, "
-    "the way you'd lean over and explain something to a friend. Capture what the turn "
-    "actually did — the point it made, the question it raised, whatever it left hanging "
-    "— and say it in your own words. Never invent anything that wasn't there.\n\n"
-    "Hard rules on form: NO markdown, NO headings, NO labels like 'Briefing:', NO bullet "
-    "points, NO bold or asterisks, NO numbered lists. Just prose — one flowing voice, as "
-    "if spoken. Lean and natural, never stiff or templated. Use the surrounding context "
-    "only to understand the turn, not to recap it."
-)
+def _default_persona(agent_name: str = "") -> str:
+    """The Ambassador's core voice. ``agent_name`` (the *briefed* agent's display
+    name, when known) lets it speak about the agent by name instead of the flat,
+    transcript-narrator 'the assistant'."""
+    agent_ref = agent_name.strip() or "your agent"
+    name_rule = (
+        f"- The agent in the conversation is named {agent_name.strip()}. Call it by that "
+        f"name, or 'your agent'. "
+        if agent_name.strip()
+        else "- Call the agent 'your agent'. "
+    )
+    return (
+        "You are an Ambassador. The person you're talking to is sitting in a conversation "
+        "with an AI agent, watching it work — and you lean over to tell THEM, directly, "
+        "what just happened in the agent's latest turn. You speak TO that person. You are "
+        "not a participant: you don't answer or continue the conversation, you only tell "
+        "them what their agent just did.\n\n"
+
+        "WHO IS WHO — this is the most important thing to get right:\n"
+        "- The person you're talking to is 'you'. Address them in the second person, always. "
+        "NEVER call them 'the user' — narrating 'the user asked…' to their own face is a "
+        "report, not a person talking. They are 'you'.\n"
+        f"{name_rule}NEVER call it 'the assistant', 'the AI', 'the model', or a bare 'it' "
+        "the way a transcript would.\n\n"
+
+        "HOW TO SPEAK:\n"
+        "Talk the way a person actually talks out loud to a friend beside them. Tell them what "
+        f"{agent_ref} found, did, decided, or asked — the real substance — in plain, flowing "
+        "sentences. They already know what they themselves said, so don't recite their own "
+        "message back to them; lead with what the agent did with it. If their request matters "
+        "for context, touch it lightly in passing, never restate it in full.\n\n"
+
+        "Do NOT narrate the turn as an event you watched from the outside. No 'the agent came "
+        "back with', no 'it then asked', no 'it broke those down into'. No play-by-play. And no "
+        "filler color — drop empty adjectives like 'a couple of solid directories', 'handy "
+        "categories', 'a nice breakdown'. Just say what's actually there, cleanly and warmly. "
+        "Never invent anything that wasn't in the turn; the surrounding context is only to help "
+        "you understand it, not to recap it.\n\n"
+
+        "If the turn shows you what the agent actually DID — a web search it ran, sources it "
+        "pulled, a table or diagram it built — work that into your words in plain terms ('it "
+        "searched for X and turned up the county index and the downtown association', 'it laid "
+        "the results out in a table'). That substance is often the real point of the turn. But "
+        "stay spoken: never dump raw results, never paste URLs, never read out a list.\n\n"
+
+        "FORM (hard rules): NO markdown, NO headings, NO labels like 'Briefing:', NO bullet "
+        "points, NO numbered lists, NO bold or asterisks. One flowing spoken voice — lean and "
+        "natural, never stiff, never templated.\n\n"
+
+        "LENGTH (hard rule): a briefing is a glance, not a recap. Keep it SHORT and obey the "
+        "length limit you're given below. Think as much as you need to get it right, but what "
+        "you actually say to the person must stay brief — when you've said the heart of it, stop."
+    )
 
 _VERBOSITY_HINT = {
-    "brief": "Keep it to a sentence or two — just the heart of it, spoken plainly.",
-    "normal": "Keep it to a few natural sentences — a short spoken paragraph.",
-    "deep": "Take a little longer if it helps — walk through the reasoning and what's left open, still as plain spoken prose.",
+    "brief": "LENGTH LIMIT: one or two sentences — just the heart of it. Then stop.",
+    "normal": "LENGTH LIMIT: a short spoken paragraph, three or four sentences at most. Do not exceed it.",
+    "deep": "LENGTH LIMIT: at most two short paragraphs — walk through the reasoning and what's left open, then stop.",
 }
+
+# Ambassadors think freely, so the token budget must leave generous headroom for
+# the model's *reasoning* on top of the (deliberately short) visible briefing —
+# otherwise a thinking model (e.g. Gemini) spends the budget reasoning and the
+# answer truncates mid-sentence. Length is controlled by the prompt's LENGTH
+# LIMIT, NOT by a tight token cap. `_THINKING_HEADROOM` is the reasoning room; the
+# per-verbosity value is the room for the visible answer on top of it.
+_THINKING_HEADROOM = 2048
+_VERBOSITY_TOKENS = {"brief": 256, "normal": 512, "deep": 1024}
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -91,8 +140,26 @@ class AmbassadorService:
             "profile_id": config.get("ambassador.profile_id", None),
             "model": config.get("ambassador.model") or None,
             "max_context_turns": config.get("ambassador.max_context_turns", 8),
-            "max_tokens": config.get("ambassador.max_tokens", 600),
+            # Optional hard ceiling. Left unset by default so a thinking model has
+            # room to reason without the visible briefing getting clipped — length
+            # is governed by the prompt's LENGTH LIMIT, not by this cap.
+            "max_tokens": config.get("ambassador.max_tokens", None),
         }
+
+    def _max_tokens(self, profile, cfg: dict[str, Any]) -> int:
+        """Token budget = thinking headroom + room for the (short) visible answer.
+
+        Ambassadors think freely, so the cap must accommodate reasoning *plus* the
+        briefing; otherwise a thinking model spends the budget reasoning and the
+        answer truncates mid-sentence. The visible length stays short via the
+        prompt's LENGTH LIMIT, not via this cap. An explicit ``ambassador.max_tokens``
+        setting, if present, is honored as a hard ceiling."""
+        amb = getattr(profile, "ambassador", None) if profile else None
+        verbosity = getattr(amb, "verbosity", "normal") if amb else "normal"
+        answer_room = _VERBOSITY_TOKENS.get(verbosity, _VERBOSITY_TOKENS["normal"])
+        budget = _THINKING_HEADROOM + answer_room
+        ceiling = cfg.get("max_tokens")
+        return min(budget, ceiling) if ceiling else budget
 
     def _resolve_profile(self, profile_id: Optional[str]):
         """Pick the ambassador profile: configured id → default profile → None."""
@@ -115,9 +182,9 @@ class AmbassadorService:
         except Exception:
             return None
 
-    def _build_persona(self, profile) -> str:
+    def _build_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
-        parts = [_DEFAULT_PERSONA]
+        parts = [_default_persona(agent_name)]
         # A profile's own system prompt colors the ambassador's voice.
         if profile and getattr(profile, "system_prompt", None):
             parts.append(f"Persona guidance:\n{profile.system_prompt.strip()}")
@@ -127,9 +194,68 @@ class AmbassadorService:
             parts.append(f"Additional briefing instructions:\n{amb.briefing_prompt.strip()}")
         return "\n\n".join(parts)
 
+    def _render_artifacts(self, artifacts: Optional[dict], agent_label: str) -> str:
+        """Compact, prose-able summary of what the agent *did* this turn (tools it
+        ran, sources it pulled, exhibits it built) — grounding beyond the reply."""
+        if not artifacts:
+            return ""
+        lines: list[str] = []
+
+        for tool in (artifacts.get("tools") or [])[:12]:
+            name = (tool.get("name") or "a tool").strip()
+            piece = f"ran {name}"
+            detail = (tool.get("detail") or "").strip()
+            if detail:
+                piece += f": {detail}"
+            if tool.get("ok") is False:
+                piece += " (which failed)"
+            result = (tool.get("result") or "").strip()
+            if result:
+                piece += f" → {result}"
+            lines.append(piece)
+
+        sources = artifacts.get("sources") or []
+        rendered_sources = []
+        for src in sources[:12]:
+            label = (src.get("label") or "").strip()
+            url = (src.get("url") or "").strip()
+            if label and url:
+                rendered_sources.append(f"{label} ({url})")
+            elif label or url:
+                rendered_sources.append(label or url)
+        if rendered_sources:
+            lines.append("pulled sources: " + "; ".join(rendered_sources))
+
+        for ex in (artifacts.get("exhibits") or [])[:8]:
+            kind = (ex.get("kind") or "an artifact").strip()
+            piece = f"presented a {kind}"
+            title = (ex.get("title") or "").strip()
+            if title:
+                piece += f" ({title})"
+            detail = (ex.get("detail") or "").strip()
+            if detail:
+                piece += f" — {detail}"
+            lines.append(piece)
+
+        if not lines:
+            return ""
+        body = "\n".join(f"- {ln}" for ln in lines)
+        return (
+            f"What {agent_label} actually did this turn — facts to ground your briefing "
+            "(weave them into your own spoken words; do NOT list them back or read out URLs):\n"
+            f"{body}"
+        )
+
     def _build_turn_prompt(
-        self, *, user_text: str, assistant_text: str, context: str
+        self,
+        *,
+        user_text: str,
+        assistant_text: str,
+        context: str,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
     ) -> str:
+        agent_label = agent_name.strip() or "Your agent"
         sections = []
         if context.strip():
             sections.append(
@@ -138,13 +264,21 @@ class AmbassadorService:
             )
         turn = "--- The turn to brief ---\n"
         if user_text.strip():
-            turn += f"The user said:\n{user_text.strip()}\n\n"
-        turn += f"The agent replied:\n{assistant_text.strip()}"
+            turn += f"You said:\n{user_text.strip()}\n\n"
+        turn += f"{agent_label} replied:\n{assistant_text.strip()}"
         sections.append(turn)
-        sections.append("Now write the briefing of that turn for the user.")
+        artifacts_block = self._render_artifacts(artifacts, agent_label)
+        if artifacts_block:
+            sections.append(artifacts_block)
+        sections.append(
+            "Now tell the person, directly and in your own spoken voice, what just "
+            "happened in that turn."
+        )
         return "\n\n".join(sections)
 
-    def _grounding_context(self, conversation_id: str, max_turns: int) -> str:
+    def _grounding_context(
+        self, conversation_id: str, max_turns: int, agent_name: str = ""
+    ) -> str:
         """Read-only recent transcript for grounding. Empty on any failure."""
         try:
             msgs = load_recent_turns(
@@ -153,9 +287,10 @@ class AmbassadorService:
         except Exception as e:  # pragma: no cover - DB offline
             logger.debug(f"ambassador grounding load failed: {e}")
             return ""
+        agent_label = agent_name.strip() or "Agent"
         lines = []
         for m in msgs[-(max_turns * 2):]:
-            role = "User" if m.role == MessageRole.USER else "Agent"
+            role = "You" if m.role == MessageRole.USER else agent_label
             lines.append(f"{role}: {m.content}")
         return "\n".join(lines)
 
@@ -166,6 +301,8 @@ class AmbassadorService:
         *,
         assistant_text: str,
         user_text: str = "",
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
     ) -> AsyncGenerator[str, None]:
         """Brief one conversation turn. Yields ``ambassador_*`` SSE events.
 
@@ -204,41 +341,85 @@ class AmbassadorService:
             )
             return
 
-        context = self._grounding_context(conversation_id, cfg["max_context_turns"])
+        context = self._grounding_context(
+            conversation_id, cfg["max_context_turns"], agent_name
+        )
         messages = [
-            Message(role=MessageRole.SYSTEM, content=self._build_persona(profile)),
+            Message(
+                role=MessageRole.SYSTEM,
+                content=self._build_persona(profile, agent_name),
+            ),
             Message(
                 role=MessageRole.USER,
                 content=self._build_turn_prompt(
-                    user_text=user_text, assistant_text=assistant_text, context=context
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    context=context,
+                    agent_name=agent_name,
+                    artifacts=artifacts,
                 ),
             ),
         ]
 
+        # Token-stream the briefing so the panel reveals it progressively (and a
+        # re-attach replays the deltas). `settled` guards the sidecar status: if
+        # the run is cancelled mid-stream (GeneratorExit from `gen.aclose()`), we
+        # must settle it ourselves — otherwise it stays stuck on "streaming" and
+        # a reopened panel shows a perpetual spinner.
+        accumulated = ""
+        settled = False
+        finish_reason = None
         try:
-            result = await provider.complete(
+            async for chunk in provider.stream(
                 messages,
                 model_id,
                 temperature=temperature,
-                max_tokens=cfg["max_tokens"],
-            )
-            summary = (result.content or "").strip()
-            if not summary:
-                summary = "(The ambassador returned an empty briefing.)"
+                max_tokens=self._max_tokens(profile, cfg),
+            ):
+                if chunk.finish_reason:
+                    finish_reason = chunk.finish_reason
+                if not chunk.content:
+                    continue
+                accumulated += chunk.content
+                store.append_chunk(conversation_id, message_id, chunk.content)
+                yield _sse(
+                    "ambassador_chunk",
+                    {"message_id": message_id, "text": chunk.content},
+                )
+            # A thinking model that still hit the cap means reasoning + answer
+            # exceeded the budget — surface it so the headroom can be raised.
+            if finish_reason == "length":
+                logger.warning(
+                    "Ambassador briefing hit the token cap (finish_reason=length) for "
+                    f"{message_id}; raise ambassador.max_tokens or _THINKING_HEADROOM."
+                )
+            summary = accumulated.strip() or "(The ambassador returned an empty briefing.)"
             store.set_summary(conversation_id, message_id, summary, status="done")
-            yield _sse("ambassador_chunk", {"message_id": message_id, "text": summary})
+            settled = True
             yield _sse(
                 "ambassador_done",
                 {"message_id": message_id, "status": "done", "summary": summary},
             )
+        except GeneratorExit:
+            # Cancelled (or client closed the run). Persist whatever streamed so
+            # far as a settled `cancelled` record — never leave it on "streaming".
+            # Re-raise without yielding (a generator must not yield while closing).
+            store.set_status(conversation_id, message_id, "cancelled", run_id=run_id)
+            settled = True
+            raise
         except Exception as e:  # noqa: BLE001 — the sidecar run must never crash
             logger.warning(f"Ambassador briefing failed for {message_id}: {e}")
             store.set_status(
                 conversation_id, message_id, "error", run_id=run_id, error=str(e)[:500]
             )
+            settled = True
             yield _sse(
                 "ambassador_error", {"message_id": message_id, "error": str(e)[:500]}
             )
+        finally:
+            # Belt-and-suspenders: any exotic exit path still settles the record.
+            if not settled:
+                store.set_status(conversation_id, message_id, "cancelled", run_id=run_id)
 
 
 # Module-level singleton

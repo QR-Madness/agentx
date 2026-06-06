@@ -1928,6 +1928,8 @@ def ambassador_brief_turn(request):
     message_id = data.get("message_id")
     assistant_text = data.get("assistant_text") or ""
     user_text = data.get("user_text") or ""
+    agent_name = data.get("agent_name") or ""
+    artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
     if not conversation_id or not message_id:
         return JsonResponse(
             {"error": "conversation_id and message_id are required"}, status=400
@@ -1944,6 +1946,8 @@ def ambassador_brief_turn(request):
             message_id,
             assistant_text=assistant_text,
             user_text=user_text,
+            agent_name=agent_name,
+            artifacts=artifacts,
         )
 
     run_id = start_chat_run(

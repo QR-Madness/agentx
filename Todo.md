@@ -272,6 +272,35 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       (`resolve_with_fallback`, never raises); idempotent re-CC; reload/tab-switch
       replay from the sidecar. Tests: storage round-trip, pollution regression,
       recovery-isolation, graceful degradation.
+- [x] **Token-streaming + verbosity budget + cancel-settle** `[v0.21.33]`: the
+      briefing now streams via `provider.stream` (per-delta `ambassador_chunk` +
+      sidecar `append_chunk`); output budget scales with verbosity
+      (`_VERBOSITY_TOKENS`, capped by `ambassador.max_tokens`). **Fix:** a cancel
+      (GeneratorExit from `gen.aclose()`) now settles the sidecar to `cancelled`
+      (preserving partial text) instead of leaving it stuck on `streaming` — no
+      more perpetual "briefing…" spinner after reload. Panel refreshed with
+      per-turn status chips + streaming cursor. Tests: streaming round-trip,
+      cancel-settle.
+- [x] **Human voice + turn-substance grounding** `[v0.21.34]`: rewrote the persona
+      so the briefing speaks **to you** (second person, names the agent) instead of
+      narrating "the user asked… the assistant replied." And the briefing now sees
+      **what the agent actually did** — the client gathers the turn's tool calls,
+      cited sources, and table/diagram exhibits (`lib/ambassadorTurn.ts::gatherTurnContext`,
+      compact + capped) and posts them as `artifacts`; `_render_artifacts` weaves them
+      into the prompt so it interprets the turn, not just the prose. `agent_name` +
+      `artifacts` added to `/ambassador/brief-turn`. Tests: artifact-grounded prompt.
+      **Name-resolution fix:** the briefed agent's name is now resolved
+      (`resolveTurnAgentName`: stamped `agentName` → producing profile by `profileId`
+      → conversation profile/`getAgentName()`) at both CC entry points, so restored
+      turns (which lack a stamped `agentName`) still get named instead of degrading to
+      "your agent". Tests: `client/src/lib/ambassadorTurn.test.ts`.
+      **Thinking-truncation fix:** ambassadors think freely, so the token cap now
+      budgets `_THINKING_HEADROOM` (reasoning) + a per-verbosity answer allowance,
+      instead of a tight cap a thinking model (e.g. Gemini) would spend reasoning —
+      which truncated the visible briefing mid-sentence. Visible length is governed
+      by a firm prompt LENGTH LIMIT, not the cap; `ambassador.max_tokens` is now an
+      optional hard ceiling (unset by default). `finish_reason=length` is logged.
+      Tests: budget headroom + ceiling.
 
 **Deferred (seams in place):**
 - [ ] **Activation toggle per-conversation** (today: global default + the active
@@ -286,7 +315,6 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       TTS/speech model — wired through the profile's `ambassador.speech_model`/`voice`.
 - [ ] **Free-form Q&A**: ask the ambassador anything about the conversation from
       the panel (the same brief-turn seam, a different prompt).
-- [ ] Token-streaming the briefing (today a single `provider.complete`).
 
 ### Design Notes
 

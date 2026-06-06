@@ -59,6 +59,7 @@ import {
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
+import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/modelCatalog';
@@ -112,20 +113,20 @@ export function ChatPanel() {
         notifyError('The ambassador can brief a turn once the conversation has been saved.');
         return;
       }
-      // Nearest preceding user message gives the ambassador the turn's prompt.
-      const msgs = activeTab?.messages ?? [];
-      const idx = msgs.findIndex((m) => m.id === message.id);
-      let userText = '';
-      for (let i = idx - 1; i >= 0; i -= 1) {
-        if (msgs[i]?.type === 'user') {
-          userText = (msgs[i] as { content?: string }).content ?? '';
-          break;
-        }
-      }
+      // Gather the turn's prompt + what the agent actually did (tools/sources/exhibits),
+      // and resolve the producing agent's name (stamped → by profile → conversation).
+      const { userText, artifacts } = gatherTurnContext(activeTab?.messages ?? [], message.id);
+      const tabProfileName = activeTab?.profileId
+        ? profiles.find((p) => p.id === activeTab.profileId)?.name
+        : undefined;
+      const resolvedAgentName = resolveTurnAgentName(message, {
+        nameByProfileId: (id) => profiles.find((p) => p.id === id)?.name,
+        fallback: tabProfileName ?? getAgentName(),
+      });
       openModal({ id: 'ambassador-drawer', type: 'drawer', position: 'right', component: 'ambassador', size: 'xxl' });
-      ccTurn(conversationId, message, userText);
+      ccTurn(conversationId, message, { userText, artifacts, agentName: resolvedAgentName });
     },
-    [activeTab?.sessionId, activeTab?.messages, openModal, ccTurn, notifyError],
+    [activeTab?.sessionId, activeTab?.messages, activeTab?.profileId, openModal, ccTurn, notifyError, profiles, getAgentName],
   );
 
   const ambassadorStatusFor = useCallback(

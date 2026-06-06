@@ -6259,6 +6259,135 @@ class AmbassadorServiceTest(TestCase):
         self.assertIn("empty_provider", joined)
         self.assertNotIn("Traceback", joined)
 
+    def test_streams_chunks_and_settles_done(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _fake_stream(*args, **kwargs):
+            for piece in ["It ", "weighed ", "the trade-off."]:
+                yield StreamChunk(content=piece)
+
+        provider = MagicMock()
+        provider.stream = _fake_stream
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake):
+            events = asyncio.run(
+                _collect(svc.brief_turn("conv", "msg", assistant_text="hi"))
+            )
+            record = a.get_briefing("conv", "msg")
+
+        joined = "".join(events)
+        # Each delta is streamed as its own ambassador_chunk, then a settled done.
+        self.assertEqual(joined.count("ambassador_chunk"), 3)
+        self.assertIn("ambassador_done", joined)
+        self.assertEqual(record["status"], "done")
+        self.assertEqual(record["summary"], "It weighed the trade-off.")
+
+    def test_cancel_midstream_settles_not_streaming(self):
+        # Cancelling a run closes the generator (GeneratorExit). The sidecar must
+        # land on `cancelled`, never stay stuck on `streaming` (perpetual spinner).
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _fake_stream(*args, **kwargs):
+            yield StreamChunk(content="partial…")
+            # Suspend forever so the consumer cancels us mid-stream.
+            await asyncio.Event().wait()
+            yield StreamChunk(content="never")
+
+        provider = MagicMock()
+        provider.stream = _fake_stream
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _drive():
+            agen = svc.brief_turn("conv", "msg", assistant_text="hi")
+            # Pull until the first streamed chunk, then close (cancel).
+            async for ev in agen:
+                if "ambassador_chunk" in ev:
+                    await agen.aclose()
+                    break
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake):
+            asyncio.run(_drive())
+            record = a.get_briefing("conv", "msg")
+
+        self.assertEqual(record["status"], "cancelled")
+        # Partial text that streamed before the cancel is preserved.
+        self.assertEqual(record["summary"], "partial…")
+
+    def test_turn_prompt_grounds_on_artifacts(self):
+        # The briefing prompt must surface what the agent *did* (tools, sources,
+        # exhibits) — not just its prose — so the ambassador can interpret it.
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        artifacts = {
+            "tools": [{"name": "web_search", "detail": "town business registry", "ok": True}],
+            "sources": [{"label": "County Index", "url": "https://county.example/biz"}],
+            "exhibits": [{"kind": "table", "title": "Local businesses", "detail": "3 columns × 24 rows"}],
+        }
+        prompt = svc._build_turn_prompt(
+            user_text="keep searching for the registry",
+            assistant_text="Here's what I found.",
+            context="",
+            agent_name="Atlas",
+            artifacts=artifacts,
+        )
+        # Speaks of the agent by name and second-person to the reader.
+        self.assertIn("You said:", prompt)
+        self.assertIn("Atlas replied:", prompt)
+        # Grounds on the real substance of the turn.
+        self.assertIn("web_search", prompt)
+        self.assertIn("town business registry", prompt)
+        self.assertIn("County Index", prompt)
+        self.assertIn("https://county.example/biz", prompt)
+        self.assertIn("table", prompt)
+
+    def test_turn_prompt_without_artifacts_has_no_block(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        prompt = svc._build_turn_prompt(
+            user_text="hi", assistant_text="hello", context="", agent_name="Atlas"
+        )
+        self.assertNotIn("actually did this turn", prompt)
+
+    def test_token_budget_leaves_headroom_for_free_range_thinking(self):
+        # The cap must accommodate reasoning + the (short) answer, so a thinking
+        # model isn't truncated mid-sentence. Length is the prompt's job, not the
+        # cap's — so the budget is much larger than the visible answer allowance.
+        from agentx_ai.agent.ambassador import (
+            AmbassadorService,
+            _THINKING_HEADROOM,
+            _VERBOSITY_TOKENS,
+        )
+
+        svc = AmbassadorService()
+        # No explicit ceiling → headroom + verbosity answer room, never clipped.
+        budget = svc._max_tokens(None, {"max_tokens": None})
+        self.assertEqual(budget, _THINKING_HEADROOM + _VERBOSITY_TOKENS["normal"])
+        self.assertGreater(budget, _VERBOSITY_TOKENS["deep"])  # not a tight length cap
+        # An explicit setting is honored as a hard ceiling.
+        self.assertEqual(svc._max_tokens(None, {"max_tokens": 700}), 700)
+
 
 class ChatRunIndexingTest(TestCase):
     """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user
