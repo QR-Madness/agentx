@@ -12,12 +12,14 @@ Provides a hierarchical prompt composition system with:
 from .models import (
     PromptSection,
     PromptProfile,
+    PromptLayer,
     GlobalPrompt,
     PromptConfig,
     StructuredOutputConfig,
     PromptTemplate,
     TemplateType,
 )
+from .layers import BUILTIN_LAYERS, LayerStore, get_layer_store
 from .manager import PromptManager, get_prompt_manager
 from .template_manager import PromptTemplateManager, get_template_manager
 from .mcp_prompt import generate_mcp_tools_prompt
@@ -32,11 +34,16 @@ __all__ = [
     # Models
     "PromptSection",
     "PromptProfile",
+    "PromptLayer",
     "GlobalPrompt",
     "PromptConfig",
     "StructuredOutputConfig",
     "PromptTemplate",
     "TemplateType",
+    # Layer stack
+    "BUILTIN_LAYERS",
+    "LayerStore",
+    "get_layer_store",
     # Manager
     "PromptManager",
     "get_prompt_manager",

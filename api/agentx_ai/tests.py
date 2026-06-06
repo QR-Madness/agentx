@@ -6510,6 +6510,103 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(svc._max_tokens(None, {"max_tokens": 700}), 700)
 
 
+class _FakeConfigManager:
+    """In-memory ConfigManager stand-in (dot-notation get/set + no-op save)."""
+
+    def __init__(self):
+        self.data = {}
+
+    def get(self, key, default=None):
+        cur = self.data
+        for k in key.split("."):
+            if not isinstance(cur, dict) or k not in cur:
+                return default
+            cur = cur[k]
+        return cur
+
+    def set(self, key, value):
+        cur = self.data
+        keys = key.split(".")
+        for k in keys[:-1]:
+            cur = cur.setdefault(k, {})
+        cur[keys[-1]] = value
+
+    def save(self):
+        return True
+
+
+class PromptLayerStoreTest(TestCase):
+    """Layered prompt stack — precedence (override vs default), durable deltas,
+    default-change diff, custom CRUD, and compose ordering."""
+
+    def _store(self, fake):
+        from agentx_ai.prompts import layers
+        with patch.object(layers, "get_config_manager", return_value=fake):
+            return layers.LayerStore()
+
+    def test_builtins_ride_default_until_overridden(self):
+        store = self._store(_FakeConfigManager())
+        layers = store.list_layers()
+        ids = {layer.id for layer in layers}
+        self.assertIn("core-principles", ids)
+        core = store.get("core-principles")
+        self.assertEqual(core.effective, core.default)
+        self.assertFalse(core.modified)
+        self.assertIsNone(core.override)
+        self.assertIn("Core Principles", store.compose())
+
+    def test_override_pins_content_and_persists(self):
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        store.set_override("core-principles", "My custom core.")
+        core = store.get("core-principles")
+        self.assertEqual(core.effective, "My custom core.")
+        self.assertTrue(core.modified)
+        # A fresh store over the same config reads the override back (durable).
+        store2 = self._store(fake)
+        self.assertEqual(store2.get("core-principles").override, "My custom core.")
+
+    def test_default_change_surfaces_update_then_ack_and_reset(self):
+        from agentx_ai.prompts import layers as layers_mod
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        store.set_override("citing-sources", "mine")
+        self.assertFalse(store.get("citing-sources").update_available)
+        # Simulate a release bumping the shipped default underneath the override.
+        builtin = layers_mod._BUILTIN_BY_ID["citing-sources"]
+        original = builtin.default_version
+        builtin.default_version = original + 1
+        try:
+            self.assertTrue(store.get("citing-sources").update_available)
+            # Acknowledge keeps the override but clears the badge.
+            store.acknowledge("citing-sources")
+            self.assertFalse(store.get("citing-sources").update_available)
+            self.assertEqual(store.get("citing-sources").override, "mine")
+            # Reset drops the override entirely (back to the new default).
+            reset = store.reset("citing-sources")
+            self.assertIsNone(reset.override)
+            self.assertEqual(reset.effective, builtin.default)
+        finally:
+            builtin.default_version = original
+
+    def test_custom_layer_crud_reorder_and_compose(self):
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        custom = store.create_custom("Tone", "Always be concise.")
+        self.assertEqual(custom.kind, "custom")
+        self.assertIn("Always be concise.", store.compose())
+        # Reorder it to the front; compose reflects the new order.
+        store.reorder([custom.id, "core-principles", "reasoning-vs-results", "citing-sources"])
+        first = store.list_layers()[0]
+        self.assertEqual(first.id, custom.id)
+        # Disable drops it from the composed stack.
+        store.set_enabled(custom.id, False)
+        self.assertNotIn("Always be concise.", store.compose())
+        # Delete removes it.
+        self.assertTrue(store.delete_custom(custom.id))
+        self.assertIsNone(store.get(custom.id))
+
+
 class ChatRunIndexingTest(TestCase):
     """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user
     recovery list that backs /api/agent/chat/runs."""

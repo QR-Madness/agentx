@@ -4,7 +4,7 @@ Pydantic models for the prompt management system.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -110,6 +110,68 @@ class PromptProfile(BaseModel):
         if not sections:
             return ""
         return "\n\n".join(s.content for s in sections)
+
+
+class PromptLayer(BaseModel):
+    """One editable block in the layered system-prompt stack ("Prompt Stack").
+
+    The composed system prompt is an ordered stack of these. Each layer carries
+    two content fields:
+
+      * ``default`` — shipped in code, owned by the app, updated by releases
+        (the *sidecar*). Only built-in layers have one.
+      * ``override`` — the user's edit. Optional.
+
+    Effective content is the override if present, else the default. So untouched
+    built-ins ride the default (release improvements flow in automatically), while
+    edited layers are pinned to the user's text and never silently overwritten.
+    ``base_version`` records the ``default_version`` the override was seeded from,
+    so we can detect (and diff) when a release changes the default underneath an
+    override.
+    """
+
+    id: str = Field(..., description="Stable slug (built-ins use well-known ids)")
+    title: str = Field(..., description="Display name")
+    kind: Literal["builtin", "custom"] = Field(
+        "custom", description="'builtin' = shipped (has a default sidecar); 'custom' = user-created"
+    )
+    default: Optional[str] = Field(
+        None, description="Shipped default content (built-ins only); the sidecar"
+    )
+    default_version: int = Field(
+        1, description="Bumped when the shipped default changes (drives update detection)"
+    )
+    override: Optional[str] = Field(
+        None, description="User edit; None means 'use the default'"
+    )
+    base_version: Optional[int] = Field(
+        None, description="default_version the override was seeded/synced from"
+    )
+    enabled: bool = Field(True, description="Whether this layer is in the composed stack")
+    order: int = Field(0, description="Position in the stack (ascending)")
+
+    @property
+    def effective(self) -> str:
+        """The content that actually ships: override if set, else default."""
+        if self.override is not None:
+            return self.override
+        return self.default or ""
+
+    @property
+    def modified(self) -> bool:
+        """The user has an override that differs from the shipped default."""
+        return self.override is not None and self.override != (self.default or "")
+
+    @property
+    def update_available(self) -> bool:
+        """A release changed the default underneath the user's override — surface a
+        diff rather than clobbering their work."""
+        return (
+            self.kind == "builtin"
+            and self.override is not None
+            and self.base_version is not None
+            and self.default_version > self.base_version
+        )
 
 
 class GlobalPrompt(BaseModel):
