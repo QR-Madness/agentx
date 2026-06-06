@@ -313,8 +313,13 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [ ] **Spoken briefing (inbound)**: a spoken/condensed briefing of the message
       plus key elements (attachments, tool artifacts, citations) via an OpenRouter
       TTS/speech model — wired through the profile's `ambassador.speech_model`/`voice`.
-- [ ] **Free-form Q&A**: ask the ambassador anything about the conversation from
-      the panel (the same brief-turn seam, a different prompt).
+- [x] **Free-form Q&A** `[v0.21.35]`: ask the ambassador anything about the
+      conversation from the panel (`POST /ambassador/ask` → `AmbassadorService.answer_question`,
+      a Q&A persona/prompt over the shared `_stream_and_settle` streaming core). Persists
+      under the disjoint `qa:` sidecar family (replays via `/ambassador/{conversation_id}`
+      → `{briefings, qa}`); client-stable `qa_id`; grounded on a wider transcript window
+      + latest-turn artifacts. Panel gained a pinned ask input + a Q&A thread. Tests:
+      qa storage round-trip/isolation, answer streaming, qa prompt grounding.
 
 ### Design Notes
 

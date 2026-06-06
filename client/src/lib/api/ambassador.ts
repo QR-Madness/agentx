@@ -55,6 +55,29 @@ export interface AmbassadorTurnArtifacts {
   exhibits?: AmbassadorExhibitArtifact[];
 }
 
+/** One persisted free-form Q&A entry (sidecar record / live state). */
+export interface AmbassadorQA {
+  qa_id: string;
+  question: string;
+  answer: string;
+  status: AmbassadorStatus;
+  error?: string;
+  run_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AskAmbassadorRequest {
+  conversation_id: string;
+  /** Client-stable id the Q&A is keyed by. */
+  qa_id: string;
+  question: string;
+  /** Resolved display name of the conversation's agent, so the answer names it. */
+  agent_name?: string;
+  /** Latest-turn substance, as extra grounding for the answer. */
+  artifacts?: AmbassadorTurnArtifacts;
+}
+
 export interface BriefTurnRequest {
   conversation_id: string;
   message_id: string;
@@ -155,12 +178,24 @@ export const ambassadorApi = {
     });
   },
 
-  /** Replay all persisted briefings for a conversation (cold-open / reload). */
-  async fetchAmbassadorBriefings(conversationId: string): Promise<AmbassadorBriefing[]> {
-    const res = await apiRequest<{ conversation_id: string; briefings: AmbassadorBriefing[] }>(
-      `/api/agent/ambassador/${encodeURIComponent(conversationId)}`,
-    );
-    return res.briefings ?? [];
+  /** Replay a conversation's persisted briefings + Q&A (cold-open / reload). */
+  async fetchAmbassadorBriefings(
+    conversationId: string,
+  ): Promise<{ briefings: AmbassadorBriefing[]; qa: AmbassadorQA[] }> {
+    const res = await apiRequest<{
+      conversation_id: string;
+      briefings: AmbassadorBriefing[];
+      qa?: AmbassadorQA[];
+    }>(`/api/agent/ambassador/${encodeURIComponent(conversationId)}`);
+    return { briefings: res.briefings ?? [], qa: res.qa ?? [] };
+  },
+
+  /** Ask the ambassador a free-form question about a conversation. */
+  async askAmbassador(req: AskAmbassadorRequest): Promise<{ run_id: string; qa_id: string }> {
+    return apiRequest('/api/agent/ambassador/ask', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
   },
 
   /** Tail a briefing run's `ambassador_*` SSE stream. Returns an abort handle. */

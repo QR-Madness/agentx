@@ -101,6 +101,45 @@ def _default_persona(agent_name: str = "") -> str:
         "you actually say to the person must stay brief — when you've said the heart of it, stop."
     )
 
+
+def _qa_persona(agent_name: str = "") -> str:
+    """The Ambassador's voice when answering a free-form question about the
+    conversation (vs. briefing a single turn). Same identity + form rules; the
+    task is to answer, grounded only in what actually happened."""
+    agent_ref = agent_name.strip() or "their agent"
+    name_rule = (
+        f"- The agent in the conversation is named {agent_name.strip()}. Call it by that "
+        f"name, or 'your agent'. "
+        if agent_name.strip()
+        else "- Call the agent 'your agent'. "
+    )
+    return (
+        "You are an Ambassador. The person you're talking to is watching a conversation "
+        "between themselves and an AI agent, and they have asked YOU a question about it. "
+        "Answer them directly. You are the interpreter standing beside them — not a "
+        "participant in the conversation, and you never continue or answer it yourself.\n\n"
+
+        "WHO IS WHO — get this right:\n"
+        "- The person you're talking to is 'you'. Address them in the second person. NEVER "
+        "call them 'the user'.\n"
+        f"{name_rule}NEVER call it 'the assistant', 'the AI', 'the model', or a bare 'it' "
+        "like a transcript.\n\n"
+
+        f"GROUND YOUR ANSWER: answer only from what {agent_ref} and the person actually said "
+        "and did in the conversation you're given. Be concrete — name the sources, tools, or "
+        "moments that matter. If the answer isn't in the conversation, say so plainly ('I "
+        "don't see that in what they did') — never invent, guess, or answer the underlying "
+        "question yourself as if you were the agent.\n\n"
+
+        "HOW TO SPEAK: like a person talking out loud to a friend beside them — plain, natural, "
+        "flowing sentences. Keep it as short as the question allows; answer what was asked, then "
+        "stop.\n\n"
+
+        "FORM (hard rules): NO markdown, NO headings, NO labels, NO bullet points, NO numbered "
+        "lists, NO bold or asterisks. One flowing spoken voice."
+    )
+
+
 _VERBOSITY_HINT = {
     "brief": "LENGTH LIMIT: one or two sentences — just the heart of it. Then stop.",
     "normal": "LENGTH LIMIT: a short spoken paragraph, three or four sentences at most. Do not exceed it.",
@@ -181,6 +220,40 @@ class AmbassadorService:
             return current_run_id.get()
         except Exception:
             return None
+
+    def _build_qa_persona(self, profile, agent_name: str = "") -> str:
+        amb = getattr(profile, "ambassador", None) if profile else None
+        parts = [_qa_persona(agent_name)]
+        if profile and getattr(profile, "system_prompt", None):
+            parts.append(f"Persona guidance:\n{profile.system_prompt.strip()}")
+        if amb and getattr(amb, "briefing_prompt", "").strip():
+            parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
+        return "\n\n".join(parts)
+
+    def _build_qa_prompt(
+        self,
+        *,
+        question: str,
+        context: str,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> str:
+        agent_label = agent_name.strip() or "the agent"
+        sections = []
+        if context.strip():
+            sections.append(
+                "The conversation so far (this is ALL you may answer from):\n"
+                f"{context.strip()}"
+            )
+        artifacts_block = self._render_artifacts(artifacts, agent_label)
+        if artifacts_block:
+            sections.append(artifacts_block)
+        sections.append(f"The person asks you:\n{question.strip()}")
+        sections.append(
+            "Answer their question directly, in your own spoken voice, grounded only in "
+            "the conversation above. If the answer isn't there, say so plainly."
+        )
+        return "\n\n".join(sections)
 
     def _build_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
@@ -361,65 +434,176 @@ class AmbassadorService:
             ),
         ]
 
-        # Token-stream the briefing so the panel reveals it progressively (and a
-        # re-attach replays the deltas). `settled` guards the sidecar status: if
-        # the run is cancelled mid-stream (GeneratorExit from `gen.aclose()`), we
-        # must settle it ourselves — otherwise it stays stuck on "streaming" and
-        # a reopened panel shows a perpetual spinner.
+        # Token-stream the briefing (progressive reveal + replay on re-attach),
+        # persisting deltas to the sidecar and settling on cancel/error.
+        async for ev in self._stream_and_settle(
+            item_id=message_id,
+            provider=provider,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=self._max_tokens(profile, cfg),
+            messages=messages,
+            on_chunk=lambda t: store.append_chunk(conversation_id, message_id, t),
+            on_done=lambda s: store.set_summary(conversation_id, message_id, s, status="done"),
+            on_cancel=lambda: store.set_status(
+                conversation_id, message_id, "cancelled", run_id=run_id
+            ),
+            on_error=lambda e: store.set_status(
+                conversation_id, message_id, "error", run_id=run_id, error=e
+            ),
+            empty_text="(The ambassador returned an empty briefing.)",
+            log_label="briefing",
+        ):
+            yield ev
+
+    async def answer_question(
+        self,
+        conversation_id: str,
+        qa_id: str,
+        question: str,
+        *,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Answer a free-form question about the conversation. Yields ``ambassador_*``
+        SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client SSE pump is
+        shared with briefings). Never raises; persists only to the Q&A sidecar."""
+        cfg = self._config()
+        run_id = self._current_run_id()
+        store.create_qa(conversation_id, qa_id, question, run_id=run_id)
+        yield _sse("ambassador_start", {"message_id": qa_id, "run_id": run_id})
+
+        if not cfg["enabled"]:
+            store.set_qa_answer(
+                conversation_id, qa_id, "The ambassador is disabled in settings.", status="error"
+            )
+            yield _sse("ambassador_error", {"message_id": qa_id, "error": "disabled"})
+            return
+
+        profile = self._resolve_profile(cfg["profile_id"])
+        profile_model = getattr(profile, "default_model", None) if profile else None
+        model = cfg["model"] or profile_model or _DEFAULT_MODEL
+        temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
+
+        try:
+            provider, model_id, _ = self.registry.resolve_with_fallback(
+                model, preferred_fallback=_DEFAULT_MODEL
+            )
+        except Exception as e:  # noqa: BLE001 — degrade gracefully
+            logger.warning(f"Ambassador provider unavailable: {e}")
+            note = "No model provider is configured for the ambassador."
+            store.set_qa_answer(conversation_id, qa_id, note, status="empty_provider")
+            yield _sse(
+                "ambassador_done",
+                {"message_id": qa_id, "status": "empty_provider", "summary": note},
+            )
+            return
+
+        # Q&A grounds on a wider window than a single-turn brief — the question can
+        # reference anything in the conversation.
+        context = self._grounding_context(
+            conversation_id, cfg["max_context_turns"] * 2, agent_name
+        )
+        messages = [
+            Message(
+                role=MessageRole.SYSTEM,
+                content=self._build_qa_persona(profile, agent_name),
+            ),
+            Message(
+                role=MessageRole.USER,
+                content=self._build_qa_prompt(
+                    question=question,
+                    context=context,
+                    agent_name=agent_name,
+                    artifacts=artifacts,
+                ),
+            ),
+        ]
+
+        async for ev in self._stream_and_settle(
+            item_id=qa_id,
+            provider=provider,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=self._max_tokens(profile, cfg),
+            messages=messages,
+            on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
+            on_done=lambda s: store.set_qa_answer(conversation_id, qa_id, s, status="done"),
+            on_cancel=lambda: store.set_qa_status(
+                conversation_id, qa_id, "cancelled", run_id=run_id
+            ),
+            on_error=lambda e: store.set_qa_status(
+                conversation_id, qa_id, "error", run_id=run_id, error=e
+            ),
+            empty_text="(The ambassador had no answer.)",
+            log_label="Q&A",
+        ):
+            yield ev
+
+    async def _stream_and_settle(
+        self,
+        *,
+        item_id: str,
+        provider,
+        model_id: str,
+        temperature: float,
+        max_tokens: int,
+        messages: list[Message],
+        on_chunk,
+        on_done,
+        on_cancel,
+        on_error,
+        empty_text: str,
+        log_label: str,
+    ) -> AsyncGenerator[str, None]:
+        """Shared streaming core for briefings + Q&A: token-stream the completion,
+        persist via the injected callbacks, and settle the sidecar on done / cancel
+        (``GeneratorExit`` from ``gen.aclose()``) / error — never leaving a record
+        stuck on ``streaming``. SSE uses the ``message_id`` field for both families
+        (it carries ``item_id``) so the client pump is identical."""
         accumulated = ""
         settled = False
         finish_reason = None
         try:
             async for chunk in provider.stream(
-                messages,
-                model_id,
-                temperature=temperature,
-                max_tokens=self._max_tokens(profile, cfg),
+                messages, model_id, temperature=temperature, max_tokens=max_tokens
             ):
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
                 if not chunk.content:
                     continue
                 accumulated += chunk.content
-                store.append_chunk(conversation_id, message_id, chunk.content)
-                yield _sse(
-                    "ambassador_chunk",
-                    {"message_id": message_id, "text": chunk.content},
-                )
+                on_chunk(chunk.content)
+                yield _sse("ambassador_chunk", {"message_id": item_id, "text": chunk.content})
             # A thinking model that still hit the cap means reasoning + answer
             # exceeded the budget — surface it so the headroom can be raised.
             if finish_reason == "length":
                 logger.warning(
-                    "Ambassador briefing hit the token cap (finish_reason=length) for "
-                    f"{message_id}; raise ambassador.max_tokens or _THINKING_HEADROOM."
+                    f"Ambassador {log_label} hit the token cap (finish_reason=length) "
+                    f"for {item_id}; raise ambassador.max_tokens or _THINKING_HEADROOM."
                 )
-            summary = accumulated.strip() or "(The ambassador returned an empty briefing.)"
-            store.set_summary(conversation_id, message_id, summary, status="done")
+            text = accumulated.strip() or empty_text
+            on_done(text)
             settled = True
             yield _sse(
                 "ambassador_done",
-                {"message_id": message_id, "status": "done", "summary": summary},
+                {"message_id": item_id, "status": "done", "summary": text},
             )
         except GeneratorExit:
-            # Cancelled (or client closed the run). Persist whatever streamed so
-            # far as a settled `cancelled` record — never leave it on "streaming".
-            # Re-raise without yielding (a generator must not yield while closing).
-            store.set_status(conversation_id, message_id, "cancelled", run_id=run_id)
+            # Cancelled (or client closed the run). Settle whatever streamed so far
+            # as `cancelled`. Re-raise without yielding (can't yield while closing).
+            on_cancel()
             settled = True
             raise
         except Exception as e:  # noqa: BLE001 — the sidecar run must never crash
-            logger.warning(f"Ambassador briefing failed for {message_id}: {e}")
-            store.set_status(
-                conversation_id, message_id, "error", run_id=run_id, error=str(e)[:500]
-            )
+            logger.warning(f"Ambassador {log_label} failed for {item_id}: {e}")
+            on_error(str(e)[:500])
             settled = True
-            yield _sse(
-                "ambassador_error", {"message_id": message_id, "error": str(e)[:500]}
-            )
+            yield _sse("ambassador_error", {"message_id": item_id, "error": str(e)[:500]})
         finally:
             # Belt-and-suspenders: any exotic exit path still settles the record.
             if not settled:
-                store.set_status(conversation_id, message_id, "cancelled", run_id=run_id)
+                on_cancel()
 
 
 # Module-level singleton

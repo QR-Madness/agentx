@@ -19,7 +19,12 @@ import {
   type ReactNode,
 } from 'react';
 import { api } from '../lib/api';
-import type { AmbassadorBriefing, AmbassadorStatus, AmbassadorTurnArtifacts } from '../lib/api';
+import type {
+  AmbassadorBriefing,
+  AmbassadorQA,
+  AmbassadorStatus,
+  AmbassadorTurnArtifacts,
+} from '../lib/api';
 import type { AssistantMessage } from '../lib/messages';
 
 interface AmbassadorContextValue {
@@ -34,7 +39,13 @@ interface AmbassadorContextValue {
   ccTurn: (conversationId: string, message: AssistantMessage, opts: CcTurnOptions) => void;
   /** Cancel an in-flight briefing. */
   cancel: (conversationId: string, messageId: string) => void;
-  /** Replay persisted briefings from the server sidecar. */
+  /** All Q&A entries for a conversation (unordered; sort by created_at). */
+  qaFor: (conversationId: string | null | undefined) => AmbassadorQA[];
+  /** Ask the ambassador a free-form question about the conversation. */
+  ask: (conversationId: string, question: string, opts?: AskOptions) => void;
+  /** Cancel an in-flight Q&A answer. */
+  cancelQa: (conversationId: string, qaId: string) => void;
+  /** Replay persisted briefings + Q&A from the server sidecar. */
   refresh: (conversationId: string) => Promise<void>;
 }
 
@@ -48,19 +59,37 @@ export interface CcTurnOptions {
   agentName?: string;
 }
 
+/** Caller-resolved grounding for a free-form question. */
+export interface AskOptions {
+  /** Resolved display name of the conversation's agent. */
+  agentName?: string;
+  /** Latest-turn substance, as extra grounding. */
+  artifacts?: AmbassadorTurnArtifacts;
+}
+
 const AmbassadorContext = createContext<AmbassadorContextValue | null>(null);
 
 type ConversationBriefings = Record<string, AmbassadorBriefing>;
+type ConversationQA = Record<string, AmbassadorQA>;
+
+function newQaId(): string {
+  const rand = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  return `qa_${rand.replace(/-/g, '').slice(0, 32)}`;
+}
 
 export function AmbassadorProvider({ children }: { children: ReactNode }) {
   // conversationId -> (messageId -> briefing)
   const [state, setState] = useState<Record<string, ConversationBriefings>>({});
-  // Active SSE controllers, keyed `${conversationId}::${messageId}`, so a live
-  // stream isn't clobbered by a refresh and can be aborted on cancel.
+  // conversationId -> (qaId -> Q&A entry)
+  const [qaState, setQaState] = useState<Record<string, ConversationQA>>({});
+  // Active SSE controllers, keyed so a live stream isn't clobbered by a refresh
+  // and can be aborted on cancel. Briefings + Q&A share the ref via disjoint keys.
   const controllers = useRef<Record<string, { abort: () => void }>>({});
 
   const ctrlKey = (conversationId: string, messageId: string) =>
     `${conversationId}::${messageId}`;
+  const qaCtrlKey = (conversationId: string, qaId: string) =>
+    `${conversationId}::qa::${qaId}`;
 
   const setBriefing = useCallback(
     (conversationId: string, messageId: string, patch: Partial<AmbassadorBriefing>) => {
@@ -76,16 +105,43 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const setQa = useCallback(
+    (conversationId: string, qaId: string, patch: Partial<AmbassadorQA>) => {
+      setQaState((prev) => {
+        const conv = prev[conversationId] ?? {};
+        const existing: AmbassadorQA = conv[qaId] ?? {
+          qa_id: qaId,
+          question: '',
+          answer: '',
+          status: 'streaming' as AmbassadorStatus,
+        };
+        return {
+          ...prev,
+          [conversationId]: { ...conv, [qaId]: { ...existing, ...patch } },
+        };
+      });
+    },
+    [],
+  );
+
   const refresh = useCallback(async (conversationId: string) => {
     if (!conversationId) return;
     try {
-      const briefings = await api.fetchAmbassadorBriefings(conversationId);
+      const { briefings, qa } = await api.fetchAmbassadorBriefings(conversationId);
       setState((prev) => {
         const conv: ConversationBriefings = { ...(prev[conversationId] ?? {}) };
         for (const b of briefings) {
           // Don't clobber a locally-streaming record (a live tail is authoritative).
           if (controllers.current[ctrlKey(conversationId, b.message_id)]) continue;
           conv[b.message_id] = b;
+        }
+        return { ...prev, [conversationId]: conv };
+      });
+      setQaState((prev) => {
+        const conv: ConversationQA = { ...(prev[conversationId] ?? {}) };
+        for (const item of qa) {
+          if (controllers.current[qaCtrlKey(conversationId, item.qa_id)]) continue;
+          conv[item.qa_id] = item;
         }
         return { ...prev, [conversationId]: conv };
       });
@@ -183,9 +239,88 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     [state],
   );
 
+  const ask = useCallback(
+    (conversationId: string, question: string, opts?: AskOptions) => {
+      const q = question.trim();
+      if (!conversationId || !q) return;
+      const qaId = newQaId();
+      // Optimistic: show the question immediately, streaming its answer.
+      setQa(conversationId, qaId, { qa_id: qaId, question: q, answer: '', status: 'streaming' });
+
+      api
+        .askAmbassador({
+          conversation_id: conversationId,
+          qa_id: qaId,
+          question: q,
+          agent_name: opts?.agentName,
+          artifacts: opts?.artifacts,
+        })
+        .then(({ run_id }) => {
+          setQa(conversationId, qaId, { run_id });
+          const handle = api.streamAmbassador(run_id, {
+            onChunk: (text) =>
+              setQaState((prev) => {
+                const conv = prev[conversationId] ?? {};
+                const existing: AmbassadorQA = conv[qaId] ?? {
+                  qa_id: qaId,
+                  question: q,
+                  answer: '',
+                  status: 'streaming',
+                };
+                return {
+                  ...prev,
+                  [conversationId]: {
+                    ...conv,
+                    [qaId]: { ...existing, answer: (existing.answer ?? '') + text },
+                  },
+                };
+              }),
+            onDone: (summary, status) => {
+              setQa(conversationId, qaId, { answer: summary, status });
+              delete controllers.current[qaCtrlKey(conversationId, qaId)];
+            },
+            onError: (error) => {
+              setQa(conversationId, qaId, { status: 'error', error });
+              delete controllers.current[qaCtrlKey(conversationId, qaId)];
+            },
+            onMissing: () => {
+              void refresh(conversationId);
+              delete controllers.current[qaCtrlKey(conversationId, qaId)];
+            },
+          });
+          controllers.current[qaCtrlKey(conversationId, qaId)] = handle;
+        })
+        .catch((err: unknown) => {
+          setQa(conversationId, qaId, {
+            status: 'error',
+            error: err instanceof Error ? err.message : 'Failed to reach the ambassador',
+          });
+        });
+    },
+    [setQa, refresh],
+  );
+
+  const cancelQa = useCallback(
+    (conversationId: string, qaId: string) => {
+      const key = qaCtrlKey(conversationId, qaId);
+      controllers.current[key]?.abort();
+      delete controllers.current[key];
+      const entry = qaState[conversationId]?.[qaId];
+      if (entry?.run_id) void api.cancelChatRun(entry.run_id).catch(() => {});
+      setQa(conversationId, qaId, { status: 'cancelled' });
+    },
+    [qaState, setQa],
+  );
+
+  const qaFor = useCallback(
+    (conversationId: string | null | undefined) =>
+      conversationId ? Object.values(qaState[conversationId] ?? {}) : [],
+    [qaState],
+  );
+
   const value = useMemo(
-    () => ({ briefingsFor, briefingForMessage, ccTurn, cancel, refresh }),
-    [briefingsFor, briefingForMessage, ccTurn, cancel, refresh],
+    () => ({ briefingsFor, briefingForMessage, ccTurn, cancel, qaFor, ask, cancelQa, refresh }),
+    [briefingsFor, briefingForMessage, ccTurn, cancel, qaFor, ask, cancelQa, refresh],
   );
 
   return <AmbassadorContext.Provider value={value}>{children}</AmbassadorContext.Provider>;

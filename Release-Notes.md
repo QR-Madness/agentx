@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.34 -->
+<!-- release-version: 0.21.35 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -38,8 +38,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   clearer in a refreshed panel. The briefing now **grounds on what the agent actually
   did** that turn — the web searches it ran, the sources it cited, the tables and
   diagrams it built — not just its written reply, so it interprets the turn instead of
-  paraphrasing it. Briefings never touch the transcript or the agent's context; future
-  spoken briefings slot onto the same seam.
+  paraphrasing it. And you can now **ask the ambassador anything** about a conversation
+  from the panel ("what sources did it use?", "summarize that table") — it answers
+  grounded only in what actually happened, streaming its reply. Briefings and Q&A never
+  touch the transcript or the agent's context; future spoken briefings slot onto the
+  same seam.
 
 ### Fixes
 

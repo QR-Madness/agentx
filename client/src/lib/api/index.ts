@@ -59,12 +59,14 @@ export const api = {
 export * from './types';
 export type {
   AmbassadorBriefing,
+  AmbassadorQA,
   AmbassadorStatus,
   AmbassadorStreamCallbacks,
   AmbassadorTurnArtifacts,
   AmbassadorToolArtifact,
   AmbassadorSource,
   AmbassadorExhibitArtifact,
+  AskAmbassadorRequest,
   BriefTurnRequest,
 } from './ambassador';
 export * from './errors';

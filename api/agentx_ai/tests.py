@@ -6219,6 +6219,42 @@ class AmbassadorStorageTest(TestCase):
         self.assertEqual(m2["summary"], "partial")
         self.assertEqual(m2["run_id"], "r2")
 
+    def test_qa_roundtrip_and_isolated_from_briefings(self):
+        # Free-form Q&A shares the sidecar but lives under a disjoint key family,
+        # so it round-trips independently and never mixes with per-turn briefings.
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            a.create_qa("c1", "qa1", "what sources did it use?", run_id="r1")
+            a.append_qa_chunk("c1", "qa1", "It pulled ")
+            a.append_qa_chunk("c1", "qa1", "the county index.")
+            a.set_summary("c1", "m1", "a per-turn briefing")  # briefing in same conv
+            qa = a.get_qa("c1", "qa1")
+            qa_list = a.list_qa("c1")
+            briefs = a.list_briefings("c1")
+        self.assertEqual(qa["question"], "what sources did it use?")
+        self.assertEqual(qa["answer"], "It pulled the county index.")
+        self.assertEqual(qa["status"], "streaming")
+        self.assertEqual(qa["run_id"], "r1")
+        self.assertEqual({x["qa_id"] for x in qa_list}, {"qa1"})
+        # Disjoint families: Q&A is absent from briefings and vice-versa.
+        self.assertEqual({b["message_id"] for b in briefs}, {"m1"})
+
+    def test_qa_settle_and_clear(self):
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            a.create_qa("c1", "qa1", "q?", run_id="r1")
+            a.set_qa_answer("c1", "qa1", "Final answer.", status="done")
+            settled = a.get_qa("c1", "qa1")
+            a.clear("c1")  # clears both families
+            after = a.get_qa("c1", "qa1")
+            briefs_after = a.list_qa("c1")
+        self.assertEqual(settled["status"], "done")
+        self.assertEqual(settled["answer"], "Final answer.")
+        self.assertIsNone(after)
+        self.assertEqual(briefs_after, [])
+
     def test_briefing_does_not_pollute_rolling_summary(self):
         # Share one fake Redis between both modules: writing a briefing must NOT
         # make it readable as the conversation's rolling summary (what the main
@@ -6369,6 +6405,54 @@ class AmbassadorServiceTest(TestCase):
             user_text="hi", assistant_text="hello", context="", agent_name="Atlas"
         )
         self.assertNotIn("actually did this turn", prompt)
+
+    def test_answer_question_streams_and_settles(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _fake_stream(*args, **kwargs):
+            for piece in ["It used ", "two sources."]:
+                yield StreamChunk(content=piece)
+
+        provider = MagicMock()
+        provider.stream = _fake_stream
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake):
+            events = asyncio.run(
+                _collect(svc.answer_question("conv", "qa1", "what sources did it use?"))
+            )
+            rec = a.get_qa("conv", "qa1")
+
+        joined = "".join(events)
+        self.assertEqual(joined.count("ambassador_chunk"), 2)
+        self.assertIn("ambassador_done", joined)
+        self.assertEqual(rec["status"], "done")
+        self.assertEqual(rec["answer"], "It used two sources.")
+        self.assertEqual(rec["question"], "what sources did it use?")
+
+    def test_qa_prompt_grounds_only_on_conversation(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        prompt = svc._build_qa_prompt(
+            question="what did it search for?",
+            context="You: find the registry\nAtlas: I searched the county index.",
+            agent_name="Atlas",
+        )
+        self.assertIn("what did it search for?", prompt)
+        self.assertIn("county index", prompt)
+        self.assertIn("grounded only in", prompt)
 
     def test_token_budget_leaves_headroom_for_free_range_thinking(self):
         # The cap must accommodate reasoning + the (short) answer, so a thinking

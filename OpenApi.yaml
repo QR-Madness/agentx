@@ -870,6 +870,56 @@ paths:
         '405':
           description: POST required
 
+  /agent/ambassador/ask:
+    post:
+      tags: [Agent]
+      operationId: ambassadorAsk
+      summary: Ask the Ambassador a free-form question (16.6)
+      description: >-
+        Start a parallel **Ambassador** Q&A run about a conversation. The ambassador
+        answers the question grounded only in the conversation (read-only), streaming
+        the answer and persisting it to the Redis sidecar under the `qa:` family —
+        never `conversation_logs`. Runs detached + un-indexed (`indexed=False`), so it
+        never appears in `/agent/chat/runs`. Returns `{run_id, qa_id}`; tail it via
+        `/agent/ambassador/stream` (shared `ambassador_*` SSE, keyed by `qa_id`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, question]
+              properties:
+                conversation_id:
+                  type: string
+                qa_id:
+                  type: string
+                  description: Client-stable id the Q&A is keyed by (server generates one if absent)
+                question:
+                  type: string
+                agent_name:
+                  type: string
+                  description: Display name of the conversation's agent, so the answer names it
+                artifacts:
+                  type: object
+                  description: Latest-turn substance (tools/sources/exhibits), as extra grounding
+      responses:
+        '200':
+          description: Q&A run started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:
+                    type: string
+                  qa_id:
+                    type: string
+        '400':
+          description: Missing required fields
+        '405':
+          description: POST required
+
   /agent/ambassador/stream:
     get:
       tags: [Agent]

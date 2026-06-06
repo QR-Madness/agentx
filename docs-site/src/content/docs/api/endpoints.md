@@ -443,6 +443,7 @@ Body: `{"message": "...", "mode"?: "queue"}`. Folds a message into an in-flight 
 
 ```
 POST /api/agent/ambassador/brief-turn
+POST /api/agent/ambassador/ask
 GET  /api/agent/ambassador/stream?run_id=<id>
 GET  /api/agent/ambassador/{conversation_id}
 ```
@@ -450,8 +451,9 @@ GET  /api/agent/ambassador/{conversation_id}
 The **Ambassador** (Phase 16.6) is a dedicated agent that runs *parallel* to a conversation and briefs you on a single turn — a middleman between the conversation and you for large-context / complex situations — **without polluting** the conversation. It is any agent profile with an `ambassador` section; the global default is `config.ambassador.profile_id` (falls back to the default agent profile).
 
 - **`POST /brief-turn`** — body `{conversation_id, message_id, assistant_text, user_text?, agent_name?, artifacts?}`. Starts a parallel briefing of one turn and returns `{run_id}`. The run is detached and **un-indexed** (`indexed=false`), so it never appears in `/agent/chat/runs`. It reads conversation context read-only and writes only to a Redis **sidecar** (the `ambassador:` key prefix) — never `conversation_logs` or the rolling summary, so nothing it produces re-enters the main agent's context. `agent_name` lets the briefing speak of the agent by name; `artifacts` (`{tools?, sources?, exhibits?}`, gathered + compacted client-side) carries what the agent actually *did* this turn so the briefing grounds on the turn's substance, not just its prose.
-- **`GET /stream?run_id=`** — tail the briefing's namespaced SSE: `ambassador_start`, `ambassador_chunk` (one per streamed delta), `ambassador_done` (status `done` | `empty_provider` | `cancelled`), `ambassador_error`; `run_missing` if the buffer expired. Cancel via `POST /api/agent/chat/runs/{run_id}/cancel` (settles the sidecar to `cancelled`, preserving partial text). A missing/unreachable provider degrades gracefully to an `empty_provider` notice rather than failing.
-- **`GET /{conversation_id}`** — replay all persisted briefings for a conversation (`{conversation_id, briefings: [{message_id, status, summary, error?, run_id?, created_at, updated_at}]}`) so a reopened panel repopulates after reload or tab-switch.
+- **`POST /ask`** — body `{conversation_id, qa_id, question, agent_name?, artifacts?}`. Ask the ambassador a free-form question about the conversation; returns `{run_id, qa_id}`. Same detached/un-indexed/sidecar machinery as `brief-turn`, persisting under the `qa:` key family so Q&A replays independently of per-turn briefings. The answer is grounded only in the conversation (read-only).
+- **`GET /stream?run_id=`** — tail a briefing **or Q&A** run's namespaced SSE: `ambassador_start`, `ambassador_chunk` (one per streamed delta), `ambassador_done` (status `done` | `empty_provider` | `cancelled`), `ambassador_error`; `run_missing` if the buffer expired. Cancel via `POST /api/agent/chat/runs/{run_id}/cancel` (settles the sidecar to `cancelled`, preserving partial text). A missing/unreachable provider degrades gracefully to an `empty_provider` notice rather than failing.
+- **`GET /{conversation_id}`** — replay a conversation's persisted briefings **and Q&A** (`{conversation_id, briefings: [...], qa: [{qa_id, question, answer, status, error?, run_id?, created_at, updated_at}]}`) so a reopened panel repopulates after reload or tab-switch.
 
 ### Agent Status
 

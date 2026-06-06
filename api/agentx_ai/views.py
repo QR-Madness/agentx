@@ -1960,6 +1960,62 @@ def ambassador_brief_turn(request):
     return JsonResponse({"run_id": run_id})
 
 
+@csrf_exempt
+def ambassador_ask(request):
+    """
+    POST /api/agent/ambassador/ask
+
+    Body: {conversation_id, question, agent_name?, artifacts?}. Starts a parallel,
+    detached free-form Q&A run about the conversation and returns {run_id, qa_id}.
+    Like brief-turn, the run is un-indexed (stays out of /chat/runs) and writes only
+    to the `ambassador:` sidecar (the `qa:` family) — never the transcript. Tail it
+    via /api/agent/ambassador/stream (shared `ambassador_*` SSE, keyed by qa_id).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    conversation_id = data.get("conversation_id")
+    question = (data.get("question") or "").strip()
+    agent_name = data.get("agent_name") or ""
+    artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
+    qa_id = (data.get("qa_id") or "").strip()
+    if not conversation_id:
+        return JsonResponse({"error": "conversation_id is required"}, status=400)
+    if not question:
+        return JsonResponse({"error": "question is required"}, status=400)
+
+    import uuid
+
+    from .agent.ambassador import get_ambassador
+    from .streaming.chat_run import start_chat_run
+
+    # Client-stable id (like briefings keyed by message id); fall back if absent.
+    qa_id = qa_id or f"qa_{uuid.uuid4().hex[:12]}"
+
+    def gen_factory():
+        return get_ambassador().answer_question(
+            conversation_id,
+            qa_id,
+            question,
+            agent_name=agent_name,
+            artifacts=artifacts,
+        )
+
+    run_id = start_chat_run(
+        gen_factory,
+        user_id=_bg_user_id(request),
+        message=f"ambassador-qa:{qa_id}",
+        session_id=conversation_id,
+        indexed=False,
+    )
+    return JsonResponse({"run_id": run_id, "qa_id": qa_id})
+
+
 async def ambassador_stream(request):
     """
     GET /api/agent/ambassador/stream?run_id=<id>
@@ -2001,7 +2057,10 @@ def ambassador_briefings(request, conversation_id):
     from .agent import ambassador_storage
 
     briefings = ambassador_storage.list_briefings(conversation_id)
-    return JsonResponse({"conversation_id": conversation_id, "briefings": briefings})
+    qa = ambassador_storage.list_qa(conversation_id)
+    return JsonResponse(
+        {"conversation_id": conversation_id, "briefings": briefings, "qa": qa}
+    )
 
 
 @csrf_exempt
