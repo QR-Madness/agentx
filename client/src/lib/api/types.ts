@@ -410,6 +410,9 @@ export type ReasoningStrategy = 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
 export interface AgentProfile {
   id: string;
   name: string;
+  // Profile kind: 'agent' = a chat agent; 'ambassador' = a parallel conversation
+  // interpreter (hidden from the chat selector, delegation, and @-mentions).
+  kind: 'agent' | 'ambassador';
   agentId: string;  // Docker-style stable identifier (used by Alloy workflows)
   avatar?: string;
   description?: string;
@@ -435,15 +438,22 @@ export interface AgentProfile {
   // as a parallel conversation interpreter.
   ambassador?: AmbassadorSection;
   isDefault: boolean;
+  // Whether this is the default *ambassador* (per-kind default; briefings use it).
+  isDefaultAmbassador?: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Phase 16.6 — the extra profile section that makes an agent an ambassador. */
+/** The ambassador-specific settings on an ambassador-kind profile. */
 export interface AmbassadorSection {
   enabled: boolean;
   briefingPrompt?: string;
   verbosity?: 'brief' | 'normal' | 'deep';
+  // Functional-persona overrides (null/undefined = use the shipped code default).
+  // The primary personality is the profile's systemPrompt (the Communications prompt).
+  briefingPersona?: string | null;
+  qaPersona?: string | null;
+  draftPersona?: string | null;
   speechModel?: string | null;
   voice?: string | null;
 }
@@ -451,6 +461,7 @@ export interface AmbassadorSection {
 export interface AgentProfileCreate {
   id?: string;
   name: string;
+  kind?: 'agent' | 'ambassador';
   avatar?: string;
   description?: string;
   tags?: string[];
@@ -470,6 +481,9 @@ export interface AgentProfileCreate {
     enabled: boolean;
     briefing_prompt?: string;
     verbosity?: 'brief' | 'normal' | 'deep';
+    briefing_persona?: string | null;
+    qa_persona?: string | null;
+    draft_persona?: string | null;
     speech_model?: string | null;
     voice?: string | null;
   } | null;

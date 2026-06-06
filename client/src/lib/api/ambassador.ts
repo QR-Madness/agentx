@@ -178,6 +178,12 @@ async function pumpAmbassadorSse(
 }
 
 export const ambassadorApi = {
+  /** The shipped default persona text for the ambassador's functional voices,
+   *  so the editor can show + diff overrides against them. */
+  async ambassadorPersonaDefaults(): Promise<{ briefing: string; qa: string; draft: string }> {
+    return apiRequest('/api/agent/ambassador/persona-defaults');
+  },
+
   /** Kick off a parallel briefing of one turn; returns its detached run_id. */
   async briefTurn(req: BriefTurnRequest): Promise<{ run_id: string }> {
     return apiRequest('/api/agent/ambassador/brief-turn', {

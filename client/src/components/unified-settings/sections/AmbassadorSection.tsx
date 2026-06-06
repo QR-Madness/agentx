@@ -1,38 +1,40 @@
 /**
- * AmbassadorSection — global Ambassador (Phase 16.6) configuration.
+ * AmbassadorSection — global Ambassador configuration.
  *
- * The ambassador is a parallel conversation interpreter (an agent profile with
- * an `ambassador` section). Here the user picks the *global default* ambassador
- * profile (`ambassador.profile_id`) and toggles the feature. Settings live under
- * `ambassador.*` in data/config.json.
+ * An ambassador is its own profile *kind* (a parallel conversation interpreter).
+ * Here the user toggles the feature globally and picks the **default ambassador**
+ * (the one briefings use) from their ambassador profiles; per-ambassador settings
+ * (personality, voices, verbosity) live in the ambassador profile editor. The
+ * global model + grounding-turns defaults persist under `ambassador.*`.
  */
 
 import { useEffect, useState } from 'react';
-import { Radio, RefreshCw, Save } from 'lucide-react';
+import { Radio, RefreshCw, Save, Plus, Pencil } from 'lucide-react';
 import { api } from '../../../lib/api';
 import type { AgentProfile } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
+import { useModal } from '../../../contexts/ModalContext';
 import { Button, SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
 
 interface AmbassadorSettings {
   enabled: boolean;
-  profile_id: string; // '' = use the default agent profile (persona)
   model: string; // '' = use the profile's model / floor
   max_context_turns: number;
 }
 
 const DEFAULT_SETTINGS: AmbassadorSettings = {
   enabled: true,
-  profile_id: '',
   model: '',
   max_context_turns: 8,
 };
 
 export default function AmbassadorSection() {
   const { notifyError, notifySuccess } = useNotify();
+  const { openModal } = useModal();
   const [settings, setSettings] = useState<AmbassadorSettings>(DEFAULT_SETTINGS);
-  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [ambassadors, setAmbassadors] = useState<AgentProfile[]>([]);
+  const [defaultAmbassadorId, setDefaultAmbassadorId] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -47,14 +49,14 @@ export default function AmbassadorSection() {
         api.getConfig(),
         api.listAgentProfiles(),
       ]);
-      setProfiles(profileRes.profiles);
+      const ambs = profileRes.profiles.filter((p) => p.kind === 'ambassador');
+      setAmbassadors(ambs);
+      setDefaultAmbassadorId(ambs.find((p) => p.isDefaultAmbassador)?.id ?? ambs[0]?.id ?? '');
       const a = (config.ambassador || {}) as Partial<AmbassadorSettings> & {
-        profile_id?: string | null;
         model?: string | null;
       };
       setSettings({
         enabled: a.enabled ?? true,
-        profile_id: a.profile_id || '',
         model: a.model || '',
         max_context_turns: a.max_context_turns ?? 8,
       });
@@ -68,21 +70,50 @@ export default function AmbassadorSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // The default ambassador is now a profile flag; clear the legacy profile_id
+      // override so the default-ambassador mechanism is authoritative.
+      if (defaultAmbassadorId) {
+        await api.setDefaultAmbassador(defaultAmbassadorId);
+      }
       await api.updateConfig({
         ambassador: {
           enabled: settings.enabled,
-          // Empty → null so the backend falls back to the default agent profile / model floor.
-          profile_id: settings.profile_id.trim() ? settings.profile_id : null,
+          profile_id: null,
           model: settings.model.trim() ? settings.model : null,
           max_context_turns: settings.max_context_turns,
         },
       });
       notifySuccess('Ambassador settings saved', 'Ambassador');
+      await load();
     } catch (error) {
       notifyError(error, 'Failed to save ambassador settings');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleNewAmbassador = async () => {
+    try {
+      const { profile } = await api.createAgentProfile({
+        name: 'New Ambassador',
+        kind: 'ambassador',
+        avatar: 'radio',
+      });
+      openModal({
+        id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor',
+        size: 'full', props: { initialProfileId: profile.id },
+      });
+    } catch (error) {
+      notifyError(error, 'Failed to create ambassador');
+    }
+  };
+
+  const handleEditAmbassador = () => {
+    if (!defaultAmbassadorId) return;
+    openModal({
+      id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor',
+      size: 'full', props: { initialProfileId: defaultAmbassadorId },
+    });
   };
 
   return (
@@ -119,25 +150,32 @@ export default function AmbassadorSection() {
 
           <div className="setting-row">
             <label className="setting-label">
-              <span>Ambassador Profile</span>
+              <span>Default Ambassador</span>
               <span className="setting-hint">
-                Which agent profile acts as the global ambassador. Its model and persona, plus its
-                profile's ambassador section, shape the briefing. Defaults to your default agent.
+                Which ambassador profile briefings use. Edit its personality and voices in the
+                ambassador profile editor.
               </span>
             </label>
-            <select
-              className="form-input"
-              value={settings.profile_id}
-              onChange={(e) => setSettings((prev) => ({ ...prev, profile_id: e.target.value }))}
-            >
-              <option value="">Default agent profile</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.ambassador?.enabled ? ' — ambassador' : ''}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select
+                className="form-input"
+                value={defaultAmbassadorId}
+                onChange={(e) => setDefaultAmbassadorId(e.target.value)}
+                disabled={ambassadors.length === 0}
+                style={{ flex: 1, minWidth: 160 }}
+              >
+                {ambassadors.length === 0 && <option value="">No ambassadors yet</option>}
+                {ambassadors.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <Button variant="secondary" size="sm" onClick={handleEditAmbassador} disabled={!defaultAmbassadorId}>
+                <Pencil size={14} /> Edit
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void handleNewAmbassador()}>
+                <Plus size={14} /> New
+              </Button>
+            </div>
           </div>
 
           <div className="setting-row">

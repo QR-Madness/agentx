@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.50 -->
+<!-- release-version: 0.21.51 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -94,7 +94,10 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   overridden or reset to their shipped default. Ambassadors are kept out of the chat agent
   picker, delegation, and @-mentions — they only ever brief, never join the conversation.
   Existing setups migrate automatically (and a default ambassador is created if you don't have
-  one), without ever turning your main agent into an ambassador.
+  one), without ever turning your main agent into an ambassador. **Settings → Ambassador** now
+  lets you pick the default ambassador and create or edit one; the profile editor adapts for
+  ambassadors — leading with the **Communications** prompt and exposing each functional voice
+  (briefing / Q&A / draft) with override, reset, and a diff against the shipped default.
 - **Polished per-agent prompt editor.** Editing an agent profile's instructions now uses the
   same refined editor: an approximate token/char count, in-place **Enhance** (with undo),
   **Insert from library** (which replaces the field), and a collapsible **effective-prompt

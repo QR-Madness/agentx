@@ -348,9 +348,10 @@ export function ChatPanel() {
     const q = mention.query.toLowerCase();
     return profiles.filter(
       p =>
-        p.name.toLowerCase().includes(q) ||
-        p.agentId.toLowerCase().includes(q) ||
-        (p.tags ?? []).some(t => t.toLowerCase().includes(q)),
+        p.kind !== 'ambassador' &&  // ambassadors aren't routable chat agents
+        (p.name.toLowerCase().includes(q) ||
+          p.agentId.toLowerCase().includes(q) ||
+          (p.tags ?? []).some(t => t.toLowerCase().includes(q))),
     );
   }, [mention.open, mention.query, profiles]);
 

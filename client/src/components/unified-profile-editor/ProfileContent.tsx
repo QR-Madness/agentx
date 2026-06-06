@@ -26,6 +26,8 @@ import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
+import { OverridablePromptField } from '../common/OverridablePromptField';
+import { api } from '../../lib/api';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState, REASONING_OPTIONS } from './hooks/useProfileEditorState';
@@ -176,9 +178,12 @@ export function ProfileContent({
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
-    ambassadorEnabled, setAmbassadorEnabled,
+    kind,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
     ambassadorVerbosity, setAmbassadorVerbosity,
+    briefingPersona, setBriefingPersona,
+    qaPersona, setQaPersona,
+    draftPersona, setDraftPersona,
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
@@ -193,12 +198,24 @@ export function ProfileContent({
   const [libraryMode, setLibraryMode] = useState<'insert' | 'select'>('insert');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<ModelInfo[]>([]);
+  const isAmbassador = kind === 'ambassador';
+  const [personaDefaults, setPersonaDefaults] = useState<{ briefing: string; qa: string; draft: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetchModelsOnce().then(m => { if (!cancelled) setModelCatalog(m); });
     return () => { cancelled = true; };
   }, []);
+
+  // Persona defaults (for the ambassador voice override/diff) — fetched once, lazily.
+  useEffect(() => {
+    if (!isAmbassador || personaDefaults) return;
+    let cancelled = false;
+    api.ambassadorPersonaDefaults()
+      .then(d => { if (!cancelled) setPersonaDefaults(d); })
+      .catch(() => { if (!cancelled) setPersonaDefaults({ briefing: '', qa: '', draft: '' }); });
+    return () => { cancelled = true; };
+  }, [isAmbassador, personaDefaults]);
 
   const selectedModel = defaultModel ? modelCatalog.find(m => m.id === defaultModel) : undefined;
   const selectedCtx = selectedModel?.context_length ?? selectedModel?.context_window;
@@ -462,18 +479,23 @@ export function ProfileContent({
                     <div className="profile-form-group">
                       <PromptEditor
                         ref={systemPromptRef}
-                        label="Agent Instructions"
-                        hint="Agent-specific instructions, woven into the prompt after the global layers"
-                        placeholder="Custom instructions for this agent… (leave empty to use defaults)"
+                        label={isAmbassador ? 'Communications (personality)' : 'Agent Instructions'}
+                        hint={isAmbassador
+                          ? 'Modifies the flavour of the ambassador — how it speaks to you across all its briefings.'
+                          : 'Agent-specific instructions, woven into the prompt after the global layers'}
+                        placeholder={isAmbassador
+                          ? 'Give your ambassador a personality… (leave empty for a neutral voice)'
+                          : 'Custom instructions for this agent… (leave empty to use defaults)'}
                         value={systemPrompt}
                         onChange={setSystemPrompt}
                         onInsertFromLibrary={() => openLibrary('insert')}
                       />
-                      <EffectivePromptPreview name={name} agentPrompt={systemPrompt} />
+                      {!isAmbassador && <EffectivePromptPreview name={name} agentPrompt={systemPrompt} />}
                     </div>
                   </AccordionCard>
 
-                  {/* Delegation — Track D */}
+                  {/* Delegation — agents only (ambassadors are never delegation targets) */}
+                  {!isAmbassador && (
                   <AccordionCard value="delegation" icon={<Share2 size={14} />} title="Delegation">
                     <label className="profile-toggle-row">
                       <span className="profile-toggle-label">
@@ -496,63 +518,70 @@ export function ProfileContent({
                       in Settings → Multi-Agent).
                     </span>
                   </AccordionCard>
+                  )}
 
-                  {/* Ambassador — Phase 16.6 */}
-                  <AccordionCard value="ambassador" icon={<Radio size={14} />} title="Ambassador">
-                    <label className="profile-toggle-row">
-                      <span className="profile-toggle-label">
-                        <Radio size={15} />
-                        Act as ambassador
-                      </span>
-                      <div className="profile-toggle-right">
-                        <input
-                          type="checkbox"
-                          checked={ambassadorEnabled}
-                          onChange={e => setAmbassadorEnabled(e.target.checked)}
-                          className="profile-toggle-input"
-                        />
-                        <span className={`profile-toggle-switch ${ambassadorEnabled ? 'active' : ''}`} />
-                      </div>
-                    </label>
+                  {/* Ambassador voices — ambassador-kind profiles only */}
+                  {isAmbassador && (
+                  <AccordionCard value="ambassador" icon={<Radio size={14} />} title="Ambassador voices">
                     <span className="profile-form-hint">
-                      An ambassador runs <em>parallel</em> to a conversation and briefs you on a
-                      turn — without entering the chat. Use the <code> CC </code> button on any
-                      reply. Pick the global default in Settings → Ambassador.
+                      This profile <strong>is</strong> an ambassador — it briefs you in parallel
+                      and never enters the chat. Its personality is the Communications prompt above;
+                      the load-bearing voices below ship with a default you can override and reset.
                     </span>
-
-                    {ambassadorEnabled && (
-                      <>
-                        <div className="profile-form-field" style={{ marginTop: 12 }}>
-                          <label className="profile-form-label">Briefing verbosity</label>
-                          <select
-                            className="profile-select"
-                            value={ambassadorVerbosity}
-                            onChange={e =>
-                              setAmbassadorVerbosity(e.target.value as 'brief' | 'normal' | 'deep')
-                            }
-                          >
-                            <option value="brief">Brief — one or two sentences</option>
-                            <option value="normal">Normal — a short paragraph</option>
-                            <option value="deep">Deep — reasoning, tensions, open questions</option>
-                          </select>
-                        </div>
-                        <div className="profile-form-field" style={{ marginTop: 12 }}>
-                          <label className="profile-form-label">Briefing instructions</label>
-                          <textarea
-                            value={ambassadorBriefingPrompt}
-                            onChange={e => setAmbassadorBriefingPrompt(e.target.value)}
-                            placeholder="What should the ambassador surface or emphasize when briefing a turn? (optional)"
-                            rows={4}
-                            className="profile-system-prompt"
-                          />
-                          <span className="profile-form-hint">
-                            Layered onto the ambassador's persona (this profile's model + system
-                            prompt still apply).
-                          </span>
-                        </div>
-                      </>
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
+                      <label className="profile-form-label">Briefing verbosity</label>
+                      <select
+                        className="profile-select"
+                        value={ambassadorVerbosity}
+                        onChange={e =>
+                          setAmbassadorVerbosity(e.target.value as 'brief' | 'normal' | 'deep')
+                        }
+                      >
+                        <option value="brief">Brief — one or two sentences</option>
+                        <option value="normal">Normal — a short paragraph</option>
+                        <option value="deep">Deep — reasoning, tensions, open questions</option>
+                      </select>
+                    </div>
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
+                      <label className="profile-form-label">Briefing instructions</label>
+                      <textarea
+                        value={ambassadorBriefingPrompt}
+                        onChange={e => setAmbassadorBriefingPrompt(e.target.value)}
+                        placeholder="What should the ambassador surface or emphasize when briefing a turn? (optional)"
+                        rows={3}
+                        className="profile-system-prompt"
+                      />
+                    </div>
+                    {personaDefaults && (
+                      <div className="profile-form-field" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <OverridablePromptField
+                          title="Briefing voice"
+                          description="How it narrates a single turn to you."
+                          defaultText={personaDefaults.briefing}
+                          override={briefingPersona}
+                          onChange={setBriefingPersona}
+                          onReset={() => setBriefingPersona(null)}
+                        />
+                        <OverridablePromptField
+                          title="Q&A voice"
+                          description="How it answers free-form questions about the conversation."
+                          defaultText={personaDefaults.qa}
+                          override={qaPersona}
+                          onChange={setQaPersona}
+                          onReset={() => setQaPersona(null)}
+                        />
+                        <OverridablePromptField
+                          title="Draft voice"
+                          description="How it ghostwrites a message from you to the agent."
+                          defaultText={personaDefaults.draft}
+                          override={draftPersona}
+                          onChange={setDraftPersona}
+                          onReset={() => setDraftPersona(null)}
+                        />
+                      </div>
                     )}
                   </AccordionCard>
+                  )}
                 </Accordion.Root>
               </Tabs.Content>
 

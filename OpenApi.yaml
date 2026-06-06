@@ -990,6 +990,26 @@ paths:
         '400':
           description: Missing run_id
 
+  /agent/ambassador/persona-defaults:
+    get:
+      tags: [Agent]
+      operationId: ambassadorPersonaDefaults
+      summary: Shipped default persona text for an ambassador's functional voices
+      description: >-
+        Returns the code-owned default text for the briefing, Q&A, and draft
+        personas so the ambassador profile editor can show and diff overrides.
+      responses:
+        '200':
+          description: Persona defaults
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  briefing: { type: string }
+                  qa: { type: string }
+                  draft: { type: string }
+
   /agent/ambassador/{conversation_id}:
     get:
       tags: [Agent]

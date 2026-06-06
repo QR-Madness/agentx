@@ -5794,6 +5794,20 @@ def agent_profile_set_default(request, profile_id):
     return JsonResponse({"default_profile_id": profile_id})
 
 
+def ambassador_persona_defaults(request):
+    """
+    GET /api/agent/ambassador/persona-defaults - The shipped default persona text
+    for an ambassador's functional voices, so the editor can show + diff overrides.
+    """
+    from .agent.ambassador import _default_persona, _qa_persona, _draft_persona
+
+    return JsonResponse({
+        "briefing": _default_persona(""),
+        "qa": _qa_persona(""),
+        "draft": _draft_persona(""),
+    })
+
+
 @csrf_exempt
 def agent_profile_set_default_ambassador(request, profile_id):
     """

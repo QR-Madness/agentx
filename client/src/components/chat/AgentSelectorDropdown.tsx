@@ -62,9 +62,11 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
   // ---- agents ----
   const agentsLocked = activeWorkflow !== null; // agent is dictated by the workflow
   const filteredProfiles = useMemo(() => {
+    // Ambassadors are not chat agents — they only ever brief, never join.
+    const agents = profiles.filter(p => p.kind !== 'ambassador');
     const q = query.trim().toLowerCase();
-    if (!q) return profiles;
-    return profiles.filter(p =>
+    if (!q) return agents;
+    return agents.filter(p =>
       p.name.toLowerCase().includes(q) ||
       (p.defaultModel ?? '').toLowerCase().includes(q) ||
       (p.tags ?? []).some(t => t.toLowerCase().includes(q)),

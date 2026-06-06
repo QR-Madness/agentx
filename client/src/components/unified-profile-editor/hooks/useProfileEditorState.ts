@@ -40,6 +40,10 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [ambassadorEnabled, setAmbassadorEnabled] = useState(false);
   const [ambassadorBriefingPrompt, setAmbassadorBriefingPrompt] = useState('');
   const [ambassadorVerbosity, setAmbassadorVerbosity] = useState<'brief' | 'normal' | 'deep'>('normal');
+  // Functional-persona overrides (null = ride the shipped default).
+  const [briefingPersona, setBriefingPersona] = useState<string | null>(null);
+  const [qaPersona, setQaPersona] = useState<string | null>(null);
+  const [draftPersona, setDraftPersona] = useState<string | null>(null);
   const [baseTemplateId, setBaseTemplateId] = useState('');
   const [baseTemplate, setBaseTemplate] = useState<PromptTemplate | null>(null);
   const [saving, setSaving] = useState(false);
@@ -68,6 +72,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setAmbassadorEnabled(profile.ambassador?.enabled ?? false);
       setAmbassadorBriefingPrompt(profile.ambassador?.briefingPrompt ?? '');
       setAmbassadorVerbosity(profile.ambassador?.verbosity ?? 'normal');
+      setBriefingPersona(profile.ambassador?.briefingPersona ?? null);
+      setQaPersona(profile.ambassador?.qaPersona ?? null);
+      setDraftPersona(profile.ambassador?.draftPersona ?? null);
     } else {
       setName('');
       setAvatar('sparkles');
@@ -87,6 +94,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setAmbassadorEnabled(false);
       setAmbassadorBriefingPrompt('');
       setAmbassadorVerbosity('normal');
+      setBriefingPersona(null);
+      setQaPersona(null);
+      setDraftPersona(null);
     }
     setError(null);
   }, [profile]);
@@ -116,6 +126,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       textarea.selectionStart = textarea.selectionEnd = start + text.length;
     });
   };
+
+  // Profile kind is set at creation and not flipped in normal editing.
+  const kind: 'agent' | 'ambassador' = profile?.kind ?? 'agent';
 
   const handleSubmit = async (
     isEditing: boolean,
@@ -148,12 +161,18 @@ export function useProfileEditorState(profile: AgentProfile | null) {
         allowed_tools: allowedTools,
         blocked_tools: blockedTools,
         available_for_delegation: availableForDelegation,
-        // Send the ambassador section when enabled; null clears it otherwise.
-        ambassador: ambassadorEnabled
+        kind,
+        // Ambassador config travels only on ambassador-kind profiles; null clears
+        // any legacy section on a normal agent. Persona overrides: null rides the
+        // shipped default; a string overrides it.
+        ambassador: kind === 'ambassador'
           ? {
               enabled: true,
               briefing_prompt: ambassadorBriefingPrompt.trim(),
               verbosity: ambassadorVerbosity,
+              briefing_persona: briefingPersona,
+              qa_persona: qaPersona,
+              draft_persona: draftPersona,
             }
           : null,
       };
@@ -205,9 +224,13 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
+    kind,
     ambassadorEnabled, setAmbassadorEnabled,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
     ambassadorVerbosity, setAmbassadorVerbosity,
+    briefingPersona, setBriefingPersona,
+    qaPersona, setQaPersona,
+    draftPersona, setDraftPersona,
     baseTemplateId, setBaseTemplateId,
     baseTemplate,
     systemPromptRef,

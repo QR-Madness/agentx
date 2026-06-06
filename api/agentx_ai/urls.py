@@ -43,6 +43,7 @@ urlpatterns = [
     path("agent/ambassador/ask", views.ambassador_ask, name="ambassador-ask"),
     path("agent/ambassador/draft", views.ambassador_draft, name="ambassador-draft"),
     path("agent/ambassador/stream", views.ambassador_stream, name="ambassador-stream"),
+    path("agent/ambassador/persona-defaults", views.ambassador_persona_defaults, name="ambassador-persona-defaults"),
     path("agent/ambassador/<str:conversation_id>", views.ambassador_briefings, name="ambassador-briefings"),
     path("chat/background", views.chat_background, name="chat-background"),
     path("chat/background/<str:job_id>", views.chat_background_detail, name="chat-background-detail"),

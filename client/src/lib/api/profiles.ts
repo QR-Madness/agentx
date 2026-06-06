@@ -5,6 +5,7 @@ import type { AgentProfile, AgentProfileCreate, ReasoningStrategy } from './type
 interface RawAgentProfile {
   id: string;
   name: string;
+  kind?: 'agent' | 'ambassador';
   agent_id?: string;
   avatar?: string;
   description?: string;
@@ -25,10 +26,14 @@ interface RawAgentProfile {
     enabled?: boolean;
     briefing_prompt?: string;
     verbosity?: 'brief' | 'normal' | 'deep';
+    briefing_persona?: string | null;
+    qa_persona?: string | null;
+    draft_persona?: string | null;
     speech_model?: string | null;
     voice?: string | null;
   } | null;
   is_default: boolean;
+  is_default_ambassador?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -37,6 +42,7 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
   return {
     id: p.id,
     name: p.name,
+    kind: p.kind ?? 'agent',
     agentId: p.agent_id || p.id,
     avatar: p.avatar,
     description: p.description,
@@ -57,11 +63,15 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
           enabled: p.ambassador.enabled ?? false,
           briefingPrompt: p.ambassador.briefing_prompt,
           verbosity: p.ambassador.verbosity,
+          briefingPersona: p.ambassador.briefing_persona,
+          qaPersona: p.ambassador.qa_persona,
+          draftPersona: p.ambassador.draft_persona,
           speechModel: p.ambassador.speech_model,
           voice: p.ambassador.voice,
         }
       : undefined,
     isDefault: p.is_default,
+    isDefaultAmbassador: p.is_default_ambassador ?? false,
     createdAt: p.created_at || '',
     updatedAt: p.updated_at || '',
   };
@@ -112,6 +122,12 @@ export const profilesApi = {
 
   async setDefaultAgentProfile(id: string): Promise<{ default_profile_id: string }> {
     return apiRequest(`/api/agent/profiles/${encodeURIComponent(id)}/set-default`, {
+      method: 'POST',
+    });
+  },
+
+  async setDefaultAmbassador(id: string): Promise<{ default_ambassador_id: string }> {
+    return apiRequest(`/api/agent/profiles/${encodeURIComponent(id)}/set-default-ambassador`, {
       method: 'POST',
     });
   },

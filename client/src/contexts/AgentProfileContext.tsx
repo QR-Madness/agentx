@@ -65,11 +65,13 @@ export function AgentProfileProvider({ children }: { children: ReactNode }) {
       const result = await api.listAgentProfiles();
       setProfiles(result.profiles);
 
-      // Load active profile ID from localStorage
+      // Load active profile ID from localStorage. The active chat agent is always
+      // an 'agent'-kind profile — never an ambassador.
+      const agents = result.profiles.filter(p => p.kind !== 'ambassador');
       const storedActiveId = localStorage.getItem(STORAGE_KEY_ACTIVE(activeServer.id));
-      const validActiveId = result.profiles.some(p => p.id === storedActiveId)
+      const validActiveId = agents.some(p => p.id === storedActiveId)
         ? storedActiveId
-        : result.profiles.find(p => p.isDefault)?.id || result.profiles[0]?.id || null;
+        : agents.find(p => p.isDefault)?.id || agents[0]?.id || null;
 
       setActiveProfileId(validActiveId);
 
