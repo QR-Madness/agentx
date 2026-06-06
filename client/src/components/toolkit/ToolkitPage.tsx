@@ -505,7 +505,7 @@ function RawJsonView() {
             {validateErrors.map((e, i) => <span key={i}>{e}</span>)}
           </div>
         )}
-        {savedMsg && <div className="meta" style={{ color: 'rgb(34, 197, 94)' }}>{savedMsg}</div>}
+        {savedMsg && <div className="meta" style={{ color: 'var(--feedback-success)' }}>{savedMsg}</div>}
         <div className="actions">
           <button className="toolkit-button" onClick={() => setText(initialJson)} disabled={saving}>
             Reset to current

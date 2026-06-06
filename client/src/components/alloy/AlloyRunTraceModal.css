@@ -27,7 +27,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #7c5cff, #38bdf8);
+  background: linear-gradient(135deg, var(--accent-primary), var(--feedback-info));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,7 +110,7 @@
   cursor: pointer;
 }
 .alloy-trace-run-tab.active {
-  border-color: #7c5cff;
+  border-color: var(--accent-primary);
   color: var(--text-primary);
 }
 .run-tab-count {
@@ -147,7 +147,7 @@
   font-weight: 600;
   color: var(--text-primary);
 }
-.summary-supervisor svg { color: #f5c451; }
+.summary-supervisor svg { color: var(--feedback-warning); }
 .summary-stats {
   display: flex;
   align-items: center;
@@ -161,7 +161,7 @@
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
-.summary-stat.cost { color: #34d399; }
+.summary-stat.cost { color: var(--feedback-success); }
 .partial-flag { color: var(--text-muted); margin-left: 0.1rem; }
 
 /* Delegation cards */
@@ -178,9 +178,9 @@
   background: var(--bg-card);
   padding: 0.875rem 1rem;
 }
-.trace-delegation.status-completed { border-left-color: #34d399; }
-.trace-delegation.status-failed { border-left-color: #f87171; }
-.trace-delegation.status-streaming { border-left-color: #7c5cff; }
+.trace-delegation.status-completed { border-left-color: var(--feedback-success); }
+.trace-delegation.status-failed { border-left-color: var(--feedback-error); }
+.trace-delegation.status-streaming { border-left-color: var(--accent-primary); }
 
 .trace-delegation-head {
   display: flex;
@@ -224,9 +224,9 @@
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
 }
-.trace-status-badge.completed { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-.trace-status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
-.trace-status-badge.running { background: rgba(124, 92, 255, 0.15); color: #a78bfa; }
+.trace-status-badge.completed { background: rgba(52, 211, 153, 0.15); color: var(--feedback-success); }
+.trace-status-badge.failed { background: rgba(248, 113, 113, 0.15); color: var(--feedback-error); }
+.trace-status-badge.running { background: var(--accent-tint-soft); color: var(--accent-primary); }
 .trace-status-badge.compact { padding: 0.1rem 0.3rem; }
 
 .trace-task {
@@ -249,14 +249,14 @@
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.trace-metric.cost { color: #34d399; }
+.trace-metric.cost { color: var(--feedback-success); }
 
 .trace-error {
   margin-top: 0.625rem;
   padding: 0.5rem 0.625rem;
   border-radius: 8px;
   background: rgba(248, 113, 113, 0.1);
-  color: #f87171;
+  color: var(--feedback-error);
   font-size: 0.75rem;
 }
 

@@ -1,5 +1,5 @@
 /**
- * PlansPanel (drawer) styles — amber accent (#f59e0b) to match the in-chat
+ * PlansPanel (drawer) styles — amber accent (var(--feedback-warning)) to match the in-chat
  * PlanExecutionBlock. Reuses .plan-subtasks / .subtask-* from
  * PlanExecutionBlock.css for the step rows.
  */
@@ -18,7 +18,7 @@
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-secondary);
-  color: #f59e0b;
+  color: var(--feedback-warning);
 }
 
 .plans-panel-header h2 {
@@ -75,14 +75,14 @@
   border-radius: 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--feedback-warning);
   overflow: hidden;
 }
 
-.plan-block.completed { border-left-color: #22c55e; }
-.plan-block.failed { border-left-color: #ef4444; }
+.plan-block.completed { border-left-color: var(--feedback-success); }
+.plan-block.failed { border-left-color: var(--feedback-error); }
 .plan-block.cancelled,
-.plan-block.stale { border-left-color: #94a3b8; }
+.plan-block.stale { border-left-color: var(--feedback-inactive); }
 
 .plan-block-header {
   display: flex;
@@ -115,7 +115,7 @@
   height: 22px;
   border-radius: 6px;
   background: rgba(245, 158, 11, 0.18);
-  color: #f59e0b;
+  color: var(--feedback-warning);
 }
 
 .plan-block-info {
@@ -155,7 +155,7 @@
 .plan-block-complexity {
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #f59e0b;
+  color: var(--feedback-warning);
 }
 
 .plan-block-elapsed {
@@ -233,11 +233,11 @@
 }
 
 .plan-block-action:hover {
-  border-color: #f59e0b;
-  color: #f59e0b;
+  border-color: var(--feedback-warning);
+  color: var(--feedback-warning);
 }
 
 .plan-block-action--danger:hover {
-  border-color: #ef4444;
-  color: #ef4444;
+  border-color: var(--feedback-error);
+  color: var(--feedback-error);
 }

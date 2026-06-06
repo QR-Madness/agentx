@@ -101,7 +101,7 @@
 }
 
 .translation-textarea.result {
-  background: rgba(139, 92, 246, 0.03);
+  background: var(--accent-tint-faint);
 }
 
 /* Translate Action */
@@ -177,7 +177,7 @@
 }
 
 .language-chip.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   border-color: var(--cosmic-violet);
   color: var(--cosmic-violet);
   font-weight: 500;

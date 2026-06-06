@@ -9,7 +9,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--accent-tint-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -45,11 +45,11 @@
 }
 .agent-selector-segment.active {
   color: var(--text-primary);
-  background: rgba(139, 92, 246, 0.14);
-  border-color: rgba(139, 92, 246, 0.4);
+  background: var(--accent-tint-soft);
+  border-color: var(--accent-tint-strong);
 }
 .segment-active-dot {
-  color: #f5c451;
+  color: var(--feedback-warning);
 }
 
 @keyframes slideUp {
@@ -107,10 +107,10 @@
 }
 
 .agent-selector-item.active {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
 }
 .agent-selector-item.active.kb-active {
-  background: rgba(139, 92, 246, 0.18);
+  background: var(--accent-tint-soft);
 }
 
 .agent-item-avatar {
@@ -283,7 +283,7 @@
 }
 
 .agent-selector-item.locked:hover {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
 }
 
 .agent-selector-locked-hint {

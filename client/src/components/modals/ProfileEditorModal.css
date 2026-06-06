@@ -59,7 +59,7 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
-  color: #ef4444;
+  color: var(--feedback-error);
   font-size: 0.875rem;
 }
 
@@ -161,7 +161,7 @@
 .profile-editor-modal select:focus {
   outline: none;
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
 }
 
 .profile-editor-modal textarea {
@@ -351,8 +351,8 @@
 
 /* Active state - green */
 .profile-editor-modal .toggle-switch.active {
-  background: #22c55e;
-  border-color: #22c55e;
+  background: var(--feedback-success);
+  border-color: var(--feedback-success);
 }
 
 .profile-editor-modal .toggle-switch.active::after {
@@ -361,8 +361,8 @@
 
 /* Legacy support for checkbox-based toggles */
 .profile-editor-modal .toggle-input:checked + .toggle-switch {
-  background: #22c55e;
-  border-color: #22c55e;
+  background: var(--feedback-success);
+  border-color: var(--feedback-success);
 }
 
 .profile-editor-modal .toggle-input:checked + .toggle-switch::after {
@@ -392,7 +392,7 @@
   gap: 0.375rem;
   padding: 0.5rem 0.875rem;
   background: transparent;
-  color: #ef4444;
+  color: var(--feedback-error);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
   font-size: 0.875rem;
@@ -452,7 +452,7 @@
 .profile-editor-modal .selected-template .modified-badge {
   padding: 0.125rem 0.375rem;
   background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  color: var(--feedback-warning);
   border-radius: 4px;
   font-size: 0.6875rem;
   font-weight: 500;

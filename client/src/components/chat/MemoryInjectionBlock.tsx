@@ -30,22 +30,22 @@ export interface MemoryInjectionBlockProps {
   queryUsed: string;
 }
 
-// Entity type colors for badges
+// Entity type colors for badges — theme tokens so they follow the active theme.
 const ENTITY_TYPE_COLORS: Record<string, string> = {
-  person: '#3b82f6',
-  organization: '#8b5cf6',
-  location: '#10b981',
-  event: '#f59e0b',
-  concept: '#ec4899',
-  default: '#6b7280',
+  person: 'var(--feedback-info)',
+  organization: 'var(--accent-primary)',
+  location: 'var(--feedback-success)',
+  event: 'var(--feedback-warning)',
+  concept: 'var(--accent-tertiary)',
+  default: 'var(--feedback-inactive)',
 };
 
 function ConfidenceBar({ confidence }: { confidence: number }) {
   const percentage = Math.round(confidence * 100);
   const getColor = () => {
-    if (percentage >= 80) return '#22c55e';
-    if (percentage >= 60) return '#eab308';
-    return '#ef4444';
+    if (percentage >= 80) return 'var(--feedback-success)';
+    if (percentage >= 60) return 'var(--feedback-warning)';
+    return 'var(--feedback-error)';
   };
 
   return (

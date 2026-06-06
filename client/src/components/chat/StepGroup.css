@@ -15,7 +15,7 @@
 
 @keyframes stepGroupFlash {
   0%, 100% { border-left-color: rgba(245, 158, 11, 0.35); }
-  30% { border-left-color: #f59e0b; }
+  30% { border-left-color: var(--feedback-warning); }
 }
 
 .step-group-header {
@@ -38,7 +38,7 @@
 }
 
 .step-group-icon {
-  color: #f59e0b;
+  color: var(--feedback-warning);
   flex-shrink: 0;
 }
 
@@ -46,7 +46,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #f59e0b;
+  color: var(--feedback-warning);
   flex-shrink: 0;
 }
 

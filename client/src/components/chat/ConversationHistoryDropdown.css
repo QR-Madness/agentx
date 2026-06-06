@@ -9,7 +9,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--accent-tint-soft);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -141,7 +141,7 @@
 }
 
 .history-item.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
 }
 
 .history-item-icon {
@@ -230,7 +230,7 @@
 
 .history-item-action-danger:hover {
   background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  color: var(--feedback-error);
 }
 
 /* Legacy single delete button (kept for backwards compatibility) */
@@ -254,7 +254,7 @@
 
 .history-item-delete:hover {
   background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  color: var(--feedback-error);
 }
 
 .history-footer {
@@ -277,14 +277,14 @@
 
 /* Server-side conversation items */
 .history-item-server .history-item-icon {
-  background: rgba(139, 92, 246, 0.1);
-  color: var(--accent-color, #8b5cf6);
+  background: var(--accent-tint-soft);
+  color: var(--accent-color, var(--accent-primary));
 }
 
 /* Resume Running items */
 .history-item-running .history-item-icon {
-  background: rgba(139, 92, 246, 0.12);
-  color: var(--accent-color, #8b5cf6);
+  background: var(--accent-tint-soft);
+  color: var(--accent-color, var(--accent-primary));
 }
 
 .history-running-dot {
@@ -311,7 +311,7 @@
 
 .history-item-loading {
   flex-shrink: 0;
-  color: var(--accent-color, #8b5cf6);
+  color: var(--accent-color, var(--accent-primary));
   display: flex;
   align-items: center;
 }

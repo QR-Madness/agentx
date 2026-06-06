@@ -22,7 +22,7 @@
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: var(--surface-overlay, #1a2035);
+  background: var(--surface-overlay, var(--surface-overlay));
   border: 1px solid var(--border-line, var(--border-color));
   border-radius: 14px;
   box-shadow: var(--shadow-lg, 0 24px 60px rgba(0, 0, 0, 0.5));
@@ -88,13 +88,13 @@
 }
 
 .cmdk-item.selected {
-  background: var(--surface-hover, rgba(139, 92, 246, 0.12));
+  background: var(--surface-hover, var(--accent-tint-soft));
   color: var(--text-primary);
 }
 
 .cmdk-item-icon {
   display: flex;
-  color: var(--cosmic-violet, #8b5cf6);
+  color: var(--cosmic-violet, var(--accent-primary));
   flex-shrink: 0;
 }
 

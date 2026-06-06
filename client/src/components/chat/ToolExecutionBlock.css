@@ -13,19 +13,19 @@
 
 /* Status-based left border accent */
 .tool-execution-block.status-pending {
-  border-left: 3px solid #eab308;
+  border-left: 3px solid var(--feedback-warning);
 }
 
 .tool-execution-block.status-running {
-  border-left: 3px solid #3b82f6;
+  border-left: 3px solid var(--feedback-info);
 }
 
 .tool-execution-block.status-completed {
-  border-left: 3px solid #22c55e;
+  border-left: 3px solid var(--feedback-success);
 }
 
 .tool-execution-block.status-failed {
-  border-left: 3px solid #ef4444;
+  border-left: 3px solid var(--feedback-error);
 }
 
 /* Header */
@@ -57,19 +57,19 @@
 }
 
 .status-pending .tool-execution-icon {
-  color: #eab308;
+  color: var(--feedback-warning);
 }
 
 .status-running .tool-execution-icon {
-  color: #3b82f6;
+  color: var(--feedback-info);
 }
 
 .status-completed .tool-execution-icon {
-  color: #22c55e;
+  color: var(--feedback-success);
 }
 
 .status-failed .tool-execution-icon {
-  color: #ef4444;
+  color: var(--feedback-error);
 }
 
 /* Animations */
@@ -231,12 +231,12 @@
 }
 
 .result-success {
-  color: #22c55e;
+  color: var(--feedback-success);
   font-weight: 500;
 }
 
 .result-failure {
-  color: #ef4444;
+  color: var(--feedback-error);
   font-weight: 500;
 }
 

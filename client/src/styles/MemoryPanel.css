@@ -177,8 +177,8 @@
 }
 
 .import-mode-toggle button.active {
-  border-color: var(--accent, #7c5cff);
-  background: var(--accent-tertiary, rgba(124, 92, 255, 0.15));
+  border-color: var(--accent, var(--accent-primary));
+  background: var(--accent-tertiary, var(--accent-tint-soft));
 }
 
 .import-warning {
@@ -186,7 +186,7 @@
   align-items: center;
   gap: 6px;
   margin: 10px 0 0;
-  color: var(--status-error, #ef4444);
+  color: var(--status-error, var(--feedback-error));
   font-size: 12px;
 }
 
@@ -275,7 +275,7 @@
 }
 
 .memory-nav .nav-item.active {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
   color: var(--text-primary);
 }
 
@@ -434,7 +434,7 @@
 }
 
 .memory-row.selected {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-tint-soft);
   border-left: 3px solid var(--cosmic-violet);
   padding-left: 13px;
 }
@@ -468,7 +468,7 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-violet);
 }
 
@@ -602,7 +602,7 @@
 
 .tool-chip {
   padding: 2px 8px;
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-violet);
   border-radius: 12px;
   font-size: 11px;
@@ -995,7 +995,7 @@
 }
 
 .graph-entity-btn.active {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
   color: var(--text-primary);
 }
 
@@ -1047,7 +1047,7 @@
 
 .graph-node.center {
   border-color: var(--cosmic-violet);
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
 }
 
 .graph-node-name {
@@ -1072,21 +1072,21 @@
 }
 
 .graph-btn-type.procedure {
-  color: #2dd4bf;
+  color: var(--accent-secondary);
 }
 
 /* Procedure-centered graph node variants (scope / agent / evidence conversation). */
 .graph-node.procedure.center {
-  border-color: #2dd4bf;
-  background: rgba(45, 212, 191, 0.12);
+  border-color: var(--accent-secondary);
+  background: var(--accent-tint-soft);
 }
 
 .graph-node.agent {
-  border-color: #f59e0b;
+  border-color: var(--feedback-warning);
 }
 
 .graph-node.conversation {
-  border-color: #64748b;
+  border-color: var(--feedback-inactive);
   border-style: dashed;
 }
 
@@ -1380,7 +1380,7 @@
 .relationship .rel-type {
   font-size: 11px;
   padding: 2px 8px;
-  background: rgba(6, 182, 212, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-cyan);
   border-radius: 10px;
   font-weight: 500;
@@ -1618,7 +1618,7 @@
 }
 
 .job-status-badge.running {
-  background: rgba(6, 182, 212, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-cyan);
 }
 
@@ -2112,7 +2112,7 @@
 
 .setting-badge.expensive {
   background: rgba(251, 191, 36, 0.15);
-  color: #f59e0b;
+  color: var(--feedback-warning);
   border: 1px solid rgba(251, 191, 36, 0.3);
 }
 

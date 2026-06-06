@@ -70,7 +70,7 @@
 }
 .run-trace-badge:hover {
   color: var(--text-primary);
-  border-color: #7c5cff;
+  border-color: var(--accent-primary);
 }
 .run-trace-count {
   background: var(--bg-hover);
@@ -142,7 +142,7 @@
 
 .icon-button.active {
   color: var(--cosmic-violet);
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-tint-soft);
 }
 
 /* === Messages Area — seamless canvas with a centered reading column === */
@@ -261,7 +261,7 @@
 
 .input-container:focus-within {
   border-color: var(--cosmic-violet);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
 }
 
 .input-container textarea {
@@ -311,7 +311,7 @@
 }
 
 .enhance-button:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-purple);
 }
 
@@ -361,17 +361,17 @@
 
 /* Background-armed send: distinct look so it's clear the next send is queued. */
 .send-button.armed {
-  background: var(--surface-overlay, rgba(139, 92, 246, 0.18));
-  color: var(--accent-color, #8b5cf6);
-  border: 1px solid var(--accent-color, #8b5cf6);
+  background: var(--surface-overlay, var(--accent-tint-soft));
+  color: var(--accent-color, var(--accent-primary));
+  border: 1px solid var(--accent-color, var(--accent-primary));
 }
 
 /* Steer send (shown beside Stop while a turn streams): outlined, not filled, so
    it reads as "fold into the running turn" rather than "start a new one". */
 .send-button.steer {
-  background: var(--surface-overlay, rgba(139, 92, 246, 0.18));
-  color: var(--accent-color, #8b5cf6);
-  border: 1px solid var(--accent-color, #8b5cf6);
+  background: var(--surface-overlay, var(--accent-tint-soft));
+  color: var(--accent-color, var(--accent-primary));
+  border: 1px solid var(--accent-color, var(--accent-primary));
 }
 
 /* === Background-armed chip === */
@@ -384,9 +384,9 @@
   padding: 3px 6px 3px 8px;
   border-radius: 999px;
   font-size: 0.75rem;
-  color: var(--accent-color, #8b5cf6);
-  background: rgba(139, 92, 246, 0.12);
-  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: var(--accent-color, var(--accent-primary));
+  background: var(--accent-tint-soft);
+  border: 1px solid var(--accent-tint-medium);
 }
 
 .bg-armed-chip button {
@@ -401,7 +401,7 @@
 }
 
 .bg-armed-chip button:hover {
-  background: rgba(139, 92, 246, 0.25);
+  background: var(--accent-tint-medium);
 }
 
 /* === Input Controls === */
@@ -435,7 +435,7 @@
 }
 
 .profile-indicator.active {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-tint-soft);
   border-color: var(--cosmic-violet);
   color: var(--text-primary);
 }
@@ -475,7 +475,7 @@
 }
 
 .composer-chip.active {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
   border-color: var(--cosmic-violet);
   color: var(--text-primary);
 }
@@ -483,11 +483,11 @@
 .composer-chip.warn {
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.5);
-  color: #f59e0b;
+  color: var(--feedback-warning);
 }
 
 .composer-chip.warn svg {
-  color: #f59e0b;
+  color: var(--feedback-warning);
 }
 
 .composer-chip:disabled {
@@ -591,7 +591,7 @@
 }
 
 .auto-scroll-toggle.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   border-color: var(--cosmic-violet);
   color: var(--cosmic-violet);
   opacity: 1;
@@ -611,7 +611,7 @@
   padding: 0.125rem 0.4rem;
   border-radius: 999px;
   font-size: 0.6875rem;
-  background: rgba(124, 92, 255, 0.15);
-  color: #b39dff;
+  background: var(--accent-tint-soft);
+  color: var(--accent-primary);
   font-weight: 500;
 }

@@ -88,7 +88,7 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
           </div>
         )}
         {success && (
-          <div className="auth-error" style={{ background: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.3)', color: 'rgb(34,197,94)' }}>
+          <div className="auth-error" style={{ background: 'var(--surface-overlay)', borderColor: 'var(--feedback-success)', color: 'var(--feedback-success)' }}>
             <CheckCircle size={16} />
             <span>Password changed. Other sessions have been signed out.</span>
           </div>

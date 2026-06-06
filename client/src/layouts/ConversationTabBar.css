@@ -56,7 +56,7 @@
 }
 
 .tab-button.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--text-primary);
 }
 
@@ -152,7 +152,7 @@
 }
 
 .tab-action-button.active {
-  background: rgba(139, 92, 246, 0.15);
+  background: var(--accent-tint-soft);
   color: var(--cosmic-violet);
 }
 

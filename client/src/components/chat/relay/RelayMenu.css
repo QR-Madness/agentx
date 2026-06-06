@@ -5,7 +5,7 @@
   max-height: 60vh;
   overflow-y: auto;
   background: var(--bg-elevated, rgba(20, 18, 36, 0.96));
-  border: 1px solid var(--border-default, rgba(139, 92, 246, 0.25));
+  border: 1px solid var(--border-default, var(--accent-tint-medium));
   border-radius: 12px;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
@@ -67,7 +67,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--cosmic-violet, #8b5cf6);
+  background: var(--cosmic-violet, var(--accent-primary));
   opacity: 0.7;
   animation: relay-pulse 1.2s ease-in-out infinite;
 }
@@ -100,7 +100,7 @@
 }
 
 .relay-item.active {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
 }
 
 .relay-item svg {
@@ -129,7 +129,7 @@
 }
 
 .relay-item.toggle.on svg {
-  color: var(--cosmic-amber, #f59e0b);
+  color: var(--cosmic-amber, var(--feedback-warning));
 }
 
 .relay-toggle-pill {
@@ -145,7 +145,7 @@
 
 .relay-item.toggle.on .relay-toggle-pill {
   background: rgba(245, 158, 11, 0.18);
-  color: var(--cosmic-amber, #f59e0b);
+  color: var(--cosmic-amber, var(--feedback-warning));
 }
 
 /* === Inbox === */
@@ -201,18 +201,18 @@
 }
 
 .relay-job-status.status-running {
-  background: rgba(139, 92, 246, 0.18);
-  color: var(--cosmic-violet, #a78bfa);
+  background: var(--accent-tint-soft);
+  color: var(--cosmic-violet, var(--accent-primary));
 }
 
 .relay-job-status.status-done {
   background: rgba(34, 197, 94, 0.18);
-  color: #4ade80;
+  color: var(--feedback-success);
 }
 
 .relay-job-status.status-failed {
   background: rgba(239, 68, 68, 0.18);
-  color: #f87171;
+  color: var(--feedback-error);
 }
 
 .relay-job-message {
@@ -232,7 +232,7 @@
 
 .relay-job-error {
   font-size: 11px;
-  color: #f87171;
+  color: var(--feedback-error);
   font-family: var(--font-mono, monospace);
 }
 
@@ -268,8 +268,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--cosmic-violet, #8b5cf6);
-  box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.5);
+  background: var(--cosmic-violet, var(--accent-primary));
+  box-shadow: 0 0 0 0 var(--accent-tint-strong);
   animation: relay-pulse 1.2s ease-in-out infinite;
 }
 
@@ -288,7 +288,7 @@
 }
 
 .relay-resume-btn:hover {
-  background: var(--cosmic-violet, #8b5cf6);
+  background: var(--cosmic-violet, var(--accent-primary));
   color: #fff;
 }
 
@@ -317,8 +317,8 @@
 }
 
 .relay-trigger.active {
-  color: var(--cosmic-violet, #a78bfa);
-  background: rgba(139, 92, 246, 0.12);
+  color: var(--cosmic-violet, var(--accent-primary));
+  background: var(--accent-tint-soft);
 }
 
 .relay-trigger-badge {
@@ -328,7 +328,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--cosmic-amber, #f59e0b);
+  background: var(--cosmic-amber, var(--feedback-warning));
   box-shadow: 0 0 0 2px var(--bg-elevated, rgba(20, 18, 36, 0.96));
 }
 
@@ -343,7 +343,7 @@
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 8px;
   font-size: 12px;
-  color: var(--cosmic-amber, #f59e0b);
+  color: var(--cosmic-amber, var(--feedback-warning));
 }
 
 .no-memo-banner strong {

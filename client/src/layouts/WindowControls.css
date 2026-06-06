@@ -25,6 +25,6 @@
 }
 
 .window-control--close:hover {
-  background: #e81123;
+  background: var(--feedback-error);
   color: #fff;
 }

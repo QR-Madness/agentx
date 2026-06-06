@@ -26,7 +26,7 @@
   height: 480px;
   top: -120px;
   left: -100px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.18) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--accent-tint-soft) 0%, transparent 70%);
   animation: auth-orb-drift-a 22s ease-in-out infinite;
 }
 
@@ -35,7 +35,7 @@
   height: 360px;
   bottom: -80px;
   right: -60px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.14) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--accent-tint-soft) 0%, transparent 70%);
   animation: auth-orb-drift-b 26s ease-in-out infinite;
 }
 
@@ -63,7 +63,7 @@
 .auth-particle--1 {
   width: 4px; height: 4px;
   top: 20%; left: 15%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.7), transparent);
+  background: radial-gradient(circle, var(--accent-tint-strong), transparent);
   opacity: 0.35;
   animation-duration: 14s;
   animation-delay: 0s;
@@ -71,7 +71,7 @@
 .auth-particle--2 {
   width: 3px; height: 3px;
   top: 65%; left: 80%;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.8), transparent);
+  background: radial-gradient(circle, var(--accent-tint-strong), transparent);
   opacity: 0.28;
   animation-duration: 18s;
   animation-delay: -4s;
@@ -95,7 +95,7 @@
 .auth-particle--5 {
   width: 4px; height: 4px;
   top: 12%; left: 70%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.6), transparent);
+  background: radial-gradient(circle, var(--accent-tint-strong), transparent);
   opacity: 0.3;
   animation-duration: 24s;
   animation-delay: -12s;
@@ -185,7 +185,7 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
-  color: #ef4444;
+  color: var(--feedback-error);
   font-size: 14px;
 }
 
@@ -228,7 +228,7 @@
 .auth-input-wrapper input:focus {
   outline: none;
   border-color: var(--accent-purple);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
 }
 
 .auth-input-wrapper input::placeholder {
@@ -344,7 +344,7 @@
 
 .auth-server-current:hover:not(:disabled) {
   border-color: var(--accent-purple);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
 }
 
 .auth-server-current:disabled {
@@ -416,13 +416,13 @@
 }
 
 .auth-server-option:hover {
-  background: rgba(139, 92, 246, 0.08);
+  background: var(--accent-tint-faint);
   color: var(--text-primary);
 }
 
 .auth-server-option--active {
-  background: rgba(139, 92, 246, 0.12);
-  border-color: rgba(139, 92, 246, 0.35);
+  background: var(--accent-tint-soft);
+  border-color: var(--accent-tint-medium);
   color: var(--text-primary);
 }
 
@@ -478,14 +478,14 @@
 }
 
 .auth-server-action-btn:hover {
-  background: rgba(139, 92, 246, 0.12);
+  background: var(--accent-tint-soft);
   color: var(--text-primary);
-  border-color: rgba(139, 92, 246, 0.35);
+  border-color: var(--accent-tint-medium);
 }
 
 .auth-server-action-btn--danger:hover {
   background: rgba(239, 68, 68, 0.14);
-  color: var(--color-error, #ef4444);
+  color: var(--color-error, var(--feedback-error));
   border-color: rgba(239, 68, 68, 0.4);
 }
 
@@ -536,7 +536,7 @@
 
 .auth-server-add-btn:hover {
   color: var(--accent-purple);
-  border-color: rgba(139, 92, 246, 0.4);
+  border-color: var(--accent-tint-strong);
 }
 
 .auth-server-add-form {
@@ -607,7 +607,7 @@
 }
 
 .auth-server-add-confirm:hover:not(:disabled) {
-  background: var(--accent-purple-hover, #7c3aed);
+  background: var(--accent-purple-hover, var(--accent-primary));
 }
 
 .auth-server-add-confirm:disabled {
@@ -621,7 +621,7 @@
     box-shadow: var(--glow-purple);
   }
   50% {
-    box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+    box-shadow: 0 0 30px var(--accent-tint-strong);
   }
 }
 
@@ -642,8 +642,8 @@
 }
 
 .auth-connection-status--pending {
-  border-color: rgba(139, 92, 246, 0.35);
-  background: rgba(139, 92, 246, 0.08);
+  border-color: var(--accent-tint-medium);
+  background: var(--accent-tint-faint);
   color: var(--text-primary);
 }
 

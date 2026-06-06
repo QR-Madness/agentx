@@ -27,7 +27,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #7c5cff, #38bdf8);
+  background: linear-gradient(135deg, var(--accent-primary), var(--feedback-info));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,16 +117,16 @@
 }
 
 .alloy-sidebar-item.active {
-  background: rgba(124, 92, 255, 0.12);
-  border-color: rgba(124, 92, 255, 0.3);
+  background: var(--accent-tint-soft);
+  border-color: var(--accent-tint-medium);
 }
 
 .sidebar-item-icon {
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: rgba(124, 92, 255, 0.18);
-  color: #b39dff;
+  background: var(--accent-tint-soft);
+  color: var(--accent-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -169,7 +169,7 @@
 
 .sidebar-item-delete:hover {
   background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  color: var(--feedback-error);
 }
 
 /* Main pane */
@@ -188,10 +188,10 @@
   align-items: flex-start;
   gap: 0.75rem;
   padding: 0.875rem 1rem;
-  border: 1px dashed rgba(124, 92, 255, 0.4);
+  border: 1px dashed var(--accent-tint-strong);
   background: linear-gradient(
     135deg,
-    rgba(124, 92, 255, 0.08),
+    var(--accent-tint-faint),
     rgba(56, 189, 248, 0.08)
   );
   border-radius: 10px;
@@ -207,7 +207,7 @@
 .alloy-canvas-banner .banner-icon {
   flex-shrink: 0;
   margin-top: 1px;
-  color: #7c5cff;
+  color: var(--accent-primary);
 }
 
 /* Empty state */
@@ -289,7 +289,7 @@
 .alloy-form-row select:focus,
 .alloy-form-row textarea:focus {
   outline: none;
-  border-color: #7c5cff;
+  border-color: var(--accent-primary);
 }
 
 .alloy-form-row input[type="text"]:disabled,
@@ -330,8 +330,8 @@
 }
 
 .alloy-specialist-row.enabled {
-  border-color: rgba(124, 92, 255, 0.45);
-  background: rgba(124, 92, 255, 0.06);
+  border-color: var(--accent-tint-strong);
+  background: var(--accent-tint-faint);
 }
 
 .alloy-specialist-row.is-supervisor {
@@ -354,7 +354,7 @@
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  accent-color: #7c5cff;
+  accent-color: var(--accent-primary);
   cursor: pointer;
 }
 
@@ -384,8 +384,8 @@
   letter-spacing: 0.05em;
   padding: 0.0625rem 0.375rem;
   border-radius: 999px;
-  background: rgba(124, 92, 255, 0.18);
-  color: #b39dff;
+  background: var(--accent-tint-soft);
+  color: var(--accent-primary);
   font-weight: 600;
 }
 
@@ -406,7 +406,7 @@
 
 .specialist-hint:focus {
   outline: none;
-  border-color: #7c5cff;
+  border-color: var(--accent-primary);
 }
 
 .specialist-hint:disabled {
@@ -446,7 +446,7 @@
 }
 
 .alloy-btn-primary {
-  background: linear-gradient(135deg, #7c5cff, #38bdf8);
+  background: linear-gradient(135deg, var(--accent-primary), var(--feedback-info));
   color: white;
   border-color: transparent;
 }

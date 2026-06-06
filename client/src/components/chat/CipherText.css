@@ -13,18 +13,18 @@
   color: var(--cosmic-cyan);
   opacity: 0.7;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+  text-shadow: 0 0 8px var(--accent-tint-strong);
   animation: cipher-glow 0.1s ease-in-out infinite alternate;
 }
 
 @keyframes cipher-glow {
   from {
     opacity: 0.5;
-    text-shadow: 0 0 4px rgba(6, 182, 212, 0.3);
+    text-shadow: 0 0 4px var(--accent-tint-medium);
   }
   to {
     opacity: 0.9;
-    text-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
+    text-shadow: 0 0 12px var(--accent-tint-strong);
   }
 }
 

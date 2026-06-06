@@ -184,9 +184,9 @@ export function ToolOutputDrawer({
       <div className="tool-output-header">
         <div className="tool-output-title">
           {success ? (
-            <CheckCircle size={18} style={{ color: '#22c55e' }} />
+            <CheckCircle size={18} style={{ color: 'var(--feedback-success)' }} />
           ) : (
-            <XCircle size={18} style={{ color: '#ef4444' }} />
+            <XCircle size={18} style={{ color: 'var(--feedback-error)' }} />
           )}
           <h3>{toolName}</h3>
           {durationMs !== undefined && (

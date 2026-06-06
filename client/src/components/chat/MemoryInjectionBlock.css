@@ -7,7 +7,7 @@
   border-radius: 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid #8b5cf6;
+  border-left: 3px solid var(--accent-primary);
   overflow: hidden;
 }
 
@@ -31,8 +31,8 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: rgba(139, 92, 246, 0.2);
-  color: #8b5cf6;
+  background: var(--accent-tint-medium);
+  color: var(--accent-primary);
   flex-shrink: 0;
 }
 
@@ -237,12 +237,12 @@
 
 .turn-role.user {
   background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
+  color: var(--feedback-info);
 }
 
 .turn-role.assistant {
   background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
+  color: var(--feedback-success);
 }
 
 .turn-timestamp {

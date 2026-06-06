@@ -35,7 +35,7 @@
 }
 
 .consolidation-menu-header svg {
-  color: #facc15;
+  color: var(--feedback-warning);
 }
 
 /* Idle state */
@@ -59,7 +59,7 @@
 .consolidation-menu-check input[type="checkbox"] {
   width: 13px;
   height: 13px;
-  accent-color: #facc15;
+  accent-color: var(--feedback-warning);
   cursor: pointer;
 }
 
@@ -73,7 +73,7 @@
   background: rgba(250, 204, 21, 0.12);
   border: 1px solid rgba(250, 204, 21, 0.25);
   border-radius: 6px;
-  color: #facc15;
+  color: var(--feedback-warning);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -103,7 +103,7 @@
 
 .consolidation-progress-header .spinning {
   animation: spin 1s linear infinite;
-  color: #facc15;
+  color: var(--feedback-warning);
 }
 
 @keyframes spin {
@@ -141,7 +141,7 @@
 
 .consolidation-progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #facc15, #f59e0b);
+  background: linear-gradient(90deg, var(--feedback-warning), var(--feedback-warning));
   border-radius: 2px;
   transition: width 0.3s ease;
 }
@@ -162,11 +162,11 @@
 }
 
 .consolidation-result-icon.success {
-  color: #4ade80;
+  color: var(--feedback-success);
 }
 
 .consolidation-result-icon.failure {
-  color: #f87171;
+  color: var(--feedback-error);
 }
 
 .consolidation-result-time {
@@ -180,7 +180,7 @@
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
-  color: #f87171;
+  color: var(--feedback-error);
 }
 
 .consolidation-menu-error svg {

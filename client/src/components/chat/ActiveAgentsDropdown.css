@@ -64,7 +64,7 @@
 }
 
 .agents-item.current {
-  background: rgba(139, 92, 246, 0.08);
+  background: var(--accent-tint-faint);
 }
 
 .agents-item-avatar {
@@ -160,7 +160,7 @@
   width: 100%;
   padding: 10px 14px;
   background: transparent;
-  color: var(--cosmic-violet, #a78bfa);
+  color: var(--cosmic-violet, var(--accent-primary));
   font-size: 13px;
   font-weight: 500;
   border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
@@ -170,7 +170,7 @@
 }
 
 .agents-new:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--accent-tint-soft);
 }
 
 .agents-new svg {
