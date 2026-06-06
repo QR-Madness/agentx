@@ -168,7 +168,7 @@
 }
 
 .sidebar-item-delete:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
 }
 
@@ -192,7 +192,7 @@
   background: linear-gradient(
     135deg,
     var(--accent-tint-faint),
-    rgba(56, 189, 248, 0.08)
+    var(--feedback-info-tint)
   );
   border-radius: 10px;
   color: var(--text-secondary);
@@ -471,8 +471,8 @@
 
 .alloy-error {
   padding: 0.625rem 0.875rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   border-radius: 8px;
   color: rgb(239, 68, 68);
   font-size: 0.8125rem;

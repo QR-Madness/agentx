@@ -212,7 +212,7 @@
     opacity: 1;
   }
   50% {
-    filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.6));
+    filter: drop-shadow(0 0 8px var(--feedback-warning));
     opacity: 0.7;
   }
 }
@@ -224,9 +224,9 @@
 
 /* === Logout (Danger) Button === */
 .toolbar-icon--danger:hover {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 0 1px var(--feedback-error-border);
 }
 
 .topbar-divider {
@@ -287,7 +287,7 @@
 }
 
 .toolbar-overflow-item--danger:hover {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
 }
 
@@ -348,8 +348,8 @@
   color: var(--feedback-warning);
   background-image: repeating-linear-gradient(
     45deg,
-    rgba(245, 158, 11, 0.28) 0,
-    rgba(245, 158, 11, 0.28) 6px,
+    var(--feedback-warning-border) 0,
+    var(--feedback-warning-border) 6px,
     transparent 6px,
     transparent 12px
   );

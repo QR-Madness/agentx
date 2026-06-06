@@ -264,8 +264,8 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   border-radius: 12px;
   color: var(--feedback-error);
   font-size: 14px;
@@ -597,8 +597,8 @@
   letter-spacing: 0.3px;
   color: var(--feedback-warning);
   padding: 3px 8px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--feedback-warning-tint);
+  border: 1px solid var(--feedback-warning-border);
   border-radius: 6px;
 }
 
@@ -749,15 +749,15 @@
 }
 
 .profile-btn-danger {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border-color: var(--feedback-error-border);
   color: var(--feedback-error);
 }
 
 .profile-btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+  background: var(--feedback-error-tint);
+  border-color: var(--feedback-error-border);
+  box-shadow: 0 0 12px var(--feedback-error-tint);
 }
 
 .profile-btn-primary:disabled,
@@ -1028,11 +1028,11 @@
 }
 .profile-tool-group-btn.allow:hover {
   color: var(--feedback-success);
-  background: rgba(34, 197, 94, 0.14);
+  background: var(--feedback-success-tint);
 }
 .profile-tool-group-btn.block:hover {
   color: var(--feedback-error);
-  background: rgba(248, 113, 113, 0.14);
+  background: var(--feedback-error-tint);
 }
 
 /* Tool row: info (name + description) on the left, segmented control on the right. */
@@ -1139,13 +1139,13 @@
 }
 
 .profile-tool-seg-btn.allow.active {
-  background: rgba(34, 197, 94, 0.30);
-  color: #dcfce7;
+  background: var(--feedback-success-border);
+  color: var(--feedback-success-tint);
 }
 
 .profile-tool-seg-btn.block.active {
-  background: rgba(248, 113, 113, 0.28);
-  color: #fee2e2;
+  background: var(--feedback-error-border);
+  color: var(--feedback-error-tint);
 }
 
 /* ── Responsive ── */

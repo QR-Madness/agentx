@@ -81,7 +81,7 @@
 
 .checkpoints-clear:hover:not(:disabled) {
   color: var(--error, var(--feedback-error));
-  border-color: var(--error, rgba(248, 113, 113, 0.5));
+  border-color: var(--error, var(--feedback-error-border));
 }
 
 .checkpoints-clear:disabled {

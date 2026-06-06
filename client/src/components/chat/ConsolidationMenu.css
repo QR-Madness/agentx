@@ -70,8 +70,8 @@
   gap: 6px;
   width: 100%;
   padding: 8px 12px;
-  background: rgba(250, 204, 21, 0.12);
-  border: 1px solid rgba(250, 204, 21, 0.25);
+  background: var(--feedback-warning-tint);
+  border: 1px solid var(--feedback-warning-border);
   border-radius: 6px;
   color: var(--feedback-warning);
   font-size: 12px;
@@ -81,8 +81,8 @@
 }
 
 .consolidation-menu-trigger:hover {
-  background: rgba(250, 204, 21, 0.2);
-  border-color: rgba(250, 204, 21, 0.4);
+  background: var(--feedback-warning-tint);
+  border-color: var(--feedback-warning-border);
 }
 
 /* Progress state */

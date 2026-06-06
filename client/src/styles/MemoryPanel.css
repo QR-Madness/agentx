@@ -81,14 +81,14 @@
 }
 
 .consolidate-message.success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: var(--feedback-success-tint);
+  border: 1px solid var(--feedback-success-border);
   color: var(--status-online);
 }
 
 .consolidate-message.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   color: var(--status-error);
 }
 
@@ -123,8 +123,8 @@
 }
 
 .import-confirm.destructive {
-  border-color: rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.06);
+  border-color: var(--feedback-error-border);
+  background: var(--feedback-error-tint);
 }
 
 .import-confirm-head {
@@ -575,7 +575,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: rgba(34, 197, 94, 0.15);
+  background: var(--feedback-success-tint);
   color: var(--status-online);
   border-radius: 12px;
   font-size: 11px;
@@ -774,8 +774,8 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   border-radius: 8px;
   font-size: 13px;
   color: var(--status-error);
@@ -1623,7 +1623,7 @@
 }
 
 .job-status-badge.disabled {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--feedback-warning-tint);
   color: var(--status-warning);
 }
 
@@ -1718,8 +1718,8 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   border-radius: 8px;
   color: var(--status-error);
   font-size: 13px;
@@ -2015,14 +2015,14 @@
 }
 
 .save-message.success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: var(--feedback-success-tint);
+  border: 1px solid var(--feedback-success-border);
   color: var(--status-online);
 }
 
 .save-message.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border: 1px solid var(--feedback-error-border);
   color: var(--status-error);
 }
 
@@ -2105,15 +2105,15 @@
 }
 
 .setting-badge.recommended {
-  background: rgba(34, 197, 94, 0.15);
+  background: var(--feedback-success-tint);
   color: var(--status-online);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  border: 1px solid var(--feedback-success-border);
 }
 
 .setting-badge.expensive {
-  background: rgba(251, 191, 36, 0.15);
+  background: var(--feedback-warning-tint);
   color: var(--feedback-warning);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  border: 1px solid var(--feedback-warning-border);
 }
 
 /* Setting Hint */

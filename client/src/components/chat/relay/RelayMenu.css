@@ -144,7 +144,7 @@
 }
 
 .relay-item.toggle.on .relay-toggle-pill {
-  background: rgba(245, 158, 11, 0.18);
+  background: var(--feedback-warning-tint);
   color: var(--cosmic-amber, var(--feedback-warning));
 }
 
@@ -176,11 +176,11 @@
 }
 
 .relay-job.status-done {
-  border-color: rgba(34, 197, 94, 0.25);
+  border-color: var(--feedback-success-border);
 }
 
 .relay-job.status-failed {
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: var(--feedback-error-border);
 }
 
 .relay-job-main {
@@ -206,12 +206,12 @@
 }
 
 .relay-job-status.status-done {
-  background: rgba(34, 197, 94, 0.18);
+  background: var(--feedback-success-tint);
   color: var(--feedback-success);
 }
 
 .relay-job-status.status-failed {
-  background: rgba(239, 68, 68, 0.18);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
 }
 
@@ -339,8 +339,8 @@
   gap: 8px;
   padding: 8px 14px;
   margin: 0 20px 8px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--feedback-warning-tint);
+  border: 1px solid var(--feedback-warning-border);
   border-radius: 8px;
   font-size: 12px;
   color: var(--cosmic-amber, var(--feedback-warning));

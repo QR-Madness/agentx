@@ -75,24 +75,24 @@ const LIGHT_PRIMITIVES = {
   slate400: '#6e7781',
 };
 
-/** Primitive color palette - Professional theme (dark graphite, restrained accent) */
+/** Primitive color palette - Professional theme (deep graphite, restrained accent) */
 const PROFESSIONAL_PRIMITIVES = {
-  // Surfaces — neutral graphite ramp
-  base: '#16161a',
-  nebula: '#1a1a1f',
-  sunken: '#101013',
-  card: '#1e1e23',
-  elevated: '#27272e',
+  // Surfaces — a deep, neutral graphite ramp with clear elevation steps
+  base: '#0f0f12',
+  nebula: '#131316',
+  sunken: '#0a0a0c',
+  card: '#18181c',
+  elevated: '#212126',
 
-  // Accent — single restrained slate-blue (brighter for dark bg)
+  // Accent — single restrained slate-blue
   accent: '#7e93c9',
   accentDeep: '#6c80b8',
   accentSoft: '#93a6d6',
 
-  // Text — warm-neutral light
-  textLight: '#ededf0',
-  textMid: '#a1a1ab',
-  textDim: '#6a6a76',
+  // Text — calm off-white (never a stark/blinding pure white)
+  textLight: '#d6d6db',
+  textMid: '#96969f',
+  textDim: '#63636c',
 
   // Status — kept colored (semantic)
   green: '#3fb950',
@@ -194,6 +194,15 @@ export const COSMIC_THEME: ThemeDefinition = {
     '--accent-tint-medium': 'rgba(139, 92, 246, 0.3)',
     '--accent-tint-strong': 'rgba(139, 92, 246, 0.5)',
     '--accent-tint-faint': 'rgba(139, 92, 246, 0.08)',
+    // === Feedback Tint Tokens (subtle bg + border, in each theme's own hue) ===
+    '--feedback-success-tint': 'rgba(34, 197, 94, 0.13)',
+    '--feedback-success-border': 'rgba(34, 197, 94, 0.32)',
+    '--feedback-warning-tint': 'rgba(245, 158, 11, 0.13)',
+    '--feedback-warning-border': 'rgba(245, 158, 11, 0.32)',
+    '--feedback-error-tint': 'rgba(239, 68, 68, 0.13)',
+    '--feedback-error-border': 'rgba(239, 68, 68, 0.32)',
+    '--feedback-info-tint': 'rgba(59, 130, 246, 0.13)',
+    '--feedback-info-border': 'rgba(59, 130, 246, 0.32)',
     '--text-error': COSMIC_PRIMITIVES.red500,
     '--text-tertiary': COSMIC_PRIMITIVES.textDim,
 
@@ -316,6 +325,15 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--accent-tint-medium': 'rgba(79, 102, 149, 0.2)',
     '--accent-tint-strong': 'rgba(79, 102, 149, 0.35)',
     '--accent-tint-faint': 'rgba(79, 102, 149, 0.05)',
+    // === Feedback Tint Tokens (subtle bg + border, in each theme's own hue) ===
+    '--feedback-success-tint': 'rgba(26, 127, 55, 0.1)',
+    '--feedback-success-border': 'rgba(26, 127, 55, 0.28)',
+    '--feedback-warning-tint': 'rgba(154, 103, 0, 0.1)',
+    '--feedback-warning-border': 'rgba(154, 103, 0, 0.28)',
+    '--feedback-error-tint': 'rgba(207, 34, 46, 0.1)',
+    '--feedback-error-border': 'rgba(207, 34, 46, 0.28)',
+    '--feedback-info-tint': 'rgba(9, 105, 218, 0.1)',
+    '--feedback-info-border': 'rgba(9, 105, 218, 0.28)',
     '--text-error': LIGHT_PRIMITIVES.red600,
     '--text-tertiary': LIGHT_PRIMITIVES.textLight,
 
@@ -418,16 +436,16 @@ export const PROFESSIONAL_THEME: ThemeDefinition = {
     '--gradient-cosmic': 'none',
 
     // === Glass Effect Token ===
-    '--glass-bg': 'rgba(30, 30, 35, 0.7)',
-    '--glass-bg-hover': 'rgba(30, 30, 35, 0.85)',
+    '--glass-bg': 'rgba(18, 18, 22, 0.7)',
+    '--glass-bg-hover': 'rgba(18, 18, 22, 0.85)',
     '--glass-blur': '12px',
 
     // === Settings / Panel Glass Layers (depth 0 → 3) ===
-    '--glass-backdrop': 'rgba(0, 0, 0, 0.5)',
-    '--glass-layer-0': 'rgba(30, 30, 35, 0.5)',
-    '--glass-layer-1': 'rgba(30, 30, 35, 0.72)',
-    '--glass-layer-2': 'rgba(39, 39, 46, 0.86)',
-    '--glass-layer-3': 'rgba(46, 46, 54, 0.95)',
+    '--glass-backdrop': 'rgba(0, 0, 0, 0.55)',
+    '--glass-layer-0': 'rgba(18, 18, 22, 0.5)',
+    '--glass-layer-1': 'rgba(18, 18, 22, 0.72)',
+    '--glass-layer-2': 'rgba(28, 28, 33, 0.86)',
+    '--glass-layer-3': 'rgba(34, 34, 40, 0.95)',
     '--blur-subtle': '8px',
     '--blur-medium': '16px',
     '--blur-strong': '24px',
@@ -438,6 +456,15 @@ export const PROFESSIONAL_THEME: ThemeDefinition = {
     '--accent-tint-medium': 'rgba(126, 147, 201, 0.28)',
     '--accent-tint-strong': 'rgba(126, 147, 201, 0.45)',
     '--accent-tint-faint': 'rgba(126, 147, 201, 0.08)',
+    // === Feedback Tint Tokens (subtle bg + border, in each theme's own hue) ===
+    '--feedback-success-tint': 'rgba(63, 185, 80, 0.14)',
+    '--feedback-success-border': 'rgba(63, 185, 80, 0.34)',
+    '--feedback-warning-tint': 'rgba(210, 153, 34, 0.14)',
+    '--feedback-warning-border': 'rgba(210, 153, 34, 0.34)',
+    '--feedback-error-tint': 'rgba(248, 81, 73, 0.14)',
+    '--feedback-error-border': 'rgba(248, 81, 73, 0.34)',
+    '--feedback-info-tint': 'rgba(88, 166, 255, 0.14)',
+    '--feedback-info-border': 'rgba(88, 166, 255, 0.34)',
     '--text-error': PROFESSIONAL_PRIMITIVES.red,
     '--text-tertiary': PROFESSIONAL_PRIMITIVES.textDim,
 
@@ -452,7 +479,7 @@ export const PROFESSIONAL_THEME: ThemeDefinition = {
     '--border-glow': 'rgba(255, 255, 255, 0.18)',
 
     '--chat-user-tint': 'rgba(126, 147, 201, 0.1)',
-    '--composer-bg': 'rgba(30, 30, 35, 0.75)',
+    '--composer-bg': 'rgba(18, 18, 22, 0.78)',
 
     // Accent Colors (legacy) — all resolve to the slate-blue family (monochrome)
     '--cosmic-purple': PROFESSIONAL_PRIMITIVES.accent,

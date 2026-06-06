@@ -565,8 +565,8 @@
   padding: var(--space-md) var(--space-lg);
   margin-bottom: var(--space-lg);
   border-radius: 10px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--feedback-warning-tint);
+  border: 1px solid var(--feedback-warning-border);
   color: var(--status-warning, #f59e0b);
   font-size: 13px;
 }
@@ -754,7 +754,7 @@
   background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
 }
 .theme-option-icon.professional {
-  background: #1e1e23;
+  background: #18181c;
   color: #7e93c9;
   border-color: rgba(255, 255, 255, 0.1);
 }
@@ -764,7 +764,7 @@
   border-color: #d7d7cf;
 }
 .theme-option-icon.system {
-  background: linear-gradient(135deg, #1e1e23 0%, #1e1e23 50%, #fdfdfc 50%, #fdfdfc 100%);
+  background: linear-gradient(135deg, #18181c 0%, #18181c 50%, #fdfdfc 50%, #fdfdfc 100%);
   color: var(--accent-primary);
 }
 .theme-option-info {

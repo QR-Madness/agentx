@@ -236,12 +236,12 @@
 }
 
 .turn-role.user {
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--feedback-info-tint);
   color: var(--feedback-info);
 }
 
 .turn-role.assistant {
-  background: rgba(34, 197, 94, 0.2);
+  background: var(--feedback-success-tint);
   color: var(--feedback-success);
 }
 

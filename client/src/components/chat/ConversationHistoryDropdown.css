@@ -229,7 +229,7 @@
 }
 
 .history-item-action-danger:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
 }
 
@@ -253,7 +253,7 @@
 }
 
 .history-item-delete:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--feedback-error-tint);
   color: var(--feedback-error);
 }
 

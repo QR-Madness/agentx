@@ -481,8 +481,8 @@
 }
 
 .composer-chip.warn {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.5);
+  background: var(--feedback-warning-tint);
+  border-color: var(--feedback-warning-border);
   color: var(--feedback-warning);
 }
 
@@ -527,7 +527,7 @@
 
 .stop-button:hover {
   transform: scale(1.05);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 12px var(--feedback-error-border);
 }
 
 .input-stats {

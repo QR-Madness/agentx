@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.38 -->
+<!-- release-version: 0.21.39 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,10 +19,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
-- **New "Professional" theme + a warmer Light.** A monochrome graphite theme where
-  color is reserved for emphasis — feedback (success/error/warning) and code stay
-  colored, the chrome is neutral with a single restrained slate-blue accent, and the
-  gradients/glows are gone. The Light theme was refreshed to a warm, neutral white in
+- **New "Professional" theme + a warmer Light.** A deep monochrome graphite theme
+  with calm off-white text, where color is reserved for emphasis — feedback
+  (success/error/warning) and code stay colored, the chrome is neutral with a single
+  restrained slate-blue accent, and the gradients/glows are gone. Feedback tints now
+  adapt per theme rather than being hardcoded. The Light theme was refreshed to a warm, neutral white in
   the same restrained spirit. Pick them in **Settings → Appearance** — which is itself
   now properly themed (it previously wasn't). A system-wide enforcement pass moved the
   remaining hardcoded colors across the UI onto theme tokens, so a theme switch (and any

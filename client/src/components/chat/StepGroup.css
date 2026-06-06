@@ -6,7 +6,7 @@
   position: relative;
   margin: 0.5rem 0;
   padding-left: 0.75rem;
-  border-left: 2px solid rgba(245, 158, 11, 0.35);
+  border-left: 2px solid var(--feedback-warning-border);
 }
 
 .step-group.flash-target {
@@ -14,7 +14,7 @@
 }
 
 @keyframes stepGroupFlash {
-  0%, 100% { border-left-color: rgba(245, 158, 11, 0.35); }
+  0%, 100% { border-left-color: var(--feedback-warning-border); }
   30% { border-left-color: var(--feedback-warning); }
 }
 
@@ -79,7 +79,7 @@
 
 @keyframes planAnchorFlash {
   0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  30% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.6); }
+  30% { box-shadow: 0 0 0 2px var(--feedback-warning); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -23,6 +23,13 @@
   box-sizing: border-box;
 }
 
+/* Text selection follows the active theme's accent (was the browser default —
+   jarring on dark themes). */
+::selection {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
 body {
   margin: 0;
   background: var(--bg-space);

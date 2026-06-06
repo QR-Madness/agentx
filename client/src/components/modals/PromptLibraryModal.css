@@ -108,8 +108,8 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: rgba(239, 68, 68, 0.08);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  background: var(--feedback-error-tint);
+  border-bottom: 1px solid var(--feedback-error-tint);
   color: var(--feedback-error);
   font-size: 13px;
   flex-shrink: 0;
@@ -415,7 +415,7 @@
 }
 
 .plm-badge-modified {
-  background: rgba(251, 191, 36, 0.12);
+  background: var(--feedback-warning-tint);
   color: var(--feedback-warning);
 }
 
@@ -575,8 +575,8 @@
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  background: rgba(239, 68, 68, 0.08);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  background: var(--feedback-error-tint);
+  border-bottom: 1px solid var(--feedback-error-tint);
   color: var(--feedback-error);
   font-size: 13px;
   flex-shrink: 0;
@@ -730,13 +730,13 @@
 .plm-btn-ghost:hover { background: var(--plm-bg-3); color: var(--text-primary); }
 
 .plm-btn-danger {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--feedback-error-tint);
+  border-color: var(--feedback-error-border);
   color: var(--feedback-error);
 }
 .plm-btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.16);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--feedback-error-tint);
+  border-color: var(--feedback-error-border);
 }
 .plm-btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
 
