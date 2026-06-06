@@ -276,6 +276,7 @@ export function ConsolidationSettingsPanel({
           onChange={v => handleChange('extraction_system_prompt', v)}
           onReset={() => handleChange('extraction_system_prompt', '')}
           placeholder={settings?.default_extraction_prompt || 'Default system prompt will be used...'}
+          defaultText={settings?.default_extraction_prompt}
           rows={8}
         />
       </SettingsSection>
@@ -315,6 +316,7 @@ export function ConsolidationSettingsPanel({
           onChange={v => handleChange('relevance_filter_prompt', v)}
           onReset={() => handleChange('relevance_filter_prompt', '')}
           placeholder={settings?.default_relevance_prompt || 'Default relevance prompt will be used...'}
+          defaultText={settings?.default_relevance_prompt}
           rows={6}
         />
       </SettingsSection>

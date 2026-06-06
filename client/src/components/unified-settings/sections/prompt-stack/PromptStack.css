@@ -233,41 +233,5 @@
   gap: 10px;
 }
 
-/* ── Diff modal ── */
-.layer-diff {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.82rem;
-  line-height: 1.5;
-  max-height: 50vh;
-  overflow-y: auto;
-  padding: 12px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.layer-diff__row {
-  padding: 0 4px;
-  border-radius: 3px;
-}
-.layer-diff__row--add {
-  background: var(--feedback-success-tint, rgba(34, 197, 94, 0.15));
-  color: var(--text-success, inherit);
-}
-.layer-diff__row--del {
-  background: var(--feedback-error-tint, rgba(239, 68, 68, 0.15));
-  color: var(--text-error, inherit);
-  text-decoration: line-through;
-  opacity: 0.8;
-}
-.layer-diff__legend {
-  display: flex;
-  gap: 16px;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
+/* Diff-view styling now lives in LayerDiffModal.css (imported by the component)
+   so it applies wherever the modal is used, not just inside this section. */

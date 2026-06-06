@@ -1,0 +1,43 @@
+/**
+ * Diff view styling for LayerDiffModal. Lives with the component (imported by
+ * LayerDiffModal.tsx) so the colors apply wherever the modal is used — the
+ * global prompt stack, ambassador personas, and memory prompts alike.
+ */
+
+.layer-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.layer-diff__row {
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.layer-diff__row--add {
+  background: var(--feedback-success-tint, rgba(34, 197, 94, 0.15));
+  color: var(--feedback-success, #22c55e);
+}
+.layer-diff__row--del {
+  background: var(--feedback-error-tint, rgba(239, 68, 68, 0.15));
+  color: var(--feedback-error, #ef4444);
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+.layer-diff__legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}

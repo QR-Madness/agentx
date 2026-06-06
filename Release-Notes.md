@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.51 -->
+<!-- release-version: 0.21.52 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -106,6 +106,10 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- Prompt diffs are now properly colored (red removals, green additions) everywhere they
+  appear — including the ambassador voices and the memory prompts. The diff view also now
+  shows up on the **memory** extraction/relevance prompts, so you can compare your override
+  against the shipped default.
 - Dialogs opened from inside a full-screen modal now appear correctly. "Insert from library"
   (and the diff and preview popups) in the System Prompt editor were rendering *behind* the
   Settings window and looked like they did nothing — they now layer on top.

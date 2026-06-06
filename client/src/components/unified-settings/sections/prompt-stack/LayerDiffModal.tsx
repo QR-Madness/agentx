@@ -18,6 +18,7 @@ import {
   DialogFooter,
   Button,
 } from '../../../ui';
+import './LayerDiffModal.css';
 
 interface LayerDiffModalProps {
   open: boolean;
