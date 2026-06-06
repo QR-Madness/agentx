@@ -78,6 +78,14 @@ export interface AskAmbassadorRequest {
   artifacts?: AmbassadorTurnArtifacts;
 }
 
+export interface DraftRelayRequest {
+  conversation_id: string;
+  /** The user's rough intent; the ambassador shapes it into a ready-to-send message. */
+  intent: string;
+  agent_name?: string;
+  artifacts?: AmbassadorTurnArtifacts;
+}
+
 export interface BriefTurnRequest {
   conversation_id: string;
   message_id: string;
@@ -193,6 +201,17 @@ export const ambassadorApi = {
   /** Ask the ambassador a free-form question about a conversation. */
   async askAmbassador(req: AskAmbassadorRequest): Promise<{ run_id: string; qa_id: string }> {
     return apiRequest('/api/agent/ambassador/ask', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  /**
+   * Draft a message FROM you TO the agent (the outbound relay) from a rough intent.
+   * Returns the draft for you to review/edit before sending — it never sends.
+   */
+  async draftRelay(req: DraftRelayRequest): Promise<{ draft: string }> {
+    return apiRequest('/api/agent/ambassador/draft', {
       method: 'POST',
       body: JSON.stringify(req),
     });

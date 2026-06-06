@@ -302,14 +302,24 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       optional hard ceiling (unset by default). `finish_reason=length` is logged.
       Tests: budget headroom + ceiling.
 
+- [x] **Outbound relay (you → agent)** `[v0.21.36]`: relay a message into the
+      conversation from the ambassador panel — a real **user turn** (or a **steer**
+      into the running turn), so the ambassador stays a non-participant (the invariant
+      holds: it never speaks into the transcript as itself; the user is the author).
+      Client seam: `ConversationContext.{registerRelay,relayToConversation}` — ChatPanel
+      registers its tab's send/steer handler; the panel got an Ask/Relay mode toggle.
+      The ambassador's value-add is **drafting**: `POST /ambassador/draft` →
+      `AmbassadorService.draft_relay_message` shapes a rough intent into a ready-to-send
+      first-person message (ghostwriter, not speaker; degrades to the raw intent with no
+      provider) which you review/edit before sending ("Refine"). Tests: draft degrade +
+      provider completion. Deferred: dictation (speech → intent) feeds this same draft seam.
+
 **Deferred (seams in place):**
 - [ ] **Activation toggle per-conversation** (today: global default + the active
       tab's context).
-- [ ] **Outbound (you → agent)**: capture continuous dictation while recording;
-      on manual stop, convert the captured speech into a drafted message you
-      **review/edit before send** (never auto-sends).
-- [ ] Relay arbitrary additional inputs you attach alongside the dictated
-      message — file inputs remain available (reuse the existing input path).
+- [ ] **Dictation (speech → relay)**: capture continuous dictation; on stop, feed the
+      captured speech as the *intent* into the existing `/ambassador/draft` → review/edit
+      → relay seam (never auto-sends). File inputs remain available (reuse the input path).
 - [ ] **Spoken briefing (inbound)**: a spoken/condensed briefing of the message
       plus key elements (attachments, tool artifacts, citations) via an OpenRouter
       TTS/speech model — wired through the profile's `ambassador.speech_model`/`voice`.

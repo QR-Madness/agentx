@@ -77,6 +77,7 @@ export function ChatPanel() {
     setActiveTabModel,
     updateTab,
     restoreConversation,
+    registerRelay,
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
@@ -468,6 +469,42 @@ export function ChatPanel() {
     },
     [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send, notifyError],
   );
+
+  // Outbound relay from another surface (the Ambassador panel): fold the message
+  // into the running turn if one is streaming, else start a fresh user turn.
+  // Mirrors handleSend/handleSteer; the relayed text is a real *user* message.
+  const relayMessage = useCallback(
+    (text: string) => {
+      const t = text.trim();
+      if (!t || !activeTab) return;
+      if (isTyping) {
+        stream.steer(t);
+        return;
+      }
+      appendMessage({
+        id: createMessageId(),
+        type: 'user',
+        content: t,
+        timestamp: new Date().toISOString(),
+        targetAgentIds: extractMentionedAgentIds(t, profiles),
+      });
+      stream.send({
+        message: t,
+        session_id: activeTab.sessionId || undefined,
+        agent_profile_id: tabProfile?.id,
+        model: activeTab.modelOverride || undefined,
+        use_memory: useMemory,
+        workflow_id: activeTab.workflowId || undefined,
+      });
+    },
+    [activeTab, isTyping, stream.steer, stream.send, appendMessage, profiles, tabProfile?.id, useMemory],
+  );
+
+  // Register this tab's relay handler so the Ambassador panel can reach it.
+  useEffect(() => {
+    if (!activeTab) return;
+    return registerRelay(activeTab.id, relayMessage);
+  }, [activeTab?.id, relayMessage, registerRelay]);
 
   const handleSendBackground = async () => {
     if (!input.trim() || !activeTab) return;

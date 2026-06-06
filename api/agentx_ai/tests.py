@@ -6441,6 +6441,43 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(rec["answer"], "It used two sources.")
         self.assertEqual(rec["question"], "what sources did it use?")
 
+    def test_draft_relay_degrades_to_raw_intent_without_provider(self):
+        # The outbound relay must never block: with no provider, drafting returns
+        # the user's raw intent so they can still send it.
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        reg = MagicMock()
+        reg.resolve_with_fallback.side_effect = ValueError("no provider")
+        svc._registry = reg
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            draft = asyncio.run(svc.draft_relay_message("conv", "ask it about the tax records"))
+        self.assertEqual(draft, "ask it about the tax records")
+
+    def test_draft_relay_uses_provider_completion(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.providers.base import CompletionResult
+
+        async def _complete(*args, **kwargs):
+            return CompletionResult(
+                content="Could you also check the county tax records?",
+                finish_reason="stop",
+                model="m",
+            )
+
+        provider = MagicMock()
+        provider.complete = _complete
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+
+        svc = AmbassadorService()
+        svc._registry = reg
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            draft = asyncio.run(
+                svc.draft_relay_message("conv", "also taxes", agent_name="Atlas")
+            )
+        self.assertEqual(draft, "Could you also check the county tax records?")
+
     def test_qa_prompt_grounds_only_on_conversation(self):
         from agentx_ai.agent.ambassador import AmbassadorService
 

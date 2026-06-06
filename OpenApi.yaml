@@ -920,6 +920,50 @@ paths:
         '405':
           description: POST required
 
+  /agent/ambassador/draft:
+    post:
+      tags: [Agent]
+      operationId: ambassadorDraft
+      summary: Draft an outbound relay message (16.6)
+      description: >-
+        The **outbound relay** (you → agent). The ambassador shapes a rough intent
+        into a clear, first-person message the user will send to the agent, using the
+        conversation for context. Returns `{draft}` for the user to review/edit; the
+        ambassador never sends it (the client relays it as a real user turn). Degrades
+        gracefully to the raw intent when no provider is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, intent]
+              properties:
+                conversation_id:
+                  type: string
+                intent:
+                  type: string
+                  description: The user's rough intent; shaped into a ready-to-send message
+                agent_name:
+                  type: string
+                artifacts:
+                  type: object
+                  description: Latest-turn substance, as extra grounding
+      responses:
+        '200':
+          description: Draft produced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft:
+                    type: string
+        '400':
+          description: Missing required fields
+        '405':
+          description: POST required
+
   /agent/ambassador/stream:
     get:
       tags: [Agent]

@@ -2016,6 +2016,41 @@ def ambassador_ask(request):
     return JsonResponse({"run_id": run_id, "qa_id": qa_id})
 
 
+@csrf_exempt
+async def ambassador_draft(request):
+    """
+    POST /api/agent/ambassador/draft
+
+    Body: {conversation_id, intent, agent_name?, artifacts?}. The ambassador drafts
+    a clear, first-person message FROM the user TO the agent (the outbound relay),
+    based on the rough intent + the conversation. Returns {draft} for the user to
+    review/edit before sending — it never sends anything itself (no transcript write).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    conversation_id = data.get("conversation_id")
+    intent = (data.get("intent") or "").strip()
+    agent_name = data.get("agent_name") or ""
+    artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
+    if not conversation_id:
+        return JsonResponse({"error": "conversation_id is required"}, status=400)
+    if not intent:
+        return JsonResponse({"error": "intent is required"}, status=400)
+
+    from .agent.ambassador import get_ambassador
+
+    draft = await get_ambassador().draft_relay_message(
+        conversation_id, intent, agent_name=agent_name, artifacts=artifacts
+    )
+    return JsonResponse({"draft": draft})
+
+
 async def ambassador_stream(request):
     """
     GET /api/agent/ambassador/stream?run_id=<id>

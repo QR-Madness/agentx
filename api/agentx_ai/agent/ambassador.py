@@ -140,6 +140,25 @@ def _qa_persona(agent_name: str = "") -> str:
     )
 
 
+def _draft_persona(agent_name: str = "") -> str:
+    """The Ambassador's voice when *drafting a message the user will send to the
+    agent*. Unlike briefings/Q&A (the ambassador's own voice), the draft is written
+    in the user's first person — it becomes the user's own turn — so the ambassador
+    is a ghostwriter here, not a speaker."""
+    agent_ref = agent_name.strip() or "the agent"
+    return (
+        "You are the Ambassador, helping the person beside you send a message to "
+        f"{agent_ref} in the conversation they're watching. Turn their rough intent into "
+        "a clear, well-formed message — written in the FIRST PERSON as the person "
+        "themselves (it will be sent as their OWN message, not yours), direct and "
+        "specific, using the conversation for context so the agent knows what they mean.\n\n"
+
+        "Output ONLY the message text — no preamble, no quotation marks, no 'Here's a "
+        "draft', no sign-off, no markdown. Just the message, ready to send. Keep it natural "
+        "and concise; never invent requirements the person didn't imply."
+    )
+
+
 _VERBOSITY_HINT = {
     "brief": "LENGTH LIMIT: one or two sentences — just the heart of it. Then stop.",
     "normal": "LENGTH LIMIT: a short spoken paragraph, three or four sentences at most. Do not exceed it.",
@@ -252,6 +271,29 @@ class AmbassadorService:
         sections.append(
             "Answer their question directly, in your own spoken voice, grounded only in "
             "the conversation above. If the answer isn't there, say so plainly."
+        )
+        return "\n\n".join(sections)
+
+    def _build_draft_prompt(
+        self,
+        *,
+        intent: str,
+        context: str,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> str:
+        agent_label = agent_name.strip() or "the agent"
+        sections = []
+        if context.strip():
+            sections.append("The conversation so far (for context):\n" f"{context.strip()}")
+        artifacts_block = self._render_artifacts(artifacts, agent_label)
+        if artifacts_block:
+            sections.append(artifacts_block)
+        sections.append(
+            "What the person wants to say (their rough intent):\n" f"{intent.strip()}"
+        )
+        sections.append(
+            f"Write their message to {agent_label} now — first person, ready to send."
         )
         return "\n\n".join(sections)
 
@@ -539,6 +581,62 @@ class AmbassadorService:
             log_label="Q&A",
         ):
             yield ev
+
+    async def draft_relay_message(
+        self,
+        conversation_id: str,
+        intent: str,
+        *,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> str:
+        """Draft a message FROM the user TO the agent (the outbound relay): turn a
+        rough intent into a clear, first-person message the user reviews/edits before
+        sending. Returns the draft text. Never raises — falls back to the raw intent
+        so the relay still works when no provider is configured."""
+        intent = (intent or "").strip()
+        if not intent:
+            return ""
+        cfg = self._config()
+        if not cfg["enabled"]:
+            return intent
+
+        profile = self._resolve_profile(cfg["profile_id"])
+        profile_model = getattr(profile, "default_model", None) if profile else None
+        model = cfg["model"] or profile_model or _DEFAULT_MODEL
+        temperature = getattr(profile, "temperature", 0.3) if profile else 0.3
+
+        try:
+            provider, model_id, _ = self.registry.resolve_with_fallback(
+                model, preferred_fallback=_DEFAULT_MODEL
+            )
+        except Exception as e:  # noqa: BLE001 — degrade to the raw intent
+            logger.warning(f"Ambassador draft provider unavailable: {e}")
+            return intent
+
+        context = self._grounding_context(
+            conversation_id, cfg["max_context_turns"], agent_name
+        )
+        messages = [
+            Message(role=MessageRole.SYSTEM, content=_draft_persona(agent_name)),
+            Message(
+                role=MessageRole.USER,
+                content=self._build_draft_prompt(
+                    intent=intent, context=context, agent_name=agent_name, artifacts=artifacts
+                ),
+            ),
+        ]
+        try:
+            result = await provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=self._max_tokens(profile, cfg),
+            )
+            return (result.content or "").strip() or intent
+        except Exception as e:  # noqa: BLE001 — never block the relay
+            logger.warning(f"Ambassador draft failed: {e}")
+            return intent
 
     async def _stream_and_settle(
         self,

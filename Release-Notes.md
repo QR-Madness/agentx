@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.35 -->
+<!-- release-version: 0.21.36 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -40,9 +40,13 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   diagrams it built — not just its written reply, so it interprets the turn instead of
   paraphrasing it. And you can now **ask the ambassador anything** about a conversation
   from the panel ("what sources did it use?", "summarize that table") — it answers
-  grounded only in what actually happened, streaming its reply. Briefings and Q&A never
-  touch the transcript or the agent's context; future spoken briefings slot onto the
-  same seam.
+  grounded only in what actually happened, streaming its reply. And the relay now goes
+  **both ways**: from the panel you can **send a message to the agent** — type it, or let
+  the ambassador shape your rough intent into a ready-to-send message ("Refine"), then
+  send. It lands as your own message in the conversation (or folds into the running turn).
+  The ambassador never speaks into the conversation itself — you're always the author.
+  Briefings and Q&A never touch the transcript or the agent's context; future spoken
+  briefings slot onto the same seam.
 
 ### Fixes
 

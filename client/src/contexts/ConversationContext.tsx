@@ -12,7 +12,7 @@
  * re-export, and the context value shape) is unchanged.
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, type ReactNode } from 'react';
 import type { ConversationMessage } from '../lib/messages';
 import type { ConversationTab } from '../lib/storage';
 import type { ActiveChatRun, ConversationSummary } from '../lib/api';
@@ -71,6 +71,14 @@ interface ConversationContextValue {
   updateMessage: (messageId: string, updates: Partial<ConversationMessage>) => void;
   setStreaming: (isStreaming: boolean) => void;
   setSessionId: (sessionId: string) => void;
+
+  // Outbound relay seam: ChatPanel owns a tab's send/steer path and registers it
+  // here so other surfaces (e.g. the Ambassador panel) can relay a user message
+  // into the conversation without duplicating the chat stream. The relayed text
+  // becomes a real user turn (or steers the running turn) — the Ambassador stays
+  // a non-participant; the user is the author.
+  registerRelay: (tabId: string, fn: (text: string) => void) => () => void;
+  relayToConversation: (tabId: string, text: string) => boolean;
 }
 
 const ConversationContext = createContext<ConversationContextValue | null>(null);
@@ -107,6 +115,21 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     updateTab: tabsApi.updateTab,
   });
 
+  // Outbound relay registry: tabId -> the live send/steer handler ChatPanel owns.
+  const relayHandlers = useRef<Map<string, (text: string) => void>>(new Map());
+  const registerRelay = useCallback((tabId: string, fn: (text: string) => void) => {
+    relayHandlers.current.set(tabId, fn);
+    return () => {
+      if (relayHandlers.current.get(tabId) === fn) relayHandlers.current.delete(tabId);
+    };
+  }, []);
+  const relayToConversation = useCallback((tabId: string, text: string) => {
+    const fn = relayHandlers.current.get(tabId);
+    if (!fn) return false;
+    fn(text);
+    return true;
+  }, []);
+
   return (
     <ConversationContext.Provider
       value={{
@@ -135,6 +158,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         updateMessage: messages.updateMessage,
         setStreaming: messages.setStreaming,
         setSessionId: messages.setSessionId,
+        registerRelay,
+        relayToConversation,
       }}
     >
       {children}

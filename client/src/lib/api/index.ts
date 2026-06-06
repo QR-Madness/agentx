@@ -67,6 +67,7 @@ export type {
   AmbassadorSource,
   AmbassadorExhibitArtifact,
   AskAmbassadorRequest,
+  DraftRelayRequest,
   BriefTurnRequest,
 } from './ambassador';
 export * from './errors';

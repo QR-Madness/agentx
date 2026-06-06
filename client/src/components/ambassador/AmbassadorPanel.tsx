@@ -1,85 +1,83 @@
 /**
  * AmbassadorPanel — the parallel conversation interpreter's surface (Phase 16.6).
  *
- * Subscribed to the *active* conversation tab: it lists that conversation's
- * assistant turns and lets you brief any of them (or the latest) on demand —
- * the panel itself is the entry point, no per-message button required. Switching
- * tabs re-aims the ambassador at whichever conversation is in front (the seam for
- * cross-seeding context from different conversations).
+ * Subscribed to the *active* conversation tab. It briefs the conversation's turns,
+ * answers free-form questions about it, and relays your messages into it — all
+ * without the ambassador ever entering the transcript itself.
  *
- * Briefings never enter the chat transcript; they live only here + the server's
- * `ambassador:` Redis sidecar.
+ * Layout note: this typed/visual surface is the **fallback**. The hero on this
+ * panel will be voice (TTS briefings + spoken Q&A); the header is intentionally
+ * kept as a clean identity zone so that voice hero can slot in above the body
+ * without a rewrite. Everything here stays for no-mic / type-it-out use.
+ *
+ * Briefings/Q&A live only here + the server's `ambassador:` Redis sidecar.
  */
 
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { Radio, Loader2, AlertTriangle, X, Sparkles, RotateCcw, Ban, Send } from 'lucide-react';
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  Radio,
+  Loader2,
+  AlertTriangle,
+  X,
+  Sparkles,
+  RotateCcw,
+  Ban,
+  Send,
+  Wand2,
+  CornerUpRight,
+} from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { isAssistantMessage, type AssistantMessage } from '../../lib/messages';
 import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { Button } from '../ui';
+import { api } from '../../lib/api';
 import type { AmbassadorBriefing, AmbassadorQA } from '../../lib/api';
 
-function snippet(text: string, max = 140): string {
+type PanelMode = 'ask' | 'relay';
+
+function snippet(text: string, max = 130): string {
   const t = text.replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-/** The ambassador's answer to a free-form question (mirrors BriefingBody states). */
-function QaItem({ entry, onCancel }: { entry: AmbassadorQA; onCancel: () => void }) {
-  const streaming = entry.status === 'streaming';
+/** A streaming text cursor in the ambassador's accent. */
+function Cursor() {
+  return <span className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-accent align-middle" />;
+}
+
+/** The ambassador's avatar motif — a small accent disc with the Radio mark. */
+function AmbassadorMark({ size = 20 }: { size?: number }) {
   return (
-    <li className="flex flex-col gap-1.5">
-      {/* The question — your voice. */}
-      <div className="self-end max-w-[85%] rounded-lg rounded-br-sm bg-accent px-3 py-1.5 text-sm text-fg-inverse">
-        {entry.question}
-      </div>
-      {/* The answer — the ambassador's voice. */}
-      <div className="flex items-start gap-1.5 self-start max-w-[92%]">
-        <Radio size={13} className="mt-1 shrink-0 text-accent" />
-        <div className="min-w-0 text-sm leading-relaxed text-fg">
-          {entry.status === 'error' ? (
-            <span className="flex items-start gap-1.5 text-error">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              {entry.error || 'The ambassador could not answer that.'}
-            </span>
-          ) : entry.status === 'empty_provider' ? (
-            <span className="text-warning">
-              {entry.answer || 'No model provider is configured for the ambassador.'}
-            </span>
-          ) : (
-            <span className="whitespace-pre-wrap">
-              {entry.answer}
-              {streaming && (
-                <span className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-accent align-middle" />
-              )}
-              {entry.status === 'cancelled' && !entry.answer && (
-                <span className="text-fg-muted">cancelled</span>
-              )}
-            </span>
-          )}
-          {streaming && (
-            <button
-              type="button"
-              className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-fg-muted transition-colors hover:text-error"
-              onClick={onCancel}
-              title="Cancel"
-            >
-              <X size={12} /> cancel
-            </button>
-          )}
-        </div>
-      </div>
-    </li>
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full bg-accent-tertiary"
+      style={{ width: size, height: size }}
+    >
+      <Radio size={Math.round(size * 0.55)} className="text-accent" />
+    </span>
+  );
+}
+
+/** A section divider: uppercase label + count + hairline rule. */
+function SectionLabel({ children, count }: { children: ReactNode; count?: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+        {children}
+      </span>
+      {typeof count === 'number' && <span className="text-[11px] text-fg-muted">{count}</span>}
+      <span className="h-px flex-1 bg-line" />
+    </div>
   );
 }
 
 /** A small status chip mirroring the briefing's lifecycle. */
-function StatusChip({ briefing }: { briefing: AmbassadorBriefing | undefined }) {
-  if (!briefing) return null;
+function StatusChip({ status }: { status: AmbassadorBriefing['status'] | undefined }) {
+  if (!status) return null;
   const base =
     'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide';
-  switch (briefing.status) {
+  switch (status) {
     case 'streaming':
       return (
         <span className={`${base} bg-accent-tertiary text-accent`}>
@@ -107,7 +105,7 @@ function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }
   if (!briefing) return null;
   if (briefing.status === 'error') {
     return (
-      <p className="mt-1.5 flex items-start gap-1.5 whitespace-pre-wrap text-sm text-error">
+      <p className="flex items-start gap-1.5 whitespace-pre-wrap text-sm text-error">
         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
         <span>{briefing.error || 'The ambassador could not brief this turn.'}</span>
       </p>
@@ -115,7 +113,7 @@ function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }
   }
   if (briefing.status === 'empty_provider') {
     return (
-      <p className="mt-1.5 whitespace-pre-wrap text-sm text-warning">
+      <p className="whitespace-pre-wrap text-sm text-warning">
         {briefing.summary || 'No model provider is configured for the ambassador.'}
       </p>
     );
@@ -123,22 +121,68 @@ function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }
   const streaming = briefing.status === 'streaming';
   if (!briefing.summary && !streaming) return null;
   return (
-    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-fg">
+    <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
       {briefing.summary}
-      {streaming && (
-        <span className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-accent align-middle" />
-      )}
+      {streaming && <Cursor />}
     </p>
   );
 }
 
+/** One free-form Q&A exchange — your question, the ambassador's answer. */
+function QaItem({ entry, onCancel }: { entry: AmbassadorQA; onCancel: () => void }) {
+  const streaming = entry.status === 'streaming';
+  return (
+    <li className="flex flex-col gap-2">
+      <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-sm leading-snug text-fg-inverse shadow-sm">
+        {entry.question}
+      </div>
+      <div className="flex max-w-[94%] items-start gap-2 self-start">
+        <AmbassadorMark size={22} />
+        <div className="min-w-0 pt-0.5 text-sm leading-relaxed text-fg">
+          {entry.status === 'error' ? (
+            <span className="flex items-start gap-1.5 text-error">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              {entry.error || 'The ambassador could not answer that.'}
+            </span>
+          ) : entry.status === 'empty_provider' ? (
+            <span className="text-warning">
+              {entry.answer || 'No model provider is configured for the ambassador.'}
+            </span>
+          ) : (
+            <span className="whitespace-pre-wrap">
+              {entry.answer}
+              {streaming && <Cursor />}
+              {entry.status === 'cancelled' && !entry.answer && (
+                <span className="text-fg-muted">cancelled</span>
+              )}
+            </span>
+          )}
+          {streaming && (
+            <button
+              type="button"
+              className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-fg-muted transition-colors hover:text-error"
+              onClick={onCancel}
+              title="Cancel"
+            >
+              <X size={12} /> cancel
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export function AmbassadorPanel() {
-  const { activeTab } = useConversation();
+  const { activeTab, relayToConversation } = useConversation();
   const { briefingForMessage, briefingsFor, refresh, ccTurn, cancel, qaFor, ask, cancelQa } =
     useAmbassador();
   const { profiles, getAgentName } = useAgentProfile();
   const conversationId = activeTab?.sessionId;
-  const [question, setQuestion] = useState('');
+  const [input, setInput] = useState('');
+  const [mode, setMode] = useState<PanelMode>('ask');
+  const [refining, setRefining] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
 
   // Subscribe: repopulate from the sidecar whenever the active conversation changes.
   useEffect(() => {
@@ -191,7 +235,7 @@ export function AmbassadorPanel() {
     [briefingsFor, qaFor, conversationId],
   );
 
-  // Conversation-level agent name + latest-turn substance, to ground a question.
+  // Conversation-level agent name + latest-turn substance, to ground a question/draft.
   const convAgentName = useMemo(() => {
     const tabProfileName = activeTab?.profileId
       ? profiles.find((p) => p.id === activeTab.profileId)?.name
@@ -199,73 +243,134 @@ export function AmbassadorPanel() {
     return tabProfileName ?? getAgentName();
   }, [activeTab?.profileId, profiles, getAgentName]);
 
-  const submitQuestion = () => {
-    if (!conversationId) return;
-    const q = question.trim();
-    if (!q) return;
-    const artifacts = latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined;
-    ask(conversationId, q, { agentName: convAgentName, artifacts });
-    setQuestion('');
+  const latestArtifacts = () =>
+    latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined;
+
+  const runActive = !!activeTab?.activeRun?.runId;
+
+  const showFlash = (msg: string) => {
+    setFlash(msg);
+    window.setTimeout(() => setFlash((cur) => (cur === msg ? null : cur)), 2500);
   };
+
+  const submitAsk = () => {
+    if (!conversationId) return;
+    const q = input.trim();
+    if (!q) return;
+    ask(conversationId, q, { agentName: convAgentName, artifacts: latestArtifacts() });
+    setInput('');
+  };
+
+  // Relay the message into the actual conversation (a real user turn, or a steer
+  // into the running turn). The ambassador stays a non-participant — you're the author.
+  const submitRelay = () => {
+    if (!activeTab) return;
+    const t = input.trim();
+    if (!t) return;
+    const ok = relayToConversation(activeTab.id, t);
+    if (!ok) {
+      showFlash('Open the conversation to relay a message.');
+      return;
+    }
+    setInput('');
+    showFlash(runActive ? 'Folded into the running turn.' : 'Sent to the conversation.');
+  };
+
+  // Optional: let the ambassador shape a rough intent into a ready-to-send message.
+  const refine = async () => {
+    if (!conversationId) return;
+    const intent = input.trim();
+    if (!intent) return;
+    setRefining(true);
+    try {
+      const { draft } = await api.draftRelay({
+        conversation_id: conversationId,
+        intent,
+        agent_name: convAgentName,
+        artifacts: latestArtifacts(),
+      });
+      if (draft) setInput(draft);
+    } catch {
+      /* keep the raw intent — the relay still works */
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const submit = () => (mode === 'ask' ? submitAsk() : submitRelay());
 
   const onInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      submitQuestion();
+      submit();
     }
   };
 
+  const footerHelp =
+    flash ??
+    (mode === 'relay'
+      ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
+      : 'Answered from the conversation only — never added to the transcript.');
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col gap-2 border-b border-line px-4 pb-3 pt-4">
-        <div className="flex items-center gap-2">
+      {/* Header — identity zone (future home of the voice/TTS hero). */}
+      <div className="flex flex-col gap-1.5 border-b border-line px-4 pb-3.5 pt-4">
+        <div className="flex items-center gap-2.5">
           <span className="relative inline-flex">
-            <Radio size={18} className="text-accent" />
+            <AmbassadorMark size={26} />
             {anyStreaming && (
               <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
             )}
           </span>
           <h2 className="text-base font-semibold text-fg">Ambassador</h2>
-          <span className="ml-auto text-xs text-fg-muted">
-            {turns.length} turn{turns.length === 1 ? '' : 's'}
-          </span>
+          {anyStreaming && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent-tertiary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+              live
+            </span>
+          )}
         </div>
         <p className="text-xs leading-relaxed text-fg-muted">
-          A dedicated agent that briefs you on a turn in parallel — without entering the
-          conversation. Pick its model in Settings → Ambassador.
+          {conversationId ? (
+            <>
+              Interpreting <span className="font-medium text-fg-secondary">{convAgentName}</span> in
+              parallel — it briefs and answers without ever entering the conversation.
+            </>
+          ) : (
+            'Your parallel interpreter — it reads a conversation and briefs or answers, without ever entering it.'
+          )}
         </p>
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
         {!conversationId ? (
-          <p className="text-sm text-fg-muted">
-            Start (or open) a conversation and the ambassador can brief its turns or answer
-            your questions about it here.
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <AmbassadorMark size={40} />
+            <p className="text-sm text-fg-muted">
+              Open a conversation and the ambassador can brief its turns or answer your questions
+              about it here.
+            </p>
+          </div>
         ) : (
           <>
             {turns.length === 0 ? (
-              <p className="text-sm text-fg-muted">
-                No assistant turns yet — you can still ask the ambassador about this
-                conversation below.
+              <p className="rounded-lg border border-dashed border-line bg-surface-sunken p-4 text-center text-sm text-fg-muted">
+                No replies yet — you can still ask the ambassador about this conversation below.
               </p>
             ) : (
-              <>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-50"
+              <section className="flex flex-col gap-3">
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  loading={latestStreaming}
                   onClick={() => latest && brief(latest.m)}
-                  disabled={latestStreaming}
                 >
-                  {latestStreaming ? (
-                    <Loader2 size={15} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={15} />
-                  )}
+                  {!latestStreaming && <Sparkles size={15} />}
                   {latestStreaming ? 'Briefing the latest turn…' : 'Brief the latest turn'}
-                </button>
+                </Button>
+
+                <SectionLabel count={turns.length}>Turns</SectionLabel>
 
                 <ul className="flex flex-col gap-2">
                   {turns.map(({ m }, idx) => {
@@ -276,51 +381,50 @@ export function AmbassadorPanel() {
                     return (
                       <li
                         key={m.id}
-                        className="flex flex-col gap-1 rounded-lg border border-line bg-surface-raised p-3 transition-colors data-[briefed=true]:border-line-strong"
+                        className="flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-3 transition-colors data-[briefed=true]:border-line-strong"
                         data-briefed={briefed || undefined}
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-fg-muted">Turn {turnNo}</span>
-                          <StatusChip briefing={briefing} />
+                          <span className="text-xs font-semibold text-fg-secondary">
+                            Turn {turnNo}
+                          </span>
+                          <StatusChip status={briefing?.status} />
                           {streaming ? (
                             <button
                               type="button"
-                              className="ml-auto inline-flex items-center gap-1 text-xs text-fg-muted transition-colors hover:text-error"
+                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-error hover:text-error"
                               onClick={() => cancel(conversationId, m.id)}
                               title="Cancel briefing"
                             >
-                              <X size={13} /> cancel
+                              <X size={12} /> cancel
                             </button>
                           ) : (
                             <button
                               type="button"
-                              className="ml-auto inline-flex items-center gap-1 text-xs text-accent transition-colors hover:underline"
+                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent-tertiary"
                               onClick={() => brief(m)}
                               title={briefing ? 'Brief this turn again' : 'Brief this turn'}
                             >
-                              {briefing ? <RotateCcw size={12} /> : <Radio size={13} />}
+                              {briefing ? <RotateCcw size={12} /> : <Radio size={12} />}
                               {briefing ? 're-brief' : 'brief'}
                             </button>
                           )}
                         </div>
-                        <p className="text-xs text-fg-muted">{snippet(m.content)}</p>
+                        <p className="border-l-2 border-line pl-2 text-xs italic text-fg-muted">
+                          {snippet(m.content)}
+                        </p>
                         <BriefingBody briefing={briefing} />
                       </li>
                     );
                   })}
                 </ul>
-              </>
+              </section>
             )}
 
             {qaList.length > 0 && (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                    Questions
-                  </span>
-                  <span className="h-px flex-1 bg-line" />
-                </div>
-                <ul className="flex flex-col gap-3">
+              <section className="flex flex-col gap-3">
+                <SectionLabel count={qaList.length}>Questions</SectionLabel>
+                <ul className="flex flex-col gap-3.5">
                   {qaList.map((entry) => (
                     <QaItem
                       key={entry.qa_id}
@@ -329,34 +433,75 @@ export function AmbassadorPanel() {
                     />
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
           </>
         )}
       </div>
 
-      {/* Ask the ambassador (pinned) */}
+      {/* Pinned input — Ask the ambassador, or Relay a message to the agent. */}
       {conversationId && (
-        <div className="border-t border-line p-3">
-          <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={onInputKeyDown}
-              rows={1}
-              placeholder="Ask the ambassador about this conversation…"
-              className="max-h-28 flex-1 resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
-            />
+        <div className="flex flex-col gap-2 border-t border-line p-3">
+          {/* Mode toggle — segmented control. */}
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1 text-xs">
             <button
               type="button"
-              onClick={submitQuestion}
-              disabled={!question.trim()}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-40"
-              title="Ask"
+              onClick={() => setMode('ask')}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              data-on={mode === 'ask' || undefined}
             >
-              <Send size={14} />
+              <Radio size={12} /> Ask
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('relay')}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              data-on={mode === 'relay' || undefined}
+            >
+              <CornerUpRight size={12} /> Relay to agent
             </button>
           </div>
+
+          <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onInputKeyDown}
+              rows={mode === 'relay' ? 2 : 1}
+              placeholder={
+                mode === 'ask'
+                  ? `Ask ${convAgentName ? `about ${convAgentName}` : 'about this conversation'}…`
+                  : runActive
+                    ? `Tell ${convAgentName} something — folds into the running turn…`
+                    : `Tell ${convAgentName} something — sent as your message…`
+              }
+              className="max-h-32 flex-1 resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
+            />
+            {mode === 'relay' && (
+              <button
+                type="button"
+                onClick={refine}
+                disabled={!input.trim() || refining}
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-xs text-fg-muted transition-colors hover:border-line-strong hover:text-accent disabled:opacity-40"
+                title="Let the ambassador shape this into a ready-to-send message"
+              >
+                {refining ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                Refine
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!input.trim()}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-40"
+              title={mode === 'ask' ? 'Ask the ambassador' : 'Send to the conversation'}
+            >
+              {mode === 'ask' ? <Send size={14} /> : <CornerUpRight size={14} />}
+            </button>
+          </div>
+
+          {/* One stable helper line — flash takes over briefly, no layout shift. */}
+          <p className="px-0.5 text-[11px] leading-snug text-fg-muted">{footerHelp}</p>
         </div>
       )}
     </div>

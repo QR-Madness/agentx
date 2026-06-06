@@ -41,6 +41,7 @@ urlpatterns = [
     # Ambassador (16.6) — specific routes BEFORE the <conversation_id> catch-all.
     path("agent/ambassador/brief-turn", views.ambassador_brief_turn, name="ambassador-brief-turn"),
     path("agent/ambassador/ask", views.ambassador_ask, name="ambassador-ask"),
+    path("agent/ambassador/draft", views.ambassador_draft, name="ambassador-draft"),
     path("agent/ambassador/stream", views.ambassador_stream, name="ambassador-stream"),
     path("agent/ambassador/<str:conversation_id>", views.ambassador_briefings, name="ambassador-briefings"),
     path("chat/background", views.chat_background, name="chat-background"),
