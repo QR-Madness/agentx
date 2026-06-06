@@ -427,7 +427,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > follow-ups (`scratchpad_note`, `forget`/`remember_this`/provenance, cached recap), and the
 > per-profile internal-tool gating UI (18.9.x). All shipped — see roadmap.
 
-### 18.13 Layered Prompt Composer ("Prompt Stack") — In Progress
+### 18.13 Layered Prompt Composer ("Prompt Stack") — ✅ Complete `[v0.21.47]`
 
 > Replace the single-base-prompt model with a durable, block-based stack of editable
 > prompt **layers**. Each built-in layer ships a `default` (sidecar, owned by the app,
@@ -472,8 +472,12 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       layer add/delete. Narrow widths collapse to one column + Preview dialog. New: `SystemPromptSection`
       + `prompt-stack/{LayerCard,ComposedPreview,LayerDiffModal}` + `PromptStack.css` +
       `lib/promptStack.ts`(+test). Libs added: `@dnd-kit/*`, `diff`.
-- [ ] **4 — snippet library**: reframe `template_manager` as insert-as-layer + enhancer-in-place;
-      drop the misleading "replaces PromptProfile/PromptSection" framing.
+- [x] **4 — snippet library** `[v0.21.47]`: reframed `template_manager` as the **Prompt Library** —
+      snippets **insert-as-layer** (reuse `PromptLibraryModal` `mode='insert'` → `createPromptLayer`)
+      and the enhancer rewrites a layer **in place** (`Enhance` button → `/api/prompts/enhance`,
+      one-click undo). Extended `onInsert(content, name?)` to seed the layer title. Dropped the
+      misleading "replaces PromptProfile/PromptSection" docstring (it's a building-block library,
+      not a replacement — composition is owned by `LayerStore`).
 
 ## Backlog (Future Enhancements)
 

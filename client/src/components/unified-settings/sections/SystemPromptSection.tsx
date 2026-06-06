@@ -24,13 +24,14 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
-import { SquareStack, Plus, RefreshCw, Eye } from 'lucide-react';
+import { SquareStack, Plus, RefreshCw, Eye, Library } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useNotify } from '../../../contexts/NotificationContext';
 import type { PromptLayer } from '../../../lib/api/types';
 import { composeStack, effectiveContent } from '../../../lib/promptStack';
 import { Button, SectionHeader } from '../../ui';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/Dialog';
+import { PromptLibraryModal } from '../../modals/PromptLibraryModal';
 import { LayerCard } from './prompt-stack/LayerCard';
 import { ComposedPreview } from './prompt-stack/ComposedPreview';
 import { LayerDiffModal } from './prompt-stack/LayerDiffModal';
@@ -55,6 +56,7 @@ export default function SystemPromptSection() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const saveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -156,6 +158,32 @@ export default function SystemPromptSection() {
       notifyError(err, 'Failed to add layer');
     }
   }, [notifyError]);
+
+  const handleInsertFromLibrary = useCallback(
+    async (content: string, name?: string) => {
+      try {
+        const { layer } = await api.createPromptLayer(name?.trim() || 'Snippet', content);
+        setLayers((prev) => sortLayers([...prev, layer]));
+        setExpandedId(layer.id);
+      } catch (err) {
+        notifyError(err, 'Failed to insert snippet as a layer');
+      }
+    },
+    [notifyError]
+  );
+
+  const handleEnhance = useCallback(
+    async (content: string): Promise<string | null> => {
+      try {
+        const { enhanced_prompt } = await api.enhancePrompt(content);
+        return enhanced_prompt;
+      } catch (err) {
+        notifyError(err, 'Failed to enhance layer');
+        return null;
+      }
+    },
+    [notifyError]
+  );
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -274,6 +302,7 @@ export default function SystemPromptSection() {
                   onViewDiff={(l) =>
                     setDiffTarget({ layer: l, mode: l.update_available ? 'update' : 'edited' })
                   }
+                  onEnhance={handleEnhance}
                 />
               ))}
             </SortableContext>
@@ -282,6 +311,9 @@ export default function SystemPromptSection() {
           <div className="prompt-stack__footer">
             <Button variant="ghost" size="sm" onClick={() => void handleAdd()}>
               <Plus size={16} /> Add layer
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setLibraryOpen(true)}>
+              <Library size={16} /> Insert from library
             </Button>
           </div>
         </div>
@@ -299,6 +331,23 @@ export default function SystemPromptSection() {
           </DialogHeader>
           <div className="px-6 pb-6 pt-2">
             <ComposedPreview composed={composed} />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Insert-from-library (snippet → custom layer) */}
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Insert from library</DialogTitle>
+          </DialogHeader>
+          <div className="px-4 pb-4 pt-2" style={{ height: '70vh' }}>
+            <PromptLibraryModal
+              variant="panel"
+              mode="insert"
+              onClose={() => setLibraryOpen(false)}
+              onInsert={(content, name) => void handleInsertFromLibrary(content, name)}
+            />
           </div>
         </DialogContent>
       </Dialog>

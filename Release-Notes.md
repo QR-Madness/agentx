@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.46 -->
+<!-- release-version: 0.21.47 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -84,7 +84,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   underneath your edit you get a **▲ update** badge and a **diff view** to **Keep yours**,
   **Adopt the new default**, or **load it into the editor to merge**. Add your own **custom
   layers** too. Your edits are always kept separate from the defaults and never silently
-  overwritten.
+  overwritten. You can also **insert a snippet from the Prompt Library** straight into the
+  stack as a new layer, and **enhance any layer in place** — let the prompt enhancer rewrite
+  it, with one-click undo.
 
 ### Fixes
 

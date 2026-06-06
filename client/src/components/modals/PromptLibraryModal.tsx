@@ -39,7 +39,8 @@ import './PromptLibraryModal.css';
 
 interface PromptLibraryModalProps {
   onClose: () => void;
-  onInsert?: (content: string) => void;
+  /** Insert the chosen snippet. `name` lets callers (e.g. insert-as-layer) seed a title. */
+  onInsert?: (content: string, name?: string) => void;
   onSelectTemplate?: (templateId: string, content: string) => void;
   mode?: 'insert' | 'select';
   initialTag?: string;
@@ -248,7 +249,7 @@ export function PromptLibraryModal({
 
   const handleInsert = () => {
     if (selectedTemplate && onInsert) {
-      onInsert(selectedTemplate.content);
+      onInsert(selectedTemplate.content, selectedTemplate.name);
       onClose();
     }
   };

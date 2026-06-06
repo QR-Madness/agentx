@@ -4,10 +4,11 @@
  * (debounced, by the parent) autosave, token count, and contextual actions.
  */
 
+import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GripVertical, ChevronDown, RotateCcw, GitCompare, Trash2 } from 'lucide-react';
+import { GripVertical, ChevronDown, RotateCcw, GitCompare, Trash2, Sparkles, Undo2 } from 'lucide-react';
 import type { PromptLayer } from '../../../../lib/api/types';
 import { effectiveContent, estimateTokens, isModified } from '../../../../lib/promptStack';
 import { Badge, Button, Switch } from '../../../ui';
@@ -22,6 +23,8 @@ interface LayerCardProps {
   onReset: (id: string) => void;
   onDelete: (id: string) => void;
   onViewDiff: (layer: PromptLayer) => void;
+  /** Rewrite the content via the LLM enhancer; returns enhanced text or null on failure. */
+  onEnhance: (content: string) => Promise<string | null>;
 }
 
 export function LayerCard({
@@ -33,6 +36,7 @@ export function LayerCard({
   onReset,
   onDelete,
   onViewDiff,
+  onEnhance,
 }: LayerCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: layer.id,
@@ -41,6 +45,29 @@ export function LayerCard({
   const isBuiltin = layer.kind === 'builtin';
   const modified = isModified(layer);
   const content = effectiveContent(layer);
+
+  const [enhancing, setEnhancing] = useState(false);
+  const [preEnhance, setPreEnhance] = useState<string | null>(null);
+
+  const handleEnhance = async () => {
+    if (!content.trim() || enhancing) return;
+    setEnhancing(true);
+    try {
+      const enhanced = await onEnhance(content);
+      if (enhanced !== null && enhanced !== content) {
+        setPreEnhance(content);
+        onContentChange(layer.id, enhanced);
+      }
+    } finally {
+      setEnhancing(false);
+    }
+  };
+
+  const handleUndoEnhance = () => {
+    if (preEnhance === null) return;
+    onContentChange(layer.id, preEnhance);
+    setPreEnhance(null);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -114,7 +141,10 @@ export function LayerCard({
                 className="layer-card__editor"
                 value={content}
                 spellCheck={false}
-                onChange={(e) => onContentChange(layer.id, e.target.value)}
+                onChange={(e) => {
+                  if (preEnhance !== null) setPreEnhance(null);
+                  onContentChange(layer.id, e.target.value);
+                }}
                 placeholder="Layer content…"
               />
               <div className="layer-card__editor-meta">
@@ -122,6 +152,22 @@ export function LayerCard({
                   ~{estimateTokens(content)} tokens · {content.length} chars
                 </span>
                 <div className="layer-card__actions">
+                  {preEnhance !== null ? (
+                    <Button variant="ghost" size="sm" onClick={handleUndoEnhance}>
+                      <Undo2 size={14} /> Undo enhance
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={enhancing}
+                      disabled={!content.trim()}
+                      onClick={() => void handleEnhance()}
+                      title="Rewrite this layer with the prompt enhancer"
+                    >
+                      <Sparkles size={14} /> Enhance
+                    </Button>
+                  )}
                   {layer.update_available && (
                     <Button variant="secondary" size="sm" onClick={() => onViewDiff(layer)}>
                       <GitCompare size={14} /> Review update

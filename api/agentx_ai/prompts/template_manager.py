@@ -1,8 +1,12 @@
 """
 Prompt Template Manager for AgentX.
 
-Manages prompt template CRUD operations and YAML persistence.
-Replaces the PromptProfile/PromptSection system with a unified template model.
+Manages prompt template CRUD operations and YAML persistence — the reusable
+**Prompt Library** of named snippets (with tags + placeholders). These are
+insert-as-layer building blocks for the layered system prompt (`prompts/layers.py`):
+a snippet can be dropped into the stack as a custom layer, and the same enhancer
+(`/api/prompts/enhance`) rewrites a layer in place. It is *not* a replacement for
+the layer stack — composition is owned by `LayerStore`.
 """
 
 import logging
