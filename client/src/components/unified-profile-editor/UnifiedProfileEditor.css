@@ -430,6 +430,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 2px;
 }
 
 .profile-avatar-option {
