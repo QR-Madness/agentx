@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.41 -->
+<!-- release-version: 0.21.42 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -34,7 +34,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   itself into a collapsed "Thinking" affordance once the answer lands, instead of
   sitting expanded above the reply (which read as duplicated content). Thoughts are
   also **no longer persisted** — they're process, not result, so they're shown in the
-  moment and don't clutter a reloaded transcript. Only the result is kept.
+  moment and don't clutter a reloaded transcript. Only the result is kept. Agents are
+  now told this directly, and nudged to write a genuinely useful thought to their
+  scratchpad (or memory tools) rather than lose it in ephemeral reasoning.
 - **Unified model picker.** Memory, planner, and prompt-enhancement settings now use
   the same full filterable model picker as the agent-profile editor (provider and
   capability filters, search, context/pricing metadata) — the old inline dropdown

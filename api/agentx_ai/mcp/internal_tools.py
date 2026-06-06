@@ -514,7 +514,9 @@ def recall_user_history(
         "checkpoint is re-injected into the system prompt every turn and "
         "survives automatic context compression. Use when you have made a "
         "non-trivial decision, completed a sub-step, or want to lock in "
-        "intent before continuing."
+        "intent before continuing. Also use it to keep an interesting or "
+        "useful thought you don't want to lose — your raw reasoning isn't "
+        "saved, so the scratchpad is how a thought survives the turn."
     ),
     input_schema={
         "type": "object",
