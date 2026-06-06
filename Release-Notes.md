@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.47 -->
+<!-- release-version: 0.21.48 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -90,6 +90,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- Dialogs opened from inside a full-screen modal now appear correctly. "Insert from library"
+  (and the diff and preview popups) in the System Prompt editor were rendering *behind* the
+  Settings window and looked like they did nothing — they now layer on top.
 - Ambassador briefings no longer truncate mid-sentence on thinking models. The token
   budget now leaves generous headroom for the model's reasoning on top of the (short)
   briefing, so a model like Gemini that reasons before answering isn't cut off — the

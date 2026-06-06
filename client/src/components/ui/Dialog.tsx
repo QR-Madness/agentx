@@ -20,7 +20,10 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50',
+      // Above the legacy app modals (.modal-backdrop/.modal-content sit at
+      // z-index 1000/1001), so a Radix dialog opened from inside a full-screen
+      // modal (e.g. Settings → System Prompt) isn't trapped behind it.
+      'fixed inset-0 z-[1100]',
       'bg-black/60 backdrop-blur-[4px]',
       'data-[state=open]:animate-in data-[state=closed]:animate-out',
       'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -42,7 +45,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
+        'fixed left-1/2 top-1/2 z-[1100] w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
         'rounded-2xl shadow-lg',
         'max-h-[85vh] overflow-y-auto',
