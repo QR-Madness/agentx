@@ -479,6 +479,44 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       misleading "replaces PromptProfile/PromptSection" docstring (it's a building-block library,
       not a replacement — composition is owned by `LayerStore`).
 
+### 18.14 Prompt System Round 2 + Ambassador-as-profile-kind — ✅ Complete `[v0.21.48–54]`
+- [x] **Dialog z-index fix** `[v0.21.48]`: `ui/Dialog` raised above the legacy app modals
+      (z-1000/1001) → "Insert from library"/diff/preview popups no longer render behind Settings.
+- [x] **Per-agent prompt editor** `[v0.21.49]`: reusable `common/PromptEditor` (tokens + in-place
+      Enhance/undo + library-insert-replaces) + `common/EffectivePromptPreview` (name → agent prompt
+      → global stack, true backend order).
+- [x] **Ambassador is its own profile `kind`** `[v0.21.50 backend / .51 client]`: `AgentProfile.kind`
+      (`agent`|`ambassador`) + `is_default_ambassador`; separate defaults (`get/set_default_ambassador`,
+      agent-default never an ambassador); engine-level chat exclusion (default-agent/routing/delegation);
+      `AmbassadorConfig` persona overrides (briefing/qa/draft) over code defaults + `system_prompt` =
+      Communications voice; migration seeds a default ambassador, never converts the default agent.
+      Endpoint `set-default-ambassador` + `ambassador/persona-defaults`. Editor adapts by kind
+      (`OverridablePromptField` default/override/reset/diff); Settings → Ambassador slimmed to a
+      default-ambassador picker + New/Edit.
+- [x] **Diff coloring everywhere + memory-prompt diff** `[v0.21.52]`: moved `.layer-diff` CSS into
+      `LayerDiffModal.css` on `--feedback-success/-error` tokens; memory extraction/relevance
+      `PromptField` gains a Diff button (default vs override).
+- [x] **More avatar icons** `[v0.21.53]`: curated set 11 → ~57 (static/tree-shaken).
+- [x] **Autosave** `[v0.21.54]`: agent profiles + memory recall/consolidation settings autosave
+      (debounced, baseline-diff = no save-loops, hydration keyed on `profile.id` = preserves cursor).
+
+### 18.15 Prompt/Ambassador follow-ups (observed while in the code) — open
+- [ ] **Finish moving ambassador settings onto the profile**: `ambassador.model` +
+      `max_context_turns` still live in global `config.ambassador.*` (split-brain). Move per-ambassador
+      knobs onto the ambassador profile (the user's "ambassadors will have lots of settings" intent).
+- [ ] **Retire the vestigial PromptProfile/PromptSection path**: the "Select Base Template"
+      (`prompt_profile_id`) control + legacy `/prompts/profiles*`/`/sections*` are now confusing
+      alongside the layer stack + library-insert. Plan a deprecation/removal once nothing depends on it.
+- [ ] **Client tests for the new logic**: autosave baseline-diff, `EffectivePromptPreview` compose
+      order, `OverridablePromptField` reset/diff — only `promptStack` has unit coverage today.
+- [ ] **Theme leak straggler**: `.profile-avatar-option.selected` uses raw `--cosmic-violet` (not a
+      semantic token) — fold into the theme-enforcement sweep.
+- [ ] **Ambassador persona-override placeholders**: an overridden functional persona loses the
+      default's `agent_name` weaving — offer a `{agent}` placeholder (or always append the name rule).
+- [ ] **`SKILL.md` standardization (parked, user-flagged)**: adopt the standard skills-file pattern;
+      let the prompt/layer machinery host composable skills; guard so profile-typing/layering never
+      gates a user's skill access. Its own initiative.
+
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete
