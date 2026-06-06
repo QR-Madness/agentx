@@ -696,3 +696,102 @@
     padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px) + 16px);
   }
 }
+
+/* === Appearance — theme picker ===
+   These classes were referenced by AppearanceSection but never styled (the only
+   un-themed corner of the app — ironic for the theme screen). Tokenized so the
+   picker chrome follows the active theme; the icon swatches deliberately preview
+   each theme's own colors. */
+.subsection-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+.subsection-description {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.theme-option:hover {
+  border-color: var(--border-emphasis);
+  background: var(--surface-overlay);
+}
+.theme-option.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-tint-faint);
+}
+.theme-option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+/* Icon swatches preview each theme's own palette (intentionally fixed colors). */
+.theme-option-icon.cosmic {
+  background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+}
+.theme-option-icon.professional {
+  background: #1e1e23;
+  color: #7e93c9;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.theme-option-icon.light {
+  background: #fdfdfc;
+  color: #4f6695;
+  border-color: #d7d7cf;
+}
+.theme-option-icon.system {
+  background: linear-gradient(135deg, #1e1e23 0%, #1e1e23 50%, #fdfdfc 50%, #fdfdfc 100%);
+  color: var(--accent-primary);
+}
+.theme-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.theme-option-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.theme-option-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.theme-check {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+.theme-system-hint {
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.theme-system-hint strong {
+  color: var(--text-secondary);
+}

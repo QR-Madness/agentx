@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.36 -->
+<!-- release-version: 0.21.37 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,12 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **New "Professional" theme + a warmer Light.** A monochrome graphite theme where
+  color is reserved for emphasis — feedback (success/error/warning) and code stay
+  colored, the chrome is neutral with a single restrained slate-blue accent, and the
+  gradients/glows are gone. The Light theme was refreshed to a warm, neutral white in
+  the same restrained spirit. Pick them in **Settings → Appearance** — which is itself
+  now properly themed (it previously wasn't).
 - **Unified model picker.** Memory, planner, and prompt-enhancement settings now use
   the same full filterable model picker as the agent-profile editor (provider and
   capability filters, search, context/pricing metadata) — the old inline dropdown

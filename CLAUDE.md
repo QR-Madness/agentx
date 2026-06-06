@@ -68,7 +68,7 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 - Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`)
 - `ServerContext` provides app-wide server state; `lib/api` is the typed API client (a facade over domain modules in `lib/api/`); `lib/hooks.ts` has React data hooks
 - `AgentProfileContext` manages agent profiles (name, model, temperature, reasoning strategy, memory channel)
-- Cosmic dark theme with glassmorphism effects and Lucide-react icons
+- Themes (Cosmic dark, warm Light, monochrome Professional) are token-driven: each is a `ThemeDefinition` in `lib/theme.ts` (a map of ~80 CSS vars) applied to `:root` by `ThemeProvider`; components read semantic tokens, never raw palette colors. Add a theme = new `ThemeDefinition` + register in `THEMES` + extend `ThemeName`. Glassmorphism effects and Lucide-react icons
 - API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)` (`lib/api`). Surface failures with `useNotify().notifyError(err)` (toasts via `contexts/NotificationContext` + `ui/Toaster`); keep inline errors for form-field validation. Read hooks are built on the `useApi<T>` factory in `lib/hooks.ts`.
 
 #### Styling (Tailwind v4 + design tokens)

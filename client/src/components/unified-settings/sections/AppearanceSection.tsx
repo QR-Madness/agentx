@@ -8,6 +8,7 @@ import {
   Sun,
   Monitor,
   Check,
+  Square,
 } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { Card, SectionHeader } from '../../ui';
@@ -45,6 +46,20 @@ export default function AppearanceSection() {
           </button>
 
           <button
+            className={`theme-option ${preference === 'professional' ? 'active' : ''}`}
+            onClick={() => setTheme('professional')}
+          >
+            <div className="theme-option-icon professional">
+              <Square size={24} />
+            </div>
+            <div className="theme-option-info">
+              <span className="theme-option-name">Professional</span>
+              <span className="theme-option-desc">Monochrome graphite — color only for emphasis</span>
+            </div>
+            {preference === 'professional' && <Check size={18} className="theme-check" />}
+          </button>
+
+          <button
             className={`theme-option ${preference === 'light' ? 'active' : ''}`}
             onClick={() => setTheme('light')}
           >
@@ -53,7 +68,7 @@ export default function AppearanceSection() {
             </div>
             <div className="theme-option-info">
               <span className="theme-option-name">Light</span>
-              <span className="theme-option-desc">Clean, bright interface for daytime use</span>
+              <span className="theme-option-desc">Warm, neutral interface for daytime use</span>
             </div>
             {preference === 'light' && <Check size={18} className="theme-check" />}
           </button>

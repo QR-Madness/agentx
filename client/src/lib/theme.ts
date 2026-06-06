@@ -43,34 +43,63 @@ const COSMIC_PRIMITIVES = {
   slate500: '#475569',
 };
 
-/** Primitive color palette - Light theme */
+/** Primitive color palette - Light theme (warm white / neutral, restrained accent) */
 const LIGHT_PRIMITIVES = {
-  // Surfaces (light to dark)
-  white: '#ffffff',
-  gray50: '#f8fafc',
-  gray100: '#f1f5f9',
-  gray200: '#e2e8f0',
-  gray300: '#cbd5e1',
-  gray400: '#94a3b8',
+  // Surfaces — warm white → warm gray (slightly warm neutral, not cool slate)
+  white: '#fdfdfc',
+  gray50: '#f6f6f3',
+  gray100: '#eeeeea',
+  gray200: '#e4e4de',
+  gray300: '#d7d7cf',
+  gray400: '#a6a69b',
 
-  // Accent palette (slightly adjusted for light bg)
-  purple600: '#9333ea',
-  violet600: '#7c3aed',
-  cyan600: '#0891b2',
-  pink600: '#db2777',
-  blue600: '#2563eb',
-  indigo600: '#4f46e5',
+  // Accent — a single restrained slate-blue (deeper for light bg). The violet/
+  // cyan/pink names are kept as keys (referenced below) but now all resolve to
+  // the slate-blue family, so the chrome stays monochrome.
+  purple600: '#4f6695',
+  violet600: '#4f6695',
+  cyan600: '#3e527d',
+  pink600: '#6981ab',
+  blue600: '#0969da', // feedback "info" — stays a real blue
+  indigo600: '#4f6695',
 
-  // Text
-  textDark: '#0f172a',
-  textMid: '#475569',
-  textLight: '#64748b',
+  // Text — warm neutral
+  textDark: '#23231f',
+  textMid: '#56564d',
+  textLight: '#87877b',
 
-  // Status (same as dark, good contrast)
-  green600: '#16a34a',
-  amber600: '#d97706',
-  red600: '#dc2626',
-  slate400: '#94a3b8',
+  // Status — kept colored (semantic), tuned for a light bg
+  green600: '#1a7f37',
+  amber600: '#9a6700',
+  red600: '#cf222e',
+  slate400: '#6e7781',
+};
+
+/** Primitive color palette - Professional theme (dark graphite, restrained accent) */
+const PROFESSIONAL_PRIMITIVES = {
+  // Surfaces — neutral graphite ramp
+  base: '#16161a',
+  nebula: '#1a1a1f',
+  sunken: '#101013',
+  card: '#1e1e23',
+  elevated: '#27272e',
+
+  // Accent — single restrained slate-blue (brighter for dark bg)
+  accent: '#7e93c9',
+  accentDeep: '#6c80b8',
+  accentSoft: '#93a6d6',
+
+  // Text — warm-neutral light
+  textLight: '#ededf0',
+  textMid: '#a1a1ab',
+  textDim: '#6a6a76',
+
+  // Status — kept colored (semantic)
+  green: '#3fb950',
+  amber: '#d29922',
+  red: '#f85149',
+  blue: '#58a6ff',
+  slate: '#6e7681',
 };
 
 /**
@@ -234,12 +263,12 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--border-emphasis': LIGHT_PRIMITIVES.gray400,
     '--border-interactive': LIGHT_PRIMITIVES.violet600,
 
-    // === Semantic Accent Tokens ===
+    // === Semantic Accent Tokens (single restrained slate-blue) ===
     '--accent-primary': LIGHT_PRIMITIVES.violet600,
     '--accent-secondary': LIGHT_PRIMITIVES.cyan600,
     '--accent-tertiary': LIGHT_PRIMITIVES.pink600,
 
-    // === Semantic Feedback Tokens ===
+    // === Semantic Feedback Tokens (kept colored) ===
     '--feedback-success': LIGHT_PRIMITIVES.green600,
     '--feedback-warning': LIGHT_PRIMITIVES.amber600,
     '--feedback-error': LIGHT_PRIMITIVES.red600,
@@ -248,23 +277,23 @@ export const LIGHT_THEME: ThemeDefinition = {
 
     // === Interactive State Tokens ===
     '--interactive-default': LIGHT_PRIMITIVES.gray100,
-    '--interactive-hover': 'rgba(124, 58, 237, 0.08)',
-    '--interactive-active': 'rgba(124, 58, 237, 0.15)',
+    '--interactive-hover': 'rgba(79, 102, 149, 0.08)',
+    '--interactive-active': 'rgba(79, 102, 149, 0.15)',
     '--interactive-disabled': LIGHT_PRIMITIVES.gray200,
 
-    // === Shadow & Glow Tokens ===
-    '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.1)',
-    '--shadow-md': '0 4px 12px rgba(0, 0, 0, 0.1)',
-    '--shadow-lg': '0 8px 24px rgba(0, 0, 0, 0.12)',
-    '--glow-primary': '0 0 12px rgba(124, 58, 237, 0.2)',
-    '--glow-secondary': '0 0 12px rgba(8, 145, 178, 0.2)',
-    '--glow-accent': '0 0 12px rgba(219, 39, 119, 0.2)',
+    // === Shadow Tokens (glows OFF for the flat, professional look) ===
+    '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.08)',
+    '--shadow-md': '0 4px 12px rgba(0, 0, 0, 0.08)',
+    '--shadow-lg': '0 8px 24px rgba(0, 0, 0, 0.1)',
+    '--glow-primary': 'none',
+    '--glow-secondary': 'none',
+    '--glow-accent': 'none',
 
-    // === Gradient Tokens ===
-    '--gradient-primary': 'linear-gradient(135deg, #7c3aed 0%, #0891b2 100%)',
-    '--gradient-accent': 'linear-gradient(135deg, #9333ea 0%, #0891b2 50%, #db2777 100%)',
-    '--gradient-surface': 'linear-gradient(180deg, rgba(124, 58, 237, 0.05) 0%, transparent 50%)',
-    '--gradient-cosmic': 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 58, 237, 0.08) 0%, transparent 50%)',
+    // === Gradient Tokens (flattened to solids/none) ===
+    '--gradient-primary': LIGHT_PRIMITIVES.violet600,
+    '--gradient-accent': LIGHT_PRIMITIVES.violet600,
+    '--gradient-surface': 'none',
+    '--gradient-cosmic': 'none',
 
     // === Glass Effect Token ===
     '--glass-bg': 'rgba(255, 255, 255, 0.8)',
@@ -280,44 +309,44 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--blur-subtle': '8px',
     '--blur-medium': '16px',
     '--blur-strong': '24px',
-    '--border-glow-subtle': '0 0 12px rgba(124, 58, 237, 0.1)',
-    '--border-glow-medium': '0 0 24px rgba(124, 58, 237, 0.2)',
-    '--border-glow-strong': '0 0 36px rgba(124, 58, 237, 0.35)',
-    '--accent-tint-soft': 'rgba(124, 58, 237, 0.1)',
-    '--accent-tint-medium': 'rgba(124, 58, 237, 0.22)',
-    '--accent-tint-strong': 'rgba(124, 58, 237, 0.4)',
-    '--accent-tint-faint': 'rgba(124, 58, 237, 0.05)',
+    '--border-glow-subtle': 'none',
+    '--border-glow-medium': 'none',
+    '--border-glow-strong': 'none',
+    '--accent-tint-soft': 'rgba(79, 102, 149, 0.1)',
+    '--accent-tint-medium': 'rgba(79, 102, 149, 0.2)',
+    '--accent-tint-strong': 'rgba(79, 102, 149, 0.35)',
+    '--accent-tint-faint': 'rgba(79, 102, 149, 0.05)',
     '--text-error': LIGHT_PRIMITIVES.red600,
     '--text-tertiary': LIGHT_PRIMITIVES.textLight,
 
     // === Backwards Compatibility (legacy variable names) ===
-    // Background Palette - mapped to light equivalents
+    // Background Palette - mapped to warm-neutral equivalents
     '--bg-space': LIGHT_PRIMITIVES.white,
     '--bg-nebula': LIGHT_PRIMITIVES.gray50,
     '--bg-void': LIGHT_PRIMITIVES.gray100,
     '--bg-card': LIGHT_PRIMITIVES.white,
     '--bg-elevated': LIGHT_PRIMITIVES.gray50,
-    '--bg-hover': 'rgba(124, 58, 237, 0.06)',
+    '--bg-hover': 'rgba(0, 0, 0, 0.04)',
     '--border-color': LIGHT_PRIMITIVES.gray300,
     '--border-glow': LIGHT_PRIMITIVES.gray400,
 
     // Immersive chat surfaces (flat-row canvas + floating composer)
-    '--chat-user-tint': 'rgba(124, 58, 237, 0.08)',
-    '--composer-bg': 'rgba(255, 255, 255, 0.78)',
+    '--chat-user-tint': 'rgba(79, 102, 149, 0.07)',
+    '--composer-bg': 'rgba(253, 253, 252, 0.8)',
 
-    // Accent Colors (legacy) - slightly darker for light bg
-    '--cosmic-purple': LIGHT_PRIMITIVES.purple600,
+    // Accent Colors (legacy) — all resolve to the slate-blue family (monochrome)
+    '--cosmic-purple': LIGHT_PRIMITIVES.violet600,
     '--cosmic-violet': LIGHT_PRIMITIVES.violet600,
     '--cosmic-cyan': LIGHT_PRIMITIVES.cyan600,
     '--cosmic-pink': LIGHT_PRIMITIVES.pink600,
-    '--cosmic-blue': LIGHT_PRIMITIVES.blue600,
-    '--cosmic-indigo': LIGHT_PRIMITIVES.indigo600,
+    '--cosmic-blue': LIGHT_PRIMITIVES.cyan600,
+    '--cosmic-indigo': LIGHT_PRIMITIVES.violet600,
 
-    // Gradients (legacy)
-    '--gradient-nebula': 'linear-gradient(135deg, #9333ea 0%, #0891b2 50%, #db2777 100%)',
-    '--gradient-aurora': 'linear-gradient(135deg, #7c3aed 0%, #0891b2 100%)',
-    '--gradient-stardust': 'linear-gradient(180deg, rgba(124, 58, 237, 0.06) 0%, transparent 50%)',
-    '--gradient-cosmic-bg': 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 58, 237, 0.08) 0%, transparent 50%)',
+    // Gradients (legacy) — flattened
+    '--gradient-nebula': LIGHT_PRIMITIVES.violet600,
+    '--gradient-aurora': LIGHT_PRIMITIVES.violet600,
+    '--gradient-stardust': 'none',
+    '--gradient-cosmic-bg': 'none',
 
     // Status Colors (legacy)
     '--status-online': LIGHT_PRIMITIVES.green600,
@@ -325,10 +354,130 @@ export const LIGHT_THEME: ThemeDefinition = {
     '--status-error': LIGHT_PRIMITIVES.red600,
     '--status-inactive': LIGHT_PRIMITIVES.slate400,
 
-    // Glow Effects (legacy) - subtler for light theme
-    '--glow-purple': '0 0 12px rgba(124, 58, 237, 0.2)',
-    '--glow-cyan': '0 0 12px rgba(8, 145, 178, 0.2)',
-    '--glow-pink': '0 0 12px rgba(219, 39, 119, 0.2)',
+    // Glow Effects (legacy) — off
+    '--glow-purple': 'none',
+    '--glow-cyan': 'none',
+    '--glow-pink': 'none',
+  },
+};
+
+export const PROFESSIONAL_THEME: ThemeDefinition = {
+  name: 'professional',
+  displayName: 'Professional',
+  isDark: true,
+  variables: {
+    ...SPACING_TOKENS,
+    // === Semantic Surface Tokens ===
+    '--surface-base': PROFESSIONAL_PRIMITIVES.base,
+    '--surface-raised': PROFESSIONAL_PRIMITIVES.card,
+    '--surface-overlay': PROFESSIONAL_PRIMITIVES.elevated,
+    '--surface-sunken': PROFESSIONAL_PRIMITIVES.sunken,
+    '--surface-hover': 'rgba(255, 255, 255, 0.05)',
+
+    // === Semantic Text Tokens ===
+    '--text-primary': PROFESSIONAL_PRIMITIVES.textLight,
+    '--text-secondary': PROFESSIONAL_PRIMITIVES.textMid,
+    '--text-muted': PROFESSIONAL_PRIMITIVES.textDim,
+    '--text-inverse': PROFESSIONAL_PRIMITIVES.base,
+
+    // === Semantic Border Tokens ===
+    '--border-default': 'rgba(255, 255, 255, 0.1)',
+    '--border-emphasis': 'rgba(255, 255, 255, 0.18)',
+    '--border-interactive': PROFESSIONAL_PRIMITIVES.accent,
+
+    // === Semantic Accent Tokens (single restrained slate-blue) ===
+    '--accent-primary': PROFESSIONAL_PRIMITIVES.accent,
+    '--accent-secondary': PROFESSIONAL_PRIMITIVES.accentDeep,
+    '--accent-tertiary': PROFESSIONAL_PRIMITIVES.accentSoft,
+
+    // === Semantic Feedback Tokens (kept colored) ===
+    '--feedback-success': PROFESSIONAL_PRIMITIVES.green,
+    '--feedback-warning': PROFESSIONAL_PRIMITIVES.amber,
+    '--feedback-error': PROFESSIONAL_PRIMITIVES.red,
+    '--feedback-info': PROFESSIONAL_PRIMITIVES.blue,
+    '--feedback-inactive': PROFESSIONAL_PRIMITIVES.slate,
+
+    // === Interactive State Tokens ===
+    '--interactive-default': PROFESSIONAL_PRIMITIVES.elevated,
+    '--interactive-hover': 'rgba(255, 255, 255, 0.07)',
+    '--interactive-active': 'rgba(255, 255, 255, 0.12)',
+    '--interactive-disabled': 'rgba(255, 255, 255, 0.04)',
+
+    // === Shadow Tokens (glows OFF — flat, professional) ===
+    '--shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.4)',
+    '--shadow-md': '0 4px 12px rgba(0, 0, 0, 0.45)',
+    '--shadow-lg': '0 8px 28px rgba(0, 0, 0, 0.5)',
+    '--glow-primary': 'none',
+    '--glow-secondary': 'none',
+    '--glow-accent': 'none',
+
+    // === Gradient Tokens (flattened to solids/none) ===
+    '--gradient-primary': PROFESSIONAL_PRIMITIVES.accent,
+    '--gradient-accent': PROFESSIONAL_PRIMITIVES.accent,
+    '--gradient-surface': 'none',
+    '--gradient-cosmic': 'none',
+
+    // === Glass Effect Token ===
+    '--glass-bg': 'rgba(30, 30, 35, 0.7)',
+    '--glass-bg-hover': 'rgba(30, 30, 35, 0.85)',
+    '--glass-blur': '12px',
+
+    // === Settings / Panel Glass Layers (depth 0 → 3) ===
+    '--glass-backdrop': 'rgba(0, 0, 0, 0.5)',
+    '--glass-layer-0': 'rgba(30, 30, 35, 0.5)',
+    '--glass-layer-1': 'rgba(30, 30, 35, 0.72)',
+    '--glass-layer-2': 'rgba(39, 39, 46, 0.86)',
+    '--glass-layer-3': 'rgba(46, 46, 54, 0.95)',
+    '--blur-subtle': '8px',
+    '--blur-medium': '16px',
+    '--blur-strong': '24px',
+    '--border-glow-subtle': 'none',
+    '--border-glow-medium': 'none',
+    '--border-glow-strong': 'none',
+    '--accent-tint-soft': 'rgba(126, 147, 201, 0.15)',
+    '--accent-tint-medium': 'rgba(126, 147, 201, 0.28)',
+    '--accent-tint-strong': 'rgba(126, 147, 201, 0.45)',
+    '--accent-tint-faint': 'rgba(126, 147, 201, 0.08)',
+    '--text-error': PROFESSIONAL_PRIMITIVES.red,
+    '--text-tertiary': PROFESSIONAL_PRIMITIVES.textDim,
+
+    // === Backwards Compatibility (legacy variable names) ===
+    '--bg-space': PROFESSIONAL_PRIMITIVES.base,
+    '--bg-nebula': PROFESSIONAL_PRIMITIVES.nebula,
+    '--bg-void': PROFESSIONAL_PRIMITIVES.sunken,
+    '--bg-card': PROFESSIONAL_PRIMITIVES.card,
+    '--bg-elevated': PROFESSIONAL_PRIMITIVES.elevated,
+    '--bg-hover': 'rgba(255, 255, 255, 0.05)',
+    '--border-color': 'rgba(255, 255, 255, 0.1)',
+    '--border-glow': 'rgba(255, 255, 255, 0.18)',
+
+    '--chat-user-tint': 'rgba(126, 147, 201, 0.1)',
+    '--composer-bg': 'rgba(30, 30, 35, 0.75)',
+
+    // Accent Colors (legacy) — all resolve to the slate-blue family (monochrome)
+    '--cosmic-purple': PROFESSIONAL_PRIMITIVES.accent,
+    '--cosmic-violet': PROFESSIONAL_PRIMITIVES.accent,
+    '--cosmic-cyan': PROFESSIONAL_PRIMITIVES.accentDeep,
+    '--cosmic-pink': PROFESSIONAL_PRIMITIVES.accentSoft,
+    '--cosmic-blue': PROFESSIONAL_PRIMITIVES.accentDeep,
+    '--cosmic-indigo': PROFESSIONAL_PRIMITIVES.accent,
+
+    // Gradients (legacy) — flattened
+    '--gradient-nebula': PROFESSIONAL_PRIMITIVES.accent,
+    '--gradient-aurora': PROFESSIONAL_PRIMITIVES.accent,
+    '--gradient-stardust': 'none',
+    '--gradient-cosmic-bg': 'none',
+
+    // Status Colors (legacy)
+    '--status-online': PROFESSIONAL_PRIMITIVES.green,
+    '--status-warning': PROFESSIONAL_PRIMITIVES.amber,
+    '--status-error': PROFESSIONAL_PRIMITIVES.red,
+    '--status-inactive': PROFESSIONAL_PRIMITIVES.slate,
+
+    // Glow Effects (legacy) — off
+    '--glow-purple': 'none',
+    '--glow-cyan': 'none',
+    '--glow-pink': 'none',
   },
 };
 
@@ -336,10 +485,19 @@ export const LIGHT_THEME: ThemeDefinition = {
 export const THEMES: Record<string, ThemeDefinition> = {
   cosmic: COSMIC_THEME,
   light: LIGHT_THEME,
+  professional: PROFESSIONAL_THEME,
 };
 
-/** Theme preference options */
-export type ThemePreference = 'cosmic' | 'light' | 'system';
+/** A concrete (non-`system`) theme name. */
+export type ThemeName = 'cosmic' | 'light' | 'professional';
+
+/** Theme preference options (a concrete theme, or follow the OS). */
+export type ThemePreference = ThemeName | 'system';
+
+/** Whether a stored/string value is a valid theme preference. */
+export function isThemePreference(value: unknown): value is ThemePreference {
+  return value === 'cosmic' || value === 'light' || value === 'professional' || value === 'system';
+}
 
 /** Apply a theme's CSS variables to the document root */
 export function applyTheme(theme: ThemeDefinition): void {
@@ -353,14 +511,14 @@ export function applyTheme(theme: ThemeDefinition): void {
   }
 }
 
-/** Get system preferred color scheme */
-export function getSystemTheme(): 'cosmic' | 'light' {
+/** Get system preferred color scheme (maps to a concrete dark/light theme). */
+export function getSystemTheme(): ThemeName {
   if (typeof window === 'undefined') return 'cosmic';
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'cosmic';
 }
 
 /** Resolve theme preference to actual theme name */
-export function resolveTheme(preference: ThemePreference): 'cosmic' | 'light' {
+export function resolveTheme(preference: ThemePreference): ThemeName {
   if (preference === 'system') {
     return getSystemTheme();
   }

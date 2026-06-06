@@ -6,18 +6,20 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import {
   ThemeDefinition,
   ThemePreference,
+  ThemeName,
   THEMES,
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
   applyTheme,
   getSystemTheme,
+  isThemePreference,
 } from '../lib/theme';
 
 interface ThemeContextValue {
-  /** User's theme preference (cosmic, light, or system) */
+  /** User's theme preference (cosmic, light, professional, or system) */
   preference: ThemePreference;
   /** The resolved/applied theme name */
-  currentTheme: 'cosmic' | 'light';
+  currentTheme: ThemeName;
   /** Full theme definition with all variables */
   themeDefinition: ThemeDefinition;
   /** Whether the current theme is dark */
@@ -35,7 +37,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreference] = useState<ThemePreference>(() => {
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY);
-      if (stored === 'cosmic' || stored === 'light' || stored === 'system') {
+      if (isThemePreference(stored)) {
         return stored;
       }
       return DEFAULT_THEME as ThemePreference;
@@ -45,7 +47,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
 
   // Resolve system preference to actual theme
-  const [systemTheme, setSystemTheme] = useState<'cosmic' | 'light'>(() => getSystemTheme());
+  const [systemTheme, setSystemTheme] = useState<ThemeName>(() => getSystemTheme());
 
   // Listen for system theme changes
   useEffect(() => {
