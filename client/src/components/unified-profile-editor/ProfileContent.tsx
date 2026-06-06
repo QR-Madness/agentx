@@ -24,6 +24,8 @@ import { type AgentProfile, type ModelInfo } from '../../lib/api';
 import { AVATAR_OPTIONS } from '../../lib/avatars';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
+import { PromptEditor } from '../common/PromptEditor';
+import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState, REASONING_OPTIONS } from './hooks/useProfileEditorState';
@@ -180,7 +182,6 @@ export function ProfileContent({
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
-    insertAtCursor,
     saving,
     deleting,
     error,
@@ -254,7 +255,9 @@ export function ProfileContent({
             <PromptLibraryPanel
               mode={libraryMode}
               onBack={closeLibrary}
-              onInsert={insertAtCursor}
+              // Insert REPLACES the agent instructions with the snippet (per design:
+              // the profile prompt is a single field, not an append-stack).
+              onInsert={(content) => setSystemPrompt(content)}
               onSelectTemplate={(templateId, content) => {
                 setBaseTemplateId(templateId);
                 if (!systemPrompt.trim()) setSystemPrompt(content);
@@ -457,26 +460,16 @@ export function ProfileContent({
                     </div>
 
                     <div className="profile-form-group">
-                      <div className="profile-prompt-toolbar">
-                        <label>Agent Instructions</label>
-                        <button
-                          type="button"
-                          className="profile-library-btn"
-                          onClick={() => openLibrary('insert')}
-                        >
-                          <Library size={13} />
-                          Insert from Library
-                        </button>
-                      </div>
-                      <textarea
+                      <PromptEditor
                         ref={systemPromptRef}
-                        value={systemPrompt}
-                        onChange={e => setSystemPrompt(e.target.value)}
+                        label="Agent Instructions"
+                        hint="Agent-specific instructions, woven into the prompt after the global layers"
                         placeholder="Custom instructions for this agent… (leave empty to use defaults)"
-                        rows={6}
-                        className="profile-system-prompt"
+                        value={systemPrompt}
+                        onChange={setSystemPrompt}
+                        onInsertFromLibrary={() => openLibrary('insert')}
                       />
-                      <span className="profile-form-hint">Agent-specific instructions prepended to conversations</span>
+                      <EffectivePromptPreview name={name} agentPrompt={systemPrompt} />
                     </div>
                   </AccordionCard>
 

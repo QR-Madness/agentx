@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.48 -->
+<!-- release-version: 0.21.49 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -87,6 +87,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   overwritten. You can also **insert a snippet from the Prompt Library** straight into the
   stack as a new layer, and **enhance any layer in place** — let the prompt enhancer rewrite
   it, with one-click undo.
+- **Polished per-agent prompt editor.** Editing an agent profile's instructions now uses the
+  same refined editor: an approximate token/char count, in-place **Enhance** (with undo),
+  **Insert from library** (which replaces the field), and a collapsible **effective-prompt
+  preview** showing the real composed result — the agent's name, its instructions, and the
+  global layer stack together — so you can see exactly what the agent receives.
 
 ### Fixes
 
