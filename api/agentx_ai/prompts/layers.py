@@ -14,8 +14,11 @@ Persistence: only the user's *deltas* are stored, via :class:`ConfigManager`
 Built-in default content + versions always come from code (``BUILTIN_LAYERS``), so
 bumping a default in a release is enough to offer the update.
 
-This module is the durable store + model. Wiring it into live composition (and
-migrating the legacy global-prompt/sections) is a separate step.
+This module is the durable store + model. The live conversational system prompt is
+composed from this stack via :meth:`PromptManager.compose_prompt` (the global content
+is ``LayerStore.compose()``); a one-time legacy migration lives there too. The stack
+governs only the conversational persona/behavior prompt — internal feature prompts
+(reasoning, planner, extraction) come from ``SystemPromptLoader`` and are untouched.
 """
 
 from __future__ import annotations
@@ -55,11 +58,26 @@ BUILTIN_LAYERS: list[PromptLayer] = [
         ),
     ),
     PromptLayer(
+        id="citing-sources",
+        title="Citing Sources",
+        kind="builtin",
+        default_version=1,
+        order=10,
+        default=(
+            "Citing sources:\n"
+            "- When you reference external sources (web pages, docs, or memory), present "
+            "them as a citation exhibit, not as inline links in your prose.\n"
+            "- Web search results are recorded as sources automatically — don't repeat "
+            "them as inline links. To spotlight a key one, mark it as an active citation "
+            "with a short quote."
+        ),
+    ),
+    PromptLayer(
         id="reasoning-vs-results",
         title="Reasoning vs. What's Kept",
         kind="builtin",
         default_version=1,
-        order=10,
+        order=20,
         default=(
             "Your reasoning vs. what's kept:\n"
             "- Your reasoning is ephemeral — it's shown while you work, but it is NOT "
@@ -72,22 +90,58 @@ BUILTIN_LAYERS: list[PromptLayer] = [
             "or your memory tools to commit it to long-term memory."
         ),
     ),
+    # The default "General" profile's sections, folded in so the stack is the
+    # complete picture of the default chat system prompt (text mirrors the
+    # SECTION_* defaults in defaults.py). Other profiles' sections are not
+    # migrated — they have no UI and stay as legacy profile defaults.
     PromptLayer(
-        id="citing-sources",
-        title="Citing Sources",
+        id="structured-thinking",
+        title="Structured Thinking",
         kind="builtin",
         default_version=1,
-        order=20,
+        order=30,
         default=(
-            "Citing sources:\n"
-            "- When you reference external sources (web pages, docs, or memory), present "
-            "them as a citation exhibit, not as inline links in your prose.\n"
-            "- Web search results are recorded as sources automatically — don't repeat "
-            "them as inline links. To spotlight a key one, mark it as an active citation "
-            "with a short quote."
+            "Use structured thinking for complex problems:\n"
+            "- Break down problems into clear steps\n"
+            "- Consider multiple approaches before choosing one\n"
+            "- Validate your reasoning as you go\n"
+            "- Summarize key conclusions"
+        ),
+    ),
+    PromptLayer(
+        id="concise-output",
+        title="Concise Output",
+        kind="builtin",
+        default_version=1,
+        order=40,
+        default=(
+            "Output Guidelines:\n"
+            "- Be direct and to the point\n"
+            "- Use bullet points and formatting for clarity\n"
+            "- Avoid unnecessary preamble or filler\n"
+            "- Get to the answer quickly while remaining helpful"
+        ),
+    ),
+    PromptLayer(
+        id="safety-constraints",
+        title="Safety Constraints",
+        kind="builtin",
+        default_version=1,
+        order=50,
+        default=(
+            "Constraints:\n"
+            "- Do not provide harmful, dangerous, or illegal content\n"
+            "- Respect privacy and confidentiality\n"
+            "- Decline requests that could cause harm\n"
+            "- Be honest about your limitations as an AI"
         ),
     ),
 ]
+
+# Fixed id for the legacy monolithic-global-prompt back-compat shim
+# (`/api/prompts/global/update`). A single custom layer we upsert, so repeated
+# saves update one block instead of accumulating duplicates.
+LEGACY_GLOBAL_LAYER_ID = "legacy-global"
 
 _BUILTIN_BY_ID = {layer.id: layer for layer in BUILTIN_LAYERS}
 
@@ -262,6 +316,28 @@ class LayerStore:
         del raw[layer_id]
         self._write(raw)
         return True
+
+    def set_singleton_override(self, content: str, *, title: str = "Imported Global Prompt") -> PromptLayer:
+        """Upsert the reserved legacy-global custom layer (fixed id).
+
+        Backs the monolithic ``/api/prompts/global/update`` shim and the one-time
+        legacy-prompt migration: a single editable block that updates in place on
+        repeated writes rather than accumulating duplicate custom layers.
+        """
+        raw = self._raw()
+        rec = raw.get(LEGACY_GLOBAL_LAYER_ID)
+        if rec and rec.get("kind") == "custom":
+            rec["override"] = content
+        else:
+            raw[LEGACY_GLOBAL_LAYER_ID] = {
+                "kind": "custom",
+                "title": title,
+                "override": content,
+                "enabled": True,
+                "order": 0,
+            }
+        self._write(raw)
+        return self.get(LEGACY_GLOBAL_LAYER_ID)  # type: ignore[return-value]
 
     def reorder(self, ordered_ids: list[str]) -> list[PromptLayer]:
         """Apply a new order from a full/partial list of ids (index * 10)."""

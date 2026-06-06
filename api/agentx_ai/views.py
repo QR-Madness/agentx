@@ -2716,15 +2716,18 @@ def prompts_profile_detail(request, profile_id):
 
 
 def prompts_global(request):
-    """Get the global prompt."""
-    from .prompts import get_prompt_manager
-    manager = get_prompt_manager()
-    
-    global_prompt = manager.get_global_prompt()
+    """Get the global prompt.
+
+    Back-compat shim: the global prompt is now composed from the durable layer
+    stack (see prompts/layers.py). Returns the composed stack so legacy callers
+    keep working; the layer API (Phase 2) is the structured surface.
+    """
+    from .prompts import get_layer_store
+    composed = get_layer_store().compose()
     return JsonResponse({
         "global_prompt": {
-            "content": global_prompt.content,
-            "enabled": global_prompt.enabled,
+            "content": composed,
+            "enabled": bool(composed.strip()),
         },
     })
 
@@ -2738,22 +2741,22 @@ def prompts_global_update(request):
     try:
         data = json.loads(request.body.decode('utf-8'))
         content = data.get("content")
-        enabled = data.get("enabled", True)
-        
+
         if content is None:
             return JsonResponse({'error': 'Missing required field: content'}, status=400)
         
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
     
-    from .prompts import get_prompt_manager
-    manager = get_prompt_manager()
-    
-    global_prompt = manager.set_global_prompt(content, enabled)
+    # Back-compat shim: persist the monolithic blob durably as the reserved
+    # legacy-global custom layer (upsert — repeated saves update one block).
+    from .prompts import get_layer_store
+    get_layer_store().set_singleton_override(content)
+    composed = get_layer_store().compose()
     return JsonResponse({
         "global_prompt": {
-            "content": global_prompt.content,
-            "enabled": global_prompt.enabled,
+            "content": composed,
+            "enabled": bool(composed.strip()),
         },
     })
 

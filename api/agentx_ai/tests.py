@@ -6606,6 +6606,79 @@ class PromptLayerStoreTest(TestCase):
         self.assertTrue(store.delete_custom(custom.id))
         self.assertIsNone(store.get(custom.id))
 
+    def test_set_singleton_override_is_idempotent(self):
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        store.set_singleton_override("v1")
+        store.set_singleton_override("v2")
+        customs = [layer for layer in store.list_layers() if layer.kind == "custom"]
+        self.assertEqual(len(customs), 1)  # one reserved legacy block, not duplicated
+        self.assertEqual(customs[0].override, "v2")
+
+
+class PromptStackCompositionTest(TestCase):
+    """Phase 1b — the live conversational system prompt is composed from the layer
+    stack: byte-parity with the legacy default, and the default-profile sections
+    (now stack layers) are not double-injected via the General profile."""
+
+    def _store(self, fake):
+        from agentx_ai.prompts import layers
+        with patch.object(layers, "get_config_manager", return_value=fake):
+            return layers.LayerStore()
+
+    def _expected_default(self) -> str:
+        from agentx_ai.prompts.defaults import (
+            DEFAULT_GLOBAL_PROMPT,
+            SECTION_STRUCTURED_THINKING,
+            SECTION_CONCISE_OUTPUT,
+            SECTION_SAFETY_CONSTRAINTS,
+        )
+        return "\n\n".join([
+            DEFAULT_GLOBAL_PROMPT.content,
+            SECTION_STRUCTURED_THINKING.content,
+            SECTION_CONCISE_OUTPUT.content,
+            SECTION_SAFETY_CONSTRAINTS.content,
+        ])
+
+    def test_stack_reproduces_legacy_default_prompt(self):
+        store = self._store(_FakeConfigManager())
+        self.assertEqual(store.compose(), self._expected_default())
+
+    def test_compose_prompt_uses_stack_without_duplicate_sections(self):
+        from agentx_ai.prompts import layers, manager as mgr_mod
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        manager = mgr_mod.PromptManager()
+        with patch.object(layers, "get_layer_store", return_value=store), \
+             patch("agentx_ai.config.get_config_manager", return_value=fake):
+            composed = manager.get_system_prompt()  # no agent/profile → just the stack
+        self.assertEqual(composed, self._expected_default())
+        # The safety section appears exactly once, not double-injected via General.
+        self.assertEqual(composed.count("Be honest about your limitations as an AI"), 1)
+
+    def test_override_changes_live_composition(self):
+        from agentx_ai.prompts import layers, manager as mgr_mod
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        store.set_override("core-principles", "OVERRIDDEN CORE")
+        manager = mgr_mod.PromptManager()
+        with patch.object(layers, "get_layer_store", return_value=store), \
+             patch("agentx_ai.config.get_config_manager", return_value=fake):
+            composed = manager.get_system_prompt()
+        self.assertIn("OVERRIDDEN CORE", composed)
+        self.assertNotIn("You are an intelligent AI assistant", composed)
+
+    def test_global_shim_returns_composed_stack(self):
+        import json as _json
+        from agentx_ai import views
+        fake = _FakeConfigManager()
+        store = self._store(fake)
+        store.set_override("core-principles", "SHIMMED CORE")
+        with patch("agentx_ai.prompts.get_layer_store", return_value=store):
+            resp = views.prompts_global(MagicMock())
+        body = _json.loads(resp.content)
+        self.assertIn("SHIMMED CORE", body["global_prompt"]["content"])
+
 
 class ChatRunIndexingTest(TestCase):
     """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user

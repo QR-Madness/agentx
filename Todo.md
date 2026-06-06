@@ -444,9 +444,17 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       (`prompts.layers`, write-through) — override/reset/acknowledge/enable/reorder + custom
       CRUD + `compose()`. Tests: precedence, override persists, default-change → update/ack/
       reset, custom CRUD/reorder/compose.
-- [ ] **1b — wire + migrate**: point `compose_system_prompt`/`PromptManager` at `LayerStore`;
-      migrate the current global prompt + sections into the stack on first boot (no data loss);
-      keep old `/prompts/global*` + `/sections*` as back-compat shims.
+- [x] **1b — wire + migrate** `[v0.21.44]`: `PromptManager.compose_prompt` now sources the
+      global content from `LayerStore.compose()` (lights up all 3 live sites — `core.py`,
+      streaming `views.py`, `alloy/executor.py` — unchanged). Folded the default "General"
+      profile's sections (structured-thinking/concise-output/safety-constraints) into
+      `BUILTIN_LAYERS` so the stack is the *complete* default prompt (byte-parity), and dropped
+      the default-profile auto-attach (`is_default` guard) to avoid double-injection. One-time
+      legacy migration (`_ensure_layers_migrated`, guarded by `prompts.layers_migrated`) imports
+      any customized legacy global into a reserved `legacy-global` custom layer. `/prompts/global*`
+      kept as back-compat shims over the store (`set_singleton_override` upsert). Scope: governs
+      only the conversational prompt — `SystemPromptLoader` feature prompts untouched. Tests:
+      parity, no-duplication, override→live, shim, singleton idempotency.
 - [ ] **2 — layer API**: `GET/POST/PATCH/DELETE /api/prompts/layers`, `/{id}/reset`,
       `/{id}/acknowledge`, `/layers/reorder`, compose preview (reflect the stack + dynamic
       injections + active agent).

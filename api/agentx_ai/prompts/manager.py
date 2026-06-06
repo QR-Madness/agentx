@@ -221,7 +221,35 @@ class PromptManager:
     # =========================================================================
     # Prompt Composition
     # =========================================================================
-    
+
+    def _ensure_layers_migrated(self) -> None:
+        """One-time import of a legacy customized global prompt into the layer stack.
+
+        First boot is normally a no-op (no legacy customization → the built-in
+        layers already reproduce the default). But if a legacy ``prompts.yaml``
+        gave us a global prompt that differs from the shipped default, preserve
+        that user work as the reserved legacy-global custom layer rather than
+        silently dropping it now that composition is stack-sourced. Guarded by a
+        separate top-level config key so it runs exactly once and never collides
+        with the per-layer delta dict under ``prompts.layers``.
+        """
+        from ..config import get_config_manager
+
+        config = get_config_manager()
+        if config.get("prompts.layers_migrated", False):
+            return
+        try:
+            legacy = (self._global_prompt.content or "").strip()
+            default = (DEFAULT_GLOBAL_PROMPT.content or "").strip()
+            if legacy and legacy != default:
+                from .layers import get_layer_store
+                get_layer_store().set_singleton_override(legacy)
+                logger.info("Migrated legacy global prompt into the layer stack")
+            config.set("prompts.layers_migrated", True)
+            config.save()
+        except Exception as e:
+            logger.warning(f"Prompt-layer migration skipped: {e}")
+
     def compose_prompt(
         self,
         profile_id: Optional[str] = None,
@@ -245,12 +273,23 @@ class PromptManager:
         Returns:
             Complete PromptConfig ready for use
         """
-        # Get profile
+        self._ensure_layers_migrated()
+
+        # Global content now comes from the durable, layered prompt stack
+        # (built-in defaults overlaid with the user's persisted overrides),
+        # not the in-memory _global_prompt. See prompts/layers.py.
+        from .layers import get_layer_store
+        stack = get_layer_store().compose()
+        global_prompt = GlobalPrompt(content=stack, enabled=bool(stack.strip()))
+
+        # Prompt-profile sections only attach for an explicit, non-default
+        # selection. The default ("General") profile's sections now live in the
+        # stack, so auto-selecting it would double-inject them.
         profile = None
         if profile_id:
-            profile = self.get_profile(profile_id)
-        if not profile:
-            profile = self.get_default_profile()
+            candidate = self.get_profile(profile_id)
+            if candidate is not None and not candidate.is_default:
+                profile = candidate
 
         # Generate MCP tools prompt if tools provided
         mcp_tools_prompt = None
@@ -258,7 +297,7 @@ class PromptManager:
             mcp_tools_prompt = generate_mcp_tools_prompt(mcp_tools)
 
         return PromptConfig(
-            global_prompt=self._global_prompt,
+            global_prompt=global_prompt,
             profile=profile,
             mcp_tools_prompt=mcp_tools_prompt,
             additional_context=additional_context,

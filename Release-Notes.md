@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.43 -->
+<!-- release-version: 0.21.44 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -65,6 +65,15 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   The ambassador never speaks into the conversation itself — you're always the author.
   Briefings and Q&A never touch the transcript or the agent's context; future spoken
   briefings slot onto the same seam.
+
+- **Durable, layered global prompt (foundation).** The agent's global system prompt is now
+  composed from a **layered stack** of editable blocks rather than one in-memory blob — and
+  edits **persist across restarts** (the old global prompt was lost on restart). Built-in
+  layers (core principles, citing sources, reasoning-vs-results, structured thinking, concise
+  output, safety) ship a default you can override per-layer; untouched layers keep receiving
+  release improvements while your edits stay pinned and are never silently overwritten. This
+  is the plumbing for the upcoming block-based prompt editor — behavior is unchanged for now
+  (the default stack reproduces the previous default prompt exactly).
 
 ### Fixes
 
