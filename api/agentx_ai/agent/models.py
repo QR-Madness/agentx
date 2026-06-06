@@ -61,7 +61,7 @@ class AmbassadorConfig(BaseModel):
     a deliberate seam for future spoken briefings (left null, not implemented).
     """
     enabled: bool = Field(
-        False, description="Whether this profile may act as a conversation ambassador"
+        False, description="Legacy marker (pre-`kind`); an ambassador is now any profile with kind='ambassador'"
     )
     briefing_prompt: str = Field(
         "",
@@ -69,6 +69,19 @@ class AmbassadorConfig(BaseModel):
     )
     verbosity: Literal["brief", "normal", "deep"] = Field(
         "normal", description="How detailed the briefing should be"
+    )
+    # Functional persona overrides — the ambassador's load-bearing voices. None =
+    # use the shipped code default (`_default_persona`/`_qa_persona`/`_draft_persona`
+    # in ambassador.py). The *primary* customizable voice is the profile's
+    # `system_prompt` (the "Communications"/personality prompt); these are advanced.
+    briefing_persona: Optional[str] = Field(
+        None, description="Override for the per-turn briefing persona (None = shipped default)"
+    )
+    qa_persona: Optional[str] = Field(
+        None, description="Override for the free-form Q&A persona (None = shipped default)"
+    )
+    draft_persona: Optional[str] = Field(
+        None, description="Override for the outbound-message draft persona (None = shipped default)"
     )
     # Future speech seam — leave null; not implemented in the foundation.
     speech_model: Optional[str] = Field(
@@ -87,6 +100,12 @@ class AgentProfile(BaseModel):
     # Identity
     id: str = Field(..., description="Unique identifier for the profile")
     name: str = Field(..., description="Display name for the agent (used in prompts and UI)")
+    # Profile kind. 'agent' = a normal chat agent; 'ambassador' = a parallel,
+    # non-polluting conversation interpreter (hidden from chat/delegation/@-mention).
+    # Named `kind` for consistency with PromptLayer.kind; extensible for future kinds.
+    kind: Literal["agent", "ambassador"] = Field(
+        "agent", description="Profile kind: 'agent' (chat) or 'ambassador' (parallel interpreter)"
+    )
     agent_id: str = Field(default_factory=generate_agent_id, description="Unique human-friendly agent identifier (Docker-style)")
     avatar: Optional[str] = Field(None, description="Avatar icon name (e.g., 'sparkles', 'brain')")
     description: Optional[str] = Field(None, description="Description of this profile's purpose")
@@ -158,7 +177,10 @@ class AgentProfile(BaseModel):
     )
 
     # Metadata
-    is_default: bool = Field(False, description="Whether this is the default profile")
+    is_default: bool = Field(False, description="Whether this is the default *agent* profile")
+    is_default_ambassador: bool = Field(
+        False, description="Whether this is the default *ambassador* (per-kind default; briefings use it)"
+    )
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 

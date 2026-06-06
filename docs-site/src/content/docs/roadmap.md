@@ -2,7 +2,7 @@
 
 This document tracks the development history and future direction of AgentX.
 
-**Current release:** v0.21.49 — the v0.20 milestone, "Mobile-Ready Alpha".
+**Current release:** v0.21.50 — the v0.20 milestone, "Mobile-Ready Alpha".
 
 ## Progress Overview
 

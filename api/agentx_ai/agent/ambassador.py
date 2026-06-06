@@ -159,6 +159,16 @@ def _draft_persona(agent_name: str = "") -> str:
     )
 
 
+def _persona_override(amb, field: str) -> Optional[str]:
+    """A non-blank functional-persona override on the ambassador config, else None."""
+    if not amb:
+        return None
+    val = getattr(amb, field, None)
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    return None
+
+
 _VERBOSITY_HINT = {
     "brief": "LENGTH LIMIT: one or two sentences — just the heart of it. Then stop.",
     "normal": "LENGTH LIMIT: a short spoken paragraph, three or four sentences at most. Do not exceed it.",
@@ -220,7 +230,11 @@ class AmbassadorService:
         return min(budget, ceiling) if ceiling else budget
 
     def _resolve_profile(self, profile_id: Optional[str]):
-        """Pick the ambassador profile: configured id → default profile → None."""
+        """Pick the ambassador profile: explicit id → **default ambassador** → None.
+
+        (An ambassador is now its own profile kind; briefings use the default
+        ambassador. `None` is fine — the persona builders fall back to the shipped
+        code defaults, so a briefing never hard-fails.)"""
         from .profiles import get_profile_manager
 
         pm = get_profile_manager()
@@ -228,7 +242,7 @@ class AmbassadorService:
         if profile_id:
             profile = pm.get_profile(profile_id)
         if profile is None:
-            profile = pm.get_default_profile()
+            profile = pm.get_default_ambassador()
         return profile
 
     def _current_run_id(self) -> Optional[str]:
@@ -242,11 +256,20 @@ class AmbassadorService:
 
     def _build_qa_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
-        parts = [_qa_persona(agent_name)]
+        base = _persona_override(amb, "qa_persona") or _qa_persona(agent_name)
+        parts = [base]
         if profile and getattr(profile, "system_prompt", None):
-            parts.append(f"Persona guidance:\n{profile.system_prompt.strip()}")
+            parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         if amb and getattr(amb, "briefing_prompt", "").strip():
             parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
+        return "\n\n".join(parts)
+
+    def _build_draft_persona(self, profile, agent_name: str = "") -> str:
+        amb = getattr(profile, "ambassador", None) if profile else None
+        base = _persona_override(amb, "draft_persona") or _draft_persona(agent_name)
+        parts = [base]
+        if profile and getattr(profile, "system_prompt", None):
+            parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         return "\n\n".join(parts)
 
     def _build_qa_prompt(
@@ -299,10 +322,12 @@ class AmbassadorService:
 
     def _build_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
-        parts = [_default_persona(agent_name)]
-        # A profile's own system prompt colors the ambassador's voice.
+        base = _persona_override(amb, "briefing_persona") or _default_persona(agent_name)
+        parts = [base]
+        # The profile's own system prompt is the ambassador's "Communications"
+        # (personality) voice — it colors how it speaks.
         if profile and getattr(profile, "system_prompt", None):
-            parts.append(f"Persona guidance:\n{profile.system_prompt.strip()}")
+            parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         verbosity = getattr(amb, "verbosity", "normal") if amb else "normal"
         parts.append(_VERBOSITY_HINT.get(verbosity, _VERBOSITY_HINT["normal"]))
         if amb and getattr(amb, "briefing_prompt", "").strip():
@@ -618,7 +643,7 @@ class AmbassadorService:
             conversation_id, cfg["max_context_turns"], agent_name
         )
         messages = [
-            Message(role=MessageRole.SYSTEM, content=_draft_persona(agent_name)),
+            Message(role=MessageRole.SYSTEM, content=self._build_draft_persona(profile, agent_name)),
             Message(
                 role=MessageRole.USER,
                 content=self._build_draft_prompt(

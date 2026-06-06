@@ -5618,7 +5618,9 @@ def agent_profiles_list(request):
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "available_for_delegation": p.available_for_delegation,
                     "ambassador": p.ambassador.model_dump() if p.ambassador else None,
+                    "kind": p.kind,
                     "is_default": p.is_default,
+                    "is_default_ambassador": p.is_default_ambassador,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 }
@@ -5664,7 +5666,9 @@ def agent_profiles_list(request):
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "available_for_delegation": created.available_for_delegation,
                     "ambassador": created.ambassador.model_dump() if created.ambassador else None,
+                    "kind": created.kind,
                     "is_default": created.is_default,
+                    "is_default_ambassador": created.is_default_ambassador,
                     "created_at": created.created_at.isoformat() if created.created_at else None,
                     "updated_at": created.updated_at.isoformat() if created.updated_at else None,
                 },
@@ -5714,7 +5718,9 @@ def agent_profile_detail(request, profile_id):
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "available_for_delegation": profile.available_for_delegation,
                 "ambassador": profile.ambassador.model_dump() if profile.ambassador else None,
+                "kind": profile.kind,
                 "is_default": profile.is_default,
+                "is_default_ambassador": profile.is_default_ambassador,
                 "created_at": profile.created_at.isoformat() if profile.created_at else None,
                 "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
             },
@@ -5749,7 +5755,9 @@ def agent_profile_detail(request, profile_id):
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "available_for_delegation": updated.available_for_delegation,
                 "ambassador": updated.ambassador.model_dump() if updated.ambassador else None,
+                "kind": updated.kind,
                 "is_default": updated.is_default,
+                "is_default_ambassador": updated.is_default_ambassador,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
             },
@@ -5784,6 +5792,27 @@ def agent_profile_set_default(request, profile_id):
         return json_error("Profile not found", status=404)
 
     return JsonResponse({"default_profile_id": profile_id})
+
+
+@csrf_exempt
+def agent_profile_set_default_ambassador(request, profile_id):
+    """
+    POST /api/agent/profiles/{id}/set-default-ambassador - Mark an ambassador-kind
+    profile as the default ambassador (the one briefings use).
+    """
+    from .agent.profiles import get_profile_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return json_error("Method not allowed", status=405)
+
+    manager = get_profile_manager()
+    if not manager.set_default_ambassador(profile_id):
+        return json_error("Ambassador profile not found", status=404)
+
+    return JsonResponse({"default_ambassador_id": profile_id})
 
 
 # ============== Agent Alloy Workflow Endpoints ==============

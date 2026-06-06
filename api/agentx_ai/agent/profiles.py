@@ -5,13 +5,14 @@ Manages agent profile CRUD operations and YAML storage.
 """
 
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
-from .models import AgentProfile, ReasoningStrategy
+from .models import AgentProfile, AmbassadorConfig, ReasoningStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,10 @@ class ProfileManager:
         else:
             self._init_defaults()
 
+        # Ensure the Ambassador-as-profile-kind invariants (migrate legacy, seed
+        # a default ambassador). Idempotent — only writes when something changed.
+        self._ensure_ambassador_defaults()
+
     def _init_defaults(self) -> None:
         """Initialize with default profiles."""
         self._profiles[DEFAULT_PROFILE.id] = DEFAULT_PROFILE
@@ -133,6 +138,67 @@ class ProfileManager:
         # Save defaults to disk
         self.save_config()
         logger.info("Initialized agent profiles with defaults")
+
+    def _ensure_ambassador_defaults(self) -> None:
+        """Migrate legacy ambassadors to `kind='ambassador'` and guarantee a default
+        ambassador exists — without ever converting the default *agent*.
+
+        Before the pivot, an "ambassador" was any profile with `ambassador.enabled`,
+        selected via `config.ambassador.profile_id` (which *defaults to the default
+        agent*). So we only convert an *explicitly dedicated* ambassador, never the
+        default agent, and otherwise seed a fresh default ambassador so briefings
+        work out of the box.
+        """
+        changed = False
+        legacy_id: Optional[str] = None
+        try:
+            from ..config import get_config_manager
+            legacy_id = get_config_manager().get("ambassador.profile_id", None)
+        except Exception:
+            legacy_id = None
+
+        # 1. Migrate dedicated legacy ambassadors (never the default agent).
+        for pid, p in list(self._profiles.items()):
+            if p.kind == "ambassador":
+                continue
+            amb = p.ambassador
+            dedicated = bool(amb and amb.enabled) and not p.is_default
+            is_legacy_target = bool(legacy_id) and pid == legacy_id and not p.is_default
+            if dedicated or is_legacy_target:
+                data = p.model_dump()
+                data["kind"] = "ambassador"
+                self._profiles[pid] = AgentProfile(**data)
+                changed = True
+
+        ambs = self.list_profiles_by_kind("ambassador")
+        if ambs:
+            # 2a. Ensure exactly one default ambassador.
+            if not any(p.is_default_ambassador for p in ambs):
+                target = self._profiles.get(legacy_id) if legacy_id else None
+                if target is None or target.kind != "ambassador":
+                    target = ambs[0]
+                data = target.model_dump()
+                data["is_default_ambassador"] = True
+                self._profiles[target.id] = AgentProfile(**data)
+                changed = True
+        else:
+            # 2b. Seed a fresh default ambassador (its own agent_id).
+            seed_id = "ambassador" if "ambassador" not in self._profiles else f"ambassador-{uuid.uuid4().hex[:8]}"
+            seed = AgentProfile(  # pyright: ignore[reportCallIssue]
+                id=seed_id,
+                name="Ambassador",
+                kind="ambassador",
+                avatar="radio",
+                description="Briefs you on the conversation in parallel — never enters it.",
+                is_default_ambassador=True,
+                ambassador=AmbassadorConfig(enabled=True),
+            )
+            self._profiles[seed_id] = seed
+            changed = True
+
+        if changed:
+            self.save_config()
+            logger.info("Ensured ambassador profile defaults (migrate/seed)")
 
     def _load_config(self, path: Path) -> None:
         """Load profiles from YAML file."""
@@ -175,6 +241,7 @@ class ProfileManager:
                 {
                     "id": p.id,
                     "name": p.name,
+                    "kind": p.kind,
                     "agent_id": p.agent_id,
                     "avatar": p.avatar,
                     "description": p.description,
@@ -197,7 +264,10 @@ class ProfileManager:
                     "allowed_tools": p.allowed_tools,
                     "blocked_tools": p.blocked_tools,
                     "available_for_delegation": p.available_for_delegation,
+                    # Ambassador section (previously dropped here → lost on restart).
+                    "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "is_default": p.is_default,
+                    "is_default_ambassador": p.is_default_ambassador,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 }
@@ -236,7 +306,7 @@ class ProfileManager:
         """
         return next(
             (p for p in self._profiles.values()
-             if getattr(p, "agent_id", None) == agent_id),
+             if getattr(p, "agent_id", None) == agent_id and p.kind == "agent"),
             None,
         )
 
@@ -248,17 +318,46 @@ class ProfileManager:
         """
         lowered = name.lower()
         return next(
-            (p for p in self._profiles.values() if p.name.lower() == lowered),
+            (p for p in self._profiles.values()
+             if p.name.lower() == lowered and p.kind == "agent"),
             None,
         )
 
+    def list_profiles_by_kind(self, kind: str) -> list[AgentProfile]:
+        """All profiles of a given kind ('agent' or 'ambassador')."""
+        return [p for p in self._profiles.values() if p.kind == kind]
+
     def get_default_profile(self) -> Optional[AgentProfile]:
-        """Get the default profile."""
-        for profile in self._profiles.values():
+        """Get the default *agent* profile (never an ambassador)."""
+        agents = self.list_profiles_by_kind("agent")
+        for profile in agents:
             if profile.is_default:
                 return profile
-        # Fall back to first profile
-        return next(iter(self._profiles.values()), None)
+        # Fall back to the first agent profile.
+        return next(iter(agents), None)
+
+    def get_default_ambassador(self) -> Optional[AgentProfile]:
+        """Get the default *ambassador* profile (briefings resolve this)."""
+        ambs = self.list_profiles_by_kind("ambassador")
+        for profile in ambs:
+            if profile.is_default_ambassador:
+                return profile
+        return next(iter(ambs), None)
+
+    def set_default_ambassador(self, profile_id: str) -> bool:
+        """Mark an ambassador-kind profile as the default ambassador (one per kind)."""
+        target = self._profiles.get(profile_id)
+        if target is None or target.kind != "ambassador":
+            return False
+        for pid, profile in self._profiles.items():
+            if profile.kind != "ambassador":
+                continue
+            data = profile.model_dump()
+            data["is_default_ambassador"] = (pid == profile_id)
+            data["updated_at"] = datetime.utcnow() if pid == profile_id else profile.updated_at
+            self._profiles[pid] = AgentProfile(**data)
+        self.save_config()
+        return True
 
     def create_profile(self, profile: AgentProfile) -> AgentProfile:
         """Create a new profile."""
@@ -307,23 +406,36 @@ class ProfileManager:
         profile = self._profiles[profile_id]
         del self._profiles[profile_id]
 
-        # If deleted profile was default, set another as default
-        if profile.is_default and self._profiles:
-            first_profile = next(iter(self._profiles.values()))
-            data = first_profile.model_dump()
-            data["is_default"] = True
-            data["updated_at"] = datetime.utcnow()
-            self._profiles[first_profile.id] = AgentProfile(**data)
+        # If the deleted profile was the default agent, promote another agent.
+        if profile.is_default:
+            next_agent = next(iter(self.list_profiles_by_kind("agent")), None)
+            if next_agent is not None:
+                data = next_agent.model_dump()
+                data["is_default"] = True
+                data["updated_at"] = datetime.utcnow()
+                self._profiles[next_agent.id] = AgentProfile(**data)
+        # If the deleted profile was the default ambassador, promote another.
+        if profile.is_default_ambassador:
+            next_amb = next(iter(self.list_profiles_by_kind("ambassador")), None)
+            if next_amb is not None:
+                data = next_amb.model_dump()
+                data["is_default_ambassador"] = True
+                data["updated_at"] = datetime.utcnow()
+                self._profiles[next_amb.id] = AgentProfile(**data)
 
         self.save_config()
         return True
 
     def set_default_profile(self, profile_id: str) -> bool:
-        """Set a profile as the default."""
-        if profile_id not in self._profiles:
+        """Set an *agent*-kind profile as the default agent. (Ambassadors use
+        set_default_ambassador and can never become the default agent.)"""
+        target = self._profiles.get(profile_id)
+        if target is None or target.kind != "agent":
             return False
 
         for pid, profile in self._profiles.items():
+            if profile.kind != "agent":
+                continue
             data = profile.model_dump()
             data["is_default"] = (pid == profile_id)
             data["updated_at"] = datetime.utcnow() if pid == profile_id else profile.updated_at

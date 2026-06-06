@@ -6764,6 +6764,89 @@ class PromptLayerApiTest(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
+class AgentProfileKindTest(TestCase):
+    """Ambassador-as-profile-kind: default isolation (agent vs ambassador),
+    persistence, migration/seed safety, and chat-routing exclusion."""
+
+    def _manager(self, path):
+        """Fresh ProfileManager over a tmp file; migration sees no legacy id."""
+        from agentx_ai.agent.profiles import ProfileManager
+        with patch("agentx_ai.config.get_config_manager", return_value=_FakeConfigManager()):
+            return ProfileManager(config_path=path)
+
+    def _tmp(self):
+        import tempfile
+        from pathlib import Path
+        return Path(tempfile.mkdtemp()) / "agent_profiles.yaml"
+
+    def test_seed_default_ambassador_separate_from_default_agent(self):
+        mgr = self._manager(self._tmp())
+        amb = mgr.get_default_ambassador()
+        agent = mgr.get_default_profile()
+        self.assertIsNotNone(amb)
+        self.assertEqual(amb.kind, "ambassador")
+        self.assertTrue(amb.is_default_ambassador)
+        # The default *agent* is never the ambassador.
+        self.assertIsNotNone(agent)
+        self.assertEqual(agent.kind, "agent")
+        self.assertNotEqual(agent.id, amb.id)
+
+    def test_kind_and_default_persist_across_reload(self):
+        path = self._tmp()
+        amb_id = self._manager(path).get_default_ambassador().id
+        reloaded = self._manager(path).get_profile(amb_id)
+        self.assertEqual(reloaded.kind, "ambassador")
+        self.assertTrue(reloaded.is_default_ambassador)
+
+    def test_set_default_profile_rejects_ambassador(self):
+        mgr = self._manager(self._tmp())
+        amb = mgr.get_default_ambassador()
+        self.assertFalse(mgr.set_default_profile(amb.id))  # can't make an ambassador the default agent
+        self.assertEqual(mgr.get_default_profile().kind, "agent")
+
+    def test_set_default_ambassador_one_per_kind(self):
+        from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
+        mgr = self._manager(self._tmp())
+        first = mgr.get_default_ambassador()
+        second = AgentProfile(id="amb2", name="Scribe", kind="ambassador",
+                              ambassador=AmbassadorConfig(enabled=True))
+        mgr.create_profile(second)
+        self.assertTrue(mgr.set_default_ambassador("amb2"))
+        self.assertEqual(mgr.get_default_ambassador().id, "amb2")
+        self.assertFalse(mgr.get_profile(first.id).is_default_ambassador)
+
+    def test_routing_lookups_exclude_ambassadors(self):
+        mgr = self._manager(self._tmp())
+        amb = mgr.get_default_ambassador()
+        self.assertIsNone(mgr.get_profile_by_agent_id(amb.agent_id))
+        self.assertIsNone(mgr.get_profile_by_name(amb.name))
+
+    def test_migration_converts_dedicated_not_default_agent(self):
+        from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
+        path = self._tmp()
+        mgr = self._manager(path)
+        default_agent_id = mgr.get_default_profile().id
+        # A legacy "dedicated" ambassador: kind still 'agent', ambassador.enabled, not default.
+        mgr.create_profile(AgentProfile(id="legacy_amb", name="Legacy", kind="agent",
+                                        ambassador=AmbassadorConfig(enabled=True)))
+        # Reload → migration promotes the dedicated one, leaves the default agent alone.
+        reloaded = self._manager(path)
+        self.assertEqual(reloaded.get_profile("legacy_amb").kind, "ambassador")
+        self.assertEqual(reloaded.get_profile(default_agent_id).kind, "agent")
+
+    def test_ambassador_persona_uses_override_and_personality(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
+        profile = AgentProfile(
+            id="amb", name="Echo", kind="ambassador",
+            system_prompt="Warm and witty.",
+            ambassador=AmbassadorConfig(enabled=True, briefing_persona="CUSTOM BRIEFING VOICE"),
+        )
+        persona = AmbassadorService()._build_persona(profile, "Mobius")
+        self.assertIn("CUSTOM BRIEFING VOICE", persona)   # override replaces the default voice
+        self.assertIn("Warm and witty.", persona)         # communications prompt woven in
+
+
 class ChatRunIndexingTest(TestCase):
     """Detached-run indexing flag (16.6) — sidecar runs stay out of the per-user
     recovery list that backs /api/agent/chat/runs."""

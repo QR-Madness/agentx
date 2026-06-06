@@ -1536,6 +1536,24 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /agent/profiles/{profile_id}/set-default-ambassador:
+    post:
+      tags: [Agent Profiles]
+      operationId: agentProfileSetDefaultAmbassador
+      summary: Mark an ambassador-kind profile as the default ambassador
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Default ambassador set
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /alloy/workflows:
     get:
       tags: [Multi-Agent]
@@ -3657,6 +3675,15 @@ components:
           type: string
         name:
           type: string
+        kind:
+          type: string
+          enum: [agent, ambassador]
+          description: >-
+            Profile kind. 'agent' = a chat agent; 'ambassador' = a parallel
+            conversation interpreter (hidden from chat/delegation/@-mention).
+        is_default_ambassador:
+          type: boolean
+          description: Whether this is the default ambassador (per-kind default).
         agent_id:
           type: string
           description: Immutable Docker-style identifier (read-only after creation).

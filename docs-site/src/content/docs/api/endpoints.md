@@ -567,7 +567,13 @@ GET    /api/agent/profiles/{profile_id}
 PATCH  /api/agent/profiles/{profile_id}
 DELETE /api/agent/profiles/{profile_id}
 POST   /api/agent/profiles/{profile_id}/set-default
+POST   /api/agent/profiles/{profile_id}/set-default-ambassador
 ```
+
+Profiles carry a `kind` (`agent` or `ambassador`). Agents and ambassadors have
+**separate defaults**: `set-default` marks the default agent; `set-default-ambassador`
+marks the default ambassador (the one briefings use). Ambassador-kind profiles are
+hidden from the chat agent selector, delegation, and `@`-mention routing.
 
 **Profile object** (returned by GET/POST):
 ```json

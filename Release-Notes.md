@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.49 -->
+<!-- release-version: 0.21.50 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -87,6 +87,14 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   overwritten. You can also **insert a snippet from the Prompt Library** straight into the
   stack as a new layer, and **enhance any layer in place** — let the prompt enhancer rewrite
   it, with one-click undo.
+- **The Ambassador is now its own profile type.** Instead of being a section bolted onto a
+  normal agent, an ambassador is a first-class profile *kind* — so you can have several, and
+  one is the **default ambassador** that briefings use. Its personality (the "Communications"
+  prompt) is customizable, and its functional voices (briefing, Q&A, draft) can each be
+  overridden or reset to their shipped default. Ambassadors are kept out of the chat agent
+  picker, delegation, and @-mentions — they only ever brief, never join the conversation.
+  Existing setups migrate automatically (and a default ambassador is created if you don't have
+  one), without ever turning your main agent into an ambassador.
 - **Polished per-agent prompt editor.** Editing an agent profile's instructions now uses the
   same refined editor: an approximate token/char count, in-place **Enhance** (with undo),
   **Insert from library** (which replaces the field), and a collapsible **effective-prompt
