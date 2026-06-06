@@ -1737,8 +1737,9 @@ async def agent_chat_stream(request):
                     asst_metadata["cost_estimate"] = cost["cost_total"]
                     asst_metadata["cost_currency"] = cost["currency"]
                     asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
-                if parsed.thinking:
-                    asst_metadata["thinking"] = parsed.thinking
+                # Thinking/CoT is process, not result — streamed live but never
+                # persisted (thoughts are free to regenerate; only results are kept,
+                # like a plan's summary card vs. its ephemeral step scratchpad).
                 if plan_summary is not None:
                     asst_metadata["plan"] = plan_summary
                 # Stamp the display name so consolidation can attribute facts to
@@ -1782,8 +1783,7 @@ async def agent_chat_stream(request):
                         interrupted_meta["cost_estimate"] = _icost["cost_total"]
                         interrupted_meta["cost_currency"] = _icost["currency"]
                         interrupted_meta["pricing_snapshot"] = _icost["pricing_snapshot"]
-                    if partial.thinking:
-                        interrupted_meta["thinking"] = partial.thinking
+                    # CoT not persisted (process, not result) — even on a hard-stop.
                     _ian = getattr(agent_profile, "name", None)
                     if _ian:
                         interrupted_meta["agent_name"] = _ian

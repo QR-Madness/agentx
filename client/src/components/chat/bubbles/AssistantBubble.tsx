@@ -24,8 +24,11 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate, on
           )}
         </div>
 
+        {/* CoT is shown expanded *while streaming* (ChatPanel's live preview); once
+            the turn lands, it collapses to a quiet affordance so the result — not the
+            process — leads. It's session-only; not persisted, gone on reload. */}
         {message.thinking && (
-          <ThinkingBubble thinking={message.thinking} defaultExpanded={true} />
+          <ThinkingBubble thinking={message.thinking} defaultExpanded={false} />
         )}
 
         <MessageContent content={message.content} />

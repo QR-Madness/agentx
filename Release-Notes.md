@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.40 -->
+<!-- release-version: 0.21.41 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -30,6 +30,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   future palette) actually applies everywhere — even focus rings and code-syntax
   highlighting now follow the theme (One Dark on dark, One Light on Light). Only the
   startup-error screen and the theme-preview swatches keep fixed colors by design.
+- **Calmer chain-of-thought.** A model's reasoning now streams live and then tucks
+  itself into a collapsed "Thinking" affordance once the answer lands, instead of
+  sitting expanded above the reply (which read as duplicated content). Thoughts are
+  also **no longer persisted** — they're process, not result, so they're shown in the
+  moment and don't clutter a reloaded transcript. Only the result is kept.
 - **Unified model picker.** Memory, planner, and prompt-enhancement settings now use
   the same full filterable model picker as the agent-profile editor (provider and
   capability filters, search, context/pricing metadata) — the old inline dropdown
