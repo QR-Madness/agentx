@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { RefreshCw, Zap, X, RotateCcw, Save } from 'lucide-react';
 import { useConsolidationSettings } from '../../lib/hooks';
 import { ConsolidationSettings, api } from '../../lib/api';
@@ -31,10 +31,16 @@ export function ConsolidationSettingsPanel({
   const [resetting, setResetting] = useState(false);
   const [consolidateJobs, setConsolidateJobs] = useState<string[]>(['consolidate']);
   const jobIdPrefix = useId();
+  // Debounced autosave (baseline-diff so the initial hydration doesn't save).
+  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const baselineRef = useRef<string | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (settings) {
       setLocalSettings(settings);
+      baselineRef.current = JSON.stringify(settings);
+      setAutosaveState('idle');
     }
   }, [settings]);
 
@@ -45,9 +51,33 @@ export function ConsolidationSettingsPanel({
     setLocalSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  // Autosave: persist genuine edits to localSettings after a short debounce.
+  useEffect(() => {
+    if (!settings || Object.keys(localSettings).length === 0) return;
+    const snap = JSON.stringify(localSettings);
+    if (baselineRef.current === null || snap === baselineRef.current) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      setAutosaveState('saving');
+      const ok = await updateSettings(localSettings);
+      if (ok) {
+        baselineRef.current = snap;
+        setAutosaveState('saved');
+      } else {
+        setAutosaveState('idle');
+      }
+    }, 800);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localSettings]);
+
   const handleSave = async () => {
     const success = await updateSettings(localSettings);
     if (success) {
+      baselineRef.current = JSON.stringify(localSettings);
+      setAutosaveState('saved');
       notifySuccess('Settings saved successfully');
     } else {
       notifyError('Failed to save settings');
@@ -553,6 +583,9 @@ export function ConsolidationSettingsPanel({
       </div>
 
       <div className="settings-actions">
+        <span className="autosave-status" aria-live="polite" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
+        </span>
         <Button variant="ghost" onClick={handleReset} disabled={saving}>
           <RotateCcw size={16} />
           Reset Prompts

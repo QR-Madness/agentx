@@ -435,6 +435,14 @@
   padding: 2px;
 }
 
+.profile-autosave-status {
+  align-self: center;
+  margin-right: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .profile-avatar-option {
   width: 40px;
   height: 40px;

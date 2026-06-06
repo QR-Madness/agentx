@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Save, Search } from 'lucide-react';
 import { useRecallSettings } from '../../lib/hooks';
 import { RecallSettings } from '../../lib/api';
@@ -16,10 +16,15 @@ export function RecallSettingsPanel() {
   const { settings, loading, saving, error, updateSettings } = useRecallSettings();
   const { notifySuccess, notifyError } = useNotify();
   const [localSettings, setLocalSettings] = useState<Partial<RecallSettings>>({});
+  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const baselineRef = useRef<string | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (settings) {
       setLocalSettings(settings);
+      baselineRef.current = JSON.stringify(settings);
+      setAutosaveState('idle');
     }
   }, [settings]);
 
@@ -30,9 +35,33 @@ export function RecallSettingsPanel() {
     setLocalSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  // Autosave genuine edits after a short debounce (baseline-diff skips hydration).
+  useEffect(() => {
+    if (!settings || Object.keys(localSettings).length === 0) return;
+    const snap = JSON.stringify(localSettings);
+    if (baselineRef.current === null || snap === baselineRef.current) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      setAutosaveState('saving');
+      const ok = await updateSettings(localSettings);
+      if (ok) {
+        baselineRef.current = snap;
+        setAutosaveState('saved');
+      } else {
+        setAutosaveState('idle');
+      }
+    }, 800);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localSettings]);
+
   const handleSave = async () => {
     const success = await updateSettings(localSettings);
     if (success) {
+      baselineRef.current = JSON.stringify(localSettings);
+      setAutosaveState('saved');
       notifySuccess('Recall settings saved successfully');
     } else {
       notifyError('Failed to save recall settings');
@@ -206,6 +235,9 @@ export function RecallSettingsPanel() {
       )}
 
       <div className="settings-actions">
+        <span aria-live="polite" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
+        </span>
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <><RefreshCw size={16} className="spin" /> Saving...</>

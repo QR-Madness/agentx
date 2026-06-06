@@ -51,6 +51,12 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [error, setError] = useState<string | null>(null);
   const systemPromptRef = useRef<HTMLTextAreaElement>(null);
 
+  // Autosave (existing profiles): debounced, silent, location-preserving.
+  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [hydratedId, setHydratedId] = useState<string | undefined>(undefined);
+  const baselineRef = useRef<string | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Initialize (or reset) form whenever the profile changes
   useEffect(() => {
     if (profile) {
@@ -99,7 +105,12 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setDraftPersona(null);
     }
     setError(null);
-  }, [profile]);
+    // Mark this profile id as hydrated → the baseline effect snapshots the freshly
+    // loaded form (so autosave only fires on genuine user edits). Keyed on id only,
+    // so list updates from a save don't reset the form (preserves cursor/scroll).
+    setHydratedId(profile?.id ?? '__new__');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   // Resolve base template name when id changes
   useEffect(() => {
@@ -130,6 +141,82 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   // Profile kind is set at creation and not flipped in normal editing.
   const kind: 'agent' | 'ambassador' = profile?.kind ?? 'agent';
 
+  // Single source of truth for the save payload — used by manual save AND autosave
+  // (and by the autosave change-detector, so the two never drift).
+  const buildPayload = (): AgentProfileCreate => ({
+    name: name.trim(),
+    avatar,
+    description: description.trim() || undefined,
+    tags,
+    default_model: defaultModel || undefined,
+    temperature,
+    reasoning_strategy: reasoningStrategy,
+    prompt_profile_id: baseTemplateId || undefined,
+    system_prompt: systemPrompt.trim() || undefined,
+    enable_memory: enableMemory,
+    memory_channel: memoryChannel,
+    enable_tools: enableTools,
+    // Send `null` explicitly when allow-all so the server clears any prior
+    // whitelist; otherwise pass the array as-is. Always send blockedTools
+    // (server defaults to []).
+    allowed_tools: allowedTools,
+    blocked_tools: blockedTools,
+    available_for_delegation: availableForDelegation,
+    kind,
+    // Ambassador config travels only on ambassador-kind profiles; null clears
+    // any legacy section on a normal agent. Persona overrides: null rides the
+    // shipped default; a string overrides it.
+    ambassador: kind === 'ambassador'
+      ? {
+          enabled: true,
+          briefing_prompt: ambassadorBriefingPrompt.trim(),
+          verbosity: ambassadorVerbosity,
+          briefing_persona: briefingPersona,
+          qa_persona: qaPersona,
+          draft_persona: draftPersona,
+        }
+      : null,
+  });
+
+  // After a (re)hydration settles, snapshot the loaded form as the autosave
+  // baseline. Defined BEFORE the autosave effect so on the hydration commit the
+  // baseline updates first and the autosave effect then sees "no change".
+  useEffect(() => {
+    baselineRef.current = JSON.stringify(buildPayload());
+    setAutosaveState('idle');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydratedId]);
+
+  // Debounced autosave for existing profiles. New profiles are created via the
+  // explicit "Create" button; once created they autosave like any other.
+  useEffect(() => {
+    if (!profile?.id || baselineRef.current === null) return;
+    const pid = profile.id;
+    const snap = JSON.stringify(buildPayload());
+    if (snap === baselineRef.current) return; // no genuine change
+    if (!name.trim()) return;                  // never autosave an invalid form
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      setAutosaveState('saving');
+      try {
+        await updateProfile(pid, buildPayload());
+        baselineRef.current = snap;
+        setAutosaveState('saved');
+      } catch {
+        setAutosaveState('idle'); // surfaced via manual save / next edit
+      }
+    }, 800);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    name, avatar, description, tags, defaultModel, temperature, reasoningStrategy,
+    baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools,
+    allowedTools, blockedTools, availableForDelegation, kind,
+    ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
+  ]);
+
   const handleSubmit = async (
     isEditing: boolean,
     profileId: string | undefined,
@@ -142,40 +229,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     setSaving(true);
     setError(null);
     try {
-      const data: AgentProfileCreate = {
-        name: name.trim(),
-        avatar,
-        description: description.trim() || undefined,
-        tags,
-        default_model: defaultModel || undefined,
-        temperature,
-        reasoning_strategy: reasoningStrategy,
-        prompt_profile_id: baseTemplateId || undefined,
-        system_prompt: systemPrompt.trim() || undefined,
-        enable_memory: enableMemory,
-        memory_channel: memoryChannel,
-        enable_tools: enableTools,
-        // Send `null` explicitly when allow-all so the server clears any prior
-        // whitelist; otherwise pass the array as-is. Always send blockedTools
-        // (server defaults to []).
-        allowed_tools: allowedTools,
-        blocked_tools: blockedTools,
-        available_for_delegation: availableForDelegation,
-        kind,
-        // Ambassador config travels only on ambassador-kind profiles; null clears
-        // any legacy section on a normal agent. Persona overrides: null rides the
-        // shipped default; a string overrides it.
-        ambassador: kind === 'ambassador'
-          ? {
-              enabled: true,
-              briefing_prompt: ambassadorBriefingPrompt.trim(),
-              verbosity: ambassadorVerbosity,
-              briefing_persona: briefingPersona,
-              qa_persona: qaPersona,
-              draft_persona: draftPersona,
-            }
-          : null,
-      };
+      const data: AgentProfileCreate = buildPayload();
       let saved: AgentProfile;
       if (isEditing && profileId) {
         const result = await updateProfile(profileId, data);
@@ -184,6 +238,10 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       } else {
         saved = await createProfile(data);
       }
+      // Keep the autosave baseline in sync so a manual save doesn't trigger a
+      // redundant autosave right after.
+      baselineRef.current = JSON.stringify(data);
+      setAutosaveState('saved');
       onSuccess(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
@@ -238,6 +296,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     saving,
     deleting,
     error,
+    autosaveState,
     handleSubmit,
     handleDelete,
   };

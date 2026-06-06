@@ -190,6 +190,7 @@ export function ProfileContent({
     saving,
     deleting,
     error,
+    autosaveState,
     handleSubmit,
     handleDelete,
   } = useProfileEditorState(profile);
@@ -668,23 +669,30 @@ export function ProfileContent({
                 </button>
               )}
               <div className="profile-footer-right">
+                {isEditing && (
+                  <span className="profile-autosave-status" aria-live="polite">
+                    {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
+                  </span>
+                )}
                 <button
                   type="button"
                   className="profile-btn-secondary"
                   onClick={onCancel}
                   disabled={saving || deleting}
                 >
-                  Cancel
+                  {isEditing ? 'Done' : 'Cancel'}
                 </button>
-                <button
-                  type="button"
-                  className="profile-btn-primary"
-                  onClick={handleSave}
-                  disabled={saving || deleting}
-                >
-                  <Save size={15} />
-                  {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Profile'}
-                </button>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    className="profile-btn-primary"
+                    onClick={handleSave}
+                    disabled={saving || deleting}
+                  >
+                    <Save size={15} />
+                    {saving ? 'Saving…' : 'Create Profile'}
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
