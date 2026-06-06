@@ -1,6 +1,6 @@
 [package]
 name = "agentx-client"
-version = "0.21.39"
+version = "0.21.40"
 description = "AgentX is an AI agent platform that allows you to create and manage AI agents with ease."
 authors = ["you"]
 edition = "2021"

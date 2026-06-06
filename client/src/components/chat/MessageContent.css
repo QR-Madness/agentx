@@ -145,41 +145,41 @@
 
 .message-content-markdown .hljs-keyword,
 .message-content-markdown .hljs-selector-tag {
-  color: #c678dd;
+  color: var(--syntax-keyword);
 }
 
 .message-content-markdown .hljs-string,
 .message-content-markdown .hljs-attr {
-  color: #98c379;
+  color: var(--syntax-string);
 }
 
 .message-content-markdown .hljs-number,
 .message-content-markdown .hljs-literal {
-  color: #d19a66;
+  color: var(--syntax-number);
 }
 
 .message-content-markdown .hljs-comment {
-  color: #5c6370;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .message-content-markdown .hljs-function,
 .message-content-markdown .hljs-title {
-  color: #61afef;
+  color: var(--syntax-function);
 }
 
 .message-content-markdown .hljs-variable,
 .message-content-markdown .hljs-template-variable {
-  color: #e06c75;
+  color: var(--syntax-variable);
 }
 
 .message-content-markdown .hljs-type,
 .message-content-markdown .hljs-class .hljs-title {
-  color: #e5c07b;
+  color: var(--syntax-class);
 }
 
 .message-content-markdown .hljs-built_in {
-  color: #56b6c2;
+  color: var(--syntax-operator);
 }
 
 /* Links */

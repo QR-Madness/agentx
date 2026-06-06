@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.39 -->
+<!-- release-version: 0.21.40 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -27,8 +27,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   the same restrained spirit. Pick them in **Settings → Appearance** — which is itself
   now properly themed (it previously wasn't). A system-wide enforcement pass moved the
   remaining hardcoded colors across the UI onto theme tokens, so a theme switch (and any
-  future palette) actually applies everywhere — only code syntax, the startup-error
-  screen, and the theme-preview swatches keep fixed colors by design.
+  future palette) actually applies everywhere — even focus rings and code-syntax
+  highlighting now follow the theme (One Dark on dark, One Light on Light). Only the
+  startup-error screen and the theme-preview swatches keep fixed colors by design.
 - **Unified model picker.** Memory, planner, and prompt-enhancement settings now use
   the same full filterable model picker as the agent-profile editor (provider and
   capability filters, search, context/pricing metadata) — the old inline dropdown

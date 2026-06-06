@@ -12,7 +12,7 @@ const buttonVariants = cva(
   // comes from the variant's global class below. Now that Tailwind is enabled
   // and base.css sits in the `base` layer, the size utilities (in `utilities`)
   // correctly out-rank the class's padding, so the `size` prop is effective.
-  'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2',
+  'inline-flex items-center justify-center gap-2 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base',
   {
     variants: {
       variant: {

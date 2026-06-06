@@ -59,6 +59,9 @@
   --color-error: var(--feedback-error);
   --color-info: var(--feedback-info);
   --color-inactive: var(--feedback-inactive);
+
+  /* Focus ring → `ring-ring` / `outline-ring` (theme-tunable) */
+  --color-ring: var(--focus-ring);
 }
 /* Note: brand shadows stay as plain `var(--shadow-md)` in CSS — they are NOT
  * bridged because our runtime tokens (`--shadow-sm/md/lg`) share Tailwind's
