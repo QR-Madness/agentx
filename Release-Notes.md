@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.58 -->
+<!-- release-version: 0.21.59 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,16 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
+  top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
+  conversations, anything still running ("Resume"), and your full history grouped by recency,
+  all in one well-styled, searchable place. It collapses to a slim avatar rail when you want
+  the room (remembered across restarts), and on mobile the same list opens as a drawer. This
+  is the home for the richer conversation-management tools coming next.
+- **Cleaner data tables.** Agent-authored tables now read like real tables — more generous
+  spacing, a crisper header with a clear divider, delineated columns that wrap long prose
+  instead of crushing it (wide tables scroll), subtler zebra striping and row hover. Sort,
+  expand-to-modal, and the mobile stacked-card view are unchanged.
 - **Toolbar cleanup — the command palette is now the one place for everything.** The
   redundant "Workspace" overflow (`⋯`) menu is gone; the ⌘K command palette is the single,
   primary command surface — a labeled **Search…** pill in the toolbar makes it obvious

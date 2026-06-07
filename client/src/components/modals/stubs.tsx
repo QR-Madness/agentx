@@ -13,7 +13,7 @@ import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
-import { ConversationListContent } from '../chat/ConversationListContent';
+import { ConversationList } from '../chat/ConversationList';
 import { Button } from '../ui';
 
 // Re-export ProfileEditorModal for the modal registry
@@ -71,8 +71,8 @@ export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
 
 /**
  * ConversationsDrawerContent — mobile-first drawer for browsing/switching active
- * and past conversations. Reuses the shared ConversationListContent (same body
- * as the desktop history dropdown). The shell-owned close button (DrawerPanel)
+ * and past conversations. Reuses the shared ConversationList (same body as the
+ * desktop Conversations sidebar). The shell-owned close button (DrawerPanel)
  * dismisses it; selecting a conversation also closes via `onActivated`.
  */
 export function ConversationsDrawerContent({ onClose }: ModalContentProps) {
@@ -86,7 +86,7 @@ export function ConversationsDrawerContent({ onClose }: ModalContentProps) {
         <MessagesSquare size={18} />
         <span>Conversations</span>
       </div>
-      <ConversationListContent onActivated={onClose} autoFocusSearch={false} />
+      <ConversationList onActivated={onClose} autoFocusSearch={false} />
     </div>
   );
 }

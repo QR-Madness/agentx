@@ -8,5 +8,6 @@ export { MetadataBar } from './MetadataBar';
 export { ToolResultBlock } from './ToolResultBlock';
 export { ToolExecutionBlock } from './ToolExecutionBlock';
 export { MemoryInjectionBlock } from './MemoryInjectionBlock';
-export { ConversationHistoryDropdown } from './ConversationHistoryDropdown';
+export { ConversationList } from './ConversationList';
+export { ConversationSidebar } from './ConversationSidebar';
 export { AgentSelectorDropdown } from './AgentSelectorDropdown';

@@ -10,7 +10,8 @@
 .exhibit-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 
 .exhibit-table thead th {
@@ -20,25 +21,54 @@
   background: var(--surface-sunken);
   text-align: left;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  /* Stronger divider under the header than the row hairlines. */
+  border-bottom: 2px solid var(--border-emphasis, var(--border-default));
 }
 
 .exhibit-table th,
 .exhibit-table td {
-  padding: 0.4rem 0.625rem;
+  padding: 0.55rem 0.85rem;
   border-bottom: 1px solid var(--border-default);
   vertical-align: top;
+  min-width: 5rem;
+}
+
+/* Subtle column delineation for scannability across many columns. */
+.exhibit-table th:not(:last-child),
+.exhibit-table td:not(:last-child) {
+  border-right: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
+}
+
+/* Prose cells wrap (with a sane cap); the scroll container takes the overflow
+   when a table is wide, so cells stay legible instead of being crushed. */
+.exhibit-table td {
+  max-width: 24rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Emphasize the first column (usually the row's label/key). */
+.exhibit-table td:first-child {
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .exhibit-table td.is-numeric,
 .exhibit-table th.is-numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .exhibit-table tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--surface-sunken) 45%, transparent);
+  background: color-mix(in srgb, var(--surface-sunken) 30%, transparent);
+}
+
+.exhibit-table tbody tr:hover {
+  background: var(--surface-hover);
 }
 
 .exhibit-table-sort {
@@ -87,12 +117,16 @@
   }
   .exhibit-table td {
     border-bottom: 0;
-    padding: 0.3rem 0;
+    border-right: 0 !important; /* reset the desktop column separators */
+    min-width: 0;
+    max-width: none;
+    padding: 0.35rem 0;
     text-align: left !important;
     display: flex;
     justify-content: space-between;
     gap: 1rem;
   }
+  .exhibit-table td:first-child { font-weight: inherit; }
   .exhibit-table td::before {
     content: attr(data-label);
     font-weight: 600;

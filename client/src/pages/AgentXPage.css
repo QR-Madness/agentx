@@ -1,0 +1,13 @@
+/* AgentX chat workspace: conversation rail + chat, each scrolling internally. */
+.agentx-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agentx-chat {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}

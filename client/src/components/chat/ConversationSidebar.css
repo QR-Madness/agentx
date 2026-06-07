@@ -1,0 +1,128 @@
+/* === ConversationSidebar — chat-page conversation rail === */
+
+.conversation-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 264px;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+  border-right: 1px solid var(--border-color);
+  background: var(--surface-base, var(--bg-card));
+}
+
+.conversation-sidebar--collapsed {
+  width: 52px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+/* Header (expanded) */
+.conv-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle, var(--border-color));
+}
+
+.conv-sidebar-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.conv-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The list fills the rail and scrolls internally (history-list owns the scroll). */
+.conv-sidebar-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shared small icon button */
+.conv-rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.conv-rail-btn:hover {
+  background: var(--bg-hover, var(--surface-hover));
+  color: var(--text-primary);
+}
+
+/* Collapsed rail */
+.conv-rail-new {
+  color: var(--accent-primary);
+}
+.conv-rail-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.conv-rail-tabs::-webkit-scrollbar { display: none; }
+
+.conv-rail-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.conv-rail-tab:hover {
+  background: var(--bg-hover, var(--surface-hover));
+  color: var(--text-primary);
+}
+.conv-rail-tab.active {
+  background: var(--accent-tint-soft);
+  color: var(--text-primary);
+}
+.conv-rail-streaming {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cosmic-cyan, var(--accent-primary));
+  animation: history-running-pulse 1.2s ease-in-out infinite;
+}
+
+/* Focus/Zen mode hides chrome → hide the rail (palette still switches). */
+.focus-mode .conversation-sidebar {
+  display: none;
+}
+
+/* Mobile: the rail is replaced by the Conversations drawer. */
+@media (max-width: 600px) {
+  .conversation-sidebar {
+    display: none;
+  }
+}

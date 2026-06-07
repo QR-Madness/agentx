@@ -28,7 +28,6 @@ import { SURFACES } from '../lib/surfaces';
 import { useConsolidationStatus, useIsMobile } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
 import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
-import { ConversationTabBar } from './ConversationTabBar';
 import { WindowControls } from './WindowControls';
 import { showWindowControls, isMac } from '../lib/platform';
 import './TopBar.css';
@@ -120,10 +119,8 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         ))}
       </nav>
 
-      {/* Center: Conversation tabs (visible only on AgentX page) + drag area */}
-      <div className="top-bar-center" data-tauri-drag-region>
-        <ConversationTabBar visible={activePage === 'agentx'} />
-      </div>
+      {/* Center: drag area (conversations now live in the chat-page sidebar) */}
+      <div className="top-bar-center" data-tauri-drag-region />
 
       {/* Right: live indicators + ⌘K + Focus + Workspace menu + window controls */}
       <div className="top-bar-right">
