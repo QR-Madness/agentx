@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.57 -->
+<!-- release-version: 0.21.58 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,15 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **Toolbar cleanup — the command palette is now the one place for everything.** The
+  redundant "Workspace" overflow (`⋯`) menu is gone; the ⌘K command palette is the single,
+  primary command surface — a labeled **Search…** pill in the toolbar makes it obvious
+  (and it's a genuine lifesaver on mobile, where it's the main way to get around). The
+  palette was rebuilt on `cmdk`: fuzzy search + ranking, grouped sections (Navigation /
+  Conversation / Workspace / Theme / Account), a **Recent** group, **theme switching**
+  (Cosmic / Light / Professional / System) inline, keyboard nav with scroll-into-view, and
+  a near-fullscreen layout on mobile. Under the hood, the toolbar and palette now open every
+  surface through one shared registry, so they can't drift out of sync.
 - **Logging overhaul — readable, color-coded, traceable, in-app.** Server logs now
   render with per-subsystem category badges (provider / memory / stream / mcp / …),
   semantic highlighting (model ids, token/cost figures, durations), and a per-turn

@@ -6,36 +6,25 @@
  * Both pulse when their respective operations are active.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import {
   Home,
   LayoutDashboard,
   Bot,
-  Settings,
-  Database,
-  Wrench,
-  BookMarked,
-  Languages,
   Brain,
   Zap,
-  LogOut,
-  KeyRound,
-  MoreHorizontal,
   BrainCircuit,
   ListChecks,
-  Command,
   Eye,
   EyeOff,
   MessagesSquare,
-  Radio,
-  ScrollText,
+  Search,
 } from 'lucide-react';
-import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
 import { usePlans } from '../contexts/PlansContext';
-import { useAuth } from '../contexts/AuthContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
+import { SURFACES } from '../lib/surfaces';
 import { useConsolidationStatus, useIsMobile } from '../lib/hooks';
 import { ActiveAgentsDropdown } from '../components/chat/ActiveAgentsDropdown';
 import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
@@ -66,152 +55,25 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const activePlanCount = Array.from(livePlans.values()).filter(
     p => p.status === 'running',
   ).length;
-  const { authRequired, isAuthenticated, logout } = useAuth();
   const { focusMode, toggleFocusMode } = useUIChrome();
   const isMobile = useIsMobile();
 
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
-  const [showOverflow, setShowOverflow] = useState(false);
-  const [overflowPos, setOverflowPos] = useState<{ top: number; right: number } | null>(null);
 
   const brainButtonRef = useRef<HTMLButtonElement>(null);
   const lightningButtonRef = useRef<HTMLButtonElement>(null);
-  const overflowButtonRef = useRef<HTMLButtonElement>(null);
 
-  const openOverflow = useCallback(() => {
-    if (!overflowButtonRef.current) return;
-    const rect = overflowButtonRef.current.getBoundingClientRect();
-    const itemCount = 5 + (authRequired && isAuthenticated ? 2 : 0);
-    const estHeight = itemCount * 44 + 16;
-    const wouldOverflow = rect.bottom + estHeight + 8 > window.innerHeight;
-    const top = wouldOverflow ? Math.max(8, rect.top - estHeight - 6) : rect.bottom + 4;
-    setOverflowPos({ top, right: window.innerWidth - rect.right });
-    setShowOverflow(true);
-  }, [authRequired, isAuthenticated]);
-
-  const closeOverflow = useCallback(() => {
-    setShowOverflow(false);
-    setOverflowPos(null);
-  }, []);
-
-  useEffect(() => {
-    if (!showOverflow) return;
-    let lastWidth = window.innerWidth;
-    const onScroll = () => closeOverflow();
-    const onResize = () => {
-      const w = window.innerWidth;
-      if (w !== lastWidth) { lastWidth = w; closeOverflow(); }
-    };
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onResize);
-    };
-  }, [showOverflow, closeOverflow]);
+  const openPalette = () =>
+    window.dispatchEvent(new CustomEvent('agentx:toggle-command-palette'));
 
   const hasStreamingTabs = tabs.some(t => t.isStreaming);
 
-  const openSettings = () => {
-    openModal({
-      id: 'unified-settings',
-      type: 'modal',
-      component: 'unifiedSettings',
-      size: 'full',
-    });
-  };
-
-  const openMemory = () => {
-    openModal({
-      id: 'memory',
-      type: 'modal',
-      component: 'memory',
-      size: 'full',
-    });
-  };
-
-  const openPlans = () => {
-    openModal({
-      id: 'plans-drawer',
-      type: 'drawer',
-      component: 'plans',
-      position: 'right',
-      size: 'xxl',
-    });
-  };
-
-  const openSources = () => {
-    openModal({
-      id: 'sources-drawer',
-      type: 'drawer',
-      component: 'sources',
-      position: 'right',
-      size: 'xxl',
-    });
-  };
-
-  const openAmbassador = () => {
-    openModal({
-      id: 'ambassador-drawer',
-      type: 'drawer',
-      component: 'ambassador',
-      position: 'right',
-      size: 'xxl',
-    });
-  };
-
-  const openTools = () => {
-    openModal({
-      id: 'toolkit',
-      type: 'modal',
-      component: 'tools',
-      size: 'full',
-    });
-  };
-
-  const openLogs = () => {
-    openModal({
-      id: 'logs-drawer',
-      type: 'drawer',
-      component: 'logs',
-      position: 'right',
-      size: 'xxl',
-    });
-  };
-
-  const openConversations = () => {
-    openModal({
-      id: 'conversations-drawer',
-      type: 'drawer',
-      component: 'conversations',
-      position: 'right',
-      size: 'md',
-    });
-  };
-
-  const openTranslation = () => {
-    openModal({
-      id: 'translation-modal',
-      type: 'modal',
-      component: 'translation',
-      size: 'lg',
-    });
-  };
-
-  const openProfileEditor = () => {
-    openModal({
-      id: 'profile-editor',
-      type: 'modal',
-      component: 'unifiedProfileEditor',
-      size: 'full',
-    });
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    onPageChange('start');
-  };
+  // The few stateful strip icons open surfaces through SURFACES so they can't
+  // drift from the command palette (the single home for every other action).
+  const openPlans = () => openModal(SURFACES.plans);
+  const openConversations = () => openModal(SURFACES.conversations);
+  const openProfileEditor = () => openModal(SURFACES.profileEditor);
 
   return (
     <header
@@ -307,13 +169,19 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           </button>
         )}
 
-        {/* Command palette */}
+        {/* Command palette — the primary entry to everything (replaces the old
+            Workspace overflow). Labeled search pill: discoverable, mobile-first. */}
         <button
-          className="toolbar-icon toolbar-cmdk"
-          onClick={() => window.dispatchEvent(new CustomEvent('agentx:toggle-command-palette'))}
-          title="Command palette (⌘K)"
+          className="toolbar-search-pill"
+          onClick={openPalette}
+          title="Search commands (⌘K)"
+          aria-label="Search commands"
         >
-          <Command size={18} />
+          <Search size={16} />
+          <span className="toolbar-search-pill-label">Search…</span>
+          {!isMobile && (
+            <kbd className="toolbar-search-pill-kbd">{isMac ? '⌘' : 'Ctrl'} K</kbd>
+          )}
         </button>
 
         {/* Focus / Zen mode */}
@@ -325,82 +193,8 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
           {focusMode ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
 
-        {/* Workspace menu — canonical home for all secondary tools */}
-        <button
-          ref={overflowButtonRef}
-          className={`toolbar-icon toolbar-workspace-trigger ${showOverflow ? 'active' : ''}`}
-          onClick={() => (showOverflow ? closeOverflow() : openOverflow())}
-          title="Workspace"
-        >
-          <MoreHorizontal size={18} />
-        </button>
-
         {showWindowControls && <WindowControls />}
       </div>
-
-      {/* Overflow dropdown — portal-rendered below the overflow button */}
-      {showOverflow && overflowPos && createPortal(
-        <>
-          <div className="toolbar-overflow-backdrop" onClick={closeOverflow} />
-          <div
-            className="toolbar-overflow-menu"
-            style={{ top: overflowPos.top, right: overflowPos.right }}
-          >
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openSettings(); }}>
-              <Settings size={16} />
-              <span>Settings</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTranslation(); }}>
-              <Languages size={16} />
-              <span>Translation</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openTools(); }}>
-              <Wrench size={16} />
-              <span>Tools</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openPlans(); }}>
-              <ListChecks size={16} />
-              <span>Plans{activePlanCount > 0 ? ` (${activePlanCount})` : ''}</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openMemory(); }}>
-              <Database size={16} />
-              <span>Memory</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openSources(); }}>
-              <BookMarked size={16} />
-              <span>Sources</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openAmbassador(); }}>
-              <Radio size={16} />
-              <span>Ambassador</span>
-            </button>
-            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openLogs(); }}>
-              <ScrollText size={16} />
-              <span>Logs</span>
-            </button>
-            {authRequired && isAuthenticated && (
-              <>
-                <div className="toolbar-overflow-divider" />
-                <button
-                  className="toolbar-overflow-item"
-                  onClick={() => {
-                    closeOverflow();
-                    openModal({ id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' });
-                  }}
-                >
-                  <KeyRound size={16} />
-                  <span>Change Password</span>
-                </button>
-                <button className="toolbar-overflow-item toolbar-overflow-item--danger" onClick={() => { closeOverflow(); handleLogout(); }}>
-                  <LogOut size={16} />
-                  <span>Sign Out</span>
-                </button>
-              </>
-            )}
-          </div>
-        </>,
-        document.body,
-      )}
     </header>
   );
 }

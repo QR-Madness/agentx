@@ -238,63 +238,46 @@
   flex-shrink: 0;
 }
 
-/* === Workspace Menu (canonical home for secondary tools, all viewports) === */
-.toolbar-workspace-trigger {
-  display: flex;
-}
-
-.toolbar-overflow-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 499;
-}
-
-.toolbar-overflow-menu {
-  position: fixed;
-  z-index: 500;
-  min-width: 180px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  box-shadow: var(--shadow-lg);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  animation: fadeIn 0.12s ease;
-}
-
-.toolbar-overflow-item {
+/* === Command palette launcher (search pill) — primary entry to everything === */
+.toolbar-search-pill {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--surface-raised, var(--bg-card));
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-  width: 100%;
-  min-height: 44px;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  -webkit-app-region: no-drag;
 }
 
-.toolbar-overflow-item:hover {
-  background: var(--bg-hover);
+.toolbar-search-pill:hover {
+  background: var(--surface-hover, var(--bg-hover));
   color: var(--text-primary);
+  border-color: var(--border-emphasis, var(--border-color));
 }
 
-.toolbar-overflow-item--danger:hover {
-  background: var(--feedback-error-tint);
-  color: var(--feedback-error);
+.toolbar-search-pill-label {
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.toolbar-overflow-divider {
-  height: 1px;
-  background: var(--border-subtle, rgba(255,255,255,0.08));
-  margin: 2px 4px;
+.toolbar-search-pill-kbd {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-void, rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* Mobile: a clear, comfortably tappable search affordance (no ⌘K kbd). */
+@media (max-width: 768px) {
+  .toolbar-search-pill { height: 36px; padding: 0 12px; }
 }
 
 /* === Responsive === */
@@ -333,12 +316,6 @@
 
   /* Hide secondary chrome (e.g. the logo button) to save room on mobile */
   .toolbar-secondary {
-    display: none !important;
-  }
-
-  /* Drop the Workspace overflow trigger on mobile — the command palette (⌘K)
-     is the canonical launcher for every drawer/modal and covers all of it. */
-  .toolbar-workspace-trigger {
     display: none !important;
   }
 }
@@ -401,8 +378,7 @@
 .top-bar--focus .top-bar-center,
 .top-bar--focus .consolidation-trigger-container,
 .top-bar--focus .toolbar-icon-plans,
-.top-bar--focus .toolbar-cmdk,
-.top-bar--focus .toolbar-workspace-trigger {
+.top-bar--focus .toolbar-search-pill {
   display: none;
 }
 

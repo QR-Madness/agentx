@@ -1,53 +1,30 @@
 /**
  * CommandPalette — ⌘K / Ctrl+K launcher for navigation + every drawer/modal.
  *
- * Consolidates the controls that used to live as individual TopBar icons into a
- * single searchable list, so the titlebar strip can stay minimal. Actions reuse
- * the same `openModal(...)` calls the strip's Workspace menu uses.
+ * The single, primary command surface (the TopBar's Workspace overflow was
+ * removed in favor of this). A thin `cmdk` renderer over the `useCommands()`
+ * registry: cmdk owns fuzzy filtering, ranking, ↑↓/Enter, scroll-into-view and
+ * ARIA; we add grouping, a "Recent" section (empty-query only), a theme group,
+ * and a footer hint bar.
  *
- * Opened/closed by RootLayout (which owns the page-navigation state and the
- * global key listener); the strip's ⌘K button dispatches
- * `agentx:toggle-command-palette` which RootLayout also listens for.
+ * Opened/closed by RootLayout (which owns page-navigation state + the global key
+ * listener); the strip's search pill dispatches `agentx:toggle-command-palette`.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Command } from 'cmdk';
+import { Search, Check } from 'lucide-react';
 import {
-  Home,
-  LayoutDashboard,
-  Bot,
-  Plus,
-  X,
-  Settings,
-  Wrench,
-  Database,
-  ListChecks,
-  BookMarked,
-  Languages,
-  BrainCircuit,
-  Eye,
-  EyeOff,
-  Zap,
-  Search,
-  KeyRound,
-  LogOut,
-  Radio,
-} from 'lucide-react';
-import { useModal } from '../../contexts/ModalContext';
-import { useConversation } from '../../contexts/ConversationContext';
-import { useUIChrome } from '../../contexts/UIChromeContext';
-import { useAuth } from '../../contexts/AuthContext';
+  useCommands,
+  GROUP_ORDER,
+  type Command as Cmd,
+  type CommandGroup,
+} from '../../hooks/useCommands';
+import { getRecentCommandIds, pushRecentCommand } from '../../lib/recentCommands';
+import { isMac } from '../../lib/platform';
 import type { PageId } from '../../layouts/TopBar';
 import './CommandPalette.css';
-
-interface CommandAction {
-  id: string;
-  label: string;
-  hint?: string;
-  icon: React.ReactNode;
-  keywords?: string;
-  run: () => void;
-}
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -55,128 +32,116 @@ interface CommandPaletteProps {
   onNavigate: (page: PageId) => void;
 }
 
+function CommandRow({ cmd }: { cmd: Cmd }) {
+  return (
+    <>
+      <span className="cmdk-item-icon">{cmd.icon}</span>
+      <span className="cmdk-item-label">{cmd.label}</span>
+      {cmd.isActive && <Check size={15} className="cmdk-item-check" />}
+      {cmd.hint && <kbd className="cmdk-item-hint">{cmd.hint}</kbd>}
+    </>
+  );
+}
+
 export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPaletteProps) {
-  const { openModal } = useModal();
-  const { addTab, closeTab, activeTabId, activeTab, updateTab } = useConversation();
-  const { focusMode, toggleFocusMode } = useUIChrome();
-  const { authRequired, isAuthenticated, logout } = useAuth();
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState('');
+  const commands = useCommands({ onNavigate, onClose });
 
-  const actions = useMemo<CommandAction[]>(() => {
-    const go = (page: PageId) => () => { onNavigate(page); onClose(); };
-    const open = (m: Parameters<typeof openModal>[0]) => () => { openModal(m); onClose(); };
-    const memLocked = !!(activeTab && (activeTab.sessionId || activeTab.messages.length > 0));
-
-    const list: CommandAction[] = [
-      { id: 'nav-chat', label: 'Go to Chat', icon: <Bot size={16} />, keywords: 'agentx conversation', run: go('agentx') },
-      { id: 'nav-start', label: 'Go to Start', icon: <Home size={16} />, keywords: 'home', run: go('start') },
-      { id: 'nav-dashboard', label: 'Go to Dashboard', icon: <LayoutDashboard size={16} />, keywords: 'metrics status', run: go('dashboard') },
-      { id: 'conv-new', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: 'tab create chat', run: () => { addTab(); onNavigate('agentx'); onClose(); } },
-      {
-        id: 'focus', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen',
-        icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: 'zen immersive hide chrome',
-        run: () => { toggleFocusMode(); onClose(); },
-      },
-      { id: 'open-settings', label: 'Open Settings', hint: '⌘,', icon: <Settings size={16} />, keywords: 'config preferences providers', run: open({ id: 'unified-settings', type: 'modal', component: 'unifiedSettings', size: 'full' }) },
-      { id: 'open-tools', label: 'Open Tools', icon: <Wrench size={16} />, keywords: 'toolkit mcp servers', run: open({ id: 'toolkit', type: 'modal', component: 'tools', size: 'full' }) },
-      { id: 'open-memory', label: 'Open Memory', icon: <Database size={16} />, keywords: 'facts entities recall', run: open({ id: 'memory-drawer', type: 'drawer', component: 'memory', position: 'right', size: 'xxl' }) },
-      { id: 'open-sources', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: 'citations bibliography references links', run: open({ id: 'sources-drawer', type: 'drawer', component: 'sources', position: 'right', size: 'xxl' }) },
-      { id: 'open-ambassador', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: 'ambassador briefing summarize interpret turn parallel', run: open({ id: 'ambassador-drawer', type: 'drawer', component: 'ambassador', position: 'right', size: 'xxl' }) },
-      { id: 'open-plans', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: 'tasks subtasks progress', run: open({ id: 'plans-drawer', type: 'drawer', component: 'plans', position: 'right', size: 'xxl' }) },
-      { id: 'open-translation', label: 'Open Translation', icon: <Languages size={16} />, keywords: 'translate language nllb', run: open({ id: 'translation-modal', type: 'modal', component: 'translation', size: 'lg' }) },
-      { id: 'open-profile', label: 'Edit agent profile', icon: <BrainCircuit size={16} />, keywords: 'agent model temperature prompt', run: open({ id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full' }) },
-    ];
-
-    if (activeTabId && !memLocked) {
-      list.push({
-        id: 'toggle-mem',
-        label: activeTab?.noMemorization ? 'Enable memorization for this chat' : 'Disable memorization for this chat',
-        icon: <Zap size={16} />, keywords: 'memory private temporary no-memorization',
-        run: () => { updateTab(activeTabId, { noMemorization: !activeTab?.noMemorization }); onClose(); },
-      });
-    }
-    if (activeTabId) {
-      list.push({ id: 'conv-close', label: 'Close conversation', hint: '⌘W', icon: <X size={16} />, keywords: 'tab remove', run: () => { closeTab(activeTabId); onClose(); } });
-    }
-
-    // Account actions live only here (and the desktop Workspace menu); the
-    // mobile toolbar drops its overflow trigger, so the palette is their home.
-    if (authRequired && isAuthenticated) {
-      list.push({ id: 'change-password', label: 'Change Password', icon: <KeyRound size={16} />, keywords: 'account security login', run: open({ id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' }) });
-      list.push({ id: 'sign-out', label: 'Sign Out', icon: <LogOut size={16} />, keywords: 'logout exit session', run: () => { onClose(); logout().then(() => onNavigate('start')); } });
-    }
-    return list;
-  }, [openModal, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, focusMode, toggleFocusMode, updateTab, authRequired, isAuthenticated, logout]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return actions;
-    return actions.filter(a => (a.label + ' ' + (a.keywords ?? '')).toLowerCase().includes(q));
-  }, [actions, query]);
-
-  // Reset + focus on open
   useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setSelected(0);
-      // focus after the portal mounts
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
+    if (isOpen) setSearch('');
   }, [isOpen]);
 
-  useEffect(() => { setSelected(0); }, [query]);
+  const byId = useMemo(() => new Map(commands.map(c => [c.id, c])), [commands]);
+
+  // Recent is shown only when the query is empty (avoids double-matching an
+  // action against both its Recent and canonical entry while searching).
+  const recent = useMemo(() => {
+    if (!isOpen || search.trim()) return [];
+    return getRecentCommandIds()
+      .map(id => byId.get(id))
+      .filter((c): c is Cmd => !!c);
+  }, [isOpen, search, byId]);
+
+  const groups = useMemo<[CommandGroup, Cmd[]][]>(
+    () =>
+      GROUP_ORDER.map(g => [g, commands.filter(c => c.group === g)] as [CommandGroup, Cmd[]])
+        .filter(([, items]) => items.length > 0),
+    [commands],
+  );
 
   if (!isOpen) return null;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelected(s => Math.min(s + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelected(s => Math.max(s - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      filtered[selected]?.run();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-    }
+  const run = (cmd: Cmd) => {
+    pushRecentCommand(cmd.id);
+    cmd.run();
   };
 
   return createPortal(
     <div className="cmdk-overlay" onClick={onClose} role="presentation">
-      <div className="cmdk-panel" onClick={e => e.stopPropagation()} role="dialog" aria-label="Command palette">
-        <div className="cmdk-search">
-          <Search size={16} className="cmdk-search-icon" />
-          <input
-            ref={inputRef}
-            className="cmdk-input"
-            placeholder="Type a command or search…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-        <div className="cmdk-list" role="listbox">
-          {filtered.length === 0 && <div className="cmdk-empty">No matching commands</div>}
-          {filtered.map((a, i) => (
-            <button
-              key={a.id}
-              className={`cmdk-item ${i === selected ? 'selected' : ''}`}
-              onMouseEnter={() => setSelected(i)}
-              onClick={a.run}
-              role="option"
-              aria-selected={i === selected}
-            >
-              <span className="cmdk-item-icon">{a.icon}</span>
-              <span className="cmdk-item-label">{a.label}</span>
-              {a.hint && <kbd className="cmdk-item-hint">{a.hint}</kbd>}
-            </button>
-          ))}
-        </div>
+      <div
+        className="cmdk-panel"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+      >
+        <Command label="Command palette">
+          <div className="cmdk-search">
+            <Search size={16} className="cmdk-search-icon" />
+            <Command.Input
+              autoFocus
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Type a command or search…"
+              className="cmdk-input"
+            />
+          </div>
+          <Command.List className="cmdk-list">
+            <Command.Empty className="cmdk-empty">No matching commands</Command.Empty>
+
+            {recent.length > 0 && (
+              <Command.Group heading="Recent" className="cmdk-group">
+                {recent.map(cmd => (
+                  <Command.Item
+                    key={`recent:${cmd.id}`}
+                    value={`recent:${cmd.id}`}
+                    onSelect={() => run(cmd)}
+                    className="cmdk-item"
+                  >
+                    <CommandRow cmd={cmd} />
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
+
+            {groups.map(([group, items]) => (
+              <Command.Group key={group} heading={group} className="cmdk-group">
+                {items.map(cmd => (
+                  <Command.Item
+                    key={cmd.id}
+                    value={cmd.id}
+                    keywords={[cmd.label, ...(cmd.keywords ?? [])]}
+                    onSelect={() => run(cmd)}
+                    className="cmdk-item"
+                  >
+                    <CommandRow cmd={cmd} />
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            ))}
+          </Command.List>
+
+          <div className="cmdk-footer">
+            <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+            <span><kbd>↵</kbd> select</span>
+            <span><kbd>esc</kbd> close</span>
+            <span className="cmdk-footer-spacer" />
+            <span className="cmdk-footer-brand"><kbd>{isMac ? '⌘' : 'Ctrl'}</kbd><kbd>K</kbd></span>
+          </div>
+        </Command>
       </div>
     </div>,
     document.body,

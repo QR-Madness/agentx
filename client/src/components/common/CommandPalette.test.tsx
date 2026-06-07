@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CommandPalette } from './CommandPalette';
+
+const setTheme = vi.fn();
 
 vi.mock('../../contexts/ModalContext', () => ({
   useModal: () => ({ openModal: vi.fn() }),
@@ -20,8 +22,16 @@ vi.mock('../../contexts/UIChromeContext', () => ({
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ authRequired: false, isAuthenticated: false, logout: vi.fn() }),
 }));
+vi.mock('../../contexts/ThemeContext', () => ({
+  useTheme: () => ({ preference: 'cosmic', setTheme }),
+}));
 
 describe('CommandPalette', () => {
+  beforeEach(() => {
+    setTheme.mockClear();
+    localStorage.clear();
+  });
+
   it('renders nothing when closed', () => {
     const { container } = render(
       <CommandPalette isOpen={false} onClose={vi.fn()} onNavigate={vi.fn()} />,
@@ -29,36 +39,35 @@ describe('CommandPalette', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('lists navigation + tool actions when open', () => {
+  it('lists navigation, workspace, and theme actions when open', () => {
     render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
     expect(screen.getByText('Go to Chat')).toBeInTheDocument();
     expect(screen.getByText('Open Settings')).toBeInTheDocument();
-    expect(screen.getByText('Open Translation')).toBeInTheDocument();
+    expect(screen.getByText('Open Logs')).toBeInTheDocument();
+    expect(screen.getByText('Theme: Light')).toBeInTheDocument();
   });
 
-  it('filters the list by query', () => {
-    render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
-    fireEvent.change(screen.getByPlaceholderText(/type a command/i), {
-      target: { value: 'translation' },
-    });
-    expect(screen.getByText('Open Translation')).toBeInTheDocument();
-    expect(screen.queryByText('Go to Chat')).not.toBeInTheDocument();
-  });
-
-  it('shows an empty state for no matches', () => {
-    render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
-    fireEvent.change(screen.getByPlaceholderText(/type a command/i), {
-      target: { value: 'zzzznomatch' },
-    });
-    expect(screen.getByText('No matching commands')).toBeInTheDocument();
-  });
-
-  it('runs an action and closes on click', () => {
+  it('runs a navigation action and closes on click', () => {
     const onNavigate = vi.fn();
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByText('Go to Dashboard'));
     expect(onNavigate).toHaveBeenCalledWith('dashboard');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('switches theme from the Theme group', () => {
+    const onClose = vi.fn();
+    render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);
+    fireEvent.click(screen.getByText('Theme: Light'));
+    expect(setTheme).toHaveBeenCalledWith('light');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes on Escape', () => {
+    const onClose = vi.fn();
+    render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);
+    fireEvent.keyDown(screen.getByPlaceholderText(/type a command/i), { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
 });

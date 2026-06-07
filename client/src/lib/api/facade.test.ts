@@ -27,6 +27,7 @@ const REPRESENTATIVE_METHODS = [
   'listJobs',               // jobs.ts
   'listConversations',      // history.ts
   'streamChat',             // streaming.ts
+  'listLogs',               // logs.ts
 ] as const;
 
 describe('api facade', () => {
@@ -34,8 +35,8 @@ describe('api facade', () => {
     expect(typeof (api as Record<string, unknown>)[method]).toBe('function');
   });
 
-  it('exposes exactly 123 methods (no drops or duplicates from the split)', () => {
-    expect(Object.keys(api)).toHaveLength(123);
+  it('exposes exactly 128 methods (no drops or duplicates from the split)', () => {
+    expect(Object.keys(api)).toHaveLength(128);
   });
 
   it('exposes only functions', () => {
