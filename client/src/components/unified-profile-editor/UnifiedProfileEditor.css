@@ -1346,8 +1346,8 @@
   position: relative;
   display: flex;
   gap: 16px;
-  align-items: flex-start;
-  padding: 18px 20px 20px;
+  align-items: center;
+  padding: 16px 20px;
   margin-bottom: 16px;
   border-radius: 18px;
   background: var(--surface-raised);
@@ -1357,15 +1357,24 @@
 .profile-hero__aura {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 8% 0%, var(--agent-soft, transparent), transparent 55%);
+  /* Glow centred on the avatar (left) so the banner reads as intentional, not empty. */
+  background: radial-gradient(360px circle at 56px 50%, var(--agent-soft, transparent), transparent 62%);
   pointer-events: none;
 }
+/* The avatar tile must stand out from the hero (same base surface) — give it a
+   tinted face, an accent ring, and the agent's signature color on the glyph. */
+.profile-hero .avatar-trigger {
+  background: linear-gradient(135deg, var(--agent-soft, transparent), transparent), var(--surface-overlay);
+  border-color: color-mix(in srgb, var(--agent-accent, var(--accent-primary)) 55%, var(--border-default));
+}
+.profile-hero .avatar-trigger__icon { color: var(--agent-accent, var(--text-primary)); }
+
 .profile-hero__main {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
 }
@@ -1391,19 +1400,24 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+/* Subtle underline field so an EMPTY description is just a thin line, not a dark box. */
 .profile-hero__desc {
   width: 100%;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px 0;
   color: var(--text-secondary);
-  font-size: 0.85rem;
-  line-height: 1.45;
-  resize: vertical;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  resize: none;
   outline: none;
+  field-sizing: content;
 }
-.profile-hero__desc:focus { border-color: var(--accent-primary); }
+.profile-hero__desc::placeholder { color: var(--text-muted); }
+.profile-hero__desc:hover { border-bottom-color: var(--border-default); }
+.profile-hero__desc:focus { border-bottom-color: var(--accent-primary); }
 
 @media (max-width: 560px) {
   .profile-hero { flex-direction: column; }
