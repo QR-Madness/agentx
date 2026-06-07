@@ -106,7 +106,7 @@ function TableElementImpl({ element }: ElementRenderProps) {
           <DialogTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:bg-surface-hover hover:text-fg"
             >
               <Maximize2 size={12} /> Expand
             </button>

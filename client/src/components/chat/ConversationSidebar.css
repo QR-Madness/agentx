@@ -1,6 +1,7 @@
 /* === ConversationSidebar — chat-page conversation rail === */
 
 .conversation-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 264px;
@@ -9,6 +10,22 @@
   min-height: 0;
   border-right: 1px solid var(--border-color);
   background: var(--surface-base, var(--bg-card));
+}
+
+/* Drag handle on the right edge to resize the rail. */
+.conv-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+.conv-sidebar-resizer:hover,
+.conv-sidebar-resizer:active {
+  background: linear-gradient(to right, transparent, var(--accent-primary) 50%, transparent);
+  opacity: 0.5;
 }
 
 .conversation-sidebar--collapsed {

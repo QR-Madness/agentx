@@ -139,6 +139,11 @@
   opacity: 1;
 }
 
+/* Touch devices have no hover — keep the actions reachable. */
+@media (hover: none) {
+  .history-item-actions { opacity: 1; }
+}
+
 .history-item-action {
   background: none;
   border: none;
@@ -163,12 +168,100 @@
 }
 
 .history-footer {
-  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
   border-top: 1px solid var(--border-subtle);
   font-size: 0.6875rem;
   color: var(--text-tertiary);
-  text-align: center;
 }
+.conv-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 5px;
+}
+.conv-select-toggle:hover { background: var(--bg-hover); color: var(--text-secondary); }
+
+/* Selected (multi-select) + active */
+.history-item.selected { background: var(--accent-tint-soft); }
+.history-item .history-item-icon[style] { border: 1px solid transparent; }
+
+/* Pin flag in title */
+.history-item-pinflag {
+  display: inline;
+  vertical-align: -1px;
+  margin-right: 3px;
+  color: var(--accent-primary);
+}
+
+/* Section toggle (collapsible groups / archived) */
+.history-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.history-section-toggle:hover { color: var(--text-secondary); }
+.history-section-count {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+/* Bulk-action bar (selection mode) */
+.conv-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--accent-tint-soft);
+}
+.conv-bulk-count { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+.conv-bulk-actions { display: flex; align-items: center; gap: 0.25rem; }
+.conv-bulk-actions .history-item-action { opacity: 1; }
+
+/* New-group inline input */
+.conv-newgroup { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+.conv-newgroup input {
+  width: 100%;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--bg-elevated, rgba(255,255,255,0.06));
+  border: 1px solid var(--accent-primary, var(--border-color));
+  border-radius: 6px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+/* Color swatch grid (in the row's Color submenu) */
+.conv-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 6px 8px;
+}
+.conv-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.conv-color-swatch.selected { border-color: var(--text-primary); }
 
 /* Section labels for Resume Running / Open / recency buckets */
 .history-section-label {

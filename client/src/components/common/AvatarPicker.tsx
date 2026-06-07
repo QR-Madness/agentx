@@ -43,10 +43,18 @@ interface AvatarPickerProps {
   size?: 'sm' | 'md' | 'lg';
   accent?: AgentAccent;
   ariaLabel?: string;
+  /** Controlled open (with onOpenChange) — lets a caller drive the picker without
+   *  the built-in trigger (e.g. opened from a menu item). Uncontrolled if omitted. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button (for controlled use). */
+  hideTrigger?: boolean;
 }
 
-export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel }: AvatarPickerProps) {
-  const [open, setOpen] = useState(false);
+export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, open: openProp, onOpenChange, hideTrigger }: AvatarPickerProps) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = (o: boolean) => { onOpenChange?.(o); if (openProp === undefined) setOpenInternal(o); };
   const [tab, setTab] = useState<'browse' | 'generate'>('browse');
   const [query, setQuery] = useState('');
   const [hovered, setHovered] = useState<string | null>(null);
@@ -96,17 +104,19 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel }
 
   return (
     <>
-      <button
-        type="button"
-        className={`avatar-trigger avatar-trigger--${size} ${accent ? 'has-accent' : ''}`}
-        style={auraStyle}
-        onClick={() => setOpen(true)}
-        aria-label={ariaLabel ?? 'Choose avatar'}
-      >
-        <span className="avatar-trigger__aura" />
-        <TriggerIcon className="avatar-trigger__icon" />
-        <span className="avatar-trigger__edit"><Pencil size={size === 'lg' ? 14 : 11} /></span>
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          className={`avatar-trigger avatar-trigger--${size} ${accent ? 'has-accent' : ''}`}
+          style={auraStyle}
+          onClick={() => setOpen(true)}
+          aria-label={ariaLabel ?? 'Choose avatar'}
+        >
+          <span className="avatar-trigger__aura" />
+          <TriggerIcon className="avatar-trigger__icon" />
+          <span className="avatar-trigger__edit"><Pencil size={size === 'lg' ? 14 : 11} /></span>
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

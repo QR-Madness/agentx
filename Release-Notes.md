@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.59 -->
+<!-- release-version: 0.21.60 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -23,11 +23,19 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,
   all in one well-styled, searchable place. It collapses to a slim avatar rail when you want
-  the room (remembered across restarts), and on mobile the same list opens as a drawer. This
-  is the home for the richer conversation-management tools coming next.
+  the room (remembered across restarts), and on mobile the same list opens as a drawer, and
+  it's **resizable** — drag the edge to the width you like.
+- **Conversation management.** Each conversation now has a `⋯` menu to **pin** it (pinned float
+  to the top), **archive** it (tucked into a collapsible Archived section), give it a custom
+  **icon** and **color**, and sort it into **custom groups** — all remembered per server.
+  **Multi-select** lets you act on many at once (bulk pin / archive / delete). And the jarring
+  native "are you sure?" delete prompt is replaced by a proper, themed confirm dialog. (Under
+  the hood this rides one extensible per-conversation metadata model — room to grow toward
+  workspace/file linking later.)
 - **Cleaner data tables.** Agent-authored tables now read like real tables — more generous
   spacing, a crisper header with a clear divider, delineated columns that wrap long prose
-  instead of crushing it (wide tables scroll), subtler zebra striping and row hover. Sort,
+  instead of crushing it (wide tables scroll), subtler zebra striping and row hover. The
+  **Expand** and dialog **close** buttons got proper padding and contrast. Sort,
   expand-to-modal, and the mobile stacked-card view are unchanged.
 - **Toolbar cleanup — the command palette is now the one place for everything.** The
   redundant "Workspace" overflow (`⋯`) menu is gone; the ⌘K command palette is the single,

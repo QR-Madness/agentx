@@ -11,6 +11,7 @@ import { AlloyWorkflowProvider } from './contexts/AlloyWorkflowContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { TooltipProvider } from './components/ui/Tooltip';
 import { Toaster } from './components/ui/Toaster';
+import { ConfirmProvider } from './components/ui/ConfirmDialog';
 import { ModalPortal } from './components/modals/ModalPortal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RootLayout } from './layouts/RootLayout';
@@ -101,12 +102,14 @@ function App() {
                        <PlansProvider>
                         <ModalProvider>
                           <UIChromeProvider>
-                            <ErrorBoundary>
-                              <RootLayout />
-                            </ErrorBoundary>
-                            <ModalPortal />
-                            <Toaster />
-                            {showWindowControls && <ResizeHandles />}
+                            <ConfirmProvider>
+                              <ErrorBoundary>
+                                <RootLayout />
+                              </ErrorBoundary>
+                              <ModalPortal />
+                              <Toaster />
+                              {showWindowControls && <ResizeHandles />}
+                            </ConfirmProvider>
                           </UIChromeProvider>
                         </ModalProvider>
                        </PlansProvider>
