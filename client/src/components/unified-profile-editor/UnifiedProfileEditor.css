@@ -1346,8 +1346,9 @@
   position: relative;
   display: flex;
   gap: 16px;
-  align-items: center;
-  padding: 16px 20px;
+  align-items: flex-start;
+  flex-shrink: 0; /* never let the flex-column scroll container squeeze the hero */
+  padding: 18px 20px;
   margin-bottom: 16px;
   border-radius: 18px;
   background: var(--surface-raised);
@@ -1400,23 +1401,24 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-/* Subtle underline field so an EMPTY description is just a thin line, not a dark box. */
+/* Subtle underline field — empty reads as a thin line, not a dark box, but it keeps
+   a real (2-row) height so the hero doesn't collapse. */
 .profile-hero__desc {
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid transparent;
+  border-bottom: 1px solid var(--border-default);
   border-radius: 0;
-  padding: 2px 0;
+  padding: 4px 0;
+  min-height: 40px;
+  margin-top: 2px;
   color: var(--text-secondary);
   font-size: 0.82rem;
-  line-height: 1.4;
-  resize: none;
+  line-height: 1.45;
+  resize: vertical;
   outline: none;
-  field-sizing: content;
 }
 .profile-hero__desc::placeholder { color: var(--text-muted); }
-.profile-hero__desc:hover { border-bottom-color: var(--border-default); }
 .profile-hero__desc:focus { border-bottom-color: var(--accent-primary); }
 
 @media (max-width: 560px) {
