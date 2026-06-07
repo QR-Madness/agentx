@@ -1305,6 +1305,75 @@ API keys are redacted from `GET /api/config` responses.
 
 ---
 
+## Logs
+
+Read-only access to the server's logs for the client **Log panel**. Backed by an
+in-memory ring buffer (live) and a compressed on-disk archive (history). Records are
+redacted of secrets at capture time. The whole group is gated by
+`AGENTX_LOG_API_ENABLED` (returns `404` when off) and is auth-gated by the normal
+middleware when `AGENTX_AUTH_ENABLED` is set.
+
+### Recent
+
+```
+GET /api/logs
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `level` | string | — | Filter by level (DEBUG/INFO/WARNING/ERROR) |
+| `category` | string | — | Filter by category key (provider/memory/stream/mcp/…) |
+| `run_id` | string | — | Filter to a single chat run |
+| `search` | string | — | Case-insensitive substring match |
+| `since` | int | — | Only records with `id` greater than this |
+| `limit` | int | 500 | Max records (1–2000) |
+
+**Response:**
+```json
+{
+  "available": true,
+  "logs": [
+    {
+      "id": 1421, "ts": 1749200000.12, "level": "INFO",
+      "logger": "agentx_ai.providers.anthropic", "category": "provider",
+      "run_id": "chat_run_ab12cd", "conversation_id": null, "agent_id": null,
+      "message": "request model=anthropic:claude-opus-4 messages=14"
+    }
+  ]
+}
+```
+
+### Live stream (SSE)
+
+```
+GET /api/logs/stream
+```
+
+Replays the current buffer, then follows live. Emits `log` events (one record each)
+plus heartbeat comments. `Content-Type: text/event-stream`. Returns `503` if the
+per-process subscriber cap is reached.
+
+### Categories
+
+```
+GET /api/logs/categories
+```
+
+Returns the category registry (`key`, `label`, `emoji`, `color`) the client uses to
+color rows.
+
+### Archive
+
+```
+GET /api/logs/archive
+GET /api/logs/archive/{name}
+```
+
+List the compressed archive segments (`data/logs/agentx.log[.N.gz]`) and download one.
+Segment names are validated against path traversal.
+
+---
+
 ## Authentication
 
 Authentication is **optional** and disabled by default. When `AGENTX_AUTH_ENABLED=true`,

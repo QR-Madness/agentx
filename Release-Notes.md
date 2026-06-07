@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.56 -->
+<!-- release-version: 0.21.57 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,17 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **Logging overhaul — readable, color-coded, traceable, in-app.** Server logs now
+  render with per-subsystem category badges (provider / memory / stream / mcp / …),
+  semantic highlighting (model ids, token/cost figures, durations), and a per-turn
+  `run:` correlation tag so one chat turn can be followed across providers, streaming
+  and memory. Startup shows an ASCII banner + a live status table (version, providers,
+  datastores, MCP). The previously enormous LLM request logs are now compact summary
+  cards by default (full payload on demand), and secrets are redacted everywhere. A new
+  **Log panel** (Workspace menu → Logs) streams the server's logs live into the client
+  with level/category/run filtering and a downloadable compressed archive. Everything is
+  governed by `AGENTX_LOG_*` flags — all on by default; `AGENTX_LOG_DECORATIONS=false`
+  restores plain output for CI/journald. The log API is auth-gated when auth is enabled.
 - **New "Professional" theme + a warmer Light.** A deep monochrome graphite theme
   with calm off-white text, where color is reserved for emphasis — feedback
   (success/error/warning) and code stay colored, the chrome is neutral with a single

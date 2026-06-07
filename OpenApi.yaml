@@ -3276,6 +3276,118 @@ paths:
               schema:
                 $ref: '#/components/schemas/ContextLimits'
 
+  /logs:
+    get:
+      tags: [Logs]
+      operationId: logsRecent
+      summary: Recent log records from the in-memory ring buffer
+      description: >-
+        Read-only view over the server's ring buffer. Gated by
+        `AGENTX_LOG_API_ENABLED`; auth-gated when `AGENTX_AUTH_ENABLED`.
+      parameters:
+        - { name: level, in: query, schema: { type: string }, description: 'Filter by level (DEBUG/INFO/WARNING/ERROR)' }
+        - { name: category, in: query, schema: { type: string }, description: 'Filter by category key (provider/memory/stream/…)' }
+        - { name: run_id, in: query, schema: { type: string }, description: 'Filter to one chat run' }
+        - { name: search, in: query, schema: { type: string }, description: 'Case-insensitive substring match' }
+        - { name: since, in: query, schema: { type: integer }, description: 'Only records with id greater than this' }
+        - { name: limit, in: query, schema: { type: integer, default: 500 } }
+      responses:
+        '200':
+          description: Log records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  logs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        ts: { type: number }
+                        level: { type: string }
+                        logger: { type: string }
+                        category: { type: string }
+                        run_id: { type: string, nullable: true }
+                        conversation_id: { type: string, nullable: true }
+                        agent_id: { type: string, nullable: true }
+                        message: { type: string }
+                        exc: { type: string }
+        '404': { description: Log API disabled }
+
+  /logs/stream:
+    get:
+      tags: [Logs]
+      operationId: logsStream
+      summary: Live log tail (SSE)
+      description: >-
+        Replays the current buffer then follows live. Emits `log` events (one
+        record each) plus heartbeat comments. Content-Type `text/event-stream`.
+      responses:
+        '200': { description: SSE stream of log events }
+        '404': { description: Log API disabled }
+        '503': { description: Too many concurrent subscribers }
+
+  /logs/categories:
+    get:
+      tags: [Logs]
+      operationId: logsCategories
+      summary: Log category registry (client color map)
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        label: { type: string }
+                        emoji: { type: string }
+                        color: { type: string }
+
+  /logs/archive:
+    get:
+      tags: [Logs]
+      operationId: logsArchiveList
+      summary: List compressed log archive segments
+      responses:
+        '200':
+          description: Archive segments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        size: { type: integer }
+                        modified: { type: number }
+                        compressed: { type: boolean }
+        '404': { description: Log API disabled }
+
+  /logs/archive/{name}:
+    get:
+      tags: [Logs]
+      operationId: logsArchiveDownload
+      summary: Download a single archive segment
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: The archive file (gzip or plain text) }
+        '404': { description: Segment not found or log API disabled }
+
 components:
   securitySchemes:
     SessionToken:

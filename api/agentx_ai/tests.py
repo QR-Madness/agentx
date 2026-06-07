@@ -6890,3 +6890,160 @@ class ChatRunIndexingTest(TestCase):
         with patch.object(chat_run, "_redis", return_value=client):
             chat_run.store.create("run-chat", user_id="u1", indexed=True)
         client.zadd.assert_called_once()
+
+
+class LoggingKitTest(TestCase):
+    """Unit tests for the logging_kit pipeline (no external deps)."""
+
+    def test_category_mapping(self):
+        from agentx_ai.logging_kit.categories import category_for
+
+        self.assertEqual(category_for("agentx_ai.providers.anthropic").key, "provider")
+        self.assertEqual(category_for("agentx_ai.streaming.tool_loop").key, "stream")
+        # ambassador lives under agent.* but must route to its own category
+        self.assertEqual(category_for("agentx_ai.agent.ambassador").key, "ambassador")
+        self.assertEqual(category_for("agentx_ai.agent.planner").key, "plan")
+        self.assertEqual(category_for("agentx_ai.agent.core").key, "agent")
+        self.assertEqual(category_for("agentx_ai.kit.agent_memory.recall").key, "memory")
+        self.assertEqual(category_for("agentx_ai.mcp.client").key, "mcp")
+        # unknown / bare root → core
+        self.assertEqual(category_for("something.else").key, "core")
+        self.assertEqual(category_for("agentx_ai").key, "core")
+
+    def test_redaction(self):
+        from agentx_ai.logging_kit.redaction import redact
+
+        self.assertIn("«redacted»", redact("api_key=sk-ant-abcd1234567890"))
+        self.assertNotIn("sk-ant-abcd1234567890", redact("api_key=sk-ant-abcd1234567890"))
+        # Authorization + bearer token: the whole credential goes, not just "Bearer"
+        scrubbed = redact("Authorization: Bearer abc.def.ghijklmnop tail")
+        self.assertNotIn("abc.def.ghijklmnop", scrubbed)
+        self.assertIn("tail", scrubbed)
+        # benign content is untouched
+        benign = "completed in 1.4s with ~8,234 tokens (60%)"
+        self.assertEqual(redact(benign), benign)
+
+    def test_ring_buffer_bounded_and_filters(self):
+        import logging as _logging
+
+        from agentx_ai.logging_kit.ring_buffer import RingBufferHandler
+
+        ring = RingBufferHandler(capacity=3)
+
+        def _emit(name, level, msg):
+            rec = _logging.LogRecord(name, level, __file__, 1, msg, None, None)
+            ring.emit(rec)
+
+        _emit("agentx_ai.providers.openai", _logging.INFO, "first")
+        _emit("agentx_ai.providers.openai", _logging.INFO, "second")
+        _emit("agentx_ai.agent.core", _logging.WARNING, "third")
+        _emit("agentx_ai.agent.core", _logging.ERROR, "fourth")
+
+        snap = ring.snapshot(limit=10)
+        self.assertEqual(len(snap), 3)  # bounded → oldest evicted
+        self.assertEqual(snap[0]["message"], "second")
+        # structured fields present
+        self.assertIn("category", snap[0])
+        self.assertIn("run_id", snap[0])
+        # filters
+        self.assertEqual(len(ring.snapshot(level="error")), 1)
+        self.assertEqual(len(ring.snapshot(category="agent")), 2)
+        self.assertEqual(len(ring.snapshot(search="fourth")), 1)
+
+    def test_ring_buffer_redacts_and_skips_self(self):
+        import logging as _logging
+
+        from agentx_ai.logging_kit.redaction import RedactionFilter
+        from agentx_ai.logging_kit.ring_buffer import RingBufferHandler
+
+        ring = RingBufferHandler(capacity=5)
+        redactor = RedactionFilter()
+
+        rec = _logging.LogRecord(
+            "agentx_ai.providers.openai", _logging.INFO, __file__, 1,
+            "key api_key=sk-secret123456789", None, None,
+        )
+        redactor.filter(rec)  # mirrors the QueueHandler-side filter
+        ring.emit(rec)
+        self.assertNotIn("sk-secret123456789", ring.snapshot()[-1]["message"])
+
+        # records from the log API / logging_kit itself are never captured
+        self_rec = _logging.LogRecord(
+            "agentx_ai.views_logs", _logging.INFO, __file__, 1, "serving stream", None, None,
+        )
+        before = len(ring.snapshot(limit=99))
+        ring.emit(self_rec)
+        self.assertEqual(len(ring.snapshot(limit=99)), before)
+
+    def test_flags_defaults_and_legacy(self):
+        from agentx_ai.logging_kit.flags import read_flags
+
+        keys = [
+            "AGENTX_LOG_DECORATIONS", "AGENTX_LOG_BANNER", "AGENTX_LLM_LOG_LEVEL",
+            "AGENTX_LOG_API_ENABLED", "AGENTX_LOG_FORMAT", "DEBUG_LOG_LLM_REQUESTS",
+            "AGENTX_LOG_ARCHIVE_ENABLED",
+        ]
+        with patch.dict(os.environ, {}, clear=False):
+            for k in keys:
+                os.environ.pop(k, None)
+            f = read_flags()
+            self.assertTrue(f.decorations)
+            self.assertTrue(f.banner)         # follows decorations
+            self.assertTrue(f.api_enabled)
+            self.assertTrue(f.archive_enabled)
+            self.assertEqual(f.llm_level, "summary")  # quiet default when decorations on
+            self.assertEqual(f.fmt, "pretty")
+
+        # legacy DEBUG_LOG_LLM_REQUESTS → full
+        with patch.dict(os.environ, {"DEBUG_LOG_LLM_REQUESTS": "1"}, clear=False):
+            os.environ.pop("AGENTX_LLM_LOG_LEVEL", None)
+            self.assertEqual(read_flags().llm_level, "full")
+
+        # explicit level wins over legacy
+        with patch.dict(os.environ, {"AGENTX_LLM_LOG_LEVEL": "off", "DEBUG_LOG_LLM_REQUESTS": "1"}, clear=False):
+            self.assertEqual(read_flags().llm_level, "off")
+
+        # decorations off → llm off by default, plain console
+        with patch.dict(os.environ, {"AGENTX_LOG_DECORATIONS": "false"}, clear=False):
+            os.environ.pop("AGENTX_LLM_LOG_LEVEL", None)
+            os.environ.pop("DEBUG_LOG_LLM_REQUESTS", None)
+            f2 = read_flags()
+            self.assertFalse(f2.decorations)
+            self.assertEqual(f2.llm_level, "off")
+
+    def test_plain_formatter_matches_baseline(self):
+        from agentx_ai.logging_kit.handler import build_plain_handler
+
+        handler = build_plain_handler()
+        # Must equal the historical 'verbose' format so decorations-off is parity.
+        self.assertEqual(handler.formatter._fmt, "{levelname} {asctime} {module} {message}")
+
+    def test_llm_cards_summary_and_off(self):
+        from agentx_ai.logging_kit.llm_cards import render_llm_request
+
+        params = {
+            "model": "anthropic:claude-opus-4",
+            "temperature": 0.7,
+            "messages": [{"role": "user", "content": "x" * 400}],
+            "tools": [{"function": {"name": "web_search"}}],
+            "api_key": "sk-ant-secret123456789",
+        }
+        with patch.dict(os.environ, {"AGENTX_LLM_LOG_LEVEL": "summary"}, clear=False):
+            card = render_llm_request("Anthropic", params)
+            self.assertIsNotNone(card)
+            self.assertIn("Anthropic", card)
+            self.assertIn("tools", card)
+            self.assertNotIn("sk-ant-secret123456789", card)  # no payload in summary
+        with patch.dict(os.environ, {"AGENTX_LLM_LOG_LEVEL": "full"}, clear=False):
+            full = render_llm_request("Anthropic", params)
+            self.assertIn("«redacted»", full)  # full payload, but redacted
+            self.assertNotIn("sk-ant-secret123456789", full)
+        with patch.dict(os.environ, {"AGENTX_LLM_LOG_LEVEL": "off"}, clear=False):
+            self.assertIsNone(render_llm_request("Anthropic", params))
+
+    def test_archive_segment_traversal_guard(self):
+        from agentx_ai.logging_kit.archive import resolve_segment
+
+        self.assertIsNone(resolve_segment("../config.json"))
+        self.assertIsNone(resolve_segment("../../etc/passwd"))
+        self.assertIsNone(resolve_segment("sub/dir"))

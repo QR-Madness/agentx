@@ -4,7 +4,6 @@ Abstract base classes for model providers.
 
 import json
 import logging
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,24 +13,23 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+
 def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
-    """Log the full LLM request payload when DEBUG_LOG_LLM_REQUESTS is set."""
-    if os.environ.get("DEBUG_LOG_LLM_REQUESTS", "").strip() in ("", "0", "false"):
-        return
-    params = request_params
-    if os.environ.get("COMPRESS_TOOL_OUTPUTS_IN_LLM_LOGS", "").strip() not in ("", "0", "false"):
-        tools = request_params.get("tools")
-        if tools:
-            names = [
-                (t.get("function", {}).get("name") or t.get("name", "?"))
-                for t in tools
-            ]
-            params = {**request_params, "tools": f"<{len(tools)} tools: {', '.join(names)}>"}
+    """Log an LLM request via the logging_kit cards.
+
+    Verbosity is governed by ``AGENTX_LLM_LOG_LEVEL`` (off|summary|full); the
+    legacy ``DEBUG_LOG_LLM_REQUESTS`` switch still maps to ``full``. Emitted at
+    DEBUG so default INFO consoles stay calm while ``agentx_ai``-at-DEBUG dev sees
+    it. Best-effort — never let logging break a request.
+    """
     try:
-        dumped = json.dumps(params, indent=2, default=str)
-    except (TypeError, ValueError):
-        dumped = str(params)
-    logger.info(f"[DEBUG LLM REQUEST] {provider_name}:\n{dumped}")
+        from agentx_ai.logging_kit.llm_cards import render_llm_request
+
+        rendered = render_llm_request(provider_name, request_params)
+        if rendered:
+            logger.debug(rendered)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class MessageRole(str, Enum):

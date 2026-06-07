@@ -8,6 +8,7 @@ import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
 import { SourcesPanel } from '../bibliography/SourcesPanel';
 import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
+import { LogsPanel } from '../logs/LogsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
@@ -54,6 +55,16 @@ export function AmbassadorDrawerContent({ onClose: _onClose }: ModalContentProps
   return (
     <div className="modal-content-wrapper">
       <AmbassadorPanel />
+    </div>
+  );
+}
+
+export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
+  // Rendered into a definite-height host so the panel fills the drawer and
+  // scrolls internally (toolbar/footer fixed, stream scrolls) — like Memory.
+  return (
+    <div className="memory-modal-content">
+      <LogsPanel />
     </div>
   );
 }

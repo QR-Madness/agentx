@@ -56,3 +56,12 @@ class AgentxAiConfig(AppConfig):
             ).start()
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not launch MCP auto-connect thread: {exc}")
+
+        # Startup banner (best-effort; gated by AGENTX_LOG_BANNER). Printed last so
+        # the status table reflects the worker/MCP kick-off above.
+        try:
+            from .logging_kit.banner import render_startup_banner
+
+            render_startup_banner()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"Startup banner skipped: {exc}")

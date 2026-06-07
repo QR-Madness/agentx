@@ -220,43 +220,26 @@ if _public_host:
     if _public_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(_public_origin)
 
-# Logging configuration
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'agentx_ai': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-    },
-}
+# Logging configuration — handed off to the logging_kit pipeline.
+#
+# Setting LOGGING_CONFIG = None tells Django not to run its own dictConfig, so
+# our central QueueHandler → QueueListener pipeline (color/category/run-tag
+# console, ring buffer, gzip archive) owns logging. All behavior is governed by
+# AGENTX_LOG_* flags; with no config it's color-on, archive-on, log-API-on.
+# AGENTX_LOG_DECORATIONS=false restores the historical plain console output.
+LOGGING_CONFIG = None
+
+try:
+    from agentx_ai.logging_kit import configure_logging as _configure_logging
+
+    _configure_logging()
+except Exception as _log_setup_exc:  # noqa: BLE001 — never let logging setup break boot
+    import logging as _logging
+
+    _logging.basicConfig(level=_logging.INFO)
+    _logging.getLogger(__name__).warning(
+        "logging_kit setup failed, fell back to basicConfig: %s", _log_setup_exc
+    )
 
 # =============================================================================
 # AgentX Security Settings (Foundation)

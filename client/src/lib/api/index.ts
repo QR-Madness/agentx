@@ -27,6 +27,7 @@ import { jobsApi } from './jobs';
 import { historyApi } from './history';
 import { streamingApi } from './streaming';
 import { ambassadorApi } from './ambassador';
+import { logsApi } from './logs';
 
 /**
  * The API client singleton. Flat method surface (`api.health()`, `api.chat()`,
@@ -53,6 +54,7 @@ export const api = {
   ...historyApi,
   ...streamingApi,
   ...ambassadorApi,
+  ...logsApi,
 };
 
 // Public surface re-exports (preserve the `'.../lib/api'` specifier).
@@ -70,6 +72,13 @@ export type {
   DraftRelayRequest,
   BriefTurnRequest,
 } from './ambassador';
+export type {
+  LogRecord,
+  LogCategoryInfo,
+  LogArchiveSegment,
+  LogFilters,
+  LogStreamCallbacks,
+} from './logs';
 export * from './errors';
 export * from './version';
 export { setAuthRequired } from './core';

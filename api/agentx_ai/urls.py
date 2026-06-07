@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from . import views_logs
 from .auth import views as auth_views
 
 urlpatterns = [
@@ -122,4 +123,10 @@ urlpatterns = [
     path("config", views.config_get, name="config-get"),
     path("config/update", views.config_update, name="config-update"),
     path("config/context-limits", views.context_limits, name="context-limits"),
+    # Log API (Log panel) — read-only over the ring buffer + gzip archive
+    path("logs", views_logs.logs_recent, name="logs-recent"),
+    path("logs/stream", views_logs.logs_stream, name="logs-stream"),
+    path("logs/categories", views_logs.logs_categories, name="logs-categories"),
+    path("logs/archive", views_logs.logs_archive_list, name="logs-archive-list"),
+    path("logs/archive/<str:name>", views_logs.logs_archive_download, name="logs-archive-download"),
 ]

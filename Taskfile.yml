@@ -281,6 +281,7 @@ tasks:
       - mkdir -p data/neo4j/{data,logs,plugins}
       - mkdir -p data/postgres
       - mkdir -p data/redis
+      - mkdir -p data/logs
       - mkdir -p backups
       - echo "✅ Data directories ready in ./data/"
 

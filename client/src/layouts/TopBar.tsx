@@ -28,6 +28,7 @@ import {
   EyeOff,
   MessagesSquare,
   Radio,
+  ScrollText,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useModal } from '../contexts/ModalContext';
@@ -166,6 +167,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
       type: 'modal',
       component: 'tools',
       size: 'full',
+    });
+  };
+
+  const openLogs = () => {
+    openModal({
+      id: 'logs-drawer',
+      type: 'drawer',
+      component: 'logs',
+      position: 'right',
+      size: 'xxl',
     });
   };
 
@@ -362,6 +373,10 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openAmbassador(); }}>
               <Radio size={16} />
               <span>Ambassador</span>
+            </button>
+            <button className="toolbar-overflow-item" onClick={() => { closeOverflow(); openLogs(); }}>
+              <ScrollText size={16} />
+              <span>Logs</span>
             </button>
             {authRequired && isAuthenticated && (
               <>
