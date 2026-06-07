@@ -6,7 +6,7 @@
  * input. All logic lives in `useConversationList`.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Search, X, Loader2, Radio, ChevronDown, ChevronRight,
   Pin, Archive, Trash2, CheckSquare, Star,
@@ -27,6 +27,13 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
   const [iconPickerKey, setIconPickerKey] = useState<string | null>(null);
   const [newGroupKey, setNewGroupKey] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
+  const newGroupRef = useRef<HTMLInputElement>(null);
+
+  // Focus the new-group input after the menu's close transition settles (rAF),
+  // so the focus isn't lost to the closing dropdown portal.
+  useEffect(() => {
+    if (newGroupKey) requestAnimationFrame(() => newGroupRef.current?.focus());
+  }, [newGroupKey]);
 
   const rowProps = { c, onOpenIconPicker: setIconPickerKey, onNewGroup: (key: string) => { setNewGroupKey(key); setNewGroupName(''); } };
 
@@ -67,7 +74,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
       {newGroupKey && (
         <div className="conv-newgroup">
           <input
-            autoFocus
+            ref={newGroupRef}
             value={newGroupName}
             placeholder="New group name…"
             onChange={(e) => setNewGroupName(e.target.value)}

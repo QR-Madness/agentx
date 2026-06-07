@@ -104,7 +104,13 @@ export function ConversationRow({ item, c, onOpenIconPicker, onNewGroup }: Conve
                   <MoreHorizontal size={14} />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuContent
+                align="end"
+                onClick={(e) => e.stopPropagation()}
+                // Don't yank focus back to the trigger on close — it would blur
+                // (and dismiss) the inline "new group" input that opens on select.
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
                 <DropdownMenuItem onSelect={() => c.startRename(item)}>
                   <Pencil size={14} /> Rename
                 </DropdownMenuItem>

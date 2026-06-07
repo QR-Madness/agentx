@@ -71,7 +71,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   } = useConversation();
   const { notifyError } = useNotify();
   const confirm = useConfirm();
-  useConversationMeta(); // re-render on any meta change
+  const metaVersion = useConversationMeta(); // bump on any meta change → recompute items
 
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -129,9 +129,10 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
       });
     }
     return out;
-    // openSessionIds is derived from tabs+liveRuns; depend on those.
+    // openSessionIds is derived from tabs+liveRuns; metaVersion re-pulls getMeta()
+    // so pin/archive/icon/color/group changes reflect immediately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabs, serverConversations, liveRuns]);
+  }, [tabs, serverConversations, liveRuns, metaVersion]);
 
   const matches = (it: ConversationItem) =>
     it.title.toLowerCase().includes(query) || (it.preview ?? '').toLowerCase().includes(query);

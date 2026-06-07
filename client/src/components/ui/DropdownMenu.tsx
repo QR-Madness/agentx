@@ -40,23 +40,28 @@ const DropdownMenuSubContent = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.SubContent
-    ref={ref}
-    className={cn(
-      'z-50 min-w-[8rem] overflow-hidden rounded-xl p-1.5',
-      'bg-[var(--surface-raised)] border border-[var(--border-default)]',
-      'shadow-lg backdrop-blur-sm',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out',
-      'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-      'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-      'data-[side=bottom]:slide-in-from-top-2',
-      'data-[side=left]:slide-in-from-right-2',
-      'data-[side=right]:slide-in-from-left-2',
-      'data-[side=top]:slide-in-from-bottom-2',
-      className
-    )}
-    {...props}
-  />
+  // Portal so the submenu escapes the parent Content's `overflow-hidden` (which
+  // otherwise clips a side-opening submenu — it read as "overflowing underneath")
+  // and any ancestor stacking context; z-[1100] keeps it above drawers/modals.
+  <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.SubContent
+      ref={ref}
+      className={cn(
+        'z-[1100] min-w-[8rem] overflow-hidden rounded-xl p-1.5',
+        'bg-[var(--surface-raised)] border border-[var(--border-default)]',
+        'shadow-lg backdrop-blur-sm',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out',
+        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        'data-[side=bottom]:slide-in-from-top-2',
+        'data-[side=left]:slide-in-from-right-2',
+        'data-[side=right]:slide-in-from-left-2',
+        'data-[side=top]:slide-in-from-bottom-2',
+        className
+      )}
+      {...props}
+    />
+  </DropdownMenuPrimitive.Portal>
 ));
 DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
 
