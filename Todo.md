@@ -524,6 +524,22 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       let the prompt/layer machinery host composable skills; guard so profile-typing/layering never
       gates a user's skill access. Its own initiative.
 
+### 18.16 Agent-profile control-center + icon picker — ✅ Complete `[v0.21.56]`
+- [x] **Redesigned editor**: hero identity header (AvatarPicker tile + `agentAccent` aura, inline
+      name, `CopyChip` agent-id, kind/default badges, tags, description) over a `ControlCard` grid
+      per tab (Model / Generation / System Prompt-full / Delegation|Ambassador / Tools / Memory),
+      each with an at-a-glance header summary. All field logic + `useProfileEditorState` autosave
+      preserved (presentation-only re-house).
+- [x] **Consolidated icon picker** (`common/AvatarPicker`): searchable, categorized modal (recents
+      + live preview + stagger), with a disabled **Generate** seam for AI icons next. Catalog grown
+      to ~95 icons with `category`/`keywords` (`lib/avatars.ts`).
+- [x] **New reusable primitives**: `ui/SegmentedControl` (reasoning + picker tabs; sliding motion,
+      a11y radiogroup), `ui/CopyChip`, `common/ControlCard`, `lib/agentAccent.ts` (deterministic
+      per-agent color — foundation for chat/Alloy identity later). Gradient temperature slider +
+      dynamic label. Tests: `agentAccent`, `avatars`. Reduced-motion respected.
+- [ ] **Follow-up**: generated icons (the Generate tab); a light `ProfileNav` polish (apply the
+      agent accent to the active item); retire now-dead `.profile-section-card`/accordion CSS.
+
 ## Backlog (Future Enhancements)
 
 > Items to consider after prototype is complete

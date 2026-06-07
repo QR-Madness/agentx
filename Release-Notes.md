@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.55 -->
+<!-- release-version: 0.21.56 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -106,6 +106,16 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   consolidation) autosave the same way. And a collapsible **effective-prompt
   preview** showing the real composed result — the agent's name, its instructions, and the
   global layer stack together — so you can see exactly what the agent receives.
+- **Redesigned agent-profile editor — a control center for your agent.** A hero identity header
+  (big avatar, inline name, copyable agent-id, kind/default badges, tags, description) sits over
+  a clean grid of control cards (Model, Generation, System Prompt, Memory, Tools, Delegation /
+  Ambassador voices) — each with an at-a-glance value in its header. Reasoning strategy is now a
+  segmented control with a glyph per strategy, and temperature is a cool→warm gradient with a
+  live label (Precise → Wild). The avatars are consolidated into a **searchable, categorized icon
+  picker** (now ~95 icons across Tech, Nature, Creatures, Craft, Emblems, Symbols, People) with a
+  recently-used row and a live preview — plus a seam for **generated icons** soon. And every agent
+  gets a **quiet signature color** derived from its id, threading its avatar aura, nav highlight,
+  and badge together. Motion is tasteful and respects reduced-motion.
 
 ### Fixes
 

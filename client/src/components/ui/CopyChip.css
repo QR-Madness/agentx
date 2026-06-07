@@ -1,0 +1,28 @@
+.ax-copychip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  max-width: 100%;
+}
+.ax-copychip:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong, var(--accent-primary));
+}
+.ax-copychip--copied {
+  color: var(--feedback-success, var(--accent-primary));
+  border-color: var(--feedback-success, var(--accent-primary));
+}
+.ax-copychip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
