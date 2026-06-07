@@ -140,37 +140,47 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const visible = items.filter(matches);
 
   // --- Partition by meta ---
-  const pinned = visible
+  // Precedence (each item has exactly one home): archived > group > pinned >
+  // open/past. So "move to group" always visibly relocates an item even if it's
+  // pinned (the pin flag still renders on the row), and archiving always hides it.
+  const archived = visible.filter(it => it.meta.archived);
+  const live = visible.filter(it => !it.meta.archived);
+  const grouped = live.filter(it => it.meta.group);
+  const ungrouped = live.filter(it => !it.meta.group);
+
+  const pinned = ungrouped
     .filter(it => it.meta.pinned)
     .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime());
 
-  const archived = visible.filter(it => it.meta.archived && !it.meta.pinned);
-
-  const groupable = visible.filter(it => !it.meta.pinned && !it.meta.archived);
-
   const groups = useMemo(() => {
     const byGroup = new Map<string, ConversationItem[]>();
-    for (const it of groupable) {
-      if (!it.meta.group) continue;
-      (byGroup.get(it.meta.group) ?? byGroup.set(it.meta.group, []).get(it.meta.group)!).push(it);
+    for (const it of grouped) {
+      (byGroup.get(it.meta.group!) ?? byGroup.set(it.meta.group!, []).get(it.meta.group!)!).push(it);
+    }
+    // Within a group, pinned items float to the top, then most-recent.
+    for (const list of byGroup.values()) {
+      list.sort((a, b) =>
+        (Number(!!b.meta.pinned) - Number(!!a.meta.pinned)) ||
+        (new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime()),
+      );
     }
     return [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [groupable]);
+  }, [grouped]);
 
-  const openItems = groupable
-    .filter(it => it.kind === 'tab' && !it.meta.group)
+  const openItems = ungrouped
+    .filter(it => it.kind === 'tab' && !it.meta.pinned)
     .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime());
 
   const pastByBucket = useMemo(() => {
     const order: RecencyBucket[] = ['Today', 'Yesterday', 'This week', 'Older'];
     const m = new Map<RecencyBucket, ConversationItem[]>();
-    for (const it of groupable) {
-      if (it.kind !== 'server' || it.meta.group) continue;
+    for (const it of ungrouped) {
+      if (it.kind !== 'server' || it.meta.pinned) continue;
       const b = recencyBucket(it.lastMessageAt);
       (m.get(b) ?? m.set(b, []).get(b)!).push(it);
     }
     return order.filter(b => m.has(b)).map(b => [b, m.get(b)!] as const);
-  }, [groupable]);
+  }, [ungrouped]);
 
   const itemByKey = useMemo(() => new Map(items.map(it => [it.key, it])), [items]);
 
