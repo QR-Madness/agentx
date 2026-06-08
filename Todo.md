@@ -23,7 +23,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 | Phases 1-11, 13, 14, 17 | **Complete** | See [roadmap.md](docs-site/src/content/docs/roadmap.md) |
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
-| Phase 16: Multi-Agent Conversations | **In Progress** | ~72% (16.0–16.5 + 16.6 ambassador foundation & TTS voice shipped; Factory UI + ambassador STT/dictation deferred) |
+| Phase 16: Multi-Agent Conversations | **In Progress** | ~72% (16.0–16.5 + 16.6 ambassador foundation & TTS voice shipped; 16.7 Ambassador v2 rework planned; Factory UI deferred) |
 | Phase 18: UX + Memory Tuning | **In Progress** | ~98% (18.9 done; eval procedural cases + run persistence done; memory import/export shipped `[v0.21.22]` → eval snapshot/restore now unblocked) |
 
 ---
@@ -315,6 +315,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       provider completion. Deferred: dictation (speech → intent) feeds this same draft seam.
 
 **Deferred (seams in place):**
+> **Superseded by §16.7 (Ambassador v2):** the briefing/Q&A flow below is being
+> reframed into a conversational, tool-using ambassador with its own thread — the
+> "no auto-brief on open", empty-conversation, and cross-conversation gaps are tracked
+> there. The items here remain accurate for the *current* one-shot implementation.
 - [ ] **Activation toggle per-conversation** (today: global default + the active
       tab's context).
 - [ ] **Dictation (speech → relay)**: capture continuous dictation; on stop, feed the
@@ -404,6 +408,216 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       (otherwise `navigator.mediaDevices` is absent in the packaged webview) and auto-grants the
       user-media `permission-request`. Requires an **app rebuild** to take effect (Rust change).
       Windows WebView2 prompts by default. (Verify on each packaged target.)
+
+### 16.7 Ambassador v2 — conversational, tool-using, parallel relay — **planned**
+
+> **Why a rework.** 16.6 shipped the ambassador as a *stateless per-turn briefer*
+> hard-bound to the active conversation tab: `conversationId = activeTab.sessionId`,
+> every brief/ask/voice-command is a **one-shot completion** over a read-only
+> transcript snapshot. That model has three problems the user hit:
+> 1. **It briefs the immediate turn on open** instead of waiting for you to ask what
+>    you want — but the ambassador runs *parallel to* the conversation, not *off* its
+>    latest turn. (Surfaces: the prominent "Brief the latest turn" CTA + the voice
+>    tab's auto-speak of the freshest item make "open ⇒ briefed" the default feel.)
+> 2. **It breaks on an empty conversation** — with no turns, the grounding context is
+>    empty and the briefing/voice path has nothing to operate on.
+> 3. **It can only see one conversation, one snapshot.** There's no way to ask "what
+>    have my agents discovered across my long-running sessions?" — the north-star use
+>    case (come back to the cluster, ask the ambassador for an application-wide
+>    summary of everything in flight).
+>
+> **The reframe.** The ambassador becomes a **real conversational agent with its own
+> persistent thread**, running parallel to (not derived from) your work, that
+> **observes the conversation world through a curated read-only tool belt** and acts
+> only when you ask. You talk *to it*; it decides what to look at. The load-bearing
+> **no-pollution invariant is unchanged** — it still writes nothing into
+> `conversation_logs`/`conv_summary:`, and its tools are SELECT-only.
+>
+> **The bigger picture — the ambassador is the app's top-level agent.** It sits *above*
+> the work, not beside one conversation. The agent profiles (the "settings agents" —
+> the workers you configure) **serve it**: it surveys what they're doing, briefs you,
+> and (future) dispatches work to them. The human has **dual entry** — talk to the
+> ambassador (the front door / orchestrator) *or* drop straight into a worker
+> conversation through the UI; both are first-class. This is the through-line that ties
+> the slices together: 16.7 builds the ambassador *up* from a per-conversation briefer
+> to the orchestration layer. Read-side (survey/brief) lands here; the write-side
+> (dispatch/delegate to workers) reuses the relay/`target` seam from 16.6 and grows
+> into real cross-agent delegation. The no-pollution invariant still holds at every
+> step — orchestration is reads + relays, never the ambassador ghost-writing a worker's
+> transcript as itself.
+
+**Design pillars**
+
+- **Wait-for-ask, never auto-brief.** Opening the panel (text or voice) lands on a
+  calm idle state — no briefing fires until you ask. "Brief the latest turn" stays as
+  an *explicit* affordance; the voice tab no longer auto-speaks on open. The
+  ambassador is parallel, not a reaction to your last turn.
+- **The ambassador owns its own conversation.** A durable, multi-turn ambassador
+  **thread** (roles `user`/`ambassador`, with tool-call records) — persisted in the
+  `ambassador:` sidecar, never `conversation_logs`. Two scopes: a thread *about* a
+  main conversation (default), and a free-standing **command-deck** thread that isn't
+  bound to one tab (for cross-conversation queries). Replaces the disjoint
+  per-turn-briefing + flat Q&A records with one coherent thread.
+- **A curated, read-only ambassador tool belt** (distinct from the main agent's
+  MCP/internal tools — an ambassador-private registry; nothing it calls can write a
+  transcript). The agentic loop replaces the one-shot completions.
+- **Voice confirms the inferred tool/intent.** "Can you summarize this?" →
+  `summarize_conversation`; "explore more on this" → `explore_turn` — two different
+  tool calls the ambassador names and **confirms by voice** before running, then
+  speaks the result. Generalizes `route_voice_command` from `{answer|relay}` to
+  `{answer|relay|tool}`.
+- **Stability is a feature.** Empty conversation, no active tab, missing provider,
+  tool failure — all degrade gracefully (the never-raise invariant now wraps the tool
+  loop, not just a single completion).
+
+**Slice 0 — stop auto-briefing + empty-conversation safety (fast, isolated)** — shipped (uncommitted)
+- [x] **No brief on open.** Decoupled open from brief: the per-message CC button
+      (`ChatPanel.handleAmbassador`) now *only opens* the panel — it no longer fires
+      `ccTurn`. Briefing is an explicit action inside the panel ("Brief the latest turn"
+      / per-turn) or an ask. The command-palette "Open Ambassador" was already idle; the
+      voice tab already opens idle (existing `seedSpoken()` prevents replay). Button
+      tooltip updated to "Open the Ambassador (parallel…)".
+- [x] **Empty-conversation safety.** `_build_qa_prompt` / `_build_voice_command_prompt`
+      now tell the model plainly when the transcript is empty (instead of a context-free
+      prompt it could hallucinate against), so brief/ask/voice degrade to a grounded
+      "nothing here yet" instead of erroring. Tests: `test_qa_prompt_handles_empty_conversation`,
+      `test_answer_question_degrades_on_empty_conversation`.
+- [ ] **Decouple the panel from a required `activeTab`** where the global mode will
+      live (the empty-state copy already exists; make the ask/voice paths null-safe).
+      → folded into Slice 1 (the ambassador thread isn't bound to a saved `sessionId`).
+
+**Slice U — coexisting panel: slide-in, non-modal (the "stop hogging the screen" rework)**
+
+> **The problem (touching reality).** Today the ambassador is a **modal drawer**:
+> `lib/surfaces.ts::ambassador` opens `type:'drawer', size:'xxl'` (`min(1000px,100vw)`)
+> inside `DrawerPanel` → `.drawer-backdrop` (`position:fixed; inset:0;
+> rgba(0,0,0,.6) + blur(4px); z-index:1000`, `aria-modal`, click-to-close). So even
+> though the panel is on the right, the **whole conversation is dimmed, blurred, and
+> click-locked** behind it. You can't watch the agent work *and* talk to the
+> ambassador — which is the entire point of a parallel relay. It must **slide in
+> beside** the conversation, both panels live.
+>
+> **Mechanisms considered:**
+> - **(A) Docked layout region (push/shrink) — recommended.** Make the ambassador a
+>   first-class column in `AgentXPage` (already `ConversationSidebar | ChatPanel`): add
+>   a right-side `AmbassadorDock` that, when open, *shrinks ChatPanel via flex* rather
+>   than overlaying it. No backdrop, no blur, both interactive. **Reuse the
+>   `ConversationSidebar` pattern** (collapsible + resizable, `agentx:conv-sidebar-*`)
+>   for `agentx:ambassador-dock-{open,width}`. Default ~420–480px (not 1000 — a
+>   coexisting dock leaves the conversation room), resizable 340–680. *Concern:* the
+>   open-state must move out of the modal system into layout state; the entry points
+>   (CC button, palette, topbar) toggle the dock via a shared store (keep `surfaces.ts`
+>   as the single descriptor so they don't drift). *Concern:* narrow screens can't
+>   push — fall back to the current full-screen sheet under ~900px (`useIsMobile`).
+> - **(B) Non-modal floating drawer (overlay, no backdrop).** Smallest change: add a
+>   `modal:false` variant to `DrawerPanel`/`ModalContext` that drops `.drawer-backdrop`
+>   (no dim/blur, click-through) and `aria-modal`. The panel still floats over the
+>   right edge but the conversation stays visible/interactive. *Concern:* it *covers*
+>   the right slice of the conversation instead of giving it its own space; pair with a
+>   narrower default width. Good interim step toward (A).
+> - **(C) Split-pane with draggable divider.** (A) plus a VS-Code-style secondary-
+>   sidebar drag handle — most powerful, most work. The resize mechanism already exists
+>   (ConversationSidebar), so (A) naturally grows into (C).
+>
+> **Recommendation:** ship **(A)** — a docked, resizable, collapsible, non-modal right
+> panel in `AgentXPage`, mobile-falling-back to the sheet. It's the truest "see both
+> panels" and reuses an in-repo pattern (sidebar resize/collapse). (B) is the cheap
+> interim if we want it *today*; (C) is (A) + a drag handle once it's docked.
+
+- [x] **Mechanism chosen: (A) docked push/shrink**, built *with* a resize handle (so
+      it lands close to (C) — reuses the `ConversationSidebar` resize/collapse pattern).
+- [ ] **Dock state + persistence** (`agentx:ambassador-dock-{open,width}`), entry points
+      route through `surfaces.ts` so palette/CC/topbar stay unified.
+- [ ] **Non-modal**: no backdrop/blur, conversation stays interactive; explicit
+      collapse/close control (not Esc-to-close, since it's persistent).
+- [ ] **Responsive**: push/shrink on wide; full-screen sheet fallback under ~900px.
+- [ ] **Payoff check**: watch the agent stream on the left while the ambassador
+      briefs/voices on the right — the parallel-relay mental model, finally visible.
+
+**Slice 1 — ambassador thread (its own conversation)**
+- [ ] **Sidecar thread model.** Generalize `ambassador_storage` from per-turn
+      briefings + flat Q&A into an **`amb_thread:` family**: an ordered message list
+      (`role`, `content`, `tool_calls?`, `status`, `created_at`) keyed by an
+      `ambassador_thread_id`. Keep the briefing/Q&A families as back-compat readers
+      during migration; new flow writes the thread. TTL + index mirror today's.
+- [ ] **Thread scoping.** Default thread id is derived from the main `conversation_id`
+      (the ambassador thread *about* this conversation); a standalone command-deck
+      thread uses its own id (not bound to a tab). One ambassador thread per scope.
+- [ ] **`GET /api/agent/ambassador/thread/{thread_id}`** replays the thread (replaces
+      the `{briefings, qa}` shape; the old endpoint becomes a back-compat shim).
+- [ ] **Client `AmbassadorContext` → thread state.** Collapse `state`/`qaState` into a
+      single per-thread message list; `refresh` replays the thread. The panel renders a
+      proper conversation (your turns + ambassador turns + tool chips), not two disjoint
+      lists.
+
+**Slice 2 — the read-only tool belt + agentic loop**
+- [ ] **Ambassador tool registry** (`agent/ambassador_tools.py`, new): a small,
+      curated, **SELECT-only** set, separate from `mcp/internal_tools`:
+      - `read_conversation(conversation_id?, range?)` — recent transcript of the active
+        (or named) conversation.
+      - `summarize_conversation(conversation_id?)` — the "summarize this" intent.
+      - `explore_turn(message_id? | topic)` — the "explore more on this" intent (deeper
+        dig; may pull the turn's artifacts/sources).
+      - `read_conversation_results(conversation_id)` — exhibits/sources/findings of a
+        conversation (reuses the bibliography/exhibit extraction).
+      - `list_conversations(filter?)` / `survey_conversations(...)` — enumerate
+        ongoing/recent sessions for cross-conversation queries (Slice 4).
+      Each tool is read-only and can **never** write a transcript — the invariant is
+      enforced at the registry boundary, not by convention.
+- [ ] **Agentic turn loop.** Replace the one-shot `answer_question` /
+      `route_voice_command` completions with a bounded tool-use loop (provider tool
+      calling): the ambassador receives your message, optionally calls tools, then
+      composes its reply — all streamed (`ambassador_chunk`) and tool calls surfaced as
+      `ambassador_tool_call`/`ambassador_tool_result` SSE. Depth-capped; never-raise
+      wraps the whole loop; tool failures settle gracefully.
+- [ ] **Personas updated.** The Q&A/briefing personas become a single **ambassador
+      agent persona** that knows it has tools and *waits to be asked* — broad,
+      catch-all intent handling ("summarize", "explore", "what changed", "what did it
+      find") routed through tool calls rather than bespoke prompts. Keep the
+      second-person, names-the-agent, no-markdown voice rules.
+
+**Slice 3 — voice mode confirms the tool call**
+- [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken
+      intent maps to a tool (`summarize_conversation`/`explore_turn`/…), return the
+      inferred tool + args; the `VoiceSurface` confirm strip (already there for relay)
+      shows a **"Summarize this conversation?" / "Explore that turn?"** confirm before
+      running, then the ambassador runs the tool-loop and **speaks the result**.
+- [ ] **Barge-in + retake** extend to tool confirmations (discard/redo before run).
+- [ ] Captions name the action ("Summarizing…", "Exploring that turn…") so voice is
+      never a silent wait.
+
+**Slice 4 — command deck: the ambassador as orchestrator (the north-star)**
+- [ ] **Standalone, top-level ambassador surface** not bound to a tab (a command-deck
+      entry in the command palette / a global Ambassador surface) — the app's front
+      door: "What have my agents discovered?" The worker conversations are still
+      reachable directly through the UI (dual entry); this is the layer *above* them.
+- [ ] **`survey_conversations`** enumerates active/recent worker sessions (over
+      `/api/conversations`), pulls each one's results read-only
+      (`read_conversation_results`), and the ambassador composes an **application-wide
+      summary** across long-running sessions. Read-only, never-raise, degrades per
+      conversation (one offline session doesn't sink the survey).
+- [ ] **Dispatch seam (write-side, later).** The orchestration write-side — the
+      ambassador handing a task to a worker — reuses the relay/`target` (16.6) and grows
+      into real cross-agent delegation. v1 stays read + relay (you confirm); the seam is
+      target-extensible so a future ambassador can start/steer a worker run directly.
+      The survey above is the read-side of that same world.
+
+**Stability & invariants (apply across all slices)**
+- [ ] No-pollution regression tests extended to the thread + tool loop (nothing reaches
+      `conversation_logs`/`conv_summary:`; tools are SELECT-only).
+- [ ] Never-raise tests: empty conversation, no provider, tool error, no active tab —
+      each degrades to a clean spoken/text notice.
+- [ ] Docs: update `CLAUDE.md` (Ambassador section), `OpenApi.yaml` +
+      `docs-site/.../api/endpoints.md` (new `thread`/tool SSE events), and the endpoint
+      table here. Version + Release-Notes bump travels with each shippable slice.
+
+**Open questions (decide before building the relevant slice)**
+- Thread persistence depth: keep the full ambassador thread in Redis (TTL'd like
+  today) vs. promote to a durable store for the command-deck history? (Recording
+  lifecycle from 16.6 is the sibling decision.)
+- Tool-belt surface: do tool calls show as chips in the text thread (transparency) or
+  stay invisible (just the answer)? Lean transparent — they're the proof of grounding.
+- Command-deck scope: all conversations, or a user-pinned working set?
 
 ### Design Notes
 

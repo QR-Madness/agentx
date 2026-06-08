@@ -62,7 +62,6 @@ import { useModal } from '../../contexts/ModalContext';
 import { useIsMobile } from '../../lib/hooks';
 import { SURFACES } from '../../lib/surfaces';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
-import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/modelCatalog';
@@ -86,7 +85,7 @@ export function ChatPanel() {
   const { getWorkflowById } = useAlloyWorkflow();
   const { openModal } = useModal();
   const isMobile = useIsMobile();
-  const { ccTurn, briefingForMessage } = useAmbassador();
+  const { briefingForMessage } = useAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
 
@@ -108,30 +107,15 @@ export function ChatPanel() {
     });
   }, [traceRun, openModal]);
 
-  // CC the Ambassador to brief one assistant turn: open the (subscribed) panel
-  // AND kick off the parallel briefing. The ambassador reads the conversation
+  // Open the Ambassador alongside the conversation. It runs in *parallel* and
+  // waits for you to ask — opening no longer auto-briefs the turn (you brief a
+  // specific turn or ask a question from inside the panel). Reads the conversation
   // read-only and writes only to its sidecar — the transcript is untouched.
   const handleAmbassador = useCallback(
-    (message: AssistantMessage) => {
-      const conversationId = activeTab?.sessionId;
-      if (!conversationId) {
-        notifyError('The ambassador can brief a turn once the conversation has been saved.');
-        return;
-      }
-      // Gather the turn's prompt + what the agent actually did (tools/sources/exhibits),
-      // and resolve the producing agent's name (stamped → by profile → conversation).
-      const { userText, artifacts } = gatherTurnContext(activeTab?.messages ?? [], message.id);
-      const tabProfileName = activeTab?.profileId
-        ? profiles.find((p) => p.id === activeTab.profileId)?.name
-        : undefined;
-      const resolvedAgentName = resolveTurnAgentName(message, {
-        nameByProfileId: (id) => profiles.find((p) => p.id === id)?.name,
-        fallback: tabProfileName ?? getAgentName(),
-      });
-      openModal({ id: 'ambassador-drawer', type: 'drawer', position: 'right', component: 'ambassador', size: 'xxl' });
-      ccTurn(conversationId, message, { userText, artifacts, agentName: resolvedAgentName });
+    (_message: AssistantMessage) => {
+      openModal(SURFACES.ambassador);
     },
-    [activeTab?.sessionId, activeTab?.messages, activeTab?.profileId, openModal, ccTurn, notifyError, profiles, getAgentName],
+    [openModal],
   );
 
   const ambassadorStatusFor = useCallback(

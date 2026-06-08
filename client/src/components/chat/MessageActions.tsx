@@ -84,7 +84,7 @@ export const MessageActions: React.FC<MessageActionsProps> = ({
           <button
             className="message-action-btn"
             onClick={onAmbassador}
-            title="CC the Ambassador to brief this turn"
+            title="Open the Ambassador (parallel — it briefs or answers on request)"
             data-active={ambassadorStatus === 'done' || undefined}
           >
             {ambassadorStatus === 'streaming' ? (

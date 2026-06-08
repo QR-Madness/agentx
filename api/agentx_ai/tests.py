@@ -6491,6 +6491,56 @@ class AmbassadorServiceTest(TestCase):
         self.assertIn("county index", prompt)
         self.assertIn("grounded only in", prompt)
 
+    def test_qa_prompt_handles_empty_conversation(self):
+        # 16.7 Slice 0: an empty/unstarted conversation must not silently produce a
+        # context-free prompt the model could hallucinate against — it's told plainly
+        # the conversation is empty so the grounded persona says "nothing here yet".
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        prompt = svc._build_qa_prompt(
+            question="what has it found so far?",
+            context="",
+            agent_name="Atlas",
+        )
+        self.assertIn("empty so far", prompt)
+        self.assertIn("never invent", prompt)
+
+    def test_answer_question_degrades_on_empty_conversation(self):
+        # The ambassador must operate on an empty conversation without raising: it
+        # grounds on nothing and settles a normal `done` (the model says so plainly).
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _fake_stream(*args, **kwargs):
+            yield StreamChunk(content="There's nothing in this conversation yet.")
+
+        provider = MagicMock()
+        provider.stream = _fake_stream
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(svc, "_grounding_context", return_value=""), \
+                patch.object(a, "_redis", return_value=fake):
+            events = asyncio.run(
+                _collect(svc.answer_question("empty-conv", "qa1", "what's happened?"))
+            )
+            record = a.get_qa("empty-conv", "qa1")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("Traceback", joined)
+        self.assertEqual(record["status"], "done")
+
     def test_token_budget_leaves_headroom_for_free_range_thinking(self):
         # The cap must accommodate reasoning + the (short) answer, so a thinking
         # model isn't truncated mid-sentence. Length is the prompt's job, not the

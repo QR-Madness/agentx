@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.71 -->
+<!-- release-version: 0.21.72 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -198,6 +198,12 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **Opening the Ambassador no longer briefs the turn for you.** The Ambassador runs
+  *parallel* to your conversation — so opening it now lands quietly and waits for you to
+  ask (summarize this, dig into that, or relay a message), instead of immediately briefing
+  the latest turn. You still brief any turn on demand from inside the panel. It also no
+  longer trips up on a brand-new, empty conversation — it just tells you there's nothing
+  there yet.
 - **A stopped Redis no longer floods the console.** If the datastore went down
   while the API kept running, the background-chat worker logged a connection
   warning every two seconds forever. It now backs off (up to 30s), logs the

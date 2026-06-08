@@ -346,13 +346,19 @@ class AmbassadorService:
                 "The conversation so far (this is ALL you may answer from):\n"
                 f"{context.strip()}"
             )
+        else:
+            sections.append(
+                "The conversation is empty so far — nothing has happened in it yet, so "
+                "there's nothing to answer from."
+            )
         artifacts_block = self._render_artifacts(artifacts, agent_label)
         if artifacts_block:
             sections.append(artifacts_block)
         sections.append(f"The person asks you:\n{question.strip()}")
         sections.append(
             "Answer their question directly, in your own spoken voice, grounded only in "
-            "the conversation above. If the answer isn't there, say so plainly."
+            "the conversation above. If there's nothing in the conversation yet (or the "
+            "answer isn't there), say so plainly — never invent an answer."
         )
         return "\n\n".join(sections)
 
@@ -744,6 +750,12 @@ class AmbassadorService:
         if context.strip():
             sections.append(
                 "The conversation so far (for grounding):\n" f"{context.strip()}"
+            )
+        else:
+            sections.append(
+                "The conversation is empty so far — nothing has happened in it yet. If they "
+                "ask about it, answer that plainly; only relay if they clearly want to "
+                "instruct the agent."
             )
         artifacts_block = self._render_artifacts(artifacts, agent_label)
         if artifacts_block:
