@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.64 -->
+<!-- release-version: 0.21.65 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,16 +19,16 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
-- **The Ambassador can talk — both ways.** Your parallel interpreter now reads its briefings and
-  answers aloud through OpenRouter text-to-speech — a speaker button on any briefing or Q&A plays
-  it back (synthesized once, then cached for instant replay). Ambassadors you opt in get an
-  immersive **voice mode** that auto-voices each new briefing. And you can **talk back**:
-  hold-to-talk (Space or the mic button) records your voice, transcribes it with OpenRouter
-  speech-to-text, and drops the text into the box for you to review before sending — never
-  auto-sent. Pick the speech, voice, and transcription models per ambassador in its profile
-  editor (ships defaulting to `microsoft/mai-voice-2` + `openai/whisper-1`). *(The immersive
-  voice surface gets a full Discord-call-style rework next — this ships the plumbing behind a
-  placeholder record button.)*
+- **The Ambassador is now a voice call.** Opt an ambassador into voice mode and its panel opens
+  into an immersive, Discord-call-style surface — **hold to talk** (mic or Space; or flip on
+  tap-to-toggle), and it answers you out loud. It **figures out what you mean**: ask it a question
+  and it answers (spoken, and saved to the Text tab); tell it to do something for the agent and it
+  drafts that as a message you review and send into the conversation — never sent without you.
+  Captions show both sides, talking over it cuts it off (barge-in), and your speech and the
+  reply models are picked per-ambassador — now with a **voice dropdown** per speech model instead
+  of pasting voice ids. The old text panel is still there as a second **Text** tab for history and
+  playback. Built on OpenRouter TTS + speech-to-text (defaults `microsoft/mai-voice-2` +
+  `openai/whisper-1`). *(Still to come: a floating mini-player and recording history/cleanup.)*
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,

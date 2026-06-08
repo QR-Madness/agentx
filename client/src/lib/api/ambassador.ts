@@ -107,6 +107,24 @@ export interface SpeakRequest {
   model?: string;
 }
 
+export type VoiceCommandAction = 'answer' | 'relay';
+
+export interface VoiceCommandRequest {
+  conversation_id: string;
+  /** The transcribed spoken command. */
+  transcript: string;
+  agent_name?: string;
+  artifacts?: AmbassadorTurnArtifacts;
+}
+
+export interface VoiceCommandResult {
+  /** `answer` = the ambassador answers you (spoken); `relay` = a draft to send to the agent. */
+  action: VoiceCommandAction;
+  text: string;
+  /** Set when an `answer` was persisted to the Q&A sidecar. */
+  qa_id?: string | null;
+}
+
 export interface TranscribeRequest {
   /** Base64-encoded audio (no data-URI prefix). */
   audio: string;
@@ -282,6 +300,18 @@ export const ambassadorApi = {
    */
   async transcribe(req: TranscribeRequest): Promise<{ text: string }> {
     return apiRequest('/api/agent/ambassador/transcribe', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  /**
+   * Route a spoken voice command: the ambassador infers intent and either answers
+   * it (spoken Q&A) or returns a `relay` draft for the user to review and send.
+   * Never throws server-side errors into the call — degrades to a spoken notice.
+   */
+  async voiceCommand(req: VoiceCommandRequest): Promise<VoiceCommandResult> {
+    return apiRequest('/api/agent/ambassador/voice-command', {
       method: 'POST',
       body: JSON.stringify(req),
     });

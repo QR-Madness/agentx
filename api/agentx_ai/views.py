@@ -2056,6 +2056,43 @@ async def ambassador_draft(request):
 
 
 @csrf_exempt
+async def ambassador_voice_command(request):
+    """
+    POST /api/agent/ambassador/voice-command
+
+    Body: {conversation_id, transcript, agent_name?, artifacts?}. The ambassador
+    **infers intent** from a spoken command: a question → it answers (spoken; also
+    persisted to the `qa:` sidecar so the Text tab shows it); an instruction for the
+    agent → it drafts a **relay** the user reviews and sends. Returns
+    `{action: "answer"|"relay", text, qa_id?}`. Never fails the call — degrades to a
+    spoken notice.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    conversation_id = data.get("conversation_id")
+    transcript = (data.get("transcript") or "").strip()
+    agent_name = data.get("agent_name") or ""
+    artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
+    if not conversation_id:
+        return JsonResponse({"error": "conversation_id is required"}, status=400)
+    if not transcript:
+        return JsonResponse({"error": "transcript is required"}, status=400)
+
+    from .agent.ambassador import get_ambassador
+
+    result = await get_ambassador().route_voice_command(
+        conversation_id, transcript, agent_name=agent_name, artifacts=artifacts
+    )
+    return JsonResponse(result)
+
+
+@csrf_exempt
 async def ambassador_speak(request):
     """
     POST /api/agent/ambassador/speak

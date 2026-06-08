@@ -335,10 +335,11 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       picker via `ModelPickerModal requireCapability="speech"`). Tests: OpenRouter
       synth (mock httpx) + `supports_speech` cap + base-raise; `AmbassadorService.synthesize`
       precedence/degradation; `SpeechPlayer` cache/state vitest.
-- [ ] **Two-way voice (STT, the user-speaks half)**: capture mic on hold-space push-to-talk
-      (the voice-mode UI scaffold + key handling already ship), transcribe via OpenRouter
-      `/audio/transcriptions`, and feed the text into the Ask / `/ambassador/draft` → relay
-      seam (never auto-sends). The immersive voice surface + PTT control are in place.
+- [x] **Two-way voice (STT, the user-speaks half)** `[v0.21.64]`: hold-to-talk captures mic
+      (Web Audio → WAV; webkit2gtk's MediaRecorder is broken), transcribes via OpenRouter
+      `/audio/transcriptions`, and routes the transcript through the ambassador's intent inference
+      (`/ambassador/voice-command`) → spoken answer or a reviewable relay (never auto-sent). Voice
+      surface rework + intent routing landed in `[v0.21.65]` (see §16.6 vision below).
 - [x] **Free-form Q&A** `[v0.21.35]`: ask the ambassador anything about the
       conversation from the panel (`POST /ambassador/ask` → `AmbassadorService.answer_question`,
       a Q&A persona/prompt over the shared `_stream_and_settle` streaming core). Persists
@@ -357,28 +358,39 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > **major UI rework** to reach this; the STT pass below ships the plumbing behind a
 > *placeholder record button*, not this surface.
 
-- [ ] **Immersive panel = three things only**: a **push-to-talk icon** (the hero), **live
-      captions**, and a **settings button**. Nothing else on screen. Discord-call calm.
-- [ ] **Stable push-to-talk (the headline fix)**: rock-solid press/hold/release with no
-      accidental triggers or stuck states — button *and* keyboard (Space when focus isn't in
-      an input), debounced, clear visual state for idle/listening/transcribing/speaking, and
-      a hold-vs-toggle option. This is the feature Copilot/OpenAI got wrong; get it right.
-- [ ] **Retake confirmation**: after you stop talking, you can **discard and re-record**
-      before anything is sent — recover gracefully from a flubbed message.
-- [ ] **Pre-send confirmation**: the transcript is shown for review/edit; **you** confirm
-      send (or edit, or discard). Never auto-send a transcription. (STT pass already routes
-      the transcript into the reviewable input — this is the baseline of that confirmation.)
-- [ ] **Captioning**: live captions for **both** sides — the ambassador's spoken output and
-      your transcribed input — so the experience is legible, not audio-only (a11y + clarity).
-- [ ] **Voice settings button** (in-mode): voice model, STT model, voice id, PTT key +
-      hold/toggle, autoplay, caption on/off — quick access without leaving the call.
+**In-panel rework shipped** `[v0.21.65]` — `components/ambassador/VoiceSurface.tsx` + the
+`[Voice | Text]` tabs in `AmbassadorPanel`; backend `route_voice_command`. The items below marked
+`[x]` landed in that slice; the floating CC player + recording lifecycle stay deferred.
+
+- [x] **Immersive panel = three things only** `[v0.21.65]`: `VoiceSurface` is a **push-to-talk
+      icon** (hero), **captions**, and a **settings** popover — nothing else. Voice **leads** for a
+      voice-enabled ambassador (opens on the Voice tab; Text is the 2nd tab).
+- [x] **Stable push-to-talk** `[v0.21.65]`: press/hold/release via mic button + Space (ignored
+      while typing); pointerup/leave end a hold; **hold default + tap-toggle** setting
+      (localStorage `agentx:voice:pttMode`); toggle-mode **max-duration auto-stop** + stop on
+      unmount; distinct idle/listening/transcribing/thinking/speaking states. **Barge-in**: talking
+      cuts off the ambassador.
+- [x] **Retake confirmation** `[v0.21.65]`: a `relay` draft offers **retake** (discard + re-record)
+      before sending.
+- [x] **Pre-send confirmation** `[v0.21.65]`: an instruction routes to a **relay draft** shown for
+      review/edit; you send (or discard). Never auto-sent. (Questions are answered spoken; a
+      first-class **"relay that instead"** override recovers a misroute.)
+- [x] **Captioning** `[v0.21.65]`: captions for **both** sides — your transcript + the ambassador's
+      spoken line; toggleable; never audio-only.
+- [x] **Voice settings popover** `[v0.21.65]`: PTT hold/toggle + captions on/off (localStorage).
+      Voice/STT model + per-model **voice dropdown** live in the profile Voice card
+      (`lib/voiceCatalog.ts` + `components/common/VoicePicker.tsx`).
+- [x] **Voice command intent routing** `[v0.21.65]`: the ambassador **infers intent** —
+      `route_voice_command` returns `{action: answer|relay, text}`; answers persist `qa:`, relays go
+      through the confirm strip → `relayToConversation`. Forward-compatible `target` for future
+      cross-agent delegation.
 - [ ] **Headless floating CC sticky player**: CC'ing an ambassador *from a message* spawns a
       small **floating, draggable sticky button** (not the full panel) — **pause/play**, a
       small **close** button, and **keyboard PTT capture when focus isn't in an input**. A
       mini now-playing pill that rides above the conversation.
-- [ ] **Text mode = a second tab** (playback / history / archival / housekeeping): the typed
-      surface becomes the place to **replay** past briefings/answers, **browse history**,
-      **archive**, and **manage recordings**. Voice mode is the call; text mode is the record.
+- [~] **Text mode = a second tab** `[v0.21.65]`: the typed panel is now the **Text** tab (turns,
+      Q&A replay with speaker buttons, ask/relay). Playback/history/replay are there; **archival +
+      recording housekeeping** still pending (see recording lifecycle below).
 - [ ] **Recording lifecycle (manual, user-owned)**: recordings are **not** auto-GC'd — users
       own their own lifecycle. Surface **how much storage** recordings use and give one-tap
       **clear** options (all / by age / by conversation); **recommend clearing at a size

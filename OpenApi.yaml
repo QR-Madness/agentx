@@ -964,6 +964,58 @@ paths:
         '405':
           description: POST required
 
+  /agent/ambassador/voice-command:
+    post:
+      tags: [Agent]
+      operationId: ambassadorVoiceCommand
+      summary: Route a spoken voice command (16.6 voice mode)
+      description: >-
+        The ambassador **infers intent** from a transcribed voice command: a
+        question → it answers (spoken; also persisted to the `qa:` sidecar so the
+        Text tab shows it); an instruction for the agent → it drafts a **relay** the
+        user reviews and sends. Returns `{action, text, qa_id?}`. Never fails the
+        call — degrades to a spoken notice. (`text` for `relay` is a first-person
+        message; the client relays it as a real user turn after review — never
+        auto-sent.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, transcript]
+              properties:
+                conversation_id:
+                  type: string
+                transcript:
+                  type: string
+                  description: The transcribed spoken command
+                agent_name:
+                  type: string
+                artifacts:
+                  type: object
+                  description: Latest-turn substance, for grounding
+      responses:
+        '200':
+          description: Routed command
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action:
+                    type: string
+                    enum: [answer, relay]
+                  text:
+                    type: string
+                  qa_id:
+                    type: string
+                    nullable: true
+        '400':
+          description: Missing required fields
+        '405':
+          description: POST required
+
   /agent/ambassador/speak:
     post:
       tags: [Agent]

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any, AsyncGenerator, Optional
 
 from ..config import get_config_manager
@@ -181,6 +182,33 @@ def _draft_persona(agent_name: str = "") -> str:
         "Output ONLY the message text — no preamble, no quotation marks, no 'Here's a "
         "draft', no sign-off, no markdown. Just the message, ready to send. Keep it natural "
         "and concise; never invent requirements the person didn't imply."
+    )
+
+
+def _voice_command_persona(agent_name: str = "") -> str:
+    """The Ambassador's voice when interpreting a spoken **voice command** in voice
+    mode. It decides whether the person is asking the ambassador a question (→ it
+    answers) or instructing the agent (→ it drafts a relay for the user to send),
+    and replies as strict JSON so the client can route it."""
+    agent_ref = agent_name.strip() or "the agent"
+    return (
+        "You are the Ambassador, on a live voice call beside the person while they watch a "
+        f"conversation with their AI agent ({agent_ref}). They just spoke to you. Decide what "
+        "they want and respond with ONLY a JSON object — nothing else.\n\n"
+
+        "Two possible actions:\n"
+        '- "answer" — they are asking YOU a question, or want information/explanation ABOUT the '
+        "conversation (what happened, what the agent found or did, a clarification). You answer it "
+        "yourself, grounded only in the conversation.\n"
+        f'- "relay" — they are giving an instruction meant for {agent_ref}: something they want it '
+        'to DO, or a message to pass along ("tell it to…", "ask the agent to…", "have it use X"). '
+        "You turn it into a clear first-person message FROM the person TO the agent, ready to send.\n\n"
+
+        'Respond with exactly: {"action": "answer" | "relay", "text": "..."}\n'
+        '- For "answer": "text" is your spoken reply — plain, conversational, no markdown, no lists.\n'
+        '- For "relay": "text" is the first-person message to the agent — direct, ready to send, no '
+        "preamble or quotation marks.\n"
+        'When genuinely unsure, prefer "answer". Output nothing but the JSON object.'
     )
 
 
@@ -693,6 +721,146 @@ class AmbassadorService:
         except Exception as e:  # noqa: BLE001 — never block the relay
             logger.warning(f"Ambassador draft failed: {e}")
             return intent
+
+    def _build_voice_command_persona(self, profile, agent_name: str = "") -> str:
+        amb = getattr(profile, "ambassador", None) if profile else None
+        parts = [_voice_command_persona(agent_name)]
+        if profile and getattr(profile, "system_prompt", None):
+            parts.append(f"Personality:\n{profile.system_prompt.strip()}")
+        if amb and getattr(amb, "briefing_prompt", "").strip():
+            parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
+        return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
+
+    def _build_voice_command_prompt(
+        self,
+        *,
+        transcript: str,
+        context: str,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> str:
+        agent_label = agent_name.strip() or "the agent"
+        sections = []
+        if context.strip():
+            sections.append(
+                "The conversation so far (for grounding):\n" f"{context.strip()}"
+            )
+        artifacts_block = self._render_artifacts(artifacts, agent_label)
+        if artifacts_block:
+            sections.append(artifacts_block)
+        sections.append(f"What the person just said to you:\n{transcript.strip()}")
+        sections.append("Decide the action and respond with only the JSON object.")
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _parse_voice_command(content: str) -> tuple[str, str]:
+        """Parse the routing model's reply into ``(action, text)``. Defensive:
+        strips code fences, extracts the first JSON object, and falls back to
+        treating the whole reply as an ``answer`` when anything is off."""
+        raw = (content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw[:4].lower() == "json":
+                raw = raw[4:]
+            raw = raw.strip()
+        data: dict[str, Any] = {}
+        start, end = raw.find("{"), raw.rfind("}")
+        if 0 <= start < end:
+            try:
+                parsed = json.loads(raw[start : end + 1])
+                if isinstance(parsed, dict):
+                    data = parsed
+            except (json.JSONDecodeError, ValueError):
+                data = {}
+        action = data.get("action")
+        text = (data.get("text") or "").strip()
+        if action not in ("answer", "relay") or not text:
+            # Couldn't route — speak whatever the model produced.
+            return "answer", text or raw
+        return action, text
+
+    async def route_voice_command(
+        self,
+        conversation_id: str,
+        transcript: str,
+        *,
+        agent_name: str = "",
+        artifacts: Optional[dict] = None,
+    ) -> dict:
+        """Interpret a spoken voice command: the ambassador decides whether to
+        **answer** it (spoken Q&A, persisted to the `qa:` sidecar so the Text tab
+        shows it) or draft a **relay** for the user to send to the agent. Returns
+        ``{action, text, qa_id?}``. Never raises — degrades to a spoken notice so
+        the call never breaks. (A future ``target`` selects a specific agent for
+        cross-agent delegation; v1 always targets the active conversation.)"""
+        transcript = (transcript or "").strip()
+        if not transcript:
+            return {"action": "answer", "text": "", "qa_id": None}
+
+        cfg = self._config()
+        if not cfg["enabled"]:
+            return {"action": "answer", "text": "The ambassador is disabled in settings.", "qa_id": None}
+
+        profile = self._resolve_profile(cfg["profile_id"])
+        profile_model = getattr(profile, "default_model", None) if profile else None
+        model = cfg["model"] or profile_model or _DEFAULT_MODEL
+        temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
+
+        try:
+            provider, model_id, _ = self.registry.resolve_with_fallback(
+                model, preferred_fallback=_DEFAULT_MODEL
+            )
+        except Exception as e:  # noqa: BLE001 — degrade gracefully
+            logger.warning(f"Ambassador voice-command provider unavailable: {e}")
+            return {
+                "action": "answer",
+                "text": "No model provider is configured for the ambassador.",
+                "qa_id": None,
+            }
+
+        context = self._grounding_context(
+            conversation_id, cfg["max_context_turns"] * 2, agent_name
+        )
+        messages = [
+            Message(
+                role=MessageRole.SYSTEM,
+                content=self._build_voice_command_persona(profile, agent_name),
+            ),
+            Message(
+                role=MessageRole.USER,
+                content=self._build_voice_command_prompt(
+                    transcript=transcript,
+                    context=context,
+                    agent_name=agent_name,
+                    artifacts=artifacts,
+                ),
+            ),
+        ]
+
+        try:
+            result = await provider.complete(
+                messages,
+                model_id,
+                temperature=temperature,
+                max_tokens=self._max_tokens(profile, cfg),
+            )
+            action, text = self._parse_voice_command(result.content)
+        except Exception as e:  # noqa: BLE001 — the call must never break
+            logger.warning(f"Ambassador voice-command failed: {e}")
+            return {"action": "answer", "text": "Sorry, I couldn't process that.", "qa_id": None}
+
+        qa_id: Optional[str] = None
+        if action == "answer" and text:
+            # Persist spoken answers as Q&A so the Text tab replays them.
+            qa_id = f"vc_{uuid.uuid4().hex[:16]}"
+            try:
+                store.create_qa(conversation_id, qa_id, transcript)
+                store.set_qa_answer(conversation_id, qa_id, text, status="done")
+            except Exception as e:  # noqa: BLE001 — persistence is best-effort
+                logger.debug(f"voice-command qa persist failed: {e}")
+                qa_id = None
+
+        return {"action": action, "text": text, "qa_id": qa_id}
 
     async def synthesize(
         self,

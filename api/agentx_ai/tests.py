@@ -7346,3 +7346,77 @@ class AmbassadorTranscriptionTest(TestCase):
         svc._registry.get_provider_for_model.assert_called_once_with(_DEFAULT_TRANSCRIPTION_MODEL)
         _, kwargs = provider.transcribe_speech.call_args
         self.assertEqual(kwargs["audio_format"], "webm")
+
+
+class AmbassadorVoiceCommandTest(TestCase):
+    """AmbassadorService.route_voice_command — intent routing + qa persistence."""
+
+    def _service_with_reply(self, reply: str):
+        """An AmbassadorService whose provider returns `reply` and whose profile/
+        grounding/registry are stubbed."""
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=SimpleNamespace(content=reply))
+        svc._registry = MagicMock()
+        svc._registry.resolve_with_fallback.return_value = (provider, "anthropic:model", None)
+        return svc
+
+    def test_answer_routes_and_persists_qa(self):
+        svc = self._service_with_reply('{"action": "answer", "text": "it searched the county index."}')
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+             patch.object(svc, "_grounding_context", return_value=""), \
+             patch("agentx_ai.agent.ambassador.store.create_qa") as create_qa, \
+             patch("agentx_ai.agent.ambassador.store.set_qa_answer") as set_answer:
+            result = asyncio.run(svc.route_voice_command("conv1", "what did it find?"))
+        self.assertEqual(result["action"], "answer")
+        self.assertEqual(result["text"], "it searched the county index.")
+        self.assertIsNotNone(result["qa_id"])
+        create_qa.assert_called_once()
+        set_answer.assert_called_once()
+
+    def test_relay_routes_without_persisting(self):
+        svc = self._service_with_reply('{"action": "relay", "text": "Use Postgres for the vector store."}')
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+             patch.object(svc, "_grounding_context", return_value=""), \
+             patch("agentx_ai.agent.ambassador.store.create_qa") as create_qa:
+            result = asyncio.run(svc.route_voice_command("conv1", "tell it to use postgres"))
+        self.assertEqual(result["action"], "relay")
+        self.assertEqual(result["text"], "Use Postgres for the vector store.")
+        self.assertIsNone(result["qa_id"])
+        create_qa.assert_not_called()
+
+    def test_malformed_json_falls_back_to_answer(self):
+        svc = self._service_with_reply("I think they want to know about the search.")
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+             patch.object(svc, "_grounding_context", return_value=""), \
+             patch("agentx_ai.agent.ambassador.store.create_qa"), \
+             patch("agentx_ai.agent.ambassador.store.set_qa_answer"):
+            result = asyncio.run(svc.route_voice_command("conv1", "what's up"))
+        self.assertEqual(result["action"], "answer")
+        self.assertEqual(result["text"], "I think they want to know about the search.")
+
+    def test_empty_transcript_short_circuits(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        svc._registry = MagicMock()
+        result = asyncio.run(svc.route_voice_command("conv1", "   "))
+        self.assertEqual(result["action"], "answer")
+        self.assertEqual(result["text"], "")
+        svc._registry.resolve_with_fallback.assert_not_called()
+
+    def test_disabled_degrades_gracefully(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        svc._registry = MagicMock()
+        cfg = {"enabled": False, "profile_id": None, "model": None, "max_context_turns": 8, "max_tokens": None}
+        with patch.object(svc, "_config", return_value=cfg):
+            result = asyncio.run(svc.route_voice_command("conv1", "hello"))
+        self.assertEqual(result["action"], "answer")
+        self.assertIn("disabled", result["text"].lower())
+        svc._registry.resolve_with_fallback.assert_not_called()

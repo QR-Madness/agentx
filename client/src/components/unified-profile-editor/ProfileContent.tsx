@@ -29,6 +29,7 @@ import { type AgentProfile, type ModelInfo, type ReasoningStrategy } from '../..
 import { agentAccent } from '../../lib/agentAccent';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
+import { VoicePicker } from '../common/VoicePicker';
 import { AvatarPicker } from '../common/AvatarPicker';
 import { ControlCard } from '../common/ControlCard';
 import { CopyChip, SegmentedControl, Badge } from '../ui';
@@ -621,11 +622,11 @@ export function ProfileContent({
 
                     <div className="profile-form-group" style={{ marginTop: 12 }}>
                       <label>Voice</label>
-                      <input
-                        type="text"
+                      <VoicePicker
+                        model={speechModel || 'openrouter:microsoft/mai-voice-2'}
                         value={voice}
-                        onChange={e => setVoice(e.target.value)}
-                        placeholder="e.g. en-US-Harper:MAI-Voice-2 (model-specific; blank = model default)"
+                        onChange={setVoice}
+                        placeholder="Custom voice id (model-specific)"
                       />
                     </div>
 
