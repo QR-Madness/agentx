@@ -53,11 +53,11 @@ function Orb({ active }: { active: boolean }) {
     <div className="relative flex h-28 w-28 items-center justify-center">
       {active && (
         <>
-          <span className="absolute h-28 w-28 animate-ping rounded-full bg-accent-tertiary opacity-60 motion-reduce:hidden" />
-          <span className="absolute h-24 w-24 animate-pulse rounded-full bg-accent-tertiary motion-reduce:animate-none" />
+          <span className="absolute h-28 w-28 animate-ping rounded-full bg-accent/40 opacity-60 motion-reduce:hidden" />
+          <span className="absolute h-24 w-24 animate-pulse rounded-full bg-accent/25 motion-reduce:animate-none" />
         </>
       )}
-      <span className="relative flex h-20 w-20 items-center justify-center rounded-full bg-accent-tertiary">
+      <span className="relative flex h-20 w-20 items-center justify-center rounded-full bg-accent/20">
         <Radio size={34} className="text-accent" />
       </span>
     </div>
@@ -234,7 +234,7 @@ export function VoiceSurface({
           <Settings2 size={16} />
         </button>
         {settingsOpen && (
-          <div className="absolute right-3 top-11 z-10 w-56 rounded-lg border border-line bg-surface-overlay p-3 shadow-lg">
+          <div className="absolute right-3 top-11 z-10 w-56 max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface-overlay p-3 shadow-lg">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
               Push-to-talk
             </p>
@@ -245,7 +245,7 @@ export function VoiceSurface({
                   type="button"
                   onClick={() => setMode(m)}
                   data-on={pttMode === m || undefined}
-                  className="rounded px-2 py-1 font-medium capitalize text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+                  className="rounded px-2 py-1 font-medium capitalize text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
                 >
                   {m === 'hold' ? 'Hold' : 'Toggle'}
                 </button>
@@ -296,9 +296,9 @@ export function VoiceSurface({
               value={relayDraft}
               onChange={(e) => setRelayDraft(e.target.value)}
               rows={2}
-              className="w-full resize-none rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-fg outline-none focus:border-line-strong"
+              className="w-full resize-none rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-fg outline-none focus:border-line-strong max-[600px]:text-base"
             />
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setRelayDraft(null)}

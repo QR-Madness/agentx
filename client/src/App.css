@@ -48,7 +48,12 @@
   --color-line-strong: var(--border-emphasis);
   --color-line-interactive: var(--border-interactive);
 
-  /* Accents → text-accent / bg-accent, …-secondary, …-tertiary */
+  /* Accents → text-accent / bg-accent, …-secondary, …-tertiary.
+   * NOTE: `accent-tertiary` is a SOLID third hue (pink in cosmic), NOT a subtle
+   * tint. For a soft accent fill (chips, hover states, identity discs) use the
+   * alpha modifier on the primary accent — `bg-accent/15` == `--accent-tint-soft`
+   * — NOT `bg-accent-tertiary` (which renders solid pink). The `--accent-tint-*`
+   * tints are deliberately not bridged; reach for `/<alpha>` instead. */
   --color-accent: var(--accent-primary);
   --color-accent-secondary: var(--accent-secondary);
   --color-accent-tertiary: var(--accent-tertiary);

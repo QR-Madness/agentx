@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Command } from 'cmdk';
-import { Search, Check } from 'lucide-react';
+import { Search, Check, X } from 'lucide-react';
 import {
   useCommands,
   GROUP_ORDER,
@@ -98,6 +98,15 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
               placeholder="Type a command or search…"
               className="cmdk-input"
             />
+            <button
+              type="button"
+              className="cmdk-close"
+              onClick={onClose}
+              aria-label="Close command palette"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
           </div>
           <Command.List className="cmdk-list">
             <Command.Empty className="cmdk-empty">No matching commands</Command.Empty>

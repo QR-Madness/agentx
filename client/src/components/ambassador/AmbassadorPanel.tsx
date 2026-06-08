@@ -79,7 +79,7 @@ function SpeakButton({
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent-tertiary hover:text-accent data-[on=true]:text-accent ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent data-[on=true]:text-accent ${className}`}
       data-on={playing || undefined}
       onClick={() => (playing ? speech.stop() : speech.speak(id, text))}
     >
@@ -108,7 +108,7 @@ function Cursor() {
 function AmbassadorMark({ size = 20 }: { size?: number }) {
   return (
     <span
-      className="flex shrink-0 items-center justify-center rounded-full bg-accent-tertiary"
+      className="flex shrink-0 items-center justify-center rounded-full bg-accent/15"
       style={{ width: size, height: size }}
     >
       <Radio size={Math.round(size * 0.55)} className="text-accent" />
@@ -137,7 +137,7 @@ function StatusChip({ status }: { status: AmbassadorBriefing['status'] | undefin
   switch (status) {
     case 'streaming':
       return (
-        <span className={`${base} bg-accent-tertiary text-accent`}>
+        <span className={`${base} bg-accent/15 text-accent`}>
           <Loader2 size={10} className="animate-spin" /> briefing
         </span>
       );
@@ -490,7 +490,7 @@ export function AmbassadorPanel() {
       {/* Header — identity zone (future home of the voice/TTS hero). */}
       <div className="flex flex-col gap-1.5 border-b border-line px-4 pb-3.5 pt-4">
         {/* pr clears the drawer shell's absolute close button (top-right, ~56px). */}
-        <div className="flex items-center gap-2.5 pr-12">
+        <div className="flex flex-wrap items-center gap-2.5 pr-12">
           <span className="relative inline-flex">
             <AmbassadorMark size={26} />
             {anyStreaming && (
@@ -499,7 +499,7 @@ export function AmbassadorPanel() {
           </span>
           <h2 className="text-base font-semibold text-fg">Ambassador</h2>
           {anyStreaming && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent-tertiary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
               live
             </span>
           )}
@@ -509,7 +509,7 @@ export function AmbassadorPanel() {
                 type="button"
                 onClick={openVoiceTab}
                 data-on={tab === 'voice' || undefined}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
                 title="Immersive voice"
               >
                 <AudioLines size={13} /> Voice
@@ -518,7 +518,7 @@ export function AmbassadorPanel() {
                 type="button"
                 onClick={openTextTab}
                 data-on={tab === 'text' || undefined}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
                 title="Text"
               >
                 <MessageSquare size={13} /> Text
@@ -619,7 +619,7 @@ export function AmbassadorPanel() {
                           ) : (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent-tertiary data-[lead=true]:ml-auto"
+                              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15 data-[lead=true]:ml-auto"
                               data-lead={!(briefed && briefing?.summary?.trim()) || undefined}
                               onClick={() => brief(m)}
                               title={briefing ? 'Brief this turn again' : 'Brief this turn'}
@@ -667,7 +667,7 @@ export function AmbassadorPanel() {
             <button
               type="button"
               onClick={() => setMode('ask')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
               data-on={mode === 'ask' || undefined}
             >
               <Radio size={12} /> Ask
@@ -675,7 +675,7 @@ export function AmbassadorPanel() {
             <button
               type="button"
               onClick={() => setMode('relay')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-muted transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
               data-on={mode === 'relay' || undefined}
             >
               <CornerUpRight size={12} /> Relay to agent
@@ -695,7 +695,7 @@ export function AmbassadorPanel() {
                     ? `Tell ${convAgentName} something — folds into the running turn…`
                     : `Tell ${convAgentName} something — sent as your message…`
               }
-              className="max-h-32 flex-1 resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
+              className="max-h-32 flex-1 resize-none bg-transparent p-0 text-sm text-fg outline-none placeholder:text-fg-muted max-[600px]:text-base"
             />
             {mode === 'relay' && (
               <button

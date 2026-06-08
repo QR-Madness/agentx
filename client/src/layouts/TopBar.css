@@ -155,19 +155,6 @@
   color: var(--cosmic-violet);
 }
 
-/* === Brain Icon (Active Agents) === */
-.toolbar-icon-brain {
-  color: var(--text-secondary);
-}
-
-.toolbar-icon-brain:hover {
-  color: var(--cosmic-violet);
-}
-
-.toolbar-icon-brain.pulsing {
-  animation: brainShiftGlow 3s ease-in-out infinite;
-}
-
 /* === Lightning Icon (Consolidation) === */
 .toolbar-icon-lightning {
   color: var(--text-secondary);
@@ -183,29 +170,6 @@
 }
 
 /* === Pulse Animations === */
-@keyframes brainShiftGlow {
-  0% {
-    color: var(--accent-primary);
-    filter: drop-shadow(0 0 6px var(--accent-tint-strong));
-  }
-  25% {
-    color: var(--accent-primary);
-    filter: drop-shadow(0 0 12px rgba(192, 132, 252, 0.8));
-  }
-  50% {
-    color: var(--accent-primary);
-    filter: drop-shadow(0 0 14px var(--accent-tint-strong));
-  }
-  75% {
-    color: var(--accent-tertiary);
-    filter: drop-shadow(0 0 12px rgba(232, 121, 249, 0.8));
-  }
-  100% {
-    color: var(--accent-primary);
-    filter: drop-shadow(0 0 6px var(--accent-tint-strong));
-  }
-}
-
 @keyframes iconPulseGlowAmber {
   0%, 100% {
     filter: drop-shadow(0 0 0 transparent);
@@ -297,26 +261,54 @@
 }
 
 @media (max-width: 600px) {
+  /* On mobile the bar sits at the bottom (RootLayout column-reverse) and
+     becomes a floating glass DOCK: margin on all sides (incl. left/right/bottom
+     safe-area insets so it clears rounded display corners + the home
+     indicator), rounded, translucent glass, soft shadow. It stays an in-flow
+     flex item, so .page-content shrinks above it — the chat composer never
+     overlaps it. */
   .top-bar {
     padding: 0 8px;
     gap: 4px;
-    /* Sits at the bottom on mobile (RootLayout uses column-reverse).
-       Pad below by the home-indicator inset, and swap the bottom border
-       for a top one since the bar is now flipped. */
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
-    border-bottom: none;
-    border-top: 1px solid var(--border-color);
+    margin:
+      8px
+      max(env(safe-area-inset-right, 0px), 12px)
+      max(env(safe-area-inset-bottom, 0px), 12px)
+      max(env(safe-area-inset-left, 0px), 12px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface-overlay) 82%, transparent);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-lg);
   }
 
-  /* The accent glow strip lives on ::after — flip it to the top edge */
+  /* The full-width accent glow line makes no sense on a rounded floating pill;
+     the shadow already separates it from the canvas. */
   .top-bar::after {
-    bottom: auto;
-    top: 0;
+    display: none;
   }
 
   /* Hide secondary chrome (e.g. the logo button) to save room on mobile */
   .toolbar-secondary {
     display: none !important;
+  }
+
+  /* The ⌘K launcher collapses to a compact, tinted icon button so the dock
+     never overflows on narrow phones (the labeled "Search…" pill was the bulk;
+     the 44px touch floor handles the rest). The label is hidden; the kbd hint
+     is already mobile-suppressed in TSX. Scoped to ≤600 so the 601–768 tablet
+     pill keeps its label. */
+  .toolbar-search-pill {
+    padding: 0;
+    width: 44px;
+    justify-content: center;
+    background: var(--accent-tint-soft);
+    color: var(--accent-primary);
+    border-color: transparent;
+  }
+  .toolbar-search-pill-label {
+    display: none;
   }
 }
 
@@ -386,4 +378,47 @@
    right-cluster controls (focus toggle + window controls) to the corner. */
 .top-bar--focus .top-bar-right {
   margin-left: auto;
+}
+
+/* The bar itself dissolves in focus mode (both desktop + mobile) — no glass,
+   border, shadow or glow — so the canvas reads edge to edge. Desktop keeps the
+   corner focus toggle + window controls visible against content. */
+.top-bar--focus {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.top-bar--focus::after {
+  display: none;
+}
+
+/* Mobile focus mode: take the dock out of flow so content fills the screen,
+   and float the *only* remaining control — the exit-focus toggle — as a
+   nicely styled glass pill. It sits TOP-right (the header is hidden in focus
+   mode, so the top is clear) to avoid colliding with the still-visible chat
+   composer's send button and the sticky auto-scroll toggle (both bottom-right). */
+@media (max-width: 600px) {
+  .top-bar--focus {
+    position: fixed;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+  .top-bar--focus .toolbar-focus {
+    position: fixed;
+    top: max(env(safe-area-inset-top, 0px), 16px);
+    right: max(env(safe-area-inset-right, 0px), 16px);
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-overlay) 82%, transparent);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+    z-index: 200;
+  }
 }

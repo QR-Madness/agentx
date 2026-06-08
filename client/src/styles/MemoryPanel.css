@@ -177,8 +177,8 @@
 }
 
 .import-mode-toggle button.active {
-  border-color: var(--accent, var(--accent-primary));
-  background: var(--accent-tertiary, var(--accent-tint-soft));
+  border-color: var(--accent-primary);
+  background: var(--accent-tint-soft);
 }
 
 .import-warning {

@@ -21,6 +21,24 @@
   opacity: 0.5;
 }
 
+/* Mobile entry to the Conversations drawer from the empty state. */
+.chat-panel-empty-conv {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chat-panel-empty-conv:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
 /* === Header === */
 .chat-panel-header {
   display: flex;
@@ -39,6 +57,24 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Mobile-only toggle that opens the Conversations drawer (the rail is hidden). */
+.chat-panel-conv-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.chat-panel-conv-toggle:hover {
+  background: var(--bg-hover, var(--surface-hover));
+  color: var(--text-primary);
 }
 
 .chat-panel-title {

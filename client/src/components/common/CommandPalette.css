@@ -62,6 +62,26 @@
 }
 .cmdk-input::placeholder { color: var(--text-muted); }
 
+/* Close (X) — visible at all sizes; the only dismiss affordance on the
+   full-screen mobile palette (no overlay margin to tap, no hardware Esc). */
+.cmdk-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cmdk-close:hover {
+  background: var(--surface-hover, var(--bg-hover));
+  color: var(--text-primary);
+}
+
 .cmdk-list {
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -157,7 +177,27 @@
     height: 100dvh;
     border-radius: 0;
     border: none;
+    animation: cmdk-rise-mobile 0.18s ease;
   }
   .cmdk-item { padding: 14px 14px; }
   .cmdk-input { font-size: 16px; } /* avoid iOS zoom-on-focus */
+
+  /* The full-screen portal owns the device safe-areas itself: the search row
+     clears the status bar, the list clears the home indicator (footer is
+     hidden on touch, so the list is the last element). */
+  .cmdk-search { padding-top: max(env(safe-area-inset-top, 0px), 14px); }
+  .cmdk-list { padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px); }
+
+  /* Keyboard-only hint bar is useless on touch — the visible X dismisses. */
+  .cmdk-footer { display: none; }
+}
+
+@keyframes cmdk-rise-mobile {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmdk-overlay,
+  .cmdk-panel { animation: none; }
 }

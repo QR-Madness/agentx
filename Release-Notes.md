@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.66 -->
+<!-- release-version: 0.21.68 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -42,6 +42,22 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   native "are you sure?" delete prompt is replaced by a proper, themed confirm dialog. (Under
   the hood this rides one extensible per-conversation metadata model — room to grow toward
   workspace/file linking later.)
+- **Mobile sweep on the new conversation + ambassador surfaces.** The two leftover "active
+  conversations" switchers in the top bar are gone — on phones the conversation list now opens
+  from a button right in the chat header (and from the ⌘K palette's new **Open conversations**
+  command, so it's always one keystroke away even in focus mode). The ambassador's voice and
+  text panels got a touch pass too: the voice settings popover no longer clips the screen edge,
+  the relay buttons wrap instead of overflowing on narrow phones, and tapping into a text field
+  no longer triggers iOS's zoom-on-focus.
+- **Command palette + bottom bar, polished for touch.** The ⌘K palette now has a visible **close
+  button** (it went full-screen on phones with no way out but a hardware Esc), drops the
+  keyboard-only hint bar on mobile, and respects the device's status bar and home indicator.
+  Searching "profiles" (and other plurals like "memories" / "translations") now finds the right
+  command — and "Edit agent profile" is now just **Agent profiles**. The mobile bottom bar
+  became a **floating glass dock**: it lifts off the screen edges with comfortable margins (so it
+  clears rounded corners and the home indicator), the search control shrinks to a tidy icon so the
+  bar no longer overflows, and in **focus mode** the bar dissolves to a single frosted exit button
+  in the corner.
 - **Cleaner data tables.** Agent-authored tables now read like real tables — more generous
   spacing, a crisper header with a clear divider, delineated columns that wrap long prose
   instead of crushing it (wide tables scroll), subtler zebra striping and row hover. The
@@ -167,6 +183,14 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **Contrast / theming fixes on the Ambassador (and friends).** Several chips, the identity mark,
+  the voice orb, and a few hover states were rendering accent text on a clashing solid-pink fill
+  (a mix-up between the third accent hue and a subtle accent *tint*) — low-contrast and, in places,
+  near-invisible. They now use a proper soft accent tint that reads cleanly in every theme. The
+  same mix-up is fixed on the Sources "active" badge and the Memory import-mode toggle. Separately,
+  the **inactive** Voice/Text, Ask/Relay, and push-to-talk toggle buttons were greyed out with the
+  muted text token; they now use the standard secondary text colour (matching the shared segmented
+  control), so the option you're *not* on is still clearly readable.
 - Prompt diffs are now properly colored (red removals, green additions) everywhere they
   appear — including the ambassador voices and the memory prompts. The diff view also now
   shows up on the **memory** extraction/relevance prompts, so you can compare your override

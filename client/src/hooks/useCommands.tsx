@@ -14,7 +14,7 @@
 import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
-  ScrollText, Moon, Sun, Contrast, Monitor,
+  ScrollText, Moon, Sun, Contrast, Monitor, MessagesSquare,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -69,17 +69,18 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
 
       // Conversation
       { id: 'conv-new', group: 'Conversation', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: ['tab', 'create', 'chat'], run: () => { addTab(); onNavigate('agentx'); onClose(); } },
+      { id: 'open-conversations', group: 'Conversation', label: 'Open conversations', icon: <MessagesSquare size={16} />, keywords: ['tabs', 'switch', 'list', 'sessions', 'sidebar'], run: open('conversations') },
 
       // Workspace
       { id: 'open-settings', group: 'Workspace', label: 'Open Settings', hint: '⌘,', icon: <Settings size={16} />, keywords: ['config', 'preferences', 'providers'], run: open('settings') },
       { id: 'open-tools', group: 'Workspace', label: 'Open Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers'], run: open('tools') },
-      { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall'], run: open('memory') },
+      { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
-      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel'], run: open('ambassador') },
+      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: open('ambassador') },
       { id: 'open-plans', group: 'Workspace', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: ['tasks', 'subtasks', 'progress'], run: open('plans') },
-      { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb'], run: open('translation') },
+      { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb', 'translations'], run: open('translation') },
       { id: 'open-logs', group: 'Workspace', label: 'Open Logs', icon: <ScrollText size={16} />, keywords: ['console', 'debug', 'server', 'trace'], run: open('logs') },
-      { id: 'open-profile', group: 'Workspace', label: 'Edit agent profile', icon: <BrainCircuit size={16} />, keywords: ['agent', 'model', 'temperature', 'prompt'], run: open('profileEditor') },
+      { id: 'open-profile', group: 'Workspace', label: 'Agent profiles', icon: <BrainCircuit size={16} />, keywords: ['profile', 'profiles', 'agent', 'agents', 'persona', 'model', 'temperature', 'prompt', 'edit'], run: open('profileEditor') },
       { id: 'focus', group: 'Workspace', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen', icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: ['zen', 'immersive', 'hide', 'chrome'], run: () => { toggleFocusMode(); onClose(); } },
 
       // Theme
@@ -105,7 +106,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
     // Account (only when auth is enabled + signed in)
     if (authRequired && isAuthenticated) {
       cmds.push({ id: 'change-password', group: 'Account', label: 'Change Password', icon: <KeyRound size={16} />, keywords: ['account', 'security', 'login'], run: open('changePassword') });
-      cmds.push({ id: 'sign-out', group: 'Account', label: 'Sign Out', icon: <LogOut size={16} />, keywords: ['logout', 'exit', 'session'], run: () => { onClose(); logout().then(() => onNavigate('start')); } });
+      cmds.push({ id: 'sign-out', group: 'Account', label: 'Sign Out', icon: <LogOut size={16} />, keywords: ['logout', 'exit', 'session', 'account'], run: () => { onClose(); logout().then(() => onNavigate('start')); } });
     }
 
     return cmds;

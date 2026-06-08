@@ -20,6 +20,7 @@ import {
   Cpu,
   X,
   ArrowRightLeft,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { RelayMenu } from './relay/RelayMenu';
@@ -58,6 +59,8 @@ import {
 } from '../../lib/planResume';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useIsMobile } from '../../lib/hooks';
+import { SURFACES } from '../../lib/surfaces';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { latestRun } from '../../lib/alloyTrace';
@@ -82,6 +85,7 @@ export function ChatPanel() {
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
   const { openModal } = useModal();
+  const isMobile = useIsMobile();
   const { ccTurn, briefingForMessage } = useAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
@@ -718,6 +722,16 @@ export function ChatPanel() {
       <div className="chat-panel-empty">
         <Bot size={48} />
         <p>Select or create a conversation to start chatting</p>
+        {isMobile && (
+          <button
+            type="button"
+            className="chat-panel-empty-conv"
+            onClick={() => openModal(SURFACES.conversations)}
+          >
+            <PanelLeftOpen size={16} />
+            <span>Show conversations</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -729,6 +743,19 @@ export function ChatPanel() {
       {/* Header */}
       <div className="chat-panel-header">
         <div className="chat-panel-info">
+          {/* Mobile: the desktop Conversations rail is hidden <600px, so open it
+              as a drawer from here (the command palette is the other entry). */}
+          {isMobile && (
+            <button
+              type="button"
+              className="chat-panel-conv-toggle"
+              onClick={() => openModal(SURFACES.conversations)}
+              title="Show conversations"
+              aria-label="Show conversations"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          )}
           <span className="chat-panel-title">{activeTab.title}</span>
           {activeTab.sessionId && (
             <span className="chat-panel-session">

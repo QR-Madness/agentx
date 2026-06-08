@@ -57,7 +57,7 @@ export function SourcesPanel() {
                 )}
               </div>
               {e.kind === 'active' && (
-                <span className="shrink-0 rounded bg-accent-tertiary px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
                   active
                 </span>
               )}
