@@ -18,16 +18,26 @@ def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
     """Log an LLM request via the logging_kit cards.
 
     Verbosity is governed by ``AGENTX_LLM_LOG_LEVEL`` (off|summary|full); the
-    legacy ``DEBUG_LOG_LLM_REQUESTS`` switch still maps to ``full``. Emitted at
-    DEBUG so default INFO consoles stay calm while ``agentx_ai``-at-DEBUG dev sees
-    it. Best-effort — never let logging break a request.
+    legacy ``DEBUG_LOG_LLM_REQUESTS`` switch still maps to ``full``.
+
+    The console only ever sees the compact one-line **summary** (logged at INFO,
+    so it shows inline in the API console). When the level is ``full`` the entire
+    redacted payload rides the ``llm_detail`` record extra — captured by the ring
+    buffer (the in-app Log panel) and the on-disk archive, but **never rendered on
+    the console**, so a single request can't wipe the scrollback. Best-effort —
+    never let logging break a request.
     """
     try:
-        from agentx_ai.logging_kit.llm_cards import render_llm_request
+        from agentx_ai.logging_kit.llm_cards import render_llm_log
 
-        rendered = render_llm_request(provider_name, request_params)
-        if rendered:
-            logger.debug(rendered)
+        rendered = render_llm_log(provider_name, request_params)
+        if not rendered:
+            return
+        summary, detail = rendered
+        if detail:
+            logger.info(summary, extra={"llm_detail": detail})
+        else:
+            logger.info(summary)
     except Exception:  # noqa: BLE001
         pass
 

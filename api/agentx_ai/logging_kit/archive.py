@@ -39,6 +39,20 @@ class GzipRotatingFileHandler(logging.handlers.RotatingFileHandler):
         os.remove(source)
 
 
+class _ArchiveFormatter(logging.Formatter):
+    """Plain archive formatter that appends any oversized ``llm_detail`` payload.
+
+    The console only shows the one-line summary, but the durable archive keeps the
+    full (already-redacted) content on the following lines, so it can be browsed
+    or downloaded later.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        detail = getattr(record, "llm_detail", None)
+        return f"{base}\n{detail}" if detail else base
+
+
 def build_archive_handler(flags: LogFlags) -> Optional[logging.Handler]:
     if not flags.archive_enabled:
         return None
@@ -50,7 +64,7 @@ def build_archive_handler(flags: LogFlags) -> Optional[logging.Handler]:
         encoding="utf-8",
         delay=True,
     )
-    handler.setFormatter(logging.Formatter(_ARCHIVE_FMT, style="{"))
+    handler.setFormatter(_ArchiveFormatter(_ARCHIVE_FMT, style="{"))
     return handler
 
 

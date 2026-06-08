@@ -43,6 +43,12 @@ def _record_to_dict(record: logging.LogRecord) -> dict[str, Any]:
     }
     if record.exc_text:
         out["exc"] = record.exc_text
+    # Oversized, already-redacted payloads (e.g. a full LLM request) ride a
+    # separate field so the message stays a one-line summary but the in-app Log
+    # panel can expand the full content on demand.
+    detail = getattr(record, "llm_detail", None)
+    if detail:
+        out["detail"] = detail
     return out
 
 

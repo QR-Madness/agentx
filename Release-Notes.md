@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.68 -->
+<!-- release-version: 0.21.69 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -183,6 +183,13 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **LLM request logs no longer flood the console.** With the verbose
+  (`AGENTX_LLM_LOG_LEVEL=full`) setting, a single LLM request used to dump its
+  entire payload to the console and blow away your scrollback. The console now
+  always shows just a compact one-line summary (model · messages · ~tokens ·
+  tools); the full, redacted payload is kept in the in-app **Log panel** (expand
+  the row to read it) and the on-disk archive. Summaries log at INFO so they show
+  inline in the standard console.
 - **Contrast / theming fixes on the Ambassador (and friends).** Several chips, the identity mark,
   the voice orb, and a few hover states were rendering accent text on a clashing solid-pink fill
   (a mix-up between the third accent hue and a subtle accent *tint*) — low-contrast and, in places,

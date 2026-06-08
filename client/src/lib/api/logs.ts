@@ -21,6 +21,9 @@ export interface LogRecord {
   agent_id?: string | null;
   message: string;
   exc?: string;
+  /** Oversized, already-redacted payload (e.g. a full LLM request) shown
+   *  collapsed under the summary — stripped from the console server-side. */
+  detail?: string;
 }
 
 export interface LogCategoryInfo {

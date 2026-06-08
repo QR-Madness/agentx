@@ -78,3 +78,24 @@ def render_llm_request(provider_name: str, request_params: dict[str, Any]) -> Op
     if level == "summary":
         return _summary(provider_name, request_params)
     return _full(provider_name, request_params)
+
+
+def render_llm_log(
+    provider_name: str, request_params: dict[str, Any]
+) -> Optional[tuple[str, Optional[str]]]:
+    """Split an LLM request into ``(console summary, storage detail)``.
+
+    * ``off``     → ``None`` (log nothing).
+    * ``summary`` → ``(summary, None)``.
+    * ``full``    → ``(summary, full)`` — the console still gets only the compact
+      summary; the full redacted payload is returned separately so the caller can
+      route it to storage (ring buffer + archive) **without flooding the
+      console** (a single ``full`` request used to wipe the scrollback).
+    """
+    level = read_flags().llm_level
+    if level == "off":
+        return None
+    summary = _summary(provider_name, request_params)
+    if level == "summary":
+        return summary, None
+    return summary, _full(provider_name, request_params)

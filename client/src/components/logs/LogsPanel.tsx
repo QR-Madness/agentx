@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, Trash2, X, Search, Archive, Download } from 'lucide-react';
+import { Pause, Play, Trash2, X, Search, Archive, Download, ChevronRight, ChevronDown } from 'lucide-react';
 import { api, type LogRecord, type LogArchiveSegment } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { categoryMeta, levelColor, LOG_LEVELS } from '../../lib/logCategories';
@@ -43,6 +43,17 @@ export function LogsPanel() {
 
   const [showArchive, setShowArchive] = useState(false);
   const [segments, setSegments] = useState<LogArchiveSegment[]>([]);
+
+  // Rows carrying an oversized `detail` payload (e.g. a full LLM request) start
+  // collapsed; the user expands the ones they care about.
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const toggleExpanded = useCallback((id: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const incoming = useRef<LogRecord[]>([]);
@@ -261,8 +272,22 @@ export function LogsPanel() {
                   <span className="logs-runtag logs-runtag--none" />
                 )}
                 <span className="logs-msg">
-                  {r.message}
+                  {r.detail ? (
+                    <button
+                      type="button"
+                      className="logs-detail-toggle"
+                      onClick={() => toggleExpanded(r.id)}
+                      aria-expanded={expanded.has(r.id)}
+                      title={expanded.has(r.id) ? 'Hide payload' : 'Show full payload'}
+                    >
+                      {expanded.has(r.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      {r.message}
+                    </button>
+                  ) : (
+                    r.message
+                  )}
                   {r.exc && <pre className="logs-exc">{r.exc}</pre>}
+                  {r.detail && expanded.has(r.id) && <pre className="logs-detail">{r.detail}</pre>}
                 </span>
               </div>
             );
