@@ -433,13 +433,14 @@ jobs:
 
       - name: Assemble deployment bundle
         # Mirrors `task deploy:bundle`: the self-contained isolated-cluster bundle
-        # (image-based compose + GPU overlay + .env template + README) that the
-        # Docker Hub overview tells users to "grab from the latest release". Attached
-        # below so that instruction is actually true.
+        # (image-based compose + GPU overlay + Cloudflare-Tunnel overlay + .env
+        # template + README) that the Docker Hub overview tells users to "grab from
+        # the latest release". Attached below so that instruction is actually true.
+        # Keep this file list in sync with the deploy:bundle / deploy:bundle:check tasks.
         run: |
           BUNDLE=agentx-deploy
           rm -rf "$BUNDLE" && mkdir -p "$BUNDLE"
-          cp docker-compose.yml docker-compose.gpu.yml "$BUNDLE/"
+          cp docker-compose.yml docker-compose.gpu.yml docker-compose.tunnel.yml "$BUNDLE/"
           cp deploy/.env.example deploy/README.md "$BUNDLE/"
           tar -czf agentx-deploy.tar.gz "$BUNDLE"
           echo "=== bundle ==="; ls -la agentx-deploy.tar.gz; tar -tzf agentx-deploy.tar.gz

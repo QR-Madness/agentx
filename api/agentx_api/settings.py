@@ -192,6 +192,7 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-auth-token",  # AgentX authentication header
+    "agentx-gateway-token",  # Nginx gateway shared-secret header (gateway deployments)
 ]
 
 # Exempt API endpoints from CSRF since we're using CORS

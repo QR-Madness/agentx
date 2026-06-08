@@ -130,6 +130,113 @@ persist under `./data`.
 
 ## Going public
 
-To expose the instance over the internet behind an Nginx + Cloudflare Tunnel
-gateway with a shared-secret header, see
-[Clusters & Gateway → Gateway](clusters.md#gateway-nginx--cloudflare).
+The simplest way to reach an isolated instance from the internet is a
+**dashboard-managed Cloudflare Tunnel running as a container** — no `cloudflared`
+on the host, no inbound ports opened, no DNS to script. The tunnel's
+public-hostname → service mapping lives in the Cloudflare Zero Trust dashboard;
+the container just dials out with a token.
+
+### 1. Create the tunnel (Cloudflare dashboard)
+
+In **Zero Trust → Networks → Tunnels**, create a tunnel and copy its **token**.
+Add a **Public Hostname** for it:
+
+- **Subdomain/Domain:** the hostname you'll use (e.g. `agentx.example.com`)
+- **Service:** `http://api:12319` — the API container, reachable by name because
+  the tunnel runs on the same Docker network.
+
+Copy the connector token (the long string in the
+`cloudflared … run --token <TOKEN>` command the dashboard shows).
+
+### 2. Configure the tunnel overlay
+
+The bundle **ships `docker-compose.tunnel.yml`** — a small overlay that adds a
+`cloudflared` container in front of the API. You don't need to write it; just set
+its two values in `.env`. (For reference, it's:)
+
+```yaml
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${AGENTX_CLUSTER_NAME:-agentx}-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - production
+```
+
+Then in `.env`:
+
+```bash
+TUNNEL_TOKEN=<your-tunnel-token>     # from the dashboard; keep it secret
+AGENTX_PUBLIC_HOST=agentx.example.com
+```
+
+`AGENTX_PUBLIC_HOST` extends `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, and
+`CSRF_TRUSTED_ORIGINS` in one shot, so Django accepts requests arriving with that
+host from the tunnel.
+
+### 3. Bring it up
+
+The overlay must be included on **every** `docker compose` invocation (up, pull,
+restart). Either pass both `-f` flags each time:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+```
+
+…or make it sticky by setting `COMPOSE_FILE` in `.env` so a bare `docker compose
+up -d` always layers it:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml
+```
+
+The `cloudflared` container waits for the API to be healthy, then dials out.
+
+### 4. Verify
+
+```bash
+# The connector registered with Cloudflare's edge:
+docker compose logs cloudflared | grep -i "Registered tunnel connection"
+
+# Reachable over the public hostname (health is unauthenticated):
+curl -sI https://agentx.example.com/api/health                       # → 200
+curl -s "https://agentx.example.com/api/health?include_memory=true" | jq .
+```
+
+Then point the desktop client at `https://agentx.example.com` and log in
+(`root` + the password you set). Authenticated endpoints return `401` until you
+log in — that's app auth, not the tunnel.
+
+!!! danger "Keep auth on"
+    This tunnel publishes the API **directly** — there is no shared-secret gateway
+    in front of it. Leave `AGENTX_AUTH_ENABLED=true` and set a strong root password
+    (`docker compose exec api agentx setup-auth`) **before** the hostname goes live.
+    Treat `TUNNEL_TOKEN` as a secret — anyone with it can run your tunnel. Rotate it
+    from the dashboard if it leaks.
+
+!!! note "Troubleshooting"
+    - **`502` / "no such host" / tunnel can't reach the origin** — the dashboard
+      **Service** must be `http://api:12319` (plain HTTP, container name `api`), and
+      `cloudflared` must be part of *this* compose project so it shares the network.
+      If you renamed the API service or run it elsewhere, match the Service to it.
+    - **`400 Bad Request` / "Invalid HTTP_HOST"** — the public hostname isn't in
+      Django's allowed hosts. Set `AGENTX_PUBLIC_HOST` to the exact hostname and
+      recreate the API container (`docker compose up -d` — env is read at boot).
+    - **Desktop client connects but the browser/web client is blocked by CORS** —
+      the API allows the desktop (Tauri) origins by default. For a web client served
+      from another origin, add it to `CORS_ALLOWED_ORIGINS` (comma-separated).
+    - **Chat streaming** (SSE) works over the tunnel with no extra configuration.
+
+!!! note "Want a shared-secret gateway too?"
+    To additionally front the API with an Nginx gateway that enforces an
+    `AgentX-Gateway-Token` header (defense-in-depth, rate limiting, SSE tuning),
+    see [Clusters & Gateway → Gateway](clusters.md#gateway-nginx--cloudflare). That
+    path points the tunnel's **Service** at `http://nginx:80` instead of the API,
+    and the client sends the gateway token from its per-server setting.

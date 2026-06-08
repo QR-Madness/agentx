@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.65 -->
+<!-- release-version: 0.21.66 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -187,6 +187,26 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   turn or block cancellation.
 - Plan resume rebuilds full context and no longer duplicates the user turn or leaves
   a stuck `running` status after an interrupt.
+- **Public gateway now starts with a real token.** The Nginx + Cloudflare Tunnel gateway
+  failed to start when given a normal-length gateway token (`openssl rand -hex 32` → 64
+  chars) — the token overflowed nginx's default map-hash bucket. The bundled `nginx.conf`
+  now sizes the bucket for long tokens. The tunnel's tokenless `/__gateway_health` probe
+  is also reachable again (the token gate is scoped so it no longer shadows the health
+  endpoint).
+- **Gateway no longer blocks browser/desktop clients (CORS preflight).** The gateway 401'd
+  the CORS `OPTIONS` preflight — which by design can't carry the custom `AgentX-Gateway-Token`
+  header — so no browser/Tauri client could reach a tunneled instance. Preflight now passes
+  through to the API (which answers it), and `agentx-gateway-token` is an allowed CORS request
+  header.
+- **`AGENTX_PUBLIC_HOST` now works in Docker.** It's passed through to the API container,
+  so setting it actually extends `ALLOWED_HOSTS`/`CORS`/`CSRF` as documented — previously
+  a no-op in containerized deployments.
+- **Go public with a dashboard-managed Cloudflare Tunnel — no host `cloudflared`.** The
+  self-hosted (isolated) bundle now ships a `docker-compose.tunnel.yml` overlay that runs
+  `cloudflared` as a container (token from the Cloudflare Zero Trust dashboard): set
+  `TUNNEL_TOKEN` + `AGENTX_PUBLIC_HOST`, point the dashboard Service at the API, and you're
+  public with no host install and no inbound ports. Shipped in the release bundle and
+  documented end-to-end (setup + verify + troubleshooting) in the self-hosting guide.
 
 ### Getting started
 

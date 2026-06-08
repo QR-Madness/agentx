@@ -125,6 +125,27 @@ curl -I -H "AgentX-Gateway-Token: $AGENTX_GATEWAY_TOKEN" \
 The client sends `AgentX-Gateway-Token` from its per-server `gatewayToken` setting; this is
 separate from user [authentication](authentication.md).
 
+!!! note "Browser & desktop clients (CORS)"
+    The gateway works with the desktop (Tauri) client and browser-based clients: the nginx
+    gateway lets the CORS **preflight** (`OPTIONS`) through to Django (a preflight can't carry
+    the custom `AgentX-Gateway-Token` header), and `agentx-gateway-token` is an allowed CORS
+    request header. Set the client's per-server **gateway token** so the *actual* request
+    carries it. The client's origin (`tauri://localhost`, and `http://localhost:1420` in dev)
+    is allowed by default; add others via `CORS_ALLOWED_ORIGINS`.
+
+!!! note "No `cloudflared` on the host (dashboard token tunnel)"
+    Prefer not to run `cloudflared tunnel login/create/route` on the host? Run the tunnel as a
+    **dashboard-managed token connector** instead — create the Tunnel in the Cloudflare Zero
+    Trust dashboard, set its Public Hostname **Service** to `http://nginx:80`, and run the
+    `cloudflared` container with `tunnel --no-autoupdate run` + `TUNNEL_TOKEN` (clear the
+    scaffolded `cloudflared/config.yml` so it doesn't conflict). Same mechanics as the isolated
+    bundle's overlay — see [Self-Hosting → Going public](self-hosting.md#going-public).
+
+!!! tip "Editing `nginx.conf` after the cluster is up"
+    `nginx.conf` is bind-mounted as a single file, whose inode the container pins at create
+    time. After editing it, recreate (don't just restart) nginx so the change is picked up:
+    `docker compose … up -d --force-recreate nginx`.
+
 ## GPU Acceleration (NVIDIA overlay)
 
 Passing `NVIDIA=1` to `cluster:up` layers in `docker-compose.gpu.yml`, which reserves the

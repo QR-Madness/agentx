@@ -1427,12 +1427,14 @@ tasks:
         rm -rf "$OUT"
         mkdir -p "$OUT"
         # The base compose is already image-based + portable, so it ships as-is.
-        # The build overlay (source-only) and the repo-relative gateway overlay
-        # are intentionally excluded.
-        cp docker-compose.yml      "$OUT/docker-compose.yml"
-        cp docker-compose.gpu.yml  "$OUT/docker-compose.gpu.yml"
-        cp deploy/.env.example     "$OUT/.env.example"
-        cp deploy/README.md        "$OUT/README.md"
+        # The GPU and Cloudflare-Tunnel overlays ship too (both are image-based and
+        # portable). The build overlay (source-only) and the repo-relative cluster
+        # gateway overlay are intentionally excluded.
+        cp docker-compose.yml        "$OUT/docker-compose.yml"
+        cp docker-compose.gpu.yml    "$OUT/docker-compose.gpu.yml"
+        cp docker-compose.tunnel.yml "$OUT/docker-compose.tunnel.yml"
+        cp deploy/.env.example       "$OUT/.env.example"
+        cp deploy/README.md          "$OUT/README.md"
         tar -czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
         echo "  ✓ $OUT/"
         echo "  ✓ $OUT.tar.gz"
@@ -1443,14 +1445,14 @@ tasks:
     cmds:
       - |
         set -e
-        # The bundle copies docker-compose.yml + docker-compose.gpu.yml verbatim;
+        # The bundle copies docker-compose.yml + the gpu/tunnel overlays verbatim;
         # this guards that the authored deploy/ env+readme still reference real
         # files and that the canonical compose is image-based (not build-only).
         if grep -qE '^\s+build:' docker-compose.yml; then
           echo "✗ docker-compose.yml has a top-level api build: — base compose must be image-based" >&2
           exit 1
         fi
-        for f in docker-compose.yml docker-compose.gpu.yml deploy/.env.example deploy/README.md; do
+        for f in docker-compose.yml docker-compose.gpu.yml docker-compose.tunnel.yml deploy/.env.example deploy/README.md; do
           [ -f "$f" ] || { echo "✗ missing $f" >&2; exit 1; }
         done
         echo "✓ deploy bundle sources present and base compose is image-based"

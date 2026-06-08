@@ -20,13 +20,31 @@
 # we trust it because the only reachable ingress is the tunnel itself.
 limit_req_zone $http_cf_connecting_ip zone=agentx_gateway:10m rate=10r/s;
 
+# The gateway token (openssl rand -hex 32 → 64 chars) is longer than nginx's
+# default map_hash_bucket_size (64), which otherwise fails to start with
+# "could not build map_hash". Bump it so long token keys fit.
+map_hash_bucket_size 128;
+
 # Constant-string comparison for the gateway token. Using `map` rather
 # than `if` inside the server block keeps us out of nginx's "if is evil"
-# territory — map is evaluated lazily and only when $gateway_authorized
-# is referenced.
-map $http_agentx_gateway_token $gateway_authorized {
+# territory — map is evaluated lazily.
+map $http_agentx_gateway_token $gw_token_ok {
     default                          0;
     "${AGENTX_GATEWAY_TOKEN}"        1;
+}
+
+# CORS preflight (OPTIONS) carries no custom request headers, so a browser
+# client can't present the gateway token on it. Let preflight through to the
+# API (django-cors-headers answers it); the real request still needs the token.
+map $request_method $gw_is_preflight {
+    default                          0;
+    OPTIONS                          1;
+}
+
+# Authorized when the token is valid OR the request is a CORS preflight.
+map "$gw_is_preflight$gw_token_ok" $gateway_authorized {
+    "00"                             0;
+    default                          1;
 }
 
 server {
@@ -38,12 +56,10 @@ server {
     limit_req zone=agentx_gateway burst=20 nodelay;
     limit_req_status 429;
 
-    if ($gateway_authorized = 0) {
-        return 401;
-    }
-
     # Health probe for the tunnel — Cloudflared can hit this without the
-    # token to verify the gateway itself is alive.
+    # token to verify the gateway itself is alive. Kept above (and outside)
+    # the token gate, which is scoped to `location /` below, so a server-level
+    # gate doesn't shadow this exact-match location during the rewrite phase.
     location = /__gateway_health {
         access_log off;
         add_header Content-Type text/plain;
@@ -51,6 +67,13 @@ server {
     }
 
     location / {
+        # Token gate scoped here (not server-level) so the tokenless health
+        # probe above stays reachable. `return` inside `if` is in nginx's
+        # safe set — not the "if is evil" territory.
+        if ($gateway_authorized = 0) {
+            return 401;
+        }
+
         proxy_pass http://${AGENTX_API_HOST}:${AGENTX_API_PORT};
         proxy_http_version 1.1;
 

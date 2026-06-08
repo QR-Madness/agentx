@@ -1,0 +1,39 @@
+# docker-compose.tunnel.yml
+#
+# Optional public-access overlay: run a Cloudflare Tunnel as a container in
+# front of the API — dashboard-managed and token-based, so there is NO
+# cloudflared on the host and NO inbound ports to open. The tunnel terminates
+# TLS at Cloudflare's edge and forwards to the API over the compose network.
+#
+# Setup (see the self-hosting guide's "Going public" section):
+#   1. In the Cloudflare Zero Trust dashboard, create a Tunnel and add a
+#      Public Hostname with Service = http://api:12319 (plain HTTP, the API
+#      container by name). Copy the connector token.
+#   2. In .env set:
+#        TUNNEL_TOKEN=<connector-token>     # secret
+#        AGENTX_PUBLIC_HOST=agentx.example.com
+#   3. Bring up with this overlay layered on the base compose:
+#        docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#      (or set COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml in .env
+#       so a bare `docker compose up -d` always includes it).
+#
+# This publishes the API directly (no shared-secret gateway); keep
+# AGENTX_AUTH_ENABLED=true. To additionally front it with the Nginx token
+# gateway, use the cluster gateway overlay instead and point the tunnel's
+# Service at http://nginx:80.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${AGENTX_CLUSTER_NAME:-agentx}-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      # Connector token from the Cloudflare dashboard. cloudflared reads it
+      # automatically; the public-hostname → service mapping lives remotely.
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - production

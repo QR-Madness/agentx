@@ -10,6 +10,7 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 |------|---------|
 | `docker-compose.yml` | The stack: API (pulled image) + Neo4j + PostgreSQL + Redis |
 | `docker-compose.gpu.yml` | Optional NVIDIA GPU overlay for the API |
+| `docker-compose.tunnel.yml` | Optional Cloudflare Tunnel overlay (go public, no host `cloudflared`) |
 | `.env.example` | Configuration template — copy to `.env` and fill in |
 
 ## Quick start
@@ -71,6 +72,25 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 Verify: `curl -s localhost:12319/api/health | jq .compute` → `{"device":"cuda",...}`.
 
+## Going public (Cloudflare Tunnel)
+
+Expose this instance over the internet with the bundled `docker-compose.tunnel.yml`
+overlay — a dashboard-managed Cloudflare Tunnel container, so there's **no
+`cloudflared` on the host and no inbound ports**:
+
+```bash
+# 1. In the Cloudflare Zero Trust dashboard: create a Tunnel, add a Public
+#    Hostname with Service = http://api:12319, and copy the connector token.
+# 2. In .env:
+#      TUNNEL_TOKEN=<token>            # secret
+#      AGENTX_PUBLIC_HOST=agentx.example.com
+# 3. Bring up with the overlay (keep AGENTX_AUTH_ENABLED=true!):
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+```
+
+Full walkthrough + troubleshooting:
+https://agentx.thejpnet.net/docs/deployment/self-hosting/#going-public
+
 ## Updating
 
 ```bash
@@ -78,6 +98,10 @@ Verify: `curl -s localhost:12319/api/health | jq .compute` → `{"device":"cuda"
 docker compose pull
 docker compose up -d
 ```
+
+> If you use the Cloudflare Tunnel overlay, include it on every command
+> (`-f docker-compose.yml -f docker-compose.tunnel.yml …`) or set
+> `COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml` in `.env`.
 
 Schema migrations re-apply automatically on boot (idempotent). Your config and
 data persist under `./data`.
