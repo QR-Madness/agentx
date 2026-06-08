@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.69 -->
+<!-- release-version: 0.21.70 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -183,6 +183,10 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **A stopped Redis no longer floods the console.** If the datastore went down
+  while the API kept running, the background-chat worker logged a connection
+  warning every two seconds forever. It now backs off (up to 30s), logs the
+  outage once, and quietly announces when Redis is reachable again.
 - **LLM request logs no longer flood the console.** With the verbose
   (`AGENTX_LLM_LOG_LEVEL=full`) setting, a single LLM request used to dump its
   entire payload to the console and blow away your scrollback. The console now

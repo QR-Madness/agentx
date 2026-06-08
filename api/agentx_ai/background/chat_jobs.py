@@ -215,6 +215,13 @@ def _worker_loop(stop_event: threading.Event) -> None:
         if "BUSYGROUP" not in str(exc):
             logger.warning(f"xgroup_create: {exc}")
 
+    # When Redis is unreachable (e.g. the dev DB was stopped while the API kept
+    # running) xreadgroup raises every cycle. Back off with a growing delay and
+    # log the outage ONCE — then DEBUG — rather than flooding the console every
+    # 2s, and announce recovery when it returns. stop_event.wait keeps shutdown
+    # prompt (no fixed sleep to sit through).
+    backoff = 2
+    degraded = False
     while not stop_event.is_set():
         try:
             entries = redis.xreadgroup(
@@ -224,10 +231,20 @@ def _worker_loop(stop_event: threading.Event) -> None:
                 count=1,
                 block=2000,
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"xreadgroup failed: {exc}")
-            time.sleep(2)
+        except Exception as exc:  # noqa: BLE001 — typically Redis being down
+            if not degraded:
+                logger.warning(f"xreadgroup failed ({exc}); backing off until Redis is reachable")
+                degraded = True
+            else:
+                logger.debug(f"xreadgroup still failing: {exc}")
+            stop_event.wait(backoff)
+            backoff = min(backoff * 2, 30)
             continue
+
+        if degraded:
+            logger.info("Redis reachable again — background chat worker resumed")
+            degraded = False
+            backoff = 2
 
         if not entries:
             continue
