@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.72 -->
+<!-- release-version: 0.21.73 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -29,6 +29,14 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   of pasting voice ids. The old text panel is still there as a second **Text** tab for history and
   playback. Built on OpenRouter TTS + speech-to-text (defaults `microsoft/mai-voice-2` +
   `openai/whisper-1`). *(Still to come: a floating mini-player and recording history/cleanup.)*
+- **The Ambassador now opens beside your conversation, not over it.** It used to take over the
+  screen — a panel that dimmed and blurred everything behind it, so you couldn't watch your agent
+  work and talk to the ambassador at the same time. Now it **slides in as a docked column** next
+  to the chat: both panels stay live, and you can **drag the edge to resize** it (remembered
+  across restarts). On a narrow screen, where there's no room to dock, it still opens as the
+  full-screen panel. And since it runs in *parallel* to your conversation, opening it now **waits
+  for you to ask** (summarize this, dig into a turn, relay a message) instead of immediately
+  briefing the latest turn — so it also works fine on a brand-new, empty conversation.
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,
@@ -198,12 +206,6 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
-- **Opening the Ambassador no longer briefs the turn for you.** The Ambassador runs
-  *parallel* to your conversation — so opening it now lands quietly and waits for you to
-  ask (summarize this, dig into that, or relay a message), instead of immediately briefing
-  the latest turn. You still brief any turn on demand from inside the panel. It also no
-  longer trips up on a brand-new, empty conversation — it just tells you there's nothing
-  there yet.
 - **A stopped Redis no longer floods the console.** If the datastore went down
   while the API kept running, the background-chat worker logged a connection
   warning every two seconds forever. It now backs off (up to 30s), logs the

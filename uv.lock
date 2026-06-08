@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentx-source"
-version = "0.21.71"
+version = "0.21.73"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },

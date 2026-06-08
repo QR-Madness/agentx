@@ -4,6 +4,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
 import { ConversationProvider } from './contexts/ConversationContext';
 import { AmbassadorProvider } from './contexts/AmbassadorContext';
+import { AmbassadorDockProvider } from './contexts/AmbassadorDockContext';
 import { PlansProvider } from './contexts/PlansContext';
 import { UIChromeProvider } from './contexts/UIChromeContext';
 import { AgentProfileProvider } from './contexts/AgentProfileContext';
@@ -101,6 +102,7 @@ function App() {
                       <AmbassadorProvider>
                        <PlansProvider>
                         <ModalProvider>
+                         <AmbassadorDockProvider>
                           <UIChromeProvider>
                             <ConfirmProvider>
                               <ErrorBoundary>
@@ -111,6 +113,7 @@ function App() {
                               {showWindowControls && <ResizeHandles />}
                             </ConfirmProvider>
                           </UIChromeProvider>
+                         </AmbassadorDockProvider>
                         </ModalProvider>
                        </PlansProvider>
                       </AmbassadorProvider>

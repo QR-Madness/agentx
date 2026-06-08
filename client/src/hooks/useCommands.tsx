@@ -22,6 +22,7 @@ import { useConversation } from '../contexts/ConversationContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useOpenAmbassador } from './useOpenAmbassador';
 import { SURFACES, type SurfaceKey } from '../lib/surfaces';
 import type { ThemePreference } from '../lib/theme';
 import type { PageId } from '../layouts/TopBar';
@@ -54,6 +55,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
   const { focusMode, toggleFocusMode } = useUIChrome();
   const { authRequired, isAuthenticated, logout } = useAuth();
   const { preference, setTheme } = useTheme();
+  const openAmbassador = useOpenAmbassador();
 
   return useMemo<Command[]>(() => {
     const go = (page: PageId) => () => { onNavigate(page); onClose(); };
@@ -76,7 +78,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-tools', group: 'Workspace', label: 'Open Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers'], run: open('tools') },
       { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
-      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: open('ambassador') },
+      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { onNavigate('agentx'); openAmbassador(); onClose(); } },
       { id: 'open-plans', group: 'Workspace', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: ['tasks', 'subtasks', 'progress'], run: open('plans') },
       { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb', 'translations'], run: open('translation') },
       { id: 'open-logs', group: 'Workspace', label: 'Open Logs', icon: <ScrollText size={16} />, keywords: ['console', 'debug', 'server', 'trace'], run: open('logs') },
@@ -110,5 +112,5 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
     }
 
     return cmds;
-  }, [openModal, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, updateTab, focusMode, toggleFocusMode, preference, setTheme, authRequired, isAuthenticated, logout]);
+  }, [openModal, openAmbassador, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, updateTab, focusMode, toggleFocusMode, preference, setTheme, authRequired, isAuthenticated, logout]);
 }

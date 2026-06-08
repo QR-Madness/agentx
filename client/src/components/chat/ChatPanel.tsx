@@ -62,6 +62,7 @@ import { useModal } from '../../contexts/ModalContext';
 import { useIsMobile } from '../../lib/hooks';
 import { SURFACES } from '../../lib/surfaces';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
+import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { fetchModelsOnce } from '../common/modelCatalog';
@@ -86,6 +87,7 @@ export function ChatPanel() {
   const { openModal } = useModal();
   const isMobile = useIsMobile();
   const { briefingForMessage } = useAmbassador();
+  const openAmbassador = useOpenAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
 
@@ -109,13 +111,13 @@ export function ChatPanel() {
 
   // Open the Ambassador alongside the conversation. It runs in *parallel* and
   // waits for you to ask — opening no longer auto-briefs the turn (you brief a
-  // specific turn or ask a question from inside the panel). Reads the conversation
-  // read-only and writes only to its sidecar — the transcript is untouched.
+  // specific turn or ask a question from inside the panel). Docks beside the chat
+  // on a wide screen (both panels live); falls back to a sheet when too narrow.
   const handleAmbassador = useCallback(
     (_message: AssistantMessage) => {
-      openModal(SURFACES.ambassador);
+      openAmbassador();
     },
-    [openModal],
+    [openAmbassador],
   );
 
   const ambassadorStatusFor = useCallback(

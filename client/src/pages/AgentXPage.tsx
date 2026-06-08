@@ -4,6 +4,7 @@
 
 import { ChatPanel } from '../components/chat';
 import { ConversationSidebar } from '../components/chat/ConversationSidebar';
+import { AmbassadorDock } from '../components/ambassador/AmbassadorDock';
 import './AgentXPage.css';
 
 export function AgentXPage() {
@@ -13,6 +14,7 @@ export function AgentXPage() {
       <div className="agentx-chat">
         <ChatPanel />
       </div>
+      <AmbassadorDock />
     </div>
   );
 }

@@ -524,15 +524,22 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > panels" and reuses an in-repo pattern (sidebar resize/collapse). (B) is the cheap
 > interim if we want it *today*; (C) is (A) + a drag handle once it's docked.
 
-- [x] **Mechanism chosen: (A) docked push/shrink**, built *with* a resize handle (so
-      it lands close to (C) — reuses the `ConversationSidebar` resize/collapse pattern).
-- [ ] **Dock state + persistence** (`agentx:ambassador-dock-{open,width}`), entry points
-      route through `surfaces.ts` so palette/CC/topbar stay unified.
-- [ ] **Non-modal**: no backdrop/blur, conversation stays interactive; explicit
-      collapse/close control (not Esc-to-close, since it's persistent).
-- [ ] **Responsive**: push/shrink on wide; full-screen sheet fallback under ~900px.
-- [ ] **Payoff check**: watch the agent stream on the left while the ambassador
-      briefs/voices on the right — the parallel-relay mental model, finally visible.
+- [x] **Mechanism: (A) docked push/shrink**, built *with* a resize handle (close to
+      (C) — reuses the `ConversationSidebar` resize/collapse pattern). `AmbassadorDock`
+      is a right column in `AgentXPage`'s flex row (after `.agentx-chat`), so opening it
+      shrinks the conversation; `AmbassadorDock.css` left-edge resizer.
+- [x] **Dock state + persistence**: `AmbassadorDockContext` (`agentx:ambassador-dock-{open,width}`),
+      mounted under `ModalProvider`. One entry point — `useOpenAmbassador()` — used by both
+      the per-message CC button (`ChatPanel`) and the palette ("Open Ambassador" now also
+      navigates to chat first), so they can't drift.
+- [x] **Non-modal**: no backdrop/blur, the conversation stays fully interactive; explicit
+      close button (reuses `.shell-close-btn`), not Esc (the dock is persistent).
+- [x] **Responsive**: docks at `≥880px`; below that (reactive media query) callers fall
+      back to the existing full-screen sheet (`DrawerPanel` is already full-screen ≤600px).
+      Width clamps 340–680 (default 440 — leaves the conversation room).
+- [ ] **Payoff check (needs a visual pass)**: watch the agent stream on the left while
+      the ambassador briefs/voices on the right; verify resize/collapse, the ≥880px↔sheet
+      crossover, and mobile sheet. *(Couldn't run the app here — built + typechecked only.)*
 
 **Slice 1 — ambassador thread (its own conversation)**
 - [ ] **Sidecar thread model.** Generalize `ambassador_storage` from per-turn

@@ -1,0 +1,39 @@
+/* AmbassadorDock — a non-modal, resizable right column in the chat workspace.
+   It sits in the AgentXPage flex row (after .agentx-chat) so opening it shrinks
+   the conversation rather than overlaying it. Mirrors the conversation rail's
+   resizer; the close button reuses the shared .shell-close-btn. */
+
+.ambassador-dock {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-color);
+}
+
+.ambassador-dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Left-edge drag handle (the dock is right-anchored). */
+.ambassador-dock-resizer {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.ambassador-dock-resizer:hover,
+.ambassador-dock-resizer:active {
+  background: linear-gradient(to right, transparent, var(--accent-primary) 50%, transparent);
+  opacity: 0.5;
+}
