@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.70 -->
+<!-- release-version: 0.21.71 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -83,6 +83,21 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   with level/category/run filtering and a downloadable compressed archive. Everything is
   governed by `AGENTX_LOG_*` flags — all on by default; `AGENTX_LOG_DECORATIONS=false`
   restores plain output for CI/journald. The log API is auth-gated when auth is enabled.
+- **Encrypted log archives.** Durable logs are now chunked **by day** and, once you've
+  set up a password, **sealed with AES-256-GCM** keyed to that password — history at rest
+  is unreadable without it (on top of the existing secret redaction). It uses envelope
+  encryption, so changing your password just re-wraps one tiny key instead of rewriting
+  every archive (`task logs:rotate-keys`; `--reencrypt` for a full re-encrypt). Encrypted
+  segments show a lock in the Log panel and are decrypted on download. With auth disabled
+  it transparently falls back to the previous plaintext-gzip behavior. Retention defaults
+  to 30 days (`AGENTX_LOG_ARCHIVE_*`). The Log panel's archive drawer now shows a **vault
+  status strip** (encrypted/unlocked/locked + sealed/pending counts), lists history as
+  friendly **per-day chunks**, and **loads earlier days as you scroll**.
+- **Desktop navbar refresh.** The chat tab is now **Agents** with an **animated spiral
+  galaxy** — a glowing core, slowly rotating arms, and an orbiting star — and the active
+  nav item gets a rich aurora "expand": it widens with a soft glow, a sheen sweeps across
+  it, an aurora underline grows in, and the galaxy spins up and lights when its tab is
+  active. Honors reduced-motion.
 - **New "Professional" theme + a warmer Light.** A deep monochrome graphite theme
   with calm off-white text, where color is reserved for emphasis — feedback
   (success/error/warning) and code stay colored, the chrome is neutral with a single

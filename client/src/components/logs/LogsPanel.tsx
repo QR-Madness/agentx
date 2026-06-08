@@ -9,13 +9,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, Trash2, X, Search, Archive, Download, ChevronRight, ChevronDown } from 'lucide-react';
-import { api, type LogRecord, type LogArchiveSegment } from '../../lib/api';
+import { Pause, Play, Trash2, X, Search, Archive, Download, ChevronRight, ChevronDown, Lock, ShieldCheck, ShieldOff } from 'lucide-react';
+import { api, type LogRecord, type LogArchiveSegment, type LogArchiveStatus } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { categoryMeta, levelColor, LOG_LEVELS } from '../../lib/logCategories';
 import './LogsPanel.css';
 
 const MAX_ROWS = 600; // sliding DOM window; older history lives in the archive
+const ARCHIVE_PAGE = 10; // day-chunks revealed per scroll step
 
 function formatTime(ts: number): string {
   const d = new Date(ts * 1000);
@@ -23,10 +24,54 @@ function formatTime(ts: number): string {
     String(d.getMilliseconds()).padStart(3, '0');
 }
 
+/** Friendly day label for a daily chunk (`agentx-YYYY-MM-DD.log.gz[.enc]`).
+ *  Legacy size-based segments (`agentx.log.N.gz`) fall back to their mtime. */
+function segmentDayLabel(s: LogArchiveSegment): string {
+  const m = s.name.match(/agentx-(\d{4})-(\d{2})-(\d{2})\.log/);
+  const d = m ? new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`) : new Date(s.modified * 1000);
+  if (Number.isNaN(d.getTime())) return s.name;
+  return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 function shortRun(runId?: string | null): string {
   if (!runId) return '';
   const tail = runId.split('_').pop() || runId;
   return tail.slice(0, 6);
+}
+
+/** Compact encryption/vault state for the top of the archive drawer. */
+function ArchiveVaultStrip({ status }: { status: LogArchiveStatus }) {
+  const { encryption_enabled, keyring_present, unlocked, sealed_segments, pending_segments, retention_days } = status;
+
+  let icon = <ShieldOff size={13} />;
+  let tone = 'neutral';
+  let label = 'Plaintext archives';
+  let detail = 'Encryption is off';
+
+  if (!encryption_enabled) {
+    detail = 'AGENTX_LOG_ARCHIVE_ENCRYPT=false';
+  } else if (!keyring_present) {
+    label = 'Not encrypted yet';
+    detail = 'Set a password to start sealing logs';
+  } else if (unlocked) {
+    icon = <ShieldCheck size={13} />;
+    tone = 'ok';
+    label = 'Encrypted · unlocked';
+    detail = `${sealed_segments} sealed${pending_segments ? `, ${pending_segments} pending` : ''} · ${retention_days}d retention`;
+  } else {
+    icon = <Lock size={13} />;
+    tone = 'locked';
+    label = 'Encrypted · locked';
+    detail = 'Re-authenticate to download sealed days';
+  }
+
+  return (
+    <div className={`logs-vault logs-vault--${tone}`} title={detail}>
+      {icon}
+      <span className="logs-vault-label">{label}</span>
+      <span className="logs-vault-detail">{detail}</span>
+    </div>
+  );
 }
 
 export function LogsPanel() {
@@ -43,6 +88,10 @@ export function LogsPanel() {
 
   const [showArchive, setShowArchive] = useState(false);
   const [segments, setSegments] = useState<LogArchiveSegment[]>([]);
+  const [archiveStatus, setArchiveStatus] = useState<LogArchiveStatus | null>(null);
+  const [visibleDays, setVisibleDays] = useState(ARCHIVE_PAGE);
+  const archiveSentinel = useRef<HTMLDivElement | null>(null);
+  const archiveScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Rows carrying an oversized `detail` payload (e.g. a full LLM request) start
   // collapsed; the user expands the ones they care about.
@@ -157,14 +206,37 @@ export function LogsPanel() {
     const next = !showArchive;
     setShowArchive(next);
     if (next) {
+      setVisibleDays(ARCHIVE_PAGE);
       try {
-        const res = await api.listLogArchive();
-        setSegments(res.segments);
+        const [list, status] = await Promise.all([
+          api.listLogArchive(),
+          api.getLogArchiveStatus().catch(() => null),
+        ]);
+        setSegments(list.segments);
+        setArchiveStatus(status);
       } catch (err) {
         notify.notifyError(err);
       }
     }
   };
+
+  // Scroll-to-load: reveal another page of older day-chunks when the sentinel
+  // at the bottom of the archive list scrolls into view.
+  useEffect(() => {
+    if (!showArchive) return;
+    const node = archiveSentinel.current;
+    if (!node) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleDays((n) => (n < segments.length ? n + ARCHIVE_PAGE : n));
+        }
+      },
+      { root: archiveScrollRef.current, threshold: 0.1 }
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, [showArchive, segments.length]);
 
   if (!available) {
     return (
@@ -227,22 +299,47 @@ export function LogsPanel() {
       </div>
 
       {showArchive && (
-        <div className="logs-archive">
+        <div className="logs-archive" ref={archiveScrollRef}>
+          {archiveStatus && <ArchiveVaultStrip status={archiveStatus} />}
           {segments.length === 0 ? (
             <span className="logs-archive-empty">No archived segments yet.</span>
           ) : (
-            segments.map((s) => (
-              <a
-                key={s.name}
-                className="logs-archive-item"
-                href={api.logArchiveUrl(s.name)}
-                download
-              >
-                <Download size={12} />
-                <span className="logs-archive-name">{s.name}</span>
-                <span className="logs-archive-size">{(s.size / 1024).toFixed(1)} KB</span>
-              </a>
-            ))
+            <>
+              {segments.slice(0, visibleDays).map((s) => {
+                const locked = !!s.encrypted && !archiveStatus?.unlocked;
+                const size = `${(s.size / 1024).toFixed(1)} KB`;
+                return s.encrypted ? (
+                  <button
+                    key={s.name}
+                    type="button"
+                    className="logs-archive-item"
+                    title={`${s.name} — ${locked ? 'encrypted, locked (re-authenticate to download)' : 'encrypted, decrypted on download'}`}
+                    onClick={async () => {
+                      try {
+                        await api.downloadLogArchive(s);
+                      } catch (err) {
+                        notify.notifyError(err);
+                      }
+                    }}
+                  >
+                    <Lock size={12} className={locked ? 'logs-archive-lock--locked' : 'logs-archive-lock'} />
+                    <span className="logs-archive-name">{segmentDayLabel(s)}</span>
+                    <span className="logs-archive-size">{size}</span>
+                  </button>
+                ) : (
+                  <a key={s.name} className="logs-archive-item" href={api.logArchiveUrl(s.name)} download title={s.name}>
+                    <Download size={12} />
+                    <span className="logs-archive-name">{segmentDayLabel(s)}</span>
+                    <span className="logs-archive-size">{size}</span>
+                  </a>
+                );
+              })}
+              {visibleDays < segments.length && (
+                <div ref={archiveSentinel} className="logs-archive-more">
+                  Loading earlier days… ({segments.length - visibleDays} more)
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

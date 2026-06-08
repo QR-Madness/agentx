@@ -131,8 +131,34 @@ def logs_archive_list(request):
     return JsonResponse({"segments": list_segments()})
 
 
+def logs_archive_status(request):
+    """GET /api/logs/archive/status — encryption/vault state for the Log panel.
+
+    Lets the client show whether sealed segments are downloadable *before* the
+    user clicks one (the locked/unlocked bit — i.e. is a key cached in memory —
+    can't be derived from the segment list alone).
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    if (disabled := _api_disabled()) is not None:
+        return disabled
+    from .logging_kit import archive_crypto
+
+    flags = read_flags()
+    status = archive_crypto.keyring_status()
+    status["encryption_enabled"] = flags.archive_encrypt
+    status["retention_days"] = flags.archive_retention_days
+    return JsonResponse(status)
+
+
 def logs_archive_download(request, name: str):
-    """GET /api/logs/archive/<name> — download a single archive segment."""
+    """GET /api/logs/archive/<name> — download a single archive segment.
+
+    Sealed ``.enc`` segments are decrypted on the fly with the in-memory DEK
+    (populated at login). If the vault is locked — e.g. after a restart, before
+    anyone has re-authenticated — we return ``423`` rather than ciphertext. Pass
+    ``?raw=true`` to download the encrypted bytes untouched.
+    """
     if request.method != "GET":
         return JsonResponse({"error": "GET required"}, status=405)
     if (disabled := _api_disabled()) is not None:
@@ -140,5 +166,26 @@ def logs_archive_download(request, name: str):
     path = resolve_segment(name)
     if path is None:
         return JsonResponse({"error": "segment not found"}, status=404)
-    content_type = "application/gzip" if path.suffix == ".gz" else "text/plain"
+
+    if path.name.endswith(".enc") and request.GET.get("raw", "").strip().lower() not in ("1", "true", "yes"):
+        from .logging_kit import archive_crypto
+
+        dek = archive_crypto.get_cached_dek()
+        if dek is None:
+            return JsonResponse(
+                {"error": "locked", "detail": "re-authenticate to unlock encrypted logs"},
+                status=423,
+            )
+        # Strip the ``.enc`` suffix so the client gets the inner ``.gz`` name.
+        inner_name = path.name[: -len(".enc")]
+        try:
+            stream = archive_crypto.unseal_iter(path, dek)
+        except Exception:  # malformed/tampered → surface as not-found-ish 422
+            logger.warning("Failed to open sealed segment %s", path.name, exc_info=True)
+            return JsonResponse({"error": "segment could not be decrypted"}, status=422)
+        response = StreamingHttpResponse(stream, content_type="application/gzip")
+        response["Content-Disposition"] = f'attachment; filename="{inner_name}"'
+        return response
+
+    content_type = "application/gzip" if (path.suffix == ".gz" or path.name.endswith(".enc")) else "text/plain"
     return FileResponse(open(path, "rb"), as_attachment=True, filename=path.name, content_type=content_type)

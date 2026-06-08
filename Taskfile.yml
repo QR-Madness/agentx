@@ -233,7 +233,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest -v2
+      - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest agentx_ai.tests.LogArchiveCryptoTest -v2
 
   test:client:
     desc: "Run client tests (Vitest)"
@@ -1057,6 +1057,34 @@ tasks:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
       - uv run python api/manage.py setup_auth --check
+
+  logs:keys:status:
+    desc: "Show log-archive encryption status (keyring + sealed/pending segments)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py rotate_log_keys --status
+
+  logs:seal:
+    desc: "Seal pending plaintext log days into encrypted archives (prompts for password)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py rotate_log_keys --seal
+
+  logs:rotate-keys:
+    desc: "Re-wrap the log-archive key under a new password (O(1), no rewrites)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py rotate_log_keys
+
+  logs:rotate-keys:deep:
+    desc: "Deep rotation: new data key + re-encrypt every archive segment"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py rotate_log_keys --reencrypt
 
 # ============================================================================
 # MOBILE / ANDROID

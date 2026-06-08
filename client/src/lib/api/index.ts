@@ -76,6 +76,7 @@ export type {
   LogRecord,
   LogCategoryInfo,
   LogArchiveSegment,
+  LogArchiveStatus,
   LogFilters,
   LogStreamCallbacks,
 } from './logs';

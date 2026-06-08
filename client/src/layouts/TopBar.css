@@ -74,16 +74,23 @@
 }
 
 .nav-pill {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition:
+    padding 0.38s cubic-bezier(0.22, 0.8, 0.2, 1),
+    gap 0.38s cubic-bezier(0.22, 0.8, 0.2, 1),
+    background 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.38s ease,
+    transform 0.18s ease;
 }
 
 .nav-pill:hover {
@@ -91,22 +98,93 @@
   color: var(--text-primary);
 }
 
-.nav-pill.active {
-  background: var(--accent-tint-soft);
-  color: var(--text-primary);
-  box-shadow: inset 0 0 0 1px var(--accent-tint-medium);
+.nav-pill:active {
+  transform: scale(0.97);
 }
 
+/* Icons ease up a touch on activation; the galaxy gets the full treatment below. */
+.nav-pill svg {
+  transition: transform 0.38s cubic-bezier(0.22, 0.8, 0.2, 1), filter 0.3s ease;
+}
+
+/* === Active pill: a rich aurora "expand" === */
+.nav-pill.active {
+  padding-left: 18px;
+  padding-right: 18px;
+  gap: 8px;
+  color: var(--text-primary);
+  font-weight: 600;
+  background:
+    radial-gradient(120% 130% at 0% 0%, var(--accent-tint-strong), transparent 62%),
+    var(--accent-tint-soft);
+  box-shadow:
+    inset 0 0 0 1px var(--accent-tint-medium),
+    0 4px 18px -6px color-mix(in srgb, var(--cosmic-violet) 60%, transparent);
+}
+
+.nav-pill.active svg {
+  transform: scale(1.1);
+}
+
+/* Moving aurora sheen swept across the active pill */
+.nav-pill.active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    transparent 26%,
+    color-mix(in srgb, var(--cosmic-violet) 30%, transparent) 48%,
+    transparent 72%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: navSheen 4s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+/* Animated aurora underline that grows in on activation */
 .nav-pill.active::before {
   content: '';
   position: absolute;
   bottom: -1px;
   left: 50%;
   transform: translateX(-50%);
-  width: 20px;
+  width: 60%;
+  max-width: 30px;
   height: 2px;
+  border-radius: 2px;
   background: var(--gradient-aurora);
-  border-radius: 1px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cosmic-violet) 70%, transparent);
+  animation: navUnderline 0.42s cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+
+@keyframes navSheen {
+  0% { background-position: 180% 0; }
+  60%, 100% { background-position: -120% 0; }
+}
+
+@keyframes navUnderline {
+  from { width: 0; opacity: 0; }
+  to { width: 60%; opacity: 1; }
+}
+
+/* === Galaxy delight: spin faster + glow on hover/active === */
+.nav-pill:hover .galaxy-disk { animation-duration: 12s; }
+.nav-pill:hover .galaxy-orbit { animation-duration: 5s; }
+
+.nav-pill.active .galaxy-icon {
+  color: var(--cosmic-violet);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--cosmic-violet) 65%, transparent));
+}
+.nav-pill.active .galaxy-disk { animation-duration: 9s; }
+.nav-pill.active .galaxy-orbit { animation-duration: 3.2s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-pill.active::after { animation: none; }
+  .nav-pill.active::before { animation: none; }
 }
 
 /* === Center Section: Conversation Tabs Slot === */

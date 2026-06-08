@@ -7420,3 +7420,116 @@ class AmbassadorVoiceCommandTest(TestCase):
         self.assertEqual(result["action"], "answer")
         self.assertIn("disabled", result["text"].lower())
         svc._registry.resolve_with_fallback.assert_not_called()
+
+
+class LogArchiveCryptoTest(TestCase):
+    """Envelope encryption for the durable log archive (no external deps)."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from agentx_ai.logging_kit import archive_crypto
+
+        self.ac = archive_crypto
+        self.tmp = Path(tempfile.mkdtemp())
+        self._orig_dir = archive_crypto.ARCHIVE_DIR
+        self._orig_keyring = archive_crypto.KEYRING_PATH
+        archive_crypto.ARCHIVE_DIR = self.tmp
+        archive_crypto.KEYRING_PATH = self.tmp / "keyring.json"
+        archive_crypto.clear_cached_dek()
+
+    def tearDown(self):
+        import shutil
+
+        self.ac.ARCHIVE_DIR = self._orig_dir
+        self.ac.KEYRING_PATH = self._orig_keyring
+        self.ac.clear_cached_dek()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _make_gz(self, name, payload):
+        import gzip
+
+        gz = self.tmp / name
+        with gzip.open(gz, "wb") as f:
+            f.write(payload)
+        return gz
+
+    def test_keyring_create_unwrap_and_bad_password(self):
+        dek = self.ac.create_keyring("correct-horse")
+        self.assertEqual(self.ac.unwrap_dek("correct-horse"), dek)
+        with self.assertRaises(self.ac.BadPassword):
+            self.ac.unwrap_dek("wrong-password")
+
+    def test_seal_unseal_roundtrip(self):
+        import gzip
+
+        dek = self.ac.create_keyring("correct-horse")
+        payload = b"INFO 2026-06-08 mod a redacted reasoning trace\n" * 4000
+        gz = self._make_gz("agentx-2026-06-08.log.gz", payload)
+        enc = self.ac.seal_segment(gz, dek)
+        self.assertIsNotNone(enc)
+        self.assertTrue(enc.exists())
+        self.assertFalse(gz.exists())  # plaintext removed after sealing
+        self.assertEqual(gzip.decompress(self.ac.unseal_bytes(enc, dek)), payload)
+
+    def test_rewrap_preserves_decryptability(self):
+        import gzip
+
+        dek = self.ac.create_keyring("old-passphrase")
+        payload = b"WARNING premise/conclusion mismatch\n" * 1000
+        enc = self.ac.seal_segment(self._make_gz("agentx-2026-06-08.log.gz", payload), dek)
+        # O(1) re-wrap, preferring the cached DEK (as change_password does).
+        self.ac.rewrap_dek("new-passphrase", dek=dek)
+        with self.assertRaises(self.ac.BadPassword):
+            self.ac.unwrap_dek("old-passphrase")
+        dek2 = self.ac.unwrap_dek("new-passphrase")
+        self.assertEqual(gzip.decompress(self.ac.unseal_bytes(enc, dek2)), payload)
+
+    def test_tamper_is_rejected(self):
+        dek = self.ac.create_keyring("correct-horse")
+        enc = self.ac.seal_segment(self._make_gz("agentx-2026-06-08.log.gz", b"x" * 2048), dek)
+        raw = bytearray(enc.read_bytes())
+        raw[-16] ^= 0xFF
+        enc.write_bytes(raw)
+        with self.assertRaises(ValueError):
+            self.ac.unseal_bytes(enc, dek)
+
+    def test_truncation_is_detected(self):
+        dek = self.ac.create_keyring("correct-horse")
+        enc = self.ac.seal_segment(self._make_gz("agentx-2026-06-08.log.gz", b"y" * 4096), dek)
+        raw = enc.read_bytes()
+        enc.write_bytes(raw[: len(raw) // 2])  # drop trailing frames + terminator
+        with self.assertRaises(ValueError):
+            self.ac.unseal_bytes(enc, dek)
+
+    def test_seal_pending_and_reencrypt_all(self):
+        import gzip
+
+        dek = self.ac.create_keyring("old-passphrase")
+        self.ac.set_cached_dek(dek)
+        p1 = b"day one\n" * 500
+        p2 = b"day two\n" * 500
+        self._make_gz("agentx-2026-06-07.log.gz", p1)
+        self._make_gz("agentx-2026-06-08.log.gz", p2)
+        self.assertEqual(self.ac.seal_pending(), 2)
+        self.assertEqual(self.ac.seal_pending(), 0)  # idempotent
+
+        count = self.ac.reencrypt_all("old-passphrase", "new-passphrase")
+        self.assertEqual(count, 2)
+        dek2 = self.ac.unwrap_dek("new-passphrase")
+        recovered = {gzip.decompress(self.ac.unseal_bytes(p, dek2)) for p in self.tmp.glob("*.enc")}
+        self.assertEqual(recovered, {p1, p2})
+
+    def test_prune_old(self):
+        import os
+        import time
+
+        self.ac.create_keyring("correct-horse")
+        old = self._make_gz("agentx-2000-01-01.log.gz", b"ancient\n")
+        recent = self._make_gz("agentx-2026-06-08.log.gz", b"fresh\n")
+        stale = time.time() - 40 * 86400
+        os.utime(old, (stale, stale))
+        self.assertEqual(self.ac.prune_old(30), 1)
+        self.assertFalse(old.exists())
+        self.assertTrue(recent.exists())

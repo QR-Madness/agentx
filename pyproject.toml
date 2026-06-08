@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.70"
+version = "0.21.71"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.10"
 dependencies = [
@@ -39,6 +39,9 @@ dependencies = [
     "einops>=0.8.2",
     "pyright>=1.1.0",
     "bcrypt>=5.0.0",
+    # Log-archive encryption (AES-GCM + Scrypt); pinned explicitly rather than
+    # relying on a transitive pull so a dependency bump can't drop it.
+    "cryptography>=43.0.0",
     "tavily-python>=0.7.25",
     "rich>=15.0.0",
 ]

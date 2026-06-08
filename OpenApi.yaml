@@ -3532,7 +3532,7 @@ paths:
     get:
       tags: [Logs]
       operationId: logsArchiveList
-      summary: List compressed log archive segments
+      summary: List daily log archive segments
       responses:
         '200':
           description: Archive segments
@@ -3550,6 +3550,36 @@ paths:
                         size: { type: integer }
                         modified: { type: number }
                         compressed: { type: boolean }
+                        encrypted:
+                          type: boolean
+                          description: Sealed (AES-256-GCM) segment; decrypted on download.
+        '404': { description: Log API disabled }
+
+  /logs/archive/status:
+    get:
+      tags: [Logs]
+      operationId: logsArchiveStatus
+      summary: Log-archive encryption / vault state
+      description: >-
+        Whether sealed segments are downloadable right now (i.e. a key is cached
+        in server memory), plus sealed/pending counts and retention. Lets the Log
+        panel show vault state before a download is attempted.
+      responses:
+        '200':
+          description: Vault status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keyring_present: { type: boolean }
+                  unlocked: { type: boolean, description: Key cached in memory; sealed segments downloadable }
+                  sealed_segments: { type: integer }
+                  pending_segments: { type: integer }
+                  encryption_enabled: { type: boolean }
+                  retention_days: { type: integer }
+                  created_at: { type: string, nullable: true }
+                  rotated_at: { type: string, nullable: true }
         '404': { description: Log API disabled }
 
   /logs/archive/{name}:
@@ -3557,11 +3587,18 @@ paths:
       tags: [Logs]
       operationId: logsArchiveDownload
       summary: Download a single archive segment
+      description: >-
+        Sealed `.enc` segments are decrypted on the fly with the in-memory key
+        (populated at login) and returned as the inner gzip. Pass `?raw=true` to
+        download the encrypted bytes untouched.
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
+        - { name: raw, in: query, required: false, schema: { type: boolean }, description: Download encrypted bytes without decrypting }
       responses:
         '200': { description: The archive file (gzip or plain text) }
         '404': { description: Segment not found or log API disabled }
+        '422': { description: Segment could not be decrypted (tampered or wrong key) }
+        '423': { description: Encrypted-log vault is locked; re-authenticate to unlock }
 
 components:
   securitySchemes:

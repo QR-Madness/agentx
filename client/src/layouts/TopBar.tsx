@@ -11,7 +11,6 @@ import { useState, useRef } from 'react';
 import {
   Home,
   LayoutDashboard,
-  Bot,
   Zap,
   BrainCircuit,
   ListChecks,
@@ -19,6 +18,7 @@ import {
   EyeOff,
   Search,
 } from 'lucide-react';
+import { GalaxyIcon } from '../components/common/GalaxyIcon';
 import { useModal } from '../contexts/ModalContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
@@ -39,7 +39,7 @@ interface TopBarProps {
 const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
   { id: 'start', label: 'Start', icon: <Home size={16} /> },
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-  { id: 'agentx', label: 'AgentX', icon: <Bot size={16} /> },
+  { id: 'agentx', label: 'Agents', icon: <GalaxyIcon size={16} /> },
 ];
 
 export function TopBar({ activePage, onPageChange }: TopBarProps) {

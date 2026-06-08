@@ -1,0 +1,52 @@
+/* GalaxyIcon — base motion. Speed/glow can be intensified by ancestors. */
+.galaxy-icon {
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.galaxy-icon .galaxy-disk,
+.galaxy-icon .galaxy-orbit,
+.galaxy-icon .galaxy-core {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+
+.galaxy-icon .galaxy-disk {
+  animation: galaxy-spin 20s linear infinite;
+}
+
+.galaxy-icon .galaxy-orbit {
+  animation: galaxy-spin 8s linear infinite;
+}
+
+.galaxy-icon .galaxy-core {
+  animation: galaxy-pulse 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 2px currentColor);
+}
+
+.galaxy-icon .galaxy-star {
+  animation: galaxy-twinkle 2.2s ease-in-out infinite;
+}
+
+@keyframes galaxy-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes galaxy-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+@keyframes galaxy-twinkle {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .galaxy-icon .galaxy-disk,
+  .galaxy-icon .galaxy-orbit,
+  .galaxy-icon .galaxy-core,
+  .galaxy-icon .galaxy-star {
+    animation: none;
+  }
+}

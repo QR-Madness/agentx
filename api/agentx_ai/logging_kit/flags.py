@@ -47,8 +47,10 @@ class LogFlags:
     api_enabled: bool
     ring_size: int
     archive_enabled: bool
-    archive_max_mb: int
+    archive_max_mb: int  # legacy size-rotation knob; a no-op under daily rotation
     archive_backups: int
+    archive_encrypt: bool
+    archive_retention_days: int
 
 
 def read_flags() -> LogFlags:
@@ -79,4 +81,8 @@ def read_flags() -> LogFlags:
         archive_enabled=_env_bool("AGENTX_LOG_ARCHIVE_ENABLED", True),
         archive_max_mb=_env_int("AGENTX_LOG_ARCHIVE_MAX_MB", 10),
         archive_backups=_env_int("AGENTX_LOG_ARCHIVE_BACKUPS", 10),
+        # Encryption only *activates* once a keyring exists (i.e. auth is set up);
+        # otherwise archives stay redacted-plaintext gzip. Flag lets ops force it off.
+        archive_encrypt=_env_bool("AGENTX_LOG_ARCHIVE_ENCRYPT", True),
+        archive_retention_days=_env_int("AGENTX_LOG_ARCHIVE_RETENTION_DAYS", 30),
     )

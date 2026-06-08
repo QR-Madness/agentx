@@ -1372,11 +1372,25 @@ color rows.
 
 ```
 GET /api/logs/archive
+GET /api/logs/archive/status
 GET /api/logs/archive/{name}
 ```
 
-List the compressed archive segments (`data/logs/agentx.log[.N.gz]`) and download one.
+`GET /api/logs/archive/status` reports the vault state — `keyring_present`, `unlocked`
+(is a key cached in memory, i.e. are sealed segments downloadable right now),
+`sealed_segments` / `pending_segments`, `encryption_enabled`, and `retention_days`.
+
+List the daily archive segments (`data/logs/agentx-YYYY-MM-DD.log.gz`) and download one.
 Segment names are validated against path traversal.
+
+When authentication is set up, completed days are **sealed** with AES-256-GCM keyed to the
+login password (envelope encryption; see the [Logging](#logging) notes). Sealed segments
+carry `encrypted: true` in the list and end in `.gz.enc`. Downloading one decrypts it on the
+fly to the inner gzip — but only while the vault is **unlocked** (a key is cached from a
+recent login); otherwise the download returns `423 Locked` (re-authenticate to unlock). Pass
+`?raw=true` to download the encrypted bytes untouched. With auth disabled, archives stay
+redacted-plaintext gzip. Manage keys with `task logs:keys:status | logs:seal |
+logs:rotate-keys | logs:rotate-keys:deep`.
 
 ---
 

@@ -62,6 +62,53 @@ class AuthService:
                     cls._instance = cls(session_ttl=session_ttl)
         return cls._instance
 
+    def _unlock_log_vault(self, password: str) -> None:
+        """Unlock (or first-time create) the log-archive keyring and seal backlog.
+
+        Best-effort and fully isolated: a crypto/import failure must never block
+        authentication. The unwrapped DEK is cached in process memory only.
+        Called after a *verified* password (login) or a freshly set one (setup).
+        """
+        try:
+            from ..logging_kit import archive_crypto
+            from ..logging_kit.flags import read_flags
+
+            if not read_flags().archive_encrypt:
+                return
+            if archive_crypto.is_encryption_active():
+                dek = archive_crypto.unwrap_dek(password)
+            else:
+                dek = archive_crypto.create_keyring(password)
+            archive_crypto.set_cached_dek(dek)
+            archive_crypto.seal_pending(dek)
+        except Exception as e:  # noqa: BLE001 — never break auth on log-vault issues
+            logger.warning(f"Log-archive vault not unlocked: {e}")
+
+    def _rotate_log_vault(self, old_password: str, new_password: str) -> None:
+        """Re-wrap the log-archive DEK under the new password (O(1), no rewrites)."""
+        try:
+            from ..logging_kit import archive_crypto
+            from ..logging_kit.flags import read_flags
+
+            if not read_flags().archive_encrypt:
+                return
+            if archive_crypto.is_encryption_active():
+                archive_crypto.rewrap_dek(
+                    new_password,
+                    dek=archive_crypto.get_cached_dek(),
+                    old_password=old_password,
+                )
+            else:
+                dek = archive_crypto.create_keyring(new_password)
+                archive_crypto.set_cached_dek(dek)
+        except Exception as e:  # noqa: BLE001 — password change already committed
+            logger.critical(
+                "Log-archive keyring NOT rotated after password change (%s). "
+                "Encrypted logs may be unreadable; run `task logs:rotate-keys` "
+                "(or `--reencrypt`) to recover.",
+                e,
+            )
+
     def _get_redis(self):
         """Get Redis client, raising if unavailable."""
         try:
@@ -134,7 +181,10 @@ class AuthService:
                     )
 
                 logger.info("Root password configured successfully")
-                return True
+            # Outside the DB session: create the log-archive keyring under this
+            # password and seal any existing plaintext backlog.
+            self._unlock_log_vault(password)
+            return True
         except Exception as e:
             logger.error(f"Error setting up root password: {e}")
             raise
@@ -200,6 +250,10 @@ class AuthService:
             redis = self._get_redis()
             session_key = f"{self.SESSION_PREFIX}{token}"
             redis.setex(session_key, self.session_ttl, json.dumps(session_data))
+
+            # Password verified above → safe to unlock the log-archive vault and
+            # seal any days that rolled while we were locked.
+            self._unlock_log_vault(password)
 
             logger.info(f"User {username} logged in successfully")
             return (token, session_data)
@@ -306,7 +360,10 @@ class AuthService:
                 )
 
                 logger.info(f"Password changed for user_id: {user_id}")
-                return True
+            # Outside the DB session: re-wrap the log-archive DEK under the new
+            # password (cheap; touches no archive).
+            self._rotate_log_vault(old_password, new_password)
+            return True
 
         except Exception as e:
             logger.error(f"Change password error: {e}")

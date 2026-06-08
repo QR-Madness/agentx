@@ -111,9 +111,39 @@
   text-decoration: none;
   font-size: 12px;
 }
+/* Encrypted segments render as a <button> (fetch+blob download); reset to match the <a>. */
+button.logs-archive-item { width: 100%; border: none; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 12px; }
 .logs-archive-item:hover { background: var(--surface-hover); color: var(--text-primary); }
-.logs-archive-name { flex: 1 1 auto; font-family: var(--font-mono, monospace); }
-.logs-archive-size { color: var(--text-muted); }
+.logs-archive-name { flex: 1 1 auto; }
+.logs-archive-size { color: var(--text-muted); font-family: var(--font-mono, monospace); font-size: 11px; }
+.logs-archive-lock { color: var(--text-secondary); }
+.logs-archive-lock--locked { color: var(--warning, #d6a23a); }
+
+/* Vault status strip (top of archive drawer) */
+.logs-vault {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem;
+  margin-bottom: 0.3rem;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--surface-sunken, rgba(255, 255, 255, 0.02));
+}
+.logs-vault-label { font-weight: 600; color: var(--text-primary); }
+.logs-vault-detail { flex: 1 1 auto; color: var(--text-muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logs-vault--ok { color: var(--success, #4caf82); }
+.logs-vault--locked { color: var(--warning, #d6a23a); }
+.logs-vault--neutral { color: var(--text-secondary); }
+
+/* Scroll-to-load sentinel */
+.logs-archive-more {
+  padding: 0.4rem;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 /* Stream */
 .logs-stream {

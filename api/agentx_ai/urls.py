@@ -131,5 +131,6 @@ urlpatterns = [
     path("logs/stream", views_logs.logs_stream, name="logs-stream"),
     path("logs/categories", views_logs.logs_categories, name="logs-categories"),
     path("logs/archive", views_logs.logs_archive_list, name="logs-archive-list"),
+    path("logs/archive/status", views_logs.logs_archive_status, name="logs-archive-status"),
     path("logs/archive/<str:name>", views_logs.logs_archive_download, name="logs-archive-download"),
 ]
