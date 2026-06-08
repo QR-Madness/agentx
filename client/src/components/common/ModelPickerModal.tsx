@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, RefreshCw, Search, Check, Wrench, Eye, Braces, Zap, Loader2,
+  X, RefreshCw, Search, Check, Wrench, Eye, Braces, Zap, Loader2, Volume2, Mic,
 } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import {
@@ -33,13 +33,15 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const KNOWN_PROVIDER_ORDER = ['anthropic', 'openrouter', 'vercel', 'lmstudio', 'openai'];
 
-type CapabilityKey = 'tools' | 'vision' | 'json' | 'streaming';
+type CapabilityKey = 'tools' | 'vision' | 'json' | 'streaming' | 'speech' | 'transcription';
 
 const CAPABILITIES: { key: CapabilityKey; label: string; icon: React.ReactNode; match: (m: ModelInfo) => boolean }[] = [
-  { key: 'tools',     label: 'Tools',     icon: <Wrench size={13} />, match: m => !!m.supports_tools },
-  { key: 'vision',    label: 'Vision',    icon: <Eye size={13} />,    match: m => !!m.supports_vision },
-  { key: 'json',      label: 'JSON mode', icon: <Braces size={13} />, match: m => !!m.supports_json_mode },
-  { key: 'streaming', label: 'Streaming', icon: <Zap size={13} />,    match: m => m.supports_streaming !== false },
+  { key: 'tools',         label: 'Tools',     icon: <Wrench size={13} />, match: m => !!m.supports_tools },
+  { key: 'vision',        label: 'Vision',    icon: <Eye size={13} />,    match: m => !!m.supports_vision },
+  { key: 'json',          label: 'JSON mode', icon: <Braces size={13} />, match: m => !!m.supports_json_mode },
+  { key: 'streaming',     label: 'Streaming', icon: <Zap size={13} />,    match: m => m.supports_streaming !== false },
+  { key: 'speech',        label: 'Speech',    icon: <Volume2 size={13} />, match: m => !!m.supports_speech },
+  { key: 'transcription', label: 'Transcribe', icon: <Mic size={13} />,   match: m => !!m.supports_transcription },
 ];
 
 interface ModelPickerModalProps {
@@ -49,6 +51,8 @@ interface ModelPickerModalProps {
   onChange: (modelId: string) => void;
   /** Show "System default" row at the top */
   showDefault?: boolean;
+  /** Restrict the list to models matching this capability (e.g. 'speech' for TTS). */
+  requireCapability?: CapabilityKey;
 }
 
 function formatContext(n?: number | null): string {
@@ -80,7 +84,7 @@ function formatPrice(input?: number | null, output?: number | null, currency = '
 }
 
 export function ModelPickerModal({
-  isOpen, onClose, value, onChange, showDefault = true,
+  isOpen, onClose, value, onChange, showDefault = true, requireCapability,
 }: ModelPickerModalProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,7 +144,9 @@ export function ModelPickerModal({
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const required = requireCapability && CAPABILITIES.find(c => c.key === requireCapability);
     return models.filter(m => {
+      if (required && !required.match(m)) return false;
       if (selectedProviders.size && !selectedProviders.has(m.provider)) return false;
       for (const cap of selectedCaps) {
         const spec = CAPABILITIES.find(c => c.key === cap);
@@ -151,7 +157,7 @@ export function ModelPickerModal({
       }
       return true;
     });
-  }, [models, selectedProviders, selectedCaps, searchQuery]);
+  }, [models, selectedProviders, selectedCaps, searchQuery, requireCapability]);
 
   const toggleProvider = (p: string) => {
     setSelectedProviders(prev => {

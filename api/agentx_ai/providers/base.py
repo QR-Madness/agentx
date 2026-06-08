@@ -170,12 +170,38 @@ class CompletionResult(BaseModel):
 
 
 @dataclass
+class SpeechResult:
+    """Result of a text-to-speech synthesis request.
+
+    ``audio`` is the raw encoded audio (e.g. MP3 bytes), ready to write to a file
+    or stream to a browser ``<audio>`` element. ``content_type`` is the response
+    MIME type (``audio/mpeg`` for MP3).
+    """
+    audio: bytes
+    content_type: str = "audio/mpeg"
+    model: str = ""
+    voice: str = ""
+    generation_id: Optional[str] = None
+
+
+@dataclass
+class TranscriptionResult:
+    """Result of a speech-to-text (transcription) request."""
+    text: str
+    model: str = ""
+    language: Optional[str] = None
+    raw_response: Optional[dict[str, Any]] = None
+
+
+@dataclass
 class ModelCapabilities:
     """Capabilities of a model."""
     supports_tools: bool = False
     supports_vision: bool = False
     supports_streaming: bool = True
     supports_json_mode: bool = False
+    supports_speech: bool = False
+    supports_transcription: bool = False
     context_window: int = 4096
     max_output_tokens: Optional[int] = None
     cost_per_1k_input: Optional[float] = None
@@ -308,6 +334,65 @@ class ModelProvider(ABC):
             Health status dict with 'status' and optional details
         """
         return {"status": "unknown", "message": "Health check not implemented"}
+
+    async def synthesize_speech(
+        self,
+        text: str,
+        *,
+        model: str,
+        voice: Optional[str] = None,
+        response_format: str = "mp3",
+        speed: Optional[float] = None,
+        **kwargs: Any,
+    ) -> "SpeechResult":
+        """Synthesize speech (text-to-speech) for ``text``.
+
+        Default raises — only providers exposing a TTS backend (currently
+        OpenRouter, via the OpenAI-compatible ``/audio/speech`` endpoint) override
+        this. Callers that need graceful degradation should resolve a
+        speech-capable model and surface a clear "voice unconfigured" message.
+
+        Args:
+            text: The text to speak.
+            model: The TTS model id.
+            voice: Voice id (provider/model specific; omit to use the model default).
+            response_format: Output container — ``mp3`` (default) or ``pcm``.
+            speed: Optional playback-speed multiplier (provider-dependent).
+
+        Returns:
+            SpeechResult with the encoded audio bytes.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not support speech synthesis"
+        )
+
+    async def transcribe_speech(
+        self,
+        audio: bytes,
+        *,
+        model: str,
+        audio_format: str = "webm",
+        language: Optional[str] = None,
+        **kwargs: Any,
+    ) -> "TranscriptionResult":
+        """Transcribe spoken audio to text (speech-to-text).
+
+        Default raises — only providers exposing an STT backend (currently
+        OpenRouter, via the OpenAI-compatible ``/audio/transcriptions`` endpoint)
+        override this.
+
+        Args:
+            audio: The raw encoded audio bytes to transcribe.
+            model: The STT model id.
+            audio_format: Container of ``audio`` (``webm``/``mp3``/``wav``/``m4a``/``ogg``/…).
+            language: Optional ISO-639-1 hint to override auto-detection.
+
+        Returns:
+            TranscriptionResult with the transcript text.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not support speech transcription"
+        )
 
     async def close(self) -> None:
         """

@@ -1,8 +1,10 @@
 import asyncio
+import base64
+import binascii
 import json
 import logging
 from typing import Any, cast
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 
@@ -635,6 +637,8 @@ async def providers_models(request):
                     "supports_vision": caps.supports_vision,
                     "supports_streaming": caps.supports_streaming,
                     "supports_json_mode": caps.supports_json_mode,
+                    "supports_speech": caps.supports_speech,
+                    "supports_transcription": caps.supports_transcription,
                     "cost_per_1k_input": caps.cost_per_1k_input,
                     "cost_per_1k_output": caps.cost_per_1k_output,
                     "pricing_currency": caps.pricing_currency,
@@ -2049,6 +2053,111 @@ async def ambassador_draft(request):
         conversation_id, intent, agent_name=agent_name, artifacts=artifacts
     )
     return JsonResponse({"draft": draft})
+
+
+@csrf_exempt
+async def ambassador_speak(request):
+    """
+    POST /api/agent/ambassador/speak
+
+    Body: {text, agent_profile_id?, voice?, model?}. Synthesize spoken audio for a
+    briefing / Q&A answer via the ambassador's speech model (OpenRouter TTS) and
+    return the raw MP3 bytes (Content-Type: audio/mpeg). The client already holds
+    the text, so this stays stateless — no transcript / sidecar write.
+
+    Degrades gracefully: a missing OpenRouter key or a non-speech model returns a
+    structured 422 ({error, code}) instead of failing the panel.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    text = (data.get("text") or "").strip()
+    if not text:
+        return JsonResponse({"error": "text is required"}, status=400)
+
+    from .config import get_config_manager
+
+    if not get_config_manager().get("ambassador.enabled", True):
+        return JsonResponse(
+            {"error": "The ambassador is disabled in settings.", "code": "disabled"},
+            status=422,
+        )
+
+    from .agent.ambassador import SpeechUnavailable, get_ambassador
+
+    try:
+        result = await get_ambassador().synthesize(
+            text,
+            profile_id=data.get("agent_profile_id"),
+            voice=data.get("voice"),
+            model=data.get("model"),
+        )
+    except SpeechUnavailable as e:
+        return JsonResponse({"error": str(e), "code": e.code}, status=422)
+
+    response = HttpResponse(result.audio, content_type=result.content_type or "audio/mpeg")
+    response["Cache-Control"] = "private, max-age=86400"
+    if result.generation_id:
+        response["X-Generation-Id"] = result.generation_id
+    return response
+
+
+@csrf_exempt
+async def ambassador_transcribe(request):
+    """
+    POST /api/agent/ambassador/transcribe
+
+    Body: {audio: <base64>, format?, agent_profile_id?, model?, language?}. Transcribe
+    a push-to-talk recording to text via the ambassador's STT model (OpenRouter
+    `/audio/transcriptions`) and return `{text}`. The client routes the transcript
+    into the reviewable input — it is **never** auto-sent (pre-send confirmation).
+
+    Degrades to a structured `422 {error, code}` (e.g. `transcription_unconfigured`)
+    when no OpenRouter key is set or the model can't transcribe.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    audio_b64 = data.get("audio") or ""
+    if not audio_b64:
+        return JsonResponse({"error": "audio is required"}, status=400)
+    try:
+        audio = base64.b64decode(audio_b64, validate=True)
+    except (binascii.Error, ValueError):
+        return JsonResponse({"error": "audio must be valid base64"}, status=400)
+
+    from .config import get_config_manager
+
+    if not get_config_manager().get("ambassador.enabled", True):
+        return JsonResponse(
+            {"error": "The ambassador is disabled in settings.", "code": "disabled"},
+            status=422,
+        )
+
+    from .agent.ambassador import SpeechUnavailable, get_ambassador
+
+    try:
+        text = await get_ambassador().transcribe(
+            audio,
+            audio_format=(data.get("format") or "webm"),
+            profile_id=data.get("agent_profile_id"),
+            model=data.get("model"),
+            language=data.get("language"),
+        )
+    except SpeechUnavailable as e:
+        return JsonResponse({"error": str(e), "code": e.code}, status=422)
+
+    return JsonResponse({"text": text})
 
 
 async def ambassador_stream(request):

@@ -7047,3 +7047,302 @@ class LoggingKitTest(TestCase):
         self.assertIsNone(resolve_segment("../config.json"))
         self.assertIsNone(resolve_segment("../../etc/passwd"))
         self.assertIsNone(resolve_segment("sub/dir"))
+
+
+# ---------------------------------------------------------------------------
+# Ambassador voice (TTS) — OpenRouter speech synthesis + graceful degradation
+# ---------------------------------------------------------------------------
+
+
+class _FakeSpeechResponse:
+    """Stand-in for an httpx Response from /audio/speech (raw audio body)."""
+
+    def __init__(self, content: bytes, status_code: int = 200, headers=None, text: str = ""):
+        self.content = content
+        self.status_code = status_code
+        self.headers = headers or {"content-type": "audio/mpeg", "x-generation-id": "gen_1"}
+        self.text = text
+
+
+def _fake_async_client(response, captured: dict):
+    """Build a fake httpx.AsyncClient class whose `post` records the call."""
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return response
+
+    return _FakeClient
+
+
+class OpenRouterSpeechTest(TestCase):
+    """OpenRouter's /audio/speech synthesis + the supports_speech capability."""
+
+    def _provider(self):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(
+            ProviderConfig(api_key="k", base_url="https://openrouter.ai/api/v1")
+        )
+
+    def test_synthesize_speech_posts_and_returns_bytes(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        provider = self._provider()
+        captured: dict = {}
+        resp = _FakeSpeechResponse(b"MP3DATA")
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            result = asyncio.run(
+                provider.synthesize_speech(
+                    "hello there",
+                    model="microsoft/mai-voice-2",
+                    voice="en-US-Harper:MAI-Voice-2",
+                )
+            )
+        self.assertEqual(result.audio, b"MP3DATA")
+        self.assertEqual(result.content_type, "audio/mpeg")
+        self.assertEqual(result.generation_id, "gen_1")
+        self.assertTrue(captured["url"].endswith("/audio/speech"))
+        self.assertEqual(captured["json"]["model"], "microsoft/mai-voice-2")
+        self.assertEqual(captured["json"]["input"], "hello there")
+        self.assertEqual(captured["json"]["voice"], "en-US-Harper:MAI-Voice-2")
+        self.assertEqual(captured["json"]["response_format"], "mp3")
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer k")
+
+    def test_synthesize_speech_omits_voice_when_unset(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        provider = self._provider()
+        captured: dict = {}
+        resp = _FakeSpeechResponse(b"X")
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            asyncio.run(provider.synthesize_speech("hi", model="m"))
+        self.assertNotIn("voice", captured["json"])
+
+    def test_synthesize_speech_raises_on_http_error(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        provider = self._provider()
+        captured: dict = {}
+        resp = _FakeSpeechResponse(b"", status_code=402, text="insufficient credits")
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(provider.synthesize_speech("hi", model="m"))
+
+    def test_capabilities_report_speech_for_audio_output(self):
+        provider = self._provider()
+        provider._model_cache = {
+            "tts/voice": {"architecture": {"output_modalities": ["audio"]}},
+            "text/model": {"architecture": {"output_modalities": ["text"]}},
+        }
+        provider._cache_timestamp = 9_999_999_999  # keep cache fresh
+        self.assertTrue(provider.get_capabilities("tts/voice").supports_speech)
+        self.assertFalse(provider.get_capabilities("text/model").supports_speech)
+
+    def test_base_provider_speech_not_implemented(self):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig())
+        with self.assertRaises(NotImplementedError):
+            asyncio.run(provider.synthesize_speech("hi", model="x"))
+
+
+class AmbassadorSpeechTest(TestCase):
+    """AmbassadorService.synthesize — resolution precedence + graceful degradation."""
+
+    def _service(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        return AmbassadorService()
+
+    def test_empty_text_raises(self):
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+
+        svc = self._service()
+        with self.assertRaises(SpeechUnavailable) as ctx:
+            asyncio.run(svc.synthesize("   "))
+        self.assertEqual(ctx.exception.code, "empty_text")
+
+    def test_unconfigured_provider_degrades(self):
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+
+        svc = self._service()
+        svc._registry = MagicMock()
+        svc._registry.get_provider_for_model.side_effect = ValueError("not configured")
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            with self.assertRaises(SpeechUnavailable) as ctx:
+                asyncio.run(svc.synthesize("hello"))
+        self.assertEqual(ctx.exception.code, "voice_unconfigured")
+
+    def test_unsupported_model_degrades(self):
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+
+        svc = self._service()
+        provider = MagicMock()
+        provider.synthesize_speech = AsyncMock(side_effect=NotImplementedError("no tts"))
+        svc._registry = MagicMock()
+        svc._registry.get_provider_for_model.return_value = (provider, "some/model")
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            with self.assertRaises(SpeechUnavailable) as ctx:
+                asyncio.run(svc.synthesize("hello"))
+        self.assertEqual(ctx.exception.code, "model_unsupported")
+
+    def test_success_returns_audio_and_uses_default_model(self):
+        from agentx_ai.agent.ambassador import (
+            _DEFAULT_SPEECH_MODEL,
+            _DEFAULT_SPEECH_VOICE,
+        )
+        from agentx_ai.providers.base import SpeechResult
+
+        svc = self._service()
+        provider = MagicMock()
+        provider.synthesize_speech = AsyncMock(
+            return_value=SpeechResult(audio=b"AUDIO", content_type="audio/mpeg", model="m", voice="v")
+        )
+        svc._registry = MagicMock()
+        svc._registry.get_provider_for_model.return_value = (provider, "microsoft/mai-voice-2")
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            result = asyncio.run(svc.synthesize("hello"))
+        self.assertEqual(result.audio, b"AUDIO")
+        # The shipped default model is resolved strictly (no chat fallback).
+        svc._registry.get_provider_for_model.assert_called_once_with(_DEFAULT_SPEECH_MODEL)
+        # The default voice is passed through to the provider.
+        _, kwargs = provider.synthesize_speech.call_args
+        self.assertEqual(kwargs["voice"], _DEFAULT_SPEECH_VOICE)
+        self.assertEqual(kwargs["response_format"], "mp3")
+
+
+class _FakeJsonResponse:
+    """Stand-in for an httpx Response carrying a JSON body (e.g. transcription)."""
+
+    def __init__(self, payload, status_code: int = 200, text: str = ""):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+class OpenRouterTranscriptionTest(TestCase):
+    """OpenRouter's /audio/transcriptions (STT) + the supports_transcription flag."""
+
+    def _provider(self):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(
+            ProviderConfig(api_key="k", base_url="https://openrouter.ai/api/v1")
+        )
+
+    def test_transcribe_posts_base64_and_returns_text(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        provider = self._provider()
+        captured: dict = {}
+        resp = _FakeJsonResponse({"text": "hello world", "usage": {"seconds": 1.2}})
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            result = asyncio.run(
+                provider.transcribe_speech(b"AUDIOBYTES", model="openai/whisper-1", audio_format="webm")
+            )
+        self.assertEqual(result.text, "hello world")
+        self.assertTrue(captured["url"].endswith("/audio/transcriptions"))
+        self.assertEqual(captured["json"]["model"], "openai/whisper-1")
+        self.assertEqual(captured["json"]["input_audio"]["format"], "webm")
+        import base64 as _b64
+
+        self.assertEqual(
+            _b64.b64decode(captured["json"]["input_audio"]["data"]), b"AUDIOBYTES"
+        )
+
+    def test_transcribe_raises_on_http_error(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        provider = self._provider()
+        captured: dict = {}
+        resp = _FakeJsonResponse({}, status_code=429, text="rate limited")
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(provider.transcribe_speech(b"x", model="m"))
+
+    def test_capabilities_report_transcription(self):
+        provider = self._provider()
+        provider._model_cache = {
+            "stt/whisper": {
+                "architecture": {"input_modalities": ["audio"], "output_modalities": ["transcription"]}
+            },
+            "chat/audio": {
+                "architecture": {"input_modalities": ["audio", "text"], "output_modalities": ["text"]}
+            },
+        }
+        provider._cache_timestamp = 9_999_999_999
+        self.assertTrue(provider.get_capabilities("stt/whisper").supports_transcription)
+        # An audio-input *chat* model is not an STT endpoint.
+        self.assertFalse(provider.get_capabilities("chat/audio").supports_transcription)
+
+    def test_base_provider_transcription_not_implemented(self):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig())
+        with self.assertRaises(NotImplementedError):
+            asyncio.run(provider.transcribe_speech(b"x", model="m"))
+
+
+class AmbassadorTranscriptionTest(TestCase):
+    """AmbassadorService.transcribe — resolution precedence + graceful degradation."""
+
+    def _service(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        return AmbassadorService()
+
+    def test_empty_audio_raises(self):
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+
+        svc = self._service()
+        with self.assertRaises(SpeechUnavailable) as ctx:
+            asyncio.run(svc.transcribe(b""))
+        self.assertEqual(ctx.exception.code, "empty_audio")
+
+    def test_unconfigured_provider_degrades(self):
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+
+        svc = self._service()
+        svc._registry = MagicMock()
+        svc._registry.get_provider_for_model.side_effect = ValueError("not configured")
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            with self.assertRaises(SpeechUnavailable) as ctx:
+                asyncio.run(svc.transcribe(b"AUDIO"))
+        self.assertEqual(ctx.exception.code, "transcription_unconfigured")
+
+    def test_success_returns_text_and_uses_default_model(self):
+        from agentx_ai.agent.ambassador import _DEFAULT_TRANSCRIPTION_MODEL
+        from agentx_ai.providers.base import TranscriptionResult
+
+        svc = self._service()
+        provider = MagicMock()
+        provider.transcribe_speech = AsyncMock(
+            return_value=TranscriptionResult(text="transcribed text", model="m")
+        )
+        svc._registry = MagicMock()
+        svc._registry.get_provider_for_model.return_value = (provider, "openai/whisper-1")
+        with patch.object(svc, "_resolve_profile", return_value=None):
+            text = asyncio.run(svc.transcribe(b"AUDIO", audio_format="webm"))
+        self.assertEqual(text, "transcribed text")
+        svc._registry.get_provider_for_model.assert_called_once_with(_DEFAULT_TRANSCRIPTION_MODEL)
+        _, kwargs = provider.transcribe_speech.call_args
+        self.assertEqual(kwargs["audio_format"], "webm")

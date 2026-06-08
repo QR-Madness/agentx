@@ -13,7 +13,15 @@
  * Briefings/Q&A live only here + the server's `ambassador:` Redis sidecar.
  */
 
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import {
   Radio,
   Loader2,
@@ -25,21 +33,218 @@ import {
   Send,
   Wand2,
   CornerUpRight,
+  Volume2,
+  Square,
+  Mic,
+  AudioLines,
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { isAssistantMessage, type AssistantMessage } from '../../lib/messages';
 import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useSpeech } from '../../hooks/useSpeech';
+import { useDictation } from '../../hooks/useDictation';
 import { Button } from '../ui';
 import { api } from '../../lib/api';
 import type { AmbassadorBriefing, AmbassadorQA } from '../../lib/api';
 
 type PanelMode = 'ask' | 'relay';
 
+/** Per-item playback controls passed down from the panel's single `useSpeech`. */
+interface SpeechControls {
+  playingId: string | null;
+  loadingId: string | null;
+  speak: (id: string, text: string) => void;
+  stop: () => void;
+}
+
+/** A speaker toggle for one speakable item (briefing summary or Q&A answer). */
+function SpeakButton({
+  id,
+  text,
+  speech,
+  className = '',
+}: {
+  id: string;
+  text: string;
+  speech: SpeechControls;
+  className?: string;
+}) {
+  const playing = speech.playingId === id;
+  const loading = speech.loadingId === id;
+  const label = playing ? 'Stop' : loading ? 'Preparing voice…' : 'Listen';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent-tertiary hover:text-accent data-[on=true]:text-accent ${className}`}
+      data-on={playing || undefined}
+      onClick={() => (playing ? speech.stop() : speech.speak(id, text))}
+    >
+      {loading ? (
+        <Loader2 size={13} className="animate-spin" />
+      ) : playing ? (
+        <Square size={13} />
+      ) : (
+        <Volume2 size={14} />
+      )}
+    </button>
+  );
+}
+
 function snippet(text: string, max = 130): string {
   const t = text.replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+/** The immersive voice surface — shown when an opted-in ambassador's voice mode is
+ *  active. The ambassador speaks briefings/answers aloud; the user types to talk
+ *  (push-to-talk is the maintained affordance, with STT capture landing next). */
+function ImmersiveVoiceSurface({
+  agentName,
+  speech,
+  spokenText,
+  recording,
+  transcribing,
+  dictationSupported,
+  dictationError,
+  onHoldStart,
+  onHoldEnd,
+  input,
+  setInput,
+  onSubmit,
+  onExit,
+}: {
+  agentName: string;
+  speech: SpeechControls;
+  spokenText: string;
+  recording: boolean;
+  transcribing: boolean;
+  dictationSupported: boolean;
+  dictationError: string | null;
+  onHoldStart: () => void;
+  onHoldEnd: () => void;
+  input: string;
+  setInput: (value: string) => void;
+  onSubmit: () => void;
+  onExit: () => void;
+}) {
+  const speaking = speech.playingId !== null;
+  const preparing = speech.loadingId !== null;
+  const active = speaking || recording;
+  const status = recording
+    ? 'Listening…'
+    : transcribing
+      ? 'Transcribing…'
+      : speaking
+        ? 'Speaking…'
+        : preparing
+          ? 'Preparing voice…'
+          : 'Ready';
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-accent">
+          <AudioLines size={13} /> Voice mode
+        </span>
+        <button
+          type="button"
+          onClick={onExit}
+          className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
+          title="Exit voice mode (Esc)"
+        >
+          <X size={12} /> exit
+        </button>
+      </div>
+
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
+        <div className="relative flex h-28 w-28 items-center justify-center">
+          {active && (
+            <>
+              <span className="absolute h-28 w-28 animate-ping rounded-full bg-accent-tertiary opacity-60 motion-reduce:hidden" />
+              <span className="absolute h-24 w-24 animate-pulse rounded-full bg-accent-tertiary motion-reduce:animate-none" />
+            </>
+          )}
+          <AmbassadorMark size={84} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-fg">{status}</span>
+          <span className="text-xs text-fg-muted">
+            {agentName ? `Interpreting ${agentName}` : 'Your parallel interpreter'}
+          </span>
+        </div>
+        {spokenText && (
+          <p className="max-h-40 max-w-sm overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-secondary">
+            {spokenText}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col items-center gap-3 border-t border-line p-4">
+        {/* Placeholder record button — hold to talk; full PTT/voice UI rework pending. */}
+        <button
+          type="button"
+          disabled={!dictationSupported || transcribing}
+          onMouseDown={onHoldStart}
+          onMouseUp={onHoldEnd}
+          onMouseLeave={() => recording && onHoldEnd()}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            onHoldStart();
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            onHoldEnd();
+          }}
+          data-active={recording || undefined}
+          className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-line bg-surface-raised text-fg-muted transition-colors hover:border-accent hover:text-accent data-[active=true]:border-accent data-[active=true]:bg-accent data-[active=true]:text-fg-inverse disabled:cursor-not-allowed disabled:opacity-40"
+          title={dictationSupported ? 'Hold to talk' : 'Voice input is not supported here'}
+          aria-label="Hold to talk"
+        >
+          {transcribing ? <Loader2 size={20} className="animate-spin" /> : <Mic size={22} />}
+        </button>
+        <span className="text-center text-[11px] leading-snug text-fg-muted">
+          {dictationError ? (
+            <span className="text-error">{dictationError}</span>
+          ) : !dictationSupported ? (
+            'Voice input isn’t available here — type below to talk.'
+          ) : (
+            <>
+              Hold <kbd className="rounded bg-surface-sunken px-1 text-fg-secondary">Space</kbd> or the
+              mic to talk — your words land in the box below to review before you send.
+            </>
+          )}
+        </span>
+        <div className="flex w-full items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit();
+              }
+            }}
+            rows={1}
+            placeholder={agentName ? `Ask about ${agentName}…` : 'Ask about this conversation…'}
+            className="max-h-32 flex-1 resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
+          />
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={!input.trim()}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-40"
+            title="Ask the ambassador"
+          >
+            <Send size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** A streaming text cursor in the ambassador's accent. */
@@ -129,8 +334,17 @@ function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }
 }
 
 /** One free-form Q&A exchange — your question, the ambassador's answer. */
-function QaItem({ entry, onCancel }: { entry: AmbassadorQA; onCancel: () => void }) {
+function QaItem({
+  entry,
+  onCancel,
+  speech,
+}: {
+  entry: AmbassadorQA;
+  onCancel: () => void;
+  speech: SpeechControls;
+}) {
   const streaming = entry.status === 'streaming';
+  const speakable = entry.status === 'done' && !!entry.answer.trim();
   return (
     <li className="flex flex-col gap-2">
       <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-sm leading-snug text-fg-inverse shadow-sm">
@@ -167,6 +381,14 @@ function QaItem({ entry, onCancel }: { entry: AmbassadorQA; onCancel: () => void
               <X size={12} /> cancel
             </button>
           )}
+          {speakable && (
+            <SpeakButton
+              id={`qa:${entry.qa_id}`}
+              text={entry.answer}
+              speech={speech}
+              className="ml-1 align-middle"
+            />
+          )}
         </div>
       </div>
     </li>
@@ -184,10 +406,55 @@ export function AmbassadorPanel() {
   const [refining, setRefining] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
+  // The briefing ambassador — supplies the speech model/voice and the voice-mode
+  // opt-in. profiles includes ambassador-kind entries (only chat routing filters).
+  const ambassadorProfile = useMemo(
+    () =>
+      profiles.find((p) => p.kind === 'ambassador' && p.isDefaultAmbassador) ??
+      profiles.find((p) => p.kind === 'ambassador'),
+    [profiles],
+  );
+  const voiceEnabled = ambassadorProfile?.ambassador?.voiceMode === true;
+
+  const { playingId, loadingId, speak, stop: stopSpeech, unlock } = useSpeech({
+    agentProfileId: ambassadorProfile?.id,
+  });
+  const speech: SpeechControls = useMemo(
+    () => ({ playingId, loadingId, speak, stop: stopSpeech }),
+    [playingId, loadingId, speak, stopSpeech],
+  );
+
+  // Immersive voice mode — a panel-session toggle, only offered when the
+  // ambassador opts in.
+  const [voiceMode, setVoiceMode] = useState(false);
+  // Items already auto-spoken in voice mode (so a re-render / history never replays).
+  const spokenRef = useRef<Set<string>>(new Set());
+
+  // Push-to-talk dictation (STT). The transcript fills the input for review — it is
+  // never auto-sent (pre-send confirmation). A flubbed take can be re-recorded (retake).
+  const handleTranscript = useCallback((text: string) => {
+    setInput((cur) => (cur.trim() ? `${cur.trim()} ${text}` : text));
+  }, []);
+  const dictation = useDictation({
+    agentProfileId: ambassadorProfile?.id,
+    onTranscript: handleTranscript,
+  });
+
   // Subscribe: repopulate from the sidecar whenever the active conversation changes.
   useEffect(() => {
     if (conversationId) void refresh(conversationId);
   }, [conversationId, refresh]);
+
+  // On conversation switch: stop any audio + seed existing done items as
+  // already-spoken, so switching never auto-replays a conversation's history.
+  useEffect(() => {
+    stopSpeech();
+    if (!conversationId) return;
+    const seed = spokenRef.current;
+    for (const b of briefingsFor(conversationId)) if (b.status === 'done') seed.add(`brief:${b.message_id}`);
+    for (const q of qaFor(conversationId)) if (q.status === 'done') seed.add(`qa:${q.qa_id}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   const messages = activeTab?.messages ?? [];
   // Assistant turns (non-empty content), newest first, carrying their index.
@@ -247,6 +514,94 @@ export function AmbassadorPanel() {
     latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined;
 
   const runActive = !!activeTab?.activeRun?.runId;
+
+  // The text currently being spoken (for the immersive surface caption).
+  const spokenText = useMemo(() => {
+    if (!playingId) return '';
+    if (playingId.startsWith('brief:')) {
+      const mid = playingId.slice('brief:'.length);
+      return briefingForMessage(conversationId, mid)?.summary ?? '';
+    }
+    if (playingId.startsWith('qa:')) {
+      const qid = playingId.slice('qa:'.length);
+      return qaFor(conversationId).find((q) => q.qa_id === qid)?.answer ?? '';
+    }
+    return '';
+  }, [playingId, conversationId, briefingForMessage, qaFor]);
+
+  const seedSpoken = () => {
+    const seed = spokenRef.current;
+    for (const b of briefingsFor(conversationId)) if (b.status === 'done') seed.add(`brief:${b.message_id}`);
+    for (const q of qaFor(conversationId)) if (q.status === 'done') seed.add(`qa:${q.qa_id}`);
+  };
+
+  const enterVoiceMode = () => {
+    unlock(); // bless the audio element on this gesture so autoplay works
+    seedSpoken(); // don't replay briefings already on screen
+    setVoiceMode(true);
+  };
+  const exitVoiceMode = () => {
+    stopSpeech();
+    dictation.cancel();
+    setVoiceMode(false);
+  };
+
+  // Voice mode autoplay: speak the freshest newly-settled briefing / answer once.
+  useEffect(() => {
+    if (!voiceMode || !conversationId) return;
+    type Item = { id: string; text: string; ts: number };
+    const items: Item[] = [];
+    for (const b of briefingsFor(conversationId))
+      if (b.status === 'done' && b.summary.trim())
+        items.push({ id: `brief:${b.message_id}`, text: b.summary, ts: Date.parse(b.updated_at ?? '') || 0 });
+    for (const q of qaFor(conversationId))
+      if (q.status === 'done' && q.answer.trim())
+        items.push({ id: `qa:${q.qa_id}`, text: q.answer, ts: Date.parse(q.updated_at ?? '') || 0 });
+    const fresh = items.filter((it) => !spokenRef.current.has(it.id));
+    if (fresh.length === 0) return;
+    fresh.sort((a, b) => a.ts - b.ts);
+    for (const it of fresh) spokenRef.current.add(it.id); // mark all seen…
+    const last = fresh[fresh.length - 1];
+    speak(last.id, last.text); // …but only voice the most recent
+  }, [voiceMode, conversationId, briefingsFor, qaFor, speak]);
+
+  // Esc exits voice mode; Space (held) is **push-to-talk** — start recording on
+  // press, stop + transcribe on release. Scoped to voice mode and ignored while
+  // typing so it never hijacks the input. (Stable PTT is a flagged refinement target.)
+  const { start: startDictation, stopAndTranscribe } = dictation;
+  useEffect(() => {
+    if (!voiceMode) return;
+    const isTyping = () => {
+      const el = document.activeElement;
+      return (
+        el instanceof HTMLElement &&
+        (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable)
+      );
+    };
+    const down = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        exitVoiceMode();
+        return;
+      }
+      if (e.code === 'Space' && !e.repeat && !isTyping()) {
+        e.preventDefault();
+        void startDictation();
+      }
+    };
+    const up = (e: globalThis.KeyboardEvent) => {
+      if (e.code === 'Space' && !isTyping()) {
+        e.preventDefault();
+        void stopAndTranscribe();
+      }
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMode, startDictation, stopAndTranscribe]);
 
   const showFlash = (msg: string) => {
     setFlash(msg);
@@ -316,7 +671,8 @@ export function AmbassadorPanel() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header — identity zone (future home of the voice/TTS hero). */}
       <div className="flex flex-col gap-1.5 border-b border-line px-4 pb-3.5 pt-4">
-        <div className="flex items-center gap-2.5">
+        {/* pr clears the drawer shell's absolute close button (top-right, ~56px). */}
+        <div className="flex items-center gap-2.5 pr-12">
           <span className="relative inline-flex">
             <AmbassadorMark size={26} />
             {anyStreaming && (
@@ -328,6 +684,17 @@ export function AmbassadorPanel() {
             <span className="inline-flex items-center gap-1 rounded-full bg-accent-tertiary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
               live
             </span>
+          )}
+          {voiceEnabled && conversationId && (
+            <button
+              type="button"
+              onClick={() => (voiceMode ? exitVoiceMode() : enterVoiceMode())}
+              data-on={voiceMode || undefined}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent data-[on=true]:border-accent data-[on=true]:bg-accent data-[on=true]:text-fg-inverse"
+              title={voiceMode ? 'Exit voice mode' : 'Enter immersive voice mode'}
+            >
+              <AudioLines size={13} /> {voiceMode ? 'Voice on' : 'Voice mode'}
+            </button>
           )}
         </div>
         <p className="text-xs leading-relaxed text-fg-muted">
@@ -342,6 +709,26 @@ export function AmbassadorPanel() {
         </p>
       </div>
 
+      {voiceMode && conversationId && (
+        <ImmersiveVoiceSurface
+          agentName={convAgentName}
+          speech={speech}
+          spokenText={spokenText}
+          recording={dictation.recording}
+          transcribing={dictation.transcribing}
+          dictationSupported={dictation.supported}
+          dictationError={dictation.error}
+          onHoldStart={() => void dictation.start()}
+          onHoldEnd={() => void dictation.stopAndTranscribe()}
+          input={input}
+          setInput={setInput}
+          onSubmit={submitAsk}
+          onExit={exitVoiceMode}
+        />
+      )}
+
+      {!voiceMode && (
+      <>
       {/* Body */}
       <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
         {!conversationId ? (
@@ -389,6 +776,14 @@ export function AmbassadorPanel() {
                             Turn {turnNo}
                           </span>
                           <StatusChip status={briefing?.status} />
+                          {briefed && briefing?.summary?.trim() && (
+                            <SpeakButton
+                              id={`brief:${m.id}`}
+                              text={briefing.summary}
+                              speech={speech}
+                              className="ml-auto"
+                            />
+                          )}
                           {streaming ? (
                             <button
                               type="button"
@@ -401,7 +796,8 @@ export function AmbassadorPanel() {
                           ) : (
                             <button
                               type="button"
-                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent-tertiary"
+                              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent-tertiary data-[lead=true]:ml-auto"
+                              data-lead={!(briefed && briefing?.summary?.trim()) || undefined}
                               onClick={() => brief(m)}
                               title={briefing ? 'Brief this turn again' : 'Brief this turn'}
                             >
@@ -430,6 +826,7 @@ export function AmbassadorPanel() {
                       key={entry.qa_id}
                       entry={entry}
                       onCancel={() => cancelQa(conversationId, entry.qa_id)}
+                      speech={speech}
                     />
                   ))}
                 </ul>
@@ -503,6 +900,8 @@ export function AmbassadorPanel() {
           {/* One stable helper line — flash takes over briefly, no layout shift. */}
           <p className="px-0.5 text-[11px] leading-snug text-fg-muted">{footerHelp}</p>
         </div>
+      )}
+      </>
       )}
     </div>
   );

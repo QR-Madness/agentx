@@ -23,7 +23,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 | Phases 1-11, 13, 14, 17 | **Complete** | See [roadmap.md](docs-site/src/content/docs/roadmap.md) |
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
-| Phase 16: Multi-Agent Conversations | **In Progress** | ~70% (16.0–16.5 + 16.6 ambassador foundation shipped; Factory UI + ambassador speech/dictation deferred) |
+| Phase 16: Multi-Agent Conversations | **In Progress** | ~72% (16.0–16.5 + 16.6 ambassador foundation & TTS voice shipped; Factory UI + ambassador STT/dictation deferred) |
 | Phase 18: UX + Memory Tuning | **In Progress** | ~98% (18.9 done; eval procedural cases + run persistence done; memory import/export shipped `[v0.21.22]` → eval snapshot/restore now unblocked) |
 
 ---
@@ -320,9 +320,25 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [ ] **Dictation (speech → relay)**: capture continuous dictation; on stop, feed the
       captured speech as the *intent* into the existing `/ambassador/draft` → review/edit
       → relay seam (never auto-sends). File inputs remain available (reuse the input path).
-- [ ] **Spoken briefing (inbound)**: a spoken/condensed briefing of the message
-      plus key elements (attachments, tool artifacts, citations) via an OpenRouter
-      TTS/speech model — wired through the profile's `ambassador.speech_model`/`voice`.
+- [x] **Spoken briefing (inbound) — TTS** `[v0.21.63]`: the ambassador speaks its
+      briefings + Q&A aloud. `ModelProvider.synthesize_speech` (implemented by
+      `OpenRouterProvider` via OpenAI-compatible `/audio/speech` → MP3; base raises);
+      `AmbassadorService.synthesize` resolves the profile's `ambassador.{speech_model,
+      voice,speech_speed}` block **strictly** (no chat fallback; precedence override →
+      profile → `config.ambassador.*` → shipped default `microsoft/mai-voice-2`),
+      degrading to a typed `SpeechUnavailable` → `422`. New `POST /ambassador/speak`
+      returns raw `audio/mpeg`. Client: `lib/audio.ts::SpeechPlayer` (blob cache +
+      queue + autoplay-unlock) behind `hooks/useSpeech.ts`; `AmbassadorPanel` per-item
+      speaker buttons + an opt-in immersive **voice mode** (auto-speaks new briefings,
+      `prefers-reduced-motion`-aware orb, Esc-to-exit). `voice_mode`/`speech_model`/`voice`
+      surfaced in the ambassador profile editor's **Voice** card (speech-capable model
+      picker via `ModelPickerModal requireCapability="speech"`). Tests: OpenRouter
+      synth (mock httpx) + `supports_speech` cap + base-raise; `AmbassadorService.synthesize`
+      precedence/degradation; `SpeechPlayer` cache/state vitest.
+- [ ] **Two-way voice (STT, the user-speaks half)**: capture mic on hold-space push-to-talk
+      (the voice-mode UI scaffold + key handling already ship), transcribe via OpenRouter
+      `/audio/transcriptions`, and feed the text into the Ask / `/ambassador/draft` → relay
+      seam (never auto-sends). The immersive voice surface + PTT control are in place.
 - [x] **Free-form Q&A** `[v0.21.35]`: ask the ambassador anything about the
       conversation from the panel (`POST /ambassador/ask` → `AmbassadorService.answer_question`,
       a Q&A persona/prompt over the shared `_stream_and_settle` streaming core). Persists
@@ -330,6 +346,52 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       → `{briefings, qa}`); client-stable `qa_id`; grounded on a wider transcript window
       + latest-turn artifacts. Panel gained a pinned ask input + a Q&A thread. Tests:
       qa storage round-trip/isolation, answer streaming, qa prompt grounding.
+
+#### 16.6 Voice Mode — UX vision (north star for the post-STT UI rework)
+
+> **The bar:** Microsoft Personal Copilot's voice mode is the closest thing to a
+> *perfect* immersive voice experience (OpenAI's was close too) — but both have the
+> **same fatal gap: no stable push-to-talk**, and they lack **retake** and **pre-send
+> confirmation**. The Ambassador's voice mode should feel like a **Discord voice call**:
+> minimal, immersive, calm — and fix exactly those gaps. The current panel will need a
+> **major UI rework** to reach this; the STT pass below ships the plumbing behind a
+> *placeholder record button*, not this surface.
+
+- [ ] **Immersive panel = three things only**: a **push-to-talk icon** (the hero), **live
+      captions**, and a **settings button**. Nothing else on screen. Discord-call calm.
+- [ ] **Stable push-to-talk (the headline fix)**: rock-solid press/hold/release with no
+      accidental triggers or stuck states — button *and* keyboard (Space when focus isn't in
+      an input), debounced, clear visual state for idle/listening/transcribing/speaking, and
+      a hold-vs-toggle option. This is the feature Copilot/OpenAI got wrong; get it right.
+- [ ] **Retake confirmation**: after you stop talking, you can **discard and re-record**
+      before anything is sent — recover gracefully from a flubbed message.
+- [ ] **Pre-send confirmation**: the transcript is shown for review/edit; **you** confirm
+      send (or edit, or discard). Never auto-send a transcription. (STT pass already routes
+      the transcript into the reviewable input — this is the baseline of that confirmation.)
+- [ ] **Captioning**: live captions for **both** sides — the ambassador's spoken output and
+      your transcribed input — so the experience is legible, not audio-only (a11y + clarity).
+- [ ] **Voice settings button** (in-mode): voice model, STT model, voice id, PTT key +
+      hold/toggle, autoplay, caption on/off — quick access without leaving the call.
+- [ ] **Headless floating CC sticky player**: CC'ing an ambassador *from a message* spawns a
+      small **floating, draggable sticky button** (not the full panel) — **pause/play**, a
+      small **close** button, and **keyboard PTT capture when focus isn't in an input**. A
+      mini now-playing pill that rides above the conversation.
+- [ ] **Text mode = a second tab** (playback / history / archival / housekeeping): the typed
+      surface becomes the place to **replay** past briefings/answers, **browse history**,
+      **archive**, and **manage recordings**. Voice mode is the call; text mode is the record.
+- [ ] **Recording lifecycle (manual, user-owned)**: recordings are **not** auto-GC'd — users
+      own their own lifecycle. Surface **how much storage** recordings use and give one-tap
+      **clear** options (all / by age / by conversation); **recommend clearing at a size
+      threshold** (we don't mind heavy usage, we just want it visible). Auto-GC is **deferred**
+      — decide the store first (IndexedDB client-side vs server sidecar) and what's even kept
+      (user audio? synthesized TTS? captions/transcripts only?).
+- [x] **Tauri/runtime mic permission** `[v0.21.64]`: macOS Info.plist
+      `NSMicrophoneUsageDescription` + `com.apple.security.device.audio-input` entitlement,
+      CSP `media-src`, **and** a Linux webkit2gtk setup hook
+      (`src-tauri/src/lib.rs::enable_webview_microphone`) that flips on `enable-media-stream`
+      (otherwise `navigator.mediaDevices` is absent in the packaged webview) and auto-grants the
+      user-media `permission-request`. Requires an **app rebuild** to take effect (Rust change).
+      Windows WebView2 prompts by default. (Verify on each packaged target.)
 
 ### Design Notes
 

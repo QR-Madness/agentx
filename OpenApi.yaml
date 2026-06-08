@@ -964,6 +964,129 @@ paths:
         '405':
           description: POST required
 
+  /agent/ambassador/speak:
+    post:
+      tags: [Agent]
+      operationId: ambassadorSpeak
+      summary: Synthesize spoken audio for a briefing / answer (16.6 voice)
+      description: >-
+        Text-to-speech for the ambassador. Synthesizes spoken audio for a briefing
+        summary or Q&A answer via the resolved ambassador's speech model (OpenRouter
+        `/audio/speech`) and returns the raw **MP3** bytes (`audio/mpeg`). Model/voice
+        precedence: request override → the ambassador profile's `speech_model`/`voice`
+        → `config.ambassador.*` → shipped default (`microsoft/mai-voice-2`). The speech
+        model is resolved strictly (no chat fallback). Stateless — the client already
+        holds the text, so nothing is written to the transcript or sidecar. Degrades to
+        a structured `422 {error, code}` (e.g. `voice_unconfigured`) when no OpenRouter
+        key is set or the model can't speak.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  description: The text to speak (a briefing summary or Q&A answer)
+                agent_profile_id:
+                  type: string
+                  description: Ambassador profile whose speech model/voice to use (default ambassador if omitted)
+                voice:
+                  type: string
+                  description: Per-call voice override
+                model:
+                  type: string
+                  description: Per-call speech-model override (provider:model)
+      responses:
+        '200':
+          description: Spoken audio (MP3)
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Missing text
+        '405':
+          description: POST required
+        '422':
+          description: Voice unavailable (no speech provider / model can't speak / disabled)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
+  /agent/ambassador/transcribe:
+    post:
+      tags: [Agent]
+      operationId: ambassadorTranscribe
+      summary: Transcribe push-to-talk voice input (16.6 voice / STT)
+      description: >-
+        Speech-to-text for the ambassador. Transcribes a push-to-talk recording
+        (base64 audio) via the resolved ambassador's STT model (OpenRouter
+        `/audio/transcriptions`) and returns `{text}`. The client routes the
+        transcript into the reviewable input — it is **never** auto-sent (pre-send
+        confirmation). Model precedence: request override → the ambassador profile's
+        `transcription_model` → `config.ambassador.transcription_model` → shipped
+        default (`openai/whisper-1`), resolved strictly. Degrades to a structured
+        `422 {error, code}` (e.g. `transcription_unconfigured`) when no OpenRouter key
+        is set or the model can't transcribe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  description: Base64-encoded audio bytes (no data-URI prefix)
+                format:
+                  type: string
+                  description: Audio container token (webm | m4a | ogg | wav | mp3); defaults to webm
+                agent_profile_id:
+                  type: string
+                  description: Ambassador profile whose STT model to use (default ambassador if omitted)
+                model:
+                  type: string
+                  description: Per-call STT-model override (provider:model)
+                language:
+                  type: string
+                  description: Optional ISO-639-1 language hint
+      responses:
+        '200':
+          description: Transcript
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+        '400':
+          description: Missing or invalid audio
+        '405':
+          description: POST required
+        '422':
+          description: Transcription unavailable (no STT provider / model can't transcribe / disabled)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
   /agent/ambassador/stream:
     get:
       tags: [Agent]

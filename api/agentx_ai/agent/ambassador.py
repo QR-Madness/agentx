@@ -20,10 +20,11 @@ No-pollution invariant (load-bearing — keep these true):
 
 Bulletproofing: a missing/unreachable provider degrades gracefully (one
 ``ambassador_done`` with ``empty_provider`` status — never raises), so the main
-conversation is never affected. The foundation briefs with a single
-``provider.complete``; token-streaming is a drop-in swap later. ``speech``
-briefings (OpenRouter TTS) bolt onto the same seam via the profile's
-``ambassador.speech_model``.
+conversation is never affected. Briefings token-stream via ``provider.stream``;
+spoken briefings (OpenRouter TTS) ride :meth:`AmbassadorService.synthesize` off
+the profile's ``ambassador.speech_model``/``voice`` block (the speak endpoint
+degrades to a clean 422 when no speech provider is configured). The user-speaks
+half of voice mode (STT) is a separate, later seam.
 """
 
 from __future__ import annotations
@@ -33,12 +34,22 @@ import logging
 from typing import Any, AsyncGenerator, Optional
 
 from ..config import get_config_manager
-from ..providers.base import Message, MessageRole
+from ..providers.base import Message, MessageRole, SpeechResult
 from ..providers.registry import ProviderRegistry, get_registry
 from . import ambassador_storage as store
 from .conversation_history import load_recent_turns
 
 logger = logging.getLogger(__name__)
+
+
+class SpeechUnavailable(Exception):
+    """Raised when spoken briefings can't be produced (no provider/model
+    configured, or the resolved model doesn't support speech). Carries a stable
+    ``code`` so the view can return a structured 422 the client can act on."""
+
+    def __init__(self, message: str, *, code: str = "voice_unconfigured") -> None:
+        super().__init__(message)
+        self.code = code
 
 # Rough token budget per grounding turn (mirrors conversation_history estimates).
 _TOKENS_PER_TURN = 400
@@ -46,6 +57,20 @@ _TOKENS_PER_TURN = 400
 # Built-in model floor — used only when neither the settings override nor the
 # chosen profile specify a model. resolve_with_fallback degrades from here.
 _DEFAULT_MODEL = "anthropic:claude-haiku-4-5-20251001"
+
+# Voice (TTS) defaults. The shipped speech model is OpenRouter-only, so spoken
+# briefings need an OpenRouter key — the speak endpoint degrades gracefully when
+# it's absent. MAI-Voice-2 voices use the Azure locale format.
+_DEFAULT_SPEECH_MODEL = "openrouter:microsoft/mai-voice-2"
+_DEFAULT_SPEECH_VOICE = "en-US-Harper:MAI-Voice-2"
+# Speech-to-text (the user-speaks half). OpenRouter-only, like TTS — the
+# transcribe endpoint degrades gracefully when no key is configured.
+_DEFAULT_TRANSCRIPTION_MODEL = "openrouter:openai/whisper-1"
+# Guard against pathological uploads (short push-to-talk clips are tiny).
+_MAX_AUDIO_BYTES = 25 * 1024 * 1024
+# Hard ceiling on synthesized text (TTS bills per character; briefings/Q&A are
+# short + markdown-free by persona rules, so this only guards pathological input).
+_MAX_SPEECH_CHARS = 4000
 
 def _default_persona(agent_name: str = "") -> str:
     """The Ambassador's core voice. ``agent_name`` (the *briefed* agent's display
@@ -668,6 +693,133 @@ class AmbassadorService:
         except Exception as e:  # noqa: BLE001 — never block the relay
             logger.warning(f"Ambassador draft failed: {e}")
             return intent
+
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        profile_id: Optional[str] = None,
+        voice: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> SpeechResult:
+        """Synthesize spoken audio for ``text`` (a briefing / Q&A answer).
+
+        Resolution precedence — explicit arg → the resolved ambassador profile's
+        ``ambassador.voice`` block → global ``ambassador.*`` config → shipped
+        default (``microsoft/mai-voice-2``). The speech model is resolved
+        **strictly** (no chat fallback — TTS must never degrade to a text model);
+        an unconfigured/unsupported model raises :class:`SpeechUnavailable` so the
+        caller can return a clean "add an OpenRouter key for voice" message.
+        """
+        text = (text or "").strip()
+        if not text:
+            raise SpeechUnavailable("Nothing to speak.", code="empty_text")
+        if len(text) > _MAX_SPEECH_CHARS:
+            text = text[:_MAX_SPEECH_CHARS].rstrip()
+
+        config = get_config_manager()
+        profile = self._resolve_profile(profile_id)
+        amb = getattr(profile, "ambassador", None) if profile else None
+
+        speech_model = (
+            model
+            or getattr(amb, "speech_model", None)
+            or config.get("ambassador.speech_model")
+            or _DEFAULT_SPEECH_MODEL
+        )
+        speech_voice = (
+            voice
+            or getattr(amb, "voice", None)
+            or config.get("ambassador.voice")
+            or _DEFAULT_SPEECH_VOICE
+        )
+        speed = getattr(amb, "speech_speed", None) if amb else None
+
+        try:
+            provider, model_id = self.registry.get_provider_for_model(speech_model)
+        except Exception as e:  # noqa: BLE001 — unconfigured provider → clean 422
+            raise SpeechUnavailable(
+                f"No speech provider is configured for '{speech_model}'. "
+                "Add an OpenRouter API key to enable voice.",
+                code="voice_unconfigured",
+            ) from e
+
+        try:
+            return await provider.synthesize_speech(
+                text,
+                model=model_id,
+                voice=speech_voice,
+                response_format="mp3",
+                speed=speed,
+            )
+        except NotImplementedError as e:
+            raise SpeechUnavailable(
+                f"'{speech_model}' does not support speech synthesis. "
+                "Choose a text-to-speech model in the ambassador's voice settings.",
+                code="model_unsupported",
+            ) from e
+        except Exception as e:  # noqa: BLE001 — surface a clean failure
+            logger.warning(f"Ambassador speech synthesis failed: {e}")
+            raise SpeechUnavailable(str(e)[:300], code="synth_failed") from e
+
+    async def transcribe(
+        self,
+        audio: bytes,
+        *,
+        audio_format: str = "webm",
+        profile_id: Optional[str] = None,
+        model: Optional[str] = None,
+        language: Optional[str] = None,
+    ) -> str:
+        """Transcribe spoken audio to text (the user-speaks half of voice mode).
+
+        Mirrors :meth:`synthesize`: the STT model resolves **strictly** with
+        precedence explicit arg → the ambassador profile's ``transcription_model``
+        → global ``ambassador.transcription_model`` → shipped default
+        (``openai/whisper-1``). An unconfigured/unsupported model raises
+        :class:`SpeechUnavailable` so the caller returns a clean ``422``. Returns the
+        transcript text (the client routes it into the reviewable input — never
+        auto-sent)."""
+        if not audio:
+            raise SpeechUnavailable("No audio to transcribe.", code="empty_audio")
+        if len(audio) > _MAX_AUDIO_BYTES:
+            raise SpeechUnavailable("Audio recording is too large.", code="audio_too_large")
+
+        config = get_config_manager()
+        profile = self._resolve_profile(profile_id)
+        amb = getattr(profile, "ambassador", None) if profile else None
+
+        stt_model = (
+            model
+            or getattr(amb, "transcription_model", None)
+            or config.get("ambassador.transcription_model")
+            or _DEFAULT_TRANSCRIPTION_MODEL
+        )
+
+        try:
+            provider, model_id = self.registry.get_provider_for_model(stt_model)
+        except Exception as e:  # noqa: BLE001 — unconfigured provider → clean 422
+            raise SpeechUnavailable(
+                f"No transcription provider is configured for '{stt_model}'. "
+                "Add an OpenRouter API key to enable voice input.",
+                code="transcription_unconfigured",
+            ) from e
+
+        try:
+            result = await provider.transcribe_speech(
+                audio, model=model_id, audio_format=audio_format, language=language
+            )
+        except NotImplementedError as e:
+            raise SpeechUnavailable(
+                f"'{stt_model}' does not support transcription. "
+                "Choose a speech-to-text model in the ambassador's voice settings.",
+                code="transcription_model_unsupported",
+            ) from e
+        except Exception as e:  # noqa: BLE001 — surface a clean failure
+            logger.warning(f"Ambassador transcription failed: {e}")
+            raise SpeechUnavailable(str(e)[:300], code="transcription_failed") from e
+
+        return result.text
 
     async def _stream_and_settle(
         self,

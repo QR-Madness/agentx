@@ -97,6 +97,29 @@ export interface BriefTurnRequest {
   artifacts?: AmbassadorTurnArtifacts;
 }
 
+export interface SpeakRequest {
+  /** The text to speak (a briefing summary or Q&A answer). */
+  text: string;
+  /** Ambassador profile whose speech model/voice to use (default ambassador if omitted). */
+  agent_profile_id?: string;
+  /** Optional per-call overrides. */
+  voice?: string;
+  model?: string;
+}
+
+export interface TranscribeRequest {
+  /** Base64-encoded audio (no data-URI prefix). */
+  audio: string;
+  /** OpenRouter format token (webm | m4a | ogg | wav | mp3). */
+  format: string;
+  /** Ambassador profile whose STT model to use (default ambassador if omitted). */
+  agent_profile_id?: string;
+  /** Optional per-call overrides. */
+  model?: string;
+  /** Optional ISO-639-1 language hint. */
+  language?: string;
+}
+
 export interface AmbassadorStreamCallbacks {
   onChunk?: (text: string) => void;
   onDone?: (summary: string, status: AmbassadorStatus) => void;
@@ -218,6 +241,47 @@ export const ambassadorApi = {
    */
   async draftRelay(req: DraftRelayRequest): Promise<{ draft: string }> {
     return apiRequest('/api/agent/ambassador/draft', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  /**
+   * Synthesize spoken audio (MP3) for a briefing / Q&A answer via the ambassador's
+   * speech model. Returns the audio Blob. Throws an `ApiError`-shaped object on
+   * failure — notably a 422 with `code: 'voice_unconfigured'` when no OpenRouter
+   * key is set (the response body is JSON in that case, not audio).
+   */
+  async speak(req: SpeakRequest, signal?: AbortSignal): Promise<Blob> {
+    const baseUrl = getBaseUrl();
+    const response = await fetch(`${baseUrl}/api/agent/ambassador/speak`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(req),
+      signal,
+    });
+    if (!response.ok) {
+      let message = `Speech synthesis failed (${response.status})`;
+      let code: string | undefined;
+      try {
+        const body = await response.json();
+        if (typeof body?.error === 'string') message = body.error;
+        if (typeof body?.code === 'string') code = body.code;
+      } catch {
+        /* non-JSON error body — keep the generic message */
+      }
+      throw { message, status: response.status, kind: 'http', details: { code } };
+    }
+    return response.blob();
+  },
+
+  /**
+   * Transcribe a push-to-talk recording to text via the ambassador's STT model.
+   * Returns `{text}` for the user to review/edit — the caller never auto-sends it.
+   * Throws an `ApiError`-shaped object on failure (e.g. 422 `transcription_unconfigured`).
+   */
+  async transcribe(req: TranscribeRequest): Promise<{ text: string }> {
+    return apiRequest('/api/agent/ambassador/transcribe', {
       method: 'POST',
       body: JSON.stringify(req),
     });

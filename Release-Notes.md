@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.62 -->
+<!-- release-version: 0.21.64 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,16 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **The Ambassador can talk — both ways.** Your parallel interpreter now reads its briefings and
+  answers aloud through OpenRouter text-to-speech — a speaker button on any briefing or Q&A plays
+  it back (synthesized once, then cached for instant replay). Ambassadors you opt in get an
+  immersive **voice mode** that auto-voices each new briefing. And you can **talk back**:
+  hold-to-talk (Space or the mic button) records your voice, transcribes it with OpenRouter
+  speech-to-text, and drops the text into the box for you to review before sending — never
+  auto-sent. Pick the speech, voice, and transcription models per ambassador in its profile
+  editor (ships defaulting to `microsoft/mai-voice-2` + `openai/whisper-1`). *(The immersive
+  voice surface gets a full Discord-call-style rework next — this ships the plumbing behind a
+  placeholder record button.)*
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,

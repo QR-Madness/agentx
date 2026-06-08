@@ -5,6 +5,7 @@ OpenRouter provides a unified API to 100+ LLM models through an
 OpenAI-compatible interface with dynamic model catalog.
 """
 
+import base64
 import logging
 import time
 from typing import Any, AsyncIterator, Optional
@@ -17,7 +18,9 @@ from .base import (
     ModelCapabilities,
     ModelProvider,
     ProviderConfig,
+    SpeechResult,
     StreamChunk,
+    TranscriptionResult,
     accumulate_tool_call_delta,
     convert_messages_to_openai_format,
     finalize_tool_calls,
@@ -255,6 +258,121 @@ class OpenRouterProvider(ModelProvider):
         finally:
             await client.close()
 
+    async def synthesize_speech(
+        self,
+        text: str,
+        *,
+        model: str,
+        voice: Optional[str] = None,
+        response_format: str = "mp3",
+        speed: Optional[float] = None,
+        **kwargs: Any,
+    ) -> SpeechResult:
+        """Synthesize speech via OpenRouter's OpenAI-compatible ``/audio/speech``.
+
+        Returns the raw audio bytes (MP3 by default) — OpenRouter streams the
+        audio as the response body, not JSON. Raises on a non-2xx with the
+        response body so the caller can surface a clear error.
+        """
+        body: dict[str, Any] = {
+            "model": model,
+            "input": text,
+            "response_format": response_format,
+        }
+        # `voice` is required by some models and rejected (defaulted) by others —
+        # send it only when explicitly set.
+        if voice:
+            body["voice"] = voice
+        if speed is not None:
+            body["speed"] = speed
+        # Allow provider-specific pass-through (e.g. MAI-Voice-2 expressive style).
+        provider_options = kwargs.get("provider")
+        if provider_options:
+            body["provider"] = provider_options
+
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        if self._site_url:
+            headers["HTTP-Referer"] = self._site_url
+        if self._app_name:
+            headers["X-Title"] = self._app_name
+
+        base = self.config.base_url or OPENROUTER_BASE_URL
+        logger.debug(f"OpenRouter TTS: model={model}, voice={voice}, chars={len(text)}")
+
+        async with httpx.AsyncClient(timeout=self.config.timeout or 60.0) as http_client:
+            response = await http_client.post(
+                f"{base}/audio/speech", headers=headers, json=body
+            )
+            if response.status_code >= 400:
+                detail = response.text[:500]
+                raise RuntimeError(
+                    f"OpenRouter speech synthesis failed ({response.status_code}): {detail}"
+                )
+            audio = response.content
+            content_type = response.headers.get("content-type", "audio/mpeg")
+            generation_id = response.headers.get("x-generation-id")
+
+        return SpeechResult(
+            audio=audio,
+            content_type=content_type,
+            model=model,
+            voice=voice or "",
+            generation_id=generation_id,
+        )
+
+    async def transcribe_speech(
+        self,
+        audio: bytes,
+        *,
+        model: str,
+        audio_format: str = "webm",
+        language: Optional[str] = None,
+        **kwargs: Any,
+    ) -> TranscriptionResult:
+        """Transcribe audio via OpenRouter's OpenAI-compatible ``/audio/transcriptions``.
+
+        OpenRouter takes the audio as **base64** in a JSON body (not multipart) and
+        returns ``{text, usage}``. Raises on a non-2xx with the response body.
+        """
+        body: dict[str, Any] = {
+            "model": model,
+            "input_audio": {
+                "data": base64.b64encode(audio).decode("ascii"),
+                "format": audio_format,
+            },
+        }
+        if language:
+            body["language"] = language
+
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        if self._site_url:
+            headers["HTTP-Referer"] = self._site_url
+        if self._app_name:
+            headers["X-Title"] = self._app_name
+
+        base = self.config.base_url or OPENROUTER_BASE_URL
+        logger.debug(
+            f"OpenRouter STT: model={model}, format={audio_format}, bytes={len(audio)}"
+        )
+
+        async with httpx.AsyncClient(timeout=self.config.timeout or 60.0) as http_client:
+            response = await http_client.post(
+                f"{base}/audio/transcriptions", headers=headers, json=body
+            )
+            if response.status_code >= 400:
+                detail = response.text[:500]
+                raise RuntimeError(
+                    f"OpenRouter transcription failed ({response.status_code}): {detail}"
+                )
+            data = response.json()
+
+        return TranscriptionResult(
+            text=(data.get("text") or "").strip(),
+            model=model,
+            language=language,
+            raw_response=data,
+        )
+
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for an OpenRouter model from cached catalog."""
         if model in self._model_cache:
@@ -292,6 +410,8 @@ class OpenRouterProvider(ModelProvider):
                 supports_vision="image" in input_modalities or "vision" in supported_params,
                 supports_streaming=True,
                 supports_json_mode=supports_json_mode,
+                supports_speech="audio" in output_modalities or "speech" in output_modalities,
+                supports_transcription="transcription" in output_modalities,
                 context_window=context_window,
                 max_output_tokens=max_output,
                 cost_per_1k_input=cost_input,

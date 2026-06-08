@@ -44,6 +44,11 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [briefingPersona, setBriefingPersona] = useState<string | null>(null);
   const [qaPersona, setQaPersona] = useState<string | null>(null);
   const [draftPersona, setDraftPersona] = useState<string | null>(null);
+  // Voice (TTS) block — spoken briefings + the immersive voice-mode opt-in.
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [speechModel, setSpeechModel] = useState('');
+  const [voice, setVoice] = useState('');
+  const [transcriptionModel, setTranscriptionModel] = useState('');
   const [baseTemplateId, setBaseTemplateId] = useState('');
   const [baseTemplate, setBaseTemplate] = useState<PromptTemplate | null>(null);
   const [saving, setSaving] = useState(false);
@@ -81,6 +86,10 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setBriefingPersona(profile.ambassador?.briefingPersona ?? null);
       setQaPersona(profile.ambassador?.qaPersona ?? null);
       setDraftPersona(profile.ambassador?.draftPersona ?? null);
+      setVoiceMode(profile.ambassador?.voiceMode ?? false);
+      setSpeechModel(profile.ambassador?.speechModel ?? '');
+      setVoice(profile.ambassador?.voice ?? '');
+      setTranscriptionModel(profile.ambassador?.transcriptionModel ?? '');
     } else {
       setName('');
       setAvatar('sparkles');
@@ -174,6 +183,10 @@ export function useProfileEditorState(profile: AgentProfile | null) {
           briefing_persona: briefingPersona,
           qa_persona: qaPersona,
           draft_persona: draftPersona,
+          voice_mode: voiceMode,
+          speech_model: speechModel.trim() ? speechModel.trim() : null,
+          voice: voice.trim() ? voice.trim() : null,
+          transcription_model: transcriptionModel.trim() ? transcriptionModel.trim() : null,
         }
       : null,
   });
@@ -215,6 +228,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools,
     allowedTools, blockedTools, availableForDelegation, kind,
     ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
+    voiceMode, speechModel, voice, transcriptionModel,
   ]);
 
   const handleSubmit = async (
@@ -289,6 +303,10 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     briefingPersona, setBriefingPersona,
     qaPersona, setQaPersona,
     draftPersona, setDraftPersona,
+    voiceMode, setVoiceMode,
+    speechModel, setSpeechModel,
+    voice, setVoice,
+    transcriptionModel, setTranscriptionModel,
     baseTemplateId, setBaseTemplateId,
     baseTemplate,
     systemPromptRef,

@@ -22,6 +22,26 @@ Optional for Tauri desktop builds:
 | **Rust** (stable) | Tauri native compilation |
 | **System libs** | `libwebkit2gtk-4.1-dev`, `libssl-dev`, etc. — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) |
 
+### Linux: voice (Ambassador TTS/STT) codecs
+
+On Linux the desktop client renders in **webkit2gtk**, which routes all in-app
+audio through GStreamer. The Ambassador's voice features need the codec plugins
+installed system-wide, or audio silently no-ops (TTS playback won't decode MP3;
+push-to-talk recording produces an empty clip):
+
+```bash
+sudo apt install \
+  gstreamer1.0-plugins-good \   # opus / vorbis / webm — push-to-talk (STT) capture
+  gstreamer1.0-plugins-bad \    # silences the WebVTT-encoder / fakevideosink warnings
+  gstreamer1.0-plugins-ugly \   # MP3 (with libav) — spoken-briefing (TTS) playback
+  gstreamer1.0-libav
+```
+
+Microphone capture also needs the webview to grant `getUserMedia`: the client
+enables `enable-media-stream` and auto-grants the user-media permission in
+`src-tauri/src/lib.rs` (Linux), and ships the macOS mic usage string + entitlement.
+Browser dev mode (`task dev:web`, localhost) is a secure context and needs none of this.
+
 ## First-Time Setup
 
 ```bash

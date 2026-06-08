@@ -22,6 +22,8 @@ import {
   Repeat2,
   RefreshCw,
   Sliders,
+  Volume2,
+  Mic,
 } from 'lucide-react';
 import { type AgentProfile, type ModelInfo, type ReasoningStrategy } from '../../lib/api';
 import { agentAccent } from '../../lib/agentAccent';
@@ -174,6 +176,10 @@ export function ProfileContent({
     briefingPersona, setBriefingPersona,
     qaPersona, setQaPersona,
     draftPersona, setDraftPersona,
+    voiceMode, setVoiceMode,
+    speechModel, setSpeechModel,
+    voice, setVoice,
+    transcriptionModel, setTranscriptionModel,
     setBaseTemplateId,
     baseTemplate,
     systemPromptRef,
@@ -188,6 +194,8 @@ export function ProfileContent({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryMode, setLibraryMode] = useState<'insert' | 'select'>('insert');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [speechPickerOpen, setSpeechPickerOpen] = useState(false);
+  const [transcriptionPickerOpen, setTranscriptionPickerOpen] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<ModelInfo[]>([]);
   const isAmbassador = kind === 'ambassador';
   const accent = agentAccent(profile?.agentId ?? 'new');
@@ -550,6 +558,111 @@ export function ProfileContent({
                         />
                       </div>
                     )}
+                  </ControlCard>
+                  )}
+
+                  {/* Voice (TTS) — ambassador-kind profiles only */}
+                  {isAmbassador && (
+                  <ControlCard full icon={<Volume2 size={14} />} title="Voice">
+                    <span className="profile-form-hint">
+                      Speak briefings + answers aloud via OpenRouter text-to-speech. Turn on
+                      <strong> voice mode</strong> for an immersive, two-way voice surface in the
+                      Ambassador panel. Leave the model/voice empty to use the shipped default
+                      (<code>microsoft/mai-voice-2</code>).
+                    </span>
+
+                    <label className="profile-toggle-row" style={{ marginTop: 12 }}>
+                      <span className="profile-toggle-label">
+                        <Mic size={15} />
+                        Voice mode
+                      </span>
+                      <div className="profile-toggle-right">
+                        <input
+                          type="checkbox"
+                          checked={voiceMode}
+                          onChange={e => setVoiceMode(e.target.checked)}
+                          className="profile-toggle-input"
+                        />
+                        <span className={`profile-toggle-switch ${voiceMode ? 'active' : ''}`} />
+                      </div>
+                    </label>
+                    <span className="profile-form-hint">
+                      Offer the immersive, two-way voice surface for this ambassador (hold-to-talk
+                      voice input + spoken briefings). With it off, you still get the per-message
+                      speaker buttons.
+                    </span>
+
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
+                      <label className="profile-form-label">Speech model</label>
+                      <button
+                        type="button"
+                        className="profile-model-trigger"
+                        onClick={() => setSpeechPickerOpen(true)}
+                      >
+                        <div className="profile-model-trigger-main">
+                          <span className="profile-model-trigger-label">Text-to-speech model</span>
+                          <span className="profile-model-trigger-name">
+                            {speechModel || 'microsoft/mai-voice-2 (default)'}
+                          </span>
+                        </div>
+                        <div className="profile-model-trigger-meta">
+                          <ChevronRight size={14} className="profile-model-trigger-chev" />
+                        </div>
+                      </button>
+                      <ModelPickerModal
+                        isOpen={speechPickerOpen}
+                        onClose={() => setSpeechPickerOpen(false)}
+                        value={speechModel}
+                        onChange={setSpeechModel}
+                        showDefault
+                        requireCapability="speech"
+                      />
+                    </div>
+
+                    <div className="profile-form-group" style={{ marginTop: 12 }}>
+                      <label>Voice</label>
+                      <input
+                        type="text"
+                        value={voice}
+                        onChange={e => setVoice(e.target.value)}
+                        placeholder="e.g. en-US-Harper:MAI-Voice-2 (model-specific; blank = model default)"
+                      />
+                    </div>
+
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
+                      <label className="profile-form-label">
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Mic size={13} /> Transcription model
+                        </span>
+                        <span className="profile-form-hint" style={{ display: 'block', marginTop: 2 }}>
+                          Speech-to-text for push-to-talk voice input. The transcript fills the input
+                          for review before you send.
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        className="profile-model-trigger"
+                        onClick={() => setTranscriptionPickerOpen(true)}
+                      >
+                        <div className="profile-model-trigger-main">
+                          <span className="profile-model-trigger-label">Speech-to-text model</span>
+                          <span className="profile-model-trigger-name">
+                            {transcriptionModel || 'openai/whisper-1 (default)'}
+                          </span>
+                        </div>
+                        <div className="profile-model-trigger-meta">
+                          <ChevronRight size={14} className="profile-model-trigger-chev" />
+                        </div>
+                      </button>
+                      <ModelPickerModal
+                        isOpen={transcriptionPickerOpen}
+                        onClose={() => setTranscriptionPickerOpen(false)}
+                        value={transcriptionModel}
+                        onChange={setTranscriptionModel}
+                        showDefault
+                        requireCapability="transcription"
+                      />
+                    </div>
                   </ControlCard>
                   )}
                 </motion.div>

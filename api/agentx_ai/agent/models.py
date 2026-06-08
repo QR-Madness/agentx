@@ -57,8 +57,11 @@ class AmbassadorConfig(BaseModel):
     transcript. An ambassador is configured like any other agent profile
     (model, temperature, persona) plus this block, which tunes *how* it briefs.
 
-    The foundation only uses the briefing knobs; ``speech_model``/``voice`` are
-    a deliberate seam for future spoken briefings (left null, not implemented).
+    Beyond the briefing knobs, the **voice** block (``voice_mode``/``speech_model``
+    /``voice``/``speech_speed``) drives spoken briefings via OpenRouter TTS — the
+    ambassador speaks its briefings + Q&A aloud, with an opt-in immersive voice
+    surface in the panel. ``speech_model``/``voice`` left null fall back to the
+    shipped default (``openrouter:microsoft/mai-voice-2``) in ``ambassador.py``.
     """
     enabled: bool = Field(
         False, description="Legacy marker (pre-`kind`); an ambassador is now any profile with kind='ambassador'"
@@ -83,11 +86,26 @@ class AmbassadorConfig(BaseModel):
     draft_persona: Optional[str] = Field(
         None, description="Override for the outbound-message draft persona (None = shipped default)"
     )
-    # Future speech seam — leave null; not implemented in the foundation.
-    speech_model: Optional[str] = Field(
-        None, description="Future: TTS/speech model id for spoken briefings"
+    # Voice (TTS) — spoken briefings via OpenRouter's /audio/speech. STT (the
+    # user-speaks half of two-way voice mode) is a separate, later seam.
+    voice_mode: bool = Field(
+        False,
+        description="Opt-in: enable the immersive two-way voice surface for this ambassador",
     )
-    voice: Optional[str] = Field(None, description="Future: voice id for spoken briefings")
+    speech_model: Optional[str] = Field(
+        None,
+        description="TTS/speech model id for spoken briefings (None = shipped default microsoft/mai-voice-2)",
+    )
+    voice: Optional[str] = Field(
+        None, description="Voice id for spoken briefings (None = the speech model's default voice)"
+    )
+    speech_speed: Optional[float] = Field(
+        None, description="Optional playback-speed multiplier for spoken briefings (provider-dependent)"
+    )
+    transcription_model: Optional[str] = Field(
+        None,
+        description="STT/transcription model id for voice input (None = shipped default openai/whisper-1)",
+    )
 
 
 class AgentProfile(BaseModel):
