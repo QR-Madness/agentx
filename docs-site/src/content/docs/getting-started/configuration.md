@@ -110,6 +110,22 @@ To set up authentication:
 
 Client IP is tracked on all requests via `request.agentx_client_ip` for rate-limiting and auditing.
 
+Once a password is set, your durable **log archives are encrypted at rest** with it (AES-256-GCM,
+envelope-wrapped). See [Authentication → Encrypted log archives](../deployment/authentication.md#encrypted-log-archives).
+
+### Logging
+
+```bash
+AGENTX_LOG_ARCHIVE_ENABLED=true        # Write the durable daily log archive (data/logs/)
+AGENTX_LOG_ARCHIVE_ENCRYPT=true        # Seal completed days with the login password (when auth is set up)
+AGENTX_LOG_ARCHIVE_RETENTION_DAYS=30   # Prune archived days older than this
+AGENTX_LOG_API_ENABLED=true            # Serve logs over /api/logs (auth-gated when auth is on)
+AGENTX_LOG_DECORATIONS=true            # Color/badges/run-tags in the console (false → plain output for CI)
+```
+
+Encryption activates only once a password exists; with auth disabled, archives stay
+redacted-plaintext gzip. Manage keys with `task logs:keys:status | logs:seal | logs:rotate-keys`.
+
 ### Client
 
 ```bash

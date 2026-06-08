@@ -65,6 +65,43 @@ Full request/response bodies are in the
 | `/api/auth/session` | GET | Validate / inspect the current session |
 | `/api/auth/change-password` | POST | Change the password (invalidates other sessions) |
 
+## Encrypted log archives
+
+Setting a password does more than gate the API: it also **encrypts your durable logs at
+rest**. The daily log archive (`data/logs/agentx-YYYY-MM-DD.log.gz`) is sealed with
+**AES-256-GCM** so on-disk history is unreadable without your password — defense-in-depth on
+top of the secret-redaction that already happens when each line is captured.
+
+It uses **envelope encryption**: a random data key (DEK) encrypts the archives, and your
+password only derives a key that *wraps* that DEK in `data/logs/keyring.json`. The practical
+consequences:
+
+- **The hot path never needs your password.** The current day is written as a redacted
+  plaintext gzip; completed days are **sealed** the moment you log in (the DEK is unwrapped and
+  cached in server memory). Days that roll while no one is logged in stay redacted-plaintext
+  until the next login or a manual `task logs:seal`.
+- **Changing your password is instant.** `change-password` just re-wraps the small key — no
+  archive is rewritten. Use `task logs:rotate-keys:deep` for a full re-encrypt under a brand-new
+  data key (e.g. if you believe the old one leaked).
+- **Lost password ⇒ unrecoverable archives**, by design.
+- **Auth disabled (the default) ⇒ no keyring**, so archives stay redacted-plaintext gzip exactly
+  as before. Encryption activates only once a password exists. (`AGENTX_LOG_ARCHIVE_ENCRYPT=false`
+  forces it off even with auth on.)
+
+Downloading a sealed segment from the Log panel decrypts it on the fly; if the server was
+restarted and no one has logged back in, the vault is **locked** and the download returns `423`
+until you re-authenticate. Retention defaults to 30 days (`AGENTX_LOG_ARCHIVE_RETENTION_DAYS`).
+
+```bash
+task logs:keys:status        # keyring present? unlocked? sealed/pending counts
+task logs:seal               # seal any pending plaintext days now (prompts for password)
+task logs:rotate-keys        # re-wrap the key under a new password (O(1))
+task logs:rotate-keys:deep   # deep rotation: new data key + re-encrypt every segment
+```
+
+See the [API reference → Logs archive](../api/endpoints.md#archive) for the segment/status
+endpoints.
+
 ## Version Compatibility
 
 `versions.yaml` is the single source of truth for the API/client versions and the wire
