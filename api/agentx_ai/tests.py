@@ -6428,6 +6428,7 @@ class AmbassadorServiceTest(TestCase):
             return [e async for e in agen]
 
         with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(svc, "_config", return_value=self._NO_TOOLS_CFG), \
                 patch.object(a, "_redis", return_value=fake):
             events = asyncio.run(
                 _collect(svc.answer_question("conv", "qa1", "what sources did it use?"))
@@ -6529,6 +6530,7 @@ class AmbassadorServiceTest(TestCase):
             return [e async for e in agen]
 
         with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(svc, "_config", return_value=self._NO_TOOLS_CFG), \
                 patch.object(svc, "_grounding_context", return_value=""), \
                 patch.object(a, "_redis", return_value=fake):
             events = asyncio.run(
@@ -6602,6 +6604,9 @@ class AmbassadorServiceTest(TestCase):
         "enabled": True, "profile_id": None, "model": None, "max_context_turns": 8,
         "max_tokens": None, "tools_enabled": True, "max_tool_rounds": 4,
     }
+    # The one-shot streaming path (kill-switch off) — still the internal fallback,
+    # so it stays covered even though the tool loop is the default.
+    _NO_TOOLS_CFG = {**_TOOLS_CFG, "tools_enabled": False}
 
     def test_answer_with_tools_executes_then_answers(self):
         from agentx_ai.agent.ambassador import AmbassadorService

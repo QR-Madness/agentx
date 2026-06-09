@@ -267,10 +267,11 @@ class AmbassadorService:
             "profile_id": config.get("ambassador.profile_id", None),
             "model": config.get("ambassador.model") or None,
             "max_context_turns": config.get("ambassador.max_context_turns", 8),
-            # Slice 2 agentic tool loop. Default OFF: it needs a live tool-capable
-            # model to verify before becoming the default Q&A path. When off, Q&A
-            # uses the (verified) grounded one-shot answer with thread continuity.
-            "tools_enabled": config.get("ambassador.tools_enabled", False),
+            # Slice 2 agentic tool loop — ON by default (this is an experimental app).
+            # The loop degrades internally to the grounded one-shot on any failure
+            # (e.g. a model that can't take tools), so it can't hard-fail a turn;
+            # `ambassador.tools_enabled=false` is the kill-switch.
+            "tools_enabled": config.get("ambassador.tools_enabled", True),
             # Bound on agentic tool rounds before forcing a final answer.
             "max_tool_rounds": config.get("ambassador.max_tool_rounds", 4),
             # Optional hard ceiling. Left unset by default so a thinking model has
