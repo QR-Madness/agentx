@@ -6565,6 +6565,127 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(history[1].role, MessageRole.ASSISTANT)
         self.assertIn("county index", history[1].content)
 
+    def test_ambassador_tools_are_read_only_and_degrade(self):
+        # 16.7 Slice 2: the tool belt is read-only and never raises — a bad/unknown
+        # call returns a readable note instead of throwing.
+        from agentx_ai.agent import ambassador_tools as t
+        from agentx_ai.providers.base import Message, MessageRole
+
+        turns = [
+            Message(role=MessageRole.USER, content="find the registry"),
+            Message(role=MessageRole.ASSISTANT, content="I searched the county index."),
+        ]
+        with patch.object(t, "load_recent_turns", return_value=turns):
+            summary = t.execute_tool(
+                "summarize_conversation", {}, active_conversation_id="conv", agent_name="Atlas"
+            )
+        self.assertIn("county index", summary)
+        self.assertIn("Atlas:", summary)
+
+        convs = [{
+            "conversation_id": "c1", "first_user": "build the registry",
+            "last_message": "done", "message_count": 4, "last_at": "2026-06-08",
+        }]
+        with patch.object(t, "list_recent_conversations", return_value=convs):
+            listed = t.execute_tool("list_conversations", {"limit": 5}, active_conversation_id="conv")
+        self.assertIn("c1", listed)
+        self.assertIn("build the registry", listed)
+
+        # Unknown tool + a missing required arg degrade to notes (never raise).
+        self.assertIn("Unknown tool", t.execute_tool("nope", {}, active_conversation_id="conv"))
+        self.assertIn(
+            "needs a conversation_id",
+            t.execute_tool("read_conversation", {}, active_conversation_id="conv"),
+        )
+
+    _TOOLS_CFG = {
+        "enabled": True, "profile_id": None, "model": None, "max_context_turns": 8,
+        "max_tokens": None, "tools_enabled": True, "max_tool_rounds": 4,
+    }
+
+    def test_answer_with_tools_executes_then_answers(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import CompletionResult, ToolCall
+
+        rounds: list[dict] = []
+
+        async def _complete(messages, model_id, **kwargs):
+            rounds.append(kwargs)
+            if len(rounds) == 1:  # first round: ask to summarize
+                return CompletionResult(
+                    content="", finish_reason="tool_calls", model="m",
+                    tool_calls=[ToolCall(id="t1", name="summarize_conversation", arguments={})],
+                )
+            return CompletionResult(
+                content="It searched the county index for you.", finish_reason="stop", model="m"
+            )
+
+        provider = MagicMock()
+        provider.complete = _complete
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_config", return_value=self._TOOLS_CFG), \
+                patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa1", "summarize this")))
+            record = a.get_qa("conv", "qa1")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_tool_call", joined)
+        self.assertIn("ambassador_tool_result", joined)
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("Traceback", joined)
+        self.assertEqual(record["status"], "done")
+        self.assertIn("county index", record["answer"])
+        self.assertIn("tools", rounds[0])  # the belt was advertised
+
+    def test_answer_with_tools_falls_back_when_provider_rejects_tools(self):
+        # A provider that can't take a `tools` arg must not break the turn — the loop
+        # degrades to a grounded one-shot answer and settles `done`.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import CompletionResult
+
+        async def _complete(messages, model_id, **kwargs):
+            if "tools" in kwargs:
+                raise RuntimeError("this provider does not support tools")
+            return CompletionResult(content="Here's the gist.", finish_reason="stop", model="m")
+
+        provider = MagicMock()
+        provider.complete = _complete
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "m", None)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_config", return_value=self._TOOLS_CFG), \
+                patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa2", "what happened?")))
+            record = a.get_qa("conv", "qa2")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("ambassador_error", joined)
+        self.assertEqual(record["status"], "done")
+        self.assertEqual(record["answer"], "Here's the gist.")
+
     def test_token_budget_leaves_headroom_for_free_range_thinking(self):
         # The cap must accommodate reasoning + the (short) answer, so a thinking
         # model isn't truncated mid-sentence. Length is the prompt's job, not the

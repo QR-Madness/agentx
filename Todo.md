@@ -569,31 +569,36 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       proper conversation (your turns + ambassador turns + tool chips), not two disjoint
       lists.
 
-**Slice 2 — the read-only tool belt + agentic loop**
-- [ ] **Ambassador tool registry** (`agent/ambassador_tools.py`, new): a small,
-      curated, **SELECT-only** set, separate from `mcp/internal_tools`:
-      - `read_conversation(conversation_id?, range?)` — recent transcript of the active
-        (or named) conversation.
-      - `summarize_conversation(conversation_id?)` — the "summarize this" intent.
-      - `explore_turn(message_id? | topic)` — the "explore more on this" intent (deeper
-        dig; may pull the turn's artifacts/sources).
-      - `read_conversation_results(conversation_id)` — exhibits/sources/findings of a
-        conversation (reuses the bibliography/exhibit extraction).
-      - `list_conversations(filter?)` / `survey_conversations(...)` — enumerate
-        ongoing/recent sessions for cross-conversation queries (Slice 4).
-      Each tool is read-only and can **never** write a transcript — the invariant is
-      enforced at the registry boundary, not by convention.
-- [ ] **Agentic turn loop.** Replace the one-shot `answer_question` /
-      `route_voice_command` completions with a bounded tool-use loop (provider tool
-      calling): the ambassador receives your message, optionally calls tools, then
-      composes its reply — all streamed (`ambassador_chunk`) and tool calls surfaced as
-      `ambassador_tool_call`/`ambassador_tool_result` SSE. Depth-capped; never-raise
-      wraps the whole loop; tool failures settle gracefully.
-- [ ] **Personas updated.** The Q&A/briefing personas become a single **ambassador
-      agent persona** that knows it has tools and *waits to be asked* — broad,
-      catch-all intent handling ("summarize", "explore", "what changed", "what did it
-      find") routed through tool calls rather than bespoke prompts. Keep the
-      second-person, names-the-agent, no-markdown voice rules.
+**Slice 2 — the read-only tool belt + agentic loop** — shipped behind a flag (`0.21.76`)
+
+> **Built + mock-tested, gated `ambassador.tools_enabled` (default OFF) pending a
+> live smoke test on a tool-capable model.** When off, Q&A uses the verified grounded
+> one-shot with thread continuity (1a). When on, `answer_question` runs the agentic
+> loop with internal fallback, so flipping it can't hard-fail a turn.
+
+- [x] **Ambassador tool registry** (`agent/ambassador_tools.py`): SELECT-only,
+      separate from `mcp/internal_tools`; `execute_tool` dispatch never raises.
+      - `summarize_conversation(conversation_id?)` — "summarize this".
+      - `explore_conversation(topic?, conversation_id?)` — "explore more on this".
+      - `read_conversation(conversation_id)` — a specific session (after a survey).
+      - `list_conversations(limit?)` — the cross-conversation survey primitive
+        (`conversation_history.list_recent_conversations`, new read-only enumerator).
+      Backed by `load_recent_turns` (read-only). Test: `test_ambassador_tools_are_read_only_and_degrade`.
+      *Deferred:* `read_conversation_results` (exhibits/sources) — needs bibliography
+      extraction plumbing; `explore_turn` by message-id — needs turn-id plumbing.
+- [x] **Agentic turn loop** (`AmbassadorService._answer_with_tools`): bounded
+      (`ambassador.max_tool_rounds`, default 4) provider tool-calling loop; emits
+      `ambassador_tool_call`/`ambassador_tool_result` SSE; **never-raise** wraps the loop
+      and **degrades to a grounded one-shot** on any failure (e.g. a provider that
+      rejects `tools`). Client SSE pump ignores the new events (default no-op), so it's
+      forward-safe. Tests: `test_answer_with_tools_executes_then_answers`,
+      `test_answer_with_tools_falls_back_when_provider_rejects_tools`.
+- [x] **Tools persona** (`_build_tools_persona`): the Q&A persona + a note that it has
+      read-only tools and should fetch what it needs, then answer in its own voice
+      (no markdown, names the agent, never reads tool output back).
+- [ ] **Remaining before default-on:** live smoke test on a tool-capable model;
+      client tool-call chips (Slice 1b); fold `route_voice_command`'s answer path through
+      the same loop so spoken questions get tools too.
 
 **Slice 3 — voice mode confirms the tool call**
 - [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken

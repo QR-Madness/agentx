@@ -267,6 +267,12 @@ class AmbassadorService:
             "profile_id": config.get("ambassador.profile_id", None),
             "model": config.get("ambassador.model") or None,
             "max_context_turns": config.get("ambassador.max_context_turns", 8),
+            # Slice 2 agentic tool loop. Default OFF: it needs a live tool-capable
+            # model to verify before becoming the default Q&A path. When off, Q&A
+            # uses the (verified) grounded one-shot answer with thread continuity.
+            "tools_enabled": config.get("ambassador.tools_enabled", False),
+            # Bound on agentic tool rounds before forcing a final answer.
+            "max_tool_rounds": config.get("ambassador.max_tool_rounds", 4),
             # Optional hard ceiling. Left unset by default so a thinking model has
             # room to reason without the visible briefing getting clipped — length
             # is governed by the prompt's LENGTH LIMIT, not by this cap.
@@ -322,6 +328,27 @@ class AmbassadorService:
         if amb and getattr(amb, "briefing_prompt", "").strip():
             parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
         return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
+
+    def _build_tools_persona(self, profile, agent_name: str = "") -> str:
+        """The Q&A persona plus a note that the ambassador has read-only tools to
+        look at conversations — so it can fetch what it needs (summarize/explore the
+        active conversation, or survey across the person's sessions) before it
+        answers, instead of relying on a single pre-stuffed transcript."""
+        base = self._build_qa_persona(profile, agent_name)
+        tools_note = (
+            "YOU HAVE TOOLS. You can look at the conversation world read-only before you "
+            "answer:\n"
+            "- summarize_conversation — read the conversation you're watching to summarize it.\n"
+            "- explore_conversation — read it and dig deeper (optionally on a topic).\n"
+            "- list_conversations — list the person's recent sessions (for 'what have my agents "
+            "found across everything?').\n"
+            "- read_conversation — read one specific conversation by id (after listing).\n\n"
+            "Call a tool when you need to see something; you may call several. When you have what "
+            "you need, answer the person directly in your own spoken voice — never read tool "
+            "output back verbatim, never mention the tools. These tools only READ; you never "
+            "change anything."
+        )
+        return f"{base}\n\n{tools_note}"
 
     def _build_draft_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
@@ -665,6 +692,27 @@ class AmbassadorService:
             )
             return
 
+        # Slice 2: the agentic, read-only tool path (gated by `ambassador.tools_enabled`).
+        # It settles the sidecar itself and degrades internally to the grounded
+        # one-shot below, so flipping the flag on can never hard-fail a turn.
+        if cfg["tools_enabled"]:
+            async for ev in self._answer_with_tools(
+                conversation_id=conversation_id,
+                qa_id=qa_id,
+                question=question,
+                provider=provider,
+                model_id=model_id,
+                temperature=temperature,
+                max_tokens=self._max_tokens(profile, cfg),
+                max_rounds=cfg["max_tool_rounds"],
+                profile=profile,
+                agent_name=agent_name,
+                artifacts=artifacts,
+                run_id=run_id,
+            ):
+                yield ev
+            return
+
         # Q&A grounds on a wider window than a single-turn brief — the question can
         # reference anything in the conversation.
         context = self._grounding_context(
@@ -709,6 +757,143 @@ class AmbassadorService:
             log_label="Q&A",
         ):
             yield ev
+
+    async def _answer_with_tools(
+        self,
+        *,
+        conversation_id: str,
+        qa_id: str,
+        question: str,
+        provider,
+        model_id: str,
+        temperature: float,
+        max_tokens: int,
+        max_rounds: int,
+        profile,
+        agent_name: str,
+        artifacts: Optional[dict],
+        run_id: Optional[str],
+    ) -> AsyncGenerator[str, None]:
+        """Agentic Q&A: let the ambassador call its **read-only** tool belt to look
+        at the conversation world, then answer in its own voice. Settles the qa
+        sidecar itself and emits ``ambassador_tool_call``/``ambassador_tool_result``
+        SSE as it works. Never raises — any failure degrades to a grounded one-shot
+        answer over the same context (so enabling the loop can't break a turn)."""
+        from .ambassador_tools import TOOL_SCHEMAS, execute_tool
+
+        context = self._grounding_context(
+            conversation_id, self._config()["max_context_turns"] * 2, agent_name
+        )
+
+        def _seed_messages(system: str) -> list[Message]:
+            return [
+                Message(role=MessageRole.SYSTEM, content=system),
+                *self._thread_history(conversation_id, exclude_id=qa_id),
+                Message(
+                    role=MessageRole.USER,
+                    content=self._build_qa_prompt(
+                        question=question,
+                        context=context,
+                        agent_name=agent_name,
+                        artifacts=artifacts,
+                    ),
+                ),
+            ]
+
+        messages = _seed_messages(self._build_tools_persona(profile, agent_name))
+        answer = ""
+        settled = False
+        try:
+            for _round in range(max(1, max_rounds)):
+                result = await provider.complete(
+                    messages,
+                    model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    tools=TOOL_SCHEMAS,
+                    tool_choice="auto",
+                )
+                calls = result.tool_calls or []
+                if not calls:
+                    answer = (result.content or "").strip()
+                    break
+                # Record the assistant's tool-call turn so the TOOL replies correlate.
+                messages.append(
+                    Message(
+                        role=MessageRole.ASSISTANT,
+                        content=result.content or "",
+                        tool_calls=[
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                            }
+                            for tc in calls
+                        ],
+                    )
+                )
+                for tc in calls:
+                    yield _sse(
+                        "ambassador_tool_call",
+                        {"message_id": qa_id, "tool": tc.name, "args": tc.arguments},
+                    )
+                    output = execute_tool(
+                        tc.name,
+                        tc.arguments,
+                        active_conversation_id=conversation_id,
+                        agent_name=agent_name,
+                    )
+                    messages.append(
+                        Message(
+                            role=MessageRole.TOOL,
+                            tool_call_id=tc.id,
+                            name=tc.name,
+                            content=output,
+                        )
+                    )
+                    yield _sse(
+                        "ambassador_tool_result",
+                        {"message_id": qa_id, "tool": tc.name, "ok": True},
+                    )
+            else:
+                # Round cap reached with tools still pending — force a final answer.
+                final = await provider.complete(
+                    messages, model_id, temperature=temperature, max_tokens=max_tokens, tool_choice="none"
+                )
+                answer = (final.content or "").strip()
+
+            answer = answer or "(The ambassador had no answer.)"
+            store.set_qa_answer(conversation_id, qa_id, answer, status="done")
+            settled = True
+            yield _sse("ambassador_chunk", {"message_id": qa_id, "text": answer})
+            yield _sse("ambassador_done", {"message_id": qa_id, "status": "done", "summary": answer})
+        except GeneratorExit:
+            # Cancelled mid-loop — settle without yielding (can't yield while closing).
+            store.set_qa_status(conversation_id, qa_id, "cancelled", run_id=run_id)
+            settled = True
+            raise
+        except Exception as e:  # noqa: BLE001 — degrade to a grounded one-shot answer
+            logger.warning(f"Ambassador tool loop failed for {qa_id}: {e}")
+            try:
+                fb = await provider.complete(
+                    _seed_messages(self._build_qa_persona(profile, agent_name)),
+                    model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                answer = (fb.content or "").strip() or "(The ambassador had no answer.)"
+                store.set_qa_answer(conversation_id, qa_id, answer, status="done")
+                settled = True
+                yield _sse("ambassador_chunk", {"message_id": qa_id, "text": answer})
+                yield _sse("ambassador_done", {"message_id": qa_id, "status": "done", "summary": answer})
+            except Exception as e2:  # noqa: BLE001 — give up cleanly, never raise
+                logger.warning(f"Ambassador tool-loop fallback failed for {qa_id}: {e2}")
+                store.set_qa_status(conversation_id, qa_id, "error", run_id=run_id, error=str(e2)[:500])
+                settled = True
+                yield _sse("ambassador_error", {"message_id": qa_id, "error": str(e2)[:500]})
+        finally:
+            if not settled:
+                store.set_qa_status(conversation_id, qa_id, "cancelled", run_id=run_id)
 
     async def draft_relay_message(
         self,

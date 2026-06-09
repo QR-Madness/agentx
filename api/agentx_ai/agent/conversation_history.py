@@ -27,6 +27,8 @@ _PER_MESSAGE_OVERHEAD = 10
 _MAX_ROWS = 400
 
 TurnReader = Callable[[str, int], list[tuple[str, str]]]
+# A conversation lister returns recent conversations newest-first as dicts.
+ConversationLister = Callable[[int], list[dict]]
 
 
 def _estimate_tokens(text: str) -> int:
@@ -56,6 +58,62 @@ def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
             return [(r[0], r[1] or "") for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+def _default_conversation_lister(limit: int) -> list[dict]:
+    """Read the most-recent conversations (newest first) from ``conversation_logs``.
+
+    Read-only and SELECT-only — backs the ambassador's cross-conversation survey
+    ("what have my agents discovered?") without touching the main agent's world.
+    """
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    conn: Any = PostgresConnection.get_engine().raw_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    cl.conversation_id::text,
+                    MAX(cl.timestamp) AS last_at,
+                    COUNT(*) AS message_count,
+                    (SELECT content FROM conversation_logs s
+                     WHERE s.conversation_id = cl.conversation_id AND s.role = 'user'
+                     ORDER BY s.turn_index ASC LIMIT 1) AS first_user,
+                    (SELECT content FROM conversation_logs s
+                     WHERE s.conversation_id = cl.conversation_id
+                     ORDER BY s.turn_index DESC LIMIT 1) AS last_message
+                FROM conversation_logs cl
+                GROUP BY cl.conversation_id
+                ORDER BY MAX(cl.timestamp) DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return [
+                {
+                    "conversation_id": r[0],
+                    "last_at": str(r[1]) if r[1] is not None else "",
+                    "message_count": int(r[2] or 0),
+                    "first_user": r[3] or "",
+                    "last_message": r[4] or "",
+                }
+                for r in cur.fetchall()
+            ]
+    finally:
+        conn.close()
+
+
+def list_recent_conversations(
+    limit: int = 20, *, lister: Optional[ConversationLister] = None
+) -> list[dict]:
+    """Recent conversations, newest-first. Empty on error (read-only, never raises)."""
+    lister = lister or _default_conversation_lister
+    try:
+        return lister(min(max(1, limit), 50))
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"conversation list failed: {e}")
+        return []
 
 
 def load_recent_turns(
