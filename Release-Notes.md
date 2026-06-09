@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.74 -->
+<!-- release-version: 0.21.75 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   into a **scrollable caption log** that **auto-scrolls** to the newest line, but **holds its
   place when you scroll back** to re-read, and resets cleanly when you switch conversations.
   (And voice mode no longer shows a blank surface before a conversation has started.)
+- **The Ambassador remembers your conversation with it.** Asking it follow-up questions used
+  to start from scratch each time — it had no memory of what you'd just asked. Now it carries
+  the thread: ask "what did it find?", then "and the second source?", and the second question
+  lands with the context of the first. (Its own conversation, still kept entirely separate from
+  your agent's transcript.)
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,

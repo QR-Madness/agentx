@@ -481,6 +481,40 @@ class AmbassadorService:
         )
         return "\n\n".join(sections)
 
+    def _thread_history(
+        self, conversation_id: str, *, exclude_id: str = "", limit: int = 8
+    ) -> list[Message]:
+        """Prior ambassador Q&A turns as conversation history, so the ambassador
+        remembers the conversation it is having *with the user* (continuity) — its
+        own thread, parallel to and never mixed into the main transcript.
+
+        Read-only over the ``qa:`` sidecar (which also captures spoken voice
+        answers), settled turns only, oldest-first, capped. The in-flight turn is
+        excluded by id. Never raises — continuity is best-effort, so a Redis hiccup
+        just yields a one-shot answer instead of failing the turn."""
+        try:
+            items = store.list_qa(conversation_id)
+        except Exception as e:  # pragma: no cover - Redis offline
+            logger.debug(f"ambassador thread history load failed: {e}")
+            return []
+        done = [
+            q
+            for q in items
+            if q.get("qa_id") != exclude_id
+            and q.get("status") == "done"
+            and (q.get("answer") or "").strip()
+        ]
+        done.sort(key=lambda q: q.get("created_at") or "")
+        msgs: list[Message] = []
+        for q in done[-limit:]:
+            question = (q.get("question") or "").strip()
+            answer = (q.get("answer") or "").strip()
+            if question:
+                msgs.append(Message(role=MessageRole.USER, content=question))
+            if answer:
+                msgs.append(Message(role=MessageRole.ASSISTANT, content=answer))
+        return msgs
+
     def _grounding_context(
         self, conversation_id: str, max_turns: int, agent_name: str = ""
     ) -> str:
@@ -641,6 +675,10 @@ class AmbassadorService:
                 role=MessageRole.SYSTEM,
                 content=self._build_qa_persona(profile, agent_name),
             ),
+            # Prior Q&A as real dialogue turns — the ambassador's own conversation
+            # with the user, so a follow-up ("what about the second one?") has
+            # context. The current (streaming) turn is excluded by id.
+            *self._thread_history(conversation_id, exclude_id=qa_id),
             Message(
                 role=MessageRole.USER,
                 content=self._build_qa_prompt(

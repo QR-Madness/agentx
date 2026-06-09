@@ -6541,6 +6541,30 @@ class AmbassadorServiceTest(TestCase):
         self.assertNotIn("Traceback", joined)
         self.assertEqual(record["status"], "done")
 
+    def test_thread_history_gives_qa_continuity(self):
+        # 16.7 Slice 1: the ambassador has its own conversation — prior settled Q&A
+        # comes back as real user/assistant dialogue turns (oldest first), so a
+        # follow-up has context. The in-flight turn is excluded; unanswered/streaming
+        # turns don't leak in.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import MessageRole
+
+        svc = AmbassadorService()
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            a.create_qa("conv", "q1", "what did it search for?")
+            a.set_qa_answer("conv", "q1", "It searched the county index.", status="done")
+            a.create_qa("conv", "q2", "and the second source?")  # in-flight, unanswered
+            history = svc._thread_history("conv", exclude_id="q2")
+
+        # q1 → a user/assistant pair; q2 (streaming, no answer) is excluded.
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0].role, MessageRole.USER)
+        self.assertEqual(history[0].content, "what did it search for?")
+        self.assertEqual(history[1].role, MessageRole.ASSISTANT)
+        self.assertIn("county index", history[1].content)
+
     def test_token_budget_leaves_headroom_for_free_range_thinking(self):
         # The cap must accommodate reasoning + the (short) answer, so a thinking
         # model isn't truncated mid-sentence. Length is the prompt's job, not the

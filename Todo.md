@@ -542,6 +542,18 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       crossover, and mobile sheet. *(Couldn't run the app here — built + typechecked only.)*
 
 **Slice 1 — ambassador thread (its own conversation)**
+
+> **1a shipped (`0.21.75`): conversational memory.** The ambassador now *has its own
+> conversation* — `answer_question` feeds prior settled Q&A back as real
+> user/assistant dialogue turns (`AmbassadorService._thread_history`, read-only over
+> the `qa:` sidecar, oldest-first, capped, in-flight turn excluded), so a follow-up
+> ("what about the second one?") has context. Zero client churn — the existing Q&A
+> store *is* the thread for now. Test: `test_thread_history_gives_qa_continuity`.
+> **Remaining (1b):** the dedicated `amb_thread:` storage shape + client thread
+> rendering + tool-call chips land with Slice 2 (the tool loop needs them anyway);
+> voice answers (`route_voice_command`) persist to the same `qa:` thread but the
+> spoken router doesn't yet *read* history — give voice continuity when 1b lands.
+
 - [ ] **Sidecar thread model.** Generalize `ambassador_storage` from per-turn
       briefings + flat Q&A into an **`amb_thread:` family**: an ordered message list
       (`role`, `content`, `tool_calls?`, `status`, `created_at`) keyed by an
