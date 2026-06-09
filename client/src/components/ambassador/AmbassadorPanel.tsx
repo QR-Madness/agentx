@@ -550,6 +550,16 @@ export function AmbassadorPanel() {
         />
       )}
 
+      {/* Voice mode but no conversation open yet — never render a blank surface. */}
+      {voiceActive && !conversationId && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+          <AmbassadorMark size={40} />
+          <p className="text-sm text-fg-muted">
+            Open a conversation and you can talk to the ambassador about it here.
+          </p>
+        </div>
+      )}
+
       {!voiceActive && (
       <>
       {/* Body */}

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.73 -->
+<!-- release-version: 0.21.74 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -37,6 +37,12 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   full-screen panel. And since it runs in *parallel* to your conversation, opening it now **waits
   for you to ask** (summarize this, dig into a turn, relay a message) instead of immediately
   briefing the latest turn — so it also works fine on a brand-new, empty conversation.
+- **Voice-mode captions are now a real transcript.** Captions used to show only the single
+  most recent line from each side — earlier exchanges vanished, and once the ambassador had
+  answered once, auto-played briefings stopped captioning at all. Now both sides accumulate
+  into a **scrollable caption log** that **auto-scrolls** to the newest line, but **holds its
+  place when you scroll back** to re-read, and resets cleanly when you switch conversations.
+  (And voice mode no longer shows a blank surface before a conversation has started.)
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,

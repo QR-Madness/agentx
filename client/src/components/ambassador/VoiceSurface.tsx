@@ -17,6 +17,7 @@ import { useSpeech } from '../../hooks/useSpeech';
 import { useDictation } from '../../hooks/useDictation';
 import { api } from '../../lib/api';
 import type { AmbassadorTurnArtifacts } from '../../lib/api';
+import { appendCaption, type Caption } from '../../lib/voiceCaptions';
 
 type PttMode = 'hold' | 'toggle';
 
@@ -81,17 +82,23 @@ export function VoiceSurface({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [routing, setRouting] = useState(false);
-  const [userCaption, setUserCaption] = useState('');
-  const [answerCaption, setAnswerCaption] = useState('');
+  // The running caption log (both sides), an accumulating, scrollable transcript.
+  const [captionLog, setCaptionLog] = useState<Caption[]>([]);
+  // Whether an answer just landed (gates the "relay that instead" override).
+  const [hasAnswer, setHasAnswer] = useState(false);
   const [relayDraft, setRelayDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastTranscript = useRef('');
+
+  const addCaption = useCallback((role: Caption['role'], text: string) => {
+    setCaptionLog((prev) => appendCaption(prev, role, text));
+  }, []);
 
   // Route a captured transcript through the ambassador's intent inference.
   const handleTranscript = useCallback(
     async (transcript: string) => {
       lastTranscript.current = transcript;
-      setUserCaption(transcript);
+      addCaption('you', transcript);
       setError(null);
       setRelayDraft(null);
       setRouting(true);
@@ -105,7 +112,8 @@ export function VoiceSurface({
         if (res.action === 'relay') {
           setRelayDraft(res.text);
         } else if (res.text) {
-          setAnswerCaption(res.text);
+          addCaption('ambassador', res.text);
+          setHasAnswer(true);
           const speakId = res.qa_id ? `qa:${res.qa_id}` : `vc:${Date.now()}`;
           void speech.speak(speakId, res.text);
           onAnswerPersisted();
@@ -116,7 +124,7 @@ export function VoiceSurface({
         setRouting(false);
       }
     },
-    [conversationId, agentName, artifacts, speech, onAnswerPersisted],
+    [conversationId, agentName, artifacts, speech, onAnswerPersisted, addCaption],
   );
 
   const dictation = useDictation({ agentProfileId, onTranscript: handleTranscript });
@@ -126,6 +134,7 @@ export function VoiceSurface({
   const beginTalk = useCallback(() => {
     speech.unlock();
     speech.stop();
+    setHasAnswer(false); // a fresh turn — retire the prior answer's override affordance
     void startCapture();
   }, [speech, startCapture]);
 
@@ -146,6 +155,48 @@ export function VoiceSurface({
 
   // Stop capture if the surface unmounts (tab switch / conversation change).
   useEffect(() => () => cancelCapture(), [cancelCapture]);
+
+  // --- Captions: an accumulating, auto-scrolling, scroll-back transcript ----
+  const captionScrollRef = useRef<HTMLDivElement>(null);
+  // Pinned to the bottom? Only auto-scroll when the reader is at the latest line,
+  // so scrolling back to review history is never yanked away.
+  const pinnedRef = useRef(true);
+  // The last auto-played briefing text folded into the log (so re-renders of the
+  // same spoken line don't re-append it).
+  const lastAmbientRef = useRef('');
+
+  // Fold the panel's auto-played briefing (spoken via the Text/Voice autoplay) into
+  // the caption log, once per distinct line.
+  useEffect(() => {
+    const t = ambientSpokenText.trim();
+    if (t && t !== lastAmbientRef.current) {
+      lastAmbientRef.current = t;
+      addCaption('ambassador', t);
+    }
+  }, [ambientSpokenText, addCaption]);
+
+  // A new conversation is a clean slate — drop the prior call's captions/state.
+  useEffect(() => {
+    setCaptionLog([]);
+    setHasAnswer(false);
+    setRelayDraft(null);
+    setError(null);
+    lastTranscript.current = '';
+    lastAmbientRef.current = '';
+    pinnedRef.current = true;
+  }, [conversationId]);
+
+  // Auto-scroll to the newest caption, but only while pinned to the bottom.
+  useEffect(() => {
+    const el = captionScrollRef.current;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [captionLog]);
+
+  const onCaptionScroll = useCallback(() => {
+    const el = captionScrollRef.current;
+    if (!el) return;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }, []);
 
   // Keyboard: Space is push-to-talk (hold or toggle), ignored while typing.
   useEffect(() => {
@@ -206,7 +257,6 @@ export function VoiceSurface({
             ? 'Review & send to the agent'
             : 'Ready';
 
-  const ambassadorCaption = answerCaption || ambientSpokenText;
   const orbActive = recording || speaking || routing;
 
   const sendRelay = () => {
@@ -268,17 +318,28 @@ export function VoiceSurface({
         <Orb active={orbActive} />
         <span className="text-sm font-medium text-fg">{status}</span>
 
-        {captionsOn && (
-          <div className="flex w-full max-w-sm flex-col gap-2">
-            {userCaption && (
-              <p className="self-end rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-left text-sm text-fg-inverse">
-                {userCaption}
-              </p>
-            )}
-            {ambassadorCaption && relayDraft === null && (
-              <p className="self-start whitespace-pre-wrap text-left text-sm leading-relaxed text-fg-secondary">
-                {ambassadorCaption}
-              </p>
+        {captionsOn && captionLog.length > 0 && (
+          <div
+            ref={captionScrollRef}
+            onScroll={onCaptionScroll}
+            className="flex max-h-44 w-full max-w-sm flex-col gap-2 overflow-y-auto px-0.5"
+          >
+            {captionLog.map((c) =>
+              c.role === 'you' ? (
+                <p
+                  key={c.id}
+                  className="max-w-[85%] self-end whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-left text-sm text-fg-inverse"
+                >
+                  {c.text}
+                </p>
+              ) : (
+                <p
+                  key={c.id}
+                  className="max-w-[90%] self-start whitespace-pre-wrap break-words text-left text-sm leading-relaxed text-fg-secondary"
+                >
+                  {c.text}
+                </p>
+              ),
             )}
           </div>
         )}
@@ -359,7 +420,7 @@ export function VoiceSurface({
                 <>Tap the mic (or <kbd className="rounded bg-surface-sunken px-1 text-fg-secondary">Space</kbd>) to start and stop.</>
               )}
             </span>
-            {answerCaption && (
+            {hasAnswer && (
               <button
                 type="button"
                 onClick={() => setRelayDraft(lastTranscript.current)}
