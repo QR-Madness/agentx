@@ -663,7 +663,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openVoiceTab}
         data-on={tab === 'voice' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent/15 data-[on=true]:text-accent"
         title="Immersive voice"
         aria-label="Voice"
       >
@@ -673,7 +673,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openTextTab}
         data-on={tab === 'text' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent/15 data-[on=true]:text-accent"
         title="Text"
         aria-label="Text"
       >
@@ -830,7 +830,7 @@ export function AmbassadorPanel() {
           <button
             type="button"
             onClick={scrollToBottom}
-            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface-overlay px-3 py-1 text-xs text-fg-secondary shadow-md transition-colors hover:text-fg"
+            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface-overlay px-3 py-1 text-xs text-fg-secondary shadow-md backdrop-blur-sm transition-colors hover:border-line-strong hover:text-fg animate-in fade-in-0 slide-in-from-bottom-2 duration-200"
           >
             <ArrowDown size={13} /> Latest
           </button>
@@ -901,7 +901,7 @@ export function AmbassadorPanel() {
               type="button"
               onClick={submit}
               disabled={!input.trim()}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-40"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
               title={mode === 'ask' ? 'Ask the ambassador' : 'Send to the conversation'}
             >
               {mode === 'ask' ? <Send size={14} /> : <CornerUpRight size={14} />}

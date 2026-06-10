@@ -112,7 +112,10 @@ export function AmbassadorConversationSwitcher({
           <MessagesSquare size={12} className="shrink-0 text-fg-muted" />
         )}
         <span className="truncate">{label}</span>
-        <ChevronDown size={13} className="shrink-0 opacity-70" />
+        <ChevronDown
+          size={13}
+          className={`shrink-0 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
       </button>
       {onRename && (
         <button
@@ -126,33 +129,48 @@ export function AmbassadorConversationSwitcher({
         </button>
       )}
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-64 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-line bg-surface-overlay p-1 shadow-lg">
-          {!onActive && activeId && (
-            <button
-              type="button"
-              onClick={() => pick(activeId)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent transition-colors hover:bg-surface-hover"
-            >
-              <CornerUpLeft size={13} className="shrink-0" /> Current conversation
-            </button>
-          )}
-          {items.length === 0 ? (
-            <p className="px-2 py-2 text-xs text-fg-muted">No conversations yet.</p>
-          ) : (
-            items.map((it) => (
-              <button
-                key={it.id}
-                type="button"
-                onClick={() => pick(it.id)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg-secondary transition-colors hover:bg-surface-hover"
-              >
-                <span className="w-3 shrink-0">
-                  {it.id === focusedId && <Check size={13} className="text-accent" />}
-                </span>
-                <span className="truncate">{it.title}</span>
-              </button>
-            ))
-          )}
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-72 max-w-[calc(100vw-2rem)] origin-top-left overflow-hidden rounded-xl border border-line bg-surface-overlay shadow-lg backdrop-blur-sm animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150">
+          <div className="border-b border-line/60 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+              Focus on a conversation
+            </p>
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1.5">
+            {!onActive && activeId && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => pick(activeId)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+                >
+                  <CornerUpLeft size={14} className="shrink-0" /> Jump to current conversation
+                </button>
+                {items.length > 0 && <div className="my-1 h-px bg-line/60" />}
+              </>
+            )}
+            {items.length === 0 ? (
+              <p className="px-2.5 py-4 text-center text-xs text-fg-muted">No conversations open yet.</p>
+            ) : (
+              items.map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => pick(it.id)}
+                  data-on={it.id === focusedId || undefined}
+                  className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-surface-hover data-[on=true]:bg-accent/10"
+                >
+                  <MessagesSquare
+                    size={14}
+                    className="shrink-0 text-fg-muted transition-colors group-data-[on=true]:text-accent"
+                  />
+                  <span className="flex-1 truncate text-fg-secondary group-hover:text-fg group-data-[on=true]:font-medium group-data-[on=true]:text-fg">
+                    {it.title}
+                  </span>
+                  {it.id === focusedId && <Check size={14} className="shrink-0 text-accent" />}
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

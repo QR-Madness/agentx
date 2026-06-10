@@ -237,7 +237,7 @@ export function VoiceBar({
       {error && <p className="text-xs text-error">{error}</p>}
 
       {relayDraft !== null ? (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
           <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-accent">
             <CornerUpRight size={13} /> Draft to {agentName || 'the agent'}
           </div>
@@ -268,7 +268,7 @@ export function VoiceBar({
               type="button"
               onClick={sendRelay}
               disabled={!relayDraft.trim()}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-fg-inverse transition-colors hover:bg-accent-secondary disabled:opacity-40"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
             >
               <Send size={13} /> Send to agent
             </button>
