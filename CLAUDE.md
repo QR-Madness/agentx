@@ -1,6 +1,24 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+It is the **light index**; deep subsystem internals live in [`Development-Notes.md`](Development-Notes.md).
+
+## Documentation Map
+
+Find the right doc before diving in — they're split deliberately so this file stays small.
+
+| Doc | What it is |
+|-----|-----------|
+| **[`Todo.md`](Todo.md)** | Roadmap **index** — Progress Tracker + a map into [`todo/`](todo/) |
+| **[`todo/phases/`](todo/phases/)** | Per-phase work (`completed.md`, `phase-15/16/18-*.md`); **16** holds the live Ambassador planning |
+| **[`todo/backlog/`](todo/backlog/)** | Future work by theme — `foundation`, `workspaces`, `memory-recall`, `procedural`, `retrieval-extraction`, `chat-ux`, `genome-advisor`, `open-platform`, … |
+| **[`Memory-Roadmap.md`](Memory-Roadmap.md)** | Memory-system hardening & experimental roadmap; pairs with the `memory-*` backlog files |
+| **[`Development-Notes.md`](Development-Notes.md)** | Deep subsystem internals + the full API/SSE reference (not auto-loaded — read when working that area) |
+| **[`Release-Notes.md`](Release-Notes.md)** | Human-written notes for the *next* release (see the version rule below) |
+| `OpenApi.yaml` + `docs-site/.../api/endpoints.md` | Authoritative API contract |
+
+> When you change code, update the matching doc in the same change (the backlog file, the
+> roadmap, `endpoints.md`/`OpenApi.yaml`, `architecture/memory-capabilities.md`).
 
 ## Development Notices
 
@@ -43,48 +61,43 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 
 ### Key Backend Modules (`api/agentx_ai/`)
 
-- `kit/translation.py` — `TranslationKit` (NLLB-200) and `LanguageLexicon` (ISO 639 bridging between Level I detection codes and Level II translation codes)
-- `kit/agent_memory/` — Memory system with lazy-loaded connections (`interface.py` → `connections.py` → implementations). `RecallLayer` provides 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query)
-- `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE). Configure via `mcp_servers.json`
-- `providers/` — Abstract `ModelProvider` with LM Studio, Anthropic, OpenAI, OpenRouter, Vercel AI Gateway impls. Provider configs + default models in `models.yaml` (capabilities fetched dynamically); cost estimation in `pricing.py`
-- `config.py` — `ConfigManager` singleton for runtime settings. Persists to `data/config.json` with dot-notation access and env var fallback
-- `drafting/` — Speculative decoding, multi-stage pipelines, N-best candidate generation. Strategies in `drafting_strategies.yaml`
-- `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection. `orchestrator.py` selects strategy by task type
-- `agent/` — `Agent` orchestrates reasoning + drafting + tools. `TaskPlanner` decomposes (with goal tracking); the chat path composes the plan with the **main agent model** via `compose_with_model` (full turn context + structured JSON; model opts out with `{"plan": null}`), gated by a cheap `_assess_complexity` heuristic. Legacy `plan()` + `SUBTASK`-regex path remains for non-chat callers. `SessionManager` for conversations.
-- `agent/profiles.py` — `ProfileManager` for agent profile CRUD (stored in `data/agent_profiles.yaml`). Each profile has a Docker-style `agent_id` (e.g. "bold-cosmic-falcon") and `self_channel` (`_self_{agent_id}`). A profile's **`kind`** is `agent` or `ambassador` with **separate defaults** (`is_default`/`get_default_profile`; `is_default_ambassador`/`get_default_ambassador`). Ambassadors are **excluded from chat** — `get_default_profile`, routing lookups (`get_profile_by_agent_id`/`get_profile_by_name`), and `delegate_to` all filter to `kind=='agent'`. `_ensure_ambassador_defaults()` seeds a default ambassador and migrates legacy ones **without ever converting the default agent**.
-- `agent/tool_output_compressor.py`, `agent/tool_output_chunker.py` — LLM task-aware compression for oversized tool outputs; section detection, JSON path queries, semantic search over stored outputs
+One-liners for orientation. **Deep internals for the starred subsystems are in
+[`Development-Notes.md`](Development-Notes.md).**
+
+- `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 detection↔translation code bridging)
+- `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query). ★
+- `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE); configure via `mcp_servers.json`
+- `providers/` — abstract `ModelProvider` (LM Studio/Anthropic/OpenAI/OpenRouter/Vercel); `models.yaml` configs + defaults, `pricing.py` cost. Resolution/fallback ★
+- `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback
+- `drafting/` — speculative decoding, multi-stage pipelines, N-best candidates; `drafting_strategies.yaml`
+- `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection; `orchestrator.py` picks strategy by task type
+- `agent/` — `Agent` orchestrates reasoning + drafting + tools. `TaskPlanner` decomposes; the chat path composes the plan with the **main agent model** via `compose_with_model` (structured JSON; opts out with `{"plan": null}`), gated by `_assess_complexity`. Legacy `plan()` + `SUBTASK`-regex path for non-chat callers. `SessionManager` for conversations.
+- `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`). Each profile has a Docker-style `agent_id` + `self_channel` (`_self_{agent_id}`). `kind` ∈ `agent`|`ambassador` with **separate defaults**; ambassadors are **excluded from chat** (default/routing/`delegate_to` all filter `kind=='agent'`). `_ensure_ambassador_defaults()` seeds/migrates without ever converting the default agent.
+- `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs (section detection, JSON-path, semantic search)
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
-- `logging_kit/` — centralized logging. `configure_logging()` (called from `settings.py` with `LOGGING_CONFIG=None`) installs a root `QueueHandler` → `QueueListener` feeding console (rich color + category badge + run tag via `handler.py`/`highlighters.py`/`categories.py`), an in-memory `RingBufferHandler` (backs `/api/logs`), and a **daily-rotating** gzip `archive.py` file (`DailyArchiveHandler`, midnight/UTC → `agentx-YYYY-MM-DD.log.gz`). When auth is set up, completed days are **sealed** with envelope AES-256-GCM by `archive_crypto.py`: a random DEK (encrypts archives) wrapped by a Scrypt KEK from the login password, stored in `data/logs/keyring.json`. The DEK is unwrapped + cached in process memory on login (sealing is lazy — the hot path never needs the key; days that roll while locked stay redacted-plaintext `.gz` until the next `seal_pending`). Password change re-wraps the DEK (`rewrap_dek`, O(1)); `reencrypt_all` is the deep-rotation path. Retention (`prune_old`, default 30 days) is ours, not `backupCount`. Auth-disabled → plaintext-gzip fallback. Ops: `task logs:keys:status|seal|rotate-keys|rotate-keys:deep` (cmd `rotate_log_keys`). `context.py` stamps a per-turn `run_id` (reuses `streaming/status.py::current_run_id`); `redaction.py` scrubs secrets at capture; `llm_cards.py` renders compact/full LLM request logs; `banner.py` is the startup banner. All behavior is governed by `AGENTX_LOG_*` flags (`flags.py`; decorations on by default, off → historical plain output). The client mirrors categories in `lib/logCategories.ts`.
+- `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★
+- `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + rolling summary + checkpoints/scratchpad). ★
+- `agent/ambassador.py` (+ `ambassador_storage.py`) — parallel briefer/relay; sidecar-only, never pollutes the transcript. ★
+- `logging_kit/` — centralized logging (queue handler → console/ring-buffer/`/api/logs` + daily encrypted archives), `AGENTX_LOG_*` flags. ★
 
-#### Prompts (`prompts/`)
-
-`PromptManager` singleton composes prompts. The **conversational global system prompt** comes from a durable **layered stack** (`layers.py`: `LayerStore` over `ConfigManager` key `prompts.layers`; `BUILTIN_LAYERS` ship a versioned `default` overlaid by the user's `override` — `effective = override ?? default`; `update_available` diffs a released default bump against `base_version`). `compose_prompt` sources global content from `LayerStore.compose()` (edits persist across restarts) and only attaches a prompt-profile's sections for an explicit non-`is_default` selection (default profile's sections fold into the stack — no double-injection). Legacy `/prompts/global*` are back-compat shims. This stack governs **only** the conversational persona — internal *feature* prompts (reasoning, planner `decompose`, extraction, compression) come from the separate `SystemPromptLoader` (`loader.py`; optional `data/system_prompts.yaml`). **Placeholders**: `placeholders.py::substitute_placeholders` replaces a whitelist (`{agent_name}`/`{date}`/`{time}`) at the end of `compose_system_prompt`; client mirrors it in `lib/promptPlaceholders.ts`.
-
-#### Conversation Context (`agent/context.py`)
-
-Per-turn context assembled by `ContextManager.assemble_turn_context`: keep the SYSTEM preamble + as much **recent verbatim transcript** as fits `context.verbatim_budget_ratio` (0.7) of the model's real window; drop oldest overflow (covered by the rolling summary). In-memory `SessionManager` is **rehydrated** from durable `conversation_logs` on a cold session (`conversation_history.py::hydrate_session_from_history`). The rolling summary is **context-window-triggered** (`maybe_update_summary`, token-based) and **persisted** in Redis (`conversation_summary_storage.py`). Checkpoints/scratchpad (`checkpoint_storage.py`) are Redis-keyed per conversation, re-injected each turn; eviction is anchor-preserving (keeps the first), and the `checkpoint` tool has a `replace` mode. After a turn, `views.py::generate_sse` persists via pure builders in `streaming/persistence.py` (user → tool → steer → assistant Turns); a hard Stop (`GeneratorExit`) persists the **partial** turn (`metadata.interrupted`); folded steers persist as `user` turns (`metadata.steered`). **Thinking/CoT is process, not result**: it streams live (shown collapsed in the client) but is **never persisted** to `conversation_logs`. Old turns persisted before this still restore stored `metadata.thinking`.
-
-#### Ambassador (`agent/ambassador.py` + `ambassador_storage.py`, Phase 16.6)
-
-A dedicated agent running *parallel* to a conversation that briefs the user on a turn **without polluting the main transcript** (the load-bearing invariant). `AmbassadorService.brief_turn` resolves the default ambassador (`get_default_ambassador()`; an `AgentProfile` with `kind='ambassador'`, hidden from chat). The profile's `system_prompt` is the personality voice; functional personas come from `AmbassadorConfig.{briefing,qa,draft}_persona` overrides ?? code defaults. Grounds **read-only** via `load_recent_turns`, runs `resolve_with_fallback` + token-streams via `provider.stream` (never raises; cancel settles sidecar to `cancelled`), emits namespaced `ambassador_*` SSE. The persona **speaks TO the reader** (second person, names the agent). The briefing grounds on the turn's substance via client-gathered `artifacts` (tool calls / sources / exhibits, `lib/ambassadorTurn.ts::gatherTurnContext`). Free-form questions (`answer_question`) and spoken questions (`route_voice_command`'s `answer` action) share **one agentic answer core** (`_agentic_answer`): a single streaming `provider.stream` loop that offers a **read-only tool belt** (`agent/ambassador_tools.py`: `summarize_conversation`/`explore_conversation`/`read_conversation`/`list_conversations` — SELECT-only, `execute_tool` never raises) — a round carrying `tool_calls` runs the tool (emits `ambassador_tool_call`/`_result` SSE) and loops; a content-only round **is** the streamed answer. Bounded by `_MAX_TOOL_ROUNDS` (last round forces tools off); never-raises, degrading to a grounded one-shot. **Tools are always on** (no gate — experimental app). **Grounding is tool-first**: the prompt pre-loads only `_LEAN_GROUNDING_TURNS` recent turns, so the ambassador *reads* the conversation (or surveys others via `list_conversations` → `read_conversation`) for real depth — this is why the tools actually fire. **Conversational memory**: prior settled Q&A is fed back as dialogue turns (`_thread_history`, read-only over `qa:`) so follow-ups have context (text **and** voice — the ambassador's *own conversation*, never mixed into the main transcript). Provider resolution is DRY'd through `_resolve_answerer`; the answer persona (`_build_answer_persona` + `_answer_persona` + `_TOOLS_NOTE`) states its capabilities so "what can you do?" is answered right. Tool reads name **each conversation by its own producing agent** (`conversation_history.load_recent_labeled_turns` / the survey's `agents` column read `metadata->>'agent_name'`), so a cross-conversation survey never mislabels one session's agent with the active one. The client panel header shows the **ambassador profile's own name + avatar** (`AmbassadorPanel`'s `AmbassadorMark` takes the profile `avatar`), since the ambassador is a customizable profile. The panel's **focus is independent of the chat tab** (`focusedConversationId`, snapshotted from the active tab on open, then "stays put"; an `AmbassadorConversationSwitcher` over the open tabs + a "current conversation" jump change it) — and it's told the **active conversation** as ambient context (`active_conversation` {id,title} on ask/voice → `_active_conversation_note`), so it knows where the person is *now* even when focused elsewhere. **Loading a conversation is pure display** — `AmbassadorPanel`'s voice auto-speak fires only for items seen `streaming` *this session* (`locallyStreamedRef`), so switching/reopening never re-synthesizes TTS or speaks history (the earlier bug billed for it). The tool belt's "this conversation" is the **focused** one (`execute_tool(focused_conversation_id=…)`); the answer persona is **multi-agent** (names each agent from its conversation, not one global "active agent"). `logging_kit/async_noise.py::install` (called from the client-abort-prone ambassador async views) downgrades Python 3.14's benign `CancelledError exception in shielded future` (a client aborting an in-flight TTS/SSE request) to debug while delegating all other loop errors. Also does **outbound relay** (`draft_relay_message`: shapes a rough intent into a first-person message the user reviews and relays into the conversation as a real **user** turn via `ConversationContext.relayToConversation` — the ambassador never speaks into the transcript as itself). Output persists ONLY to the Redis **sidecar** — never `conversation_logs`/`conv_summary:`. **Slice 1b** unified briefings + Q&A into one ordered **thread** ("Inquiry") under the `amb_thread:{thread_id}` family (entry-oriented — one record per ambassador turn carrying its optional `question`; ordered by `created_at`; `thread_id` defaults to the conversation id) carrying its own `title`. The pre-1b per-family public API (`create_qa`/`set_qa_answer`/`set_summary`/`get_qa`/`list_briefings`/…) is preserved as **thin projections** over the entry store, and legacy `ambassador:` records still replay (one-place fold in `list_thread`). Tool-call chips are **persisted on the entry** (`set_entry_tool_calls`, called inside `_agentic_answer`) so they survive a reload. `GET/PATCH /api/agent/ambassador/thread/{thread_id}` replays (`thread_payload` → `{thread_id, title, entries}`) / renames (`set_thread_title`); the `{conversation_id}` endpoint is a back-compat shim. Client: `AmbassadorContext.threadFor` renders one **Inquiry** stream (briefings as their own turns via `BriefingItem`), with `titleFor`/`renameThread`/`clearThread` driving the switcher rename + a `⋯` menu (brief / rename / clear). Runs ride detached-run infra via `start_chat_run(indexed=False)`. **The ambassador is a parallel operator, not a turn-by-turn briefer** (the UI is deliberately *boringly stable*): `AmbassadorPanel` is **de-coupled from turns** — no Turns strip. The panel is conversation-level — **"Brief this conversation"** (`briefConversation` → an `ask` with a summary intent) + starter chips + free-form ask/relay; the ambassador scopes to conversations through its read-only tools (it never receives per-turn `artifacts`). Per-turn work is **CC**: the chat's `MessageActions` button (`ChatPanel.handleAmbassador`) forwards a turn *into* the Inquiry as an `ask` ("brief me on this turn: …") — like an email into the thread — and opens the panel. The header is **one stable compact command bar in both modes** (voice only adds a subtle accent tint — never a layout morph, so the Voice/Text toggle never relocates and can't strand you); the body **auto-scrolls** (`useStickyScroll` + jump-to-latest); answers carry **copy** + relative timestamps. **Voice and text share one body** — the Inquiry stream *is* the transcript (a spoken question persists as a `qa:` entry), so only the footer differs: the text composer ↔ `components/ambassador/VoiceBar.tsx` (PTT mic + `voiceCommand` → spoken answer/relay-confirm + settings popover). The old full-screen `VoiceSurface` (orb + separate caption log) and `lib/voiceCaptions.ts` were retired. **Voice (TTS):** `AmbassadorService.synthesize` speaks a briefing/answer via the profile's `AmbassadorConfig.{voice_mode,speech_model,voice,speech_speed}` block — `ModelProvider.synthesize_speech` (only `OpenRouterProvider` implements it, via OpenAI-compatible `/audio/speech` → MP3 bytes; base raises `NotImplementedError`); resolved **strictly** (no chat fallback) with precedence override → profile → `config.ambassador.*` → shipped default `openrouter:microsoft/mai-voice-2`, degrading to a typed `SpeechUnavailable` (→ `422`) when unconfigured. The client plays it through a framework-agnostic `lib/audio.ts::SpeechPlayer` singleton (blob-URL cache + playback queue + autoplay-unlock) behind `hooks/useSpeech.ts`; `AmbassadorPanel` adds per-item speaker buttons; a voice-enabled ambassador (`ambassador.voice_mode`) **leads with a Voice tab** ([Voice | Text]) — the immersive `components/ambassador/VoiceSurface.tsx` (Discord-call layout: PTT mic + captions + settings popover). **STT (voice input):** `AmbassadorService.transcribe` → `ModelProvider.transcribe_speech` (OpenRouter `/audio/transcriptions`, base64; default `openrouter:openai/whisper-1`); client `lib/audioRecorder.ts` captures **raw PCM via Web Audio → WAV** (NOT MediaRecorder — webkit2gtk's is broken) behind `hooks/useDictation.ts`. **Voice command routing:** a transcript → `route_voice_command` first **classifies intent** (`_voice_command_persona`, strict JSON `{action,text}`, defensive parse → `answer` fallback); an `answer` is then produced by the shared agentic core (`_answer_to_text` → `_agentic_answer`, so spoken questions get the **same tools + continuity** as typed ones, persisted `qa:`), while a `relay` returns the drafted message the user confirms in a strip and sends via `ConversationContext.relayToConversation` (never auto-sent). VoiceSurface: hold-to-talk default + tap-to-toggle (localStorage `agentx:voice:pttMode`), barge-in (speak stops on record), instant transcript echo, captions both ways, toggle max-duration safety. Per-model **voice dropdowns** via `lib/voiceCatalog.ts` + `components/common/VoicePicker.tsx` (curated set + free-text). Tauri mic perms: CSP `media-src`, macOS `Info.plist`/`entitlements.plist`, Linux webkit2gtk hook `src-tauri/src/lib.rs::enable_webview_microphone` (enables `enable-media-stream` + auto-grants user-media). **Deferred** (Todo §16.6): floating CC sticky player, recording persistence/history/GC, streaming answers, cross-agent delegation (relay JSON is target-extensible).
+★ Plus the **memory subsystems** (extraction pipeline, procedural memory, context gating, web-research tools, model resolution & fallback, multi-agent attribution) and the **full API + chat-stream SSE reference** — all in [`Development-Notes.md`](Development-Notes.md).
 
 ### Key Client Patterns (`client/src/`)
 
-- 3 primary pages: Start, Dashboard, AgentX — routed via `RootLayout` + `TopBar`; plus gate pages `AuthPage` (when `AGENTX_AUTH_ENABLED`) and `VersionMismatchPage`
-- Conversations: the chat page (`pages/AgentXPage.tsx`) is a **left `ConversationSidebar` rail + `ChatPanel`** (the old TopBar tab strip was removed). The rail is collapsible (`agentx:conv-sidebar-collapsed`) and **resizable** (`agentx:conv-sidebar-width`), presentation over `ConversationContext` (the tab/session/streaming model is unchanged — "open conversations" are the top rows). Logic is shared via **`hooks/useConversationList.ts`** (normalizes tabs + server conversations into one `ConversationItem[]`, partitions by meta, owns selection/bulk) + **`components/chat/ConversationList.tsx`** + **`ConversationRow.tsx`** (the `⋯` actions menu), reused by the mobile **Conversations drawer** (`SURFACES.conversations`). Per-conversation management (pin/archive/icon/color/group + multi-select bulk) is stored client-side per-server in **`lib/conversationMeta.ts`** (an extensible store that folded in the old title-override shim and reserves `workspaceId`/`fileRefs` for future workspace/file linking; reactive via `useConversationMeta`/`useSyncExternalStore`). Destructive actions use the themed **`ui/ConfirmDialog`** (`useConfirm()` + `ConfirmProvider` at the app root) — the replacement for native `window.confirm`.
-- Settings, Tools, **Memory** open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources remain right-side drawers
-- **Command palette is the primary command surface** (the TopBar "Workspace" overflow was removed). `components/common/CommandPalette.tsx` is a thin `cmdk` renderer over the **`hooks/useCommands.tsx`** registry (grouped: Navigation/Conversation/Workspace/Theme/Account; theme switching is the only dynamic group; `lib/recentCommands.ts` MRU). Both the palette and the TopBar's live icons open drawers/modals through one shared **`lib/surfaces.ts`** (`SURFACES.*` `openModal` descriptors) so the two can't drift. The toolbar's `⌘K` is a labeled "Search…" pill that dispatches `agentx:toggle-command-palette` (RootLayout owns the global key listener + open state)
-- Multi-server support: per-server settings in localStorage (`agentx:servers`, `agentx:server:{id}:meta`, `agentx:activeServer`). `ServerContext` provides app-wide server state; `lib/api` is the typed API client (facade over domain modules in `lib/api/`); `lib/hooks.ts` has React data hooks built on the `useApi<T>` factory
-- `AgentProfileContext` manages agent profiles
-- **Agent-profile editor** (`unified-profile-editor/`): control-center with a hero identity header over a `ControlCard` grid per tab. Avatars in `common/AvatarPicker` (searchable modal over `lib/avatars.ts`). Deterministic signature color from `lib/agentAccent.ts::agentAccent(agent_id)`. Shared primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`. Field logic + `useProfileEditorState` (autosave) unchanged — redesign is presentation only.
-- **Prompt Stack editor** (Settings → Intelligence → "System Prompt", `unified-settings/sections/SystemPromptSection.tsx` + `prompt-stack/{LayerCard,ComposedPreview,LayerDiffModal}`): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` drag-reorder, debounced-autosave inline edit, reset/diff for built-ins, live preview via `lib/promptStack.ts::composeStack` (client mirror of the backend join). Prompt Library snippets insert as custom layers; the prompt **enhancer** (`/api/prompts/enhance`) rewrites a layer in place (with undo).
-- Themes (Cosmic dark, warm Light, monochrome Professional) are token-driven: each a `ThemeDefinition` in `lib/theme.ts` (~80 CSS vars) applied to `:root` by `ThemeProvider`. Add a theme = new `ThemeDefinition` + register in `THEMES` + extend `ThemeName`. Glassmorphism + Lucide-react icons.
-- API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`. Surface failures with `useNotify().notifyError(err)` (toasts via `contexts/NotificationContext` + `ui/Toaster`); keep inline errors for form-field validation.
+- 3 primary pages (Start, Dashboard, AgentX) routed via `RootLayout` + `TopBar`; gate pages `AuthPage` (`AGENTX_AUTH_ENABLED`) + `VersionMismatchPage`.
+- Chat page (`pages/AgentXPage.tsx`) = left `ConversationSidebar` rail + `ChatPanel` (collapsible/resizable, presentation over `ConversationContext`). Shared list logic in `hooks/useConversationList.ts` + `components/chat/ConversationList.tsx`/`ConversationRow.tsx`, reused by the mobile Conversations drawer. Per-conversation meta (pin/archive/icon/color/group/bulk) in `lib/conversationMeta.ts` (reserves `workspaceId`/`fileRefs`). Destructive actions use `ui/ConfirmDialog` (`useConfirm()`), not native `confirm`.
+- Settings, Tools, **Memory** open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources are right-side drawers.
+- **Command palette is the primary command surface** — `components/common/CommandPalette.tsx` (thin `cmdk`) over the `hooks/useCommands.tsx` registry; palette + TopBar icons share `lib/surfaces.ts` (`SURFACES.*`) so they can't drift. `⌘K` dispatches `agentx:toggle-command-palette` (RootLayout owns it).
+- Multi-server: per-server settings in localStorage (`agentx:servers`/`…:meta`/`activeServer`); `ServerContext` app-wide; `lib/api` typed client (facade over `lib/api/`); `lib/hooks.ts` data hooks on the `useApi<T>` factory. `AgentProfileContext` manages profiles.
+- **Agent-profile editor** (`unified-profile-editor/`): hero identity header over a `ControlCard` grid; avatars in `common/AvatarPicker` (`lib/avatars.ts`); signature color from `lib/agentAccent.ts`. Primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`.
+- **Prompt Stack editor** (Settings → Intelligence → "System Prompt"): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` reorder, debounced autosave, reset/diff, live preview via `lib/promptStack.ts::composeStack`. Library snippets insert as custom layers; the enhancer (`/api/prompts/enhance`) rewrites a layer in place.
+- Themes (Cosmic dark, warm Light, monochrome Professional) are token-driven `ThemeDefinition`s in `lib/theme.ts` (~80 CSS vars) applied by `ThemeProvider`. Add a theme = new definition + register in `THEMES` + extend `ThemeName`.
+- API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`; surface via `useNotify().notifyError(err)` (toasts); inline errors only for form-field validation.
 
 #### Styling (Tailwind v4 + design tokens)
 
 - **Tailwind v4** via `@tailwindcss/vite`. CSS entry `src/App.css` imports only the `theme` + `utilities` layers — **Preflight is intentionally disabled** so it doesn't clobber `styles/base.css` (imported into `base`; utilities out-rank it, unlayered per-component CSS out-ranks utilities).
-- **Design tokens** in `lib/theme.ts`, injected at runtime by `ThemeProvider` as CSS vars; `App.css` bridges them into Tailwind via `@theme inline`. Use **semantic utilities**, not raw palette: `bg-surface-base|raised|overlay|sunken|hover`, `text-fg|fg-secondary|fg-muted|fg-inverse`, `border-line|line-strong`, `text-accent|bg-accent(-secondary|-tertiary)`, feedback `text-error|success|warning|info`. Spacing tokens `--space-*` for hand-written CSS. Brand shadows stay `var(--shadow-md)` (not bridged).
+- **Design tokens** in `lib/theme.ts`, injected at runtime by `ThemeProvider` as CSS vars; `App.css` bridges them via `@theme inline`. Use **semantic utilities**, not raw palette: `bg-surface-base|raised|overlay|sunken|hover`, `text-fg|fg-secondary|fg-muted|fg-inverse`, `border-line|line-strong`, `text-accent|bg-accent(-secondary|-tertiary)`, feedback `text-error|success|warning|info`. Spacing tokens `--space-*` for hand-written CSS. Brand shadows stay `var(--shadow-md)`.
 - **Components**: prefer Tailwind for new/shared UI; keep per-feature CSS for complex panels. Shared primitives in `components/ui/` follow shadcn (CVA + `cn()` in `lib/utils.ts`, exported from `components/ui/index.ts`). Radix enter/exit animations from `tw-animate-css`.
 
 ## Development Commands
@@ -152,81 +165,12 @@ task models:download    # Pre-download HuggingFace models (NLLB-200, language de
 
 ## API Endpoints
 
-Base URL: `http://localhost:12319/api/`
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health` | GET | Health check (add `?include_memory=true` for DB status) |
-| `/api/tools/language-detect-20` | GET/POST | Detect language of text |
-| `/api/tools/translate` | POST | Translate (`{"text": "...", "targetLanguage": "fra_Latn"}`) |
-| `/api/mcp/servers` `/api/mcp/tools` `/api/mcp/resources` | GET | List MCP servers / tools / resources (filter `?server=`) |
-| `/api/mcp/connect` `/api/mcp/disconnect` | POST | Connect/disconnect (`{"server": "name"}` or `{"all": true}`) |
-| `/api/providers` `/api/providers/models` `/api/providers/health` | GET | List providers / models (`?provider=`) / health |
-| `/api/agent/run` | POST | Execute a task with the agent |
-| `/api/agent/chat` | POST | Conversational interaction with session |
-| `/api/agent/chat/stream` | POST | Streaming chat via SSE (see below) |
-| `/api/agent/chat/stream/attach` | GET | Re-attach to a detached run (`?run_id=`): replays buffered events + follows live; `run_missing` if buffer expired |
-| `/api/agent/chat/runs` | GET | List the caller's detached chat runs (newest first) for recovery surfaces |
-| `/api/agent/chat/runs/{run_id}/cancel` | POST | Cooperatively cancel a detached chat run |
-| `/api/agent/chat/runs/{run_id}/steer` | POST | Live-steer a running turn (`{message, mode?}`): queued and folded in at the next safe boundary as a fresh user turn; owner-only; echoes a `steer` event; persisted as a `user` turn with `metadata.steered` |
-| `/api/agent/ambassador/brief-turn` | POST | Start a parallel briefing of one turn (`{conversation_id, message_id, assistant_text, user_text?, agent_name?, artifacts?}`) → `{run_id}`. Detached + `indexed=False`; writes only to the `ambassador:` sidecar |
-| `/api/agent/ambassador/ask` | POST | Free-form question (`{conversation_id, qa_id, question, agent_name?, artifacts?}`) → `{run_id, qa_id}`; persists under `qa:` |
-| `/api/agent/ambassador/draft` | POST | Outbound-relay draft (`{conversation_id, intent, agent_name?, artifacts?}`) → `{draft}`; client relays as a real user turn |
-| `/api/agent/ambassador/voice-command` | POST | Voice-mode intent routing (`{conversation_id, transcript, agent_name?, artifacts?}`) → `{action: answer\|relay, text, qa_id?}`; ambassador answers (persists `qa:`) or drafts a relay; never fails (degrades to a spoken notice) |
-| `/api/agent/ambassador/speak` | POST | TTS: synthesize a briefing/answer (`{text, agent_profile_id?, voice?, model?}`) → raw MP3 (`audio/mpeg`) via OpenRouter `/audio/speech`; strict speech-model resolve, graceful `422` when unconfigured |
-| `/api/agent/ambassador/transcribe` | POST | STT: transcribe push-to-talk audio (`{audio: base64, format?, agent_profile_id?, model?, language?}`) → `{text}` via OpenRouter `/audio/transcriptions`; strict STT-model resolve, graceful `422`; transcript fills the reviewable input (never auto-sent) |
-| `/api/agent/ambassador/stream` | GET | Tail a briefing/Q&A run (`?run_id=`): `ambassador_start`/`_chunk`/`_done`/`_error` SSE |
-| `/api/agent/ambassador/thread/{thread_id}` | GET/PATCH/DELETE | Replay one unified ambassador thread ("Inquiry") `{thread_id, title, entries}` (briefings + Q&A as one ordered list, persisted tool chips) / rename (`{title}`) / clear it. `thread_id` defaults to the conversation id |
-| `/api/agent/ambassador/{conversation_id}` | GET | Back-compat shim: replay as `{briefings, qa}` (now projected from the unified thread) |
-| `/api/agent/status` | GET | Current agent status |
-| `/api/prompts/profiles` `/api/prompts/profiles/{id}` | GET | List prompt profiles / detail with composed preview |
-| `/api/prompts/global` `/api/prompts/global/update` | GET/POST | Back-compat shims over the layer stack |
-| `/api/prompts/layers` | GET/POST | List the stack (`{layers, composed}`) or create a custom layer (`{title, content?}`) |
-| `/api/prompts/layers/reorder` | POST | Reorder (`{order: [id, …]}`) |
-| `/api/prompts/layers/{id}` | PATCH/DELETE | Update (`{content?, title?, enabled?}`, content sets override) or delete a custom layer |
-| `/api/prompts/layers/{id}/reset` `/acknowledge` | POST | Reset a built-in's override / mark a bumped default seen |
-| `/api/prompts/sections` `/compose` `/mcp-tools` | GET | List sections / preview composed prompt / auto MCP-tools prompt |
-| `/api/memory/channels` `/entities` `/entities/graph` | GET | List channels / entities (`?channel=`,`?type=`) / entity graph |
-| `/api/memory/facts` | GET | List facts (`?channel=`,`?entity_id=`); each carries `entities[]` for its ABOUT'd entities |
-| `/api/memory/facts/{id}/entities` | POST/DELETE | Link/unlink an entity (`{entity_id}`, ABOUT edge) |
-| `/api/memory/strategies` `/procedures` `/stats` | GET | Procedural strategies / distilled procedures / stats |
-| `/api/memory/checkpoints` | GET/DELETE | List/clear a conversation's checkpoints (`?conversation_id=`) |
-| `/api/memory/user-history` | POST | Browse the user's past turns + top facts (`{topic?, limit?, channel?}`) |
-| `/api/memory/recall-settings` `/settings` | GET/POST | Get/update recall-layer / memory settings |
-| `/api/memory/consolidate` `/reset` | POST | Trigger consolidation / reset (with confirmation) |
-| `/api/memory/export` `/import` | POST | Round-trippable JSON export / idempotent import (`{data, mode: merge\|replace, channel?}`); also `task memory:export`/`import` |
-| `/api/metrics/usage` | GET | Aggregated token/cost/latency from `conversation_logs` (`?days=` 1–90, default 14) |
-| `/api/jobs` `/jobs/{id}` | GET | List background jobs / detail |
-| `/api/jobs/clear-stuck` `/jobs/{id}/run` `/jobs/{id}/toggle` | POST | Clear stuck / run / enable-disable |
-| `/api/config` `/config/update` `/config/context-limits` | GET/POST/GET | Runtime config (secrets redacted) / update (`{"key": "dot.path", "value": ...}`) / per-model limits |
-| `/api/logs` `/logs/stream` `/logs/categories` | GET | Ring-buffer log records (filters `?level=&category=&run_id=&search=&since=&limit=`) / SSE live tail / category registry. Gated by `AGENTX_LOG_API_ENABLED`; auth-gated when `AGENTX_AUTH_ENABLED` |
-| `/api/logs/archive` `/logs/archive/status` `/logs/archive/{name}` | GET | List daily archive segments (`data/logs/agentx-YYYY-MM-DD.log.gz[.enc]`; sealed `.enc` carry `encrypted:true`) / vault state (keyring present, `unlocked`, sealed/pending counts, retention) / download a segment (sealed ones decrypt on the fly; `423` when locked, `?raw=true` for ciphertext) |
-
-Additional endpoint groups (added since v0.18 — see `urls.py` for the full set):
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auth/{status,setup,login,logout,session,change-password}` | GET/POST | Optional session auth (Phase 17, gated by `AGENTX_AUTH_ENABLED`) |
-| `/api/agent/profiles`, `/api/agent/profiles/{id}` | GET/PATCH/DELETE | Profile CRUD; `.../set-default` (agent), `.../set-default-ambassador`. Profiles carry `kind` (`agent`\|`ambassador`) |
-| `/api/alloy/workflows`, `/api/alloy/workflows/{id}` | GET/POST/PATCH/DELETE | Multi-agent (Agent Alloy) workflow CRUD |
-| `/api/chat/background`, `/api/chat/background/{job_id}` | POST/GET | Queue + poll background conversations |
-| `/api/tool-outputs`, `/api/tool-outputs/{key}` | GET/DELETE | Stored tool-output retrieval |
-| `/api/prompts/templates*`, `/api/prompts/enhance` | GET/POST/PUT/DELETE | Prompt template CRUD + LLM prompt enhancer |
-| `/api/conversations`, `/api/conversations/{id}/messages` | GET | Conversation history |
-| `/api/agent/plans/cancel` | POST | Cancel active plan execution |
-| `/api/agent/plans/{plan_id}/status` | GET | Read Redis plan state (`?session_id=`); `resumable` flags an `active`/`interrupted` plan with work left; `ttl_seconds` = resumable lifetime. On load the client auto-appends a `choice` exhibit (`exh_resume_{plan_id}`) nudging the model to continue (a normal turn, not a `PlanExecutor` re-run) |
-| `/api/agent/plans/{plan_id}/resume` | POST | Resume an interrupted plan (`{session_id, agent_profile_id?, model?}`): rebuilds from Redis and streams only not-yet-terminal subtasks (SSE, first event `plan_resumed`) as a detached run. Single-agent only; 404 when not resumable |
-
-### `/api/agent/chat/stream` (SSE)
-
-The main streaming chat path. Runs **detached server-side** (survives client disconnect); first event `run_started` carries `run_id`. Events: `run_started, start, chunk, status, steer, tool_call, tool_result, exhibit, done, error, close`.
-
-- **Routing**: optional `target_agent_id` routes to a specific agent by `agent_id` (priority `workflow_id > target_agent_id > agent_profile_id > default`). An inline `@agent-id`/`@name` in the message overrides the selection (suppressed in workflows); the client composer offers `@`-autocomplete. With `alloy.allow_adhoc_delegation`, the agent gets a `delegate_to` tool (depth-limited, no self-delegation; emits `delegation_*` events).
-- **Exhibits**: the internal `present_exhibit` tool emits a typed `exhibit` event (declarative Gallery→Exhibit→Element tree) instead of tool cards. Element types: `mermaid`, `choice` (clicking submits as the next user turn), `table` (sortable/scrollable/expand-to-modal), `citation` (active foldable sources vs passive links). A successful `web_search` auto-emits a passive `citation` exhibit (deduped by URL; id `exh_src_<tool_call_id>`; toggle `citations.auto_capture_web_search`).
-- **Status events** (`{phase, label, detail?, group?, progress?}`): a coarse per-phase activity feed (`recalling`/`composing`/`thinking`/`running_tool`/`reading`). Rides the run's Redis event bus (not generator yields) via an ambient `emit_status()` (`streaming/status.py`, run resolved from a `ContextVar`), so it replays on re-attach.
-- **Steer**: a live `steer` event carries a user message folded into the running turn.
-
-**Plan termination & cancellation.** `PlanExecutor` wraps its subtask loop in `try/finally`: a hard Stop (`GeneratorExit`) mid-subtask resets the in-flight subtask to `pending` and marks the plan **`interrupted`** (resumable) instead of stuck `running`; cooperative cancel marks `cancelled` + `clear_cancel`s the flag. The Stop handler in `views.py` persists the interrupted plan card faithfully. Cancellation is **cooperative** (GeneratorExit lands at a `yield`), made prompt by capping tool wall-clock (`web_search` bounded by `search.timeout`, default 15s). Tool execution stays **synchronous** (off-thread/`asyncio` deadlocked Stop).
+Base URL: `http://localhost:12319/api/`. The **full endpoint table + the `/api/agent/chat/stream`
+SSE contract** live in [`Development-Notes.md`](Development-Notes.md); the authoritative spec is
+`OpenApi.yaml` + `docs-site/.../api/endpoints.md`. Headline groups: `/health`, `/tools/*`
+(translate/detect), `/mcp/*`, `/providers/*`, `/agent/{run,chat,chat/stream,status,profiles,plans,
+ambassador/*}`, `/alloy/workflows`, `/prompts/*` (layers/profiles/templates/enhance), `/memory/*`,
+`/metrics/usage`, `/jobs/*`, `/config*`, `/logs/*`, `/auth/*`, `/conversations`.
 
 ## Environment Configuration
 
@@ -242,45 +186,17 @@ Copy `.env.example` to `.env`. Key vars: `NEO4J_PASSWORD`, `POSTGRES_PASSWORD` (
 
 ## Agent Memory Interface
 
-`AgentMemory` (`kit/agent_memory/memory/interface.py`) is the unified API.
-
-**Core**: `store_turn(turn)` (episodic + working), `remember(query, top_k)` (turns/facts/entities/strategies), `learn_fact(claim, source, confidence)`, `upsert_entity(entity)`, `record_tool_usage(...)`, `reflect(outcome)` (async consolidation).
-
-**Goal tracking**: `add_goal`, `get_goal`, `complete_goal(goal_id, status, result)` (`completed`/`abandoned`/`blocked`), `get_active_goals`. `TaskPlanner.plan()` accepts an optional `memory` param: creates a `Goal` for the main task, stores it on `TaskPlan.goal_id`; `Agent.run()` calls `complete_goal()` on success/failure.
-
-### Extraction Pipeline (`extraction/service.py`)
-
-LLM-based extraction. `check_relevance_and_extract(text)` combines relevance check + extraction in one call (~75% fewer calls); `check_relevance_and_extract_assistant(text)` does self-knowledge extraction (certainty: definitive/analytical/speculative). Both accept a `roster` (`[{agent_id, name}]`) + `addressed_agent_id` so facts attribute to a *specific* agent: the LLM names the agent in prose (`subject_agent`), `_resolve_agent_attribution` resolves name → `agent_id` (durable truth, stored transiently as `subject_agent_id`); unknown names demote to `third_party` (never fabricate an agent_id). `check_contradictions(claim, facts)` is three-layer fact verification: hash gate → semantic duplicate → entity-scoped candidates → LLM adjudication. Default extraction model `nvidia/nemotron-3-nano` (`combined_extraction_model` setting). Consolidation jobs (`consolidation/jobs.py`) call extractors every 15 min. Degrades to empty results with no provider.
-
-### Procedural Memory (encode → distill → reflex-core)
-
-Learns the "how we work here" **delta** (not baseline behavior a capable model already does). Three loops:
-- **Encode** (Slice 0, every turn, cheap): stages `procedure_candidates` PG rows — `correction` (from persisted steers) + `explicit_rule` (`procedural.detect_explicit_rule`, heuristic). `status='pending'`.
-- **Distill** (Slice 1, consolidation): the async `distill_procedures` job reads pending candidates, groups by derived scope (corrections with `agent_id` → `_self_{agent_id}`; explicit rules stay on their channel), runs `ExtractionService.distill_procedure` (baseline-deviation filter), and **strengthens** a cosine-similar existing `Procedure` (`procedural_dedupe_threshold`) instead of duplicating. Writes via `learn_procedure`/`reinforce_procedure` on Neo4j `Procedure` nodes (`trigger`/`body`/`rationale`/`scope`/`strength`/`evidence_refs`; `procedure_embeddings` vector index).
-- **Activate — reflex core** (Slice 1): `ProceduralMemory.get_reflex_procedures` (top-`strength` over recall channels, *maintained not searched*) attached at `interface.remember()` and rendered by `MemoryBundle.to_context_string` ("Learned Procedures"). Gated by `reflex_core_enabled`/`reflex_core_limit`.
-- **Worker**: `ConsolidationWorker.run()` awaits coroutine jobs; `task dev` runs it; manual `task memory:distill-procedures`. Inspect via `GET /api/memory/procedures` + `/api/memory/stats`.
-
-### Context Gating
-
-Large tool outputs (>12K chars) compressed + stored for retrieval: `ToolOutputCompressor` (task-aware LLM compression with structure indexing), `tool_output_chunker.py` (section detection, JSON path, semantic search). Internal MCP tools: `read_stored_output`, `tool_output_query`, `tool_output_section`, `tool_output_path`. Trajectory compression (Focus-style) at 75% context threshold. Retrieval-tool bypass prevents re-storage loops.
-
-### Web Research Tools (`mcp/internal_tools.py`)
-
-**Capability-aware advertisement**: backends differ (Tavily = research suite via `tavily-python`: search/extract/map/crawl/research; Brave = search-only via httpx). A pre-check (`resolve_active_search_backend` + `build_tool_schema`/`build_tool_description`) inventories the active backend at tool-listing time and advertises only its real tools + knobs. `web_extract`/`web_map`/`web_crawl`/`web_research` advertised only when Tavily is active but stay registered (self-guard on stale call). `SEARCH_CAPABILITIES` is the single source of truth. `web_search` keeps results compact (under oversize threshold, parseable for auto-capture); `web_crawl`/`web_research` ride the stored-output handler; `web_research` is agentic/slow (~120s timeout + `web_research.enabled`). Config: `search.backend`, `search.{tavily,brave}_api_key`, `search.fallback_enabled`. Successful searches auto-capture sources as a passive `citation` exhibit (shared `citation_exhibit_from_web_search` helper also backs the conversation **Bibliography**: `lib/bibliography.ts` → `SourcesPanel`).
-
-### Model Resolution & Fallback (`providers/registry.py`)
-
-Every LLM feature resolves `provider:model` through the registry. `resolve_with_fallback(model, *, preferred_fallback=)` (sync) and `complete_with_fallback(...)` (async, execution-retry) make a feature **never hard-fail the turn**: an unconfigured/unreachable provider falls back to the caller's active agent-profile model (`preferred_fallback`) → global default (`preferences.default_model` / `models.defaults.chat`) → first healthy provider. Kill-switch `models.fallback_enabled`; best-effort health cache (fed by `health_check`). The **main chat path stays strict** (`get_provider_for_model`) — the agent's chosen model is the floor. **Memory stages inherit**: each stage resolves `explicit override → consolidation.feature_default_model (bulk) → default chat` (`_resolve_stage_model`); stage defaults stay `lmstudio:…` so local users stay cheap and cloud-only users auto-fall-back.
-
-### Agent Identity & Multi-Agent Attribution (Phase 16)
-
-Each profile has a Docker-style `agent_id` (auto-generated, immutable, adj-adj-noun, ~83K combos). `self_channel` = `_self_{agent_id}`; recall searches `[active_channel, _self_{agent_id}, _global]`. Attribution is **agent-specific** (`agent_id` is the durable key, display name is prose only):
-- **Agents are first-class entities**: consolidation `_ensure_agent_entities` upserts `Entity(type="Agent")` per agent in `_global`, id `agent:{user_id}:{agent_id}`, canonical key `properties.agent_id`, name + prior names as `aliases`. Facts link via normal `[:ABOUT]`.
-- **Name stamping**: assistant turns carry the display name in `Turn.metadata["agent_name"]` (set by writers in `views.py`/`core.py`/`alloy/executor.py`); `episodic.store_turn` stamps `Turn`/`AgentParticipant` nodes so the kit builds a roster (`get_conversation_roster`) without importing `ProfileManager`.
-- **Per-agent routing**: `_resolve_subject_channel` honors `subject_agent_id` → `_self_{that_agent}`; assistant self-extraction routes each turn by its own producing `agent_id`.
-- **Rename-safety**: `update_profile` propagates a name change to the Agent entity's `aliases`; `dedupe_entities` never merges `Agent` nodes (keyed by `agent_id`).
-- **Backfill / debug**: `task memory:backfill-agent-attribution[:apply]` rewrites legacy generic self-facts deterministically; `task memory:debug-attribution -- --scenario <directive|cross-agent|mixed> --agents "..."` drives a scripted multi-agent conversation through real consolidation (non-destructive by default; `--isolate` for a sterile read).
+`AgentMemory` (`kit/agent_memory/memory/interface.py`) is the unified API. **Core**: `store_turn`,
+`remember(query, top_k)`, `learn_fact`, `upsert_entity`, `record_tool_usage`, `reflect` (async
+consolidation). **Goal tracking**: `add_goal`/`get_goal`/`complete_goal`/`get_active_goals`
+(`TaskPlanner.plan()` opens a goal, `Agent.run()` closes it). Full method semantics + the extraction,
+procedural, context-gating, web-research, model-resolution, and attribution subsystems are documented
+in [`Development-Notes.md`](Development-Notes.md).
 
 ## Project Status
 
-Phases 1-14 and 17 (Server Management) complete. Phase 15 (Plan Execution) ~80%. Phase 16 (Multi-Agent) ~45% — Agent Alloy v1, 16.1 attribution, 16.2 routing, 16.3 per-agent tool isolation, 16.4 ad-hoc delegation, 16.5 @-mention routing + `AgentParticipant` nodes, multi-agent attribution, and 16.6 Ambassador foundation shipped. Phase 18 (UX + Memory Tuning) in progress. Current version: see `versions.yaml`. See `Todo.md` for detailed tracking.
+Phases 1–14 + 17 complete. Phase 15 (Plan Execution) core complete. **Phase 16 (Multi-Agent) ~72%**
+— Agent Alloy v1, attribution, routing, tool isolation, ad-hoc + @-mention delegation, and the
+Ambassador (foundation + TTS/STT voice) shipped; **16.7 Ambassador v2** is the live planning. Phase 18
+(UX + Memory Tuning) ~98%. Current version: see `versions.yaml`. **Detailed tracking:** [`Todo.md`](Todo.md)
+→ [`todo/`](todo/); memory direction in [`Memory-Roadmap.md`](Memory-Roadmap.md).
