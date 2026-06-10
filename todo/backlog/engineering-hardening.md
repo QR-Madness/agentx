@@ -38,9 +38,11 @@
       **unverified in Actions** (couldn't run CI locally) — first push may need an action-version
       bump (`setup-uv`/`setup-bun`/`setup-task`); (b) optionally turn on branch protection requiring
       the `gates` check.
-- [ ] **(WS-2) `task check:fast` + opt-in `task hooks:install`** — the sub-5s subset (docs+parity+
-      ruff-on-changed+notes-marker) behind a plain 3-line `.git/hooks/pre-commit` (no pre-commit
-      framework — see Decisions "Rejected"). Catches drift at commit time, not release time.
+- [x] **(WS-2) `task check:fast` + opt-in `task hooks:install`** — **shipped.** `check:fast`
+      (~0.2s) = `docs:check` + `lint:python` + Release-Notes-marker check; `hooks:install` writes a
+      plain 3-line `.git/hooks/pre-commit` calling it (no pre-commit framework — see Decisions
+      "Rejected"; bypass via `git commit --no-verify`). Opt-in, so it's non-cumbersome. Catches drift
+      at commit time, not release-time archaeology.
 - [ ] **(WS-6) `scripts/check_config_keys.py`** — cross-reference config keys (defined in
       `config.py`/`memory_settings`/YAML) against read sites; flag defined-but-unread + read-but-
       undefined (the `_global`-vs-`_default` bug class). Warnings-first. Doubles as the Settings

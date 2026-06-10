@@ -707,6 +707,28 @@ tasks:
     cmds:
       - bun run tsc --noEmit
 
+  check:fast:
+    desc: "Fast pre-commit gate (~1-2s): doc/API drift + ruff + Release-Notes marker"
+    silent: true
+    cmds:
+      - task: docs:check
+      - task: lint:python
+      - |
+        # Release-Notes marker vs versions.yaml (the continuous version+notes habit) — advisory here,
+        # enforced hard by release:check.
+        NOTES=$(grep -m1 -oE 'release-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' Release-Notes.md 2>/dev/null | sed -E 's/.*:[[:space:]]*//')
+        BAKED=$(grep -A2 '^api:' versions.yaml | grep -m1 -oE 'version:[[:space:]]*"[^"]*"' | sed -E 's/.*"([^"]*)"/\1/')
+        if [ "$NOTES" = "$BAKED" ]; then echo "  ✓ Release-Notes marks v$BAKED"; else echo "  ⚠️  Release-Notes marker ($NOTES) != versions.yaml ($BAKED) — bump them together"; fi
+
+  hooks:install:
+    desc: "Install an opt-in git pre-commit hook that runs `task check:fast`"
+    cmds:
+      - |
+        hook=.git/hooks/pre-commit
+        printf '#!/bin/sh\n# Installed by `task hooks:install`. Bypass with: git commit --no-verify\nexec task check:fast\n' > "$hook"
+        chmod +x "$hook"
+        echo "✓ $hook → runs 'task check:fast' before each commit (bypass: git commit --no-verify)"
+
   check:static:
     desc: "Run all static analysis (lint + types + build)"
     cmds:
