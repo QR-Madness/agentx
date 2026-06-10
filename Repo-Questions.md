@@ -330,6 +330,10 @@ migration — one mapping implementation, two callers, mirroring Q3's single-pro
 
 ## Workspace Super-Refinements (Fable)
 
+> **✅ TRIAGED** — WS-3 / WS-8 / WS-9 built (`check_docs.py` anchor + size gates, `scripts/README.md`);
+> WS-1 / 2 / 4 / 5 / 6 / 7 filed in [engineering-hardening.md](todo/backlog/engineering-hardening.md)
+> (WS-1 CI awaits a steer); the rejected list is in [Decisions.md](Decisions.md). Detail below is the record.
+
 > The bar: every item must pay rent in **maintainability + productivity + legibility**, cost a
 > one-time setup with ~zero ongoing ceremony, and extend a pattern the repo already runs rather
 > than import a new ideology. **This workspace is agent-first** — the primary developer is an

@@ -15,6 +15,33 @@
       `transformers`) have no fix without a major bump — accept/track separately. Do a focused
       bump-and-test pass (not a blind `uv lock --upgrade`); re-run `task test` after. *(Surfaced by
       the static-analysis pass; pip-audit is advisory in `task release:check`.)*
+
+#### Workspace DX gates (from Fable's Super-Refinements — see [Repo-Questions.md](../../Repo-Questions.md))
+
+> Built already: anchor-aware link checking + CLAUDE.md context-budget gate (`check_docs.py`),
+> the gate-script protocol doc (`scripts/README.md`). The rest, by leverage:
+
+- [ ] **(WS-1, highest) CI workflow (`ci.yml`)** — run the gates on push + PR: `ruff check` ·
+      `check_pyright_baseline.py` · client `tsc` · `check_docs.py` · `check_api_parity.py` ·
+      `uv lock --check` + `bun install --frozen-lockfile` · `test:quick`. No matrix, no model
+      downloads, target < 5 min. Converts every gate from laptop habit → guarantee. *(Needs a steer:
+      triggers + branch-protection intent.)*
+- [ ] **(WS-2) `task check:fast` + opt-in `task hooks:install`** — the sub-5s subset (docs+parity+
+      ruff-on-changed+notes-marker) behind a plain 3-line `.git/hooks/pre-commit` (no pre-commit
+      framework — see Decisions "Rejected"). Catches drift at commit time, not release time.
+- [ ] **(WS-6) `scripts/check_config_keys.py`** — cross-reference config keys (defined in
+      `config.py`/`memory_settings`/YAML) against read sites; flag defined-but-unread + read-but-
+      undefined (the `_global`-vs-`_default` bug class). Warnings-first. Doubles as the Settings
+      Manifest seed inventory; folds into Foundation #6's dead-knob sweep.
+- [ ] **(WS-7) client static-analysis parity** — `knip` (unused exports/files/deps in `client/src`)
+      + `bun audit` as `lint:client:audit`, beside the Python `ruff`+`pip-audit`. Single-config;
+      knip warnings-only until the first sweep.
+- [ ] **(WS-4) mechanical test baseline** — kill the tribal "7 pre-existing 401 failures are
+      baseline" knowledge: `@unittest.expectedFailure` (+ a todo pointer) or an `api/.test-baseline`
+      ratchet, so `task test:quick` is green-or-regression.
+- [ ] **(WS-5) TODO-comment pointer-or-perish** — gate inline `TODO`/`FIXME` to carry a doc pointer
+      (`TODO(todo/backlog/foo.md): …`); enforce as a ratcheted count so `grep TODO` and the `todo/`
+      tree can't disagree about what's owed.
 - [ ] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — subtask state is
       encoded as magic prefixes on the *result* string (`[FAILED: …]` / `[SKIPPED: …]` / `[ABANDONED: …]`)
       and re-parsed by `str.startswith` in **three** places (`plan_executor.py` `_build_synthesis_messages`,
