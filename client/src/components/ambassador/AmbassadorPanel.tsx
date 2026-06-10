@@ -49,7 +49,7 @@ import { toolChipLabel } from '../../lib/ambassadorTools';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useStickyScroll } from '../../hooks/useStickyScroll';
-import { VoiceSurface } from './VoiceSurface';
+import { VoiceBar } from './VoiceBar';
 import { AmbassadorConversationSwitcher, type SwitcherItem } from './AmbassadorConversationSwitcher';
 import {
   Button,
@@ -344,7 +344,7 @@ function BriefingItem({
 export function AmbassadorPanel() {
   const { activeTab, tabs, relayToConversation } = useConversation();
   const {
-    briefingForMessage, briefingsFor, refresh, cancel, qaFor,
+    briefingsFor, refresh, cancel, qaFor,
     threadFor, titleFor, renameThread, clearThread, ask, cancelQa,
   } = useAmbassador();
   const confirm = useConfirm();
@@ -491,20 +491,6 @@ export function AmbassadorPanel() {
   );
 
   const runActive = !!focusTab?.activeRun?.runId;
-
-  // The text currently being spoken (for the immersive surface caption).
-  const spokenText = useMemo(() => {
-    if (!playingId) return '';
-    if (playingId.startsWith('brief:')) {
-      const mid = playingId.slice('brief:'.length);
-      return briefingForMessage(conversationId, mid)?.summary ?? '';
-    }
-    if (playingId.startsWith('qa:')) {
-      const qid = playingId.slice('qa:'.length);
-      return qaFor(conversationId).find((q) => q.qa_id === qid)?.answer ?? '';
-    }
-    return '';
-  }, [playingId, conversationId, briefingForMessage, qaFor]);
 
   const openVoiceTab = () => {
     unlock(); // bless the audio element on this gesture so autoplay works
@@ -778,32 +764,7 @@ export function AmbassadorPanel() {
         </div>
       )}
 
-      {voiceActive && conversationId && (
-        <VoiceSurface
-          conversationId={conversationId}
-          agentProfileId={ambassadorProfile?.id}
-          agentName={convAgentName}
-          ambassadorName={ambassadorProfile?.name}
-          activeConversation={activeConversation}
-          ambientSpokenText={spokenText}
-          onRelay={relayVoiceCommand}
-          onAnswerPersisted={onAnswerPersisted}
-        />
-      )}
-
-      {/* Voice mode but no conversation open yet — never render a blank surface. */}
-      {voiceActive && !conversationId && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
-          <p className="text-sm text-fg-muted">
-            Open a conversation and you can talk to the ambassador about it here.
-          </p>
-        </div>
-      )}
-
-      {!voiceActive && (
-      <>
-      {/* Body — the Inquiry (the ambassador's own conversation with you). */}
+      {/* Body — the Inquiry (shared by text + voice; only the footer differs). */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={bodyRef}
@@ -876,8 +837,18 @@ export function AmbassadorPanel() {
         )}
       </div>
 
-      {/* Pinned input — Ask the ambassador, or Relay a message to the agent. */}
-      {conversationId && (
+      {/* Footer — push-to-talk in voice mode, the text composer otherwise. */}
+      {conversationId && (voiceActive ? (
+        <VoiceBar
+          conversationId={conversationId}
+          agentProfileId={ambassadorProfile?.id}
+          agentName={convAgentName}
+          ambassadorName={ambassadorProfile?.name}
+          activeConversation={activeConversation}
+          onRelay={relayVoiceCommand}
+          onAnswerPersisted={onAnswerPersisted}
+        />
+      ) : (
         <div className="flex flex-col gap-2 border-t border-line p-3">
           {/* Mode toggle — segmented control. */}
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1 text-xs">
@@ -940,9 +911,7 @@ export function AmbassadorPanel() {
           {/* One stable helper line — flash takes over briefly, no layout shift. */}
           <p className="px-0.5 text-[11px] leading-snug text-fg-muted">{footerHelp}</p>
         </div>
-      )}
-      </>
-      )}
+      ))}
     </div>
   );
 }

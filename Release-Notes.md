@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.83 -->
+<!-- release-version: 0.21.84 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -24,7 +24,7 @@ the client at your own API server and bring your own model providers.
 ### Highlights
 
 - **The Ambassador is now a parallel operator.** A dedicated agent that runs *beside* your conversations (never in them). Its panel is an **Inquiry** you ask, brief, or talk to — with read-only tools to read and survey across your conversations.
-- **Talk to the Ambassador.** Opt into voice mode for a hold-to-talk "call" surface: it answers out loud, drafts relays you approve before sending, and captions both sides.
+- **Talk to the Ambassador.** Voice mode is the *same* Inquiry, just hands-free: hold-to-talk and it answers out loud (your spoken Q&A lands right in the thread), and drafts relays you approve before sending.
 - **One nameable Inquiry thread.** Briefings + Q&A are a single ordered conversation with live tool chips that survive reload; rename or clear it. CC a turn from the chat to forward it *into* the Inquiry; "Brief this conversation" reads the whole thing.
 - **Conversations moved to a proper sidebar.** A dedicated, searchable, resizable rail (collapsible to an avatar strip; a drawer on mobile) — open, running, and history grouped by recency. Pin / archive / icon / color / group, multi-select bulk actions, themed confirms.
 - **The command palette is the one command surface.** ⌘K rebuilt on `cmdk`: fuzzy search, grouped sections, Recent, inline theme switching. Mobile got a floating glass dock + a focus-mode exit button.

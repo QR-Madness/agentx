@@ -651,9 +651,12 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > accent-gradient **voice hero**); body **auto-scrolls** (`hooks/useStickyScroll` + jump pill);
 > a **⋯ menu** (brief / rename / clear → `DELETE /thread/{id}` via `clearThread`); answers carry
 > **copy** + relative timestamps. `AmbassadorConversationSwitcher` has an `inline` variant.
-> **Remaining:** voice mode still uses `VoiceSurface`'s orb/caption layout — mirror it onto the
-> shared Inquiry stream (same capability, different presentation) so text/voice are one body;
-> refine CC semantics (a CC'd turn as a first-class *message* that retains prior state, vs. an ask).
+> **Voice mirrored (`0.21.84`, Slice 1e):** voice + text now share **one body** — the Inquiry
+> stream *is* the transcript (a spoken question persists as a `qa:` entry), so only the footer
+> differs (text composer ↔ `VoiceBar` = PTT mic + `voiceCommand` + relay-confirm + settings). The
+> full-screen `VoiceSurface` (orb + caption log) and `lib/voiceCaptions.*` were deleted; the panel
+> renders the body unconditionally and swaps the footer on `voiceActive`. **Remaining:** refine CC
+> semantics (a CC'd turn as a first-class *message* that retains prior state, vs. today's framed ask).
 
 **Slice 1c — conversations overhaul + active-conversation context** — shipped (`0.21.81`)
 

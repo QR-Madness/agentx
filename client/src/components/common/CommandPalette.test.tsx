@@ -25,6 +25,9 @@ vi.mock('../../contexts/AuthContext', () => ({
 vi.mock('../../contexts/ThemeContext', () => ({
   useTheme: () => ({ preference: 'cosmic', setTheme }),
 }));
+vi.mock('../../contexts/AmbassadorDockContext', () => ({
+  useAmbassadorDock: () => ({ dockCapable: false, open: false, setOpen: vi.fn() }),
+}));
 
 describe('CommandPalette', () => {
   beforeEach(() => {
