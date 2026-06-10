@@ -663,7 +663,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openVoiceTab}
         data-on={tab === 'voice' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
         title="Immersive voice"
         aria-label="Voice"
       >
@@ -673,7 +673,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openTextTab}
         data-on={tab === 'text' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
         title="Text"
         aria-label="Text"
       >
