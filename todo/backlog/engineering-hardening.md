@@ -74,9 +74,10 @@
       AGENTX_AUTH_ENABLED=False)` on `MCPClientTest`, matching the 4 sibling endpoint classes.
       `task test:quick` is now green regardless of local auth and **runs in CI**. *(If the full `task
       test` is ever CI-gated, sweep the same override onto any other endpoint test that 401s.)*
-- [ ] **(WS-5) TODO-comment pointer-or-perish** — gate inline `TODO`/`FIXME` to carry a doc pointer
-      (`TODO(todo/backlog/foo.md): …`); enforce as a ratcheted count so `grep TODO` and the `todo/`
-      tree can't disagree about what's owed.
+- [×] **(WS-5) TODO-comment pointer-or-perish** — **won't build (doesn't earn its keep).** The whole
+      codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
+      a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into
+      the dozens.
 - [ ] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — subtask state is
       encoded as magic prefixes on the *result* string (`[FAILED: …]` / `[SKIPPED: …]` / `[ABANDONED: …]`)
       and re-parsed by `str.startswith` in **three** places (`plan_executor.py` `_build_synthesis_messages`,
