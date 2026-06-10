@@ -8,8 +8,8 @@ import json
 import logging
 import secrets
 import threading
-from datetime import datetime, timezone
-from typing import ClassVar, Optional, TypedDict, cast
+from datetime import datetime, UTC
+from typing import ClassVar, TypedDict, cast
 
 import bcrypt
 from sqlalchemy import text
@@ -28,8 +28,8 @@ class SessionData(TypedDict):
     username: str
     created_at: str
     last_active: str
-    ip_address: Optional[str]
-    user_agent: Optional[str]
+    ip_address: str | None
+    user_agent: str | None
 
 
 class AuthService:
@@ -40,7 +40,7 @@ class AuthService:
     Sessions are extended on each validated request.
     """
 
-    _instance: ClassVar[Optional["AuthService"]] = None
+    _instance: ClassVar[AuthService | None] = None
 
     SESSION_PREFIX = "agentx:session:"
 
@@ -54,7 +54,7 @@ class AuthService:
         self.session_ttl = session_ttl
 
     @classmethod
-    def get_instance(cls, session_ttl: int = 86400) -> "AuthService":
+    def get_instance(cls, session_ttl: int = 86400) -> AuthService:
         """Get or create singleton AuthService instance."""
         if cls._instance is None:
             with _service_lock:
@@ -117,7 +117,7 @@ class AuthService:
             return client
         except Exception as e:
             logger.error(f"Redis unavailable for auth: {e}")
-            raise RuntimeError("Authentication service unavailable: Redis connection failed")
+            raise RuntimeError("Authentication service unavailable: Redis connection failed") from e
 
     def is_setup_required(self) -> bool:
         """
@@ -193,9 +193,9 @@ class AuthService:
         self,
         username: str,
         password: str,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
-    ) -> Optional[tuple[str, SessionData]]:
+        ip_address: str | None = None,
+        user_agent: str | None = None
+    ) -> tuple[str, SessionData] | None:
         """
         Authenticate user and create session.
 
@@ -235,7 +235,7 @@ class AuthService:
 
             # Create session token
             token = secrets.token_urlsafe(32)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             session_data: SessionData = {
                 "user_id": user_id,
@@ -284,7 +284,7 @@ class AuthService:
             logger.error(f"Logout error: {e}")
             return False
 
-    def validate_session(self, token: str, extend_ttl: bool = True) -> Optional[SessionData]:
+    def validate_session(self, token: str, extend_ttl: bool = True) -> SessionData | None:
         """
         Validate session token and optionally extend TTL.
 
@@ -299,7 +299,7 @@ class AuthService:
             redis = self._get_redis()
             session_key = f"{self.SESSION_PREFIX}{token}"
 
-            data = cast(Optional[bytes], redis.get(session_key))
+            data = cast(bytes | None, redis.get(session_key))
             if not data:
                 return None
 
@@ -307,7 +307,7 @@ class AuthService:
 
             if extend_ttl:
                 # Update last_active and extend TTL
-                session_data["last_active"] = datetime.now(timezone.utc).isoformat()
+                session_data["last_active"] = datetime.now(UTC).isoformat()
                 redis.setex(session_key, self.session_ttl, json.dumps(session_data))
 
             return session_data
@@ -369,7 +369,7 @@ class AuthService:
             logger.error(f"Change password error: {e}")
             return False
 
-    def invalidate_all_sessions(self, except_token: Optional[str] = None) -> int:
+    def invalidate_all_sessions(self, except_token: str | None = None) -> int:
         """
         Invalidate all sessions, optionally keeping one.
 

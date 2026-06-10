@@ -9,7 +9,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -37,7 +37,7 @@ class CoTConfig:
     step_prefix: str = "Step"
     
     # Few-shot examples (for few_shot mode)
-    examples: Optional[list[dict[str, str]]] = None
+    examples: list[dict[str, str]] | None = None
     
     # Auto-CoT settings
     auto_examples_count: int = 3
@@ -114,7 +114,7 @@ class ChainOfThought(ReasoningStrategy):
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -175,7 +175,7 @@ class ChainOfThought(ReasoningStrategy):
     def _build_cot_prompt(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
     ) -> list[Message]:
         """Build the Chain-of-Thought prompt."""
         messages = []

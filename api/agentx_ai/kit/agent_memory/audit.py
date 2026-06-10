@@ -12,7 +12,8 @@ import time
 from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, TypeVar
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import text
@@ -80,7 +81,7 @@ def _is_write_operation(operation: str) -> bool:
     }
 
 
-def _hash_query(query_text: Optional[str]) -> Optional[str]:
+def _hash_query(query_text: str | None) -> str | None:
     """Create a hash of the query text for deduplication."""
     if not query_text:
         return None
@@ -97,7 +98,7 @@ class MemoryAuditLogger:
     - verbose: Full logging including working memory and detailed payloads
     """
 
-    def __init__(self, settings: Optional[Settings] = None):
+    def __init__(self, settings: Settings | None = None):
         """Initialize the audit logger.
 
         Args:
@@ -148,7 +149,7 @@ class MemoryAuditLogger:
 
         return False
 
-    def _get_config_snapshot(self) -> Dict[str, Any]:
+    def _get_config_snapshot(self) -> dict[str, Any]:
         """Get current configuration values for snapshot."""
         return {
             "audit_log_level": self._settings.audit_log_level,
@@ -163,21 +164,21 @@ class MemoryAuditLogger:
         self,
         operation: str,
         memory_type: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        conversation_id: Optional[Union[str, UUID]] = None,
-        source_channel: Optional[str] = None,
-        target_channels: Optional[List[str]] = None,
-        query_text: Optional[str] = None,
-        result_count: Optional[int] = None,
-        latency_ms: Optional[int] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        conversation_id: str | UUID | None = None,
+        source_channel: str | None = None,
+        target_channels: list[str] | None = None,
+        query_text: str | None = None,
+        result_count: int | None = None,
+        latency_ms: int | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
-        promoted_from_channel: Optional[str] = None,
-        promotion_confidence: Optional[float] = None,
-        promotion_access_count: Optional[int] = None,
-        promotion_conversation_count: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_message: str | None = None,
+        promoted_from_channel: str | None = None,
+        promotion_confidence: float | None = None,
+        promotion_access_count: int | None = None,
+        promotion_conversation_count: int | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Write audit log entry to PostgreSQL.
 
@@ -253,15 +254,15 @@ class MemoryAuditLogger:
         self,
         operation: str,
         memory_type: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        conversation_id: Optional[Union[str, UUID]] = None,
-        channel: Optional[str] = None,
-        record_ids: Optional[List[str]] = None,
-        latency_ms: Optional[int] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        conversation_id: str | UUID | None = None,
+        channel: str | None = None,
+        record_ids: list[str] | None = None,
+        latency_ms: int | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a write operation (store, update, delete).
 
@@ -302,16 +303,16 @@ class MemoryAuditLogger:
         self,
         operation: str,
         memory_type: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        conversation_id: Optional[Union[str, UUID]] = None,
-        channels: Optional[List[str]] = None,
-        query_text: Optional[str] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        conversation_id: str | UUID | None = None,
+        channels: list[str] | None = None,
+        query_text: str | None = None,
         result_count: int = 0,
-        latency_ms: Optional[int] = None,
+        latency_ms: int | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a read operation (retrieve, search).
 
@@ -351,15 +352,15 @@ class MemoryAuditLogger:
     def log_promotion(
         self,
         source_channel: str,
-        promoted_ids: List[str],
+        promoted_ids: list[str],
         promoted_type: str,
         confidence: float,
         access_count: int,
         conversation_count: int,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        latency_ms: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        latency_ms: int | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a cross-channel promotion operation.
 
@@ -402,10 +403,10 @@ class MemoryAuditLogger:
         self,
         job_name: str,
         items_processed: int = 0,
-        latency_ms: Optional[int] = None,
+        latency_ms: int | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log a consolidation job execution.
 
@@ -438,10 +439,10 @@ class MemoryAuditLogger:
         self,
         operation: str,
         memory_type: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        conversation_id: Optional[Union[str, UUID]] = None,
-        channel: Optional[str] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        conversation_id: str | UUID | None = None,
+        channel: str | None = None,
     ):
         """Context manager for timing operations.
 

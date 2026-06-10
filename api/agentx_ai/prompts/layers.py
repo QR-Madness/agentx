@@ -24,7 +24,6 @@ governs only the conversational persona/behavior prompt — internal feature pro
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ..config import get_config_manager
 from .models import PromptLayer
@@ -212,7 +211,7 @@ class LayerStore:
         layers.sort(key=lambda layer: layer.order)
         return layers
 
-    def get(self, layer_id: str) -> Optional[PromptLayer]:
+    def get(self, layer_id: str) -> PromptLayer | None:
         for layer in self.list_layers():
             if layer.id == layer_id:
                 return layer
@@ -228,7 +227,7 @@ class LayerStore:
     def _delta(self, raw: dict, layer_id: str) -> dict:
         return raw.setdefault(layer_id, {})
 
-    def set_override(self, layer_id: str, content: str) -> Optional[PromptLayer]:
+    def set_override(self, layer_id: str, content: str) -> PromptLayer | None:
         """Set a layer's override. For a built-in this pins it to the user's text and
         stamps base_version to the current default (so later default changes diff)."""
         raw = self._raw()
@@ -244,7 +243,7 @@ class LayerStore:
         self._write(raw)
         return self.get(layer_id)
 
-    def reset(self, layer_id: str) -> Optional[PromptLayer]:
+    def reset(self, layer_id: str) -> PromptLayer | None:
         """Clear a built-in's override (back to riding the shipped default)."""
         raw = self._raw()
         if layer_id not in raw or layer_id not in _BUILTIN_BY_ID:
@@ -256,7 +255,7 @@ class LayerStore:
         self._write(raw)
         return self.get(layer_id)
 
-    def acknowledge(self, layer_id: str) -> Optional[PromptLayer]:
+    def acknowledge(self, layer_id: str) -> PromptLayer | None:
         """Keep the user's override but mark the new default as seen (clears the
         'update available' badge without adopting the new default)."""
         raw = self._raw()
@@ -267,7 +266,7 @@ class LayerStore:
         self._write(raw)
         return self.get(layer_id)
 
-    def set_enabled(self, layer_id: str, enabled: bool) -> Optional[PromptLayer]:
+    def set_enabled(self, layer_id: str, enabled: bool) -> PromptLayer | None:
         raw = self._raw()
         if layer_id in _BUILTIN_BY_ID:
             self._delta(raw, layer_id)["enabled"] = enabled
@@ -295,8 +294,8 @@ class LayerStore:
         return self.get(layer_id)  # type: ignore[return-value]
 
     def update_custom(
-        self, layer_id: str, *, title: Optional[str] = None, content: Optional[str] = None
-    ) -> Optional[PromptLayer]:
+        self, layer_id: str, *, title: str | None = None, content: str | None = None
+    ) -> PromptLayer | None:
         raw = self._raw()
         rec = raw.get(layer_id)
         if not rec or rec.get("kind") != "custom":
@@ -351,7 +350,7 @@ class LayerStore:
         return self.list_layers()
 
 
-_store: Optional[LayerStore] = None
+_store: LayerStore | None = None
 
 
 def get_layer_store() -> LayerStore:

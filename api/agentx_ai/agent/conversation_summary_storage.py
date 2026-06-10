@@ -10,7 +10,6 @@ aged-out turns survive rehydration so a long conversation stays coherent.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ def _key(conversation_id: str) -> str:
     return f"{SUMMARY_PREFIX}{conversation_id}"
 
 
-def get_summary(conversation_id: str) -> Optional[str]:
+def get_summary(conversation_id: str) -> str | None:
     """Return the persisted rolling summary, or None."""
     try:
         val = _redis().get(_key(conversation_id))

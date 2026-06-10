@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def add_note(conversation_id: str, note: str) -> dict[str, Any]:
     """Append a scratchpad note to the conversation. Returns the stored entry."""
     entry = {
         "note": note.strip(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     try:

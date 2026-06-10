@@ -10,7 +10,8 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -40,11 +41,11 @@ class CandidateConfig:
     prefer_longer: bool = True
     
     # For verifier scoring
-    verifier_model: Optional[str] = None
-    verifier_prompt: Optional[str] = None
+    verifier_model: str | None = None
+    verifier_prompt: str | None = None
     
     # For custom scoring
-    custom_scorer: Optional[Callable[[str, list[str]], float]] = None
+    custom_scorer: Callable[[str, list[str]], float] | None = None
     
     # Temperature settings (higher = more diversity)
     base_temperature: float = 0.7
@@ -149,7 +150,7 @@ class CandidateGenerator(DraftingStrategy):
             strategy=self.name,
             status=DraftStatus.COMPLETE,
             total_time_ms=total_time,
-            models_used=list(set(c.model for c in candidates)),
+            models_used=list({c.model for c in candidates}),
             candidates_generated=len(candidates),
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
@@ -200,7 +201,7 @@ class CandidateGenerator(DraftingStrategy):
         messages: list[Message],
         temperature: float,
         **kwargs: Any,
-    ) -> Optional[Candidate]:
+    ) -> Candidate | None:
         """Generate a single candidate."""
         try:
             provider, model_id = self.registry.get_provider_for_model(model)

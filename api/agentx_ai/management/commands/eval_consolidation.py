@@ -28,7 +28,7 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from uuid import uuid4
 
@@ -292,7 +292,7 @@ class Command(BaseCommand):
             users.append(export.model_dump(mode="json"))
         bundle = {
             "snapshot_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "users": users,
         }
         path = Path(path)
@@ -539,7 +539,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Extraction model {model!r} is not usable: {e}. Configure the "
                 "provider (e.g. set OPENROUTER_API_KEY) or pass --model provider:model_id."
-            )
+            ) from e
 
         # Sterility gate — consolidation is global. --snapshot satisfies it
         # non-destructively (snapshot → wipe → run → restore).
@@ -556,7 +556,7 @@ class Command(BaseCommand):
         # Snapshot the whole cluster before wiping so we can restore it afterward.
         snapshot_path = None
         if opts["snapshot"]:
-            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
             snapshot_dir = Path(__file__).resolve().parents[4] / "data" / "eval_snapshots"
             snapshot_path = self._make_snapshot(snapshot_dir / f"{ts}.json")
         if snapshot_path or opts["wipe"]:
@@ -649,13 +649,13 @@ class Command(BaseCommand):
             Path(__file__).resolve().parents[4] / "data" / "eval_runs")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:4]}"
+        run_id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:4]}"
         slug = model.replace("/", "-").replace(":", "-")
         path = out_dir / f"{run_id}_{slug}_{'full' if opts['full'] else 'quick'}.json"
 
         payload = {
             "run_id": run_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "model": model,
             "flags": {"full": opts["full"], "only": opts["only"]},
             "cases": case_results,

@@ -26,11 +26,11 @@ import time
 from collections import OrderedDict
 from concurrent.futures import Future
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger("agentx")
 
-ComputeFn = Callable[[List[str]], List[List[float]]]
+ComputeFn = Callable[[list[str]], list[list[float]]]
 
 # Substrings that mark a failure as worth retrying (remote rate-limit / transient
 # network), vs a permanent error (e.g. a torch RuntimeError) that should fail fast.
@@ -51,8 +51,8 @@ def _is_transient(exc: BaseException) -> bool:
 
 @dataclass
 class _Request:
-    texts: List[str]
-    future: "Future[List[List[float]]]"
+    texts: list[str]
+    future: Future[list[list[float]]]
 
 
 class EmbeddingCache:
@@ -61,14 +61,14 @@ class EmbeddingCache:
     def __init__(self, max_size: int, ttl_seconds: float):
         self._max = max(1, max_size)
         self._ttl = ttl_seconds
-        self._store: "OrderedDict[str, tuple[float, List[float]]]" = OrderedDict()
+        self._store: OrderedDict[str, tuple[float, list[float]]] = OrderedDict()
         self._lock = threading.Lock()
 
     @staticmethod
     def _key(namespace: str, text: str) -> str:
-        return f"{namespace}:{hashlib.sha1(text.encode('utf-8')).hexdigest()}"
+        return f"{namespace}:{hashlib.sha1(text.encode('utf-8')).hexdigest()}"  # noqa: S324 — non-security cache key
 
-    def get(self, namespace: str, text: str) -> Optional[List[float]]:
+    def get(self, namespace: str, text: str) -> list[float] | None:
         key = self._key(namespace, text)
         now = time.monotonic()
         with self._lock:
@@ -82,7 +82,7 @@ class EmbeddingCache:
             self._store.move_to_end(key)
             return vec
 
-    def put(self, namespace: str, text: str, vec: List[float]) -> None:
+    def put(self, namespace: str, text: str, vec: list[float]) -> None:
         key = self._key(namespace, text)
         now = time.monotonic()
         with self._lock:
@@ -118,14 +118,14 @@ class _EmbeddingQueue:
         self._window = max(0, window_ms) / 1000.0
         self._timeout = timeout
         self._max_retries = max(0, max_retries)
-        self._q: "queue.Queue[_Request]" = queue.Queue(maxsize=max(1, max_size))
-        self._worker: Optional[threading.Thread] = None
+        self._q: queue.Queue[_Request] = queue.Queue(maxsize=max(1, max_size))
+        self._worker: threading.Thread | None = None
         self._start_lock = threading.Lock()
 
-    def submit(self, texts: List[str]) -> List[List[float]]:
+    def submit(self, texts: list[str]) -> list[list[float]]:
         """Enqueue a request and block until its embeddings are ready."""
         self._ensure_worker()
-        fut: "Future[List[List[float]]]" = Future()
+        fut: Future[list[list[float]]] = Future()
         # Bounded put provides backpressure; raises queue.Full on timeout.
         self._q.put(_Request(texts=texts, future=fut), timeout=self._timeout)
         return fut.result(timeout=self._timeout)
@@ -163,8 +163,8 @@ class _EmbeddingQueue:
                 total += len(nxt.texts)
             self._process(batch)
 
-    def _process(self, batch: List[_Request]) -> None:
-        all_texts: List[str] = []
+    def _process(self, batch: list[_Request]) -> None:
+        all_texts: list[str] = []
         for req in batch:
             all_texts.extend(req.texts)
         try:
@@ -181,7 +181,7 @@ class _EmbeddingQueue:
                 req.future.set_result(vectors[idx : idx + n])
             idx += n
 
-    def _compute_with_retry(self, texts: List[str]) -> List[List[float]]:
+    def _compute_with_retry(self, texts: list[str]) -> list[list[float]]:
         attempt = 0
         while True:
             try:
@@ -225,22 +225,22 @@ class EmbeddingDispatcher:
             else None
         )
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         if self._cache is None:
             return self._compute_or_queue(texts)
 
-        results: List[Optional[List[float]]] = [self._cache.get(self.namespace, t) for t in texts]
+        results: list[list[float] | None] = [self._cache.get(self.namespace, t) for t in texts]
         miss_slots = [i for i, r in enumerate(results) if r is None]
         if miss_slots:
             computed = self._compute_or_queue([texts[i] for i in miss_slots])
-            for slot, vec in zip(miss_slots, computed):
+            for slot, vec in zip(miss_slots, computed, strict=False):
                 results[slot] = vec
                 self._cache.put(self.namespace, texts[slot], vec)
         return [r for r in results if r is not None]
 
-    def _compute_or_queue(self, texts: List[str]) -> List[List[float]]:
+    def _compute_or_queue(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         if self._queue is not None:

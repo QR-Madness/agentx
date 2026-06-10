@@ -16,7 +16,7 @@ import queue
 import threading
 from collections import deque
 from itertools import count
-from typing import Any, Optional
+from typing import Any
 
 from .categories import category_for
 
@@ -90,11 +90,11 @@ class RingBufferHandler(logging.Handler):
     def snapshot(
         self,
         *,
-        level: Optional[str] = None,
-        category: Optional[str] = None,
-        run_id: Optional[str] = None,
-        search: Optional[str] = None,
-        since_id: Optional[int] = None,
+        level: str | None = None,
+        category: str | None = None,
+        run_id: str | None = None,
+        search: str | None = None,
+        since_id: int | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
         lvl = (level or "").upper() or None
@@ -116,7 +116,7 @@ class RingBufferHandler(logging.Handler):
             out.append(e)
         return out[-limit:]
 
-    def subscribe(self) -> Optional[queue.Queue]:
+    def subscribe(self) -> queue.Queue | None:
         q: queue.Queue = queue.Queue(maxsize=_SUBSCRIBER_QUEUE_MAX)
         with self._lock:
             if len(self._subscribers) >= _MAX_SUBSCRIBERS:
@@ -133,13 +133,13 @@ class RingBufferHandler(logging.Handler):
 
 
 # Process-wide singleton, installed by ``setup.configure_logging``.
-_handler: Optional[RingBufferHandler] = None
+_handler: RingBufferHandler | None = None
 
 
-def get_ring_handler() -> Optional[RingBufferHandler]:
+def get_ring_handler() -> RingBufferHandler | None:
     return _handler
 
 
-def set_ring_handler(handler: Optional[RingBufferHandler]) -> None:
+def set_ring_handler(handler: RingBufferHandler | None) -> None:
     global _handler
     _handler = handler

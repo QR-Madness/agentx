@@ -1,6 +1,5 @@
 """Memory decay functions and utilities."""
 
-from typing import Optional
 from datetime import datetime, timedelta
 import math
 
@@ -30,7 +29,7 @@ def calculate_decay(
 def calculate_importance_boost(
     base_importance: float,
     access_count: int,
-    recency_hours: Optional[float] = None
+    recency_hours: float | None = None
 ) -> float:
     """
     Calculate importance score with access frequency and recency boost.

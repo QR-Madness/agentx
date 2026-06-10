@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..kit.agent_memory.models import Turn
@@ -29,13 +29,13 @@ class TaskOutcome:
     task_id: str
     task: str
     status: str  # 'complete' | 'failed' | 'cancelled'
-    answer: Optional[str] = None
+    answer: str | None = None
     total_tokens: int = 0
     total_time_ms: float = 0.0
     reasoning_steps: int = 0
     tools_used: list[str] = field(default_factory=list)
-    goal_id: Optional[str] = None
-    error: Optional[str] = None
+    goal_id: str | None = None
+    error: str | None = None
 
 
 class AgentHooks:
@@ -48,11 +48,11 @@ class AgentHooks:
     def on_task_error(self, outcome: TaskOutcome) -> None:
         return None
 
-    def on_turn(self, turn: "Turn") -> None:
+    def on_turn(self, turn: Turn) -> None:
         return None
 
     def on_goal_complete(
-        self, goal_id: str, status: str, result: Optional[str] = None
+        self, goal_id: str, status: str, result: str | None = None
     ) -> None:
         return None
 
@@ -63,7 +63,7 @@ class AgentHooks:
         tool_output: Any,
         success: bool,
         latency_ms: int,
-        error_message: Optional[str],
+        error_message: str | None,
     ) -> None:
         return None
 
@@ -126,14 +126,14 @@ class MemoryRecorder(AgentHooks):
             except Exception as e:
                 logger.warning(f"Failed to update goal status: {e}")
 
-    def on_turn(self, turn: "Turn") -> None:
+    def on_turn(self, turn: Turn) -> None:
         try:
             self._memory.store_turn(turn)
         except Exception as e:
             logger.warning(f"Failed to store turn in memory: {e}")
 
     def on_goal_complete(
-        self, goal_id: str, status: str, result: Optional[str] = None
+        self, goal_id: str, status: str, result: str | None = None
     ) -> None:
         try:
             self._memory.complete_goal(goal_id, status=status, result=result)
@@ -147,7 +147,7 @@ class MemoryRecorder(AgentHooks):
         tool_output: Any,
         success: bool,
         latency_ms: int,
-        error_message: Optional[str],
+        error_message: str | None,
     ) -> None:
         try:
             self._memory.record_tool_usage(

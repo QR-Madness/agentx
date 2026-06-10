@@ -9,7 +9,6 @@ tool-output-specific key scheme, payload, and list projection.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from .redis_blob_storage import RedisBlobStorage, make_storage_key
 
@@ -24,7 +23,7 @@ def store_tool_output(
     tool_name: str,
     content: str,
     ttl_seconds: int = 3600,
-) -> Optional[str]:
+) -> str | None:
     """
     Store a large tool output in Redis.
 
@@ -49,7 +48,7 @@ def store_tool_output(
     return _storage.store(storage_key, data, ttl_seconds)
 
 
-def get_tool_output(storage_key: str) -> Optional[dict]:
+def get_tool_output(storage_key: str) -> dict | None:
     """
     Retrieve a stored tool output from Redis.
 
@@ -63,8 +62,8 @@ def get_tool_output(storage_key: str) -> Optional[dict]:
 def get_tool_output_content(
     storage_key: str,
     offset: int = 0,
-    limit: Optional[int] = None,
-) -> Optional[str]:
+    limit: int | None = None,
+) -> str | None:
     """Retrieve just the content of a stored tool output, with pagination."""
     return _storage.get_content(storage_key, offset, limit)
 

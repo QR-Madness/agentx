@@ -8,7 +8,7 @@ model settings, and behavior configuration.
 from datetime import datetime
 from enum import Enum
 import random
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -77,13 +77,13 @@ class AmbassadorConfig(BaseModel):
     # use the shipped code default (`_default_persona`/`_qa_persona`/`_draft_persona`
     # in ambassador.py). The *primary* customizable voice is the profile's
     # `system_prompt` (the "Communications"/personality prompt); these are advanced.
-    briefing_persona: Optional[str] = Field(
+    briefing_persona: str | None = Field(
         None, description="Override for the per-turn briefing persona (None = shipped default)"
     )
-    qa_persona: Optional[str] = Field(
+    qa_persona: str | None = Field(
         None, description="Override for the free-form Q&A persona (None = shipped default)"
     )
-    draft_persona: Optional[str] = Field(
+    draft_persona: str | None = Field(
         None, description="Override for the outbound-message draft persona (None = shipped default)"
     )
     # Voice (TTS) — spoken briefings via OpenRouter's /audio/speech. STT (the
@@ -92,17 +92,17 @@ class AmbassadorConfig(BaseModel):
         False,
         description="Opt-in: enable the immersive two-way voice surface for this ambassador",
     )
-    speech_model: Optional[str] = Field(
+    speech_model: str | None = Field(
         None,
         description="TTS/speech model id for spoken briefings (None = shipped default microsoft/mai-voice-2)",
     )
-    voice: Optional[str] = Field(
+    voice: str | None = Field(
         None, description="Voice id for spoken briefings (None = the speech model's default voice)"
     )
-    speech_speed: Optional[float] = Field(
+    speech_speed: float | None = Field(
         None, description="Optional playback-speed multiplier for spoken briefings (provider-dependent)"
     )
-    transcription_model: Optional[str] = Field(
+    transcription_model: str | None = Field(
         None,
         description="STT/transcription model id for voice input (None = shipped default openai/whisper-1)",
     )
@@ -125,8 +125,8 @@ class AgentProfile(BaseModel):
         "agent", description="Profile kind: 'agent' (chat) or 'ambassador' (parallel interpreter)"
     )
     agent_id: str = Field(default_factory=generate_agent_id, description="Unique human-friendly agent identifier (Docker-style)")
-    avatar: Optional[str] = Field(None, description="Avatar icon name (e.g., 'sparkles', 'brain')")
-    description: Optional[str] = Field(None, description="Description of this profile's purpose")
+    avatar: str | None = Field(None, description="Avatar icon name (e.g., 'sparkles', 'brain')")
+    description: str | None = Field(None, description="Description of this profile's purpose")
     # Short, free-form labels surfacing the agent's traits/roles (e.g. "research",
     # "fast", "writer"). Shown as chips in the agent selector. Capped at 4 so the
     # selector row stays readable; each is trimmed and length-limited.
@@ -136,15 +136,15 @@ class AgentProfile(BaseModel):
     )
 
     # Model settings
-    default_model: Optional[str] = Field(None, description="Default model to use for this profile")
+    default_model: str | None = Field(None, description="Default model to use for this profile")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Model temperature (0.0-2.0)")
 
     # Prompt configuration
-    prompt_profile_id: Optional[str] = Field(
+    prompt_profile_id: str | None = Field(
         None,
         description="ID of the PromptProfile to use for system prompt composition"
     )
-    system_prompt: Optional[str] = Field(
+    system_prompt: str | None = Field(
         None,
         description="Custom system prompt for this agent (prepended to conversations)"
     )
@@ -163,7 +163,7 @@ class AgentProfile(BaseModel):
     # matching in `Agent._get_tools_for_provider` is exact-string and case-
     # sensitive. Bare names (no `.`) won't match anything under the FQ scheme
     # and are flagged with a startup warning; see profiles.py.
-    allowed_tools: Optional[list[str]] = Field(
+    allowed_tools: list[str] | None = Field(
         None,
         description=(
             "If set, only these fully-qualified tools (`server.tool`; "
@@ -189,7 +189,7 @@ class AgentProfile(BaseModel):
 
     # Ambassador (Phase 16.6): optional extra section turning this profile into a
     # parallel, non-polluting conversation interpreter. None = not an ambassador.
-    ambassador: Optional[AmbassadorConfig] = Field(
+    ambassador: AmbassadorConfig | None = Field(
         None,
         description="Extra section configuring this profile as a conversation ambassador",
     )
@@ -199,8 +199,8 @@ class AgentProfile(BaseModel):
     is_default_ambassador: bool = Field(
         False, description="Whether this is the default *ambassador* (per-kind default; briefings use it)"
     )
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: datetime | None = Field(default_factory=datetime.utcnow)
+    updated_at: datetime | None = Field(default_factory=datetime.utcnow)
 
     @field_validator("tags", mode="before")
     @classmethod

@@ -13,7 +13,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, AsyncGenerator, Optional
+from typing import TYPE_CHECKING
+from collections.abc import AsyncGenerator
 
 if TYPE_CHECKING:
     from ..providers.pricing import CostEstimate
@@ -39,9 +40,9 @@ class AlloyExecutor:
         supervisor_agent,
         session: Session,
         *,
-        workflow: Optional[Workflow] = None,
-        channel: Optional[str] = None,
-        delegator_agent_id: Optional[str] = None,
+        workflow: Workflow | None = None,
+        channel: str | None = None,
+        delegator_agent_id: str | None = None,
         max_delegation_depth: int = 3,
         max_parallel_delegations: int = 3,
     ):
@@ -71,7 +72,7 @@ class AlloyExecutor:
             self.channel = channel or "_global"
             self.delegator_agent_id = delegator_agent_id or ""
 
-    def _validate_target(self, target_agent_id: str) -> Optional[str]:
+    def _validate_target(self, target_agent_id: str) -> str | None:
         """Return an error string if ``target_agent_id`` is not delegable, else None."""
         # No self-delegation (both modes) — satisfies the Phase 16.4 safeguard
         # and is harmless for workflow supervisors (they never list themselves).
@@ -93,7 +94,7 @@ class AlloyExecutor:
         *,
         tool_call_id: str,
         depth: int = 0,
-    ) -> AsyncGenerator[tuple[str, str], None]:
+    ) -> AsyncGenerator[tuple[str, str]]:
         """
         Run one specialist for one task.
 
@@ -158,7 +159,7 @@ class AlloyExecutor:
         }), ""
 
         # ------- create child goal (best effort) -------
-        child_goal_id: Optional[str] = None
+        child_goal_id: str | None = None
         memory_for_goal = getattr(self.supervisor, "memory", None)
         if memory_for_goal is not None:
             try:
@@ -209,7 +210,7 @@ class AlloyExecutor:
         # ------- stream specialist run -------
         accumulated = ""
         status = "success"
-        error: Optional[str] = None
+        error: str | None = None
         loop_result = ToolLoopResult()
         t0 = time.perf_counter()
         try:
@@ -276,7 +277,7 @@ class AlloyExecutor:
             })
 
         # ------- cost estimate (reuses the supervisor done-event path) -------
-        cost: Optional["CostEstimate"] = None
+        cost: CostEstimate | None = None
         try:
             from ..providers.pricing import estimate_cost
             caps = provider.get_capabilities(model_id)

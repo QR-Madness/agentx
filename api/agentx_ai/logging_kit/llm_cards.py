@@ -15,7 +15,7 @@ logger; ``None`` means "don't log".
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 from .flags import read_flags
 from .redaction import redact
@@ -71,7 +71,7 @@ def _full(provider_name: str, params: dict[str, Any]) -> str:
     return f"🤖 LLM REQUEST ▸ {provider_name}:\n{redact(dumped)}"
 
 
-def render_llm_request(provider_name: str, request_params: dict[str, Any]) -> Optional[str]:
+def render_llm_request(provider_name: str, request_params: dict[str, Any]) -> str | None:
     level = read_flags().llm_level
     if level == "off":
         return None
@@ -82,7 +82,7 @@ def render_llm_request(provider_name: str, request_params: dict[str, Any]) -> Op
 
 def render_llm_log(
     provider_name: str, request_params: dict[str, Any]
-) -> Optional[tuple[str, Optional[str]]]:
+) -> tuple[str, str | None] | None:
     """Split an LLM request into ``(console summary, storage detail)``.
 
     * ``off``     → ``None`` (log nothing).

@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import datetime, UTC
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _key(user_id: str, channel: str) -> str:
     return f"{RECAP_PREFIX}{user_id}:{channel}"
 
 
-def get_cached_recap(user_id: str, channel: str = "_default") -> Optional[dict[str, Any]]:
+def get_cached_recap(user_id: str, channel: str = "_default") -> dict[str, Any] | None:
     """Return the cached recap entry ``{summary, updated_at}`` or None."""
     try:
         raw = _redis().get(_key(user_id, channel))
@@ -63,7 +63,7 @@ def set_cached_recap(user_id: str, channel: str, summary: str) -> dict[str, Any]
     """Cache a recap summary with TTL. Returns the stored entry."""
     entry = {
         "summary": summary.strip(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     try:
         _redis().setex(_key(user_id, channel), RECAP_TTL_SECONDS, json.dumps(entry))
@@ -73,11 +73,11 @@ def set_cached_recap(user_id: str, channel: str, summary: str) -> dict[str, Any]
 
 
 async def build_and_cache_user_recap(
-    memory: "AgentMemory",
+    memory: AgentMemory,
     *,
     max_turns: int = 30,
     max_facts: int = 20,
-) -> Optional[str]:
+) -> str | None:
     """
     Build a fresh recap for ``memory``'s user/channel from recent turns + facts,
     cache it, and return the summary. Returns None when there's no material or

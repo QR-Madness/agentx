@@ -7,7 +7,7 @@ changes later.
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 from .base import ModelCapabilities
 
@@ -29,7 +29,7 @@ def estimate_cost(
     caps: ModelCapabilities,
     tokens_in: int,
     tokens_out: int,
-) -> Optional[CostEstimate]:
+) -> CostEstimate | None:
     """Return an absolute-dollar cost estimate for one turn, or None if the
     model has no pricing metadata (e.g. local LM Studio models).
     """

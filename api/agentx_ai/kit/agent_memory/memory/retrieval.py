@@ -5,8 +5,8 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING, cast
+from datetime import datetime, UTC
+from typing import Any, TYPE_CHECKING, cast
 
 from ..models import MemoryBundle
 from ..embeddings import get_embedder
@@ -43,7 +43,7 @@ class RetrievalWeights:
     recency: float = 0.1
 
     @classmethod
-    def from_dict(cls, d: Dict[str, float]) -> "RetrievalWeights":
+    def from_dict(cls, d: dict[str, float]) -> RetrievalWeights:
         """
         Create RetrievalWeights from a dictionary, using defaults for missing keys.
 
@@ -63,7 +63,7 @@ class RetrievalWeights:
         )
 
     @classmethod
-    def from_config(cls) -> "RetrievalWeights":
+    def from_config(cls) -> RetrievalWeights:
         """Create RetrievalWeights from config settings."""
         return cls(
             episodic=settings.retrieval_weight_episodic,
@@ -74,8 +74,8 @@ class RetrievalWeights:
         )
 
     def merge(
-        self, overrides: Optional[Union["RetrievalWeights", Dict[str, float]]]
-    ) -> "RetrievalWeights":
+        self, overrides: RetrievalWeights | dict[str, float] | None
+    ) -> RetrievalWeights:
         """
         Merge with overrides, returning new weights.
 
@@ -110,7 +110,7 @@ class RetrievalMetrics:
 
     query_hash: str = ""
     user_id: str = ""
-    channels_searched: List[str] = field(default_factory=list)
+    channels_searched: list[str] = field(default_factory=list)
 
     # Hit counts per memory type
     episodic_count: int = 0
@@ -120,7 +120,7 @@ class RetrievalMetrics:
     total_count: int = 0
 
     # Results per channel
-    results_per_channel: Dict[str, int] = field(default_factory=dict)
+    results_per_channel: dict[str, int] = field(default_factory=dict)
 
     # Latency breakdown (ms)
     embedding_latency_ms: int = 0
@@ -141,7 +141,7 @@ class MemoryRetriever:
     Combines vector search, graph traversal, and temporal heuristics.
     """
 
-    def __init__(self, memory: "AgentMemory", audit_logger: Optional["MemoryAuditLogger"] = None):
+    def __init__(self, memory: AgentMemory, audit_logger: MemoryAuditLogger | None = None):
         """Initialize the memory retriever.
 
         Args:
@@ -170,7 +170,7 @@ class MemoryRetriever:
         self,
         query: str,
         user_id: str,
-        channels: List[str],
+        channels: list[str],
         top_k: int,
         include_episodic: bool,
         include_semantic: bool,
@@ -185,7 +185,7 @@ class MemoryRetriever:
         ).hexdigest()[:16]
         return f"{settings.retrieval_cache_key_prefix}:{user_id}:{channels_str}:{query_hash}:{params_hash}"
 
-    def _get_cached(self, cache_key: str) -> Optional[MemoryBundle]:
+    def _get_cached(self, cache_key: str) -> MemoryBundle | None:
         """Get cached retrieval result."""
         if not settings.retrieval_cache_enabled:
             return None
@@ -275,11 +275,11 @@ class MemoryRetriever:
         include_episodic: bool = True,
         include_semantic: bool = True,
         include_procedural: bool = True,
-        time_window_hours: Optional[int] = None,
-        channel: Optional[str] = None,
-        channels: Optional[List[str]] = None,
-        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
-        conversation_id: Optional[str] = None,
+        time_window_hours: int | None = None,
+        channel: str | None = None,
+        channels: list[str] | None = None,
+        strategy_weights: RetrievalWeights | dict[str, float] | None = None,
+        conversation_id: str | None = None,
     ) -> MemoryBundle:
         """
         Main retrieval method combining multiple strategies.
@@ -457,13 +457,13 @@ class MemoryRetriever:
 
     def _retrieve_episodic(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         user_id: str,
         top_k: int,
-        time_window_hours: Optional[int],
-        channel: Optional[str] = None,
-        conversation_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        time_window_hours: int | None,
+        channel: str | None = None,
+        conversation_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Retrieve from episodic memory with recency boost.
 
@@ -480,7 +480,7 @@ class MemoryRetriever:
         """
         # Always-include: fetch last N turns from current conversation
         # These are marked and will be preserved through reranking
-        always_include_turns: List[Dict[str, Any]] = []
+        always_include_turns: list[dict[str, Any]] = []
         always_include_count = settings.always_include_recent_turns
 
         if conversation_id and always_include_count > 0:
@@ -544,9 +544,9 @@ class MemoryRetriever:
 
     def _normalize_scores(
         self,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
         score_key: str = "score"
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Normalize scores to 0-1 range using min-max normalization.
 
@@ -596,9 +596,9 @@ class MemoryRetriever:
 
             # Make timezone-aware if needed
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+                ts = ts.replace(tzinfo=UTC)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             age_hours = (now - ts).total_seconds() / 3600
 
             # Exponential decay: half-life of 24 hours
@@ -611,7 +611,7 @@ class MemoryRetriever:
         self,
         bundle: MemoryBundle,
         query: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         weights: RetrievalWeights,
         active_channel: str,
     ) -> MemoryBundle:
@@ -665,7 +665,7 @@ class MemoryRetriever:
 
             # Diversity: limit items from same conversation (only for regular turns)
             max_per_conv = getattr(settings, 'max_results_per_conversation', 3)
-            seen_convs: Dict[str, int] = {}
+            seen_convs: dict[str, int] = {}
             filtered_regular = []
             for turn in regular_turns:
                 conv_id = turn.get("conversation_id")
@@ -777,9 +777,9 @@ class MemoryRetriever:
 
         return bundle
 
-    def _count_results_per_channel(self, bundle: MemoryBundle) -> Dict[str, int]:
+    def _count_results_per_channel(self, bundle: MemoryBundle) -> dict[str, int]:
         """Count results per channel for metrics."""
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
 
         for turn in bundle.relevant_turns:
             ch = turn.get("channel", "_global")

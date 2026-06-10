@@ -35,6 +35,7 @@ from .utils.responses import (
     parse_json_body,
     require_methods,
 )
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -647,7 +648,7 @@ async def providers_models(request):
                     "description": caps.description,
                 })
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Timeout fetching models from {provider_name} (>{FETCH_TIMEOUT}s)")
             return []
         except ValueError:
@@ -3648,10 +3649,10 @@ def memory_channels(request):
 
             # Channel is created implicitly when first item is added
             # For now, just confirm it's valid and doesn't exist
-            from datetime import datetime, timezone
+            from datetime import datetime
             return JsonResponse({
                 "name": channel_name,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "message": "Channel created successfully"
             }, status=201)
 

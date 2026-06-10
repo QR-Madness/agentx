@@ -8,7 +8,7 @@ persisted to ``data/workflows.yaml`` (created on first save).
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -65,7 +65,7 @@ def _parse_workflow(data: dict) -> Workflow:
 class WorkflowManager:
     """Loads, validates, and persists Agent Alloy workflows."""
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         if config_path is None:
             config_path = (
                 Path(__file__).parent.parent.parent.parent / "data" / "workflows.yaml"
@@ -81,7 +81,7 @@ class WorkflowManager:
 
     def _load_config(self, path: Path) -> None:
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
             if not config or "workflows" not in config:
                 return
@@ -92,7 +92,7 @@ class WorkflowManager:
         except Exception as e:
             logger.error(f"Failed to load workflows: {e}")
 
-    def save_config(self, path: Optional[Path] = None) -> None:
+    def save_config(self, path: Path | None = None) -> None:
         save_path = path or self.config_path
         save_path.parent.mkdir(parents=True, exist_ok=True)
         config = {"workflows": []}
@@ -158,7 +158,7 @@ class WorkflowManager:
     def list(self) -> list[Workflow]:
         return list(self._workflows.values())
 
-    def get(self, workflow_id: str) -> Optional[Workflow]:
+    def get(self, workflow_id: str) -> Workflow | None:
         return self._workflows.get(workflow_id)
 
     def create(self, workflow: Workflow) -> Workflow:
@@ -170,7 +170,7 @@ class WorkflowManager:
         self.save_config()
         return workflow
 
-    def update(self, workflow_id: str, updates: dict[str, Any]) -> Optional[Workflow]:
+    def update(self, workflow_id: str, updates: dict[str, Any]) -> Workflow | None:
         current = self._workflows.get(workflow_id)
         if current is None:
             return None
@@ -209,7 +209,7 @@ class WorkflowManager:
         return True
 
 
-_workflow_manager: Optional[WorkflowManager] = None
+_workflow_manager: WorkflowManager | None = None
 
 
 def get_workflow_manager() -> WorkflowManager:

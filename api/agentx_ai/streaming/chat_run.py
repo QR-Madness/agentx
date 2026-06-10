@@ -28,8 +28,9 @@ import asyncio
 import json
 import logging
 import threading
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Callable, Optional, cast
+from datetime import datetime, UTC
+from typing import Any, cast
+from collections.abc import AsyncGenerator, Callable
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def _decode(value: Any) -> Any:
     return value.decode("utf-8") if isinstance(value, bytes) else value
 
 
-def _extract_session_id(sse_event: str) -> Optional[str]:
+def _extract_session_id(sse_event: str) -> str | None:
     """Pull session_id from an SSE event's `data:` JSON line, if present."""
     for line in sse_event.splitlines():
         if line.startswith("data:"):
@@ -96,12 +97,12 @@ class ChatRunStore:
         *,
         user_id: str = "default",
         message: str = "",
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         indexed: bool = True,
     ) -> None:
         try:
             client = _redis()
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             client.hset(
                 _state_key(run_id),
                 mapping={
@@ -120,7 +121,7 @@ class ChatRunStore:
             # in `list_runs` -> /api/agent/chat/runs (Relay inbox / selector).
             if indexed:
                 index_key = _index_key(user_id)
-                score = datetime.now(timezone.utc).timestamp() * 1000
+                score = datetime.now(UTC).timestamp() * 1000
                 client.zadd(index_key, {run_id: score})
                 # Trim to the most-recent MAX_INDEX entries (drop lowest scores).
                 client.zremrangebyrank(index_key, 0, -(MAX_INDEX + 1))
@@ -155,13 +156,13 @@ class ChatRunStore:
     def mark(self, run_id: str, status: str) -> None:
         try:
             client = _redis()
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             client.hset(_state_key(run_id), mapping={"status": status, "updated_at": now})
             client.expire(_state_key(run_id), RUN_TTL_SECONDS)
         except Exception as e:
             logger.warning(f"chat_run mark failed: {e}")
 
-    def get_state(self, run_id: str) -> Optional[dict]:
+    def get_state(self, run_id: str) -> dict | None:
         try:
             raw = cast(dict, _redis().hgetall(_state_key(run_id)))
             if not raw:
@@ -259,7 +260,7 @@ store = ChatRunStore()
 
 # Factory yielding the SSE async generator to drive. Kept as a zero-arg callable
 # so the (request-free) ``generate_sse`` closure can be handed over as-is.
-GenFactory = Callable[[], AsyncGenerator[str, None]]
+GenFactory = Callable[[], AsyncGenerator[str]]
 
 
 def start_chat_run(
@@ -267,7 +268,7 @@ def start_chat_run(
     *,
     user_id: str = "default",
     message: str = "",
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     indexed: bool = True,
 ) -> str:
     """Create run state and spawn the detached runner thread. Returns run_id.
@@ -352,13 +353,13 @@ def _is_stale_running(state: dict) -> bool:
         return False
     try:
         ts = datetime.fromisoformat(updated)
-        age = (datetime.now(timezone.utc) - ts).total_seconds()
+        age = (datetime.now(UTC) - ts).total_seconds()
         return age > STALE_RUNNING_SECONDS
     except Exception:
         return False
 
 
-async def tail_chat_run(run_id: str, last_id: str = "0") -> AsyncGenerator[str, None]:
+async def tail_chat_run(run_id: str, last_id: str = "0") -> AsyncGenerator[str]:
     """
     Yield SSE event strings for a run, replaying from ``last_id`` then following
     live. Stops on the CLOSE sentinel or a terminal/orphaned state. Emits a

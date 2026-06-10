@@ -22,7 +22,6 @@ import logging.handlers
 import os
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from .flags import LogFlags
 
@@ -100,7 +99,7 @@ class _ArchiveFormatter(logging.Formatter):
         return f"{base}\n{detail}" if detail else base
 
 
-def build_archive_handler(flags: LogFlags) -> Optional[logging.Handler]:
+def build_archive_handler(flags: LogFlags) -> logging.Handler | None:
     if not flags.archive_enabled:
         return None
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -147,7 +146,7 @@ def list_segments() -> list[dict[str, object]]:
     return out
 
 
-def resolve_segment(name: str) -> Optional[Path]:
+def resolve_segment(name: str) -> Path | None:
     """Safely resolve a segment name to a path inside ARCHIVE_DIR (no traversal)."""
     if "/" in name or "\\" in name or ".." in name:
         return None

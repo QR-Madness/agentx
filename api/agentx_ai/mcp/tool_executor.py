@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from mcp import ClientSession
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
@@ -15,7 +16,7 @@ from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 logger = logging.getLogger(__name__)
 
 # Type for tool usage recording callback
-ToolUsageRecorder = Callable[[str, dict, Any, bool, int, Optional[str]], None]
+ToolUsageRecorder = Callable[[str, dict, Any, bool, int, str | None], None]
 
 
 @dataclass
@@ -28,7 +29,7 @@ class ToolInfo:
     server_name: str
     
     @classmethod
-    def from_mcp_tool(cls, tool: Tool, server_name: str) -> "ToolInfo":
+    def from_mcp_tool(cls, tool: Tool, server_name: str) -> ToolInfo:
         """Create ToolInfo from MCP Tool object."""
         return cls(
             name=tool.name,
@@ -84,9 +85,9 @@ class ToolExecutor:
         # "discovery failed" apart from "server genuinely has no tools" (both
         # otherwise surface as an empty list).
         self._discovery_errors: dict[str, str] = {}
-        self._usage_recorder: Optional[ToolUsageRecorder] = None
+        self._usage_recorder: ToolUsageRecorder | None = None
 
-    def get_discovery_error(self, server_name: str) -> Optional[str]:
+    def get_discovery_error(self, server_name: str) -> str | None:
         """Return the last tool-discovery error for a server, or None if the
         most recent discovery succeeded (an empty tool list is a success)."""
         return self._discovery_errors.get(server_name)

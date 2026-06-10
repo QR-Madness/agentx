@@ -10,7 +10,6 @@ The client mirrors this list in `lib/promptPlaceholders.ts` for the editor's
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 # Source of truth for the supported tokens (token, label, description).
 PROMPT_PLACEHOLDERS: list[dict[str, str]] = [
@@ -21,7 +20,7 @@ PROMPT_PLACEHOLDERS: list[dict[str, str]] = [
 
 
 def substitute_placeholders(
-    text: str, *, agent_name: str = "", now: Optional[datetime] = None
+    text: str, *, agent_name: str = "", now: datetime | None = None
 ) -> str:
     """Replace the whitelisted `{token}`s in ``text``. Unknown braces are untouched."""
     if not text or "{" not in text:

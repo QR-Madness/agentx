@@ -28,7 +28,7 @@ def docker_services_running() -> bool:
         try:
             with socket.create_connection((host, port), timeout=1):
                 pass
-        except (socket.error, socket.timeout):
+        except (TimeoutError, OSError):
             return False
     return True
 

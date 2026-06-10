@@ -11,7 +11,8 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Callable, Optional
+from typing import Any
+from collections.abc import AsyncGenerator, Callable
 
 from ..providers.base import Message, MessageRole
 from .helpers import estimate_tokens, truncate_tool_messages
@@ -69,7 +70,7 @@ def _prepare_round_context(
     max_context_tokens: int,
     task_context: str,
     truncate_on_overflow: bool,
-    context_window: Optional[int],
+    context_window: int | None,
     context_warning_threshold: float,
 ) -> bool:
     """Pre-stream context management for one round.
@@ -190,10 +191,10 @@ async def _run_delegations(
     alloy_executor,
     agent,
     *,
-    result: "ToolLoopResult",
+    result: ToolLoopResult,
     delegation_messages: list[Message],
     delegation_raw: dict[str, dict[str, Any]],
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Run Agent Alloy delegations **concurrently**, yielding their interleaved
     event stream.
 
@@ -331,10 +332,10 @@ async def _execute_and_emit_tools(
     *,
     task_context: str,
     capture_tool_turns: bool,
-    result: "ToolLoopResult",
+    result: ToolLoopResult,
     delegation_raw: dict[str, dict[str, Any]],
     suppress_result_ids: set | None = None,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Execute the regular (sync) tool calls, emit `tool_result` events, and
     extend `messages` with the round's tool results.
 
@@ -410,22 +411,22 @@ async def streaming_tool_loop(
     provider,
     model_id: str,
     messages: list[Message],
-    tools: Optional[list[dict[str, Any]]],
+    tools: list[dict[str, Any]] | None,
     agent,
     *,
     temperature: float = 0.7,
     max_tokens: int = 4096,
     max_tool_rounds: int = 10,
     max_context_tokens: int = 100000,
-    context_window: Optional[int] = None,
+    context_window: int | None = None,
     context_warning_threshold: float = 0.85,
     task_context: str = "",
     emit_trajectory_info: bool = True,
     truncate_on_overflow: bool = True,
     capture_tool_turns: bool = False,
-    result: Optional[ToolLoopResult] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
-) -> AsyncGenerator[str, None]:
+    result: ToolLoopResult | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> AsyncGenerator[str]:
     """
     Async generator running the streaming tool-use loop.
 

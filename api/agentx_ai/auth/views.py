@@ -1,7 +1,7 @@
 """Authentication views for AgentX API."""
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 
@@ -107,7 +107,7 @@ def auth_login(request):
 
     # Calculate expiration
     session_ttl = getattr(settings, 'AGENTX_SESSION_TTL', 86400)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=session_ttl)
+    expires_at = datetime.now(UTC) + timedelta(seconds=session_ttl)
 
     return json_success({
         "token": token,

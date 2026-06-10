@@ -32,7 +32,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
+from collections.abc import AsyncGenerator
 
 from ..config import get_config_manager
 from ..providers.base import Message, MessageRole, SpeechResult
@@ -253,7 +254,7 @@ def _sub_placeholders(text: str, *, agent_name: str = "") -> str:
     return substitute_placeholders(text, agent_name=agent_name)
 
 
-def _persona_override(amb, field: str) -> Optional[str]:
+def _persona_override(amb, field: str) -> str | None:
     """A non-blank functional-persona override on the ambassador config, else None."""
     if not amb:
         return None
@@ -287,7 +288,7 @@ class AmbassadorService:
     """Briefs conversation turns on demand, in parallel and without pollution."""
 
     def __init__(self) -> None:
-        self._registry: Optional[ProviderRegistry] = None
+        self._registry: ProviderRegistry | None = None
 
     @property
     def registry(self) -> ProviderRegistry:
@@ -323,7 +324,7 @@ class AmbassadorService:
         ceiling = cfg.get("max_tokens")
         return min(budget, ceiling) if ceiling else budget
 
-    def _resolve_profile(self, profile_id: Optional[str]):
+    def _resolve_profile(self, profile_id: str | None):
         """Pick the ambassador profile: explicit id → **default ambassador** → None.
 
         (An ambassador is now its own profile kind; briefings use the default
@@ -339,7 +340,7 @@ class AmbassadorService:
             profile = pm.get_default_ambassador()
         return profile
 
-    def _current_run_id(self) -> Optional[str]:
+    def _current_run_id(self) -> str | None:
         """Best-effort: the detached runner sets this ambiently per run."""
         try:
             from ..streaming.status import current_run_id
@@ -400,7 +401,7 @@ class AmbassadorService:
         question: str,
         context: str,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
+        artifacts: dict | None = None,
     ) -> str:
         agent_label = agent_name.strip() or "the agent"
         sections = []
@@ -431,7 +432,7 @@ class AmbassadorService:
         intent: str,
         context: str,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
+        artifacts: dict | None = None,
     ) -> str:
         agent_label = agent_name.strip() or "the agent"
         sections = []
@@ -462,7 +463,7 @@ class AmbassadorService:
             parts.append(f"Additional briefing instructions:\n{amb.briefing_prompt.strip()}")
         return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
 
-    def _render_artifacts(self, artifacts: Optional[dict], agent_label: str) -> str:
+    def _render_artifacts(self, artifacts: dict | None, agent_label: str) -> str:
         """Compact, prose-able summary of what the agent *did* this turn (tools it
         ran, sources it pulled, exhibits it built) — grounding beyond the reply."""
         if not artifacts:
@@ -521,7 +522,7 @@ class AmbassadorService:
         assistant_text: str,
         context: str,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
+        artifacts: dict | None = None,
     ) -> str:
         agent_label = agent_name.strip() or "Your agent"
         sections = []
@@ -603,7 +604,7 @@ class AmbassadorService:
         return self._grounding_context(conversation_id, _LEAN_GROUNDING_TURNS, agent_name)
 
     @staticmethod
-    def _active_conversation_note(active_conversation: Optional[dict]) -> str:
+    def _active_conversation_note(active_conversation: dict | None) -> str:
         """A one-line ambient-context note telling the ambassador which conversation the
         person is *currently in* (the active chat tab) — distinct from the conversation
         it's focused on / discussing. Lets it answer 'what am I working on now?' and
@@ -631,10 +632,10 @@ class AmbassadorService:
         question: str,
         exclude_id: str,
         agent_name: str,
-        artifacts: Optional[dict],
+        artifacts: dict | None,
         profile,
         with_tools: bool,
-        active_conversation: Optional[dict] = None,
+        active_conversation: dict | None = None,
     ) -> list[Message]:
         """The message list for an answer turn: capability persona (+ tool belt +
         ambient active-conversation note) → prior Q&A as continuity (`_thread_history`)
@@ -664,8 +665,8 @@ class AmbassadorService:
         assistant_text: str,
         user_text: str = "",
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
-    ) -> AsyncGenerator[str, None]:
+        artifacts: dict | None = None,
+    ) -> AsyncGenerator[str]:
         """Brief one conversation turn. Yields ``ambassador_*`` SSE events.
 
         Never raises: a failure settles the sidecar status and emits an error
@@ -743,9 +744,9 @@ class AmbassadorService:
         question: str,
         *,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
-        active_conversation: Optional[dict] = None,
-    ) -> AsyncGenerator[str, None]:
+        artifacts: dict | None = None,
+        active_conversation: dict | None = None,
+    ) -> AsyncGenerator[str]:
         """Answer a free-form question about the conversation. Yields ``ambassador_*``
         SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client pump is
         shared with briefings). The ambassador drives its read-only tool belt to look
@@ -820,7 +821,7 @@ class AmbassadorService:
         on_error,
         empty_text: str,
         log_label: str,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """The unified streaming agentic answer core (text Q&A + voice).
 
         Each round streams ``provider.stream`` with the read-only tool belt: a round
@@ -969,7 +970,7 @@ class AmbassadorService:
         intent: str,
         *,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
+        artifacts: dict | None = None,
     ) -> str:
         """Draft a message FROM the user TO the agent (the outbound relay): turn a
         rough intent into a clear, first-person message the user reviews/edits before
@@ -1029,7 +1030,7 @@ class AmbassadorService:
         transcript: str,
         context: str,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
+        artifacts: dict | None = None,
     ) -> str:
         agent_label = agent_name.strip() or "the agent"
         sections = []
@@ -1084,13 +1085,13 @@ class AmbassadorService:
         qa_id: str,
         question: str,
         agent_name: str,
-        artifacts: Optional[dict],
+        artifacts: dict | None,
         profile,
         provider,
         model_id: str,
         temperature: float,
         cfg: dict[str, Any],
-        active_conversation: Optional[dict] = None,
+        active_conversation: dict | None = None,
     ) -> str:
         """Run the agentic answer core to completion (persisting to the ``qa:``
         sidecar) and return the final spoken text. The voice path uses this so a
@@ -1137,8 +1138,8 @@ class AmbassadorService:
         transcript: str,
         *,
         agent_name: str = "",
-        artifacts: Optional[dict] = None,
-        active_conversation: Optional[dict] = None,
+        artifacts: dict | None = None,
+        active_conversation: dict | None = None,
     ) -> dict:
         """Interpret a spoken voice command: the ambassador first decides whether to
         **answer** it or draft a **relay** for the user to send. An *answer* is then
@@ -1229,9 +1230,9 @@ class AmbassadorService:
         self,
         text: str,
         *,
-        profile_id: Optional[str] = None,
-        voice: Optional[str] = None,
-        model: Optional[str] = None,
+        profile_id: str | None = None,
+        voice: str | None = None,
+        model: str | None = None,
     ) -> SpeechResult:
         """Synthesize spoken audio for ``text`` (a briefing / Q&A answer).
 
@@ -1298,9 +1299,9 @@ class AmbassadorService:
         audio: bytes,
         *,
         audio_format: str = "webm",
-        profile_id: Optional[str] = None,
-        model: Optional[str] = None,
-        language: Optional[str] = None,
+        profile_id: str | None = None,
+        model: str | None = None,
+        language: str | None = None,
     ) -> str:
         """Transcribe spoken audio to text (the user-speaks half of voice mode).
 
@@ -1367,7 +1368,7 @@ class AmbassadorService:
         on_error,
         empty_text: str,
         log_label: str,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Shared streaming core for briefings + Q&A: token-stream the completion,
         persist via the injected callbacks, and settle the sidecar on done / cancel
         (``GeneratorExit`` from ``gen.aclose()``) / error — never leaving a record
@@ -1419,7 +1420,7 @@ class AmbassadorService:
 
 
 # Module-level singleton
-_service: Optional[AmbassadorService] = None
+_service: AmbassadorService | None = None
 
 
 def get_ambassador() -> AmbassadorService:

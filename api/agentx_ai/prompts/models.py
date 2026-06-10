@@ -4,7 +4,7 @@ Pydantic models for the prompt management system.
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -44,9 +44,9 @@ class PromptTemplate(BaseModel):
     )
     type: TemplateType = Field(default=TemplateType.SNIPPET, description="Template type")
     is_builtin: bool = Field(default=False, description="Protected default template")
-    description: Optional[str] = Field(None, description="Usage description")
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    description: str | None = Field(None, description="Usage description")
+    created_at: datetime | None = Field(default_factory=datetime.utcnow)
+    updated_at: datetime | None = Field(default_factory=datetime.utcnow)
 
     def has_modifications(self) -> bool:
         """Check if content differs from default."""
@@ -93,7 +93,7 @@ class PromptProfile(BaseModel):
     """
     id: str = Field(..., description="Unique identifier")
     name: str = Field(..., description="Display name")
-    description: Optional[str] = Field(None, description="Description of when to use this profile")
+    description: str | None = Field(None, description="Description of when to use this profile")
     sections: list[PromptSection] = Field(default_factory=list, description="Ordered list of sections")
     is_default: bool = Field(default=False, description="Whether this is the default profile")
     
@@ -135,16 +135,16 @@ class PromptLayer(BaseModel):
     kind: Literal["builtin", "custom"] = Field(
         "custom", description="'builtin' = shipped (has a default sidecar); 'custom' = user-created"
     )
-    default: Optional[str] = Field(
+    default: str | None = Field(
         None, description="Shipped default content (built-ins only); the sidecar"
     )
     default_version: int = Field(
         1, description="Bumped when the shipped default changes (drives update detection)"
     )
-    override: Optional[str] = Field(
+    override: str | None = Field(
         None, description="User edit; None means 'use the default'"
     )
-    base_version: Optional[int] = Field(
+    base_version: int | None = Field(
         None, description="default_version the override was seeded/synced from"
     )
     enabled: bool = Field(True, description="Whether this layer is in the composed stack")
@@ -188,8 +188,8 @@ class GlobalPrompt(BaseModel):
 class StructuredOutputConfig(BaseModel):
     """Configuration for structured/constrained output."""
     enabled: bool = Field(default=False, description="Whether structured output is enabled")
-    format: Optional[str] = Field(None, description="Output format: 'json', 'json_schema', etc.")
-    output_schema: Optional[str] = Field(None, description="JSON schema for structured output")
+    format: str | None = Field(None, description="Output format: 'json', 'json_schema', etc.")
+    output_schema: str | None = Field(None, description="JSON schema for structured output")
     strict: bool = Field(default=False, description="Whether to enforce strict schema compliance")
 
 
@@ -199,18 +199,18 @@ class PromptConfig(BaseModel):
 
     Combines global prompt, profile, and any request-specific overrides.
     """
-    global_prompt: Optional[GlobalPrompt] = None
-    profile: Optional[PromptProfile] = None
-    mcp_tools_prompt: Optional[str] = None
-    structured_output: Optional[StructuredOutputConfig] = None
+    global_prompt: GlobalPrompt | None = None
+    profile: PromptProfile | None = None
+    mcp_tools_prompt: str | None = None
+    structured_output: StructuredOutputConfig | None = None
 
     # Request-specific overrides
-    additional_context: Optional[str] = None
-    system_override: Optional[str] = None  # Completely replace system prompt
+    additional_context: str | None = None
+    system_override: str | None = None  # Completely replace system prompt
 
     # Agent identity
-    agent_name: Optional[str] = None  # Name to inject as "Your name is {name}."
-    agent_system_prompt: Optional[str] = None  # Agent-specific custom instructions
+    agent_name: str | None = None  # Name to inject as "Your name is {name}."
+    agent_system_prompt: str | None = None  # Agent-specific custom instructions
 
     def compose_system_prompt(self) -> str:
         """

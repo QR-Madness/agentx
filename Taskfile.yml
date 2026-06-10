@@ -642,6 +642,11 @@ tasks:
     cmds:
       - uv run ruff check --fix api/
 
+  audit:
+    desc: "Scan installed dependencies for known CVEs (pip-audit)"
+    cmds:
+      - uv run pip-audit --progress-spinner off {{.CLI_ARGS}}
+
   lint:client:
     desc: "Lint TypeScript/React code"
     dir: client
@@ -961,6 +966,11 @@ tasks:
       - echo "🔍 Release Checklist"
       - echo "━━━━━━━━━━━━━━━━━━━━"
       - task: docs:check
+      - |
+        echo "  ⏳ Auditing dependencies (advisory — not blocking)..."
+        uv run pip-audit --progress-spinner off \
+          && echo "  ✓ No known dependency CVEs" \
+          || echo "  ⚠️  pip-audit reported advisories above — triage with 'task audit'"
       - |
         ISSUES=""
         

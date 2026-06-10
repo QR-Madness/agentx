@@ -5,7 +5,7 @@ Base classes for reasoning strategies.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -41,16 +41,16 @@ class ThoughtStep(BaseModel):
     confidence: float = 1.0
     
     # For branching (ToT)
-    parent_step: Optional[int] = None
-    branch_id: Optional[str] = None
+    parent_step: int | None = None
+    branch_id: str | None = None
     
     # For actions (ReAct)
-    action_name: Optional[str] = None
-    action_input: Optional[dict[str, Any]] = None
-    action_output: Optional[str] = None
+    action_name: str | None = None
+    action_input: dict[str, Any] | None = None
+    action_output: str | None = None
     
     # Metadata
-    model: Optional[str] = None
+    model: str | None = None
     tokens_used: int = 0
     time_ms: float = 0.0
 
@@ -67,7 +67,7 @@ class ReasoningResult(BaseModel):
     
     # For ToT
     branches_explored: int = 0
-    best_branch: Optional[str] = None
+    best_branch: str | None = None
     
     # For ReAct
     actions_taken: int = 0
@@ -81,7 +81,7 @@ class ReasoningResult(BaseModel):
     models_used: list[str] = []
     
     # Raw data
-    raw_trace: Optional[list[dict[str, Any]]] = None
+    raw_trace: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -115,19 +115,17 @@ class ReasoningStrategy(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this strategy."""
-        pass
     
     @property
     @abstractmethod
     def strategy_type(self) -> str:
         """Return the type of strategy (cot, tot, react, reflection)."""
-        pass
     
     @abstractmethod
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -141,7 +139,6 @@ class ReasoningStrategy(ABC):
         Returns:
             ReasoningResult with answer and reasoning trace
         """
-        pass
 
     def validate(self) -> bool:
         """Validate that the strategy is properly configured."""

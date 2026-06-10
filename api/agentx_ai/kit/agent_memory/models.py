@@ -1,9 +1,9 @@
 """Data models for the agent memory system."""
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from hashlib import sha256
-from typing import Optional, List, Dict, Any
+from typing import Any
 from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
 
@@ -56,7 +56,7 @@ def compute_claim_hash(claim: str) -> str:
 
 def _utc_now():
     """Return current UTC time as timezone-aware datetime."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Turn(BaseModel):
@@ -68,15 +68,15 @@ class Turn(BaseModel):
     timestamp: datetime = Field(default_factory=_utc_now)
     role: str  # 'user', 'assistant', 'system', 'tool'
     content: str
-    embedding: Optional[List[float]] = None
-    token_count: Optional[int] = None
-    model: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = None
+    token_count: int | None = None
+    model: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     channel: str = "_global"
     # Docker-style agent_id of the producing agent (assistant turns only).
     # Enables multi-agent transcript reconstruction (Phase 16 — message
     # attribution).
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
 
     @field_validator("timestamp", mode="before")
     @classmethod
@@ -90,11 +90,11 @@ class Entity(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     type: str  # 'Person', 'Organization', 'Concept', etc.
-    aliases: List[str] = Field(default_factory=list)
-    description: Optional[str] = None
-    embedding: Optional[List[float]] = None
+    aliases: list[str] = Field(default_factory=list)
+    description: str | None = None
+    embedding: list[float] | None = None
     salience: float = 0.5
-    properties: Dict[str, Any] = Field(default_factory=dict)
+    properties: dict[str, Any] = Field(default_factory=dict)
     first_seen: datetime = Field(default_factory=_utc_now)
     last_accessed: datetime = Field(default_factory=_utc_now)
     access_count: int = 0
@@ -106,7 +106,7 @@ class Entity(BaseModel):
         return _coerce_datetime(v)
 
     @staticmethod
-    def compute_embedding_text(name: str, description: Optional[str], type_: str) -> str:
+    def compute_embedding_text(name: str, description: str | None, type_: str) -> str:
         """Canonical text used to embed an entity: ``"{name}: {description or type}"``.
 
         Shared by upsert and update paths so the embedding input stays
@@ -124,12 +124,12 @@ class Fact(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     claim: str
-    claim_hash: Optional[str] = None  # SHA256 hash for indexed duplicate detection
+    claim_hash: str | None = None  # SHA256 hash for indexed duplicate detection
     confidence: float = 0.8
     source: str  # 'extraction', 'user_stated', 'inferred'
-    source_turn_id: Optional[str] = None
-    entity_ids: List[str] = Field(default_factory=list)
-    embedding: Optional[List[float]] = None
+    source_turn_id: str | None = None
+    entity_ids: list[str] = Field(default_factory=list)
+    embedding: list[float] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     channel: str = "_global"
 
@@ -139,12 +139,12 @@ class Fact(BaseModel):
     salience: float = 0.5
 
     # Temporal context (simple: current/past/future)
-    temporal_context: Optional[str] = None  # "current", "past", "future", or None
+    temporal_context: str | None = None  # "current", "past", "future", or None
 
     # Supersession tracking (for corrections and contradictions)
-    superseded_at: Optional[datetime] = None
-    superseded_by_id: Optional[str] = None
-    supersedes_id: Optional[str] = None  # ID of fact this supersedes
+    superseded_at: datetime | None = None
+    superseded_by_id: str | None = None
+    supersedes_id: str | None = None  # ID of fact this supersedes
 
     # Review flags
     flagged_for_review: bool = False
@@ -169,10 +169,10 @@ class Goal(BaseModel):
     description: str
     status: str = "active"  # 'active', 'completed', 'abandoned', 'blocked'
     priority: int = 3  # 1-5
-    parent_goal_id: Optional[str] = None
-    embedding: Optional[List[float]] = None
+    parent_goal_id: str | None = None
+    embedding: list[float] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
-    deadline: Optional[datetime] = None
+    deadline: datetime | None = None
     channel: str = "_global"
 
     @field_validator("created_at", "deadline", mode="before")
@@ -187,11 +187,11 @@ class Strategy(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     description: str
     context_pattern: str  # Regex or keywords
-    tool_sequence: List[str] = Field(default_factory=list)
-    embedding: Optional[List[float]] = None
+    tool_sequence: list[str] = Field(default_factory=list)
+    embedding: list[float] | None = None
     success_count: int = 0
     failure_count: int = 0
-    last_used: Optional[datetime] = None
+    last_used: datetime | None = None
     channel: str = "_global"
 
     @field_validator("last_used", mode="before")
@@ -211,17 +211,17 @@ class Procedure(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     trigger: str  # NL condition that activates this — "when presenting a recommendation"
-    trigger_features: Dict[str, Any] = Field(default_factory=dict)  # situation features (later activation)
+    trigger_features: dict[str, Any] = Field(default_factory=dict)  # situation features (later activation)
     body: str  # the replayable approach / instruction
     rationale: str = ""  # why this is the right behavior
     scope: str = "_global"  # channel scope (_global | user | project | _self_{agent})
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
     strength: int = 1  # replay/reinforce count
-    evidence_refs: List[str] = Field(default_factory=list)  # candidate ids + conversation ids
-    signal_kinds: List[str] = Field(default_factory=list)  # e.g. ["correction", "explicit_rule"]
-    embedding: Optional[List[float]] = None
-    created_at: Optional[datetime] = None
-    last_reinforced: Optional[datetime] = None
+    evidence_refs: list[str] = Field(default_factory=list)  # candidate ids + conversation ids
+    signal_kinds: list[str] = Field(default_factory=list)  # e.g. ["correction", "explicit_rule"]
+    embedding: list[float] | None = None
+    created_at: datetime | None = None
+    last_reinforced: datetime | None = None
 
     @field_validator("created_at", "last_reinforced", mode="before")
     @classmethod
@@ -232,21 +232,21 @@ class Procedure(BaseModel):
 class MemoryBundle(BaseModel):
     """Aggregated retrieval result for context injection."""
 
-    relevant_turns: List[Dict[str, Any]] = Field(default_factory=list)
-    entities: List[Dict[str, Any]] = Field(default_factory=list)
-    facts: List[Dict[str, Any]] = Field(default_factory=list)
-    strategies: List[Dict[str, Any]] = Field(default_factory=list)
-    procedures: List[Dict[str, Any]] = Field(default_factory=list)
-    active_goals: List[Dict[str, Any]] = Field(default_factory=list)
-    user_context: Dict[str, Any] = Field(default_factory=dict)
+    relevant_turns: list[dict[str, Any]] = Field(default_factory=list)
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    facts: list[dict[str, Any]] = Field(default_factory=list)
+    strategies: list[dict[str, Any]] = Field(default_factory=list)
+    procedures: list[dict[str, Any]] = Field(default_factory=list)
+    active_goals: list[dict[str, Any]] = Field(default_factory=list)
+    user_context: dict[str, Any] = Field(default_factory=dict)
 
     def to_context_string(
         self,
         *,
         turn_char_limit: int = 2000,
         max_turns: int = 10,
-        roles: Optional[set] = None,
-        current_conversation_id: Optional[str] = None,
+        roles: set | None = None,
+        current_conversation_id: str | None = None,
     ) -> str:
         """Format memory bundle as context for LLM prompt.
 
@@ -262,7 +262,7 @@ class MemoryBundle(BaseModel):
         sections = []
 
         if self.relevant_turns:
-            def _format_turn(t: Dict[str, Any]) -> str:
+            def _format_turn(t: dict[str, Any]) -> str:
                 content = t["content"] or ""
                 if len(content) > turn_char_limit:
                     content = content[:turn_char_limit] + "…[truncated]"
@@ -305,7 +305,7 @@ class MemoryBundle(BaseModel):
         # delta a general model wouldn't already do by default. Maintained, not
         # searched, so it's injected every turn (see ProceduralMemory.get_reflex_procedures).
         if self.procedures:
-            def _format_proc(p: Dict[str, Any]) -> str:
+            def _format_proc(p: dict[str, Any]) -> str:
                 trigger = (p.get("trigger") or "").strip()
                 body = (p.get("body") or "").strip()
                 return f"- {_prefix_trigger(trigger)}: {body}" if trigger else f"- {body}"

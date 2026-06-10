@@ -3,7 +3,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
 from pydantic_settings import BaseSettings
 
 # Path to user-configurable settings file
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "changeme"
+    neo4j_password: str = "changeme"  # noqa: S105 — dev default; real value from NEO4J_PASSWORD env
 
     # PostgreSQL
     postgres_uri: str = "postgresql://agent:changeme@localhost:5432/agent_memory"
@@ -271,7 +271,7 @@ class Settings(BaseSettings):
 
 
 # Mutable settings that can be updated at runtime
-_runtime_settings: Optional[Settings] = None
+_runtime_settings: Settings | None = None
 _settings_cache_time: float = 0.0
 
 
@@ -301,7 +301,7 @@ def _load_settings_with_overrides() -> Settings:
 
     if MEMORY_SETTINGS_PATH.exists():
         try:
-            with open(MEMORY_SETTINGS_PATH, "r") as f:
+            with open(MEMORY_SETTINGS_PATH) as f:
                 overrides = json.load(f)
             # Apply overrides to a copy of base settings
             base_dict = base.model_dump()
@@ -313,7 +313,7 @@ def _load_settings_with_overrides() -> Settings:
     return base
 
 
-def save_memory_settings(settings_dict: Dict[str, Any]) -> None:
+def save_memory_settings(settings_dict: dict[str, Any]) -> None:
     """
     Save consolidation settings to file.
 
@@ -336,7 +336,7 @@ def save_memory_settings(settings_dict: Dict[str, Any]) -> None:
         existing = {}
         if MEMORY_SETTINGS_PATH.exists():
             try:
-                with open(MEMORY_SETTINGS_PATH, "r") as f:
+                with open(MEMORY_SETTINGS_PATH) as f:
                     existing = json.load(f)
             except Exception:
                 existing = {}
@@ -353,7 +353,7 @@ def save_memory_settings(settings_dict: Dict[str, Any]) -> None:
     _settings_cache_time = 0.0
 
 
-def load_memory_settings() -> Dict[str, Any]:
+def load_memory_settings() -> dict[str, Any]:
     """
     Load current memory settings as a dictionary.
 
@@ -363,7 +363,7 @@ def load_memory_settings() -> Dict[str, Any]:
     return settings.model_dump()
 
 
-def get_consolidation_settings() -> Dict[str, Any]:
+def get_consolidation_settings() -> dict[str, Any]:
     """
     Get only the consolidation-related settings for the UI.
 
@@ -446,7 +446,7 @@ def get_consolidation_settings() -> Dict[str, Any]:
     }
 
 
-_TRAJECTORY_COMPRESSION_KEYS: Dict[str, Any] = {
+_TRAJECTORY_COMPRESSION_KEYS: dict[str, Any] = {
     # ui_key: (config_path, default)
     "trajectory_compression_enabled": ("trajectory_compression.enabled", True),
     "trajectory_compression_model": ("trajectory_compression.model", "anthropic:claude-haiku-4-5-20251001"),
@@ -457,7 +457,7 @@ _TRAJECTORY_COMPRESSION_KEYS: Dict[str, Any] = {
 }
 
 
-def _get_trajectory_compression_settings() -> Dict[str, Any]:
+def _get_trajectory_compression_settings() -> dict[str, Any]:
     """Read trajectory-compression keys from ConfigManager for the UI."""
     from agentx_ai.config import get_config_manager
     cfg = get_config_manager()
@@ -467,7 +467,7 @@ def _get_trajectory_compression_settings() -> Dict[str, Any]:
     }
 
 
-def _apply_trajectory_compression_settings(settings_dict: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_trajectory_compression_settings(settings_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Pull any trajectory_compression_* keys out of settings_dict and write them
     to ConfigManager. Returns the remaining dict (other keys untouched).
@@ -483,7 +483,7 @@ def _apply_trajectory_compression_settings(settings_dict: Dict[str, Any]) -> Dic
     return remaining
 
 
-def get_recall_settings() -> Dict[str, Any]:
+def get_recall_settings() -> dict[str, Any]:
     """
     Get RecallLayer settings for the UI.
 

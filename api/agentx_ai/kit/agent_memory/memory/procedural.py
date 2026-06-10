@@ -1,12 +1,12 @@
 """Procedural memory - tool usage patterns and successful strategies."""
 
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
+from datetime import datetime, UTC
+from typing import Any, TYPE_CHECKING, cast
 import json
 import logging
 import re
 
-from typing_extensions import LiteralString
+from typing import LiteralString
 from sqlalchemy import text
 
 from ..models import Strategy, Procedure
@@ -37,7 +37,7 @@ _RULE_TRIGGERS = re.compile(
 )
 
 
-def detect_explicit_rule(message: str) -> Optional[str]:
+def detect_explicit_rule(message: str) -> str | None:
     """Return the rule clause if a message states a standing rule/preference, else None.
 
     Heuristic only (no LLM): matches imperative/preference phrasing and returns the
@@ -57,7 +57,7 @@ def detect_explicit_rule(message: str) -> Optional[str]:
 class ProceduralMemory:
     """Handles tool usage patterns and successful strategies."""
 
-    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+    def __init__(self, audit_logger: MemoryAuditLogger | None = None):
         """Initialize procedural memory.
 
         Args:
@@ -69,14 +69,14 @@ class ProceduralMemory:
     def record_invocation(
         self,
         conversation_id: str,
-        turn_id: Optional[str],
+        turn_id: str | None,
         tool_name: str,
-        tool_input: Dict[str, Any],
+        tool_input: dict[str, Any],
         tool_output: Any,
         success: bool,
         latency_ms: int,
         channel: str = "_global",
-        turn_index: Optional[int] = None,
+        turn_index: int | None = None,
     ) -> None:
         """
         Record a tool invocation.
@@ -159,10 +159,10 @@ class ProceduralMemory:
         signal: str,
         content: str,
         *,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         channel: str = "_global",
-        agent_id: Optional[str] = None,
-        turn_index: Optional[int] = None,
+        agent_id: str | None = None,
+        turn_index: int | None = None,
     ) -> None:
         """Stage a raw procedural-memory candidate (the encode loop).
 
@@ -190,10 +190,10 @@ class ProceduralMemory:
                 },
             )
 
-    def count_candidates(self, *, status: str = "pending", channel: Optional[str] = None) -> int:
+    def count_candidates(self, *, status: str = "pending", channel: str | None = None) -> int:
         """Count staged candidates (for observability / stats)."""
         sql = "SELECT COUNT(*) FROM procedure_candidates WHERE status = :status"
-        params: Dict[str, Any] = {"status": status}
+        params: dict[str, Any] = {"status": status}
         if channel:
             sql += " AND channel = :channel"
             params["channel"] = channel
@@ -207,7 +207,7 @@ class ProceduralMemory:
     # duplicated, as the same pattern recurs.
     # ------------------------------------------------------------------
 
-    def _safe_embed(self, text_value: str) -> Optional[List[float]]:
+    def _safe_embed(self, text_value: str) -> list[float] | None:
         """Embed text, degrading to None if no embedder is available.
 
         Keeps procedural writes working (sans vector dedupe/search) on a box
@@ -221,10 +221,10 @@ class ProceduralMemory:
 
     def mark_candidates(
         self,
-        candidate_ids: List[int],
+        candidate_ids: list[int],
         status: str,
         *,
-        distilled_into: Optional[str] = None,
+        distilled_into: str | None = None,
     ) -> None:
         """Bulk-update staged candidates' lifecycle (``distilled`` | ``discarded``)."""
         if not candidate_ids:
@@ -252,11 +252,11 @@ class ProceduralMemory:
         body: str,
         rationale: str = "",
         scope: str = "_global",
-        agent_id: Optional[str] = None,
-        signal_kinds: Optional[List[str]] = None,
-        evidence_refs: Optional[List[str]] = None,
-        conversation_ids: Optional[List[str]] = None,
-        user_id: Optional[str] = None,
+        agent_id: str | None = None,
+        signal_kinds: list[str] | None = None,
+        evidence_refs: list[str] | None = None,
+        conversation_ids: list[str] | None = None,
+        user_id: str | None = None,
     ) -> Procedure:
         """Write a distilled Procedure node (Slice 1 — the encode→distill output).
 
@@ -273,8 +273,8 @@ class ProceduralMemory:
             signal_kinds=signal_kinds or [],
             evidence_refs=evidence_refs or [],
             embedding=self._safe_embed(f"{trigger}\n{body}"),
-            created_at=datetime.now(timezone.utc),
-            last_reinforced=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            last_reinforced=datetime.now(UTC),
         )
 
         with Neo4jConnection.session() as session:
@@ -331,9 +331,9 @@ class ProceduralMemory:
         self,
         procedure_id: str,
         *,
-        evidence_refs: Optional[List[str]] = None,
-        signal_kinds: Optional[List[str]] = None,
-        channel: Optional[str] = None,
+        evidence_refs: list[str] | None = None,
+        signal_kinds: list[str] | None = None,
+        channel: str | None = None,
     ) -> bool:
         """Strengthen an existing Procedure (replay): ``strength += 1``, merge
         evidence + signal kinds, bump ``last_reinforced``. Repurposes the dead
@@ -368,10 +368,10 @@ class ProceduralMemory:
         self,
         query: str,
         *,
-        channels: Optional[List[str]] = None,
+        channels: list[str] | None = None,
         top_k: int = 5,
-        min_score: Optional[float] = None,
-    ) -> List[Procedure]:
+        min_score: float | None = None,
+    ) -> list[Procedure]:
         """Vector-search procedures by ``trigger + body`` similarity (used for
         dedupe-on-write and the deferred deliberate-recall mode). ``min_score``
         filters to cosine-similar matches (dedupe). Returns [] when no embedder is
@@ -438,10 +438,10 @@ class ProceduralMemory:
 
     def get_reflex_procedures(
         self,
-        channels: List[str],
+        channels: list[str],
         *,
         limit: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """The reflex core: top-``strength`` procedures across the recall channels.
 
         Non-vector and *maintained, not searched* — injected every turn regardless
@@ -467,7 +467,7 @@ class ProceduralMemory:
             )
             return [dict(record) for record in result]
 
-    def count_procedures(self, *, channel: Optional[str] = None) -> int:
+    def count_procedures(self, *, channel: str | None = None) -> int:
         """Count stored procedures (observability / stats)."""
         with Neo4jConnection.session() as session:
             filters = CypherFilterBuilder("p")
@@ -488,7 +488,7 @@ class ProceduralMemory:
 
     def list_procedures(
         self, user_id: str, channel: str = "_global", offset: int = 0, limit: int = 20
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """List procedures with pagination (mirrors ``list_strategies``)."""
         with Neo4jConnection.session() as session:
             conditions = ["p.user_id = $user_id"]
@@ -551,10 +551,10 @@ class ProceduralMemory:
         self,
         description: str,
         context_pattern: str,
-        tool_sequence: List[str],
-        from_conversation_id: Optional[str] = None,
+        tool_sequence: list[str],
+        from_conversation_id: str | None = None,
         success: bool = True,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         channel: str = "_global",
     ) -> Strategy:
         """
@@ -581,7 +581,7 @@ class ProceduralMemory:
             embedding=embedding,
             success_count=1 if success else 0,
             failure_count=0 if success else 1,
-            last_used=datetime.now(timezone.utc),
+            last_used=datetime.now(UTC),
         )
 
         with Neo4jConnection.session() as session:
@@ -640,9 +640,9 @@ class ProceduralMemory:
         self,
         task_description: str,
         top_k: int = 5,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None,
-    ) -> List[Strategy]:
+        user_id: str | None = None,
+        channel: str | None = None,
+    ) -> list[Strategy]:
         """
         Find strategies that worked for similar tasks.
 
@@ -706,8 +706,8 @@ class ProceduralMemory:
         self,
         strategy_id: str,
         success: bool,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None,
+        user_id: str | None = None,
+        channel: str | None = None,
     ) -> bool:
         """
         Update strategy success/failure counts.
@@ -764,10 +764,10 @@ class ProceduralMemory:
 
     def get_tool_stats(
         self,
-        task_type: Optional[str] = None,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        task_type: str | None = None,
+        user_id: str | None = None,
+        channel: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get tool usage statistics, optionally filtered by task type.
 
@@ -841,7 +841,7 @@ class ProceduralMemory:
 
     def list_strategies(
         self, user_id: str, channel: str = "_global", offset: int = 0, limit: int = 20
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         List strategies with pagination.
 

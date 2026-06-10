@@ -6,7 +6,7 @@ Neo4j Cypher and PostgreSQL queries.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, List
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,9 @@ class CypherFilterBuilder:
             node_alias: The alias used for the node in Cypher (e.g., "f" for Fact)
         """
         self.node_alias = node_alias
-        self._conditions: List[str] = []
+        self._conditions: list[str] = []
 
-    def add_user_filter(self, user_id: Optional[str]) -> "CypherFilterBuilder":
+    def add_user_filter(self, user_id: str | None) -> CypherFilterBuilder:
         """
         Add user_id filter if provided.
 
@@ -63,9 +63,9 @@ class CypherFilterBuilder:
 
     def add_channel_filter(
         self,
-        channel: Optional[str],
+        channel: str | None,
         include_global: bool = True,
-    ) -> "CypherFilterBuilder":
+    ) -> CypherFilterBuilder:
         """
         Add channel filter with standard AgentX semantics.
 
@@ -100,10 +100,10 @@ class CypherFilterBuilder:
 
     def add_time_filter(
         self,
-        hours: Optional[int],
+        hours: int | None,
         timestamp_field: str = "timestamp",
         max_hours: int = 8760,  # 1 year
-    ) -> "CypherFilterBuilder":
+    ) -> CypherFilterBuilder:
         """
         Add time window filter.
 
@@ -126,9 +126,9 @@ class CypherFilterBuilder:
 
     def add_confidence_filter(
         self,
-        min_confidence: Optional[float],
+        min_confidence: float | None,
         confidence_field: str = "confidence",
-    ) -> "CypherFilterBuilder":
+    ) -> CypherFilterBuilder:
         """
         Add minimum confidence filter.
 
@@ -145,7 +145,7 @@ class CypherFilterBuilder:
             )
         return self
 
-    def add_custom(self, condition: str) -> "CypherFilterBuilder":
+    def add_custom(self, condition: str) -> CypherFilterBuilder:
         """
         Add a custom condition.
 
@@ -188,13 +188,13 @@ class CypherFilterBuilder:
         """Check if any conditions have been added."""
         return len(self._conditions) > 0
 
-    def clear(self) -> "CypherFilterBuilder":
+    def clear(self) -> CypherFilterBuilder:
         """Clear all conditions."""
         self._conditions.clear()
         return self
 
 
-def neo4j_datetime_to_iso(dt: Any) -> Optional[str]:
+def neo4j_datetime_to_iso(dt: Any) -> str | None:
     """
     Convert Neo4j DateTime object to ISO string.
 
@@ -230,7 +230,7 @@ COMMON_DATETIME_FIELDS = [
 
 def convert_record_datetimes(
     record: dict[str, Any],
-    fields: Optional[List[str]] = None,
+    fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Convert all DateTime fields in a record to ISO strings.
@@ -330,10 +330,10 @@ class SQLFilterBuilder:
         params = builder.params  # {"user_id": "...", "channel": "..."}
     """
 
-    _conditions: List[str] = field(default_factory=list)
+    _conditions: list[str] = field(default_factory=list)
     params: dict[str, Any] = field(default_factory=dict)
 
-    def add_user_filter(self, user_id: Optional[str]) -> "SQLFilterBuilder":
+    def add_user_filter(self, user_id: str | None) -> SQLFilterBuilder:
         """Add user_id filter if provided."""
         if user_id:
             self._conditions.append("user_id = :user_id")
@@ -342,9 +342,9 @@ class SQLFilterBuilder:
 
     def add_channel_filter(
         self,
-        channel: Optional[str],
+        channel: str | None,
         include_global: bool = True,
-    ) -> "SQLFilterBuilder":
+    ) -> SQLFilterBuilder:
         """Add channel filter with standard semantics."""
         if channel == "_all" or channel is None:
             pass
@@ -360,7 +360,7 @@ class SQLFilterBuilder:
             self.params["channel"] = channel
         return self
 
-    def add_custom(self, condition: str, **params: Any) -> "SQLFilterBuilder":
+    def add_custom(self, condition: str, **params: Any) -> SQLFilterBuilder:
         """Add custom condition with parameters."""
         if condition:
             self._conditions.append(condition)

@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import logging
 import os
-from functools import lru_cache
+from functools import cache
 
 logger = logging.getLogger("agentx")
 
 _DEVICE_ENV_VAR = "AGENTX_DEVICE"
 
 
-@lru_cache(maxsize=None)
+@cache
 def resolve_device(override: str | None = None) -> str:
     """Resolve the torch device string to run on-device models.
 

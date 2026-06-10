@@ -20,7 +20,7 @@ try:
 except (FileNotFoundError, KeyError, TypeError) as e:
     # Fallback for edge cases (e.g., running from unusual locations)
     import warnings
-    warnings.warn(f"Could not load versions.yaml: {e}. Using fallback values.")
+    warnings.warn(f"Could not load versions.yaml: {e}. Using fallback values.", stacklevel=2)
     VERSION = "0.0.0"
     PROTOCOL_VERSION = 0
     MIN_CLIENT_VERSION = "0.0.0"

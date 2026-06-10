@@ -9,7 +9,7 @@ import json
 import logging
 import math
 import re
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ def get_section_content(
     content: str,
     section_name: str,
     limit: int = 5000,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Extract content for a named section (case-insensitive fuzzy match).
 
@@ -327,7 +327,7 @@ def _walk_path(data: Any, path: str) -> Any:
                 try:
                     current = current[int(segment)]
                 except ValueError:
-                    raise KeyError(f"Cannot access '{segment}' on a list")
+                    raise KeyError(f"Cannot access '{segment}' on a list") from None
             else:
                 raise TypeError(f"Cannot access '{segment}' on {type(current).__name__}")
 
@@ -409,7 +409,7 @@ def semantic_search_chunks(
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0 or norm_b == 0:

@@ -1,8 +1,9 @@
 """Background consolidation jobs for memory processing."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Callable, Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+from datetime import datetime, timedelta, UTC
+from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 from uuid import uuid4
 import logging
 import json
@@ -71,7 +72,7 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
 
 def _is_semantic_duplicate(
     session,
-    claim_embedding: List[float],
+    claim_embedding: list[float],
     user_id: str,
     channel: str,
     threshold: float = 0.92,
@@ -117,13 +118,13 @@ def _is_semantic_duplicate(
 def _get_contradiction_candidates(
     session,
     claim: str,
-    claim_embedding: List[float],
-    entity_names: List[str],
+    claim_embedding: list[float],
+    entity_names: list[str],
     user_id: str,
     channel: str,
     similarity_threshold: float = 0.5,
     max_candidates: int = 10,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Find facts that might contradict a new claim using entity-scoped
     retrieval + embedding similarity (Layer 2 of the verification pipeline).
@@ -147,7 +148,7 @@ def _get_contradiction_candidates(
         List of candidate facts with id, claim, confidence, temporal_context, similarity_score
     """
     seen_ids: set = set()
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
 
     # Strategy 1: Entity-scoped retrieval
     if entity_names:
@@ -208,7 +209,7 @@ def _get_contradiction_candidates(
     return candidates[:max_candidates]
 
 
-def _is_temporal_progression(new_fact: Dict[str, Any], old_fact: Dict[str, Any]) -> bool:
+def _is_temporal_progression(new_fact: dict[str, Any], old_fact: dict[str, Any]) -> bool:
     """
     Detect natural temporal progressions that don't need LLM adjudication.
 
@@ -231,7 +232,7 @@ def _is_temporal_progression(new_fact: Dict[str, Any], old_fact: Dict[str, Any])
     return False
 
 
-def _get_memory_for_user(user_id: str, channel: str = "_default") -> "AgentMemory":
+def _get_memory_for_user(user_id: str, channel: str = "_default") -> AgentMemory:
     """
     Get or create an AgentMemory instance for a user.
 
@@ -251,7 +252,7 @@ def _get_recent_facts(
     user_id: str,
     channel: str,
     limit: int = 30,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Get recent facts for a user/channel for contradiction detection.
 
@@ -281,7 +282,7 @@ def _get_recent_facts(
 
 
 def _handle_user_correction(
-    memory: "AgentMemory",
+    memory: AgentMemory,
     session,
     correction,
     user_id: str,
@@ -356,9 +357,9 @@ def _handle_user_correction(
 
 
 def _handle_contradiction(
-    memory: "AgentMemory",
+    memory: AgentMemory,
     session,
-    fact_dict: Dict[str, Any],
+    fact_dict: dict[str, Any],
     contradiction,
     user_id: str,
     channel: str,
@@ -419,15 +420,15 @@ def _handle_contradiction(
 
 
 def _resolve_and_prepare_entities(
-    memory: "AgentMemory",
-    extracted_entities: List[Dict[str, Any]],
-    entity_map: Dict[str, str],
+    memory: AgentMemory,
+    extracted_entities: list[dict[str, Any]],
+    entity_map: dict[str, str],
     user_id: str,
     channel: str,
     conv_id: str,
     metrics: ConsolidationMetrics,
-    errors: List[str],
-) -> tuple[List[Entity], int, int]:
+    errors: list[str],
+) -> tuple[list[Entity], int, int]:
     """
     Resolve each extracted entity dict against the existing store before storage.
 
@@ -442,7 +443,7 @@ def _resolve_and_prepare_entities(
 
     Returns (entities_to_store, num_reused, total_entities_resolved).
     """
-    entities_to_store: List[Entity] = []
+    entities_to_store: list[Entity] = []
     reused = 0
     semantic = memory.semantic
 
@@ -527,7 +528,7 @@ def _resolve_and_prepare_entities(
 
 def _batch_store_entities(
     session,
-    entities: List[Entity],
+    entities: list[Entity],
     conv_id: str,
     user_id: str,
     channel: str,
@@ -600,8 +601,8 @@ def _batch_store_entities(
 
 def _batch_store_relationships(
     session,
-    relationships: List[Dict[str, Any]],
-    entity_map: Dict[str, str],
+    relationships: list[dict[str, Any]],
+    entity_map: dict[str, str],
 ) -> int:
     """
     Store multiple relationships in a single Neo4j transaction using UNWIND.
@@ -650,10 +651,10 @@ def _batch_store_relationships(
 
 
 def _resolve_subject_channel(
-    subject: Optional[str],
+    subject: str | None,
     active_channel: str,
-    agent_id: Optional[str],
-    subject_agent_id: Optional[str] = None,
+    agent_id: str | None,
+    subject_agent_id: str | None = None,
 ) -> str:
     """Map a fact's subject to the channel it belongs in.
 
@@ -675,11 +676,11 @@ def _resolve_subject_channel(
 
 
 def _get_or_create_memory(
-    memory_cache: Dict[str, "AgentMemory"],
+    memory_cache: dict[str, AgentMemory],
     user_id: str,
     channel: str,
-    agent_id: Optional[str] = None,
-) -> "AgentMemory":
+    agent_id: str | None = None,
+) -> AgentMemory:
     """Return a cached AgentMemory for (user_id, channel), creating it if needed."""
     cache_key = f"{user_id}:{channel}"
     mem = memory_cache.get(cache_key)
@@ -691,11 +692,11 @@ def _get_or_create_memory(
 
 
 def _make_subject_router(
-    memory_cache: Dict[str, "AgentMemory"],
+    memory_cache: dict[str, AgentMemory],
     user_id: str,
     active_channel: str,
-    agent_id: Optional[str],
-) -> Callable[[Dict[str, Any]], Tuple["AgentMemory", str]]:
+    agent_id: str | None,
+) -> Callable[[dict[str, Any]], tuple[AgentMemory, str]]:
     """Build a ``route(fact) -> (memory, channel)`` closure for fact storage.
 
     The fact dict carries ``subject`` and an optional ``subject_agent_id`` (the
@@ -704,7 +705,7 @@ def _make_subject_router(
     (any agent's self-channel) are built lazily on first use, so a single
     conversation can fan facts out to several agents' ``_self_`` channels.
     """
-    def route(fact: Dict[str, Any]) -> Tuple["AgentMemory", str]:
+    def route(fact: dict[str, Any]) -> tuple[AgentMemory, str]:
         channel = _resolve_subject_channel(
             fact.get("subject"), active_channel, agent_id,
             subject_agent_id=fact.get("subject_agent_id"),
@@ -716,9 +717,9 @@ def _make_subject_router(
 
 def _ensure_agent_entities(
     session,
-    memory_cache: Dict[str, "AgentMemory"],
+    memory_cache: dict[str, AgentMemory],
     user_id: str,
-    roster: List[Dict[str, str]],
+    roster: list[dict[str, str]],
 ) -> None:
     """Upsert one first-class ``Agent`` entity per roster member, in ``_global``.
 
@@ -762,15 +763,15 @@ def _ensure_agent_entities(
 
 
 def _resolve_fact_entity_ids(
-    memory: "AgentMemory",
+    memory: AgentMemory,
     session,
-    entity_names: List[str],
-    entity_map: Dict[str, str],
+    entity_names: list[str],
+    entity_map: dict[str, str],
     user_id: str,
     channel: str,
     conv_id: str,
     metrics: ConsolidationMetrics,
-) -> List[str]:
+) -> list[str]:
     """Resolve a fact's ``entity_names`` to entity ids, bulletproofing the ABOUT link.
 
     A fact's entity_names previously linked only when the exact lowercased name was in
@@ -786,7 +787,7 @@ def _resolve_fact_entity_ids(
     order-preserving list of entity ids. Records recovery + stub metrics.
     """
     settings = get_settings()
-    ids: List[str] = []
+    ids: list[str] = []
     seen: set = set()
 
     for raw in entity_names or []:
@@ -860,13 +861,13 @@ _NAME_STOPWORDS = frozenset({
 })
 
 
-def _extract_name_candidates(text: str, max_candidates: int = 12) -> List[str]:
+def _extract_name_candidates(text: str, max_candidates: int = 12) -> list[str]:
     """Cheap regex pre-pass: pull proper-noun-shaped tokens from a turn."""
     if not text:
         return []
     # Preserve original casing of first occurrence; dedup by lowercase
     seen_lower: set[str] = set()
-    out: List[str] = []
+    out: list[str] = []
     for match in _NAME_CANDIDATE_RE.finditer(text):
         candidate = next((g for g in match.groups() if g), None)
         if not candidate:
@@ -885,13 +886,13 @@ def _extract_name_candidates(text: str, max_candidates: int = 12) -> List[str]:
 
 
 def _build_scope_context(
-    memory: "AgentMemory",
+    memory: AgentMemory,
     text: str,
     user_id: str,
     channel: str,
     max_entities: int = 8,
     max_facts_per_entity: int = 3,
-) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Build (known_entities, known_facts) for the extraction prompt.
 
@@ -906,7 +907,7 @@ def _build_scope_context(
         return [], []
 
     semantic = memory.semantic
-    entities: List[Dict[str, Any]] = []
+    entities: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
     for name in candidates:
@@ -928,7 +929,7 @@ def _build_scope_context(
 
     # Pull a few facts per entity. `get_entity_facts_and_relationships` returns
     # facts ordered by confidence DESC, so a head slice is fine.
-    facts: List[Dict[str, Any]] = []
+    facts: list[dict[str, Any]] = []
     fact_ids: set[str] = set()
     for ent in entities:
         try:
@@ -958,10 +959,10 @@ def _build_scope_context(
 @dataclass
 class _ConvExtraction:
     """Result of relevance-filtering + extracting one conversation's user turns."""
-    relevant_turns: List[Dict[str, Any]] = field(default_factory=list)
-    entities: List[Dict[str, Any]] = field(default_factory=list)
-    facts: List[Dict[str, Any]] = field(default_factory=list)
-    relationships: List[Dict[str, Any]] = field(default_factory=list)
+    relevant_turns: list[dict[str, Any]] = field(default_factory=list)
+    entities: list[dict[str, Any]] = field(default_factory=list)
+    facts: list[dict[str, Any]] = field(default_factory=list)
+    relationships: list[dict[str, Any]] = field(default_factory=list)
     corrections_applied: int = 0
     extraction_failed: bool = False
 
@@ -969,7 +970,7 @@ class _ConvExtraction:
 @dataclass
 class _FactStoreResult:
     """Outcome of running the fact verification pipeline for one conversation."""
-    stored_fact_ids: List[str] = field(default_factory=list)
+    stored_fact_ids: list[str] = field(default_factory=list)
     fact_count: int = 0
     skipped_duplicates: int = 0
     contradictions_found: int = 0
@@ -977,8 +978,8 @@ class _FactStoreResult:
 
 
 def _fetch_pending_conversations(
-    session, only_conversation_id: Optional[str] = None,
-) -> Tuple[List[Any], int]:
+    session, only_conversation_id: str | None = None,
+) -> tuple[list[Any], int]:
     """Discover conversations with unconsolidated user turns.
 
     Returns ``(records, total_in_neo4j)`` where ``records`` are the
@@ -1153,7 +1154,7 @@ async def _store_facts_with_verification(
     embedder = get_embedder()
     # Per-channel entity maps so a routed fact never links to an entity in another
     # channel. The active channel reuses the conversation's prebuilt map.
-    entity_maps: Dict[str, Dict[str, str]] = {active_channel: entity_map}
+    entity_maps: dict[str, dict[str, str]] = {active_channel: entity_map}
 
     for fact_dict in extracted_facts:
         try:
@@ -1405,7 +1406,7 @@ async def _consolidate_user_conversation(
     )
 
     # Use lowercase keys for case-insensitive matching with relationships
-    entity_map: Dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
+    entity_map: dict[str, str] = {}  # lowercase_name -> entity_id for relationship linking
 
     # Prepare entities for batch storage
     storage_start = time.perf_counter()
@@ -1551,7 +1552,7 @@ async def _consolidate_assistant_conversation(
         metrics.assistant_facts_extracted += len(result.facts)
 
         # Resolve entities against the self-channel store before storing
-        entity_map: Dict[str, str] = {}
+        entity_map: dict[str, str] = {}
         entities_to_store, _reused, _ = _resolve_and_prepare_entities(
             memory=memory,
             extracted_entities=result.entities,
@@ -1574,7 +1575,7 @@ async def _consolidate_assistant_conversation(
 
         # Store facts with self_extraction source. Per-channel entity maps keep a
         # routed user-subject fact from linking to a self-channel entity.
-        entity_maps: Dict[str, Dict[str, str]] = {self_channel: entity_map}
+        entity_maps: dict[str, dict[str, str]] = {self_channel: entity_map}
         for fact_dict in result.facts:
             claim = fact_dict.get("claim")
             if not claim:
@@ -1625,9 +1626,9 @@ async def _consolidate_assistant_conversation(
 
 
 async def consolidate_episodic_to_semantic(
-    progress_callback: Optional[Callable] = None,
-    only_conversation_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    progress_callback: Callable | None = None,
+    only_conversation_id: str | None = None,
+) -> dict[str, Any]:
     """
     Extract entities, facts, and relationships from recent episodic memory
     and store in semantic memory using the AgentMemory interface.
@@ -1649,14 +1650,14 @@ async def consolidate_episodic_to_semantic(
     job_id = str(uuid4())[:8]
 
     # Cache memory instances per user to avoid repeated initialization
-    memory_cache: Dict[str, "AgentMemory"] = {}
+    memory_cache: dict[str, AgentMemory] = {}
 
     # Aggregated metrics across all conversations
     metrics = ConsolidationMetrics(
         job_id=job_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
-    errors: List[str] = []
+    errors: list[str] = []
 
     # =========================================================================
     # Phase 1: User-turn consolidation into semantic memory
@@ -1697,7 +1698,7 @@ async def consolidate_episodic_to_semantic(
     # Phase 2: Assistant self-knowledge extraction
     # Extract knowledge from assistant turns into per-agent _self_ channels
     # =========================================================================
-    self_memory_cache: Dict[str, "AgentMemory"] = {}
+    self_memory_cache: dict[str, AgentMemory] = {}
 
     with Neo4jConnection.session() as session:
         assistant_result = session.run("""
@@ -1737,7 +1738,7 @@ async def consolidate_episodic_to_semantic(
     self_memory_cache.clear()
 
     # Finalize metrics
-    metrics.completed_at = datetime.now(timezone.utc)
+    metrics.completed_at = datetime.now(UTC)
     metrics.total_latency_ms = int((time.perf_counter() - job_start) * 1000)
     metrics.total_llm_calls = (
         metrics.relevance_calls + metrics.correction_calls +
@@ -1770,7 +1771,7 @@ async def consolidate_episodic_to_semantic(
     }
 
 
-def detect_patterns() -> Dict[str, Any]:
+def detect_patterns() -> dict[str, Any]:
     """
     Analyze successful conversations to extract procedural patterns.
 
@@ -1836,7 +1837,7 @@ def detect_patterns() -> Dict[str, Any]:
     return {"items_processed": patterns_extracted}
 
 
-def _derive_procedure_scope(signal: str, channel: Optional[str], agent_id: Optional[str]) -> str:
+def _derive_procedure_scope(signal: str, channel: str | None, agent_id: str | None) -> str:
     """Channel a distilled Procedure should live in.
 
     An implicit *correction* aimed at a specific agent routes to that agent's
@@ -1868,7 +1869,7 @@ def _resolve_user_for_conversation(conversation_id: Any) -> str:
     return "default"
 
 
-async def distill_procedures(progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+async def distill_procedures(progress_callback: Callable | None = None) -> dict[str, Any]:
     """Distill pending ``procedure_candidates`` into scoped Procedures (Loop 2).
 
     Reads high-signal candidates (corrections/steers + explicit user rules), drops
@@ -1888,7 +1889,7 @@ async def distill_procedures(progress_callback: Optional[Callable] = None) -> Di
     created = 0
     reinforced = 0
     discarded = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
     with get_postgres_session() as pg:
         from sqlalchemy import text as _sa_text
@@ -1914,7 +1915,7 @@ async def distill_procedures(progress_callback: Optional[Callable] = None) -> Di
         }
 
     # Group candidates by the scope (channel) their procedure will live in.
-    groups: Dict[str, List[Any]] = {}
+    groups: dict[str, list[Any]] = {}
     for r in rows:
         scope = _derive_procedure_scope(r.signal, r.channel, r.agent_id)
         groups.setdefault(scope, []).append(r)
@@ -1998,7 +1999,7 @@ async def distill_procedures(progress_callback: Optional[Callable] = None) -> Di
     }
 
 
-def apply_memory_decay() -> Dict[str, Any]:
+def apply_memory_decay() -> dict[str, Any]:
     """
     Apply time-based decay to memory salience scores.
 
@@ -2042,7 +2043,7 @@ def apply_memory_decay() -> Dict[str, Any]:
     }
 
 
-def promote_to_global() -> Dict[str, Any]:
+def promote_to_global() -> dict[str, Any]:
     """
     Promote high-quality facts/entities from project channels to _global.
 
@@ -2068,7 +2069,7 @@ def promote_to_global() -> Dict[str, Any]:
     facts_promoted = 0
     entities_updated = 0
     facts_updated = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
     audit_logger = MemoryAuditLogger(settings)
 
@@ -2252,7 +2253,7 @@ def promote_to_global() -> Dict[str, Any]:
     }
 
 
-def cleanup_old_memories() -> Dict[str, Any]:
+def cleanup_old_memories() -> dict[str, Any]:
     """Archive or delete old, low-salience memories."""
     retention_days = settings.episodic_retention_days
     archived_count = 0
@@ -2292,7 +2293,7 @@ def cleanup_old_memories() -> Dict[str, Any]:
     }
 
 
-def reset_consolidation(delete_memories: bool = False) -> Dict[str, Any]:
+def reset_consolidation(delete_memories: bool = False) -> dict[str, Any]:
     """
     Reset consolidation timestamps for all conversations.
 
@@ -2366,7 +2367,7 @@ def reset_consolidation(delete_memories: bool = False) -> Dict[str, Any]:
 def trigger_reflection(
     conversation_id: str,
     user_id: str,
-    outcome: Dict[str, Any]
+    outcome: dict[str, Any]
 ) -> None:
     """
     Trigger reflection job for a conversation.
@@ -2383,14 +2384,14 @@ def trigger_reflection(
         "conversation_id": conversation_id,
         "user_id": user_id,
         "outcome": outcome,
-        "triggered_at": datetime.now(timezone.utc).isoformat()
+        "triggered_at": datetime.now(UTC).isoformat()
     }
 
     redis.xadd("reflection_jobs", {"data": json.dumps(job_data)})
     logger.info(f"Queued reflection for conversation {conversation_id}")
 
 
-def manage_audit_partitions() -> Dict[str, Any]:
+def manage_audit_partitions() -> dict[str, Any]:
     """
     Manage audit log partitions.
     Creates future partitions and drops old ones based on retention settings.
@@ -2405,7 +2406,7 @@ def manage_audit_partitions() -> Dict[str, Any]:
 
     partitions_created = 0
     partitions_dropped = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
     with get_postgres_session() as session:
         # Create future partitions
@@ -2509,7 +2510,7 @@ def _slug(text: str) -> str:
     return "".join(ch for ch in text.lower() if ch.isalnum())
 
 
-def _build_entity_index(session, user_id: str, channel: str) -> Dict[str, str]:
+def _build_entity_index(session, user_id: str, channel: str) -> dict[str, str]:
     """Map name/alias (lowercased) and slug → entity id for a (user, channel) scope.
 
     Scoped to ``channel`` + ``_global`` and ranked by salience so a name shared by
@@ -2527,7 +2528,7 @@ def _build_entity_index(session, user_id: str, channel: str) -> Dict[str, str]:
     """, user_id=user_id, channel=channel)
 
     # Ascending salience so higher-salience entries overwrite lower ones on key collision.
-    index: Dict[str, str] = {}
+    index: dict[str, str] = {}
     for r in rows:
         names = [r["name"], *(r["aliases"] or [])]
         for nm in names:
@@ -2540,7 +2541,7 @@ def _build_entity_index(session, user_id: str, channel: str) -> Dict[str, str]:
     return index
 
 
-def _claim_entity_candidates(claim: str, max_ngram: int) -> List[str]:
+def _claim_entity_candidates(claim: str, max_ngram: int) -> list[str]:
     """Contiguous 1..max_ngram-word n-grams from a claim, for entity-name matching.
 
     Punctuation is stripped per word; stopwords are dropped from the unigrams but
@@ -2549,7 +2550,7 @@ def _claim_entity_candidates(claim: str, max_ngram: int) -> List[str]:
     """
     words = [w.strip(".,;:!?\"'()[]{}").strip() for w in claim.split()]
     words = [w for w in words if w]
-    candidates: List[str] = []
+    candidates: list[str] = []
     seen: set = set()
     for n in range(min(max_ngram, len(words)), 0, -1):
         for i in range(len(words) - n + 1):
@@ -2565,7 +2566,7 @@ def _claim_entity_candidates(claim: str, max_ngram: int) -> List[str]:
     return candidates
 
 
-def link_facts_to_entities() -> Dict[str, Any]:
+def link_facts_to_entities() -> dict[str, Any]:
     """
     Backfill: link orphaned facts (no ``ABOUT`` edge) to existing entities.
 
@@ -2588,7 +2589,7 @@ def link_facts_to_entities() -> Dict[str, Any]:
     links_created = 0
     facts_processed = 0
     facts_still_orphan = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
     with Neo4jConnection.session() as session:
         # All orphan facts (no 7-day window) — bounded by a config cap.
@@ -2605,7 +2606,7 @@ def link_facts_to_entities() -> Dict[str, Any]:
         logger.info(f"Entity-link backfill: found {len(facts_to_link)} unlinked facts")
 
         # Cache one entity index per (user_id, channel) across the batch.
-        index_cache: Dict[Tuple[str, str], Dict[str, str]] = {}
+        index_cache: dict[tuple[str, str], dict[str, str]] = {}
 
         for record in facts_to_link:
             fact_id = record["fact_id"]
@@ -2621,7 +2622,7 @@ def link_facts_to_entities() -> Dict[str, Any]:
                     index = _build_entity_index(session, user_id, channel)
                     index_cache[cache_key] = index
 
-                matched_ids: List[str] = []
+                matched_ids: list[str] = []
                 seen_ids: set = set()
                 for phrase in _claim_entity_candidates(claim, max_ngram):
                     eid = index.get(phrase.lower()) or index.get(_slug(phrase))

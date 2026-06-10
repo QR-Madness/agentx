@@ -10,7 +10,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
@@ -41,7 +41,7 @@ The request to assess:
 {task}"""
 
 
-def _extract_json_object(text: str) -> Optional[dict]:
+def _extract_json_object(text: str) -> dict | None:
     """Best-effort extract a single JSON object from an LLM response.
 
     Handles raw JSON, ```json fenced blocks, and JSON embedded in prose (scans
@@ -80,7 +80,7 @@ def _extract_json_object(text: str) -> Optional[dict]:
     return None
 
 
-def _coerce_subtask_type(v: object) -> "SubtaskType":
+def _coerce_subtask_type(v: object) -> SubtaskType:
     try:
         return SubtaskType(str(v).strip().lower())
     except Exception:
@@ -134,8 +134,8 @@ class Subtask:
     estimated_complexity: TaskComplexity = TaskComplexity.SIMPLE
     tools_needed: list[str] = field(default_factory=list)
     completed: bool = False
-    result: Optional[str] = None
-    goal_id: Optional[str] = None  # For future subtask-level goal tracking
+    result: str | None = None
+    goal_id: str | None = None  # For future subtask-level goal tracking
 
     def to_dict(self) -> dict:
         """Serialize for Redis storage.
@@ -157,7 +157,7 @@ class Subtask:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Subtask":
+    def from_dict(cls, data: dict) -> Subtask:
         """Rehydrate a Subtask from its ``to_dict`` form (lenient about missing
         optional keys so older snapshots still load)."""
         return cls(
@@ -183,7 +183,7 @@ class TaskPlan:
     steps: list[Subtask]
     reasoning_strategy: str = "auto"
     estimated_tokens: int = 0
-    goal_id: Optional[str] = None  # Linked goal in memory system
+    goal_id: str | None = None  # Linked goal in memory system
 
     def to_dict(self) -> dict:
         """Serialize for Redis storage."""
@@ -197,7 +197,7 @@ class TaskPlan:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TaskPlan":
+    def from_dict(cls, data: dict) -> TaskPlan:
         """Rehydrate a TaskPlan from its ``to_dict`` form (for plan resumption)."""
         return cls(
             task=data.get("task", ""),
@@ -208,7 +208,7 @@ class TaskPlan:
             goal_id=data.get("goal_id"),
         )
 
-    def get_next_subtask(self) -> Optional[Subtask]:
+    def get_next_subtask(self) -> Subtask | None:
         """Get the next subtask that can be executed."""
         for subtask in self.steps:
             if subtask.completed:
@@ -264,7 +264,7 @@ class TaskPlanner:
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
-        prompt_override: Optional[str] = None,
+        prompt_override: str | None = None,
         max_subtasks: int = 6,
     ):
         self.model = model
@@ -284,8 +284,8 @@ class TaskPlanner:
     async def plan(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
-        memory: Optional["AgentMemory"] = None,
+        context: list[Message] | None = None,
+        memory: AgentMemory | None = None,
     ) -> TaskPlan:
         """
         Create a plan for executing a task.
@@ -385,8 +385,8 @@ class TaskPlanner:
         base_messages: list[Message],
         task: str,
         *,
-        memory: Optional["AgentMemory"] = None,
-    ) -> Optional[TaskPlan]:
+        memory: AgentMemory | None = None,
+    ) -> TaskPlan | None:
         """Decompose ``task`` using the *caller's* model + already-assembled context.
 
         Unlike :meth:`plan`, this reuses the **main agent's** provider/model and
@@ -594,7 +594,7 @@ class TaskPlanner:
     def _create_goal_for_plan(
         self,
         plan: TaskPlan,
-        memory: Optional["AgentMemory"]
+        memory: AgentMemory | None
     ) -> TaskPlan:
         """
         Create a goal in memory for the given plan.

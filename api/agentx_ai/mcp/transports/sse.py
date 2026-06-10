@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
@@ -40,7 +40,7 @@ class SSETransport:
         name: str,
         url: str,
         headers: dict[str, str] | None = None,
-    ) -> AsyncGenerator[ClientSession, None]:
+    ) -> AsyncGenerator[ClientSession]:
         """
         Connect to an MCP server via SSE.
         

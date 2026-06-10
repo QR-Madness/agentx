@@ -7,7 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Optional
+from typing import Any
+from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
 
@@ -54,9 +55,9 @@ class Message(BaseModel):
     """A message in a conversation."""
     role: MessageRole
     content: str
-    name: Optional[str] = None
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[list[dict[str, Any]]] = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class ToolCall(BaseModel):
@@ -119,7 +120,7 @@ def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCa
     return completed
 
 
-def convert_messages_to_openai_format(messages: list["Message"]) -> list[dict[str, Any]]:
+def convert_messages_to_openai_format(messages: list[Message]) -> list[dict[str, Any]]:
     """Convert internal Message objects to the OpenAI chat format.
 
     Shared by the OpenAI-compatible providers (OpenAI, OpenRouter, Vercel).
@@ -164,19 +165,19 @@ def parse_openai_tool_calls(tool_calls: Any) -> list[ToolCall]:
 class StreamChunk(BaseModel):
     """A chunk of streaming response."""
     content: str = ""
-    finish_reason: Optional[str] = None
-    tool_calls: Optional[list[ToolCall]] = None
-    usage: Optional[dict[str, int]] = None  # Token usage (available on final chunk)
+    finish_reason: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    usage: dict[str, int] | None = None  # Token usage (available on final chunk)
 
 
 class CompletionResult(BaseModel):
     """Result of a completion request."""
     content: str
     finish_reason: str
-    tool_calls: Optional[list[ToolCall]] = None
-    usage: Optional[dict[str, int]] = None
+    tool_calls: list[ToolCall] | None = None
+    usage: dict[str, int] | None = None
     model: str
-    raw_response: Optional[dict[str, Any]] = None
+    raw_response: dict[str, Any] | None = None
 
 
 @dataclass
@@ -191,7 +192,7 @@ class SpeechResult:
     content_type: str = "audio/mpeg"
     model: str = ""
     voice: str = ""
-    generation_id: Optional[str] = None
+    generation_id: str | None = None
 
 
 @dataclass
@@ -199,8 +200,8 @@ class TranscriptionResult:
     """Result of a speech-to-text (transcription) request."""
     text: str
     model: str = ""
-    language: Optional[str] = None
-    raw_response: Optional[dict[str, Any]] = None
+    language: str | None = None
+    raw_response: dict[str, Any] | None = None
 
 
 @dataclass
@@ -213,23 +214,23 @@ class ModelCapabilities:
     supports_speech: bool = False
     supports_transcription: bool = False
     context_window: int = 4096
-    max_output_tokens: Optional[int] = None
-    cost_per_1k_input: Optional[float] = None
-    cost_per_1k_output: Optional[float] = None
+    max_output_tokens: int | None = None
+    cost_per_1k_input: float | None = None
+    cost_per_1k_output: float | None = None
     input_modalities: list[str] = field(default_factory=lambda: ["text"])
     output_modalities: list[str] = field(default_factory=lambda: ["text"])
-    description: Optional[str] = None
+    description: str | None = None
     pricing_currency: str = "USD"
 
 
 @dataclass
 class ProviderConfig:
     """Configuration for a model provider."""
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+    api_key: str | None = None
+    base_url: str | None = None
     # None means "unset" — each provider applies its own default (cloud: 60s,
     # LM Studio: 300s). An explicit value is always honored as-is.
-    timeout: Optional[float] = None
+    timeout: float | None = None
     max_retries: int = 3
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -249,7 +250,6 @@ class ModelProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this provider."""
-        pass
     
     @abstractmethod
     async def complete(
@@ -258,10 +258,10 @@ class ModelProvider(ABC):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> CompletionResult:
         """
@@ -289,10 +289,10 @@ class ModelProvider(ABC):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """
@@ -324,7 +324,6 @@ class ModelProvider(ABC):
         Returns:
             ModelCapabilities describing what the model supports
         """
-        pass
     
     @abstractmethod
     def list_models(self) -> list[str]:
@@ -334,7 +333,6 @@ class ModelProvider(ABC):
         Returns:
             List of model names
         """
-        pass
     
     async def health_check(self) -> dict[str, Any]:
         """
@@ -350,11 +348,11 @@ class ModelProvider(ABC):
         text: str,
         *,
         model: str,
-        voice: Optional[str] = None,
+        voice: str | None = None,
         response_format: str = "mp3",
-        speed: Optional[float] = None,
+        speed: float | None = None,
         **kwargs: Any,
-    ) -> "SpeechResult":
+    ) -> SpeechResult:
         """Synthesize speech (text-to-speech) for ``text``.
 
         Default raises — only providers exposing a TTS backend (currently
@@ -382,9 +380,9 @@ class ModelProvider(ABC):
         *,
         model: str,
         audio_format: str = "webm",
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs: Any,
-    ) -> "TranscriptionResult":
+    ) -> TranscriptionResult:
         """Transcribe spoken audio to text (speech-to-text).
 
         Default raises — only providers exposing an STT backend (currently

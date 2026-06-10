@@ -6,7 +6,8 @@ Consolidates JSON error responses, pagination, and request handling patterns.
 
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, Tuple
+from typing import Any
+from collections.abc import Callable
 import json
 import logging
 
@@ -44,7 +45,7 @@ class PaginationInfo:
         """Check if there are previous pages."""
         return self.page > 1
 
-    def to_dict(self, total: Optional[int] = None) -> dict[str, Any]:
+    def to_dict(self, total: int | None = None) -> dict[str, Any]:
         """
         Convert to dictionary for JSON response.
 
@@ -184,7 +185,7 @@ def method_not_allowed(allowed: list[str]) -> JsonResponse:
 
 def parse_json_body(
     request: HttpRequest,
-) -> Tuple[dict, Optional[JsonResponse]]:
+) -> tuple[dict, JsonResponse | None]:
     """
     Parse JSON body from request with error handling.
 
@@ -227,8 +228,8 @@ def parse_json_body(
 def require_field(
     data: dict,
     field_name: str,
-    field_type: Optional[type] = None,
-) -> Optional[JsonResponse]:
+    field_type: type | None = None,
+) -> JsonResponse | None:
     """
     Validate that a required field exists in data.
 

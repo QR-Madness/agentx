@@ -17,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
@@ -83,7 +83,7 @@ class Command(BaseCommand):
     def _resolve_output(output: str | None, channel: str) -> Path:
         if output:
             return Path(output)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         safe_channel = (channel or "_all").lstrip("_") or "all"
         # Repo root is two levels up from api/agentx_ai/management/commands/… —
         # use cwd-relative data/ so it matches the rest of the bind-mounted data.

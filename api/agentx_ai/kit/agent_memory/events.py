@@ -27,14 +27,15 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 # Event callback types
 SyncCallback = Callable[..., None]
 AsyncCallback = Callable[..., Any]  # Coroutine function
-Callback = Union[SyncCallback, AsyncCallback]
+Callback = SyncCallback | AsyncCallback
 
 
 @dataclass
@@ -43,7 +44,7 @@ class EventPayload:
 
     event_name: str
     timestamp: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -86,7 +87,7 @@ class FactUpdatedPayload(EventPayload):
     """Payload for on_fact_updated event."""
 
     fact_id: str = ""
-    fields_updated: List[str] = field(default_factory=list)
+    fields_updated: list[str] = field(default_factory=list)
     user_id: str = ""
     channel: str = "_global"
 
@@ -105,7 +106,7 @@ class EntityUpdatedPayload(EventPayload):
     """Payload for on_entity_updated event."""
 
     entity_id: str = ""
-    fields_updated: List[str] = field(default_factory=list)
+    fields_updated: list[str] = field(default_factory=list)
     user_id: str = ""
     channel: str = "_global"
 
@@ -181,7 +182,7 @@ class MemoryEventEmitter:
     RETRIEVAL_COMPLETE = "retrieval_complete"
 
     def __init__(self):
-        self._handlers: Dict[str, List[Callback]] = {}
+        self._handlers: dict[str, list[Callback]] = {}
         self._enabled = True
 
     def on(self, event: str, callback: Callback) -> Callable[[], None]:
@@ -225,7 +226,7 @@ class MemoryEventEmitter:
         except ValueError:
             return False
 
-    def emit(self, event: str, payload: Optional[EventPayload] = None) -> int:
+    def emit(self, event: str, payload: EventPayload | None = None) -> int:
         """
         Emit an event synchronously.
 
@@ -264,7 +265,7 @@ class MemoryEventEmitter:
         return called
 
     async def emit_async(
-        self, event: str, payload: Optional[EventPayload] = None
+        self, event: str, payload: EventPayload | None = None
     ) -> int:
         """
         Emit an event asynchronously.
@@ -297,7 +298,7 @@ class MemoryEventEmitter:
 
         return called
 
-    def clear(self, event: Optional[str] = None) -> None:
+    def clear(self, event: str | None = None) -> None:
         """
         Clear handlers for an event or all events.
 
@@ -322,7 +323,7 @@ class MemoryEventEmitter:
         """Check if events are enabled."""
         return self._enabled
 
-    def handler_count(self, event: Optional[str] = None) -> int:
+    def handler_count(self, event: str | None = None) -> int:
         """
         Get the number of registered handlers.
 

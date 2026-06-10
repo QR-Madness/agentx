@@ -6,7 +6,6 @@ Manages prompt composition, profile selection, and prompt storage.
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -38,7 +37,7 @@ class PromptManager:
     - MCP tools prompt generation
     """
     
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the PromptManager.
         
@@ -59,7 +58,7 @@ class PromptManager:
     def _load_config(self, path: Path) -> None:
         """Load prompts configuration from YAML file."""
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
             
             if not config:
@@ -94,7 +93,7 @@ class PromptManager:
         except Exception as e:
             logger.error(f"Failed to load prompt configuration: {e}")
     
-    def save_config(self, path: Optional[Path] = None) -> None:
+    def save_config(self, path: Path | None = None) -> None:
         """Save current configuration to YAML file."""
         save_path = path or self.config_path
         if not save_path:
@@ -154,11 +153,11 @@ class PromptManager:
         """List all available profiles."""
         return list(self._profiles.values())
     
-    def get_profile(self, profile_id: str) -> Optional[PromptProfile]:
+    def get_profile(self, profile_id: str) -> PromptProfile | None:
         """Get a profile by ID."""
         return self._profiles.get(profile_id)
     
-    def get_default_profile(self) -> Optional[PromptProfile]:
+    def get_default_profile(self) -> PromptProfile | None:
         """Get the default profile."""
         for profile in self._profiles.values():
             if profile.is_default:
@@ -202,7 +201,7 @@ class PromptManager:
         """List all available sections."""
         return list(self._sections.values())
     
-    def get_section(self, section_id: str) -> Optional[PromptSection]:
+    def get_section(self, section_id: str) -> PromptSection | None:
         """Get a section by ID."""
         return self._sections.get(section_id)
     
@@ -252,12 +251,12 @@ class PromptManager:
 
     def compose_prompt(
         self,
-        profile_id: Optional[str] = None,
-        mcp_tools: Optional[list[dict]] = None,
-        additional_context: Optional[str] = None,
-        structured_output: Optional[StructuredOutputConfig] = None,
-        agent_name: Optional[str] = None,
-        agent_system_prompt: Optional[str] = None,
+        profile_id: str | None = None,
+        mcp_tools: list[dict] | None = None,
+        additional_context: str | None = None,
+        structured_output: StructuredOutputConfig | None = None,
+        agent_name: str | None = None,
+        agent_system_prompt: str | None = None,
     ) -> PromptConfig:
         """
         Compose a complete prompt configuration.
@@ -308,11 +307,11 @@ class PromptManager:
     
     def get_system_prompt(
         self,
-        profile_id: Optional[str] = None,
-        mcp_tools: Optional[list[dict]] = None,
-        additional_context: Optional[str] = None,
-        agent_name: Optional[str] = None,
-        agent_system_prompt: Optional[str] = None,
+        profile_id: str | None = None,
+        mcp_tools: list[dict] | None = None,
+        additional_context: str | None = None,
+        agent_name: str | None = None,
+        agent_system_prompt: str | None = None,
     ) -> str:
         """
         Get the composed system prompt string.
@@ -340,7 +339,7 @@ class PromptManager:
 # Singleton instance
 # =============================================================================
 
-_prompt_manager: Optional[PromptManager] = None
+_prompt_manager: PromptManager | None = None
 
 
 def get_prompt_manager() -> PromptManager:

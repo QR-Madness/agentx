@@ -15,7 +15,8 @@ import hashlib
 import json
 import logging
 from datetime import datetime
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class RedisBlobStorage:
     def _redis_key(self, storage_key: str) -> str:
         return f"{self.key_prefix}{storage_key}"
 
-    def store(self, storage_key: str, data: dict, ttl_seconds: int) -> Optional[str]:
+    def store(self, storage_key: str, data: dict, ttl_seconds: int) -> str | None:
         """Store ``data`` (JSON-serialized) under ``storage_key``.
 
         Returns the storage key on success, or None on failure so the caller
@@ -63,11 +64,11 @@ class RedisBlobStorage:
             logger.warning(f"Failed to store {self.label} in Redis: {e}")
             return None
 
-    def get(self, storage_key: str) -> Optional[dict]:
+    def get(self, storage_key: str) -> dict | None:
         """Retrieve the full payload dict, or None if missing/expired."""
         try:
             client = self._client()
-            data = cast(Optional[bytes], client.get(self._redis_key(storage_key)))
+            data = cast(bytes | None, client.get(self._redis_key(storage_key)))
             if data:
                 return json.loads(data)
             return None
@@ -79,8 +80,8 @@ class RedisBlobStorage:
         self,
         storage_key: str,
         offset: int = 0,
-        limit: Optional[int] = None,
-    ) -> Optional[str]:
+        limit: int | None = None,
+    ) -> str | None:
         """Retrieve just the ``content`` field, with optional pagination."""
         data = self.get(storage_key)
         if not data:
@@ -108,7 +109,7 @@ class RedisBlobStorage:
             for key in keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
                 storage_key = key_str.replace(self.key_prefix, "")
-                data = cast(Optional[bytes], client.get(key))
+                data = cast(bytes | None, client.get(key))
                 if data:
                     results.append(projection(storage_key, json.loads(data)))
 

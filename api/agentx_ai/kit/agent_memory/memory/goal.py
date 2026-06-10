@@ -8,7 +8,7 @@ storage here so goal operations are independently testable.
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from ..connections import Neo4jConnection
 from ..audit import OperationType, MemoryType
@@ -25,7 +25,7 @@ class GoalMemory:
     """Stores and retrieves user goals as ``(:Goal)`` nodes linked via
     ``(:User)-[:HAS_GOAL]->(:Goal)`` with optional ``[:SUBGOAL_OF]`` hierarchy."""
 
-    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+    def __init__(self, audit_logger: MemoryAuditLogger | None = None):
         """Initialize goal memory.
 
         Args:
@@ -38,8 +38,8 @@ class GoalMemory:
         goal: Goal,
         user_id: str,
         channel: str = "_global",
-        session_id: Optional[str] = None,
-        conversation_id: Optional[str] = None,
+        session_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> Goal:
         """Create a goal node and link it to the user (and parent, if any).
 
@@ -109,7 +109,7 @@ class GoalMemory:
         goal_id: str,
         user_id: str,
         channel: str = "_global",
-    ) -> Optional[Goal]:
+    ) -> Goal | None:
         """Retrieve a goal by ID if the user owns it and it's in scope."""
         with Neo4jConnection.session() as session:
             channel_filter = get_channel_filter_cypher(channel)
@@ -135,10 +135,10 @@ class GoalMemory:
         goal_id: str,
         user_id: str,
         status: str = "completed",
-        result: Optional[str] = None,
+        result: str | None = None,
         channel: str = "_global",
-        session_id: Optional[str] = None,
-        conversation_id: Optional[str] = None,
+        session_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> bool:
         """Update a goal's status. Returns True if the goal was found and updated."""
         start_time = time.perf_counter()
@@ -193,7 +193,7 @@ class GoalMemory:
         self,
         user_id: str,
         channel: str = "_global",
-    ) -> List[Goal]:
+    ) -> list[Goal]:
         """Get all active goals for the user in accessible channels."""
         with Neo4jConnection.session() as session:
             if channel and channel != "_global":
@@ -209,9 +209,9 @@ class GoalMemory:
                 ORDER BY g.priority DESC
             """, user_id=user_id, channel=channel)
 
-            goals: List[Goal] = []
+            goals: list[Goal] = []
             for record in result:
-                goal_data: Dict[str, Any] = dict(record["g"])
+                goal_data: dict[str, Any] = dict(record["g"])
                 if record["parent"]:
                     goal_data["parent"] = dict(record["parent"])
                 goals.append(Goal(**goal_data))

@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 
 def _turn_id(conv_id: str, suffix: str) -> str:
     return f"{conv_id}-{uuid.uuid4().hex[:8]}-{suffix}"
 
 
-def build_user_turn(conv_id: str, content: str, index: int, *, turn_id: Optional[str] = None):
+def build_user_turn(conv_id: str, content: str, index: int, *, turn_id: str | None = None):
     from ..kit.agent_memory.models import Turn
 
     return Turn(
@@ -81,8 +81,8 @@ def build_steer_turns(
     steers: list[dict],
     start_index: int,
     *,
-    agent_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
 ) -> list:
     """Build `user` Turns for mid-turn steers, carrying a procedural-ready marker.
 
@@ -124,10 +124,10 @@ def build_assistant_turn(
     index: int,
     *,
     metadata: dict,
-    token_count: Optional[int] = None,
-    model: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    turn_id: Optional[str] = None,
+    token_count: int | None = None,
+    model: str | None = None,
+    agent_id: str | None = None,
+    turn_id: str | None = None,
 ):
     """Build the assistant Turn, or None for blank content (the skip-empty rule).
 

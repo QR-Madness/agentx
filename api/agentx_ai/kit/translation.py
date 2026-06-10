@@ -71,7 +71,7 @@ class LanguageLexicon:
             try:
                 language = iso639.Language.from_part1(level_i_detected_language_code.lower())
             except iso639.LanguageNotFoundError:
-                raise ValueError(f"Language {level_i_detected_language_code} not supported for conversion to level II.")
+                raise ValueError(f"Language {level_i_detected_language_code} not supported for conversion to level II.") from None
 
         terminological_language_code = language.part2t
         if terminological_language_code not in self.nlb200_list_mapped_to_iso639_terminological:
@@ -172,7 +172,7 @@ class TranslationKit:
 
 
 @lazy_singleton
-def get_translation_kit() -> "TranslationKit":
+def get_translation_kit() -> TranslationKit:
     """Get or create the shared TranslationKit instance lazily.
 
     Lives here (rather than in views) so both the HTTP endpoints and the internal

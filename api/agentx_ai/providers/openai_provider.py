@@ -7,7 +7,8 @@ and cached for efficiency.
 
 import logging
 import time
-from typing import Any, AsyncIterator, Optional
+from typing import Any
+from collections.abc import AsyncIterator
 
 from .base import (
     CompletionResult,
@@ -44,7 +45,7 @@ class OpenAIProvider(ModelProvider):
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._model_cache: list[str] = []
         self._cache_timestamp: float = 0
     
@@ -62,7 +63,7 @@ class OpenAIProvider(ModelProvider):
                 raise ImportError(
                     "OpenAI package not installed. "
                     "Install with: pip install openai"
-                )
+                ) from None
 
             self._client = AsyncOpenAI(
                 api_key=self.config.api_key,
@@ -78,10 +79,10 @@ class OpenAIProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> CompletionResult:
         """Generate a completion using OpenAI API."""
@@ -136,10 +137,10 @@ class OpenAIProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using OpenAI API."""

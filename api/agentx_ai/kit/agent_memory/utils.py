@@ -1,6 +1,6 @@
 """Utility functions for the agent memory system."""
 
-from typing import Any, Dict, List
+from typing import Any
 from datetime import datetime
 import hashlib
 
@@ -31,7 +31,7 @@ def format_timestamp(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def merge_dicts(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+def merge_dicts(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively merge two dictionaries.
 
@@ -80,7 +80,7 @@ def sanitize_cypher_string(text: str) -> str:
     return text.replace("'", "\\'").replace('"', '\\"')
 
 
-def deduplicate_by_id(items: List[Dict[str, Any]], id_key: str = "id") -> List[Dict[str, Any]]:
+def deduplicate_by_id(items: list[dict[str, Any]], id_key: str = "id") -> list[dict[str, Any]]:
     """
     Deduplicate list of dictionaries by ID key.
 

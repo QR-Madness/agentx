@@ -134,6 +134,6 @@ class Command(BaseCommand):
             ))
 
         except ValueError as e:
-            raise CommandError(str(e))
+            raise CommandError(str(e)) from e
         except Exception as e:
-            raise CommandError(f"Failed to set up authentication: {e}")
+            raise CommandError(f"Failed to set up authentication: {e}") from e

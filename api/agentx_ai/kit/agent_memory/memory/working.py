@@ -1,6 +1,6 @@
 """Working memory - fast, ephemeral memory for current session state using Redis."""
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, cast
 import json
 
 from ..connections import RedisConnection
@@ -21,9 +21,9 @@ class WorkingMemory:
     def __init__(
         self,
         user_id: str,
-        conversation_id: Optional[str] = None,
+        conversation_id: str | None = None,
         channel: str = "_global",
-        audit_logger: Optional["MemoryAuditLogger"] = None
+        audit_logger: MemoryAuditLogger | None = None
     ):
         """Initialize working memory.
 
@@ -66,7 +66,7 @@ class WorkingMemory:
         # Set TTL (1 hour default)
         self.redis.expire(self.turns_key, 3600)
 
-    def get_recent_turns(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_recent_turns(self, limit: int = 10) -> list[dict[str, Any]]:
         """
         Get most recent turns from working memory.
 
@@ -101,7 +101,7 @@ class WorkingMemory:
         full_key = f"{self.context_key}:{key}"
         self.redis.setex(full_key, ttl_seconds, json.dumps(value))
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Get a value from working memory.
 
@@ -127,7 +127,7 @@ class WorkingMemory:
         full_key = f"{self.context_key}:{key}"
         self.redis.delete(full_key)
 
-    def get_context(self) -> Dict[str, Any]:
+    def get_context(self) -> dict[str, Any]:
         """
         Get all working memory context.
 

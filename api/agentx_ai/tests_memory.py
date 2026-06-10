@@ -20,7 +20,7 @@ import asyncio
 import inspect
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -401,7 +401,7 @@ class EmbeddingStorageFormatTest(TestCase):
                 index=0,
                 role="user",
                 content="Hello",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 embedding=[0.1, 0.2, 0.3]
             )
 
@@ -449,7 +449,7 @@ class TurnAgentAttributionTest(TestCase):
     def test_assistant_turn_persists_agent_id(self) -> None:
         params = self._captured_params(Turn(
             id="t-asst", conversation_id="conv-1", index=1, role="assistant",
-            content="Hi", timestamp=datetime.now(timezone.utc),
+            content="Hi", timestamp=datetime.now(UTC),
             agent_id="bold-cosmic-falcon",
         ))
         self.assertEqual(params.get("agent_id"), "bold-cosmic-falcon")
@@ -457,7 +457,7 @@ class TurnAgentAttributionTest(TestCase):
     def test_user_turn_persists_null_agent_id(self) -> None:
         params = self._captured_params(Turn(
             id="t-user", conversation_id="conv-1", index=0, role="user",
-            content="Hello", timestamp=datetime.now(timezone.utc),
+            content="Hello", timestamp=datetime.now(UTC),
         ))
         self.assertIsNone(params.get("agent_id"))
 
@@ -467,7 +467,7 @@ class TurnAgentAttributionTest(TestCase):
             mock_pg.return_value = mock_session
             EpisodicMemory().store_turn_log(
                 Turn(id="t", conversation_id="c", index=0, role="assistant",
-                     content="x", timestamp=datetime.now(timezone.utc), agent_id="a"),
+                     content="x", timestamp=datetime.now(UTC), agent_id="a"),
                 channel="_global",
             )
         sql = str(mock_session.execute.call_args[0][0])
@@ -506,7 +506,7 @@ class AgentParticipantGraphTest(TestCase):
             mock_neo4j.return_value = mock_session
             EpisodicMemory().store_turn(
                 Turn(id="t", conversation_id="c1", index=0, role="assistant",
-                     content="hi", timestamp=datetime.now(timezone.utc), agent_id="beta-agent"),
+                     content="hi", timestamp=datetime.now(UTC), agent_id="beta-agent"),
                 user_id="u", channel="_global", agent_id="beta-agent",
             )
         cypher = mock_session.run.call_args[0][0]
@@ -699,7 +699,7 @@ class ConsolidationTimestampTest(TestCase):
         """c.consolidated = datetime() set even if entity extraction fails."""
         # The consolidation should mark conversations as processed even on partial failure
         # This prevents infinite retry loops
-        pass  # Actual test requires integration testing
+        # Actual test requires integration testing
 
     def test_fact_storage_handles_errors_gracefully(self) -> None:
         """The fact-storage stage guards each fact with try/except.
@@ -1334,7 +1334,7 @@ class WorkingMemoryTTLRefreshTest(TestCase):
             mock_turn.index = 0
             mock_turn.role = "user"
             mock_turn.content = "test"
-            mock_turn.timestamp = datetime.now(timezone.utc)
+            mock_turn.timestamp = datetime.now(UTC)
 
             wm.add_turn(mock_turn)
 
@@ -1470,7 +1470,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
             index=0,
             role="user",
             content="Hello, this is a test message",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1503,7 +1503,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
             index=0,
             role="user",
             content="Hello, PostgreSQL test",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1536,7 +1536,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
             index=0,
             role="user",
             content="Hello, Redis test",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1565,7 +1565,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
             index=0,
             role="user",
             content="I love programming in Python. It's my favorite language.",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1597,7 +1597,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
             index=0,
             role="user",
             content="I work at a tech company in San Francisco",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1672,7 +1672,7 @@ class PostgresAuditLogTest(MemoryTestBase):
             index=0,
             role="user",
             content="Audit test message",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
 
         memory.store_turn(turn)
@@ -1766,15 +1766,13 @@ class AgentChatMemoryStorageTest(APITestBase):
     def test_chat_stores_user_turn(self) -> None:
         """User message stored in episodic memory."""
         # This test requires a configured provider
-        pass  # Placeholder for full integration
+        # Placeholder for full integration
 
     def test_chat_stores_assistant_turn(self) -> None:
         """Assistant response stored in episodic memory."""
-        pass
 
     def test_chat_respects_channel_parameter(self) -> None:
         """Turns stored in specified channel."""
-        pass
 
 
 @skipUnless(
@@ -1787,15 +1785,12 @@ class AgentGracefulDegradationTest(TestCase):
     def test_agent_works_without_neo4j(self) -> None:
         """Agent chat functions when Neo4j is down."""
         # Would require mocking connection failures
-        pass
 
     def test_agent_works_without_postgres(self) -> None:
         """Agent chat functions when PostgreSQL is down."""
-        pass
 
     def test_agent_works_without_redis(self) -> None:
         """Agent chat functions when Redis is down."""
-        pass
 
 
 # =============================================================================
@@ -1989,8 +1984,8 @@ class ConsolidationCorrectionHandlerTest(TestCase):
         mock_session = create_mock_neo4j_session()
         mock_result = MagicMock()
         mock_result.__iter__ = MagicMock(return_value=iter([
-            {"id": "fact-1", "claim": "User likes Python", "confidence": 0.9, "created_at": datetime.now(timezone.utc)},
-            {"id": "fact-2", "claim": "User works at Google", "confidence": 0.8, "created_at": datetime.now(timezone.utc)},
+            {"id": "fact-1", "claim": "User likes Python", "confidence": 0.9, "created_at": datetime.now(UTC)},
+            {"id": "fact-2", "claim": "User works at Google", "confidence": 0.8, "created_at": datetime.now(UTC)},
         ]))
         mock_session.run.return_value = mock_result
 
@@ -2426,7 +2421,7 @@ class ConsolidationMetricsTest(TestCase):
     def test_to_dict_serialization(self) -> None:
         """to_dict should properly serialize metrics including computed properties."""
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         metrics = ConsolidationMetrics(
             job_id="test-123",
             started_at=now,
@@ -3609,7 +3604,7 @@ class EntityResolutionTest(TestCase):
             "existing_entity_id": "ent-py-1",
         }]
         entity_map: dict = {}
-        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
         errors: list = []
 
         new_entities, reused, total = _resolve_and_prepare_entities(
@@ -3638,7 +3633,7 @@ class EntityResolutionTest(TestCase):
         )
         extracted = [{"name": "Python", "type": "Technology"}]
         entity_map: dict = {}
-        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
 
         new_entities, reused, _ = _resolve_and_prepare_entities(
             memory=memory,
@@ -3665,7 +3660,7 @@ class EntityResolutionTest(TestCase):
             "confidence": 0.9,
         }]
         entity_map: dict = {}
-        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
 
         new_entities, reused, _ = _resolve_and_prepare_entities(
             memory=memory,
@@ -3693,7 +3688,7 @@ class EntityResolutionTest(TestCase):
             {"name": "OK", "type": ""},
             {"name": "Valid", "type": "Concept"},
         ]
-        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(timezone.utc))
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
 
         new_entities, reused, _ = _resolve_and_prepare_entities(
             memory=memory,
@@ -3935,17 +3930,17 @@ def _queue_settings(**overrides):
     """Minimal settings stub for the embedding dispatcher/queue."""
     import types as _types
 
-    base = dict(
-        embedding_queue_enabled=True,
-        embedding_batch_max_size=8,
-        embedding_batch_window_ms=10,
-        embedding_request_timeout=5.0,
-        embedding_queue_max_size=64,
-        embedding_max_retries=2,
-        embedding_cache_enabled=True,
-        embedding_cache_max_size=4,
-        embedding_cache_ttl_seconds=10.0,
-    )
+    base = {
+        "embedding_queue_enabled": True,
+        "embedding_batch_max_size": 8,
+        "embedding_batch_window_ms": 10,
+        "embedding_request_timeout": 5.0,
+        "embedding_queue_max_size": 64,
+        "embedding_max_retries": 2,
+        "embedding_cache_enabled": True,
+        "embedding_cache_max_size": 4,
+        "embedding_cache_ttl_seconds": 10.0,
+    }
     base.update(overrides)
     return _types.SimpleNamespace(**base)
 
@@ -4181,7 +4176,7 @@ class MemoryPortabilityTest(MemoryTestBase):
         turn = Turn(
             conversation_id=conversation_id, index=0, role="user",
             content="My favorite language is Python.",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
         memory.store_turn(turn)
         entity = Entity(name="Python", type="Concept", description="A programming language")
@@ -4320,7 +4315,7 @@ class EvalSnapshotRestoreTest(MemoryTestBase):
         )
         turn = Turn(
             conversation_id=self.test_conversation_id, index=0, role="user",
-            content="My favorite language is Python.", timestamp=datetime.now(timezone.utc),
+            content="My favorite language is Python.", timestamp=datetime.now(UTC),
         )
         memory.store_turn(turn)
         entity = Entity(name="Python", type="Concept", description="A programming language")
@@ -4563,9 +4558,9 @@ class ProcedureDistillJobTest(TestCase):
 
     def _row(self, **kw):
         from types import SimpleNamespace
-        base = dict(id=1, conversation_id="conv-1", signal="explicit_rule",
-                    content="always summarize trade-offs before recommending",
-                    channel="_global", agent_id=None)
+        base = {"id": 1, "conversation_id": "conv-1", "signal": "explicit_rule",
+                    "content": "always summarize trade-offs before recommending",
+                    "channel": "_global", "agent_id": None}
         base.update(kw)
         return SimpleNamespace(**base)
 

@@ -9,7 +9,7 @@ complex problems.
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from ..providers.base import Message
 from .base import ReasoningResult, ReasoningStatus, ReasoningStrategy
@@ -119,9 +119,9 @@ class ReasoningOrchestrator:
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
-        strategy: Optional[str] = None,
-        task_type: Optional[TaskType] = None,
+        context: list[Message] | None = None,
+        strategy: str | None = None,
+        task_type: TaskType | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -232,7 +232,7 @@ class ReasoningOrchestrator:
         self.config.react_tools.append(tool)
         
         # Update existing ReAct strategies
-        for key, strategy in self._strategies.items():
+        for _key, strategy in self._strategies.items():
             if isinstance(strategy, ReActAgent):
                 strategy.add_tool(tool)
     

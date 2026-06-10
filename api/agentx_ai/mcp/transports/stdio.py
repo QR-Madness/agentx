@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable
 
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -46,7 +46,7 @@ class StdioTransport:
         command: str,
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
-    ) -> AsyncGenerator[ClientSession, None]:
+    ) -> AsyncGenerator[ClientSession]:
         """
         Connect to an MCP server via stdio.
         

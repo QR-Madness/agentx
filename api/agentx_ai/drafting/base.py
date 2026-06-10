@@ -5,7 +5,7 @@ Base classes for drafting strategies.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -46,7 +46,7 @@ class DraftResult(BaseModel):
     estimated_cost: float = 0.0
     
     # Raw data
-    raw_results: Optional[list[dict[str, Any]]] = None
+    raw_results: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -57,7 +57,7 @@ class DraftingConfig:
     
     # Common settings
     temperature: float = 0.7
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
     timeout_seconds: float = 60.0
     
     # Strategy-specific config stored here
@@ -79,13 +79,11 @@ class DraftingStrategy(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this strategy."""
-        pass
     
     @property
     @abstractmethod
     def strategy_type(self) -> str:
         """Return the type of strategy (speculative, pipeline, candidate)."""
-        pass
     
     @abstractmethod
     async def generate(
@@ -103,7 +101,6 @@ class DraftingStrategy(ABC):
         Returns:
             DraftResult with generated content and metrics
         """
-        pass
     
     async def validate(self) -> bool:
         """

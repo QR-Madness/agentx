@@ -9,7 +9,8 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
@@ -65,7 +66,7 @@ class PlanExecutor:
         self,
         subtask: Subtask,
         status: str,
-        result: Optional[str] = None,
+        result: str | None = None,
     ) -> None:
         """Update the memory goal linked to a subtask, if one exists."""
         if not subtask.goal_id:
@@ -117,7 +118,7 @@ class PlanExecutor:
         ``error``) so the card renders identically on reload, and carries a
         top-level ``status`` (e.g. ``interrupted``) the client maps faithfully.
         """
-        def _status(result: Optional[str]) -> str:
+        def _status(result: str | None) -> str:
             if not result:
                 return "completed"
             if result.startswith("[FAILED"):
@@ -171,7 +172,7 @@ class PlanExecutor:
     # Synchronous execution (for Agent.run)
     # ------------------------------------------------------------------
 
-    def execute(self, plan: TaskPlan, context: Optional[list[Message]] = None) -> str:
+    def execute(self, plan: TaskPlan, context: list[Message] | None = None) -> str:
         """
         Execute a plan synchronously, returning the composed final answer.
 
@@ -190,7 +191,7 @@ class PlanExecutor:
         self.state.create(plan_id, plan)
 
         cancelled = False
-        inflight: Optional[Subtask] = None
+        inflight: Subtask | None = None
         terminated_cleanly = False
         try:
             while not plan.is_complete():
@@ -261,15 +262,15 @@ class PlanExecutor:
         plan: TaskPlan,
         provider,
         model_id: str,
-        tools: Optional[list[dict[str, Any]]],
+        tools: list[dict[str, Any]] | None,
         *,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         max_context_tokens: int = 100000,
-        conversation_context: Optional[list[Message]] = None,
-        result: Optional[PlanResult] = None,
-        resume_plan_id: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
+        conversation_context: list[Message] | None = None,
+        result: PlanResult | None = None,
+        resume_plan_id: str | None = None,
+    ) -> AsyncGenerator[str]:
         """
         Execute a plan as an async generator, yielding SSE event strings.
 
@@ -323,7 +324,7 @@ class PlanExecutor:
         # The subtask currently between "running" and a terminal state. Non-None
         # only while one is genuinely in-flight, so a hard Stop (GeneratorExit) /
         # CancelledError mid-subtask can leave a clean, resumable state.
-        inflight: Optional[Subtask] = None
+        inflight: Subtask | None = None
         terminated_cleanly = False
         try:
             while not plan.is_complete():
@@ -473,12 +474,12 @@ class PlanExecutor:
         subtask: Subtask,
         provider,
         model_id: str,
-        tools: Optional[list[dict[str, Any]]],
+        tools: list[dict[str, Any]] | None,
         *,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         max_context_tokens: int = 100000,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Stream a single subtask's execution, yielding SSE events."""
         from ..streaming.tool_loop import streaming_tool_loop, ToolLoopResult
 
@@ -677,7 +678,7 @@ class PlanExecutor:
         *,
         temperature: float = 0.5,
         max_tokens: int = 4000,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Stream the synthesis step, yielding chunk SSE events."""
         messages = self._build_synthesis_messages(plan)
 

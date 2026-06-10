@@ -1,12 +1,12 @@
 """Entity extraction from text using LLM-based extraction."""
 
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def extract_entities(text: str) -> List[Dict[str, Any]]:
+def extract_entities(text: str) -> list[dict[str, Any]]:
     """
     Extract named entities from text using LLM.
 

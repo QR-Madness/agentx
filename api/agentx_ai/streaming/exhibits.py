@@ -18,7 +18,7 @@ never raw HTML.
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -139,7 +139,7 @@ class CitationElement(BaseModel):
 # Element union — discriminated on `type`; the discriminator enforces the
 # allow-list (an unknown type raises). Widen as new element types ship.
 Element = Annotated[
-    Union[MermaidElement, ChoiceElement, TableElement, CitationElement],
+    MermaidElement | ChoiceElement | TableElement | CitationElement,
     Field(discriminator="type"),
 ]
 

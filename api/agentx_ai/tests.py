@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1773,7 +1773,7 @@ class MemoryRetrieverUnitTest(TestCase):
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recent = now - timedelta(hours=1)
         old = now - timedelta(hours=48)
 
@@ -1787,7 +1787,7 @@ class MemoryRetrieverUnitTest(TestCase):
         mock_memory = MagicMock()
         retriever = MemoryRetriever(mock_memory)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         one_day_ago = now - timedelta(hours=24)
 
         # Score at 24 hours should be approximately 0.5 (half-life)
@@ -3263,7 +3263,7 @@ class SubtaskGoalTrackingTest(TestCase):
         self.assertIsNotNone(result.goal_id)
         # Each child references the parent and is wired back onto its step.
         child_goals = [c.args[0] for c in memory.add_goal.call_args_list[1:]]
-        for step, goal in zip(result.steps, child_goals):
+        for step, goal in zip(result.steps, child_goals, strict=False):
             self.assertEqual(goal.parent_goal_id, result.goal_id)
             self.assertEqual(step.goal_id, goal.id)
 

@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -34,35 +34,35 @@ class ExtractionResult(BaseModel):
     facts: list[dict[str, Any]] = []
     relationships: list[dict[str, Any]] = []
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     tokens_used: int = 0
 
 
 class RelevanceResult(BaseModel):
     """Result of relevance check."""
     is_relevant: bool = False
-    reason: Optional[str] = None
+    reason: str | None = None
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class CorrectionResult(BaseModel):
     """Result of user correction detection."""
     is_correction: bool = False
-    original_claim: Optional[str] = None
-    corrected_claim: Optional[str] = None
+    original_claim: str | None = None
+    corrected_claim: str | None = None
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ContradictionResult(BaseModel):
     """Result of contradiction check."""
     has_contradiction: bool = False
-    contradicting_fact_id: Optional[str] = None
-    reason: Optional[str] = None
+    contradicting_fact_id: str | None = None
+    reason: str | None = None
     resolution: str = "flag_review"  # prefer_new, prefer_old, flag_review
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class CombinedExtractionResult(BaseModel):
@@ -79,7 +79,7 @@ class CombinedExtractionResult(BaseModel):
     relationships: list[dict[str, Any]] = []
     tokens_used: int = 0
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ProcedureDistillResult(BaseModel):
@@ -89,7 +89,7 @@ class ProcedureDistillResult(BaseModel):
     body: str = ""
     rationale: str = ""
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ExtractionService:
@@ -123,7 +123,7 @@ class ExtractionService:
             return self._settings
         return get_settings()
 
-    def _get_provider_for_stage(self, stage: str) -> Tuple[Any, str, float, int]:
+    def _get_provider_for_stage(self, stage: str) -> tuple[Any, str, float, int]:
         """
         Get provider, model, temperature, and max_tokens for a consolidation stage.
 
@@ -345,7 +345,7 @@ class ExtractionService:
             return CorrectionResult(success=False, error=str(e))
 
     async def distill_procedure(
-        self, candidates: List[Dict[str, Any]], scope: str
+        self, candidates: list[dict[str, Any]], scope: str
     ) -> ProcedureDistillResult:
         """Distill a same-scope batch of procedure candidates into one Procedure.
 
@@ -408,7 +408,7 @@ class ExtractionService:
                 rationale=(parsed.get("rationale") or "").strip(),
                 success=True,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             msg = f"distill model timed out after {self.settings.procedural_distill_timeout_s}s"
             logger.warning(f"Procedure distillation failed: {msg}")
             return ProcedureDistillResult(keep=False, success=False, error=msg)
@@ -590,8 +590,8 @@ class ExtractionService:
 
     @staticmethod
     def _render_roster(
-        roster: Optional[List[Dict[str, str]]],
-        addressed_agent_id: Optional[str],
+        roster: list[dict[str, str]] | None,
+        addressed_agent_id: str | None,
     ) -> tuple[str, str]:
         """Render the ``{agent_roster}`` and ``{addressed_agent}`` prompt blocks.
 
@@ -623,8 +623,8 @@ class ExtractionService:
     @staticmethod
     def _resolve_agent_attribution(
         facts: list[dict[str, Any]],
-        roster: Optional[List[Dict[str, str]]],
-        default_agent_id: Optional[str],
+        roster: list[dict[str, str]] | None,
+        default_agent_id: str | None,
         default_subject: str,
     ) -> list[dict[str, Any]]:
         """Normalize ``subject`` and resolve ``subject_agent`` (a name) → ``agent_id``.
@@ -657,7 +657,7 @@ class ExtractionService:
             subject = subject if subject in valid else default_subject
 
             raw_agent = str(fact.pop("subject_agent", "") or "").strip()
-            resolved: Optional[str] = None
+            resolved: str | None = None
             if raw_agent:
                 low = raw_agent.lower()
                 if low in by_name:
@@ -679,8 +679,8 @@ class ExtractionService:
 
     @staticmethod
     def _render_scope_context(
-        known_entities: Optional[List[Dict[str, Any]]],
-        known_facts: Optional[List[Dict[str, Any]]],
+        known_entities: list[dict[str, Any]] | None,
+        known_facts: list[dict[str, Any]] | None,
         max_entities: int = 8,
         max_facts: int = 12,
     ) -> tuple[str, str]:
@@ -725,11 +725,11 @@ class ExtractionService:
     async def check_relevance_and_extract(
         self,
         text: str,
-        source_turn_id: Optional[str] = None,
-        known_entities: Optional[List[Dict[str, Any]]] = None,
-        known_facts: Optional[List[Dict[str, Any]]] = None,
-        roster: Optional[List[Dict[str, str]]] = None,
-        addressed_agent_id: Optional[str] = None,
+        source_turn_id: str | None = None,
+        known_entities: list[dict[str, Any]] | None = None,
+        known_facts: list[dict[str, Any]] | None = None,
+        roster: list[dict[str, str]] | None = None,
+        addressed_agent_id: str | None = None,
     ) -> CombinedExtractionResult:
         """
         Combined relevance check and extraction in a single LLM call.
@@ -863,11 +863,11 @@ class ExtractionService:
     async def check_relevance_and_extract_assistant(
         self,
         text: str,
-        source_turn_id: Optional[str] = None,
-        known_entities: Optional[List[Dict[str, Any]]] = None,
-        known_facts: Optional[List[Dict[str, Any]]] = None,
-        roster: Optional[List[Dict[str, str]]] = None,
-        addressed_agent_id: Optional[str] = None,
+        source_turn_id: str | None = None,
+        known_entities: list[dict[str, Any]] | None = None,
+        known_facts: list[dict[str, Any]] | None = None,
+        roster: list[dict[str, str]] | None = None,
+        addressed_agent_id: str | None = None,
     ) -> CombinedExtractionResult:
         """
         Extract self-knowledge from an assistant response.
@@ -970,7 +970,7 @@ class ExtractionService:
             )
 
     @staticmethod
-    def _repair_truncated_json(text: str) -> Optional[dict]:
+    def _repair_truncated_json(text: str) -> dict | None:
         """
         Attempt to repair truncated JSON from LLM output.
 
@@ -1061,7 +1061,7 @@ class ExtractionService:
                 success=True,
             )
 
-        def _try_extract_json(text: str) -> Optional[CombinedExtractionResult]:
+        def _try_extract_json(text: str) -> CombinedExtractionResult | None:
             """Try multiple strategies to extract JSON from text."""
             if not text or not text.strip():
                 return None
@@ -1151,7 +1151,7 @@ class ExtractionService:
     async def extract_all(
         self,
         text: str,
-        source_turn_id: Optional[str] = None,
+        source_turn_id: str | None = None,
     ) -> ExtractionResult:
         """
         Extract entities, facts, and relationships in a single call.
@@ -1358,7 +1358,7 @@ class ExtractionService:
 
 
 # Module-level singleton
-_extraction_service: Optional[ExtractionService] = None
+_extraction_service: ExtractionService | None = None
 
 
 def get_extraction_service() -> ExtractionService:

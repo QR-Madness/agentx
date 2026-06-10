@@ -5,8 +5,9 @@ import json
 import time
 import logging
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Callable, Any
-from datetime import datetime, timezone
+from typing import Any
+from collections.abc import Callable
+from datetime import datetime, UTC
 
 from ..connections import RedisConnection
 from ..config import get_settings
@@ -46,9 +47,9 @@ class JobStatus:
     description: str
     interval_minutes: int
     status: str  # 'idle' | 'running' | 'disabled'
-    last_run: Optional[str]
-    last_success: Optional[str]
-    last_error: Optional[str]
+    last_run: str | None
+    last_success: str | None
+    last_error: str | None
     run_count: int
     success_count: int
     failure_count: int
@@ -64,8 +65,8 @@ class JobHistoryEntry:
     duration_ms: int
     success: bool
     items_processed: int
-    metrics: Dict[str, Any]
-    error: Optional[str] = None
+    metrics: dict[str, Any]
+    error: str | None = None
 
 
 class JobRegistry:
@@ -80,7 +81,7 @@ class JobRegistry:
     - Execution history
     """
 
-    _instance: Optional["JobRegistry"] = None
+    _instance: JobRegistry | None = None
 
     # Redis key patterns
     KEY_STATUS = "job:status:{name}"
@@ -94,7 +95,7 @@ class JobRegistry:
         self._audit_logger = MemoryAuditLogger(settings)
 
         # Register all jobs with descriptions
-        self._jobs: Dict[str, JobDefinition] = {
+        self._jobs: dict[str, JobDefinition] = {
             "consolidate": JobDefinition(
                 name="consolidate",
                 func=consolidate_episodic_to_semantic,
@@ -146,13 +147,13 @@ class JobRegistry:
         }
 
     @classmethod
-    def get_instance(cls) -> "JobRegistry":
+    def get_instance(cls) -> JobRegistry:
         """Get singleton instance of JobRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
-    def _get_metrics(self, name: str) -> Dict[str, Any]:
+    def _get_metrics(self, name: str) -> dict[str, Any]:
         """Get metrics for a job from Redis."""
         key = self.KEY_METRICS.format(name=name)
         data = self.redis.get(key)
@@ -172,7 +173,7 @@ class JobRegistry:
         name: str,
         success: bool,
         duration_ms: int,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Update metrics after job execution."""
         metrics = self._get_metrics(name)
@@ -181,7 +182,7 @@ class JobRegistry:
 
         if success:
             metrics["success_count"] += 1
-            metrics["last_success"] = datetime.now(timezone.utc).isoformat()
+            metrics["last_success"] = datetime.now(UTC).isoformat()
         else:
             metrics["failure_count"] += 1
             metrics["last_error"] = error
@@ -223,13 +224,13 @@ class JobRegistry:
         status = self.redis.get(status_key)
         return str(status) if status else "idle"
 
-    def _get_last_run(self, name: str) -> Optional[str]:
+    def _get_last_run(self, name: str) -> str | None:
         """Get last run timestamp from consolidation keys."""
         key = f"consolidation:last_run:{name}"
         result = self.redis.get(key)
         return str(result) if result else None
 
-    def list_jobs(self) -> List[JobStatus]:
+    def list_jobs(self) -> list[JobStatus]:
         """List all jobs with current status."""
         result = []
 
@@ -267,7 +268,7 @@ class JobRegistry:
 
         return result
 
-    def get_job(self, name: str) -> Optional[JobStatus]:
+    def get_job(self, name: str) -> JobStatus | None:
         """Get status for a specific job."""
         if name not in self._jobs:
             return None
@@ -278,7 +279,7 @@ class JobRegistry:
                 return job
         return None
 
-    def get_job_history(self, name: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_job_history(self, name: str, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent execution history for a job."""
         if name not in self._jobs:
             return []
@@ -290,7 +291,7 @@ class JobRegistry:
         # json.loads() accepts str, bytes, or bytearray - type: ignore for redis ResponseT
         return [json.loads(entry) for entry in entries]  # type: ignore[arg-type]
 
-    async def run_job(self, name: str, progress: Optional[Any] = None) -> Dict[str, Any]:
+    async def run_job(self, name: str, progress: Any | None = None) -> dict[str, Any]:
         """
         Manually run a job.
 
@@ -316,14 +317,14 @@ class JobRegistry:
         start_time = time.perf_counter()
         success = True
         error_msg = None
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         items_processed = 0
 
         try:
             # Build a progress callback scoped to this job
-            progress_cb: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None
+            progress_cb: Callable[[str, dict[str, Any] | None], None] | None = None
             if progress:
-                def _emit(stage: str, details: Optional[Dict[str, Any]] = None) -> None:
+                def _emit(stage: str, details: dict[str, Any] | None = None) -> None:
                     progress.emit(name, stage, details)
                 progress_cb = _emit
 
@@ -357,7 +358,7 @@ class JobRegistry:
             self._add_history(
                 name,
                 JobHistoryEntry(
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                     duration_ms=duration_ms,
                     success=success,
                     items_processed=items_processed,
@@ -368,7 +369,7 @@ class JobRegistry:
 
             # Update last run timestamp
             last_run_key = f"consolidation:last_run:{name}"
-            self.redis.set(last_run_key, datetime.now(timezone.utc).isoformat())
+            self.redis.set(last_run_key, datetime.now(UTC).isoformat())
 
             # Clear running status
             self._set_status(name, "idle")
@@ -413,7 +414,7 @@ class JobRegistry:
         key = self.KEY_DISABLED.format(name=name)
         return bool(self.redis.exists(key))
 
-    def clear_stuck_jobs(self) -> List[str]:
+    def clear_stuck_jobs(self) -> list[str]:
         """
         Clear any jobs stuck in 'running' state.
 
@@ -432,9 +433,9 @@ class JobRegistry:
 
     async def run_consolidation_pipeline(
         self,
-        jobs: Optional[List[str]] = None,
-        progress: Optional[Any] = None,
-    ) -> Dict[str, Any]:
+        jobs: list[str] | None = None,
+        progress: Any | None = None,
+    ) -> dict[str, Any]:
         """
         Run the consolidation pipeline (multiple jobs).
 
@@ -449,8 +450,8 @@ class JobRegistry:
         if jobs is None:
             jobs = ["consolidate", "patterns", "promote", "distill_procedures"]
 
-        results: Dict[str, Any] = {}
-        errors: List[str] = []
+        results: dict[str, Any] = {}
+        errors: list[str] = []
         total_start = time.perf_counter()
 
         if progress:
@@ -492,7 +493,7 @@ class JobRegistry:
 
         return final_result
 
-    def get_worker_status(self) -> Optional[Dict[str, Any]]:
+    def get_worker_status(self) -> dict[str, Any] | None:
         """Get status of the background worker if running."""
         pattern = "worker:heartbeat:*"
         for key in self.redis.scan_iter(match=pattern):  # type: ignore[union-attr]
@@ -501,7 +502,7 @@ class JobRegistry:
                 worker_data = json.loads(data)
                 # Calculate uptime
                 started_at = datetime.fromisoformat(worker_data["started_at"])
-                uptime = (datetime.now(timezone.utc) - started_at).total_seconds()
+                uptime = (datetime.now(UTC) - started_at).total_seconds()
                 return {
                     "id": worker_data.get("worker_id"),
                     "status": worker_data.get("status", "unknown"),

@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ class ConsolidationMetrics:
     conversation_id: str = ""
     user_id: str = ""
     channel: str = "_default"
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
     # Turn processing
     turns_total: int = 0
@@ -85,7 +85,7 @@ class ConsolidationMetrics:
     temporal_progressions_resolved: int = 0
 
     # Error tracking
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def skip_rate(self) -> float:
@@ -102,7 +102,7 @@ class ConsolidationMetrics:
             return 0.0
         return self.facts_extracted / self.extraction_calls
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)
         # Convert datetimes to ISO strings
@@ -120,7 +120,7 @@ class ConsolidationMetrics:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ConsolidationMetrics":
+    def from_dict(cls, d: dict[str, Any]) -> ConsolidationMetrics:
         """Create from dictionary."""
         # Handle datetime conversion
         if d.get("started_at") and isinstance(d["started_at"], str):
@@ -188,6 +188,6 @@ class AggregatedMetrics:
         if self.runs > 0:
             self.avg_tokens_per_run = self.total_tokens / self.runs
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from datetime import datetime, UTC
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def _key(conversation_id: str) -> str:
 def add_checkpoint(
     conversation_id: str,
     summary: str,
-    decisions: Optional[list[str]] = None,
+    decisions: list[str] | None = None,
     next_step: str = "",
     replace: bool = False,
 ) -> dict[str, Any]:
@@ -52,7 +52,7 @@ def add_checkpoint(
         "summary": summary.strip(),
         "decisions": [d.strip() for d in (decisions or []) if d and d.strip()],
         "next_step": next_step.strip(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     try:

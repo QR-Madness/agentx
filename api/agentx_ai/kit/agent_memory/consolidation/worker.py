@@ -6,7 +6,7 @@ import time
 import signal
 import logging
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from uuid import uuid4
 
 from ..connections import RedisConnection
@@ -36,9 +36,9 @@ class ConsolidationWorker:
         self.running = True
         self._audit_logger = MemoryAuditLogger(settings)
         self.worker_id = str(uuid4())[:8]
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = datetime.now(UTC)
         self.jobs_run_count = 0
-        self._last_heartbeat = datetime.now(timezone.utc)
+        self._last_heartbeat = datetime.now(UTC)
 
         # Jobs with configurable intervals from settings
         self.jobs = {
@@ -88,12 +88,12 @@ class ConsolidationWorker:
         data = {
             "worker_id": self.worker_id,
             "started_at": self.started_at.isoformat(),
-            "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+            "last_heartbeat": datetime.now(UTC).isoformat(),
             "jobs_run": self.jobs_run_count,
             "status": "running"
         }
         self.redis.setex(key, settings.worker_heartbeat_ttl, json.dumps(data))
-        self._last_heartbeat = datetime.now(timezone.utc)
+        self._last_heartbeat = datetime.now(UTC)
 
     def _clear_heartbeat(self):
         """Clear worker heartbeat on shutdown."""
@@ -114,7 +114,7 @@ class ConsolidationWorker:
                 worker_data = json.loads(data)
                 last_heartbeat = datetime.fromisoformat(worker_data["last_heartbeat"])
 
-                if datetime.now(timezone.utc) - last_heartbeat > stale_threshold:
+                if datetime.now(UTC) - last_heartbeat > stale_threshold:
                     worker_id = worker_data.get("worker_id", "unknown")
                     self.redis.delete(key)
                     logger.warning(f"Cleaned up stale worker: {worker_id}")
@@ -123,7 +123,7 @@ class ConsolidationWorker:
 
     def _maybe_send_heartbeat(self):
         """Send heartbeat if interval has elapsed."""
-        if datetime.now(timezone.utc) - self._last_heartbeat >= timedelta(seconds=settings.worker_heartbeat_interval):
+        if datetime.now(UTC) - self._last_heartbeat >= timedelta(seconds=settings.worker_heartbeat_interval):
             self._send_heartbeat()
 
     def _should_run_job(self, job_name: str, interval_minutes: int) -> bool:
@@ -146,8 +146,8 @@ class ConsolidationWorker:
         last_run_time = datetime.fromisoformat(str(last_run))
         # Handle both naive and aware datetimes from Redis
         if last_run_time.tzinfo is None:
-            last_run_time = last_run_time.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - last_run_time > timedelta(minutes=interval_minutes)
+            last_run_time = last_run_time.replace(tzinfo=UTC)
+        return datetime.now(UTC) - last_run_time > timedelta(minutes=interval_minutes)
 
     def _mark_job_run(self, job_name: str):
         """
@@ -157,7 +157,7 @@ class ConsolidationWorker:
             job_name: Name of the job
         """
         last_run_key = f"consolidation:last_run:{job_name}"
-        self.redis.set(last_run_key, datetime.now(timezone.utc).isoformat())
+        self.redis.set(last_run_key, datetime.now(UTC).isoformat())
 
     def run(self):
         """Main worker loop."""

@@ -8,7 +8,8 @@ a public models API. Users should use full model IDs directly.
 import json
 import logging
 import time
-from typing import Any, AsyncIterator, Optional
+from typing import Any
+from collections.abc import AsyncIterator
 
 from .base import (
     CompletionResult,
@@ -95,7 +96,7 @@ class AnthropicProvider(ModelProvider):
     
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         # Dynamic model catalog populated from /v1/models on first use and
         # whenever the cache TTL expires. Mirrors the OpenRouter pattern so
         # the providers_models endpoint and the dashboard health pill stay
@@ -117,7 +118,7 @@ class AnthropicProvider(ModelProvider):
                 raise ImportError(
                     "Anthropic package not installed. "
                     "Install with: pip install anthropic"
-                )
+                ) from None
 
             client_kwargs: dict[str, Any] = {
                 "api_key": self.config.api_key,
@@ -132,7 +133,7 @@ class AnthropicProvider(ModelProvider):
 
     def _convert_messages(
         self, messages: list[Message]
-    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+    ) -> tuple[str | None, list[dict[str, Any]]]:
         """
         Convert internal Message objects to Anthropic format.
         
@@ -187,8 +188,8 @@ class AnthropicProvider(ModelProvider):
         return system_prompt, converted
     
     def _convert_tools(
-        self, tools: Optional[list[dict[str, Any]]]
-    ) -> Optional[list[dict[str, Any]]]:
+        self, tools: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
         """Convert OpenAI-style tools to Anthropic format."""
         if not tools:
             return None
@@ -234,10 +235,10 @@ class AnthropicProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> CompletionResult:
         """Generate a completion using Anthropic API."""
@@ -294,10 +295,10 @@ class AnthropicProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using Anthropic API."""

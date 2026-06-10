@@ -12,7 +12,8 @@ so a very long thread doesn't load whole.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..providers.base import Message, MessageRole
 
@@ -62,7 +63,7 @@ def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
 
 def _default_labeled_reader(
     conversation_id: str, limit: int
-) -> list[tuple[str, str, Optional[str]]]:
+) -> list[tuple[str, str, str | None]]:
     """Like :func:`_default_reader` but also returns each turn's producing agent
     name (``metadata->>'agent_name'``, Phase 16 attribution) so a reader can label
     each conversation by its *own* agent — used by the ambassador's tools so a
@@ -94,8 +95,8 @@ def load_recent_labeled_turns(
     *,
     token_budget: int,
     max_rows: int = _MAX_ROWS,
-    reader: Optional[Callable[[str, int], list[tuple[str, str, Optional[str]]]]] = None,
-) -> list[tuple[str, str, Optional[str]]]:
+    reader: Callable[[str, int], list[tuple[str, str, str | None]]] | None = None,
+) -> list[tuple[str, str, str | None]]:
     """Recent user/assistant turns as ``(role, content, agent_name)`` in chronological
     order, fitting ``token_budget``. ``agent_name`` is the producing agent's display
     name per turn (``None`` for user/unstamped). Empty on error."""
@@ -105,7 +106,7 @@ def load_recent_labeled_turns(
     except Exception as e:  # pragma: no cover - DB offline
         logger.debug(f"labeled transcript load failed for {conversation_id}: {e}")
         return []
-    picked: list[tuple[str, str, Optional[str]]] = []
+    picked: list[tuple[str, str, str | None]] = []
     used = 0
     for role, content, agent_name in rows:
         tokens = _estimate_tokens(content)
@@ -168,7 +169,7 @@ def _default_conversation_lister(limit: int) -> list[dict]:
 
 
 def list_recent_conversations(
-    limit: int = 20, *, lister: Optional[ConversationLister] = None
+    limit: int = 20, *, lister: ConversationLister | None = None
 ) -> list[dict]:
     """Recent conversations, newest-first. Empty on error (read-only, never raises)."""
     lister = lister or _default_conversation_lister
@@ -184,7 +185,7 @@ def load_recent_turns(
     *,
     token_budget: int,
     max_rows: int = _MAX_ROWS,
-    reader: Optional[TurnReader] = None,
+    reader: TurnReader | None = None,
 ) -> list[Message]:
     """Load the most recent user/assistant turns that fit ``token_budget``.
 
@@ -222,7 +223,7 @@ def hydrate_session_from_history(
     conversation_id: str,
     *,
     token_budget: int,
-    reader: Optional[TurnReader] = None,
+    reader: TurnReader | None = None,
 ) -> int:
     """Populate an *empty, not-yet-hydrated* session from durable history (once).
 

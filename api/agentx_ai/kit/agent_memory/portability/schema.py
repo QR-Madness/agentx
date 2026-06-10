@@ -12,8 +12,8 @@ restore-vs-recompute.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -55,9 +55,9 @@ class MemoryExport(BaseModel):
     """Round-trippable snapshot of a user's memory graph (optionally one channel)."""
 
     schema_version: int = SCHEMA_VERSION
-    exported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    exported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     user_id: str
-    channel: Optional[str] = None  # None / "_all" = every channel for the user
+    channel: str | None = None  # None / "_all" = every channel for the user
     # Exports are text-only — embeddings are always regenerated on import.
     # `embedder` records which model the source ran, as provenance only.
     embedder: EmbedderInfo
@@ -65,20 +65,20 @@ class MemoryExport(BaseModel):
     # Node collections — each item is the node's full property dict (datetimes
     # as ISO strings), plus a couple of relationship-derived helper keys noted
     # inline below.
-    conversations: List[Dict[str, Any]] = Field(default_factory=list)
-    turns: List[Dict[str, Any]] = Field(default_factory=list)  # + "conversation_id"
-    entities: List[Dict[str, Any]] = Field(default_factory=list)
-    facts: List[Dict[str, Any]] = Field(default_factory=list)  # + "entity_ids"
-    goals: List[Dict[str, Any]] = Field(default_factory=list)
-    strategies: List[Dict[str, Any]] = Field(default_factory=list)  # + "tool_sequence", "succeeded_in", "failed_in"
-    tool_invocations: List[Dict[str, Any]] = Field(default_factory=list)  # + "conversation_id"
+    conversations: list[dict[str, Any]] = Field(default_factory=list)
+    turns: list[dict[str, Any]] = Field(default_factory=list)  # + "conversation_id"
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    facts: list[dict[str, Any]] = Field(default_factory=list)  # + "entity_ids"
+    goals: list[dict[str, Any]] = Field(default_factory=list)
+    strategies: list[dict[str, Any]] = Field(default_factory=list)  # + "tool_sequence", "succeeded_in", "failed_in"
+    tool_invocations: list[dict[str, Any]] = Field(default_factory=list)  # + "conversation_id"
 
     # PostgreSQL audit mirror (carries fields not on the graph nodes: model,
     # metadata/cost on logs; tool_input/tool_output on invocations).
-    pg_conversation_logs: List[Dict[str, Any]] = Field(default_factory=list)
-    pg_tool_invocations: List[Dict[str, Any]] = Field(default_factory=list)
+    pg_conversation_logs: list[dict[str, Any]] = Field(default_factory=list)
+    pg_tool_invocations: list[dict[str, Any]] = Field(default_factory=list)
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         """Per-collection item counts (for CLI/UI summaries)."""
         return {
             "conversations": len(self.conversations),

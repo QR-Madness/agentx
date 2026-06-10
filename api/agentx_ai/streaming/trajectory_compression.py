@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ..providers.base import Message, MessageRole
 from ..utils.async_bridge import run_coro_sync
@@ -100,7 +100,7 @@ def _generate_knowledge_block(
     rounds_text: str,
     task_context: str,
     config: dict[str, Any],
-) -> Optional[str]:
+) -> str | None:
     """
     Call the LLM to produce a knowledge summary from serialised rounds.
 

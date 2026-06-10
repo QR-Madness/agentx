@@ -15,17 +15,16 @@ from __future__ import annotations
 
 import logging
 from contextvars import ContextVar
-from typing import Optional
 
-conversation_id_var: ContextVar[Optional[str]] = ContextVar("log_conversation_id", default=None)
-agent_id_var: ContextVar[Optional[str]] = ContextVar("log_agent_id", default=None)
+conversation_id_var: ContextVar[str | None] = ContextVar("log_conversation_id", default=None)
+agent_id_var: ContextVar[str | None] = ContextVar("log_agent_id", default=None)
 
 # Resolved lazily once; the streaming module is stdlib-light so importing it from
 # a log filter is cheap and import-safe (no Django at module load).
-_run_id_var: Optional[ContextVar] = None
+_run_id_var: ContextVar | None = None
 
 
-def _run_id() -> Optional[str]:
+def _run_id() -> str | None:
     global _run_id_var
     if _run_id_var is None:
         try:
@@ -40,7 +39,7 @@ def _run_id() -> Optional[str]:
         return None
 
 
-def _short(run_id: Optional[str]) -> Optional[str]:
+def _short(run_id: str | None) -> str | None:
     """A compact run tag for the console (full id stays on the structured record)."""
     if not run_id:
         return None
@@ -60,7 +59,7 @@ class ContextFilter(logging.Filter):
         return True
 
 
-def set_turn_context(*, conversation_id: Optional[str] = None, agent_id: Optional[str] = None) -> None:
+def set_turn_context(*, conversation_id: str | None = None, agent_id: str | None = None) -> None:
     """Opportunistically tag the current context (best-effort; safe to call anywhere)."""
     if conversation_id is not None:
         conversation_id_var.set(conversation_id)

@@ -6,7 +6,8 @@ Provides reusable patterns for lazy initialization, caching, etc.
 
 from functools import wraps
 from threading import Lock
-from typing import Callable, Optional, Protocol, TypeVar, cast
+from typing import Protocol, TypeVar, cast
+from collections.abc import Callable
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,12 @@ class LazySingletonCallable(Protocol[T_co]):
         """Check if the singleton has been initialized without triggering init."""
         ...
 
-    def get_if_initialized(self) -> Optional[T_co]:
+    def get_if_initialized(self) -> T_co | None:
         """Get the instance if initialized, or None without triggering init."""
         ...
 
 
-def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
+def lazy_singleton[T](init_func: Callable[[], T]) -> LazySingletonCallable[T]:
     """
     Decorator for thread-safe lazy singleton initialization.
 
@@ -61,7 +62,7 @@ def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
         get_my_service.is_initialized()  # Check without triggering init
         get_my_service.get_if_initialized()  # Get instance or None
     """
-    instance: Optional[T] = None
+    instance: T | None = None
     lock = Lock()
 
     @wraps(init_func)
@@ -86,7 +87,7 @@ def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
         """Check if the singleton has been initialized without triggering init."""
         return instance is not None
 
-    def get_if_initialized() -> Optional[T]:
+    def get_if_initialized() -> T | None:
         """Get the instance if initialized, or None without triggering init."""
         return instance
 
@@ -98,8 +99,8 @@ def lazy_singleton(init_func: Callable[[], T]) -> LazySingletonCallable[T]:
 
 def lazy_singleton_with_fallback(
     init_func: Callable[[], T],
-    fallback: Optional[T] = None,
-) -> LazySingletonCallable[Optional[T]]:
+    fallback: T | None = None,
+) -> LazySingletonCallable[T | None]:
     """
     Lazy singleton that returns fallback on initialization failure.
 
@@ -119,12 +120,12 @@ def lazy_singleton_with_fallback(
         init_func: Initialization function
         fallback: Value to return on failure (default: None)
     """
-    instance: Optional[T] = None
-    error: Optional[Exception] = None
+    instance: T | None = None
+    error: Exception | None = None
     lock = Lock()
 
     @wraps(init_func)
-    def wrapper() -> Optional[T]:
+    def wrapper() -> T | None:
         nonlocal instance, error
 
         # If we previously failed, return fallback without retrying
@@ -157,11 +158,11 @@ def lazy_singleton_with_fallback(
         """Check if the singleton has been initialized without triggering init."""
         return instance is not None and error is None
 
-    def get_if_initialized() -> Optional[T]:
+    def get_if_initialized() -> T | None:
         """Get the instance if initialized, or None without triggering init."""
         return instance
 
     wrapper.reset = reset  # type: ignore[attr-defined]
     wrapper.is_initialized = is_initialized  # type: ignore[attr-defined]
     wrapper.get_if_initialized = get_if_initialized  # type: ignore[attr-defined]
-    return cast(LazySingletonCallable[Optional[T]], wrapper)
+    return cast(LazySingletonCallable[T | None], wrapper)

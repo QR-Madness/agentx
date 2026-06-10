@@ -5,7 +5,8 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
-from typing import Callable, ClassVar, Generator, Optional, TypeVar
+from typing import ClassVar, TypeVar
+from collections.abc import Callable, Generator
 import redis
 from neo4j import GraphDatabase, Driver, Session, NotificationMinimumSeverity
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
@@ -29,7 +30,7 @@ _NEO4J_TRANSIENT_ERRORS = (ServiceUnavailable, SessionExpired, TransientError)
 T = TypeVar("T")
 
 
-def with_neo4j_retry(
+def with_neo4j_retry[T](
     fn: Callable[[], T],
     *,
     retries: int = 3,
@@ -45,7 +46,7 @@ def with_neo4j_retry(
     clean. For simple one-shot queries prefer `Neo4jConnection.execute_query`,
     which uses the driver's own managed retry.
     """
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
     for attempt in range(retries):
         try:
             return fn()
@@ -67,7 +68,7 @@ def with_neo4j_retry(
 class Neo4jConnection:
     """Neo4j graph database connection manager."""
 
-    _driver: ClassVar[Optional[Driver]] = None
+    _driver: ClassVar[Driver | None] = None
 
     @classmethod
     def get_driver(cls) -> Driver:
@@ -89,7 +90,7 @@ class Neo4jConnection:
 
     @classmethod
     @contextmanager
-    def session(cls) -> Generator[Session, None, None]:
+    def session(cls) -> Generator[Session]:
         """Context manager for Neo4j sessions."""
         driver = cls.get_driver()
         session = driver.session()
@@ -126,8 +127,8 @@ class Neo4jConnection:
 class PostgresConnection:
     """PostgreSQL connection manager with lazy initialization."""
 
-    _engine: ClassVar[Optional[Engine]] = None
-    _session_factory: ClassVar[Optional[sessionmaker[SQLSession]]] = None
+    _engine: ClassVar[Engine | None] = None
+    _session_factory: ClassVar[sessionmaker[SQLSession] | None] = None
 
     @classmethod
     def get_engine(cls) -> Engine:
@@ -178,7 +179,7 @@ class PostgresConnection:
 
 
 @contextmanager
-def get_postgres_session() -> Generator[SQLSession, None, None]:
+def get_postgres_session() -> Generator[SQLSession]:
     """Context manager for PostgreSQL sessions."""
     session = PostgresConnection.get_session_factory()()
     try:
@@ -195,7 +196,7 @@ def get_postgres_session() -> Generator[SQLSession, None, None]:
 class RedisConnection:
     """Redis in-memory data store connection manager."""
 
-    _client: ClassVar[Optional[redis.Redis]] = None
+    _client: ClassVar[redis.Redis | None] = None
 
     @classmethod
     def get_client(cls) -> redis.Redis:
@@ -269,7 +270,7 @@ def close_all_connections():
         t.join(timeout=2)
 
 
-def get_redis_client() -> Optional[redis.Redis]:
+def get_redis_client() -> redis.Redis | None:
     """
     Get Redis client instance, returning None if connection fails.
 

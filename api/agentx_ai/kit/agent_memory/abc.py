@@ -18,7 +18,7 @@ Usage:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -29,7 +29,7 @@ class ScoredResult:
 
     item: Any
     score: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -38,8 +38,8 @@ class HealthStatus:
 
     healthy: bool
     message: str = ""
-    latency_ms: Optional[float] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    latency_ms: float | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class MemoryStore(ABC):
@@ -64,8 +64,8 @@ class MemoryStore(ABC):
     def store(
         self,
         key: str,
-        data: Dict[str, Any],
-        embedding: Optional[List[float]] = None,
+        data: dict[str, Any],
+        embedding: list[float] | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -80,16 +80,15 @@ class MemoryStore(ABC):
         Returns:
             The key/ID of the stored item
         """
-        pass
 
     @abstractmethod
     def retrieve(
         self,
-        query_embedding: Optional[List[float]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        query_embedding: list[float] | None = None,
+        filters: dict[str, Any] | None = None,
         top_k: int = 10,
         **kwargs: Any,
-    ) -> List[ScoredResult]:
+    ) -> list[ScoredResult]:
         """
         Retrieve data from the memory store.
 
@@ -102,7 +101,6 @@ class MemoryStore(ABC):
         Returns:
             List of scored results
         """
-        pass
 
     @abstractmethod
     def delete(self, key: str, **kwargs: Any) -> bool:
@@ -116,7 +114,6 @@ class MemoryStore(ABC):
         Returns:
             True if deleted, False if not found
         """
-        pass
 
     @abstractmethod
     def health_check(self) -> HealthStatus:
@@ -126,7 +123,6 @@ class MemoryStore(ABC):
         Returns:
             HealthStatus indicating store health
         """
-        pass
 
 
 class Embedder(ABC):
@@ -150,10 +146,9 @@ class Embedder(ABC):
     @abstractmethod
     def dimensions(self) -> int:
         """Return the dimensionality of embeddings."""
-        pass
 
     @abstractmethod
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         """
         Generate embeddings for multiple texts.
 
@@ -163,9 +158,8 @@ class Embedder(ABC):
         Returns:
             List of embedding vectors
         """
-        pass
 
-    def embed_single(self, text: str) -> List[float]:
+    def embed_single(self, text: str) -> list[float]:
         """
         Generate embedding for a single text.
 
@@ -181,9 +175,9 @@ class Embedder(ABC):
 
     def embed_batch(
         self,
-        texts: List[str],
+        texts: list[str],
         batch_size: int = 32,
-    ) -> List[List[float]]:
+    ) -> list[list[float]]:
         """
         Generate embeddings in batches (for large inputs).
 
@@ -203,7 +197,7 @@ class Embedder(ABC):
         return results
 
 
-class Extractor(ABC, Generic[T]):
+class Extractor[T](ABC):
     """
     Abstract base class for text extractors.
 
@@ -225,14 +219,13 @@ class Extractor(ABC, Generic[T]):
     @abstractmethod
     def extraction_type(self) -> str:
         """Return the type of data this extractor produces (e.g., 'entity', 'fact')."""
-        pass
 
     @abstractmethod
     def extract(
         self,
         text: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[T]:
+        context: dict[str, Any] | None = None,
+    ) -> list[T]:
         """
         Extract structured data from text.
 
@@ -243,13 +236,12 @@ class Extractor(ABC, Generic[T]):
         Returns:
             List of extracted items
         """
-        pass
 
     async def extract_async(
         self,
         text: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[T]:
+        context: dict[str, Any] | None = None,
+    ) -> list[T]:
         """
         Async version of extract.
 
@@ -284,10 +276,10 @@ class Reranker(ABC):
     def rerank(
         self,
         query: str,
-        results: List[ScoredResult],
-        top_k: Optional[int] = None,
+        results: list[ScoredResult],
+        top_k: int | None = None,
         **kwargs: Any,
-    ) -> List[ScoredResult]:
+    ) -> list[ScoredResult]:
         """
         Rerank results based on the query.
 
@@ -300,15 +292,14 @@ class Reranker(ABC):
         Returns:
             Reranked list of results
         """
-        pass
 
     async def rerank_async(
         self,
         query: str,
-        results: List[ScoredResult],
-        top_k: Optional[int] = None,
+        results: list[ScoredResult],
+        top_k: int | None = None,
         **kwargs: Any,
-    ) -> List[ScoredResult]:
+    ) -> list[ScoredResult]:
         """
         Async version of rerank.
 

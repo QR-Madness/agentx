@@ -8,7 +8,7 @@ evaluating and pruning branches to find the best solution.
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 import uuid
 
 from ..providers.base import Message, MessageRole
@@ -31,12 +31,12 @@ class TreeNode:
     """A node in the thought tree."""
     id: str
     content: str
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     depth: int = 0
     score: float = 0.0
     is_terminal: bool = False
     is_pruned: bool = False
-    children: list["TreeNode"] = field(default_factory=list)
+    children: list[TreeNode] = field(default_factory=list)
 
 
 @dataclass
@@ -53,8 +53,8 @@ class ToTConfig:
     beam_width: int = 3  # For beam search
     
     # Evaluation
-    evaluator_model: Optional[str] = None  # Separate model for evaluation
-    evaluation_prompt: Optional[str] = None
+    evaluator_model: str | None = None  # Separate model for evaluation
+    evaluation_prompt: str | None = None
     pruning_threshold: float = 0.3  # Prune branches below this score
     
     # Generation
@@ -109,7 +109,7 @@ class TreeOfThought(ReasoningStrategy):
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -175,7 +175,7 @@ class TreeOfThought(ReasoningStrategy):
         self,
         root: TreeNode,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> tuple[list[TreeNode], list[ThoughtStep], int]:
         """Breadth-first search through the thought tree."""
         all_nodes = [root]
@@ -185,7 +185,7 @@ class TreeOfThought(ReasoningStrategy):
 
         current_level = [root]
 
-        for depth in range(self.tot_config.max_depth):
+        for _depth in range(self.tot_config.max_depth):
             if not current_level:
                 break
 
@@ -236,7 +236,7 @@ class TreeOfThought(ReasoningStrategy):
         self,
         root: TreeNode,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> tuple[list[TreeNode], list[ThoughtStep], int]:
         """Depth-first search through the thought tree."""
         all_nodes = [root]
@@ -283,7 +283,7 @@ class TreeOfThought(ReasoningStrategy):
         self,
         root: TreeNode,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> tuple[list[TreeNode], list[ThoughtStep], int]:
         """Beam search through the thought tree."""
         all_nodes = [root]
@@ -293,7 +293,7 @@ class TreeOfThought(ReasoningStrategy):
 
         beam = [root]
 
-        for depth in range(self.tot_config.max_depth):
+        for _depth in range(self.tot_config.max_depth):
             if not beam:
                 break
 
@@ -340,7 +340,7 @@ class TreeOfThought(ReasoningStrategy):
         self,
         node: TreeNode,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> tuple[list[TreeNode], int]:
         """Generate child nodes by exploring different thought paths."""
         provider, model_id = self.registry.get_provider_for_model(
@@ -409,7 +409,7 @@ class TreeOfThought(ReasoningStrategy):
         self,
         node: TreeNode,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> tuple[float, int]:
         """Evaluate a node's promise for solving the task."""
         eval_model = self.tot_config.evaluator_model or self.tot_config.model

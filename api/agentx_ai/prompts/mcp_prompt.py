@@ -5,7 +5,6 @@ Generates a prompt section that teaches the model how to use
 available MCP tools effectively.
 """
 
-from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 def generate_mcp_tools_prompt(
     tools: list[dict],
     include_examples: bool = True,
-    max_tools: Optional[int] = None,
+    max_tools: int | None = None,
 ) -> str:
     """
     Generate a prompt section describing available MCP tools.

@@ -15,10 +15,10 @@ Modes:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, cast
 
 from sqlalchemy import bindparam, text
-from typing_extensions import Literal, LiteralString
+from typing import Literal, LiteralString
 
 from ..connections import Neo4jConnection, get_postgres_session
 from ..embeddings import get_embedder
@@ -42,10 +42,10 @@ class MemoryImporter:
 
     def import_export(
         self,
-        payload: Union[MemoryExport, Dict[str, Any]],
+        payload: MemoryExport | dict[str, Any],
         mode: ImportMode = "merge",
-        channel: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        channel: str | None = None,
+    ) -> dict[str, Any]:
         """Restore `payload`. `channel` overrides the wipe scope for replace mode.
 
         Returns a summary dict with per-type counts and `recomputed_embeddings`.
@@ -59,7 +59,7 @@ class MemoryImporter:
         self._prepare_embeddings(export)
 
         wipe_channel = channel if channel is not None else export.channel
-        results: Dict[str, Tuple[int, int]] = {}
+        results: dict[str, tuple[int, int]] = {}
 
         with Neo4jConnection.session() as session:
             tx = session.begin_transaction()
@@ -97,7 +97,7 @@ class MemoryImporter:
 
     # -- embedding handling ---------------------------------------------
 
-    def _embed(self, text_value: str) -> List[float]:
+    def _embed(self, text_value: str) -> list[float]:
         if self._embedder is None:
             self._embedder = get_embedder()
         self._recomputed += 1
@@ -119,7 +119,7 @@ class MemoryImporter:
 
     # -- replace-mode wipe ----------------------------------------------
 
-    def _wipe(self, tx, channel: Optional[str]) -> None:
+    def _wipe(self, tx, channel: str | None) -> None:
         """Scoped DETACH DELETE of the user's nodes in `channel` (exact match, no _global spill)."""
         chan = None if channel in (None, "_all") else channel
 
@@ -155,13 +155,13 @@ class MemoryImporter:
     # -- node writers ----------------------------------------------------
 
     @staticmethod
-    def _counts(result) -> Tuple[int, int]:
+    def _counts(result) -> tuple[int, int]:
         rec = result.single()
         if rec is None:
             return (0, 0)
         return (rec["created"] or 0, rec["total"] or 0)
 
-    def _import_entities(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_entities(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         return self._counts(tx.run("""
@@ -188,7 +188,7 @@ class MemoryImporter:
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))
 
-    def _import_conversations(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_conversations(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         return self._counts(tx.run("""
@@ -210,7 +210,7 @@ class MemoryImporter:
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))
 
-    def _import_turns(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_turns(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         return self._counts(tx.run("""
@@ -235,7 +235,7 @@ class MemoryImporter:
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))
 
-    def _import_facts(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_facts(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         counts = self._counts(tx.run("""
@@ -286,7 +286,7 @@ class MemoryImporter:
             """, rows=supersedes)
         return counts
 
-    def _import_goals(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_goals(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         counts = self._counts(tx.run("""
@@ -317,7 +317,7 @@ class MemoryImporter:
             """, rows=children)
         return counts
 
-    def _import_strategies(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_strategies(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         if not rows:
             return (0, 0)
         return self._counts(tx.run("""
@@ -352,7 +352,7 @@ class MemoryImporter:
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))
 
-    def _import_tool_invocations(self, tx, rows: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def _import_tool_invocations(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         # id-less node → MERGE on a natural key (conversation + tool + turn + ts).
         rows = [r for r in rows if r.get("timestamp") and r.get("conversation_id")]
         if not rows:
@@ -373,7 +373,7 @@ class MemoryImporter:
         """, rows=rows)
         return (0, len(rows))
 
-    def _rebuild_turn_chains(self, tx, conv_ids: List[str]) -> None:
+    def _rebuild_turn_chains(self, tx, conv_ids: list[str]) -> None:
         """Re-derive FOLLOWED_BY (from turn index) and AgentParticipant for imported convos."""
         if not conv_ids:
             return
@@ -399,7 +399,7 @@ class MemoryImporter:
 
     # -- PostgreSQL ------------------------------------------------------
 
-    def _import_pg_logs(self, rows: List[Dict[str, Any]]) -> int:
+    def _import_pg_logs(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
             return 0
         # The audit-mirror embedding is left NULL on import — recall uses the
@@ -426,7 +426,7 @@ class MemoryImporter:
                 """), self._pg_log_params(row))
         return len(rows)
 
-    def _import_pg_tools(self, rows: List[Dict[str, Any]]) -> int:
+    def _import_pg_tools(self, rows: list[dict[str, Any]]) -> int:
         # No natural key on tool_invocations → delete the exported conversations'
         # rows, then re-insert. Idempotent across re-imports.
         if not rows:
@@ -456,7 +456,7 @@ class MemoryImporter:
             return value
         return json.dumps(value)
 
-    def _pg_log_params(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def _pg_log_params(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "conversation_id": row["conversation_id"],
             "turn_index": row["turn_index"],
@@ -471,7 +471,7 @@ class MemoryImporter:
             "metadata": self._json_param(row.get("metadata")) or "{}",
         }
 
-    def _pg_tool_params(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def _pg_tool_params(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "conversation_id": row["conversation_id"],
             "turn_index": row.get("turn_index"),
@@ -488,7 +488,7 @@ class MemoryImporter:
     # -- validation ------------------------------------------------------
 
     @staticmethod
-    def _coerce(payload: Union[MemoryExport, Dict[str, Any]]) -> MemoryExport:
+    def _coerce(payload: MemoryExport | dict[str, Any]) -> MemoryExport:
         export = payload if isinstance(payload, MemoryExport) else MemoryExport.model_validate(payload)
         if export.schema_version > SCHEMA_VERSION:
             raise ValueError(

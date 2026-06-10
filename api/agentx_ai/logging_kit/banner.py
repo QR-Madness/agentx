@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import socket
-from typing import Optional
 
 from .flags import LogFlags, read_flags
 
@@ -67,7 +66,7 @@ def _mcp_count() -> str:
         return "[grey50]?[/grey50]"
 
 
-def render_startup_banner(flags: Optional[LogFlags] = None) -> None:
+def render_startup_banner(flags: LogFlags | None = None) -> None:
     flags = flags or read_flags()
     if not flags.banner:
         return

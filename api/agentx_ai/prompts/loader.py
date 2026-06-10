@@ -6,7 +6,7 @@ with support for variable substitution.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 import logging
 
 import yaml
@@ -38,7 +38,7 @@ class SystemPromptLoader:
         math_examples = loader.get_examples("examples.cot_math")
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the loader.
 
@@ -63,7 +63,7 @@ class SystemPromptLoader:
             return
 
         try:
-            with open(self._config_path, "r", encoding="utf-8") as f:
+            with open(self._config_path, encoding="utf-8") as f:
                 self._data = yaml.safe_load(f) or {}
             logger.debug(f"Loaded system prompts from {self._config_path}")
         except Exception as e:
@@ -135,7 +135,7 @@ class SystemPromptLoader:
 
         return result
 
-    def get_list(self, key: str, default: Optional[list] = None) -> list:
+    def get_list(self, key: str, default: list | None = None) -> list:
         """
         Get a list value by key.
 
@@ -171,7 +171,7 @@ class SystemPromptLoader:
         """
         return self.get_list(key, default=[])
 
-    def get_dict(self, key: str, default: Optional[dict] = None) -> dict:
+    def get_dict(self, key: str, default: dict | None = None) -> dict:
         """
         Get a dictionary value by key.
 
@@ -226,7 +226,7 @@ class SystemPromptLoader:
 
 
 # Singleton instance
-_loader: Optional[SystemPromptLoader] = None
+_loader: SystemPromptLoader | None = None
 
 
 def get_prompt_loader() -> SystemPromptLoader:
@@ -261,7 +261,7 @@ def get_prompt(key: str, default: str = "", **variables: Any) -> str:
     return get_prompt_loader().get(key, default, **variables)
 
 
-def get_prompt_list(key: str, default: Optional[list] = None) -> list:
+def get_prompt_list(key: str, default: list | None = None) -> list:
     """
     Convenience function to get a list directly.
 

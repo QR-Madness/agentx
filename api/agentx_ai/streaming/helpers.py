@@ -5,7 +5,7 @@ Extracted from views.py to reduce complexity and enable reuse.
 """
 
 import logging
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 from .constants import (
     CHAR_TO_TOKEN_RATIO,
@@ -82,7 +82,7 @@ def truncate_tool_messages(
     return truncated_count
 
 
-def resolve_with_priority(*sources: Optional[T]) -> Optional[T]:
+def resolve_with_priority[T](*sources: T | None) -> T | None:
     """
     Return first non-None value from sources.
 

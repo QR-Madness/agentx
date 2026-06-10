@@ -11,7 +11,7 @@ import asyncio
 import concurrent.futures
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from ..config import get_config_manager
 from ..prompts.loader import get_prompt_loader
@@ -26,7 +26,7 @@ class CompressionResult:
     """Result of tool output compression."""
     compressed_text: str = ""
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     tokens_used: int = 0
     original_chars: int = 0
     compressed_chars: int = 0
@@ -41,7 +41,7 @@ class ToolOutputCompressor:
     """
 
     def __init__(self):
-        self._registry: Optional[ProviderRegistry] = None
+        self._registry: ProviderRegistry | None = None
 
     @property
     def registry(self) -> ProviderRegistry:
@@ -60,7 +60,7 @@ class ToolOutputCompressor:
             "max_summary_chars": config.get("compression.max_summary_chars", 2000),
         }
 
-    def _get_provider(self, model: str) -> Tuple[Any, str]:
+    def _get_provider(self, model: str) -> tuple[Any, str]:
         """Get provider and resolved model_id for compression.
 
         Fallback-aware: a missing/unreachable (or provider-prefix-less) compression
@@ -181,7 +181,7 @@ class ToolOutputCompressor:
 
 
 # Module-level singleton
-_compressor: Optional[ToolOutputCompressor] = None
+_compressor: ToolOutputCompressor | None = None
 
 
 def get_compressor() -> ToolOutputCompressor:

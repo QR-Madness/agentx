@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     # LiteralString lives in typing only on 3.11+; the project targets >=3.10,
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from typing import LiteralString
 
 
-def get_channel_filter_cypher(channel: Optional[str], var: "LiteralString" = "g") -> "LiteralString":
+def get_channel_filter_cypher(channel: str | None, var: LiteralString = "g") -> LiteralString:
     """Return the Cypher channel-access clause for a node bound to ``var``.
 
     When a non-global channel is active, results are scoped to that channel plus

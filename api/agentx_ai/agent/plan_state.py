@@ -7,8 +7,8 @@ State tracking is best-effort — execution continues even if Redis is unavailab
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional, cast
+from datetime import datetime, UTC
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from .planner import TaskPlan
@@ -53,7 +53,7 @@ class PlanStateStore:
         try:
             client = _get_redis_client()
             key = self._key(plan_id)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             fields = {
                 "status": "active",
@@ -84,14 +84,14 @@ class PlanStateStore:
         plan_id: str,
         subtask_id: int,
         status: str,
-        result: Optional[str] = None,
-        error: Optional[str] = None,
+        result: str | None = None,
+        error: str | None = None,
     ) -> None:
         """Atomically update a subtask's status and optional result/error."""
         try:
             client = _get_redis_client()
             key = self._key(plan_id)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             fields = {
                 f"subtask:{subtask_id}:status": status,
@@ -110,18 +110,18 @@ class PlanStateStore:
         except Exception as e:
             logger.warning(f"Failed to update subtask {subtask_id} state: {e}")
 
-    def get_status(self, plan_id: str) -> Optional[dict]:
+    def get_status(self, plan_id: str) -> dict | None:
         """Read full plan state."""
         try:
             client = _get_redis_client()
-            data = cast(Optional[dict], client.hgetall(self._key(plan_id)))
+            data = cast(dict | None, client.hgetall(self._key(plan_id)))
             return data if data else None
         except Exception as e:
             logger.warning(f"Failed to read plan state: {e}")
             return None
 
     @staticmethod
-    def _overlay_result(status: str, stored_result: Optional[str], error: Optional[str]) -> Optional[str]:
+    def _overlay_result(status: str, stored_result: str | None, error: str | None) -> str | None:
         """Reconstruct a subtask's in-memory ``result`` from its persisted status.
 
         Only "complete" stores a real result; the other terminal states are
@@ -138,7 +138,7 @@ class PlanStateStore:
             return "[ABANDONED: plan cancelled]"
         return None  # pending / running → not yet produced
 
-    def load_plan(self, plan_id: str) -> Optional["TaskPlan"]:
+    def load_plan(self, plan_id: str) -> TaskPlan | None:
         """Rebuild a ``TaskPlan`` from Redis for resumption.
 
         Reconstructs the structural skeleton from the ``plan_json`` snapshot,
@@ -187,7 +187,7 @@ class PlanStateStore:
         plan = self.load_plan(plan_id)
         return plan is not None and not plan.is_complete()
 
-    def get_ttl(self, plan_id: str) -> Optional[int]:
+    def get_ttl(self, plan_id: str) -> int | None:
         """Remaining time-to-live (seconds) for the plan's Redis key.
 
         Returns the seconds until the snapshot expires (how long it stays
@@ -206,7 +206,7 @@ class PlanStateStore:
         try:
             client = _get_redis_client()
             key = self._key(plan_id)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             client.hset(key, mapping={"status": status, "updated_at": now})
             logger.info("plan=%s status=%s", plan_id, status)
         except Exception as e:

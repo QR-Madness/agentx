@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -181,7 +180,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Done."))  # type: ignore[attr-defined]
 
     @staticmethod
-    def _rename(claim: str, name: str) -> Optional[str]:
+    def _rename(claim: str, name: str) -> str | None:
         """Rewrite a leading generic "Agent"/"The agent" to ``name``.
 
         Returns the new claim, or None if the claim doesn't start with a generic

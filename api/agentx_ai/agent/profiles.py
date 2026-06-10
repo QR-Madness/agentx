@@ -8,7 +8,6 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -108,7 +107,7 @@ class ProfileManager:
     - Default profile selection
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the ProfileManager.
 
@@ -150,7 +149,7 @@ class ProfileManager:
         work out of the box.
         """
         changed = False
-        legacy_id: Optional[str] = None
+        legacy_id: str | None = None
         try:
             from ..config import get_config_manager
             legacy_id = get_config_manager().get("ambassador.profile_id", None)
@@ -203,7 +202,7 @@ class ProfileManager:
     def _load_config(self, path: Path) -> None:
         """Load profiles from YAML file."""
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
 
             if not config or "profiles" not in config:
@@ -227,7 +226,7 @@ class ProfileManager:
             logger.error(f"Failed to load agent profiles: {e}")
             self._init_defaults()
 
-    def save_config(self, path: Optional[Path] = None) -> None:
+    def save_config(self, path: Path | None = None) -> None:
         """Save current profiles to YAML file."""
         save_path = path or self.config_path
         if not save_path:
@@ -294,11 +293,11 @@ class ProfileManager:
         """List all profiles."""
         return list(self._profiles.values())
 
-    def get_profile(self, profile_id: str) -> Optional[AgentProfile]:
+    def get_profile(self, profile_id: str) -> AgentProfile | None:
         """Get a profile by ID."""
         return self._profiles.get(profile_id)
 
-    def get_profile_by_agent_id(self, agent_id: str) -> Optional[AgentProfile]:
+    def get_profile_by_agent_id(self, agent_id: str) -> AgentProfile | None:
         """Get a profile by its Docker-style agent_id (e.g. 'bold-cosmic-falcon').
 
         The canonical routing/attribution key for multi-agent conversations
@@ -310,7 +309,7 @@ class ProfileManager:
             None,
         )
 
-    def get_profile_by_name(self, name: str) -> Optional[AgentProfile]:
+    def get_profile_by_name(self, name: str) -> AgentProfile | None:
         """Get a profile by its display name (case-insensitive exact match).
 
         Used as the @-mention fallback (Phase 16.5) when a token isn't a known
@@ -327,7 +326,7 @@ class ProfileManager:
         """All profiles of a given kind ('agent' or 'ambassador')."""
         return [p for p in self._profiles.values() if p.kind == kind]
 
-    def get_default_profile(self) -> Optional[AgentProfile]:
+    def get_default_profile(self) -> AgentProfile | None:
         """Get the default *agent* profile (never an ambassador)."""
         agents = self.list_profiles_by_kind("agent")
         for profile in agents:
@@ -336,7 +335,7 @@ class ProfileManager:
         # Fall back to the first agent profile.
         return next(iter(agents), None)
 
-    def get_default_ambassador(self) -> Optional[AgentProfile]:
+    def get_default_ambassador(self) -> AgentProfile | None:
         """Get the default *ambassador* profile (briefings resolve this)."""
         ambs = self.list_profiles_by_kind("ambassador")
         for profile in ambs:
@@ -367,7 +366,7 @@ class ProfileManager:
         self.save_config()
         return profile
 
-    def update_profile(self, profile_id: str, updates: dict) -> Optional[AgentProfile]:
+    def update_profile(self, profile_id: str, updates: dict) -> AgentProfile | None:
         """Update an existing profile."""
         if profile_id not in self._profiles:
             return None
@@ -449,7 +448,7 @@ class ProfileManager:
 # Singleton instance
 # =============================================================================
 
-_profile_manager: Optional[ProfileManager] = None
+_profile_manager: ProfileManager | None = None
 
 
 def get_profile_manager() -> ProfileManager:

@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel
@@ -21,16 +21,16 @@ logger = logging.getLogger(__name__)
 class ModelConfig(BaseModel):
     """Configuration for a specific model."""
     provider: str
-    model_id: Optional[str] = None  # If different from the key
+    model_id: str | None = None  # If different from the key
     context_window: int = 8192
     supports_tools: bool = False
     supports_vision: bool = False
     supports_streaming: bool = True
-    cost_per_1k_input: Optional[float] = None
-    cost_per_1k_output: Optional[float] = None
+    cost_per_1k_input: float | None = None
+    cost_per_1k_output: float | None = None
     local: bool = False
     default_temperature: float = 0.7
-    max_output_tokens: Optional[int] = None
+    max_output_tokens: int | None = None
 
 
 class ProviderRegistry:
@@ -43,8 +43,8 @@ class ProviderRegistry:
     
     def __init__(
         self,
-        config_path: Optional[Path] = None,
-        config_manager: Optional[ConfigManager] = None,
+        config_path: Path | None = None,
+        config_manager: ConfigManager | None = None,
     ):
         self._providers: dict[str, ModelProvider] = {}
         self._model_configs: dict[str, ModelConfig] = {}
@@ -202,7 +202,7 @@ class ProviderRegistry:
         self._providers[name] = provider
         return provider
     
-    def get_model_config(self, model: str) -> Optional[ModelConfig]:
+    def get_model_config(self, model: str) -> ModelConfig | None:
         """Get configuration for a specific model."""
         return self._model_configs.get(model)
     
@@ -252,7 +252,7 @@ class ProviderRegistry:
     def _fallback_enabled(self) -> bool:
         return bool(self._config().get("models.fallback_enabled", True))
 
-    def _default_chat_model(self) -> Optional[str]:
+    def _default_chat_model(self) -> str | None:
         """The global default chat model (floor when there's no active turn).
 
         Reads either latent global-default key (`preferences.default_model` or
@@ -272,7 +272,7 @@ class ProviderRegistry:
         entry = self._provider_health.get(name)
         return entry is not None and entry[0] > time.time() and not entry[1]
 
-    def _fallback_chain(self, model: str, preferred_fallback: Optional[str]) -> list[str]:
+    def _fallback_chain(self, model: str, preferred_fallback: str | None) -> list[str]:
         """Ordered, de-duped `provider:model` candidates: requested → the active
         agent model (caller's known-good) → global default model. Empty/invalid
         entries are dropped."""
@@ -283,8 +283,8 @@ class ProviderRegistry:
         return chain
 
     def resolve_with_fallback(
-        self, model: str, *, preferred_fallback: Optional[str] = None
-    ) -> tuple[ModelProvider, str, Optional[str]]:
+        self, model: str, *, preferred_fallback: str | None = None
+    ) -> tuple[ModelProvider, str, str | None]:
         """Resolve a `provider:model`, falling back when its provider is
         unconfigured or cached-unhealthy.
 
@@ -316,7 +316,7 @@ class ProviderRegistry:
         model: str,
         messages: list,
         *,
-        preferred_fallback: Optional[str] = None,
+        preferred_fallback: str | None = None,
         **kwargs: Any,
     ):
         """Complete with the requested model, transparently retrying down the
@@ -331,7 +331,7 @@ class ProviderRegistry:
             return await provider.complete(messages, model_id, **kwargs)
 
         chain = self._fallback_chain(model, preferred_fallback)
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         tried: list[str] = []
         for cand in chain:
             provider_name, model_id = cand.split(":", 1)
@@ -391,7 +391,7 @@ class ProviderRegistry:
                     provider.health_check(),
                     timeout=per_provider_timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return {
                     "status": "unhealthy",
                     "error": f"timeout after {per_provider_timeout:.0f}s",
@@ -400,7 +400,7 @@ class ProviderRegistry:
                 return {"status": "error", "error": str(e)}
 
         results = await asyncio.gather(*[_check(n) for n in names])
-        health = dict(zip(names, results))
+        health = dict(zip(names, results, strict=False))
         # Feed the fallback path's best-effort health cache.
         for name, res in health.items():
             self.mark_provider_health(name, res.get("status") == "healthy")
@@ -448,7 +448,7 @@ class ProviderRegistry:
 
 
 # Global registry instance
-_registry: Optional[ProviderRegistry] = None
+_registry: ProviderRegistry | None = None
 
 
 def get_registry() -> ProviderRegistry:
@@ -459,7 +459,7 @@ def get_registry() -> ProviderRegistry:
     return _registry
 
 
-def set_registry(registry: Optional[ProviderRegistry]) -> None:
+def set_registry(registry: ProviderRegistry | None) -> None:
     """Inject the global provider registry (or `None` to clear).
 
     Dependency-injection seam: lets tests swap in a fake registry instead of
@@ -479,7 +479,7 @@ def get_provider(name: str) -> ModelProvider:
     return get_registry().get_provider(name)
 
 
-def get_model_config(model: str) -> Optional[ModelConfig]:
+def get_model_config(model: str) -> ModelConfig | None:
     """Get model configuration from the global registry."""
     return get_registry().get_model_config(model)
 

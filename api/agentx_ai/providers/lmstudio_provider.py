@@ -7,7 +7,8 @@ a wrapper around the OpenAI provider with different defaults.
 
 import json
 import logging
-from typing import Any, AsyncIterator, Optional
+from typing import Any
+from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -58,7 +59,7 @@ class LMStudioProvider(ModelProvider):
         # Unset timeout (None) → LM Studio's longer default (local models can be
         # slow). An explicit value (including 60.0) is honored as given.
         self._timeout = self.DEFAULT_TIMEOUT if config.timeout is None else config.timeout
-        self._available_models: Optional[list[dict[str, Any]]] = None
+        self._available_models: list[dict[str, Any]] | None = None
         self._api_key = config.api_key or "lm-studio"
 
     @property
@@ -96,7 +97,7 @@ class LMStudioProvider(ModelProvider):
         return convert_messages_to_openai_format(messages)
 
     @staticmethod
-    def _parse_sse_data(event_str: str) -> Optional[dict[str, Any]]:
+    def _parse_sse_data(event_str: str) -> dict[str, Any] | None:
         """
         Parse SSE event string and return JSON data.
 
@@ -167,10 +168,10 @@ class LMStudioProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> CompletionResult:
         """Generate a completion using LM Studio API."""
@@ -242,10 +243,10 @@ class LMStudioProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using LM Studio API with raw httpx for better streaming."""
@@ -418,4 +419,3 @@ class LMStudioProvider(ModelProvider):
 
     async def close(self) -> None:
         """Close the provider. No-op since clients are created per-request."""
-        pass

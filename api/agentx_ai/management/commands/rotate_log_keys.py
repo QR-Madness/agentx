@@ -66,7 +66,7 @@ class Command(BaseCommand):
         try:
             dek = archive_crypto.unwrap_dek(password)
         except archive_crypto.BadPassword:
-            raise CommandError("Incorrect password")
+            raise CommandError("Incorrect password") from None
         count = archive_crypto.seal_pending(dek)
         archive_crypto.set_cached_dek(dek)
         self.stdout.write(self.style.SUCCESS(f"✓ Sealed {count} pending segment(s)"))
@@ -77,7 +77,7 @@ class Command(BaseCommand):
         try:
             archive_crypto.rewrap_dek(new_password, old_password=old_password)
         except archive_crypto.BadPassword:
-            raise CommandError("Incorrect current password")
+            raise CommandError("Incorrect current password") from None
         self.stdout.write(self.style.SUCCESS("✓ Keyring re-wrapped under the new password (no archives rewritten)"))
 
     def _reencrypt(self, old_password, new_password):
@@ -86,7 +86,7 @@ class Command(BaseCommand):
         try:
             count = archive_crypto.reencrypt_all(old_password, new_password)
         except archive_crypto.BadPassword:
-            raise CommandError("Incorrect current password")
+            raise CommandError("Incorrect current password") from None
         self.stdout.write(self.style.SUCCESS(f"✓ Re-encrypted {count} segment(s) under a brand-new DEK"))
 
     def _prompt_new(self) -> str:

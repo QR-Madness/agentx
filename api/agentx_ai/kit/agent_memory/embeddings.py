@@ -1,7 +1,6 @@
 """Embedding generation for vector similarity search."""
 
 import logging
-from typing import List, Tuple, Union
 from functools import lru_cache
 
 from .config import get_settings
@@ -52,7 +51,7 @@ class EmbeddingProvider:
         assert dims is not None, "Model did not report embedding dimensions"
         return dims
 
-    def validate_dimensions(self) -> Tuple[int, int, bool]:
+    def validate_dimensions(self) -> tuple[int, int, bool]:
         """
         Compare actual model output dimensions against configured dimensions.
 
@@ -76,7 +75,7 @@ class EmbeddingProvider:
                 f"Update EMBEDDING_DIMENSIONS={actual} or re-initialize schemas."
             )
 
-    def embed(self, texts: Union[str, List[str]]) -> List[List[float]]:
+    def embed(self, texts: str | list[str]) -> list[list[float]]:
         """
         Generate embeddings for one or more texts.
 
@@ -106,14 +105,14 @@ class EmbeddingProvider:
             )
         return self._dispatcher
 
-    def _compute(self, texts: List[str]) -> List[List[float]]:
+    def _compute(self, texts: list[str]) -> list[list[float]]:
         """Raw embedding compute — invoked serially by the dispatcher's worker."""
         if self.provider == "openai":
             return self._embed_openai(texts)
         else:
             return self._embed_local(texts)
 
-    def _embed_openai(self, texts: List[str]) -> List[List[float]]:
+    def _embed_openai(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using OpenAI API."""
         if self._client is None:
             self._init_openai()
@@ -125,7 +124,7 @@ class EmbeddingProvider:
         )
         return [item.embedding for item in response.data]
 
-    def _embed_local(self, texts: List[str]) -> List[List[float]]:
+    def _embed_local(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using local model."""
         if self._model is None:
             self._init_local()
@@ -135,7 +134,7 @@ class EmbeddingProvider:
         embeddings = self._model.encode(texts, convert_to_numpy=True)
         return embeddings.tolist()
 
-    def embed_single(self, text: str) -> List[float]:
+    def embed_single(self, text: str) -> list[float]:
         """
         Convenience method for single text embedding.
 

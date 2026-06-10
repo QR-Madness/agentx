@@ -8,7 +8,7 @@ improving quality through iterative refinement.
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -32,7 +32,7 @@ class ReflectionConfig:
     
     # Reflection settings
     max_revisions: int = 3
-    reflection_model: Optional[str] = None  # Use different model for critique
+    reflection_model: str | None = None  # Use different model for critique
     
     # Prompts
     critique_prompt: str = (
@@ -106,7 +106,7 @@ class ReflectiveReasoner(ReasoningStrategy):
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -255,7 +255,7 @@ class ReflectiveReasoner(ReasoningStrategy):
     def _build_initial_prompt(
         self,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> list[Message]:
         """Build the initial generation prompt."""
         loader = get_prompt_loader()

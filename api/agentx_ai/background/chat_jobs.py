@@ -20,8 +20,8 @@ import logging
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +49,16 @@ def enqueue_background_chat(
     *,
     user_id: str,
     message: str,
-    session_id: Optional[str] = None,
-    profile_id: Optional[str] = None,
-    agent_profile_id: Optional[str] = None,
-    workflow_id: Optional[str] = None,
-    model: Optional[str] = None,
+    session_id: str | None = None,
+    profile_id: str | None = None,
+    agent_profile_id: str | None = None,
+    workflow_id: str | None = None,
+    model: str | None = None,
     use_memory: bool = True,
 ) -> str:
     """Enqueue a background chat run. Returns the new job_id."""
     job_id = uuid.uuid4().hex[:16]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     now_ms = int(time.time() * 1000)
 
     payload = {
@@ -98,7 +98,7 @@ def _decode(value: Any) -> Any:
     return value
 
 
-def get_background_chat(job_id: str) -> Optional[Dict[str, Any]]:
+def get_background_chat(job_id: str) -> dict[str, Any] | None:
     """Fetch a single job by id, or None if missing/expired."""
     raw = _redis().hgetall(_job_key(job_id))
     if not raw:
@@ -106,11 +106,11 @@ def get_background_chat(job_id: str) -> Optional[Dict[str, Any]]:
     return {_decode(k): _decode(v) for k, v in raw.items()}  # type: ignore[union-attr]
 
 
-def list_background_chats(user_id: str, *, limit: int = 50) -> List[Dict[str, Any]]:
+def list_background_chats(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
     """Return recent jobs for a user, most recent first."""
     redis = _redis()
     ids = redis.zrevrange(_index_key(user_id), 0, max(0, limit - 1))
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for raw_id in ids:  # type: ignore[union-attr]
         jid = _decode(raw_id)
         rec = get_background_chat(jid)
@@ -136,13 +136,13 @@ def _update_job(job_id: str, **fields: str) -> None:
     redis.expire(_job_key(job_id), JOB_TTL_SECONDS)
 
 
-def _run_job(job: Dict[str, Any]) -> None:
+def _run_job(job: dict[str, Any]) -> None:
     """Execute a single chat job and persist the result."""
     job_id = job["job_id"]
     _update_job(
         job_id,
         status="running",
-        started_at=datetime.now(timezone.utc).isoformat(),
+        started_at=datetime.now(UTC).isoformat(),
     )
 
     try:
@@ -150,7 +150,7 @@ def _run_job(job: Dict[str, Any]) -> None:
         from ..agent.profiles import get_profile_manager
         from ..streaming.helpers import resolve_with_priority
 
-        config_kwargs: Dict[str, Any] = {
+        config_kwargs: dict[str, Any] = {
             "enable_memory": job.get("use_memory") != "0",
         }
 
@@ -183,7 +183,7 @@ def _run_job(job: Dict[str, Any]) -> None:
         _update_job(
             job_id,
             status="done",
-            completed_at=datetime.now(timezone.utc).isoformat(),
+            completed_at=datetime.now(UTC).isoformat(),
             response=result.answer or "",
             session_id=job.get("session_id") or result.task_id,
             total_tokens=str(getattr(result, "total_tokens", 0) or 0),
@@ -195,12 +195,12 @@ def _run_job(job: Dict[str, Any]) -> None:
         _update_job(
             job_id,
             status="failed",
-            completed_at=datetime.now(timezone.utc).isoformat(),
+            completed_at=datetime.now(UTC).isoformat(),
             error=str(exc)[:1000],
         )
 
 
-_worker_thread: Optional[threading.Thread] = None
+_worker_thread: threading.Thread | None = None
 _worker_started = threading.Lock()
 
 

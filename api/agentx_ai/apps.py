@@ -19,7 +19,7 @@ class AgentxAiConfig(AppConfig):
         # where argv[0] is the *full path* to the uvicorn binary (so a bare
         # "uvicorn" string never matches). Check the basename of argv[0] and
         # any asgi/wsgi target, not just exact-string membership.
-        argv = list(getattr(os, "sys").argv)  # type: ignore[attr-defined]
+        argv = list(os.sys.argv)  # type: ignore[attr-defined]
         prog = os.path.basename(argv[0]) if argv else ""
         run_main = os.environ.get("RUN_MAIN") == "true"
         is_server = (

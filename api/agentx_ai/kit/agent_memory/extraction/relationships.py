@@ -1,15 +1,15 @@
 """Relationship extraction from text to build knowledge graph connections."""
 
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 def extract_relationships(
     text: str,
-    entities: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+    entities: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """
     Extract relationships between entities from text using LLM.
 

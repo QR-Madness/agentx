@@ -7,7 +7,7 @@ resolving tokens against the ProfileManager and applying the routing override.
 """
 
 import re
-from typing import Callable, Optional
+from collections.abc import Callable
 
 # Match @token where token is hyphen/word chars (agent_ids are adj-adj-noun;
 # single-word names also fit). The negative lookbehind skips emails
@@ -27,8 +27,8 @@ def extract_mentions(text: str) -> list[str]:
 
 def resolve_first_mention(
     text: str,
-    resolve_fn: Callable[[str], Optional[str]],
-) -> tuple[Optional[str], str]:
+    resolve_fn: Callable[[str], str | None],
+) -> tuple[str | None, str]:
     """Resolve the first @-mention that maps to an agent.
 
     Args:
@@ -40,7 +40,7 @@ def resolve_first_mention(
         resolved (or ``None`` if none did) and ``stripped_text`` has the resolved
         ``@token`` removed. Unresolved tokens are left verbatim.
     """
-    resolved_agent_id: Optional[str] = None
+    resolved_agent_id: str | None = None
     for tok in extract_mentions(text):
         agent_id = resolve_fn(tok)
         if agent_id is None:

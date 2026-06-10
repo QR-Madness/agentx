@@ -14,7 +14,8 @@ import threading
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
+from collections.abc import AsyncGenerator
 
 from mcp import ClientSession
 from pydantic import AnyUrl
@@ -295,7 +296,7 @@ class MCPClientManager:
     async def connect_server(
         self,
         config: ServerConfig | str,
-    ) -> AsyncGenerator[ServerConnection, None]:
+    ) -> AsyncGenerator[ServerConnection]:
         """
         Connect to an MCP server (scoped — connection dies when block exits).
         
@@ -326,7 +327,7 @@ class MCPClientManager:
             raise MCPTransportError(f"Unsupported transport: {config.transport}")
 
     @asynccontextmanager
-    async def _connect_stdio(self, config: ServerConfig) -> AsyncGenerator[ServerConnection, None]:
+    async def _connect_stdio(self, config: ServerConfig) -> AsyncGenerator[ServerConnection]:
         """Connect via stdio transport."""
         async with self._stdio_transport.connect(
             name=config.name,
@@ -341,7 +342,7 @@ class MCPClientManager:
                 await self._cleanup_connection(connection)
     
     @asynccontextmanager
-    async def _connect_sse(self, config: ServerConfig) -> AsyncGenerator[ServerConnection, None]:
+    async def _connect_sse(self, config: ServerConfig) -> AsyncGenerator[ServerConnection]:
         """Connect via SSE transport."""
         async with self._sse_transport.connect(
             name=config.name,
@@ -355,7 +356,7 @@ class MCPClientManager:
                 await self._cleanup_connection(connection)
     
     @asynccontextmanager
-    async def _connect_streamable_http(self, config: ServerConfig) -> AsyncGenerator[ServerConnection, None]:
+    async def _connect_streamable_http(self, config: ServerConfig) -> AsyncGenerator[ServerConnection]:
         """Connect via Streamable HTTP transport."""
         async with self._streamable_http_transport.connect(
             name=config.name,
@@ -483,7 +484,7 @@ class MCPClientManager:
             return {
                 "uri": uri,
                 "contents": [
-                    {"text": getattr(content, "text") if hasattr(content, "text") else str(content)}
+                    {"text": content.text if hasattr(content, "text") else str(content)}
                     for content in result.contents
                 ],
             }

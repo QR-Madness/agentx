@@ -12,7 +12,7 @@ import logging
 import os
 from pathlib import Path
 from threading import Lock
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class ConfigManager:
                     with open(self.CONFIG_PATH) as f:
                         self._config = json.load(f)
                     logger.info(f"Loaded config from {self.CONFIG_PATH}")
-                except (json.JSONDecodeError, IOError) as e:
+                except (OSError, json.JSONDecodeError) as e:
                     logger.error(f"Failed to load config: {e}, using defaults")
                     self._config = self._deep_copy(DEFAULT_CONFIG)
             else:
@@ -274,7 +274,7 @@ class ConfigManager:
 
                 logger.info(f"Saved config to {self.CONFIG_PATH}")
                 return True
-            except IOError as e:
+            except OSError as e:
                 logger.error(f"Failed to save config: {e}")
                 return False
 
@@ -291,7 +291,7 @@ class ConfigManager:
         self,
         provider: str,
         key: str,
-        env_var: Optional[str] = None,
+        env_var: str | None = None,
         default: Any = None
     ) -> Any:
         """
@@ -319,7 +319,7 @@ class ConfigManager:
 
 
 # Global singleton instance
-_config_manager: Optional[ConfigManager] = None
+_config_manager: ConfigManager | None = None
 _config_lock = Lock()
 
 
@@ -332,7 +332,7 @@ def get_config_manager() -> ConfigManager:
         return _config_manager
 
 
-def set_config_manager(manager: Optional[ConfigManager]) -> None:
+def set_config_manager(manager: ConfigManager | None) -> None:
     """Inject the global ConfigManager (or `None` to clear).
 
     Dependency-injection seam: lets tests swap in a fake manager instead of

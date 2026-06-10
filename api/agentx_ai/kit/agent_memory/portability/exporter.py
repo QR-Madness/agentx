@@ -10,10 +10,10 @@ SUBGOAL_OF).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from sqlalchemy import bindparam, text
-from typing_extensions import LiteralString
+from typing import LiteralString
 
 from ..connections import Neo4jConnection, get_postgres_session
 from ..query_utils import (
@@ -31,7 +31,7 @@ class MemoryExporter:
     def __init__(
         self,
         user_id: str,
-        channel: Optional[str] = None,
+        channel: str | None = None,
     ):
         self.user_id = user_id
         # Normalize "_all"/None → no channel filter.
@@ -43,7 +43,7 @@ class MemoryExporter:
         """Inline channel-scope clause for `alias` (empty when exporting all channels)."""
         return CypherFilterBuilder(alias).add_channel_filter(self.channel).build_inline()
 
-    def _node(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _node(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Normalize a Neo4j node property dict for JSON. Exports are text-only:
         the embedding is always dropped (regenerated on import). Every temporal
         property is converted to ISO so no raw Neo4j DateTime (e.g. a Conversation's
@@ -156,12 +156,12 @@ class MemoryExporter:
 
     # -- PostgreSQL ------------------------------------------------------
 
-    def _pg_rows(self, sql: str, conv_ids: List[str]) -> List[Dict[str, Any]]:
+    def _pg_rows(self, sql: str, conv_ids: list[str]) -> list[dict[str, Any]]:
         stmt = text(sql).bindparams(bindparam("ids", expanding=True))
         with get_postgres_session() as session:
             result = session.execute(stmt, {"ids": conv_ids})
             rows = [dict(row._mapping) for row in result]
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for row in rows:
             row["conversation_id"] = str(row["conversation_id"])
             if row.get("timestamp") is not None and hasattr(row["timestamp"], "isoformat"):
@@ -169,7 +169,7 @@ class MemoryExporter:
             out.append(row)
         return out
 
-    def _export_pg_logs(self, conv_ids: List[str]) -> List[Dict[str, Any]]:
+    def _export_pg_logs(self, conv_ids: list[str]) -> list[dict[str, Any]]:
         # Text-only: the embedding column is omitted (regenerated on import).
         return self._pg_rows("""
             SELECT conversation_id::text AS conversation_id, turn_index, timestamp,
@@ -180,7 +180,7 @@ class MemoryExporter:
             ORDER BY conversation_id, turn_index
         """, conv_ids)
 
-    def _export_pg_tools(self, conv_ids: List[str]) -> List[Dict[str, Any]]:
+    def _export_pg_tools(self, conv_ids: list[str]) -> list[dict[str, Any]]:
         return self._pg_rows("""
             SELECT conversation_id::text AS conversation_id, turn_index, timestamp,
                    tool_name, tool_input, tool_output, success, latency_ms,

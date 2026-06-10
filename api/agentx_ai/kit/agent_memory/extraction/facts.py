@@ -1,12 +1,12 @@
 """Fact extraction from text using LLM-based extraction."""
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def extract_facts(text: str, source_turn_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def extract_facts(text: str, source_turn_id: str | None = None) -> list[dict[str, Any]]:
     """
     Extract factual claims from text using LLM.
 

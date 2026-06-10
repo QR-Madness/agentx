@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -53,7 +53,7 @@ class AgentResult(BaseModel):
     answer: str
     
     # Parsed output components
-    thinking: Optional[str] = None  # Extracted thinking/reasoning content
+    thinking: str | None = None  # Extracted thinking/reasoning content
     has_thinking: bool = False
     
     # Execution details
@@ -67,7 +67,7 @@ class AgentResult(BaseModel):
     total_time_ms: float = 0.0
     
     # Trace for debugging
-    trace: Optional[list[dict[str, Any]]] = None
+    trace: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -75,12 +75,12 @@ class AgentConfig:
     """Configuration for an Agent instance."""
     # Identity
     name: str = "agentx"
-    user_id: Optional[str] = None
+    user_id: str | None = None
     
     # Model settings - default to local LM Studio (use provider:model format)
     default_model: str = "lmstudio:llama3.2"
-    reasoning_model: Optional[str] = None
-    drafting_model: Optional[str] = None
+    reasoning_model: str | None = None
+    drafting_model: str | None = None
     
     # Behavior settings
     max_iterations: int = 20
@@ -97,8 +97,8 @@ class AgentConfig:
     default_reasoning_strategy: str = "auto"  # "auto", "cot", "tot", "react", "reflection"
     
     # Tool settings
-    allowed_tools: Optional[list[str]] = None
-    blocked_tools: Optional[list[str]] = None
+    allowed_tools: list[str] | None = None
+    blocked_tools: list[str] | None = None
     max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
     max_tool_result_chars: int = 12000  # Threshold for storing oversized results in Redis
     store_oversized_results: bool = True  # Store large results in Redis instead of truncating
@@ -115,13 +115,13 @@ class AgentConfig:
     summarize_threshold: int = 6000
     
     # Prompt settings
-    prompt_profile_id: Optional[str] = None  # Use default if None
-    agent_id: Optional[str] = None  # Human-friendly agent identifier for self-memory channel
+    prompt_profile_id: str | None = None  # Use default if None
+    agent_id: str | None = None  # Human-friendly agent identifier for self-memory channel
 
     # Memory settings
     memory_channel: str = "_default"  # Channel for memory scoping (use _default, not _global)
     memory_top_k: int = 10  # Number of memories to retrieve
-    memory_time_window_hours: Optional[int] = None  # Time window filter for retrieval
+    memory_time_window_hours: int | None = None  # Time window filter for retrieval
     memory_recall_turn_chars: int = 2000  # Per-turn char budget when formatting recall context
     memory_recall_max_turns: int = 10  # Max recalled turns surfaced in the prompt
 
@@ -142,24 +142,24 @@ class Agent:
         result = await agent.run("Analyze the codebase and suggest improvements")
     """
     
-    def __init__(self, config: AgentConfig, *, registry: Optional[ProviderRegistry] = None):
+    def __init__(self, config: AgentConfig, *, registry: ProviderRegistry | None = None):
         self.config = config
         self.status = AgentStatus.IDLE
 
         # Core components (lazy-loaded). An injected registry takes precedence;
         # the `registry` property falls back to get_registry() when None.
-        self._registry: Optional[ProviderRegistry] = registry
-        self._reasoning: Optional[ReasoningOrchestrator] = None
-        self._drafting: Optional[DraftingStrategy] = None
+        self._registry: ProviderRegistry | None = registry
+        self._reasoning: ReasoningOrchestrator | None = None
+        self._drafting: DraftingStrategy | None = None
         self._context_manager = None
         self._session_manager = None
         self._memory = None
         self._mcp_client = None
         # Lifecycle subscribers (built lazily once memory resolves)
-        self._hooks: Optional[list[AgentHooks]] = None
+        self._hooks: list[AgentHooks] | None = None
 
         # Runtime state
-        self._current_task_id: Optional[str] = None
+        self._current_task_id: str | None = None
         self._cancel_requested = False
         
         # Tool registry
@@ -188,7 +188,7 @@ class Agent:
         return self._reasoning
     
     @property
-    def drafting(self) -> Optional[DraftingStrategy]:
+    def drafting(self) -> DraftingStrategy | None:
         """Lazy-load the drafting strategy."""
         if self._drafting is None and self.config.enable_drafting:
             model = self.config.drafting_model or self.config.default_model
@@ -561,7 +561,7 @@ class Agent:
     def run(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """
@@ -810,9 +810,9 @@ class Agent:
     def chat(
         self,
         message: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         simple_mode: bool = True,
-        profile_id: Optional[str] = None,
+        profile_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """

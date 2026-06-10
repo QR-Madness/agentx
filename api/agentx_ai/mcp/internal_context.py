@@ -15,24 +15,23 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class InternalToolContext:
     user_id: str
-    channel: Optional[str] = None
-    agent_id: Optional[str] = None
-    conversation_id: Optional[str] = None
+    channel: str | None = None
+    agent_id: str | None = None
+    conversation_id: str | None = None
 
 
-_active: contextvars.ContextVar[Optional[InternalToolContext]] = contextvars.ContextVar(
+_active: contextvars.ContextVar[InternalToolContext | None] = contextvars.ContextVar(
     "agentx_internal_tool_context",
     default=None,
 )
 
 
-def set_context(ctx: Optional[InternalToolContext]) -> contextvars.Token:
+def set_context(ctx: InternalToolContext | None) -> contextvars.Token:
     """Bind the active context. Returns a token to pass to :func:`reset_context`."""
     return _active.set(ctx)
 
@@ -42,6 +41,6 @@ def reset_context(token: contextvars.Token) -> None:
     _active.reset(token)
 
 
-def current_context() -> Optional[InternalToolContext]:
+def current_context() -> InternalToolContext | None:
     """Return the active context, or ``None`` when no chat is in flight."""
     return _active.get()

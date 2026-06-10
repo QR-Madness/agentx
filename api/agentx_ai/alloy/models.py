@@ -10,7 +10,6 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -27,7 +26,7 @@ class WorkflowMember:
     """An agent participating in a workflow, referenced by agent_id."""
     agent_id: str
     role: MemberRole
-    delegation_hint: Optional[str] = None
+    delegation_hint: str | None = None
 
     def to_dict(self) -> dict:
         d: dict = {"agent_id": self.agent_id, "role": self.role.value}
@@ -62,12 +61,12 @@ class Workflow:
     name: str
     supervisor_agent_id: str
     members: list[WorkflowMember]
-    description: Optional[str] = None
+    description: str | None = None
     routes: list[WorkflowRoute] = field(default_factory=list)
     shared_channel: str = ""  # auto-derived in __post_init__ when blank
     canvas: dict = field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.shared_channel:
@@ -76,7 +75,7 @@ class Workflow:
     def specialists(self) -> list[WorkflowMember]:
         return [m for m in self.members if m.role == MemberRole.SPECIALIST]
 
-    def get_member(self, agent_id: str) -> Optional[WorkflowMember]:
+    def get_member(self, agent_id: str) -> WorkflowMember | None:
         for m in self.members:
             if m.agent_id == agent_id:
                 return m

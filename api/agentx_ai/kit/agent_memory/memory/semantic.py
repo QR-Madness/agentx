@@ -2,9 +2,9 @@
 
 import json
 import logging
-from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, cast
 
-from typing_extensions import LiteralString
+from typing import LiteralString
 
 from ..models import Entity, Fact
 from ..connections import Neo4jConnection
@@ -21,7 +21,7 @@ settings = get_settings()
 class SemanticMemory:
     """Handles entities, facts, and conceptual knowledge."""
 
-    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+    def __init__(self, audit_logger: MemoryAuditLogger | None = None):
         """Initialize semantic memory.
 
         Args:
@@ -55,7 +55,7 @@ class SemanticMemory:
         )
         return "Entity"
 
-    def upsert_entity(self, entity: Entity, user_id: Optional[str] = None, channel: str = "_global") -> Entity:
+    def upsert_entity(self, entity: Entity, user_id: str | None = None, channel: str = "_global") -> Entity:
         """
         Create or update an entity.
 
@@ -122,7 +122,7 @@ class SemanticMemory:
         name: str,
         user_id: str,
         channel: str = "_global",
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Look up an existing entity by name or alias, scoped to (user_id, channel).
 
@@ -185,9 +185,9 @@ class SemanticMemory:
         self,
         entity_id: str,
         user_id: str,
-        aliases: Optional[List[str]] = None,
-        description: Optional[str] = None,
-        properties: Optional[Dict[str, Any]] = None,
+        aliases: list[str] | None = None,
+        description: str | None = None,
+        properties: dict[str, Any] | None = None,
     ) -> bool:
         """
         Idempotently fold new aliases (case-insensitive dedup against existing),
@@ -226,7 +226,7 @@ class SemanticMemory:
             )
             return result.single() is not None
 
-    def store_fact(self, fact: Fact, user_id: Optional[str] = None, channel: str = "_global") -> None:
+    def store_fact(self, fact: Fact, user_id: str | None = None, channel: str = "_global") -> None:
         """
         Store a fact and link to entities.
 
@@ -293,7 +293,7 @@ class SemanticMemory:
         user_id: str,
         channel: str = "_global",
         reason: str = "user_correction",
-    ) -> Optional[Fact]:
+    ) -> Fact | None:
         """
         Mark an existing fact as superseded and create a new corrected version.
 
@@ -400,7 +400,7 @@ class SemanticMemory:
         self,
         fact_id: str,
         user_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get a single fact by ID, scoped to user_id."""
         with Neo4jConnection.session() as session:
             result = session.run("""
@@ -436,15 +436,15 @@ class SemanticMemory:
         fact_id: str,
         user_id: str,
         *,
-        claim: Optional[str] = None,
-        claim_hash: Optional[str] = None,
-        embedding: Optional[List[float]] = None,
-        confidence: Optional[float] = None,
-        source: Optional[str] = None,
-        temporal_context: Optional[str] = None,
-        salience: Optional[float] = None,
+        claim: str | None = None,
+        claim_hash: str | None = None,
+        embedding: list[float] | None = None,
+        confidence: float | None = None,
+        source: str | None = None,
+        temporal_context: str | None = None,
+        salience: float | None = None,
         channel: str = "_global",
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Update editable fields on a fact in place.
 
@@ -542,14 +542,14 @@ class SemanticMemory:
         entity_id: str,
         user_id: str,
         *,
-        name: Optional[str] = None,
-        type: Optional[str] = None,
-        description: Optional[str] = None,
-        aliases: Optional[List[str]] = None,
-        properties: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
+        name: str | None = None,
+        type: str | None = None,
+        description: str | None = None,
+        aliases: list[str] | None = None,
+        properties: dict[str, Any] | None = None,
+        embedding: list[float] | None = None,
         channel: str = "_global",
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Update editable fields on an entity in place.
 
@@ -646,12 +646,12 @@ class SemanticMemory:
 
     def vector_search_facts(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 10,
         min_confidence: float = 0.5,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        user_id: str | None = None,
+        channel: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Search facts by vector similarity.
 
@@ -705,11 +705,11 @@ class SemanticMemory:
 
     def vector_search_entities(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 10,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        user_id: str | None = None,
+        channel: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Search entities by vector similarity.
 
@@ -755,12 +755,12 @@ class SemanticMemory:
 
     def get_entity_graph(
         self,
-        entity_ids: List[str],
+        entity_ids: list[str],
         depth: int = 2,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None,
+        user_id: str | None = None,
+        channel: str | None = None,
         max_related: int = 50
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Traverse entity relationships to get context.
 
@@ -853,8 +853,8 @@ class SemanticMemory:
         source_id: str,
         target_id: str,
         rel_type: str,
-        properties: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None,
+        properties: dict[str, Any] | None = None,
+        user_id: str | None = None,
         channel: str = "_global"
     ) -> None:
         """
@@ -892,7 +892,7 @@ class SemanticMemory:
                 channel=channel
             )
 
-    def _fact_entities(self, session, fact_id: str, user_id: str) -> List[Dict[str, Any]]:
+    def _fact_entities(self, session, fact_id: str, user_id: str) -> list[dict[str, Any]]:
         """Return the {id,name,type} entities a fact is ABOUT (shared by link/unlink)."""
         result = session.run(
             """
@@ -910,7 +910,7 @@ class SemanticMemory:
 
     def link_fact_to_entity(
         self, fact_id: str, entity_id: str, user_id: str
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         """
         Create a manual (f:Fact)-[:ABOUT]->(e:Entity) link (#905).
 
@@ -939,7 +939,7 @@ class SemanticMemory:
 
     def unlink_fact_from_entity(
         self, fact_id: str, entity_id: str, user_id: str
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         """
         Remove a (f:Fact)-[:ABOUT]->(e:Entity) link (#905). User-scoped.
 
@@ -972,9 +972,9 @@ class SemanticMemory:
         channel: str = "_global",
         offset: int = 0,
         limit: int = 20,
-        search: Optional[str] = None,
-        entity_type: Optional[str] = None
-    ) -> tuple[List[Dict[str, Any]], int]:
+        search: str | None = None,
+        entity_type: str | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         List entities with pagination and optional filtering.
 
@@ -1063,8 +1063,8 @@ class SemanticMemory:
         offset: int = 0,
         limit: int = 20,
         min_confidence: float = 0.0,
-        search: Optional[str] = None
-    ) -> tuple[List[Dict[str, Any]], int]:
+        search: str | None = None
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         List facts with pagination and optional filtering.
 
@@ -1155,7 +1155,7 @@ class SemanticMemory:
         self,
         entity_id: str,
         user_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a single entity by ID.
 
@@ -1196,7 +1196,7 @@ class SemanticMemory:
         entity_id: str,
         user_id: str,
         depth: int = 2
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get an entity with its connected facts and relationships.
 

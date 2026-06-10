@@ -7,7 +7,7 @@ when database services are not running.
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import logging
 import threading
 
@@ -16,14 +16,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_memory_instance: Optional[AgentMemory] = None
-_memory_error: Optional[Exception] = None
+_memory_instance: AgentMemory | None = None
+_memory_error: Exception | None = None
 
 # Timeout for health checks in seconds
 HEALTH_CHECK_TIMEOUT = 5
 
 
-def get_agent_memory(user_id: str = "default", conversation_id: Optional[str] = None, channel: str = "_default", agent_id: Optional[str] = None):
+def get_agent_memory(user_id: str = "default", conversation_id: str | None = None, channel: str = "_default", agent_id: str | None = None):
     """
     Get or create an AgentMemory instance.
 

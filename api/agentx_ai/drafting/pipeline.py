@@ -10,7 +10,8 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -38,20 +39,20 @@ class PipelineStage:
     name: str
     model: str
     role: StageRole = StageRole.CUSTOM
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     temperature: float = 0.7
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
     
     # Transform functions (optional)
     # These allow preprocessing/postprocessing at each stage
-    preprocess: Optional[Callable[[str], str]] = None
-    postprocess: Optional[Callable[[str], str]] = None
+    preprocess: Callable[[str], str] | None = None
+    postprocess: Callable[[str], str] | None = None
     
     # Whether to include previous stage output in context
     include_previous: bool = True
     
     # Custom instructions added to the prompt
-    instructions: Optional[str] = None
+    instructions: str | None = None
 
 
 # Default system prompts for common roles

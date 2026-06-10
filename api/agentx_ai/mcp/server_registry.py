@@ -105,7 +105,7 @@ class ServerConfig:
         return resolved
     
     @classmethod
-    def from_dict(cls, name: str, data: dict[str, Any]) -> "ServerConfig":
+    def from_dict(cls, name: str, data: dict[str, Any]) -> ServerConfig:
         """Create ServerConfig from dictionary."""
         return cls(
             name=name,
@@ -148,7 +148,7 @@ class ServerRegistry:
     def load_from_file(self, path: Path) -> None:
         """Load server configurations from a JSON file."""
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 data = json.load(f)
             
             servers = data.get("servers", {})

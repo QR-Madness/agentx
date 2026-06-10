@@ -28,14 +28,13 @@ import logging
 import threading
 import time
 from contextvars import ContextVar
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Set by `chat_run._drive_run` for the lifetime of one detached run; None outside
 # a streaming turn (background jobs, plan exec driven standalone, tests) — in which
 # case `emit_status` is a safe no-op.
-current_run_id: ContextVar[Optional[str]] = ContextVar("current_run_id", default=None)
+current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
 
 # Stable phase slug -> default human label. `phase` is the client's stable key
 # (phase -> icon/affordance); `label` is the display text. Reserved slugs at the
@@ -61,18 +60,18 @@ _THROTTLE_SECONDS = 0.15
 
 # (run_id, phase) -> (last_label, last_detail, last_ts). Guarded by a lock since
 # the embedding daemon thread emits concurrently with the run's async task.
-_last_emit: dict[tuple[str, str], tuple[str, Optional[str], float]] = {}
+_last_emit: dict[tuple[str, str], tuple[str, str | None, float]] = {}
 _lock = threading.Lock()
 
 
 def emit_status(
     phase: str,
-    label: Optional[str] = None,
+    label: str | None = None,
     *,
-    detail: Optional[str] = None,
-    group: Optional[str] = None,
-    progress: Optional[float] = None,
-    run_id: Optional[str] = None,
+    detail: str | None = None,
+    group: str | None = None,
+    progress: float | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Publish a `status` event to the current run's event bus.
 

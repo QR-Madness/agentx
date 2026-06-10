@@ -43,9 +43,10 @@ import secrets
 import struct
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import BinaryIO, Iterator, Optional
+from typing import BinaryIO
+from collections.abc import Iterator
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -72,7 +73,7 @@ _SCRYPT_R = 8
 _SCRYPT_P = 1
 
 _lock = threading.RLock()
-_dek: Optional[bytes] = None
+_dek: bytes | None = None
 
 
 class BadPassword(Exception):
@@ -92,7 +93,7 @@ def set_cached_dek(dek: bytes) -> None:
         _dek = dek
 
 
-def get_cached_dek() -> Optional[bytes]:
+def get_cached_dek() -> bytes | None:
     with _lock:
         return _dek
 
@@ -151,7 +152,7 @@ def _write_keyring(dek: bytes, password: str, *, created_at: str) -> None:
         "wrap_nonce": _b64(nonce),
         "wrapped_dek": _b64(wrapped),
         "created_at": created_at,
-        "rotated_at": datetime.now(timezone.utc).isoformat(),
+        "rotated_at": datetime.now(UTC).isoformat(),
     }
     _atomic_write(KEYRING_PATH, json.dumps(payload, indent=2).encode("utf-8"))
 
@@ -166,7 +167,7 @@ def create_keyring(password: str) -> bytes:
         if KEYRING_PATH.exists():
             return unwrap_dek(password)
         dek = secrets.token_bytes(_DEK_BYTES)
-        _write_keyring(dek, password, created_at=datetime.now(timezone.utc).isoformat())
+        _write_keyring(dek, password, created_at=datetime.now(UTC).isoformat())
         logger.info("Log-archive keyring created")
         return dek
 
@@ -191,7 +192,7 @@ def unwrap_dek(password: str) -> bytes:
         raise BadPassword("incorrect password for log-archive keyring") from exc
 
 
-def rewrap_dek(new_password: str, *, dek: Optional[bytes] = None, old_password: Optional[str] = None) -> None:
+def rewrap_dek(new_password: str, *, dek: bytes | None = None, old_password: str | None = None) -> None:
     """Re-wrap the existing DEK under ``new_password`` (``O(1)``, touches no archive).
 
     Prefers an in-memory ``dek`` (the cached key from login) so rotation doesn't
@@ -203,7 +204,7 @@ def rewrap_dek(new_password: str, *, dek: Optional[bytes] = None, old_password: 
             if old_password is None:
                 raise ValueError("rewrap_dek needs either dek= or old_password=")
             dek = unwrap_dek(old_password)
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         if KEYRING_PATH.exists():
             try:
                 created_at = json.loads(KEYRING_PATH.read_text("utf-8")).get("created_at", created_at)
@@ -297,7 +298,7 @@ def _dated_gz_segments() -> list[Path]:
     return [p for p in ARCHIVE_DIR.glob(ARCHIVE_BASENAME.split(".")[0] + "*.gz") if p.is_file()]
 
 
-def seal_segment(gz: Path, dek: bytes) -> Optional[Path]:
+def seal_segment(gz: Path, dek: bytes) -> Path | None:
     """Encrypt one ``.gz`` to ``<name>.gz.enc`` and remove the plaintext source.
 
     Atomic (tmp + ``os.replace``); the ``.gz`` is removed only after the ``.enc``
@@ -323,7 +324,7 @@ def seal_segment(gz: Path, dek: bytes) -> Optional[Path]:
     return enc
 
 
-def seal_pending(dek: Optional[bytes] = None) -> int:
+def seal_pending(dek: bytes | None = None) -> int:
     """Seal every dated ``.gz`` lacking a sibling ``.enc``. Returns the count sealed."""
     dek = dek or get_cached_dek()
     if dek is None:
@@ -400,7 +401,7 @@ def reencrypt_all(old_password: str, new_password: str) -> int:
             except Exception:
                 tmp.unlink(missing_ok=True)
                 raise
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         _write_keyring(new_dek, new_password, created_at=created_at)
         set_cached_dek(new_dek)
     logger.info("Re-encrypted %d log archive segment(s) under a new DEK", count)

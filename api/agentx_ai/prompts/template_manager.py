@@ -12,7 +12,6 @@ the layer stack — composition is owned by `LayerStore`.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -33,7 +32,7 @@ class PromptTemplateManager:
     - Rollback to default content
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the PromptTemplateManager.
 
@@ -64,7 +63,7 @@ class PromptTemplateManager:
     def _load_config(self, path: Path) -> None:
         """Load templates from YAML file."""
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 config = yaml.safe_load(f)
 
             if not config or "templates" not in config:
@@ -97,7 +96,7 @@ class PromptTemplateManager:
             logger.error(f"Failed to load prompt templates: {e}")
             self._init_defaults()
 
-    def save_config(self, path: Optional[Path] = None) -> None:
+    def save_config(self, path: Path | None = None) -> None:
         """Save current templates to YAML file."""
         save_path = path or self.config_path
         if not save_path:
@@ -142,9 +141,9 @@ class PromptTemplateManager:
 
     def list_templates(
         self,
-        type_filter: Optional[TemplateType] = None,
-        tag_filter: Optional[str] = None,
-        search: Optional[str] = None,
+        type_filter: TemplateType | None = None,
+        tag_filter: str | None = None,
+        search: str | None = None,
     ) -> list[PromptTemplate]:
         """
         List templates with optional filtering.
@@ -180,7 +179,7 @@ class PromptTemplateManager:
 
         return templates
 
-    def get_template(self, template_id: str) -> Optional[PromptTemplate]:
+    def get_template(self, template_id: str) -> PromptTemplate | None:
         """Get a template by ID."""
         return self._templates.get(template_id)
 
@@ -222,7 +221,7 @@ class PromptTemplateManager:
         self.save_config()
         return template
 
-    def update_template(self, template_id: str, updates: dict) -> Optional[PromptTemplate]:
+    def update_template(self, template_id: str, updates: dict) -> PromptTemplate | None:
         """
         Update an existing template.
 
@@ -288,7 +287,7 @@ class PromptTemplateManager:
         self.save_config()
         return True
 
-    def reset_to_default(self, template_id: str) -> Optional[PromptTemplate]:
+    def reset_to_default(self, template_id: str) -> PromptTemplate | None:
         """
         Reset a template's content to its default_content.
 
@@ -310,7 +309,7 @@ class PromptTemplateManager:
     # Rendering
     # =========================================================================
 
-    def render_template(self, template_id: str, **variables: str) -> Optional[str]:
+    def render_template(self, template_id: str, **variables: str) -> str | None:
         """
         Render a template with variable substitution.
 
@@ -331,7 +330,7 @@ class PromptTemplateManager:
 # Singleton instance
 # =============================================================================
 
-_template_manager: Optional[PromptTemplateManager] = None
+_template_manager: PromptTemplateManager | None = None
 
 
 def get_template_manager() -> PromptTemplateManager:

@@ -8,7 +8,8 @@ OpenAI-compatible interface with dynamic model catalog.
 import base64
 import logging
 import time
-from typing import Any, AsyncIterator, Optional
+from typing import Any
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -55,7 +56,7 @@ class OpenRouterProvider(ModelProvider):
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._model_cache: dict[str, dict[str, Any]] = {}
         self._cache_timestamp: float = 0
 
@@ -78,7 +79,7 @@ class OpenRouterProvider(ModelProvider):
             raise ImportError(
                 "OpenAI package not installed. "
                 "Install with: pip install openai"
-            )
+            ) from None
 
         headers = {}
         if self._site_url:
@@ -126,10 +127,10 @@ class OpenRouterProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> CompletionResult:
         """Generate a completion using OpenRouter API."""
@@ -187,10 +188,10 @@ class OpenRouterProvider(ModelProvider):
         model: str,
         *,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
-        stop: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        stop: list[str] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[StreamChunk]:
         """Stream a completion using OpenRouter API."""
@@ -263,9 +264,9 @@ class OpenRouterProvider(ModelProvider):
         text: str,
         *,
         model: str,
-        voice: Optional[str] = None,
+        voice: str | None = None,
         response_format: str = "mp3",
-        speed: Optional[float] = None,
+        speed: float | None = None,
         **kwargs: Any,
     ) -> SpeechResult:
         """Synthesize speech via OpenRouter's OpenAI-compatible ``/audio/speech``.
@@ -326,7 +327,7 @@ class OpenRouterProvider(ModelProvider):
         *,
         model: str,
         audio_format: str = "webm",
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs: Any,
     ) -> TranscriptionResult:
         """Transcribe audio via OpenRouter's OpenAI-compatible ``/audio/transcriptions``.

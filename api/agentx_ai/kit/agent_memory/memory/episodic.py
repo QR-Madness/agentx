@@ -1,10 +1,10 @@
 """Episodic memory - conversation history storage and retrieval."""
 
 import json
-from typing import List, Dict, Any, Optional, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING, cast
 
 from sqlalchemy import text
-from typing_extensions import LiteralString
+from typing import LiteralString
 
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
@@ -20,7 +20,7 @@ settings = get_settings()
 class EpisodicMemory:
     """Handles storage and retrieval of conversation history."""
 
-    def __init__(self, audit_logger: Optional["MemoryAuditLogger"] = None):
+    def __init__(self, audit_logger: MemoryAuditLogger | None = None):
         """Initialize episodic memory.
 
         Args:
@@ -28,7 +28,7 @@ class EpisodicMemory:
         """
         self._audit_logger = audit_logger
 
-    def store_turn(self, turn: Turn, user_id: Optional[str] = None, channel: str = "_global", agent_id: Optional[str] = None) -> None:
+    def store_turn(self, turn: Turn, user_id: str | None = None, channel: str = "_global", agent_id: str | None = None) -> None:
         """
         Store turn in Neo4j graph.
 
@@ -150,7 +150,7 @@ class EpisodicMemory:
                 "agent_id": turn.agent_id,
             })
 
-    def get_conversation_agent_ids(self, conversation_id: str) -> List[str]:
+    def get_conversation_agent_ids(self, conversation_id: str) -> list[str]:
         """Return the distinct producing-agent ids recorded for a conversation.
 
         Reads the PostgreSQL ``conversation_logs.agent_id`` column (the Phase
@@ -166,7 +166,7 @@ class EpisodicMemory:
             """), {"conv_id": conversation_id})
             return [row[0] for row in result if row[0]]
 
-    def get_conversation_roster(self, conversation_id: str) -> List[Dict[str, str]]:
+    def get_conversation_roster(self, conversation_id: str) -> list[dict[str, str]]:
         """Return the agents that produced turns in a conversation as a roster.
 
         Each entry is ``{"agent_id": ..., "name": ...}``. The ``name`` is the
@@ -186,12 +186,12 @@ class EpisodicMemory:
 
     def vector_search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 10,
-        user_id: Optional[str] = None,
-        time_window_hours: Optional[int] = None,
-        channel: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        user_id: str | None = None,
+        time_window_hours: int | None = None,
+        channel: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Search episodic memory by vector similarity.
 
@@ -239,9 +239,9 @@ class EpisodicMemory:
     def get_conversation(
         self,
         conversation_id: str,
-        user_id: Optional[str] = None,
-        channel: Optional[str] = None
-    ) -> List[Turn]:
+        user_id: str | None = None,
+        channel: str | None = None
+    ) -> list[Turn]:
         """
         Get all turns in a conversation.
 
@@ -277,7 +277,7 @@ class EpisodicMemory:
         user_id: str,
         limit: int = 3,
         order: str = "desc"
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get the last N turns from a specific conversation.
 
@@ -317,7 +317,7 @@ class EpisodicMemory:
         self,
         turn_id: str,
         user_id: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a single turn by ID plus its owning conversation, scoped to user.
 
@@ -343,8 +343,8 @@ class EpisodicMemory:
         user_id: str,
         hours: int = 24,
         limit: int = 50,
-        channel: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        channel: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get recent turns across all conversations.
 

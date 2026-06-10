@@ -8,8 +8,9 @@ Provides a ConsolidationProgress helper that:
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
+from collections.abc import Callable
 from uuid import uuid4
 
 from ..connections import RedisConnection
@@ -37,22 +38,22 @@ class ConsolidationProgress:
 
     def __init__(
         self,
-        jobs: List[str],
+        jobs: list[str],
         triggered_by: str = "manual",
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
     ):
         self.run_id = run_id or str(uuid4())[:8]
         self.jobs = jobs
         self.triggered_by = triggered_by
         self.redis = RedisConnection.get_client()
-        self._started_at = datetime.now(timezone.utc)
+        self._started_at = datetime.now(UTC)
 
-    def _publish(self, event: str, data: Dict[str, Any]) -> None:
+    def _publish(self, event: str, data: dict[str, Any]) -> None:
         """Publish a progress event to Redis pub/sub."""
         payload = {
             "event": event,
             "run_id": self.run_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "data": data,
         }
         try:
@@ -91,10 +92,10 @@ class ConsolidationProgress:
             "total": total,
         })
 
-    def emit(self, job_name: str, stage: str, details: Optional[Dict[str, Any]] = None) -> None:
+    def emit(self, job_name: str, stage: str, details: dict[str, Any] | None = None) -> None:
         """Emit a granular progress event during processing."""
         self._refresh_active()
-        data: Dict[str, Any] = {"job": job_name, "stage": stage}
+        data: dict[str, Any] = {"job": job_name, "stage": stage}
         if details:
             data.update(details)
         self._publish("progress", data)
@@ -104,7 +105,7 @@ class ConsolidationProgress:
         job_name: str,
         success: bool,
         duration_ms: int,
-        result: Optional[Dict[str, Any]] = None,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """Signal a job completed."""
         self._publish("job_done", {
@@ -114,7 +115,7 @@ class ConsolidationProgress:
             "result": result or {},
         })
 
-    def complete(self, result: Dict[str, Any]) -> None:
+    def complete(self, result: dict[str, Any]) -> None:
         """Signal the entire pipeline completed. Clears active key."""
         self._publish("done", result)
         try:
@@ -136,14 +137,14 @@ class ConsolidationProgress:
 
         The callback signature: callback(stage: str, details: dict, job: str)
         """
-        def callback(stage: str, details: Optional[Dict[str, Any]] = None, job: str = "") -> None:
+        def callback(stage: str, details: dict[str, Any] | None = None, job: str = "") -> None:
             self.emit(job, stage, details)
         return callback
 
 
 # --- Helper functions ---
 
-def get_active_consolidation() -> Optional[Dict[str, Any]]:
+def get_active_consolidation() -> dict[str, Any] | None:
     """
     Check if a consolidation run is currently active.
 

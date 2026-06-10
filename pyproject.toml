@@ -38,6 +38,7 @@ dependencies = [
     "ruff>=0.8.0",
     "einops>=0.8.2",
     "pyright>=1.1.0",
+    "pip-audit>=2.7.0",
     "bcrypt>=5.0.0",
     # Log-archive encryption (AES-GCM + Scrypt); pinned explicitly rather than
     # relying on a transitive pull so a dependency bump can't drop it.
@@ -45,3 +46,40 @@ dependencies = [
     "tavily-python>=0.7.25",
     "rich>=15.0.0",
 ]
+
+# ----------------------------------------------------------------------------
+# Static analysis — ruff. Lean by design: only rules that earn their keep in this
+# repo. Run `task lint:python` (check) / `task lint:python:fix` (safe autofix).
+# Rationale for the off-by-design security rules lives in Decisions.md.
+# ----------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+# Note: E501 (line length) is intentionally NOT enforced — the codebase uses a
+# deliberate compact-block style; gating on it would be 1600+ findings of noise.
+select = [
+    "E4", "E7", "E9", "F",  # default set: pyflakes + the real pycodestyle errors
+    "B",                     # bugbear — genuine bug patterns (chaining, mutable defaults)
+    "C4",                    # flake8-comprehensions
+    "PIE",                   # misc anti-patterns
+    "UP",                    # pyupgrade — modern syntax for the py3.14 target
+    "ASYNC",                 # async correctness — cheap guard (cf. Decisions ADR-1's deadlock)
+    "S",                     # flake8-bandit security — guards the raw-SQL / secret surface
+]
+ignore = [
+    "S101",          # asserts are deliberate (and are the point in tests)
+    "S110", "S112",  # try/except/pass|continue IS the never-raise / degrade-gracefully idiom (INV-1)
+    "S311",          # `random` is for agent-id / jitter, never crypto
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests*.py" = ["S105", "S108"]  # dummy token + /tmp path in test fixtures
+# Audited raw SQL: values are bound (%s / :name / Cypher $params); only static
+# fragments or internal identifiers are interpolated. The real fix is the §1.5
+# repository layer, not noqa-decoration — see Decisions.md. S608 stays active
+# everywhere else to catch NEW raw SQL.
+"api/agentx_ai/views.py" = ["S608"]
+"api/agentx_ai/kit/agent_memory/memory/semantic.py" = ["S608"]
+"api/agentx_ai/management/commands/eval_consolidation.py" = ["S608"]
+"api/agentx_ai/management/commands/init_memory_schema.py" = ["S608"]

@@ -10,7 +10,8 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -179,7 +180,7 @@ class ReActAgent(ReasoningStrategy):
     async def reason(
         self,
         task: str,
-        context: Optional[list[Message]] = None,
+        context: list[Message] | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """
@@ -321,7 +322,7 @@ class ReActAgent(ReasoningStrategy):
     def _build_initial_prompt(
         self,
         task: str,
-        context: Optional[list[Message]],
+        context: list[Message] | None,
     ) -> list[Message]:
         """Build the initial ReAct prompt with tool descriptions."""
         tool_descriptions = []
@@ -352,7 +353,7 @@ class ReActAgent(ReasoningStrategy):
 
         return messages
     
-    def _extract_thought(self, response: str) -> Optional[str]:
+    def _extract_thought(self, response: str) -> str | None:
         """Extract the thought from a response."""
         pattern = rf"{self.react_config.thought_prefix}\s*(.+?)(?={self.react_config.action_prefix}|$)"
         match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
@@ -360,7 +361,7 @@ class ReActAgent(ReasoningStrategy):
             return match.group(1).strip()
         return None
     
-    def _extract_action(self, response: str) -> tuple[Optional[str], dict[str, Any]]:
+    def _extract_action(self, response: str) -> tuple[str | None, dict[str, Any]]:
         """Extract the action from a response."""
         pattern = rf"{self.react_config.action_prefix}\s*(\w+)\s*\(([^)]*)\)"
         match = re.search(pattern, response, re.IGNORECASE)

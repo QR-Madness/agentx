@@ -147,7 +147,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Extraction model {model!r} is not usable: {e}. Configure the provider "
                 "(e.g. set OPENROUTER_API_KEY / run LM Studio) or pass --model provider:model_id."
-            )
+            ) from e
 
     # ── agents / seeding ──────────────────────────────────────────────────────
     def _resolve_agents(self, names: str, needed: int):

@@ -33,8 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, UTC
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ def _redis():
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _decode(value) -> str:
@@ -114,7 +113,7 @@ def _persist(item_key: str, index_key: str, item_id: str, record: dict) -> None:
         logger.warning(f"ambassador write failed: {e}")
 
 
-def _read(item_key: str) -> Optional[dict]:
+def _read(item_key: str) -> dict | None:
     """Return the JSON record at ``item_key``, or None."""
     try:
         raw = _redis().get(item_key)
@@ -155,7 +154,7 @@ def _list(index_key: str, item_key_for) -> list[dict]:
 # --- entry core (the unified store) -----------------------------------------
 
 
-def get_entry(thread_id: str, entry_id: str) -> Optional[dict]:
+def get_entry(thread_id: str, entry_id: str) -> dict | None:
     """Return the raw thread entry, or None."""
     return _read(_entry_key(thread_id, entry_id))
 
@@ -256,7 +255,7 @@ def list_thread(thread_id: str) -> list[dict]:
 # --- thread meta (title) ----------------------------------------------------
 
 
-def get_thread_meta(thread_id: str) -> Optional[dict]:
+def get_thread_meta(thread_id: str) -> dict | None:
     return _read(_thread_meta_key(thread_id))
 
 
@@ -332,7 +331,7 @@ def _entry_to_briefing(e: dict) -> dict:
     return out
 
 
-def get_briefing(conversation_id: str, message_id: str) -> Optional[dict]:
+def get_briefing(conversation_id: str, message_id: str) -> dict | None:
     """Return the briefing record for one message, or None."""
     e = get_entry(conversation_id, message_id)
     if e is not None and e.get("kind") == "briefing":
@@ -355,8 +354,8 @@ def set_status(
     message_id: str,
     status: str,
     *,
-    run_id: Optional[str] = None,
-    error: Optional[str] = None,
+    run_id: str | None = None,
+    error: str | None = None,
 ) -> None:
     """Create/update a briefing entry's status (preserving any summary text)."""
     _set_entry(
@@ -417,7 +416,7 @@ def _entry_to_qa(e: dict) -> dict:
     return out
 
 
-def get_qa(conversation_id: str, qa_id: str) -> Optional[dict]:
+def get_qa(conversation_id: str, qa_id: str) -> dict | None:
     """Return one Q&A record, or None."""
     e = get_entry(conversation_id, qa_id)
     if e is not None and e.get("kind") == "qa":
@@ -440,7 +439,7 @@ def create_qa(
     qa_id: str,
     question: str,
     *,
-    run_id: Optional[str] = None,
+    run_id: str | None = None,
 ) -> None:
     """Open a Q&A entry in the ``streaming`` state, stamping the question."""
     _set_entry(
@@ -459,8 +458,8 @@ def set_qa_status(
     qa_id: str,
     status: str,
     *,
-    run_id: Optional[str] = None,
-    error: Optional[str] = None,
+    run_id: str | None = None,
+    error: str | None = None,
 ) -> None:
     """Update a Q&A entry's status (preserving its question + any answer text)."""
     _set_entry(conversation_id, qa_id, "qa", status=status, run_id=run_id, error=error)

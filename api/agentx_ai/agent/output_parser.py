@@ -6,14 +6,13 @@ and handle structured output.
 """
 
 import re
-from typing import Optional
 from pydantic import BaseModel
 
 
 class ParsedOutput(BaseModel):
     """Parsed model output with separated components."""
     content: str
-    thinking: Optional[str] = None
+    thinking: str | None = None
     has_thinking: bool = False
     raw: str  # Original unmodified output
 
@@ -44,7 +43,7 @@ FINAL_ANSWER_PATTERNS = [
 ]
 
 
-def _find_trailing_json(text: str) -> Optional[int]:
+def _find_trailing_json(text: str) -> int | None:
     """
     Find the start index of a trailing JSON object in text using brace-balancing.
     Handles arbitrary nesting depth. Returns None if no balanced JSON found at end.
@@ -185,7 +184,7 @@ def extract_code_blocks(content: str) -> list[dict]:
     return blocks
 
 
-def validate_json_output(content: str) -> tuple[bool, Optional[dict], Optional[str]]:
+def validate_json_output(content: str) -> tuple[bool, dict | None, str | None]:
     """
     Validate that content is valid JSON.
     
@@ -222,7 +221,7 @@ def clean_for_display(content: str) -> str:
     return content
 
 
-def extract_yes_no_answer(content: str) -> Optional[bool]:
+def extract_yes_no_answer(content: str) -> bool | None:
     """
     Extract a YES/NO answer from model output.
 
@@ -273,7 +272,7 @@ def extract_yes_no_answer(content: str) -> Optional[bool]:
     return None
 
 
-def extract_json_from_reasoning(content: str) -> Optional[str]:
+def extract_json_from_reasoning(content: str) -> str | None:
     """
     Extract JSON from a response that may contain reasoning.
 

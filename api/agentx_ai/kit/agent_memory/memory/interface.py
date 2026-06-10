@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..portability import MemoryExport
@@ -54,11 +54,11 @@ class AgentMemory:
     def __init__(
         self,
         user_id: str,
-        conversation_id: Optional[str] = None,
+        conversation_id: str | None = None,
         channel: str = "_global",
-        session_id: Optional[str] = None,
-        events: Optional[MemoryEventEmitter] = None,
-        agent_id: Optional[str] = None,
+        session_id: str | None = None,
+        events: MemoryEventEmitter | None = None,
+        agent_id: str | None = None,
     ):
         # Validate user_id
         if not user_id or not user_id.strip():
@@ -103,7 +103,7 @@ class AgentMemory:
         """Invalidate retrieval cache for current user/channel scope."""
         self.retriever.invalidate_cache(self.user_id, self.channel)
 
-    def _default_recall_channels(self) -> List[str]:
+    def _default_recall_channels(self) -> list[str]:
         """Build the default channel list for recall: [active, self, _global]."""
         channels = [self.channel] if self.channel != "_global" else []
         if self.self_channel:
@@ -171,7 +171,7 @@ class AgentMemory:
                 error_message=error_msg,
             )
 
-    def get_conversation_participants(self, conversation_id: str) -> List[str]:
+    def get_conversation_participants(self, conversation_id: str) -> list[str]:
         """Distinct agent ids that have produced turns in a conversation.
 
         Pass-through to :meth:`EpisodicMemory.get_conversation_agent_ids`;
@@ -180,7 +180,7 @@ class AgentMemory:
         """
         return self.episodic.get_conversation_agent_ids(conversation_id)
 
-    def get_conversation_roster(self, conversation_id: str) -> List[Dict[str, str]]:
+    def get_conversation_roster(self, conversation_id: str) -> list[dict[str, str]]:
         """Agents (``{agent_id, name}``) that produced turns in a conversation.
 
         Pass-through to :meth:`EpisodicMemory.get_conversation_roster`; used by
@@ -193,9 +193,9 @@ class AgentMemory:
         claim: str,
         source: str = "extraction",
         confidence: float = 0.8,
-        entity_ids: Optional[List[str]] = None,
-        source_turn_id: Optional[str] = None,
-        temporal_context: Optional[str] = None
+        entity_ids: list[str] | None = None,
+        source_turn_id: str | None = None,
+        temporal_context: str | None = None
     ) -> Fact:
         """
         Add a fact to semantic memory.
@@ -214,7 +214,7 @@ class AgentMemory:
         start_time = time.perf_counter()
         success = True
         error_msg = None
-        fact_id: Optional[str] = None
+        fact_id: str | None = None
 
         try:
             fact = Fact(
@@ -326,20 +326,20 @@ class AgentMemory:
         self,
         fact_id: str,
         *,
-        claim: Optional[str] = None,
-        confidence: Optional[float] = None,
-        source: Optional[str] = None,
-        temporal_context: Optional[str] = None,
-        salience: Optional[float] = None,
-    ) -> Optional[Dict[str, Any]]:
+        claim: str | None = None,
+        confidence: float | None = None,
+        source: str | None = None,
+        temporal_context: str | None = None,
+        salience: float | None = None,
+    ) -> dict[str, Any] | None:
         """
         Update editable fields on a fact in place.
 
         When `claim` changes, re-embeds and recomputes claim_hash.
         Returns the updated fact dict, or None if not found.
         """
-        embedding: Optional[List[float]] = None
-        claim_hash: Optional[str] = None
+        embedding: list[float] | None = None
+        claim_hash: str | None = None
         if claim is not None:
             embedding = self.embedder.embed_single(claim)
             claim_hash = compute_claim_hash(claim)
@@ -402,7 +402,7 @@ class AgentMemory:
             self._invalidate_retrieval_cache()
         return deleted
 
-    def boost_salience(self, fact_id: str, to: float = 0.9) -> Optional[Dict[str, Any]]:
+    def boost_salience(self, fact_id: str, to: float = 0.9) -> dict[str, Any] | None:
         """
         Raise a fact's salience ("remember this") so it survives memory decay
         and ranks higher in recall. ``to`` is clamped to [0, 1]. Returns the
@@ -411,7 +411,7 @@ class AgentMemory:
         target = max(0.0, min(1.0, float(to)))
         return self.update_fact(fact_id, salience=target)
 
-    def forget_fact(self, fact_id: str, hard: bool = False) -> Dict[str, Any]:
+    def forget_fact(self, fact_id: str, hard: bool = False) -> dict[str, Any]:
         """
         "Forget" a fact. Soft (default) retires it for recall while preserving
         provenance: marks ``temporal_context="past"`` and drops both confidence
@@ -441,7 +441,7 @@ class AgentMemory:
             "fact": updated,
         }
 
-    def get_fact_provenance(self, fact_id: str) -> Dict[str, Any]:
+    def get_fact_provenance(self, fact_id: str) -> dict[str, Any]:
         """
         Resolve where a fact was learned ("where did I learn this?"). Returns the
         fact's ``source``/``source_turn_id`` and, when the origin turn is still on
@@ -452,7 +452,7 @@ class AgentMemory:
             return {"success": False, "fact_id": fact_id, "error": "Fact not found"}
 
         source_turn_id = fact.get("source_turn_id")
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "success": True,
             "fact_id": fact_id,
             "claim": fact.get("claim"),
@@ -476,12 +476,12 @@ class AgentMemory:
         self,
         entity_id: str,
         *,
-        name: Optional[str] = None,
-        type: Optional[str] = None,
-        description: Optional[str] = None,
-        aliases: Optional[List[str]] = None,
-        properties: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, Any]]:
+        name: str | None = None,
+        type: str | None = None,
+        description: str | None = None,
+        aliases: list[str] | None = None,
+        properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         """
         Update editable fields on an entity in place.
 
@@ -489,7 +489,7 @@ class AgentMemory:
         ``f"{name}: {description or ''}"`` to match upsert_entity.
         Returns the updated entity dict, or None if not found.
         """
-        embedding: Optional[List[float]] = None
+        embedding: list[float] | None = None
         if name is not None or description is not None:
             current = self.semantic.get_entity_by_id(entity_id, self.user_id)
             if current is None:
@@ -579,7 +579,7 @@ class AgentMemory:
             conversation_id=self.conversation_id,
         )
 
-    def get_goal(self, goal_id: str) -> Optional[Goal]:
+    def get_goal(self, goal_id: str) -> Goal | None:
         """
         Retrieve a goal by ID.
 
@@ -595,7 +595,7 @@ class AgentMemory:
         self,
         goal_id: str,
         status: str = "completed",
-        result: Optional[str] = None
+        result: str | None = None
     ) -> bool:
         """
         Update a goal's status.
@@ -621,11 +621,11 @@ class AgentMemory:
     def record_tool_usage(
         self,
         tool_name: str,
-        tool_input: Dict[str, Any],
+        tool_input: dict[str, Any],
         tool_output: Any,
         success: bool,
         latency_ms: int,
-        turn_id: Optional[str] = None
+        turn_id: str | None = None
     ) -> None:
         """
         Record tool invocation for procedural learning.
@@ -681,9 +681,9 @@ class AgentMemory:
         signal: str,
         content: str,
         *,
-        context: Optional[Dict[str, Any]] = None,
-        agent_id: Optional[str] = None,
-        turn_index: Optional[int] = None,
+        context: dict[str, Any] | None = None,
+        agent_id: str | None = None,
+        turn_index: int | None = None,
     ) -> bool:
         """Stage a high-signal procedural candidate (encode loop; Slice 0).
 
@@ -709,7 +709,7 @@ class AgentMemory:
             return False
 
     def _attach_reflex_procedures(
-        self, bundle: "MemoryBundle", channels: List[str]
+        self, bundle: MemoryBundle, channels: list[str]
     ) -> None:
         """Populate ``bundle.procedures`` with the reflex core (Slice 1).
 
@@ -721,7 +721,7 @@ class AgentMemory:
         limit = int(getattr(self._settings, "reflex_core_limit", 5))
         bundle.procedures = self.procedural.get_reflex_procedures(channels, limit=limit)
 
-    def get_reflex_procedures(self, *, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_reflex_procedures(self, *, limit: int = 5) -> list[dict[str, Any]]:
         """Reflex-core procedures for this instance's default recall channels."""
         return self.procedural.get_reflex_procedures(
             self._default_recall_channels(), limit=limit
@@ -729,13 +729,13 @@ class AgentMemory:
 
     def list_procedures(
         self, channel: str = "_global", offset: int = 0, limit: int = 20
-    ) -> tuple[List[Dict[str, Any]], int]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """List distilled procedures for this user (inspection surface)."""
         return self.procedural.list_procedures(
             self.user_id, channel=channel, offset=offset, limit=limit
         )
 
-    def count_procedures(self, *, channel: Optional[str] = None) -> int:
+    def count_procedures(self, *, channel: str | None = None) -> int:
         """Count distilled procedures (observability / stats)."""
         return self.procedural.count_procedures(channel=channel)
 
@@ -748,9 +748,9 @@ class AgentMemory:
         include_episodic: bool = True,
         include_semantic: bool = True,
         include_procedural: bool = True,
-        time_window_hours: Optional[int] = None,
-        strategy_weights: Optional[Union[RetrievalWeights, Dict[str, float]]] = None,
-        channels: Optional[List[str]] = None,
+        time_window_hours: int | None = None,
+        strategy_weights: RetrievalWeights | dict[str, float] | None = None,
+        channels: list[str] | None = None,
         use_recall_layer: bool = True,
     ) -> MemoryBundle:
         """
@@ -892,7 +892,7 @@ class AgentMemory:
                 metadata=metadata,
             )
 
-    def get_active_goals(self) -> List[Goal]:
+    def get_active_goals(self) -> list[Goal]:
         """
         Get all active goals for the user in accessible channels.
 
@@ -901,7 +901,7 @@ class AgentMemory:
         """
         return self.goal.get_active_goals(user_id=self.user_id, channel=self.channel)
 
-    def get_user_context(self) -> Dict[str, Any]:
+    def get_user_context(self) -> dict[str, Any]:
         """
         Get user profile and preferences scoped to accessible channels.
 
@@ -938,7 +938,7 @@ class AgentMemory:
                 "interests": [i for i in record["interests"] if i]
             }
 
-    def what_worked_for(self, task_description: str, top_k: int = 5) -> List[Strategy]:
+    def what_worked_for(self, task_description: str, top_k: int = 5) -> list[Strategy]:
         """
         Find successful strategies for similar tasks.
 
@@ -958,7 +958,7 @@ class AgentMemory:
 
     # Working memory operations
 
-    def get_working_context(self) -> Dict[str, Any]:
+    def get_working_context(self) -> dict[str, Any]:
         """
         Get current working memory state.
 
@@ -980,7 +980,7 @@ class AgentMemory:
 
     # Lifecycle operations
 
-    def reflect(self, outcome: Dict[str, Any]) -> None:
+    def reflect(self, outcome: dict[str, Any]) -> None:
         """
         Trigger reflection on conversation outcome.
         Called at end of conversation or after task completion.
@@ -1001,7 +1001,7 @@ class AgentMemory:
 
     # Portability (scriptable import/export)
 
-    def export_memory(self, channel: Optional[str] = None) -> "MemoryExport":
+    def export_memory(self, channel: str | None = None) -> MemoryExport:
         """Serialize this user's memory graph into a round-trippable envelope.
 
         The export is text-only (embeddings are regenerated on import).
@@ -1017,10 +1017,10 @@ class AgentMemory:
 
     def import_memory(
         self,
-        payload: Union["MemoryExport", Dict[str, Any]],
+        payload: MemoryExport | dict[str, Any],
         mode: str = "merge",
-        channel: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        channel: str | None = None,
+    ) -> dict[str, Any]:
         """Restore a memory export under this user (idempotent MERGE-on-id).
 
         Args:

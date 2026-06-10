@@ -16,7 +16,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any
 
 from ..config import get_settings
 from ..models import MemoryBundle
@@ -37,7 +37,7 @@ class RecallMetrics:
     query: str
     user_id: str
     channel: str
-    techniques_enabled: Dict[str, bool] = field(default_factory=dict)
+    techniques_enabled: dict[str, bool] = field(default_factory=dict)
 
     # Base retrieval
     base_results: int = 0
@@ -50,23 +50,23 @@ class RecallMetrics:
 
     # Hybrid search
     hybrid_bm25_results: int = 0
-    hybrid_bm25_top_scores: List[Tuple[str, float]] = field(default_factory=list)
+    hybrid_bm25_top_scores: list[tuple[str, float]] = field(default_factory=list)
     hybrid_vector_results: int = 0
     hybrid_merged_results: int = 0
     hybrid_latency_ms: int = 0
 
     # Entity-centric
-    entity_centric_entities: List[str] = field(default_factory=list)
+    entity_centric_entities: list[str] = field(default_factory=list)
     entity_centric_facts: int = 0
     entity_centric_latency_ms: int = 0
 
     # Query expansion
-    expansion_variants: List[str] = field(default_factory=list)
+    expansion_variants: list[str] = field(default_factory=list)
     expansion_results: int = 0
     expansion_latency_ms: int = 0
 
     # Self-query
-    self_query_filters: Dict[str, Any] = field(default_factory=dict)
+    self_query_filters: dict[str, Any] = field(default_factory=dict)
     self_query_results: int = 0
     self_query_latency_ms: int = 0
 
@@ -75,7 +75,7 @@ class RecallMetrics:
     duplicates_removed: int = 0
     total_latency_ms: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for audit logging."""
         return {
             "query": self.query[:100],
@@ -124,9 +124,9 @@ class RecallLayer:
 
     def __init__(
         self,
-        memory: "AgentMemory",
-        base_retriever: "MemoryRetriever",
-        audit_logger: Optional["MemoryAuditLogger"] = None,
+        memory: AgentMemory,
+        base_retriever: MemoryRetriever,
+        audit_logger: MemoryAuditLogger | None = None,
     ):
         self.memory = memory
         self.base_retriever = base_retriever
@@ -157,8 +157,8 @@ class RecallLayer:
         query: str,
         user_id: str,
         top_k: int = 10,
-        channels: Optional[List[str]] = None,
-        time_window_hours: Optional[int] = None,
+        channels: list[str] | None = None,
+        time_window_hours: int | None = None,
         **kwargs,
     ) -> MemoryBundle:
         """
@@ -326,11 +326,11 @@ class RecallLayer:
     def _hybrid_retrieval(
         self,
         query: str,
-        embedding: List[float],
+        embedding: list[float],
         user_id: str,
-        channels: List[str],
+        channels: list[str],
         top_k: int,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         Hybrid search combining BM25 (keyword) and vector (semantic).
 
@@ -409,9 +409,9 @@ class RecallLayer:
         self,
         keywords: str,
         user_id: str,
-        channels: List[str],
+        channels: list[str],
         limit: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Execute BM25 search using Neo4j full-text index."""
         from ..connections import Neo4jConnection
 
@@ -476,13 +476,13 @@ class RecallLayer:
 
     def _rrf_fusion(
         self,
-        bm25_results: List[Dict[str, Any]],
-        vector_results: List[Dict[str, Any]],
+        bm25_results: list[dict[str, Any]],
+        vector_results: list[dict[str, Any]],
         bm25_weight: float,
         vector_weight: float,
         rrf_k: int,
         top_k: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Combine BM25 and vector results using Reciprocal Rank Fusion."""
         # Build rank maps
         bm25_ranks = {r["id"]: i + 1 for i, r in enumerate(bm25_results)}
@@ -529,11 +529,11 @@ class RecallLayer:
     def _entity_centric_retrieval(
         self,
         query: str,
-        embedding: List[float],
+        embedding: list[float],
         user_id: str,
-        channels: List[str],
+        channels: list[str],
         top_k: int,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         Entity-centric retrieval via graph traversal.
 
@@ -597,11 +597,11 @@ class RecallLayer:
 
     def _get_facts_for_entities(
         self,
-        entity_ids: List[str],
+        entity_ids: list[str],
         user_id: str,
-        channels: List[str],
+        channels: list[str],
         limit: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get facts linked to entities via ABOUT relationship."""
         from ..connections import Neo4jConnection
 
@@ -641,11 +641,11 @@ class RecallLayer:
         self,
         query: str,
         user_id: str,
-        channels: Optional[List[str]],
+        channels: list[str] | None,
         top_k: int,
-        time_window_hours: Optional[int],
+        time_window_hours: int | None,
         **kwargs,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         Query expansion retrieval.
 
@@ -682,7 +682,7 @@ class RecallLayer:
             all_results.extend(results)
 
         # Deduplicate by ID (keep first occurrence with higher score)
-        seen_ids: Set[str] = set()
+        seen_ids: set[str] = set()
         unique_results = []
         for r in all_results:
             if r["id"] not in seen_ids:
@@ -702,7 +702,7 @@ class RecallLayer:
             "latency_ms": latency_ms,
         }
 
-    def _expand_query(self, query: str) -> List[str]:
+    def _expand_query(self, query: str) -> list[str]:
         """Generate query variants using rule-based transforms."""
         variants = []
         query_lower = query.lower().strip()
@@ -757,7 +757,7 @@ class RecallLayer:
         filtered = []
         skip_next = False
 
-        for i, word in enumerate(words):
+        for _i, word in enumerate(words):
             if skip_next:
                 skip_next = False
                 continue
@@ -778,11 +778,11 @@ class RecallLayer:
         self,
         query: str,
         user_id: str,
-        channels: Optional[List[str]],
+        channels: list[str] | None,
         top_k: int,
-        time_window_hours: Optional[int],
+        time_window_hours: int | None,
         **kwargs,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         HyDE: Hypothetical Document Embedding.
 
@@ -877,10 +877,10 @@ class RecallLayer:
         self,
         query: str,
         user_id: str,
-        channels: Optional[List[str]],
+        channels: list[str] | None,
         top_k: int,
         **kwargs,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         Self-query: LLM extracts structured filters.
 
@@ -940,7 +940,7 @@ class RecallLayer:
             "latency_ms": latency_ms,
         }
 
-    def _extract_filters(self, query: str) -> Dict[str, Any]:
+    def _extract_filters(self, query: str) -> dict[str, Any]:
         """Extract structured filters from query using LLM."""
         settings = self._settings
 
@@ -1003,15 +1003,15 @@ class RecallLayer:
     def _merge_bundles(
         self,
         *bundles: MemoryBundle,
-    ) -> Tuple[MemoryBundle, Dict[str, Any]]:
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
         """
         Merge multiple MemoryBundles, deduplicating by ID.
 
         Keeps the version with the higher score when duplicates found.
         """
-        seen_fact_ids: Set[str] = set()
-        seen_entity_ids: Set[str] = set()
-        seen_turn_ids: Set[str] = set()
+        seen_fact_ids: set[str] = set()
+        seen_entity_ids: set[str] = set()
+        seen_turn_ids: set[str] = set()
 
         merged_facts = []
         merged_entities = []

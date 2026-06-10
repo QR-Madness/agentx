@@ -9,7 +9,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from ..providers.base import Message, MessageRole
 
@@ -43,16 +43,16 @@ class Session:
     messages: list[Message] = field(default_factory=list)
     
     # Context summary for long conversations
-    summary: Optional[str] = None
+    summary: str | None = None
     
     # Metadata
-    user_id: Optional[str] = None
+    user_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Multi-agent conversations (Phase 16.2): agents that have spoken in this
     # conversation, keyed by Docker-style agent_id. Derived from the durable
     # conversation_logs.agent_id attribution (16.1) plus the active agent.
-    participants: dict[str, "AgentProfile"] = field(default_factory=dict)
+    participants: dict[str, AgentProfile] = field(default_factory=dict)
 
     # Settings
     max_messages: int = 100
@@ -75,7 +75,7 @@ class Session:
             recent = self.messages[-(self.max_messages - len(system_messages)):]
             self.messages = system_messages + recent
     
-    def get_messages(self, limit: Optional[int] = None) -> list[Message]:
+    def get_messages(self, limit: int | None = None) -> list[Message]:
         """Get messages from the session."""
         if limit:
             return self.messages[-limit:]
@@ -132,8 +132,8 @@ class SessionManager:
     
     def create(
         self,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
         **metadata: Any,
     ) -> Session:
         """Create a new session.
@@ -156,7 +156,7 @@ class SessionManager:
         self.sessions[sid] = session
         return session
     
-    def get(self, session_id: str) -> Optional[Session]:
+    def get(self, session_id: str) -> Session | None:
         """Get a session by ID."""
         session = self.sessions.get(session_id)
         
@@ -172,8 +172,8 @@ class SessionManager:
     
     def get_or_create(
         self,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
         **metadata: Any,
     ) -> Session:
         """Get an existing session or create a new one."""
@@ -191,7 +191,7 @@ class SessionManager:
             return True
         return False
     
-    def list(self, user_id: Optional[str] = None) -> list[dict[str, Any]]:
+    def list(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """List sessions, optionally filtered by user."""
         result = []
         
@@ -311,7 +311,7 @@ class SessionManager:
         return len(expired)
 
 
-_SESSION_MANAGER: Optional[SessionManager] = None
+_SESSION_MANAGER: SessionManager | None = None
 
 
 def get_session_manager() -> SessionManager:

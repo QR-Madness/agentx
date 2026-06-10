@@ -9,7 +9,6 @@ Handles the context window by:
 
 import logging
 from dataclasses import dataclass
-from typing import Union
 
 from ..providers.base import Message, MessageRole
 from ..providers.registry import get_registry
@@ -221,7 +220,7 @@ class ContextManager:
     def inject_memory(
         self,
         context: list[Message],
-        memories: Union[MemoryBundle, list[str]],
+        memories: MemoryBundle | list[str],
         max_memory_tokens: int = 500,
     ) -> list[Message]:
         """

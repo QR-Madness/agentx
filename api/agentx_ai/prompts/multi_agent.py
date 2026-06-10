@@ -7,16 +7,16 @@ but for free-form (non-workflow) conversations — inside an Alloy workflow the
 supervisor prompt already frames the team, so this block is suppressed there.
 """
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..agent.models import AgentProfile
 
 
 def build_participants_block(
-    current_agent_id: Optional[str],
-    participants: dict[str, "AgentProfile"],
-) -> Optional[str]:
+    current_agent_id: str | None,
+    participants: dict[str, AgentProfile],
+) -> str | None:
     """Render a roster of the OTHER agents present in the conversation.
 
     Args:
