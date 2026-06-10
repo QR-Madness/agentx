@@ -1,9 +1,7 @@
 name: CI
 
 # Runs the same gates as the local dev loop (Taskfile), so "laptop discipline"
-# becomes a guarantee. Fast: no build matrix, no model downloads. test:quick joins
-# once WS-4 makes it green-or-regression (it has 7 known auth-401 baseline failures —
-# see todo/backlog/engineering-hardening.md).
+# becomes a guarantee. Fast: no build matrix, no model downloads.
 
 on:
   push:
@@ -57,3 +55,6 @@ jobs:
 
       - name: Doc + API-spec drift gate
         run: task docs:check
+
+      - name: Backend tests (quick — no models, no Docker)
+        run: task test:quick

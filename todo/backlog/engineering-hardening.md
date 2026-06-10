@@ -33,10 +33,10 @@
 
 - [x] **(WS-1, highest) CI workflow (`ci.yml`)** — **shipped** (push to master + PRs): `uv sync
       --frozen` + `bun install --frozen-lockfile` (lockfile checks) → ruff · pyright-baseline · tsc ·
-      docs:check (links/anchors/parity). Python pinned 3.14 to match the baseline. **Remaining:**
-      (a) add `test:quick` once WS-4 lands (7 auth-401 baseline failures today); (b) the workflow is
+      docs:check (links/anchors/parity) · test:quick (WS-4 made it deterministic). Python pinned
+      3.14 to match the baseline. **Remaining:** (a) the workflow is
       **unverified in Actions** (couldn't run CI locally) — first push may need an action-version
-      bump (`setup-uv`/`setup-bun`/`setup-task`); (c) optionally turn on branch protection requiring
+      bump (`setup-uv`/`setup-bun`/`setup-task`); (b) optionally turn on branch protection requiring
       the `gates` check.
 - [ ] **(WS-2) `task check:fast` + opt-in `task hooks:install`** — the sub-5s subset (docs+parity+
       ruff-on-changed+notes-marker) behind a plain 3-line `.git/hooks/pre-commit` (no pre-commit
@@ -48,9 +48,13 @@
 - [ ] **(WS-7) client static-analysis parity** — `knip` (unused exports/files/deps in `client/src`)
       + `bun audit` as `lint:client:audit`, beside the Python `ruff`+`pip-audit`. Single-config;
       knip warnings-only until the first sweep.
-- [ ] **(WS-4) mechanical test baseline** — kill the tribal "7 pre-existing 401 failures are
-      baseline" knowledge: `@unittest.expectedFailure` (+ a todo pointer) or an `api/.test-baseline`
-      ratchet, so `task test:quick` is green-or-regression.
+- [x] **(WS-4) `test:quick` deterministic + in CI** — the "7 pre-existing 401 failures" were **not
+      inherent**: `MCPClientTest` inherited ambient `AGENTX_AUTH_ENABLED` (true in this dev's local
+      `.env`) and didn't authenticate. Fixed the *real* way — not a baseline/`expectedFailure`, which
+      would have gone red in clean CI on "unexpected success" — via `@override_settings(
+      AGENTX_AUTH_ENABLED=False)` on `MCPClientTest`, matching the 4 sibling endpoint classes.
+      `task test:quick` is now green regardless of local auth and **runs in CI**. *(If the full `task
+      test` is ever CI-gated, sweep the same override onto any other endpoint test that 401s.)*
 - [ ] **(WS-5) TODO-comment pointer-or-perish** — gate inline `TODO`/`FIXME` to carry a doc pointer
       (`TODO(todo/backlog/foo.md): …`); enforce as a ratcheted count so `grep TODO` and the `todo/`
       tree can't disagree about what's owed.

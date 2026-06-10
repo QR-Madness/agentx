@@ -167,6 +167,7 @@ class HealthCheckTest(APITestBase):
                          f"Redis unhealthy: {data['memory']['redis'].get('error')}")
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
 class MCPClientTest(APITestBase):
 
     def test_mcp_servers_endpoint(self) -> None:
