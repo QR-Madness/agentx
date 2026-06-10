@@ -30,7 +30,7 @@
 
 ## Phase 13: UX Overhaul — Immersive AgentX (Complete)
 
-> Moved to [roadmap.md](docs-site/src/content/docs/roadmap.md). All items complete:
+> Moved to [roadmap.md](../../docs-site/src/content/docs/roadmap.md). All items complete:
 > - 13.6 AgentXPage with ConversationContext + ChatPanel
 > - 13.10 Removed old tabs dir, renamed to panels, keyboard shortcuts (Ctrl+T/W/K), CSS pass
 > - 13.11 Consolidation settings UI + TopBar integration
@@ -39,7 +39,7 @@
 
 ## Phase 14: Context Gating (Complete)
 
-> All 14.1-14.7 complete. See [roadmap.md](docs-site/src/content/docs/roadmap.md) for details.
+> All 14.1-14.7 complete. See [roadmap.md](../../docs-site/src/content/docs/roadmap.md) for details.
 
 
 ---
@@ -47,7 +47,7 @@
 ## Phase 17: Seamless Server Management (Complete)
 
 > **Goal**: Solid self-hosted server deployment + client connection tools.
-> Complete (17.1–17.5). Moved to [roadmap.md](docs-site/src/content/docs/roadmap.md): authoritative
+> Complete (17.1–17.5). Moved to [roadmap.md](../../docs-site/src/content/docs/roadmap.md): authoritative
 > `ConfigManager` config, optional session auth (bcrypt + Redis sessions, `AGENTX_AUTH_ENABLED`),
 > Docker production stack (`task prod:*`), multi-cluster deployment (`task cluster:*`), and strict
 > client/API version matching (`protocol_version` + `VersionMismatchPage`). Android Tauri mobile

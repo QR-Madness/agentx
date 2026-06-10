@@ -14,11 +14,15 @@ Find the right doc before diving in — they're split deliberately so this file 
 | **[`todo/backlog/`](todo/backlog/)** | Future work by theme — `foundation`, `workspaces`, `memory-recall`, `procedural`, `retrieval-extraction`, `chat-ux`, `genome-advisor`, `open-platform`, … |
 | **[`Memory-Roadmap.md`](Memory-Roadmap.md)** | Memory-system hardening & experimental roadmap; pairs with the `memory-*` backlog files |
 | **[`Development-Notes.md`](Development-Notes.md)** | Deep subsystem internals + the full API/SSE reference (not auto-loaded — read when working that area) |
+| **[`Decisions.md`](Decisions.md)** | Load-bearing invariants + locked decisions (the "don't relitigate" list) — read before changing memory/ambassador/streaming internals |
 | **[`Release-Notes.md`](Release-Notes.md)** | Human-written notes for the *next* release (see the version rule below) |
 | `OpenApi.yaml` + `docs-site/.../api/endpoints.md` | Authoritative API contract |
 
 > When you change code, update the matching doc in the same change (the backlog file, the
-> roadmap, `endpoints.md`/`OpenApi.yaml`, `architecture/memory-capabilities.md`).
+> roadmap, `endpoints.md`/`OpenApi.yaml`, `architecture/memory-capabilities.md`). **`task docs:check`**
+> guards the mechanical half — broken inter-doc links, orphaned `todo/` files, version drift, and
+> Release-Notes size; it runs inside `task release:check`. [`Decisions.md`](Decisions.md) is the
+> judgement half a script can't enforce.
 
 ## Development Notices
 

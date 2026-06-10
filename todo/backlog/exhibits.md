@@ -14,7 +14,7 @@
 > Visual sibling to the 16.6 Ambassador Agent (which mediates via voice/briefing); this mediates
 > visually. Same typed structure doubles as the export/integration payload above.
 
-**Shipped (Slices 1–5, `[v0.21.25]`–`[v0.21.29]`) → [roadmap.md](docs-site/src/content/docs/roadmap.md):**
+**Shipped (Slices 1–5, `[v0.21.25]`–`[v0.21.29]`) → [roadmap.md](../../docs-site/src/content/docs/roadmap.md):**
 protocol + `present_exhibit` tool, `mermaid`/`choice`/`table`/`citation` elements, `web_search` +
 `web_research` citation auto-capture, capability-aware Tavily web tools (search/extract/map/crawl/
 research via the `tavily-python` SDK), universal model fallback + bulk/inherited memory-stage models,

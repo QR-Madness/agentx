@@ -534,6 +534,11 @@ tasks:
     cmds:
       - bunx vercel --prod
 
+  docs:check:
+    desc: "Doc drift gate — broken links, orphan todo/ files, version drift, Release-Notes size"
+    cmds:
+      - python3 scripts/check_docs.py {{.CLI_ARGS}}
+
 # ============================================================================
 # CLEANUP & RESET
 # ============================================================================
@@ -955,6 +960,7 @@ tasks:
     cmds:
       - echo "🔍 Release Checklist"
       - echo "━━━━━━━━━━━━━━━━━━━━"
+      - task: docs:check
       - |
         ISSUES=""
         

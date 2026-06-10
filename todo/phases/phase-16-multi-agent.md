@@ -13,7 +13,7 @@
 > **Agent Alloy** = the multi-agent system. **Factory** = the visual editor (frontend, not yet built).
 > Control flow: supervisor agent owns the conversation; specialists are invoked via a `delegate_to` tool. Opt-in per chat request via `workflow_id`.
 
-### Shipped (16.0–16.5) — moved to [roadmap.md](docs-site/src/content/docs/roadmap.md)
+### Shipped (16.0–16.5) — moved to [roadmap.md](../../docs-site/src/content/docs/roadmap.md)
 
 - **16.0 Agent Alloy v1 backend** (2026-04-27): `alloy/` package, workflow model + `WorkflowManager` YAML CRUD, `delegate_to` tool, `AlloyExecutor` (shared `_alloy_<id>` channel, child goals, `delegation_*` SSE streaming, depth-limited re-delegation), supervisor framing prompt, `/api/alloy/workflows` CRUD, `alloy.*` config.
 - **Parallel / fan-out delegation** + **trace/replay UI** (`[v0.20.1]`): per-delegation tokens/duration/cost/pricing-snapshot persisted; client `AlloyRunTraceModal` groups fan-out into runs.

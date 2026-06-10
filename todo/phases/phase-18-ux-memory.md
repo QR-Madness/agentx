@@ -7,7 +7,7 @@
 ## Phase 18: UX Improvements & Optimization and Memory Tuning (In Progress, ~90%)
 
 > Polish the client and tune the memory pipeline. Shipped waves moved to
-> [roadmap.md](docs-site/src/content/docs/roadmap.md):
+> [roadmap.md](../../docs-site/src/content/docs/roadmap.md):
 > **18.1** Wave 1 fixes (provider settings, mobile topbar) · **18.2** Toolkit (MCP server CRUD +
 > tool browser, tags/groups/`allowed_agent_ids`, per-agent `allowed_tools`/`blocked_tools`) ·
 > **18.3** Relay module (background-run inbox, "No Memorization" toggle) · **18.4** model metadata +
@@ -22,7 +22,7 @@
 > **18.12** Wave 3 entry-surface UX (Start recents, renamable conversations, selector redesigns,
 > splash, README trim).
 
-### 18.x Shipped — moved to [roadmap.md](docs-site/src/content/docs/roadmap.md)
+### 18.x Shipped — moved to [roadmap.md](../../docs-site/src/content/docs/roadmap.md)
 
 > Dashboard redesign + usage metrics (`[v0.21.9]`/`[v0.21.10]`), extraction eval-harness + cleanup
 > (18.6: procedural cases, snapshot/restore, persisted eval runs, `dedupe_entities`), working-memory

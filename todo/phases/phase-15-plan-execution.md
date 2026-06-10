@@ -7,7 +7,7 @@
 ## Phase 15: Plan Execution (Core Complete)
 
 > **Goal**: Execute decomposed task plans instead of discarding them — subtask iteration, Redis state tracking, streaming progress events
-> Core shipped (15.1–15.6 + cancellation). Moved to [roadmap.md](docs-site/src/content/docs/roadmap.md):
+> Core shipped (15.1–15.6 + cancellation). Moved to [roadmap.md](../../docs-site/src/content/docs/roadmap.md):
 > `PlanStateStore` + `PlanExecutor` (dependency-ordered subtasks, per-subtask trajectory
 > compression, failure skip, synthesis), `Agent.run`/streaming integration, SSE plan events,
 > and mid-execution cancellation. Only the deferred follow-ups below remain.
