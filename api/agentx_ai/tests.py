@@ -6268,6 +6268,78 @@ class AmbassadorStorageTest(TestCase):
             leaked = cs.get_summary("convX")
         self.assertIsNone(leaked)
 
+    def test_thread_unifies_briefings_and_qa_in_order(self):
+        # Slice 1b: briefings + Q&A are one ordered thread (an "Inquiry"), oldest-first
+        # by created_at, regardless of which kind was written when.
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            a.set_summary("c", "m1", "first — a briefing")
+            a.create_qa("c", "qa1", "a question?")
+            a.set_qa_answer("c", "qa1", "an answer")
+            payload = a.thread_payload("c")
+        self.assertEqual(payload["thread_id"], "c")
+        self.assertEqual(payload["title"], "")  # no title yet → client borrows chat title
+        kinds = [e["kind"] for e in payload["entries"]]
+        ids = [e["id"] for e in payload["entries"]]
+        self.assertEqual(kinds, ["briefing", "qa"])  # created_at order preserved
+        self.assertEqual(ids, ["m1", "qa1"])
+        qa_entry = payload["entries"][1]
+        self.assertEqual(qa_entry["question"], "a question?")
+        self.assertEqual(qa_entry["content"], "an answer")
+
+    def test_tool_calls_persist_on_entry(self):
+        # The agentic loop's chips must survive a reload — persisted on the entry and
+        # surfaced (camelCase) by both the Q&A projection and the thread payload.
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        chips = [
+            {"tool": "read_conversation", "args": {"conversation_id": "c"}, "done": True},
+            {"tool": "summarize_conversation", "args": {}, "done": False},
+        ]
+        with patch.object(a, "_redis", return_value=fake):
+            a.create_qa("c", "qa1", "what happened?")
+            a.set_entry_tool_calls("c", "qa1", chips)
+            a.set_qa_answer("c", "qa1", "Here is what happened.")  # must not clobber chips
+            qa = a.get_qa("c", "qa1")
+            entry = a.thread_payload("c")["entries"][0]
+        self.assertEqual(qa["answer"], "Here is what happened.")
+        self.assertEqual([t["tool"] for t in qa["toolCalls"]], [c["tool"] for c in chips])
+        self.assertEqual(entry["toolCalls"][0]["done"], True)
+
+    def test_thread_title_persists(self):
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            self.assertEqual(a.get_thread_title("c"), "")
+            a.set_thread_title("c", "  Weekly review  ")
+            again = a.get_thread_title("c")
+            payload_title = a.thread_payload("c")["title"]
+        self.assertEqual(again, "Weekly review")  # trimmed
+        self.assertEqual(payload_title, "Weekly review")
+
+    def test_legacy_records_fold_into_thread(self):
+        # Pre-1b sidecars (separate ambassador:{cid}:msg / :qa families) must still
+        # replay through the unified reader, so a deploy doesn't drop Inquiry history.
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            # Hand-write legacy-shaped records via the legacy key engine.
+            a._persist(a._briefing_key("c", "m0"), a._index_key("c"), "m0",
+                       {"message_id": "m0", "summary": "legacy briefing",
+                        "status": "done", "created_at": "2026-01-01T00:00:00+00:00"})
+            a._persist(a._qa_key("c", "q0"), a._qa_index_key("c"), "q0",
+                       {"qa_id": "q0", "question": "legacy q", "answer": "legacy a",
+                        "status": "done", "created_at": "2026-01-02T00:00:00+00:00"})
+            # A new (1b) entry lands after both.
+            a.set_summary("c", "m1", "new briefing")
+            entries = a.list_thread("c")
+            briefs = a.list_briefings("c")
+            qa = a.list_qa("c")
+        self.assertEqual([e["id"] for e in entries], ["m0", "q0", "m1"])  # created_at order
+        self.assertEqual({b["message_id"] for b in briefs}, {"m0", "m1"})
+        self.assertEqual({x["qa_id"] for x in qa}, {"q0"})
+
 
 class AmbassadorServiceTest(TestCase):
     """Ambassador service (16.6) — bulletproof graceful degradation."""

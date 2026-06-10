@@ -82,6 +82,26 @@ export interface AmbassadorQA {
   toolCalls?: AmbassadorToolCall[];
 }
 
+/** One entry in the unified ambassador thread (an "Inquiry", Slice 1b) — a briefing
+ *  or a Q&A, the panel's single ordered conversation. The client splits these back
+ *  into the briefing/Q&A shapes it already streams into; the thread view re-merges them. */
+export interface AmbassadorThreadEntry {
+  id: string;
+  kind: 'briefing' | 'qa';
+  /** The prompting question (Q&A entries); empty for briefings. */
+  question: string;
+  /** The ambassador's text — the answer (Q&A) or the briefing summary. */
+  content: string;
+  status: AmbassadorStatus;
+  toolCalls?: AmbassadorToolCall[];
+  /** The briefed turn's id (briefing entries). */
+  message_id?: string;
+  run_id?: string;
+  error?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 /** The conversation the person is *currently in* (their active chat tab) — ambient
  *  context distinct from the ambassador's focus, so it knows where they are now. */
 export interface AmbassadorActiveConversation {
@@ -280,6 +300,27 @@ export const ambassadorApi = {
       qa?: AmbassadorQA[];
     }>(`/api/agent/ambassador/${encodeURIComponent(conversationId)}`);
     return { briefings: res.briefings ?? [], qa: res.qa ?? [] };
+  },
+
+  /** Replay one ambassador thread ("Inquiry") — its title + ordered entries (Slice 1b). */
+  async fetchAmbassadorThread(
+    threadId: string,
+  ): Promise<{ thread_id: string; title: string; entries: AmbassadorThreadEntry[] }> {
+    const res = await apiRequest<{
+      thread_id: string;
+      title?: string;
+      entries?: AmbassadorThreadEntry[];
+    }>(`/api/agent/ambassador/thread/${encodeURIComponent(threadId)}`);
+    return { thread_id: res.thread_id, title: res.title ?? '', entries: res.entries ?? [] };
+  },
+
+  /** Rename an ambassador thread ("Inquiry"). Empty title clears it (falls back to chat title). */
+  async renameAmbassadorThread(threadId: string, title: string): Promise<{ title: string }> {
+    const res = await apiRequest<{ thread_id: string; title: string }>(
+      `/api/agent/ambassador/thread/${encodeURIComponent(threadId)}`,
+      { method: 'PATCH', body: JSON.stringify({ title }) },
+    );
+    return { title: res.title ?? '' };
   },
 
   /** Ask the ambassador a free-form question about a conversation. */

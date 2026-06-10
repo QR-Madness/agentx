@@ -837,6 +837,9 @@ class AmbassadorService:
         from .ambassador_tools import TOOL_SCHEMAS, execute_tool
 
         settled = False
+        # Accumulated tool-call chips, persisted onto the entry as they happen so they
+        # survive a reload (the live SSE drives them in-session; this is the durable copy).
+        tool_chips: list[dict] = []
         try:
             for _round in range(_MAX_TOOL_ROUNDS):
                 last_round = _round == _MAX_TOOL_ROUNDS - 1
@@ -892,6 +895,8 @@ class AmbassadorService:
                     )
                 )
                 for tc in round_calls:
+                    tool_chips.append({"tool": tc.name, "args": tc.arguments, "done": False})
+                    store.set_entry_tool_calls(conversation_id, item_id, tool_chips)
                     yield _sse(
                         "ambassador_tool_call",
                         {"message_id": item_id, "tool": tc.name, "args": tc.arguments},
@@ -910,6 +915,11 @@ class AmbassadorService:
                             content=output,
                         )
                     )
+                    for chip in reversed(tool_chips):
+                        if chip["tool"] == tc.name and not chip["done"]:
+                            chip["done"] = True
+                            break
+                    store.set_entry_tool_calls(conversation_id, item_id, tool_chips)
                     yield _sse(
                         "ambassador_tool_result",
                         {"message_id": item_id, "tool": tc.name, "ok": True},

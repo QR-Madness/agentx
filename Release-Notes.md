@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.81 -->
+<!-- release-version: 0.21.82 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -19,6 +19,12 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Highlights
 
+- **The Ambassador panel is now one conversation, and you can name it.** Per-turn briefings and
+  your questions used to sit in two separate lists; they're now a single ordered thread — an
+  **Inquiry** — that reads as one back-and-forth. The tool chips that show the ambassador reading
+  and surveying your conversations now **survive a reload** (they're saved, not just live), and you
+  can **rename an Inquiry** from the switcher (a "weekly review", say) — empty falls back to the
+  conversation's own title. Older briefings/Q&A still show up after upgrading.
 - **The Ambassador is now a voice call.** Opt an ambassador into voice mode and its panel opens
   into an immersive, Discord-call-style surface — **hold to talk** (mic or Space; or flip on
   tap-to-toggle), and it answers you out loud. It **figures out what you mean**: ask it a question

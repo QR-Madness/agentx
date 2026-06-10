@@ -43,6 +43,13 @@ interface AmbassadorContextValue {
   cancel: (conversationId: string, messageId: string) => void;
   /** All Q&A entries for a conversation (unordered; sort by created_at). */
   qaFor: (conversationId: string | null | undefined) => AmbassadorQA[];
+  /** The unified ordered thread (briefings + Q&A interleaved) — the panel's single
+   *  conversation ("Inquiry"), oldest-first by created_at. */
+  threadFor: (conversationId: string | null | undefined) => ThreadStreamItem[];
+  /** The Inquiry's own title (empty → caller falls back to the chat title). */
+  titleFor: (conversationId: string | null | undefined) => string;
+  /** Rename the Inquiry (persists to the sidecar; empty clears it). */
+  renameThread: (conversationId: string, title: string) => void;
   /** Ask the ambassador a free-form question about the conversation. */
   ask: (conversationId: string, question: string, opts?: AskOptions) => void;
   /** Cancel an in-flight Q&A answer. */
@@ -50,6 +57,12 @@ interface AmbassadorContextValue {
   /** Replay persisted briefings + Q&A from the server sidecar. */
   refresh: (conversationId: string) => Promise<void>;
 }
+
+/** One item in the unified ambassador thread — a briefing or a Q&A, tagged + timestamped
+ *  so the panel renders both as one ordered conversation. */
+export type ThreadStreamItem =
+  | { kind: 'briefing'; id: string; createdAt?: string; briefing: AmbassadorBriefing }
+  | { kind: 'qa'; id: string; createdAt?: string; qa: AmbassadorQA };
 
 /** Everything a CC needs beyond the message itself (caller-resolved). */
 export interface CcTurnOptions {
@@ -86,6 +99,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Record<string, ConversationBriefings>>({});
   // conversationId -> (qaId -> Q&A entry)
   const [qaState, setQaState] = useState<Record<string, ConversationQA>>({});
+  // conversationId -> the Inquiry's own title ("" → fall back to the chat title)
+  const [titles, setTitles] = useState<Record<string, string>>({});
   // Active SSE controllers, keyed so a live stream isn't clobbered by a refresh
   // and can be aborted on cancel. Briefings + Q&A share the ref via disjoint keys.
   const controllers = useRef<Record<string, { abort: () => void }>>({});
@@ -167,7 +182,38 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async (conversationId: string) => {
     if (!conversationId) return;
     try {
-      const { briefings, qa } = await api.fetchAmbassadorBriefings(conversationId);
+      // The unified thread: one ordered list + the Inquiry's title. Split the entries
+      // back into the briefing/Q&A maps the streaming logic already drives.
+      const { title, entries } = await api.fetchAmbassadorThread(conversationId);
+      const briefings: AmbassadorBriefing[] = [];
+      const qa: AmbassadorQA[] = [];
+      for (const e of entries) {
+        if (e.kind === 'briefing') {
+          briefings.push({
+            message_id: e.message_id ?? e.id,
+            status: e.status,
+            summary: e.content,
+            error: e.error,
+            run_id: e.run_id,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+            toolCalls: e.toolCalls,
+          });
+        } else {
+          qa.push({
+            qa_id: e.id,
+            question: e.question,
+            answer: e.content,
+            status: e.status,
+            error: e.error,
+            run_id: e.run_id,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+            toolCalls: e.toolCalls,
+          });
+        }
+      }
+      setTitles((prev) => ({ ...prev, [conversationId]: title }));
       setState((prev) => {
         const conv: ConversationBriefings = { ...(prev[conversationId] ?? {}) };
         for (const b of briefings) {
@@ -368,9 +414,49 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     [qaState],
   );
 
+  const threadFor = useCallback(
+    (conversationId: string | null | undefined): ThreadStreamItem[] => {
+      if (!conversationId) return [];
+      const items: ThreadStreamItem[] = [];
+      for (const b of Object.values(state[conversationId] ?? {})) {
+        items.push({ kind: 'briefing', id: b.message_id, createdAt: b.created_at, briefing: b });
+      }
+      for (const q of Object.values(qaState[conversationId] ?? {})) {
+        items.push({ kind: 'qa', id: q.qa_id, createdAt: q.created_at, qa: q });
+      }
+      // Oldest first; brand-new local entries (no created_at yet) sort last, next to the input.
+      items.sort((a, b) => {
+        const ta = a.createdAt ? Date.parse(a.createdAt) : Infinity;
+        const tb = b.createdAt ? Date.parse(b.createdAt) : Infinity;
+        return ta - tb;
+      });
+      return items;
+    },
+    [state, qaState],
+  );
+
+  const titleFor = useCallback(
+    (conversationId: string | null | undefined) =>
+      (conversationId ? titles[conversationId] : '') ?? '',
+    [titles],
+  );
+
+  const renameThread = useCallback((conversationId: string, title: string) => {
+    if (!conversationId) return;
+    const t = title.trim();
+    setTitles((prev) => ({ ...prev, [conversationId]: t }));
+    void api.renameAmbassadorThread(conversationId, t).catch(() => {});
+  }, []);
+
   const value = useMemo(
-    () => ({ briefingsFor, briefingForMessage, ccTurn, cancel, qaFor, ask, cancelQa, refresh }),
-    [briefingsFor, briefingForMessage, ccTurn, cancel, qaFor, ask, cancelQa, refresh],
+    () => ({
+      briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
+      threadFor, titleFor, renameThread, ask, cancelQa, refresh,
+    }),
+    [
+      briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
+      threadFor, titleFor, renameThread, ask, cancelQa, refresh,
+    ],
   );
 
   return <AmbassadorContext.Provider value={value}>{children}</AmbassadorContext.Provider>;

@@ -281,10 +281,54 @@ function QaItem({
   );
 }
 
+/** One briefing in the unified Inquiry stream — the ambassador's take on a turn,
+ *  rendered as its own turn (mark + tool chips + prose + speak), so briefings and
+ *  Q&A read as one conversation. The per-turn trigger lives in the Turns strip. */
+function BriefingItem({
+  briefing,
+  onCancel,
+  speech,
+}: {
+  briefing: AmbassadorBriefing;
+  onCancel: () => void;
+  speech: SpeechControls;
+}) {
+  const streaming = briefing.status === 'streaming';
+  const speakable = briefing.status === 'done' && !!briefing.summary.trim();
+  return (
+    <li className="flex max-w-[94%] items-start gap-2 self-start">
+      <AmbassadorMark size={22} />
+      <div className="flex min-w-0 flex-col gap-1.5 pt-0.5">
+        <ToolChips calls={briefing.toolCalls} />
+        <BriefingBody briefing={briefing} />
+        {(streaming || speakable) && (
+          <div className="flex items-center gap-2">
+            {streaming && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors hover:text-error"
+                onClick={onCancel}
+                title="Cancel briefing"
+              >
+                <X size={12} /> cancel
+              </button>
+            )}
+            {speakable && (
+              <SpeakButton id={`brief:${briefing.message_id}`} text={briefing.summary} speech={speech} />
+            )}
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export function AmbassadorPanel() {
   const { activeTab, tabs, relayToConversation } = useConversation();
-  const { briefingForMessage, briefingsFor, refresh, ccTurn, cancel, qaFor, ask, cancelQa } =
-    useAmbassador();
+  const {
+    briefingForMessage, briefingsFor, refresh, ccTurn, cancel, qaFor,
+    threadFor, titleFor, renameThread, ask, cancelQa,
+  } = useAmbassador();
   const { profiles, getAgentName } = useAgentProfile();
 
   // Conversations the ambassador can be pointed at — the open tabs that have a saved
@@ -397,16 +441,12 @@ export function AmbassadorPanel() {
   const latestStreaming =
     !!latest && briefingForMessage(conversationId, latest.m.id)?.status === 'streaming';
 
-  // Q&A thread, oldest first (newest sits next to the input). Brand-new local
-  // entries (no created_at yet) sort last.
-  const qaList = useMemo(() => {
-    const items = qaFor(conversationId);
-    return [...items].sort((a, b) => {
-      const ta = a.created_at ? Date.parse(a.created_at) : Infinity;
-      const tb = b.created_at ? Date.parse(b.created_at) : Infinity;
-      return ta - tb;
-    });
-  }, [qaFor, conversationId]);
+  // The unified Inquiry — briefings + Q&A as one ordered conversation (oldest first;
+  // the newest sits next to the input). The per-turn trigger stays in the Turns strip;
+  // the briefing *result* shows here in the stream.
+  const thread = useMemo(() => threadFor(conversationId), [threadFor, conversationId]);
+  // The Inquiry's own title, or the focused conversation's title as a fallback.
+  const inquiryTitle = titleFor(conversationId);
 
   const anyStreaming = useMemo(
     () =>
@@ -635,6 +675,8 @@ export function AmbassadorPanel() {
               focusedId={conversationId}
               activeId={activeConversationId}
               onSelect={setFocusedConversationId}
+              title={inquiryTitle}
+              onRename={(t) => renameThread(conversationId, t)}
             />
           </div>
         )}
@@ -728,14 +770,6 @@ export function AmbassadorPanel() {
                             Turn {turnNo}
                           </span>
                           <StatusChip status={briefing?.status} />
-                          {briefed && briefing?.summary?.trim() && (
-                            <SpeakButton
-                              id={`brief:${m.id}`}
-                              text={briefing.summary}
-                              speech={speech}
-                              className="ml-auto"
-                            />
-                          )}
                           {streaming ? (
                             <button
                               type="button"
@@ -748,8 +782,7 @@ export function AmbassadorPanel() {
                           ) : (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15 data-[lead=true]:ml-auto"
-                              data-lead={!(briefed && briefing?.summary?.trim()) || undefined}
+                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15"
                               onClick={() => brief(m)}
                               title={briefing ? 'Brief this turn again' : 'Brief this turn'}
                             >
@@ -761,8 +794,6 @@ export function AmbassadorPanel() {
                         <p className="border-l-2 border-line pl-2 text-xs italic text-fg-muted">
                           {snippet(m.content)}
                         </p>
-                        <ToolChips calls={briefing?.toolCalls} />
-                        <BriefingBody briefing={briefing} />
                       </li>
                     );
                   })}
@@ -770,18 +801,27 @@ export function AmbassadorPanel() {
               </section>
             )}
 
-            {qaList.length > 0 && (
+            {thread.length > 0 && (
               <section className="flex flex-col gap-3">
-                <SectionLabel count={qaList.length}>Questions</SectionLabel>
+                <SectionLabel count={thread.length}>Inquiry</SectionLabel>
                 <ul className="flex flex-col gap-3.5">
-                  {qaList.map((entry) => (
-                    <QaItem
-                      key={entry.qa_id}
-                      entry={entry}
-                      onCancel={() => cancelQa(conversationId, entry.qa_id)}
-                      speech={speech}
-                    />
-                  ))}
+                  {thread.map((item) =>
+                    item.kind === 'qa' ? (
+                      <QaItem
+                        key={`qa:${item.id}`}
+                        entry={item.qa}
+                        onCancel={() => cancelQa(conversationId, item.id)}
+                        speech={speech}
+                      />
+                    ) : (
+                      <BriefingItem
+                        key={`brief:${item.id}`}
+                        briefing={item.briefing}
+                        onCancel={() => cancel(conversationId, item.id)}
+                        speech={speech}
+                      />
+                    ),
+                  )}
                 </ul>
               </section>
             )}

@@ -2246,12 +2246,41 @@ async def ambassador_stream(request):
 
 
 @csrf_exempt
+def ambassador_thread(request, thread_id):
+    """
+    GET   /api/agent/ambassador/thread/<thread_id>  → {thread_id, title, entries}
+    PATCH /api/agent/ambassador/thread/<thread_id>  ({title}) → rename the Inquiry
+
+    The unified ambassador thread ("Inquiry"): one ordered list of entries (briefings +
+    Q&A) plus the thread's own title. Replaces the disjoint {briefings, qa} replay; the
+    `<conversation_id>` endpoint below stays as a back-compat shim. `thread_id` defaults
+    to the conversation id today (Slice 4 will mint standalone thread ids).
+    """
+    from .agent import ambassador_storage
+
+    if request.method == "GET":
+        return JsonResponse(ambassador_storage.thread_payload(thread_id))
+
+    if request.method == "PATCH":
+        try:
+            body = json.loads(request.body or "{}")
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "invalid JSON body"}, status=400)
+        meta = ambassador_storage.set_thread_title(thread_id, body.get("title", ""))
+        return JsonResponse({"thread_id": thread_id, "title": meta.get("title", "")})
+
+    return JsonResponse({"error": "GET or PATCH required"}, status=405)
+
+
+@csrf_exempt
 def ambassador_briefings(request, conversation_id):
     """
     GET /api/agent/ambassador/<conversation_id>
 
-    Return all persisted ambassador briefings for a conversation (sidecar
-    replay) so a cold/reopened panel repopulates after reload or tab-switch.
+    Back-compat shim over the unified thread (Slice 1b): returns the old
+    {briefings, qa} shape (now projected from the `amb_thread:` entry store) so older
+    clients still repopulate after reload or tab-switch. New clients use
+    /api/agent/ambassador/thread/<thread_id>.
     """
     if request.method != "GET":
         return JsonResponse({"error": "GET required"}, status=405)

@@ -449,6 +449,8 @@ POST /api/agent/ambassador/voice-command
 POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
+GET   /api/agent/ambassador/thread/{thread_id}
+PATCH /api/agent/ambassador/thread/{thread_id}
 GET  /api/agent/ambassador/{conversation_id}
 ```
 
@@ -461,7 +463,9 @@ The **Ambassador** (Phase 16.6) is a dedicated agent that runs *parallel* to a c
 - **`POST /speak`** — body `{text, agent_profile_id?, voice?, model?}`. **Voice (TTS):** synthesizes spoken audio for a briefing summary or Q&A answer via the ambassador's speech model (OpenRouter `/audio/speech`) and returns the raw **MP3** bytes (`audio/mpeg`). Model/voice precedence: request override → the ambassador profile's `speech_model`/`voice` → `config.ambassador.*` → shipped default (`microsoft/mai-voice-2`); the speech model resolves strictly (no chat fallback). Stateless — the client already holds the text, so nothing is written to the transcript or sidecar. Degrades to a structured `422 {error, code}` (e.g. `voice_unconfigured` when no OpenRouter key is set) rather than failing. Played by the client's `SpeechPlayer` (synthesized once, cached for replay); opted-in ambassadors get an immersive **voice mode** that auto-speaks new briefings.
 - **`POST /transcribe`** — body `{audio: <base64>, format?, agent_profile_id?, model?, language?}`. **Voice input (STT):** transcribes a push-to-talk recording via the ambassador's STT model (OpenRouter `/audio/transcriptions`) and returns `{text}`. Model precedence: request override → the ambassador profile's `transcription_model` → `config.ambassador.*` → shipped default (`openai/whisper-1`), strict. The client routes the transcript into the **reviewable input** — it is **never** auto-sent (pre-send confirmation), and a flubbed take can be re-recorded (retake). Degrades to a structured `422 {error, code}` (e.g. `transcription_unconfigured`). Client capture: `lib/audioRecorder.ts` (getUserMedia + MediaRecorder) behind `hooks/useDictation.ts`; hold-Space or the immersive voice-mode record button drives it.
 - **`GET /stream?run_id=`** — tail a briefing **or Q&A** run's namespaced SSE: `ambassador_start`, `ambassador_chunk` (one per streamed delta), `ambassador_done` (status `done` | `empty_provider` | `cancelled`), `ambassador_error`; `run_missing` if the buffer expired. Cancel via `POST /api/agent/chat/runs/{run_id}/cancel` (settles the sidecar to `cancelled`, preserving partial text). A missing/unreachable provider degrades gracefully to an `empty_provider` notice rather than failing.
-- **`GET /{conversation_id}`** — replay a conversation's persisted briefings **and Q&A** (`{conversation_id, briefings: [...], qa: [{qa_id, question, answer, status, error?, run_id?, created_at, updated_at}]}`) so a reopened panel repopulates after reload or tab-switch.
+- **`GET /thread/{thread_id}`** — replay the unified ambassador thread (an **"Inquiry"**): `{thread_id, title, entries: [{id, kind: "briefing"|"qa", question, content, status, toolCalls, message_id?, run_id?, created_at, updated_at}]}`. Briefings and Q&A are one ordered conversation (oldest-first), each entry carrying its **persisted tool-call chips** (they now survive a reload), plus the thread's own `title`. `thread_id` defaults to the conversation id. The client renders this as one stream and lets you rename the Inquiry.
+- **`PATCH /thread/{thread_id}`** — rename the Inquiry, body `{title}` → `{thread_id, title}`. An empty title clears it (the client falls back to the chat conversation's title).
+- **`GET /{conversation_id}`** — **back-compat shim**: replay as the old `{conversation_id, briefings: [...], qa: [...]}` shape (now projected from the unified thread). New clients use `/thread/{thread_id}`.
 
 ### Agent Status
 

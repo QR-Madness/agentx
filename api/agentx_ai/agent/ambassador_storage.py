@@ -1,27 +1,32 @@
 """
-Per-turn Ambassador briefings, persisted in Redis (a conversation *sidecar*).
+The Ambassador's durable conversation, persisted in Redis (a conversation *sidecar*).
 
-The Ambassador (Phase 16.6) runs parallel to a conversation and briefs the user
-on individual turns. Its output is deliberately kept **out** of the main agent's
-world: it lives under the dedicated ``ambassador:`` key prefix, which is read by
+The Ambassador (Phase 16.7) runs parallel to a conversation and talks *with* the
+user about it — per-turn **briefings** and free-form **Q&A** — without ever writing
+into the main agent's world. Its output lives under a dedicated Redis prefix read by
 *nothing* in the main-agent path (``hydrate_session_from_history``,
-``load_recent_turns``, ``ContextManager.assemble_turn_context`` read only the
-Postgres ``conversation_logs`` turn stream and the ``conv_summary:`` Redis key).
-This prefix isolation is the load-bearing no-pollution guarantee — never write a
-briefing into ``conversation_logs`` or ``conv_summary:``.
+``load_recent_turns``, ``ContextManager.assemble_turn_context`` read only the Postgres
+``conversation_logs`` stream and the ``conv_summary:`` key). This prefix isolation is
+the load-bearing no-pollution guarantee — never write the ambassador's output into
+``conversation_logs`` or ``conv_summary:``.
 
-Briefings are keyed by the **client message id** (stable, persisted in the
-client's localStorage) rather than a server turn_index, so a just-finished live
-turn can be briefed without depending on DB persistence timing or turn ordering.
+**Slice 1b — unified thread model.** Briefings and Q&A are now one ordered **thread**
+of *entries* (an "Inquiry") keyed by a ``thread_id`` (defaults to the conversation id),
+so the thread can carry its own ``title`` and the panel renders one conversation. Each
+entry is one ambassador turn carrying its optional prompting ``question`` (entry-oriented
+rather than message-split — this keeps in-place streaming updates simple and preserves
+briefing idempotency, which is keyed by the briefed turn's ``message_id``).
+
+The previous per-family public API (``set_summary``/``create_qa``/``get_qa``/…) is
+preserved as **thin projections** over the entry store, so callers and replay shapes are
+unchanged. Pre-1b records under the legacy key families still **replay** (a one-place
+fold in ``list_thread``) and age out via the TTL.
 
 Keys:
-    Briefing:  ambassador:{conversation_id}:msg:{message_id}   (Redis string, JSON, TTL)
-    Index:     ambassador:{conversation_id}:index              (Redis set of message_ids, TTL)
-    Q&A:       ambassador:{conversation_id}:qa:{qa_id}         (Redis string, JSON, TTL)
-    Q&A index: ambassador:{conversation_id}:qa_index           (Redis set of qa_ids, TTL)
-
-Per-turn briefings and free-form Q&A share this sidecar (and the no-pollution
-invariant) but live under disjoint key families so they replay independently.
+    Thread meta:  amb_thread:{thread_id}:meta            (Redis string, JSON, TTL)
+    Entry:        amb_thread:{thread_id}:entry:{entry_id}(Redis string, JSON, TTL)
+    Entry index:  amb_thread:{thread_id}:index           (Redis set of entry_ids, TTL)
+    Legacy (read-only, pre-1b): ambassador:{cid}:msg:{mid} / :index / :qa:{qid} / :qa_index
 """
 
 from __future__ import annotations
@@ -33,10 +38,17 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Legacy prefix — still asserted by the no-pollution test and read for back-compat.
 AMBASSADOR_PREFIX = "ambassador:"
+# Unified thread family (Slice 1b).
+THREAD_PREFIX = "amb_thread:"
 AMBASSADOR_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days, mirrors conv_summary
 
+# Sentinel: a patch value meaning "remove this field" (e.g. clear `error` on settle).
+_DELETE = object()
+
 # status ∈ streaming | done | error | empty_provider | cancelled
+# kind   ∈ briefing | qa
 
 
 def _redis():
@@ -45,6 +57,30 @@ def _redis():
     return RedisConnection.get_client()
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _decode(value) -> str:
+    return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
+
+
+# --- keys -------------------------------------------------------------------
+
+
+def _entry_key(thread_id: str, entry_id: str) -> str:
+    return f"{THREAD_PREFIX}{thread_id}:entry:{entry_id}"
+
+
+def _thread_index_key(thread_id: str) -> str:
+    return f"{THREAD_PREFIX}{thread_id}:index"
+
+
+def _thread_meta_key(thread_id: str) -> str:
+    return f"{THREAD_PREFIX}{thread_id}:meta"
+
+
+# Legacy key families (pre-1b) — read for back-compat fold + cleared by clear().
 def _briefing_key(conversation_id: str, message_id: str) -> str:
     return f"{AMBASSADOR_PREFIX}{conversation_id}:msg:{message_id}"
 
@@ -61,15 +97,7 @@ def _qa_index_key(conversation_id: str) -> str:
     return f"{AMBASSADOR_PREFIX}{conversation_id}:qa_index"
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _decode(value) -> str:
-    return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
-
-
-# --- Generic record engine (shared by the briefing + Q&A families) ----------
+# --- generic record engine --------------------------------------------------
 
 
 def _persist(item_key: str, index_key: str, item_id: str, record: dict) -> None:
@@ -124,30 +152,202 @@ def _list(index_key: str, item_key_for) -> list[dict]:
     return out
 
 
-def _write(conversation_id: str, record: dict) -> None:
-    """Persist (replace) a briefing record + index it. Best-effort."""
-    message_id = record.get("message_id")
-    if not message_id:
+# --- entry core (the unified store) -----------------------------------------
+
+
+def get_entry(thread_id: str, entry_id: str) -> Optional[dict]:
+    """Return the raw thread entry, or None."""
+    return _read(_entry_key(thread_id, entry_id))
+
+
+def _set_entry(thread_id: str, entry_id: str, kind: str, **patch) -> None:
+    """Upsert one entry: get-or-create (preserving ``created_at``), apply ``patch``
+    (a value of ``None`` is skipped; ``_DELETE`` pops the field), restamp
+    ``updated_at``. Best-effort."""
+    if not entry_id:
         return
-    _persist(
-        _briefing_key(conversation_id, message_id),
-        _index_key(conversation_id),
-        message_id,
-        record,
-    )
+    rec = get_entry(thread_id, entry_id) or {
+        "id": entry_id,
+        "kind": kind,
+        "question": "",
+        "content": "",
+        "tool_calls": [],
+        "status": "streaming",
+        "created_at": _now(),
+    }
+    rec.setdefault("kind", kind)
+    for key, value in patch.items():
+        if value is _DELETE:
+            rec.pop(key, None)
+        elif value is not None:
+            rec[key] = value
+    rec["updated_at"] = _now()
+    _persist(_entry_key(thread_id, entry_id), _thread_index_key(thread_id), entry_id, rec)
+
+
+def set_entry_tool_calls(thread_id: str, entry_id: str, tool_calls: list) -> None:
+    """Persist the live tool-call chips on an entry so they survive a reload. The entry
+    is always created first (by ``create_qa`` / briefing ``set_status``), so a missing
+    entry is a no-op rather than a phantom create."""
+    rec = get_entry(thread_id, entry_id)
+    if rec is None:
+        return
+    rec["tool_calls"] = list(tool_calls or [])
+    rec["updated_at"] = _now()
+    _persist(_entry_key(thread_id, entry_id), _thread_index_key(thread_id), entry_id, rec)
+
+
+def _legacy_briefing_to_entry(rec: dict) -> dict:
+    return {
+        "id": rec.get("message_id"),
+        "kind": "briefing",
+        "question": "",
+        "content": rec.get("summary") or "",
+        "tool_calls": rec.get("tool_calls") or rec.get("toolCalls") or [],
+        "status": rec.get("status"),
+        "run_id": rec.get("run_id"),
+        "error": rec.get("error"),
+        "message_id": rec.get("message_id"),
+        "created_at": rec.get("created_at"),
+        "updated_at": rec.get("updated_at"),
+    }
+
+
+def _legacy_qa_to_entry(rec: dict) -> dict:
+    return {
+        "id": rec.get("qa_id"),
+        "kind": "qa",
+        "question": rec.get("question") or "",
+        "content": rec.get("answer") or "",
+        "tool_calls": rec.get("tool_calls") or rec.get("toolCalls") or [],
+        "status": rec.get("status"),
+        "run_id": rec.get("run_id"),
+        "error": rec.get("error"),
+        "created_at": rec.get("created_at"),
+        "updated_at": rec.get("updated_at"),
+    }
+
+
+def list_thread(thread_id: str) -> list[dict]:
+    """All entries for a thread, oldest-first by ``created_at``.
+
+    Folds in pre-1b legacy briefing/Q&A records (the one-place migration bridge) so old
+    sidecars still replay; a new entry with the same id wins. Removable once the legacy
+    TTL window (30 days) has fully aged out.
+    """
+    entries: dict[str, dict] = {}
+    # Legacy first, so a re-written new entry of the same id supersedes it below.
+    for rec in _list(_index_key(thread_id), lambda i: _briefing_key(thread_id, i)):
+        e = _legacy_briefing_to_entry(rec)
+        if e.get("id"):
+            entries[e["id"]] = e
+    for rec in _list(_qa_index_key(thread_id), lambda i: _qa_key(thread_id, i)):
+        e = _legacy_qa_to_entry(rec)
+        if e.get("id"):
+            entries[e["id"]] = e
+    for rec in _list(_thread_index_key(thread_id), lambda i: _entry_key(thread_id, i)):
+        if rec.get("id"):
+            entries[rec["id"]] = rec
+    out = list(entries.values())
+    out.sort(key=lambda e: e.get("created_at") or "")
+    return out
+
+
+# --- thread meta (title) ----------------------------------------------------
+
+
+def get_thread_meta(thread_id: str) -> Optional[dict]:
+    return _read(_thread_meta_key(thread_id))
+
+
+def get_thread_title(thread_id: str) -> str:
+    """The Inquiry's own title, or "" (the client falls back to the chat title)."""
+    return (get_thread_meta(thread_id) or {}).get("title") or ""
+
+
+def set_thread_title(thread_id: str, title: str) -> dict:
+    """Set/rename the thread's title. Best-effort; returns the meta record."""
+    meta = get_thread_meta(thread_id) or {"thread_id": thread_id, "created_at": _now()}
+    meta["title"] = (title or "").strip()[:200]
+    meta["updated_at"] = _now()
+    try:
+        client = _redis()
+        client.set(_thread_meta_key(thread_id), json.dumps(meta))
+        client.expire(_thread_meta_key(thread_id), AMBASSADOR_TTL_SECONDS)
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.warning(f"ambassador title write failed: {e}")
+    return meta
+
+
+# --- wire serialization (replay endpoint) -----------------------------------
+
+
+def _entry_to_wire(e: dict) -> dict:
+    """Serialize an entry for the thread replay endpoint (camelCase ``toolCalls`` to
+    match the client's live SSE shape)."""
+    out = {
+        "id": e.get("id"),
+        "kind": e.get("kind"),
+        "question": e.get("question") or "",
+        "content": e.get("content") or "",
+        "status": e.get("status"),
+        "toolCalls": e.get("tool_calls") or [],
+        "created_at": e.get("created_at"),
+        "updated_at": e.get("updated_at"),
+    }
+    if e.get("message_id"):
+        out["message_id"] = e["message_id"]
+    if e.get("run_id"):
+        out["run_id"] = e["run_id"]
+    if e.get("error"):
+        out["error"] = e["error"]
+    return out
+
+
+def thread_payload(thread_id: str) -> dict:
+    """The full replay payload for one Inquiry: ``{thread_id, title, entries}``."""
+    return {
+        "thread_id": thread_id,
+        "title": get_thread_title(thread_id),
+        "entries": [_entry_to_wire(e) for e in list_thread(thread_id)],
+    }
+
+
+# --- per-turn briefings (kind="briefing"): public API over the entry store ---
+
+
+def _entry_to_briefing(e: dict) -> dict:
+    out = {
+        "message_id": e.get("message_id") or e.get("id"),
+        "status": e.get("status"),
+        "summary": e.get("content") or "",
+        "created_at": e.get("created_at"),
+        "updated_at": e.get("updated_at"),
+        "toolCalls": e.get("tool_calls") or [],
+    }
+    if e.get("run_id"):
+        out["run_id"] = e["run_id"]
+    if e.get("error"):
+        out["error"] = e["error"]
+    return out
 
 
 def get_briefing(conversation_id: str, message_id: str) -> Optional[dict]:
     """Return the briefing record for one message, or None."""
-    return _read(_briefing_key(conversation_id, message_id))
+    e = get_entry(conversation_id, message_id)
+    if e is not None and e.get("kind") == "briefing":
+        return _entry_to_briefing(e)
+    legacy = _read(_briefing_key(conversation_id, message_id))
+    return _entry_to_briefing(_legacy_briefing_to_entry(legacy)) if legacy else None
 
 
 def list_briefings(conversation_id: str) -> list[dict]:
-    """Return all briefing records for a conversation (unordered)."""
-    return _list(
-        _index_key(conversation_id),
-        lambda message_id: _briefing_key(conversation_id, message_id),
-    )
+    """Return all briefing records for a conversation (oldest-first)."""
+    return [
+        _entry_to_briefing(e)
+        for e in list_thread(conversation_id)
+        if e.get("kind") == "briefing"
+    ]
 
 
 def set_status(
@@ -158,34 +358,25 @@ def set_status(
     run_id: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    """Create/update a briefing record's status (preserving any summary text)."""
-    record = get_briefing(conversation_id, message_id) or {
-        "message_id": message_id,
-        "summary": "",
-        "created_at": _now(),
-    }
-    record["status"] = status
-    record["updated_at"] = _now()
-    if run_id is not None:
-        record["run_id"] = run_id
-    if error is not None:
-        record["error"] = error
-    _write(conversation_id, record)
+    """Create/update a briefing entry's status (preserving any summary text)."""
+    _set_entry(
+        conversation_id,
+        message_id,
+        "briefing",
+        status=status,
+        message_id=message_id,
+        run_id=run_id,
+        error=error,
+    )
 
 
 def append_chunk(conversation_id: str, message_id: str, text: str) -> None:
     """Append streamed text to a briefing (status stays whatever it was)."""
     if not text:
         return
-    record = get_briefing(conversation_id, message_id) or {
-        "message_id": message_id,
-        "status": "streaming",
-        "summary": "",
-        "created_at": _now(),
-    }
-    record["summary"] = (record.get("summary") or "") + text
-    record["updated_at"] = _now()
-    _write(conversation_id, record)
+    cur = get_entry(conversation_id, message_id)
+    content = ((cur or {}).get("content") or "") + text
+    _set_entry(conversation_id, message_id, "briefing", content=content, message_id=message_id)
 
 
 def set_summary(
@@ -195,63 +386,53 @@ def set_summary(
     status: str = "done",
 ) -> None:
     """Replace the full briefing text and settle the status."""
-    record = get_briefing(conversation_id, message_id) or {
-        "message_id": message_id,
-        "created_at": _now(),
-    }
-    record["summary"] = summary or ""
-    record["status"] = status
-    record["updated_at"] = _now()
-    record.pop("error", None)
-    _write(conversation_id, record)
-
-
-def clear(conversation_id: str) -> None:
-    """Delete all briefings + Q&A for a conversation."""
-    try:
-        client = _redis()
-        for index_key, key_for in (
-            (_index_key(conversation_id), lambda i: _briefing_key(conversation_id, i)),
-            (_qa_index_key(conversation_id), lambda i: _qa_key(conversation_id, i)),
-        ):
-            for item_id in [_decode(m) for m in client.smembers(index_key)]:
-                client.delete(key_for(item_id))
-            client.delete(index_key)
-    except Exception as e:  # pragma: no cover - Redis offline
-        logger.debug(f"ambassador clear failed: {e}")
-
-
-# --- Free-form Q&A records --------------------------------------------------
-#
-# A Q&A entry is conversation-scoped (not turn-scoped): the user asks the
-# ambassador anything about the conversation. Same status lifecycle + streaming
-# shape as a briefing, but carries the `question` and lives under the `qa:` family
-# so it replays independently of per-turn briefings.
-
-
-def _write_qa(conversation_id: str, record: dict) -> None:
-    qa_id = record.get("qa_id")
-    if not qa_id:
-        return
-    _persist(
-        _qa_key(conversation_id, qa_id),
-        _qa_index_key(conversation_id),
-        qa_id,
-        record,
+    _set_entry(
+        conversation_id,
+        message_id,
+        "briefing",
+        content=summary or "",
+        status=status,
+        message_id=message_id,
+        error=_DELETE,
     )
+
+
+# --- free-form Q&A (kind="qa"): public API over the entry store -------------
+
+
+def _entry_to_qa(e: dict) -> dict:
+    out = {
+        "qa_id": e.get("id"),
+        "question": e.get("question") or "",
+        "answer": e.get("content") or "",
+        "status": e.get("status"),
+        "created_at": e.get("created_at"),
+        "updated_at": e.get("updated_at"),
+        "toolCalls": e.get("tool_calls") or [],
+    }
+    if e.get("run_id"):
+        out["run_id"] = e["run_id"]
+    if e.get("error"):
+        out["error"] = e["error"]
+    return out
 
 
 def get_qa(conversation_id: str, qa_id: str) -> Optional[dict]:
     """Return one Q&A record, or None."""
-    return _read(_qa_key(conversation_id, qa_id))
+    e = get_entry(conversation_id, qa_id)
+    if e is not None and e.get("kind") == "qa":
+        return _entry_to_qa(e)
+    legacy = _read(_qa_key(conversation_id, qa_id))
+    return _entry_to_qa(_legacy_qa_to_entry(legacy)) if legacy else None
 
 
 def list_qa(conversation_id: str) -> list[dict]:
-    """Return all Q&A records for a conversation (unordered; sort by created_at)."""
-    return _list(
-        _qa_index_key(conversation_id),
-        lambda qa_id: _qa_key(conversation_id, qa_id),
-    )
+    """Return all Q&A records for a conversation (oldest-first)."""
+    return [
+        _entry_to_qa(e)
+        for e in list_thread(conversation_id)
+        if e.get("kind") == "qa"
+    ]
 
 
 def create_qa(
@@ -262,17 +443,14 @@ def create_qa(
     run_id: Optional[str] = None,
 ) -> None:
     """Open a Q&A entry in the ``streaming`` state, stamping the question."""
-    _write_qa(
+    _set_entry(
         conversation_id,
-        {
-            "qa_id": qa_id,
-            "question": question,
-            "answer": "",
-            "status": "streaming",
-            "run_id": run_id,
-            "created_at": _now(),
-            "updated_at": _now(),
-        },
+        qa_id,
+        "qa",
+        question=question,
+        content="",
+        status="streaming",
+        run_id=run_id,
     )
 
 
@@ -284,36 +462,17 @@ def set_qa_status(
     run_id: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    """Update a Q&A record's status (preserving its question + any answer text)."""
-    record = get_qa(conversation_id, qa_id) or {
-        "qa_id": qa_id,
-        "question": "",
-        "answer": "",
-        "created_at": _now(),
-    }
-    record["status"] = status
-    record["updated_at"] = _now()
-    if run_id is not None:
-        record["run_id"] = run_id
-    if error is not None:
-        record["error"] = error
-    _write_qa(conversation_id, record)
+    """Update a Q&A entry's status (preserving its question + any answer text)."""
+    _set_entry(conversation_id, qa_id, "qa", status=status, run_id=run_id, error=error)
 
 
 def append_qa_chunk(conversation_id: str, qa_id: str, text: str) -> None:
-    """Append streamed answer text to a Q&A record."""
+    """Append streamed answer text to a Q&A entry."""
     if not text:
         return
-    record = get_qa(conversation_id, qa_id) or {
-        "qa_id": qa_id,
-        "question": "",
-        "answer": "",
-        "status": "streaming",
-        "created_at": _now(),
-    }
-    record["answer"] = (record.get("answer") or "") + text
-    record["updated_at"] = _now()
-    _write_qa(conversation_id, record)
+    cur = get_entry(conversation_id, qa_id)
+    content = ((cur or {}).get("content") or "") + text
+    _set_entry(conversation_id, qa_id, "qa", content=content)
 
 
 def set_qa_answer(
@@ -323,13 +482,24 @@ def set_qa_answer(
     status: str = "done",
 ) -> None:
     """Replace the full answer text and settle the status."""
-    record = get_qa(conversation_id, qa_id) or {
-        "qa_id": qa_id,
-        "question": "",
-        "created_at": _now(),
-    }
-    record["answer"] = answer or ""
-    record["status"] = status
-    record["updated_at"] = _now()
-    record.pop("error", None)
-    _write_qa(conversation_id, record)
+    _set_entry(conversation_id, qa_id, "qa", content=answer or "", status=status, error=_DELETE)
+
+
+# --- lifecycle --------------------------------------------------------------
+
+
+def clear(conversation_id: str) -> None:
+    """Delete the whole thread (entries + meta) and any legacy briefing/Q&A records."""
+    try:
+        client = _redis()
+        for index_key, key_for in (
+            (_thread_index_key(conversation_id), lambda i: _entry_key(conversation_id, i)),
+            (_index_key(conversation_id), lambda i: _briefing_key(conversation_id, i)),
+            (_qa_index_key(conversation_id), lambda i: _qa_key(conversation_id, i)),
+        ):
+            for item_id in [_decode(m) for m in client.smembers(index_key)]:
+                client.delete(key_for(item_id))
+            client.delete(index_key)
+        client.delete(_thread_meta_key(conversation_id))
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.debug(f"ambassador clear failed: {e}")

@@ -236,6 +236,15 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       consolidation without coupling the kit to `ProfileManager`.
 - [ ] **Agent social/delegation graph** — mine cross-agent facts ("Atlas is faster at SQL
       than Mobius") into a graph that informs Agent Alloy routing ("who's good at what").
+- [ ] **Delegation handbook (the "Dossier")** — a **global, cross-agent registry of who to
+      delegate to**: one entry per agent profile with its role/specialties/strengths (seeded from
+      the profile's system prompt + capability blurb, hand-editable, optionally enriched by the
+      social/delegation graph above). Global to **all** agents — any agent (and the top-level
+      ambassador) reads it to pick the right delegate, so routing isn't re-derived per turn. This is
+      the **curated/explicit** counterpart to the *mined* social graph (graph informs it; handbook is
+      the authoritative, editable source). Backs the ambassador's `list_agents`/roster awareness
+      (§16.7) and ad-hoc/Alloy delegation routing with one shared lookup. Stored once (not per
+      conversation); surfaced read-only to agents as a compact "who's who," editable in the UI.
 - [ ] **Per-agent identity seeding** — on profile create, seed the agent's `_self_` channel
       with an identity fact/entity ("I am Mobius, id …") for stronger self-recall.
 - [ ] **Debug-harness extensions** — record/replay real conversations into scenarios;
@@ -549,25 +558,40 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > the `qa:` sidecar, oldest-first, capped, in-flight turn excluded), so a follow-up
 > ("what about the second one?") has context. Zero client churn — the existing Q&A
 > store *is* the thread for now. Test: `test_thread_history_gives_qa_continuity`.
-> **Remaining (1b):** the dedicated `amb_thread:` storage shape + client thread
-> rendering + tool-call chips land with Slice 2 (the tool loop needs them anyway);
-> voice answers (`route_voice_command`) persist to the same `qa:` thread but the
-> spoken router doesn't yet *read* history — give voice continuity when 1b lands.
+> **1b shipped (`0.21.82`): the `amb_thread:` thread model.** Briefings + Q&A are now
+> one ordered **thread** ("Inquiry") under `amb_thread:{thread_id}` (entry-oriented — one
+> record per ambassador turn carrying its optional `question`; ordered by `created_at`;
+> `thread_id` defaults to the conversation id) carrying its own `title`. Decision:
+> **entry-oriented, not message-split** (preserves in-place streaming + briefing
+> idempotency). The pre-1b per-family public API is preserved as **thin projections** over
+> the entry store, so `ambassador.py` + the existing tests barely changed; legacy
+> `ambassador:` records still replay (one-place fold in `list_thread`). Tool-call chips are
+> **persisted on the entry** (`set_entry_tool_calls`, inside `_agentic_answer`) so they
+> survive a reload — closing the Slice-2 follow-up. The client renders one **Inquiry**
+> stream (`AmbassadorContext.threadFor`; briefings as their own turns via `BriefingItem`,
+> the per-turn CC trigger staying in the Turns strip) with inline rename in the switcher
+> (`titleFor`/`renameThread`, empty → chat title). New endpoint
+> `GET/PATCH /api/agent/ambassador/thread/{thread_id}`; the `{conversation_id}` endpoint is
+> a back-compat shim. Tests: `AmbassadorStorageTest` (unify+order, tool-call persistence,
+> title, legacy fold).
 
-- [ ] **Sidecar thread model.** Generalize `ambassador_storage` from per-turn
-      briefings + flat Q&A into an **`amb_thread:` family**: an ordered message list
-      (`role`, `content`, `tool_calls?`, `status`, `created_at`) keyed by an
-      `ambassador_thread_id`. Keep the briefing/Q&A families as back-compat readers
-      during migration; new flow writes the thread. TTL + index mirror today's.
-- [ ] **Thread scoping.** Default thread id is derived from the main `conversation_id`
-      (the ambassador thread *about* this conversation); a standalone command-deck
-      thread uses its own id (not bound to a tab). One ambassador thread per scope.
-- [ ] **`GET /api/agent/ambassador/thread/{thread_id}`** replays the thread (replaces
-      the `{briefings, qa}` shape; the old endpoint becomes a back-compat shim).
-- [ ] **Client `AmbassadorContext` → thread state.** Collapse `state`/`qaState` into a
-      single per-thread message list; `refresh` replays the thread. The panel renders a
-      proper conversation (your turns + ambassador turns + tool chips), not two disjoint
-      lists.
+- [x] **Sidecar thread model** (`0.21.82`): one `amb_thread:` entry family + thread meta
+      (`title`); the briefing/Q&A public API preserved as projections; legacy records fold
+      in via `list_thread`. (Entry-oriented rather than a `role`/`content` message list.)
+- [x] **Thread scoping** (`0.21.82`): `thread_id` is a real param, defaulting to the main
+      `conversation_id`. Standalone command-deck thread ids (not bound to a tab) are
+      Slice 4's to mint — the seam is in place.
+- [x] **`GET/PATCH /api/agent/ambassador/thread/{thread_id}`** (`0.21.82`) replays the
+      thread (`{thread_id, title, entries}`) + renames it; the `{conversation_id}` endpoint
+      is now a back-compat shim.
+- [x] **Client thread state** (`0.21.82`): `AmbassadorContext.threadFor` renders one ordered
+      Inquiry stream (briefings + Q&A + persisted tool chips); `refresh` replays the thread.
+      *(The two internal maps are kept as the source of truth with `threadFor` as a merge
+      selector + projected `briefingsFor`/`qaFor` views — lower-risk than a physical state
+      collapse, same UX.)*
+- [ ] **Voice continuity follow-up:** the spoken router (`route_voice_command`) persists to
+      the thread but still doesn't *read* prior Q&A as history — give voice the same
+      continuity the typed path has.
 
 **Slice 2 — the read-only tool belt + agentic loop** — shipped + consolidated (`0.21.76`–`78`)
 
@@ -610,9 +634,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       qa/briefing record (`toolCalls`); `AmbassadorPanel` renders live `ToolChips`
       (spinner → check) in Q&A + briefings (`lib/ambassadorTools.ts::toolChipLabel`).
       *Live-only* (not persisted to the sidecar — gone on reload).
-- [ ] **Follow-ups:** persist tool calls to the sidecar so chips survive reload; surface
-      tool activity in the *voice* path too (it answers server-side, no live SSE today);
-      tool chips in `QaItem`'s avatar still use the generic mark.
+- [x] **Persist tool calls to the sidecar so chips survive reload** (`0.21.82`, with Slice 1b
+      thread model — `set_entry_tool_calls` on the entry).
+- [ ] **Follow-ups:** surface tool activity in the *voice* path too (it answers server-side,
+      no live SSE today); tool chips in `QaItem`'s avatar still use the generic mark.
 
 **Slice 1c — conversations overhaul + active-conversation context** — shipped (`0.21.81`)
 
@@ -628,14 +653,36 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 > conversation). Relay targets the focused conversation when open; per-turn briefing stays
 > gated to the active tab (needs in-memory messages).
 - [ ] **Switcher over server history too** (today: open tabs only) — the full command deck.
+- [~] **Nameable ambassador conversations — "Inquiries"** — **manual rename shipped (`0.21.82`)**:
+      each thread carries its own `title` (`amb_thread:{id}:meta`); the switcher has inline rename
+      (`titleFor`/`renameThread`), empty → chat title. **Name: an _Inquiry_** (UI noun, plural
+      "Inquiries") — leans into its read-only, investigative role ("what have my agents
+      discovered?") and dodges the `survey`/`search`/`research` verbs already used in code.
+      **Remaining:** auto-titling (*"Inquiry · {chat title}"* mirror / *"Inquiry — {date}"* or a
+      first-question summary for a **standalone** thread) is only worth it once threads can be
+      standalone (a "weekly review" inquiry, a cross-conversation survey, a command-deck session)
+      with no chat title to borrow — that lands with Slice 4's standalone `thread_id` minting.
 
 **Command deck + ad-hoc delegation — roadmap (foundation laid in 1c)**
 - [ ] **Agent roster awareness** — a read-only `list_agents` tool (names + capability blurb
-      from each profile's system prompt) so the ambassador knows the roster.
+      from each profile's system prompt) so the ambassador knows the roster. Reads from the
+      global **Delegation Handbook ("Dossier")** (§16 multi-agent roadmap) once it lands.
 - [ ] **Capability/strength modelling + recognize the primary agent from history.**
 - [ ] **Ad-hoc delegation** — the ambassador (top-level agent) dispatches work to the right
       agent, reusing the relay `target` seam. The active-conversation context + per-conversation
       agent names from 1c are the inputs.
+- [ ] **Swarm paradigm — aides gather, the ambassador stays high-level.** Today the tool belt
+      reads **full transcripts into the ambassador's own context** (each read ~`_READ_TOKEN_BUDGET`,
+      bounded by `_MAX_TOOL_ROUNDS`) — fine for one conversation, but a cross-conversation survey
+      ("what have my agents discovered?") bloats context fast and gets expensive. Instead, the
+      ambassador should **delegate to a swarm of cheap aide models**: each aide reads/condenses ONE
+      conversation (or shard) read-only and returns a **high-level digest**, so the ambassador only
+      ingests condensed summaries, never raw transcripts. Keeps its context lean + parallelizes the
+      survey. Shape: `summarize_conversation`/`read_conversation` (and `survey_conversations`) become
+      **fan-out to aide jobs** (their own model tier, e.g. `consolidation.feature_default_model`),
+      results merged for the ambassador. Reuses the read-only tool belt as the aides' capability;
+      ties into ad-hoc delegation (aides are the read-side, worker agents the write-side). Bound
+      fan-out width + per-aide budget; never-raise per aide (one bad read doesn't sink the survey).
 
 **Slice 3 — voice mode confirms the tool call**
 - [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken

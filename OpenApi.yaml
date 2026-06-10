@@ -1185,14 +1185,112 @@ paths:
                   qa: { type: string }
                   draft: { type: string }
 
+  /agent/ambassador/thread/{thread_id}:
+    get:
+      tags: [Agent]
+      operationId: ambassadorThread
+      summary: Replay one Ambassador thread ("Inquiry")
+      description: >-
+        Replays the unified ambassador thread for a conversation — per-turn briefings
+        and free-form Q&A as one ordered list of entries (each with its persisted
+        tool-call chips), plus the thread's own title. Replaces the disjoint
+        `{briefings, qa}` replay below. `thread_id` defaults to the conversation id.
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Thread
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread_id:
+                    type: string
+                  title:
+                    type: string
+                    description: The Inquiry's own title ("" → client falls back to the chat title)
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                          enum: [briefing, qa]
+                        question:
+                          type: string
+                          description: The prompting question (Q&A entries); empty for briefings
+                        content:
+                          type: string
+                          description: The ambassador's text — the answer (Q&A) or briefing summary
+                        status:
+                          type: string
+                          description: streaming | done | error | empty_provider | cancelled
+                        toolCalls:
+                          type: array
+                          items:
+                            type: object
+                        message_id:
+                          type: string
+                          nullable: true
+                        run_id:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+                        updated_at:
+                          type: string
+    patch:
+      tags: [Agent]
+      operationId: ambassadorThreadRename
+      summary: Rename an Ambassador thread ("Inquiry")
+      description: >-
+        Sets the thread's title. An empty title clears it (the client falls back to
+        the chat conversation's title).
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+      responses:
+        '200':
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread_id:
+                    type: string
+                  title:
+                    type: string
+
   /agent/ambassador/{conversation_id}:
     get:
       tags: [Agent]
       operationId: ambassadorBriefings
-      summary: List a conversation's Ambassador briefings
+      summary: Replay a conversation's Ambassador briefings + Q&A (back-compat shim)
       description: >-
-        Replays all persisted per-turn briefings for a conversation from the sidecar
-        so a cold/reopened panel repopulates after reload or tab-switch.
+        Back-compat shim over the unified thread: replays per-turn briefings and Q&A
+        as the old `{briefings, qa}` shape (now projected from the `amb_thread:` entry
+        store). New clients use `/agent/ambassador/thread/{thread_id}`.
       parameters:
         - name: conversation_id
           in: path

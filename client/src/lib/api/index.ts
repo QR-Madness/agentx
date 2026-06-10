@@ -65,6 +65,7 @@ export type {
   AmbassadorQA,
   AmbassadorStatus,
   AmbassadorStreamCallbacks,
+  AmbassadorThreadEntry,
   AmbassadorToolCall,
   AmbassadorTurnArtifacts,
   AmbassadorToolArtifact,
