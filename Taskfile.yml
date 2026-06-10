@@ -535,9 +535,10 @@ tasks:
       - bunx vercel --prod
 
   docs:check:
-    desc: "Doc drift gate — broken links, orphan todo/ files, version drift, Release-Notes size"
+    desc: "Doc drift gate — broken links, orphan todo/ files, version drift, Release-Notes size, API spec parity"
     cmds:
       - python3 scripts/check_docs.py {{.CLI_ARGS}}
+      - python3 scripts/check_api_parity.py {{.CLI_ARGS}}
 
 # ============================================================================
 # CLEANUP & RESET

@@ -363,6 +363,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /tools/search-health:
+    get:
+      tags: [Providers]
+      operationId: searchHealth
+      summary: Probe the configured web-search backend
+      description: >-
+        Runs a trivial query against the active search backend (Tavily/Brave) to
+        confirm it is configured and reachable. Powers the "Test connection"
+        button in Settings → Web Search.
+      responses:
+        '200':
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  backend:
+                    type: string
+                    nullable: true
+                  count:
+                    type: integer
+                  error:
+                    type: string
+                    nullable: true
+        '500':
+          description: Probe failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /mcp/servers:
     get:
       tags: [MCP]

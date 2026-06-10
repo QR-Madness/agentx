@@ -101,6 +101,25 @@ Uses NLLB-200 language codes (e.g., `eng_Latn`, `fra_Latn`, `deu_Latn`, `spa_Lat
 }
 ```
 
+### Search-backend health
+
+```
+GET /api/tools/search-health
+```
+
+Probes the active web-search backend (Tavily/Brave) with a trivial query to confirm it is
+configured and reachable. Powers the "Test connection" button in Settings → Web Search.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "backend": "tavily",
+  "count": 1,
+  "error": null
+}
+```
+
 ---
 
 ## MCP (Model Context Protocol)
