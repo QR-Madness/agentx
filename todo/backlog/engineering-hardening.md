@@ -43,10 +43,18 @@
       plain 3-line `.git/hooks/pre-commit` calling it (no pre-commit framework — see Decisions
       "Rejected"; bypass via `git commit --no-verify`). Opt-in, so it's non-cumbersome. Catches drift
       at commit time, not release-time archaeology.
-- [ ] **(WS-6) `scripts/check_config_keys.py`** — cross-reference config keys (defined in
-      `config.py`/`memory_settings`/YAML) against read sites; flag defined-but-unread + read-but-
-      undefined (the `_global`-vs-`_default` bug class). Warnings-first. Doubles as the Settings
-      Manifest seed inventory; folds into Foundation #6's dead-knob sweep.
+- [x] **(WS-6) `scripts/check_config_keys.py`** — **shipped** as `task lint:config-keys` (advisory
+      scout, ast-parses `DEFAULT_CONFIG`). Read pattern is **scoped to `config.get()` handles** so the
+      prompt-loader / plain-dict `.get("a.b")` calls don't masquerade as config reads (that scoping was
+      essential — unscoped it flagged `loader.get("planner.decompose")` etc.). `--inventory` emits the
+      75-leaf key list = the **Settings Manifest seed**. *Dead-knob axis is opt-in (`--dead-knobs`):
+      noisy because many keys are read by f-string (`f"providers.{p}.{k}"`) — would need f-string-prefix
+      detection to be gate-worthy.* Standalone/advisory, not wired into a gate.
+- [ ] **Declare the undeclared ambassador config keys** — `lint:config-keys` finds
+      `ambassador.{speech_model,voice,transcription_model}` read via `config.get()` but absent from
+      `DEFAULT_CONFIG` (resolved today via the override→profile→`config.ambassador.*`→default chain).
+      Not bugs, but declaring them (as `None`) completes the config surface for the Settings Manifest /
+      config UI. Verify against the ambassador resolution before adding ([[don't change defaults]] care).
 - [~] **(WS-7) client static-analysis parity** — **`bun audit` shipped** (`task lint:client:audit`
       + advisory in `release:check`, mirroring `pip-audit`), and removed one dead barrel
       (`components/memory/index.ts`). **knip deferred:** its high-signal output here is mostly false

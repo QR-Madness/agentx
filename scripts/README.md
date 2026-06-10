@@ -8,6 +8,7 @@ of the repo's anti-drift posture (the judgement half lives in [`Decisions.md`](.
 | `check_docs.py` | `docs:check` | inter-doc links + `#anchors`, orphan `todo/` files, version drift, Release-Notes + CLAUDE.md size |
 | `check_api_parity.py` | `docs:check` | Django routes (`urls.py`) ↔ `OpenApi.yaml` paths |
 | `check_pyright_baseline.py` | `check:types:python:baseline` | pyright error count never rises above `api/.pyright-baseline` |
+| `check_config_keys.py` | `lint:config-keys` | `config.get()` reads vs `DEFAULT_CONFIG` + key inventory (`--inventory`); advisory, not gated |
 
 ## The gate protocol (write new gates to this spec, not by imitation)
 

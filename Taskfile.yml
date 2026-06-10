@@ -661,6 +661,11 @@ tasks:
     cmds:
       - bun audit {{.CLI_ARGS}}
 
+  lint:config-keys:
+    desc: "Config-key scout: config.get() reads not in DEFAULT_CONFIG + the key inventory (--inventory)"
+    cmds:
+      - python3 scripts/check_config_keys.py {{.CLI_ARGS}}
+
   format:
     desc: "Format all code"
     cmds:
