@@ -663,7 +663,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openVoiceTab}
         data-on={tab === 'voice' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent/15 data-[on=true]:text-accent"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
         title="Immersive voice"
         aria-label="Voice"
       >
@@ -673,7 +673,7 @@ export function AmbassadorPanel() {
         type="button"
         onClick={openTextTab}
         data-on={tab === 'text' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent/15 data-[on=true]:text-accent"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
         title="Text"
         aria-label="Text"
       >
@@ -720,49 +720,36 @@ export function AmbassadorPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header — compact command bar (text) / immersive voice hero (voice). */}
-      {voiceActive && conversationId ? (
-        <div className="relative flex flex-col items-center gap-1.5 border-b border-line bg-gradient-to-b from-accent/12 via-accent/5 to-transparent px-4 pb-4 pt-6 text-center">
-          <span className="relative inline-flex">
+      {/* Header — ONE stable command bar in both modes (the context is unified; only the
+          footer input differs). Voice adds a subtle accent tint, never a layout morph, so
+          the Voice/Text toggle never moves and you can't get stranded. */}
+      <div
+        className={`flex flex-col gap-1 border-b border-line px-4 pb-2.5 pt-3.5 transition-colors duration-300 ${voiceActive ? 'bg-gradient-to-b from-accent/8 to-transparent' : ''}`}
+      >
+        {/* pr-10 clears the shell's absolute close button (top-right). */}
+        <div className="flex items-center gap-2 pr-10">
+          <span className="relative inline-flex shrink-0">
+            <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
             {anyStreaming && (
-              <span className="absolute -inset-1 animate-pulse rounded-full ring-2 ring-accent/40" />
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
             )}
-            <AmbassadorMark size={44} avatar={ambassadorProfile?.avatar} />
           </span>
-          <h2 className="text-sm font-semibold text-fg">{ambassadorProfile?.name || 'Ambassador'}</h2>
-          <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
-            {titleControl}
-            {modeToggle}
-            {overflowMenu}
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1 border-b border-line px-4 pb-2.5 pt-3.5">
-          {/* pr-10 clears the shell's absolute close button (top-right). */}
-          <div className="flex items-center gap-2 pr-10">
-            <span className="relative inline-flex shrink-0">
-              <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
-              {anyStreaming && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
-              )}
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <span className="shrink-0 text-sm font-semibold text-fg">
+              {ambassadorProfile?.name || 'Ambassador'}
             </span>
-            <div className="flex min-w-0 flex-1 items-center gap-1">
-              <span className="shrink-0 text-sm font-semibold text-fg">
-                {ambassadorProfile?.name || 'Ambassador'}
-              </span>
-              {conversationId && (
-                <>
-                  <span className="shrink-0 text-fg-muted">·</span>
-                  {titleControl}
-                </>
-              )}
-            </div>
-            {modeToggle}
-            {overflowMenu}
+            {conversationId && (
+              <>
+                <span className="shrink-0 text-fg-muted">·</span>
+                {titleControl}
+              </>
+            )}
           </div>
-          <p className="pl-[34px] text-[11px] leading-snug text-fg-muted">{contextLine}</p>
+          {modeToggle}
+          {overflowMenu}
         </div>
-      )}
+        <p className="pl-[34px] text-[11px] leading-snug text-fg-muted">{contextLine}</p>
+      </div>
 
       {/* Body — the Inquiry (shared by text + voice; only the footer differs). */}
       <div className="relative flex min-h-0 flex-1 flex-col">

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.85 -->
+<!-- release-version: 0.21.86 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,7 +44,7 @@ the client at your own API server and bring your own model providers.
 - **Briefings settle cleanly.** No mid-sentence truncation on thinking models, no perpetual "briefing…" spinner after cancel, reliable agent naming on restored turns.
 - **Layering + diffs.** Dialogs from inside a full-screen modal layer on top; prompt diffs are colored everywhere (incl. memory prompts); accent-tint contrast fixes across the UI.
 - Web search is bounded by a wall-clock cap; plan resume no longer duplicates the user turn or sticks in `running`.
-- **Ambassador polish.** Redesigned the Inquiry conversation switcher (roomier, animated), fixed buttons that shifted hue on hover, and smoothed transitions throughout.
+- **Ambassador polish.** One stable header across voice/text (switching modes no longer reshuffles the top bar or strands you — same Inquiry, only the input swaps), a redesigned + higher-contrast conversation switcher, accent-colored mode toggle, and fixed hue-shifting buttons.
 
 ### Getting started
 

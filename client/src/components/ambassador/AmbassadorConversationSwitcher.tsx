@@ -161,9 +161,9 @@ export function AmbassadorConversationSwitcher({
                 >
                   <MessagesSquare
                     size={14}
-                    className="shrink-0 text-fg-muted transition-colors group-data-[on=true]:text-accent"
+                    className="shrink-0 text-fg-secondary transition-colors group-data-[on=true]:text-accent"
                   />
-                  <span className="flex-1 truncate text-fg-secondary group-hover:text-fg group-data-[on=true]:font-medium group-data-[on=true]:text-fg">
+                  <span className="flex-1 truncate text-fg group-data-[on=true]:font-medium group-data-[on=true]:text-accent">
                     {it.title}
                   </span>
                   {it.id === focusedId && <Check size={14} className="shrink-0 text-accent" />}
