@@ -45,9 +45,18 @@
       `config.py`/`memory_settings`/YAML) against read sites; flag defined-but-unread + read-but-
       undefined (the `_global`-vs-`_default` bug class). Warnings-first. Doubles as the Settings
       Manifest seed inventory; folds into Foundation #6's dead-knob sweep.
-- [ ] **(WS-7) client static-analysis parity** — `knip` (unused exports/files/deps in `client/src`)
-      + `bun audit` as `lint:client:audit`, beside the Python `ruff`+`pip-audit`. Single-config;
-      knip warnings-only until the first sweep.
+- [~] **(WS-7) client static-analysis parity** — **`bun audit` shipped** (`task lint:client:audit`
+      + advisory in `release:check`, mirroring `pip-audit`), and removed one dead barrel
+      (`components/memory/index.ts`). **knip deferred:** its high-signal output here is mostly false
+      positives needing an ignore-list — `@tauri-apps/plugin-opener` (used Rust-side), `react-hook-form`
+      (staged for the planned `form` exhibit), `concurrently` (used by `task dev`, not client src),
+      `@types/*` (needed by tsc) — and 152 "unused export/type" findings are noise for a typed API
+      client. Worth adding *with* a tuned `knip.json` (rules: `files`+`dependencies` only, +
+      `ignoreDependencies`) — not lean to force now.
+- [ ] **Client dependency CVE triage** — `task lint:client:audit` flags 8 (1 critical / 4 high / 3
+      moderate), mostly **dev-only** (`vite` dev-server path-traversal/file-read, `picomatch` ReDoS).
+      A Tauri-bundled prod app doesn't ship the vite dev server, so impact is low; bump on the next
+      client-dep pass (`bun update`) + re-run `tsc`/`vitest`. Advisory (non-blocking) in `release:check`.
 - [x] **(WS-4) `test:quick` deterministic + in CI** — the "7 pre-existing 401 failures" were **not
       inherent**: `MCPClientTest` inherited ambient `AGENTX_AUTH_ENABLED` (true in this dev's local
       `.env`) and didn't authenticate. Fixed the *real* way — not a baseline/`expectedFailure`, which

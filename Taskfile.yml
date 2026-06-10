@@ -655,6 +655,12 @@ tasks:
     cmds:
       - bun run lint 2>/dev/null || true
 
+  lint:client:audit:
+    desc: "Scan client dependencies for known CVEs (bun audit)"
+    dir: client
+    cmds:
+      - bun audit {{.CLI_ARGS}}
+
   format:
     desc: "Format all code"
     cmds:
@@ -970,8 +976,11 @@ tasks:
       - |
         echo "  ⏳ Auditing dependencies (advisory — not blocking)..."
         uv run pip-audit --progress-spinner off \
-          && echo "  ✓ No known dependency CVEs" \
+          && echo "  ✓ No known Python dependency CVEs" \
           || echo "  ⚠️  pip-audit reported advisories above — triage with 'task audit'"
+        (cd client && bun audit) \
+          && echo "  ✓ No known client dependency CVEs" \
+          || echo "  ⚠️  bun audit reported advisories above — triage with 'task lint:client:audit'"
       - |
         ISSUES=""
         
