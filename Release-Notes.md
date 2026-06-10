@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.77 -->
+<!-- release-version: 0.21.78 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -48,12 +48,13 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   the thread: ask "what did it find?", then "and the second source?", and the second question
   lands with the context of the first. (Its own conversation, still kept entirely separate from
   your agent's transcript.)
-- **The Ambassador can now look things up for itself.** Instead of only seeing the one turn you
-  pointed it at, it can decide to read the conversation to summarize or dig into it — and it can
-  **survey across your conversations** to answer questions like "what have my agents found across
-  everything?" by listing your recent sessions and reading the relevant ones. Everything it does
-  here is **read-only** — it looks, it never touches — and if a model can't drive tools it quietly
-  falls back to answering from what it's given. Needs a tool-capable model on the ambassador.
+- **The Ambassador can now look things up for itself.** Ask it to summarize the conversation or
+  dig into a part of it and it actually **reads the conversation** to answer; ask "what have my
+  agents found across everything?" and it **surveys your other conversations** — listing your
+  recent sessions and reading the relevant ones. This works the same whether you **type or talk**
+  to it, and it remembers your back-and-forth so follow-ups have context. Everything it does here
+  is **read-only** — it looks, it never touches — and if a model can't drive tools it quietly
+  falls back to answering from what it's given. Point the ambassador at a tool-capable model.
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,

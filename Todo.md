@@ -569,12 +569,19 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       proper conversation (your turns + ambassador turns + tool chips), not two disjoint
       lists.
 
-**Slice 2 — the read-only tool belt + agentic loop** — shipped ON (`0.21.76` built / `0.21.77` enabled)
+**Slice 2 — the read-only tool belt + agentic loop** — shipped + consolidated (`0.21.76`–`78`)
 
-> **On by default** (`ambassador.tools_enabled=true`, kill-switch only — this is an
-> experimental app). `answer_question` runs the agentic loop; it degrades internally
-> to the grounded one-shot with thread continuity (1a) on any failure, so it can't
-> hard-fail a turn. Mock-tested; live behavior to be observed in use.
+> **Ungated + unified (`0.21.78`).** The tools never fired because (a) **voice had no
+> tools** and (b) the answer path **pre-stuffed the whole transcript** beside the tools,
+> so the model never needed them. Fixed by a consolidation onto **one streaming agentic
+> core** (`_agentic_answer`): tools always on (no gate), **tool-first grounding**
+> (`_LEAN_GROUNDING_TURNS` only — the model reads via tools for depth), and **voice
+> answers routed through the same core** (`route_voice_command` classifies →
+> `_answer_to_text`), so spoken questions get the same tools + continuity. Also DRY'd
+> provider resolution (`_resolve_answerer`), collapsed the qa/tools personas into one
+> capability-stating `_answer_persona` (+ `_TOOLS_NOTE`), and reuse `_stream_and_settle`
+> for the degrade. Tests rewritten for the streaming core (tool fires, voice drives a
+> tool, provider-rejects-tools → grounded fallback).
 
 - [x] **Ambassador tool registry** (`agent/ambassador_tools.py`): SELECT-only,
       separate from `mcp/internal_tools`; `execute_tool` dispatch never raises.
@@ -596,9 +603,10 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [x] **Tools persona** (`_build_tools_persona`): the Q&A persona + a note that it has
       read-only tools and should fetch what it needs, then answer in its own voice
       (no markdown, names the agent, never reads tool output back).
-- [ ] **Follow-ups:** client tool-call chips (Slice 1b); fold `route_voice_command`'s
-      answer path through the same loop so spoken questions get tools too; watch live
-      behavior in use (it's on by default now).
+- [x] **Voice answers fold through the same loop** (`0.21.78`) — spoken questions drive
+      tools + continuity via the shared core.
+- [ ] **Follow-ups:** client tool-call chips (Slice 1b — the SSE `ambassador_tool_call`/
+      `_result` events are emitted; the client pump still no-ops them); watch live behavior.
 
 **Slice 3 — voice mode confirms the tool call**
 - [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken

@@ -59,6 +59,14 @@ _TOKENS_PER_TURN = 400
 # chosen profile specify a model. resolve_with_fallback degrades from here.
 _DEFAULT_MODEL = "anthropic:claude-haiku-4-5-20251001"
 
+# Agentic answer core: hard cap on tool rounds before the ambassador is forced to
+# answer (the final round runs with tools off). Plain constant — tools are always on
+# (this is an experimental app; the persona/tools aren't gated).
+_MAX_TOOL_ROUNDS = 4
+# Tool-first grounding: the answer path pre-loads only this many recent turns (so it's
+# never blind), then reads the conversation via tools for any real depth/breadth.
+_LEAN_GROUNDING_TURNS = 2
+
 # Voice (TTS) defaults. The shipped speech model is OpenRouter-only, so spoken
 # briefings need an OpenRouter key — the speak endpoint degrades gracefully when
 # it's absent. MAI-Voice-2 voices use the Azure locale format.
@@ -128,10 +136,12 @@ def _default_persona(agent_name: str = "") -> str:
     )
 
 
-def _qa_persona(agent_name: str = "") -> str:
-    """The Ambassador's voice when answering a free-form question about the
-    conversation (vs. briefing a single turn). Same identity + form rules; the
-    task is to answer, grounded only in what actually happened."""
+def _answer_persona(agent_name: str = "") -> str:
+    """The Ambassador's voice when the person talks to it about the conversation — a
+    question, a request to summarize, or a broad 'what's happened across my work?'. It
+    states what the ambassador can actually do (read/summarize/explore this
+    conversation, survey across the person's other conversations) so it knows to go
+    look, and keeps the second-person, names-the-agent, spoken-voice rules."""
     agent_ref = agent_name.strip() or "their agent"
     name_rule = (
         f"- The agent in the conversation is named {agent_name.strip()}. Call it by that "
@@ -141,7 +151,8 @@ def _qa_persona(agent_name: str = "") -> str:
     )
     return (
         "You are an Ambassador. The person you're talking to is watching a conversation "
-        "between themselves and an AI agent, and they have asked YOU a question about it. "
+        "between themselves and an AI agent, and they're talking to YOU about it — asking a "
+        "question, asking you to summarize, or asking what's happened across their work. "
         "Answer them directly. You are the interpreter standing beside them — not a "
         "participant in the conversation, and you never continue or answer it yourself.\n\n"
 
@@ -151,11 +162,16 @@ def _qa_persona(agent_name: str = "") -> str:
         f"{name_rule}NEVER call it 'the assistant', 'the AI', 'the model', or a bare 'it' "
         "like a transcript.\n\n"
 
-        f"GROUND YOUR ANSWER: answer only from what {agent_ref} and the person actually said "
-        "and did in the conversation you're given. Be concrete — name the sources, tools, or "
-        "moments that matter. If the answer isn't in the conversation, say so plainly ('I "
-        "don't see that in what they did') — never invent, guess, or answer the underlying "
-        "question yourself as if you were the agent.\n\n"
+        "WHAT YOU CAN DO: you can read this conversation to summarize it or dig into any part "
+        "of it, and you can look across the person's other conversations to answer broader "
+        "questions like 'what have my agents found?'. Go and look at what you need before you "
+        "answer — don't answer about the conversation from memory.\n\n"
+
+        f"GROUND YOUR ANSWER: answer from what {agent_ref} and the person actually said and "
+        "did — read the conversation (and others, when the question is broader) rather than "
+        "guessing. Be concrete — name the sources, tools, or moments that matter. If something "
+        "isn't there, say so plainly ('I don't see that in what they did') — never invent, "
+        "guess, or answer the underlying question yourself as if you were the agent.\n\n"
 
         "HOW TO SPEAK: like a person talking out loud to a friend beside them — plain, natural, "
         "flowing sentences. Keep it as short as the question allows; answer what was asked, then "
@@ -164,6 +180,22 @@ def _qa_persona(agent_name: str = "") -> str:
         "FORM (hard rules): NO markdown, NO headings, NO labels, NO bullet points, NO numbered "
         "lists, NO bold or asterisks. One flowing spoken voice."
     )
+
+
+# The read-only tool belt, described for the model. Appended to the answer persona so
+# the ambassador knows the concrete moves behind "what you can do". Mirrors
+# ``ambassador_tools.TOOL_SCHEMAS``.
+_TOOLS_NOTE = (
+    "YOUR TOOLS (read-only — you look, you never change anything). Use them before you "
+    "answer about the conversation; you may call several:\n"
+    "- summarize_conversation — read the conversation you're watching, to summarize it.\n"
+    "- explore_conversation — read it and dig deeper (optionally on a topic).\n"
+    "- list_conversations — list the person's recent sessions (for 'what have my agents "
+    "found across everything?').\n"
+    "- read_conversation — read one specific conversation by id (after listing).\n\n"
+    "When you have what you need, answer the person directly in your own spoken voice — "
+    "never read tool output back verbatim, never mention the tools."
+)
 
 
 def _draft_persona(agent_name: str = "") -> str:
@@ -267,13 +299,6 @@ class AmbassadorService:
             "profile_id": config.get("ambassador.profile_id", None),
             "model": config.get("ambassador.model") or None,
             "max_context_turns": config.get("ambassador.max_context_turns", 8),
-            # Slice 2 agentic tool loop — ON by default (this is an experimental app).
-            # The loop degrades internally to the grounded one-shot on any failure
-            # (e.g. a model that can't take tools), so it can't hard-fail a turn;
-            # `ambassador.tools_enabled=false` is the kill-switch.
-            "tools_enabled": config.get("ambassador.tools_enabled", True),
-            # Bound on agentic tool rounds before forcing a final answer.
-            "max_tool_rounds": config.get("ambassador.max_tool_rounds", 4),
             # Optional hard ceiling. Left unset by default so a thinking model has
             # room to reason without the visible briefing getting clipped — length
             # is governed by the prompt's LENGTH LIMIT, not by this cap.
@@ -320,36 +345,43 @@ class AmbassadorService:
         except Exception:
             return None
 
-    def _build_qa_persona(self, profile, agent_name: str = "") -> str:
+    def _resolve_answerer(self, cfg: dict[str, Any], *, default_temperature: float = 0.2):
+        """Resolve ``(profile, provider, model_id, temperature)`` for an ambassador
+        LLM call: precedence is the Settings model override → the chosen ambassador
+        profile's model → the built-in floor. Raises on resolution failure — each
+        caller degrades in its own idiom (briefing card / qa answer / spoken notice /
+        raw relay intent), so resolution stays DRY but the degrade stays local."""
+        profile = self._resolve_profile(cfg["profile_id"])
+        profile_model = getattr(profile, "default_model", None) if profile else None
+        model = cfg["model"] or profile_model or _DEFAULT_MODEL
+        temperature = (
+            getattr(profile, "temperature", default_temperature)
+            if profile
+            else default_temperature
+        )
+        provider, model_id, _ = self.registry.resolve_with_fallback(
+            model, preferred_fallback=_DEFAULT_MODEL
+        )
+        return profile, provider, model_id, temperature
+
+    def _build_answer_persona(
+        self, profile, agent_name: str = "", *, with_tools: bool = True
+    ) -> str:
+        """The single ambassador-agent persona for answering the person (text Q&A and
+        voice). It states what the ambassador can actually do (read/summarize/explore
+        this conversation, survey across the person's other conversations); the
+        ``with_tools`` note adds the concrete read-only tool belt. The ``qa_persona``
+        override still applies. ``with_tools=False`` is the grounded-fallback voice."""
         amb = getattr(profile, "ambassador", None) if profile else None
-        base = _persona_override(amb, "qa_persona") or _qa_persona(agent_name)
+        base = _persona_override(amb, "qa_persona") or _answer_persona(agent_name)
         parts = [base]
+        if with_tools:
+            parts.append(_TOOLS_NOTE)
         if profile and getattr(profile, "system_prompt", None):
             parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         if amb and getattr(amb, "briefing_prompt", "").strip():
             parts.append(f"Additional instructions:\n{amb.briefing_prompt.strip()}")
         return _sub_placeholders("\n\n".join(parts), agent_name=agent_name)
-
-    def _build_tools_persona(self, profile, agent_name: str = "") -> str:
-        """The Q&A persona plus a note that the ambassador has read-only tools to
-        look at conversations — so it can fetch what it needs (summarize/explore the
-        active conversation, or survey across the person's sessions) before it
-        answers, instead of relying on a single pre-stuffed transcript."""
-        base = self._build_qa_persona(profile, agent_name)
-        tools_note = (
-            "YOU HAVE TOOLS. You can look at the conversation world read-only before you "
-            "answer:\n"
-            "- summarize_conversation — read the conversation you're watching to summarize it.\n"
-            "- explore_conversation — read it and dig deeper (optionally on a topic).\n"
-            "- list_conversations — list the person's recent sessions (for 'what have my agents "
-            "found across everything?').\n"
-            "- read_conversation — read one specific conversation by id (after listing).\n\n"
-            "Call a tool when you need to see something; you may call several. When you have what "
-            "you need, answer the person directly in your own spoken voice — never read tool "
-            "output back verbatim, never mention the tools. These tools only READ; you never "
-            "change anything."
-        )
-        return f"{base}\n\n{tools_note}"
 
     def _build_draft_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
@@ -371,22 +403,22 @@ class AmbassadorService:
         sections = []
         if context.strip():
             sections.append(
-                "The conversation so far (this is ALL you may answer from):\n"
-                f"{context.strip()}"
+                "The most recent turns, for quick context (read the conversation with your "
+                f"tools for anything more):\n{context.strip()}"
             )
         else:
             sections.append(
-                "The conversation is empty so far — nothing has happened in it yet, so "
-                "there's nothing to answer from."
+                "Nothing is pre-loaded here — read the conversation with your tools to see "
+                "what's happened. If it's empty, say so plainly."
             )
         artifacts_block = self._render_artifacts(artifacts, agent_label)
         if artifacts_block:
             sections.append(artifacts_block)
         sections.append(f"The person asks you:\n{question.strip()}")
         sections.append(
-            "Answer their question directly, in your own spoken voice, grounded only in "
-            "the conversation above. If there's nothing in the conversation yet (or the "
-            "answer isn't there), say so plainly — never invent an answer."
+            "Answer their question directly, in your own spoken voice, grounded in the "
+            "conversation. If there's nothing relevant (or the conversation is empty), say "
+            "so plainly — never invent an answer."
         )
         return "\n\n".join(sections)
 
@@ -561,6 +593,43 @@ class AmbassadorService:
             lines.append(f"{role}: {m.content}")
         return "\n".join(lines)
 
+    def _lean_grounding(self, conversation_id: str, agent_name: str = "") -> str:
+        """Just the last couple of turns — the answer path is tool-first, so the model
+        reads the conversation with its tools for depth; this only keeps a quick
+        question (e.g. 'what just happened?') from needing a tool round."""
+        return self._grounding_context(conversation_id, _LEAN_GROUNDING_TURNS, agent_name)
+
+    def _seed_answer_messages(
+        self,
+        *,
+        conversation_id: str,
+        question: str,
+        exclude_id: str,
+        agent_name: str,
+        artifacts: Optional[dict],
+        profile,
+        with_tools: bool,
+    ) -> list[Message]:
+        """The message list for an answer turn: capability persona (+ tool belt) →
+        prior Q&A as continuity (`_thread_history`) → the lean snippet + the question.
+        Shared by text Q&A and voice so both get the same tools + memory."""
+        return [
+            Message(
+                role=MessageRole.SYSTEM,
+                content=self._build_answer_persona(profile, agent_name, with_tools=with_tools),
+            ),
+            *self._thread_history(conversation_id, exclude_id=exclude_id),
+            Message(
+                role=MessageRole.USER,
+                content=self._build_qa_prompt(
+                    question=question,
+                    context=self._lean_grounding(conversation_id, agent_name),
+                    agent_name=agent_name,
+                    artifacts=artifacts,
+                ),
+            ),
+        ]
+
     async def brief_turn(
         self,
         conversation_id: str,
@@ -587,17 +656,8 @@ class AmbassadorService:
             yield _sse("ambassador_error", {"message_id": message_id, "error": "disabled"})
             return
 
-        profile = self._resolve_profile(cfg["profile_id"])
-        # Precedence: the explicit settings model (Settings → Ambassador) wins;
-        # else the chosen profile's model; else the built-in floor.
-        profile_model = getattr(profile, "default_model", None) if profile else None
-        model = cfg["model"] or profile_model or _DEFAULT_MODEL
-        temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
-
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(
-                model, preferred_fallback=_DEFAULT_MODEL
-            )
+            profile, provider, model_id, temperature = self._resolve_answerer(cfg)
         except Exception as e:  # noqa: BLE001 — any resolution failure degrades gracefully
             logger.warning(f"Ambassador provider unavailable: {e}")
             note = "No model provider is configured for the ambassador."
@@ -660,8 +720,10 @@ class AmbassadorService:
         artifacts: Optional[dict] = None,
     ) -> AsyncGenerator[str, None]:
         """Answer a free-form question about the conversation. Yields ``ambassador_*``
-        SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client SSE pump is
-        shared with briefings). Never raises; persists only to the Q&A sidecar."""
+        SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client pump is
+        shared with briefings). The ambassador drives its read-only tool belt to look
+        at the conversation (and the person's others) before answering. Never raises;
+        persists only to the Q&A sidecar."""
         cfg = self._config()
         run_id = self._current_run_id()
         store.create_qa(conversation_id, qa_id, question, run_id=run_id)
@@ -674,15 +736,8 @@ class AmbassadorService:
             yield _sse("ambassador_error", {"message_id": qa_id, "error": "disabled"})
             return
 
-        profile = self._resolve_profile(cfg["profile_id"])
-        profile_model = getattr(profile, "default_model", None) if profile else None
-        model = cfg["model"] or profile_model or _DEFAULT_MODEL
-        temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
-
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(
-                model, preferred_fallback=_DEFAULT_MODEL
-            )
+            profile, provider, model_id, temperature = self._resolve_answerer(cfg)
         except Exception as e:  # noqa: BLE001 — degrade gracefully
             logger.warning(f"Ambassador provider unavailable: {e}")
             note = "No model provider is configured for the ambassador."
@@ -693,150 +748,124 @@ class AmbassadorService:
             )
             return
 
-        # Slice 2: the agentic, read-only tool path (gated by `ambassador.tools_enabled`).
-        # It settles the sidecar itself and degrades internally to the grounded
-        # one-shot below, so flipping the flag on can never hard-fail a turn.
-        if cfg["tools_enabled"]:
-            async for ev in self._answer_with_tools(
-                conversation_id=conversation_id,
-                qa_id=qa_id,
-                question=question,
-                provider=provider,
-                model_id=model_id,
-                temperature=temperature,
-                max_tokens=self._max_tokens(profile, cfg),
-                max_rounds=cfg["max_tool_rounds"],
-                profile=profile,
-                agent_name=agent_name,
-                artifacts=artifacts,
-                run_id=run_id,
-            ):
-                yield ev
-            return
-
-        # Q&A grounds on a wider window than a single-turn brief — the question can
-        # reference anything in the conversation.
-        context = self._grounding_context(
-            conversation_id, cfg["max_context_turns"] * 2, agent_name
-        )
-        messages = [
-            Message(
-                role=MessageRole.SYSTEM,
-                content=self._build_qa_persona(profile, agent_name),
-            ),
-            # Prior Q&A as real dialogue turns — the ambassador's own conversation
-            # with the user, so a follow-up ("what about the second one?") has
-            # context. The current (streaming) turn is excluded by id.
-            *self._thread_history(conversation_id, exclude_id=qa_id),
-            Message(
-                role=MessageRole.USER,
-                content=self._build_qa_prompt(
-                    question=question,
-                    context=context,
-                    agent_name=agent_name,
-                    artifacts=artifacts,
-                ),
-            ),
-        ]
-
-        async for ev in self._stream_and_settle(
+        async for ev in self._agentic_answer(
             item_id=qa_id,
             provider=provider,
             model_id=model_id,
             temperature=temperature,
             max_tokens=self._max_tokens(profile, cfg),
-            messages=messages,
+            conversation_id=conversation_id,
+            agent_name=agent_name,
+            messages=self._seed_answer_messages(
+                conversation_id=conversation_id, question=question, exclude_id=qa_id,
+                agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=True,
+            ),
+            fallback_messages=self._seed_answer_messages(
+                conversation_id=conversation_id, question=question, exclude_id=qa_id,
+                agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=False,
+            ),
             on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
             on_done=lambda s: store.set_qa_answer(conversation_id, qa_id, s, status="done"),
-            on_cancel=lambda: store.set_qa_status(
-                conversation_id, qa_id, "cancelled", run_id=run_id
-            ),
-            on_error=lambda e: store.set_qa_status(
-                conversation_id, qa_id, "error", run_id=run_id, error=e
-            ),
+            on_cancel=lambda: store.set_qa_status(conversation_id, qa_id, "cancelled", run_id=run_id),
+            on_error=lambda e: store.set_qa_status(conversation_id, qa_id, "error", run_id=run_id, error=e),
             empty_text="(The ambassador had no answer.)",
             log_label="Q&A",
         ):
             yield ev
 
-    async def _answer_with_tools(
+    async def _agentic_answer(
         self,
         *,
-        conversation_id: str,
-        qa_id: str,
-        question: str,
+        item_id: str,
         provider,
         model_id: str,
         temperature: float,
         max_tokens: int,
-        max_rounds: int,
-        profile,
+        conversation_id: str,
         agent_name: str,
-        artifacts: Optional[dict],
-        run_id: Optional[str],
+        messages: list[Message],
+        fallback_messages: list[Message],
+        on_chunk,
+        on_done,
+        on_cancel,
+        on_error,
+        empty_text: str,
+        log_label: str,
     ) -> AsyncGenerator[str, None]:
-        """Agentic Q&A: let the ambassador call its **read-only** tool belt to look
-        at the conversation world, then answer in its own voice. Settles the qa
-        sidecar itself and emits ``ambassador_tool_call``/``ambassador_tool_result``
-        SSE as it works. Never raises — any failure degrades to a grounded one-shot
-        answer over the same context (so enabling the loop can't break a turn)."""
+        """The unified streaming agentic answer core (text Q&A + voice).
+
+        Each round streams ``provider.stream`` with the read-only tool belt: a round
+        that ends carrying ``tool_calls`` is a tool round (emit
+        ``ambassador_tool_call``/``_result``, run the SELECT-only tool, append the
+        assistant-tool-call + ``role=tool`` messages, go again); a round that ends with
+        only content **is** the answer — streamed live, then settled. Bounded by
+        ``_MAX_TOOL_ROUNDS`` (the last round runs with tools off, so it must answer).
+
+        Never raises: ``GeneratorExit`` settles ``cancelled``; any failure degrades to a
+        grounded one-shot over ``fallback_messages``. SSE/persist callbacks mirror
+        ``_stream_and_settle`` so the client pump is identical; a tool-round's preamble
+        is superseded by the authoritative ``ambassador_done`` (and ``on_done``)."""
         from .ambassador_tools import TOOL_SCHEMAS, execute_tool
 
-        context = self._grounding_context(
-            conversation_id, self._config()["max_context_turns"] * 2, agent_name
-        )
-
-        def _seed_messages(system: str) -> list[Message]:
-            return [
-                Message(role=MessageRole.SYSTEM, content=system),
-                *self._thread_history(conversation_id, exclude_id=qa_id),
-                Message(
-                    role=MessageRole.USER,
-                    content=self._build_qa_prompt(
-                        question=question,
-                        context=context,
-                        agent_name=agent_name,
-                        artifacts=artifacts,
-                    ),
-                ),
-            ]
-
-        messages = _seed_messages(self._build_tools_persona(profile, agent_name))
-        answer = ""
         settled = False
         try:
-            for _round in range(max(1, max_rounds)):
-                result = await provider.complete(
+            for _round in range(_MAX_TOOL_ROUNDS):
+                last_round = _round == _MAX_TOOL_ROUNDS - 1
+                round_text = ""
+                round_calls: list = []
+                finish_reason = None
+                async for chunk in provider.stream(
                     messages,
                     model_id,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    tools=TOOL_SCHEMAS,
-                    tool_choice="auto",
-                )
-                calls = result.tool_calls or []
-                if not calls:
-                    answer = (result.content or "").strip()
-                    break
-                # Record the assistant's tool-call turn so the TOOL replies correlate.
+                    tools=None if last_round else TOOL_SCHEMAS,
+                    tool_choice="none" if last_round else "auto",
+                ):
+                    if chunk.finish_reason:
+                        finish_reason = chunk.finish_reason
+                    if chunk.tool_calls:
+                        round_calls = chunk.tool_calls
+                    if chunk.content:
+                        round_text += chunk.content
+                        on_chunk(chunk.content)
+                        yield _sse("ambassador_chunk", {"message_id": item_id, "text": chunk.content})
+
+                if not round_calls:
+                    # The model answered (no tools requested) — settle this round.
+                    if finish_reason == "length":
+                        logger.warning(
+                            f"Ambassador {log_label} hit the token cap for {item_id}; "
+                            "raise ambassador.max_tokens / _THINKING_HEADROOM."
+                        )
+                    text = round_text.strip() or empty_text
+                    on_done(text)
+                    settled = True
+                    yield _sse(
+                        "ambassador_done",
+                        {"message_id": item_id, "status": "done", "summary": text},
+                    )
+                    return
+
+                # Tool round: record the assistant's tool-call turn, then run each tool.
                 messages.append(
                     Message(
                         role=MessageRole.ASSISTANT,
-                        content=result.content or "",
+                        content=round_text,
                         tool_calls=[
                             {
                                 "id": tc.id,
                                 "type": "function",
                                 "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
                             }
-                            for tc in calls
+                            for tc in round_calls
                         ],
                     )
                 )
-                for tc in calls:
+                for tc in round_calls:
                     yield _sse(
                         "ambassador_tool_call",
-                        {"message_id": qa_id, "tool": tc.name, "args": tc.arguments},
+                        {"message_id": item_id, "tool": tc.name, "args": tc.arguments},
                     )
                     output = execute_tool(
                         tc.name,
@@ -854,47 +883,46 @@ class AmbassadorService:
                     )
                     yield _sse(
                         "ambassador_tool_result",
-                        {"message_id": qa_id, "tool": tc.name, "ok": True},
+                        {"message_id": item_id, "tool": tc.name, "ok": True},
                     )
-            else:
-                # Round cap reached with tools still pending — force a final answer.
-                final = await provider.complete(
-                    messages, model_id, temperature=temperature, max_tokens=max_tokens, tool_choice="none"
-                )
-                answer = (final.content or "").strip()
-
-            answer = answer or "(The ambassador had no answer.)"
-            store.set_qa_answer(conversation_id, qa_id, answer, status="done")
+            # Loop exhausted without a settle (defensive — the last round forces tools off).
+            on_done(empty_text)
             settled = True
-            yield _sse("ambassador_chunk", {"message_id": qa_id, "text": answer})
-            yield _sse("ambassador_done", {"message_id": qa_id, "status": "done", "summary": answer})
+            yield _sse(
+                "ambassador_done", {"message_id": item_id, "status": "done", "summary": empty_text}
+            )
         except GeneratorExit:
-            # Cancelled mid-loop — settle without yielding (can't yield while closing).
-            store.set_qa_status(conversation_id, qa_id, "cancelled", run_id=run_id)
+            on_cancel()
             settled = True
             raise
         except Exception as e:  # noqa: BLE001 — degrade to a grounded one-shot answer
-            logger.warning(f"Ambassador tool loop failed for {qa_id}: {e}")
+            logger.warning(
+                f"Ambassador {log_label} agentic loop failed for {item_id}: {e}; degrading."
+            )
             try:
-                fb = await provider.complete(
-                    _seed_messages(self._build_qa_persona(profile, agent_name)),
-                    model_id,
+                async for ev in self._stream_and_settle(
+                    item_id=item_id,
+                    provider=provider,
+                    model_id=model_id,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                )
-                answer = (fb.content or "").strip() or "(The ambassador had no answer.)"
-                store.set_qa_answer(conversation_id, qa_id, answer, status="done")
+                    messages=fallback_messages,
+                    on_chunk=on_chunk,
+                    on_done=on_done,
+                    on_cancel=on_cancel,
+                    on_error=on_error,
+                    empty_text=empty_text,
+                    log_label=f"{log_label} (fallback)",
+                ):
+                    yield ev
                 settled = True
-                yield _sse("ambassador_chunk", {"message_id": qa_id, "text": answer})
-                yield _sse("ambassador_done", {"message_id": qa_id, "status": "done", "summary": answer})
-            except Exception as e2:  # noqa: BLE001 — give up cleanly, never raise
-                logger.warning(f"Ambassador tool-loop fallback failed for {qa_id}: {e2}")
-                store.set_qa_status(conversation_id, qa_id, "error", run_id=run_id, error=str(e2)[:500])
+            except GeneratorExit:
+                on_cancel()
                 settled = True
-                yield _sse("ambassador_error", {"message_id": qa_id, "error": str(e2)[:500]})
+                raise
         finally:
             if not settled:
-                store.set_qa_status(conversation_id, qa_id, "cancelled", run_id=run_id)
+                on_cancel()
 
     async def draft_relay_message(
         self,
@@ -915,14 +943,9 @@ class AmbassadorService:
         if not cfg["enabled"]:
             return intent
 
-        profile = self._resolve_profile(cfg["profile_id"])
-        profile_model = getattr(profile, "default_model", None) if profile else None
-        model = cfg["model"] or profile_model or _DEFAULT_MODEL
-        temperature = getattr(profile, "temperature", 0.3) if profile else 0.3
-
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(
-                model, preferred_fallback=_DEFAULT_MODEL
+            profile, provider, model_id, temperature = self._resolve_answerer(
+                cfg, default_temperature=0.3
             )
         except Exception as e:  # noqa: BLE001 — degrade to the raw intent
             logger.warning(f"Ambassador draft provider unavailable: {e}")
@@ -1015,6 +1038,57 @@ class AmbassadorService:
             return "answer", text or raw
         return action, text
 
+    async def _answer_to_text(
+        self,
+        *,
+        conversation_id: str,
+        qa_id: str,
+        question: str,
+        agent_name: str,
+        artifacts: Optional[dict],
+        profile,
+        provider,
+        model_id: str,
+        temperature: float,
+        cfg: dict[str, Any],
+    ) -> str:
+        """Run the agentic answer core to completion (persisting to the ``qa:``
+        sidecar) and return the final spoken text. The voice path uses this so a
+        *spoken* question gets the same tools + continuity as a typed one, while
+        keeping its synchronous ``{action,text}`` contract. Never raises."""
+        captured = {"text": ""}
+
+        def _done(summary: str) -> None:
+            captured["text"] = summary
+            store.set_qa_answer(conversation_id, qa_id, summary, status="done")
+
+        agen = self._agentic_answer(
+            item_id=qa_id,
+            provider=provider,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=self._max_tokens(profile, cfg),
+            conversation_id=conversation_id,
+            agent_name=agent_name,
+            messages=self._seed_answer_messages(
+                conversation_id=conversation_id, question=question, exclude_id=qa_id,
+                agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=True,
+            ),
+            fallback_messages=self._seed_answer_messages(
+                conversation_id=conversation_id, question=question, exclude_id=qa_id,
+                agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=False,
+            ),
+            on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
+            on_done=_done,
+            on_cancel=lambda: store.set_qa_status(conversation_id, qa_id, "cancelled"),
+            on_error=lambda e: store.set_qa_status(conversation_id, qa_id, "error", error=e),
+            empty_text="(The ambassador had no answer.)",
+            log_label="voice Q&A",
+        )
+        async for _ev in agen:  # consume the SSE (no client tail on the voice path)
+            pass
+        return captured["text"]
+
     async def route_voice_command(
         self,
         conversation_id: str,
@@ -1023,12 +1097,13 @@ class AmbassadorService:
         agent_name: str = "",
         artifacts: Optional[dict] = None,
     ) -> dict:
-        """Interpret a spoken voice command: the ambassador decides whether to
-        **answer** it (spoken Q&A, persisted to the `qa:` sidecar so the Text tab
-        shows it) or draft a **relay** for the user to send to the agent. Returns
-        ``{action, text, qa_id?}``. Never raises — degrades to a spoken notice so
-        the call never breaks. (A future ``target`` selects a specific agent for
-        cross-agent delegation; v1 always targets the active conversation.)"""
+        """Interpret a spoken voice command: the ambassador first decides whether to
+        **answer** it or draft a **relay** for the user to send. An *answer* is then
+        produced by the full agentic core (read-only tools + continuity), persisted to
+        the ``qa:`` sidecar so the Text tab replays it; a *relay* returns the drafted
+        message for the user to confirm. Returns ``{action, text, qa_id?}``. Never
+        raises — degrades to a spoken notice so the call never breaks. (A future
+        ``target`` selects a specific agent for cross-agent delegation.)"""
         transcript = (transcript or "").strip()
         if not transcript:
             return {"action": "answer", "text": "", "qa_id": None}
@@ -1037,15 +1112,8 @@ class AmbassadorService:
         if not cfg["enabled"]:
             return {"action": "answer", "text": "The ambassador is disabled in settings.", "qa_id": None}
 
-        profile = self._resolve_profile(cfg["profile_id"])
-        profile_model = getattr(profile, "default_model", None) if profile else None
-        model = cfg["model"] or profile_model or _DEFAULT_MODEL
-        temperature = getattr(profile, "temperature", 0.2) if profile else 0.2
-
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(
-                model, preferred_fallback=_DEFAULT_MODEL
-            )
+            profile, provider, model_id, temperature = self._resolve_answerer(cfg)
         except Exception as e:  # noqa: BLE001 — degrade gracefully
             logger.warning(f"Ambassador voice-command provider unavailable: {e}")
             return {
@@ -1054,10 +1122,11 @@ class AmbassadorService:
                 "qa_id": None,
             }
 
+        # 1) Classify the intent (and, for a relay, draft the message) — a cheap call.
         context = self._grounding_context(
             conversation_id, cfg["max_context_turns"] * 2, agent_name
         )
-        messages = [
+        classify_messages = [
             Message(
                 role=MessageRole.SYSTEM,
                 content=self._build_voice_command_persona(profile, agent_name),
@@ -1072,10 +1141,9 @@ class AmbassadorService:
                 ),
             ),
         ]
-
         try:
             result = await provider.complete(
-                messages,
+                classify_messages,
                 model_id,
                 temperature=temperature,
                 max_tokens=self._max_tokens(profile, cfg),
@@ -1085,18 +1153,33 @@ class AmbassadorService:
             logger.warning(f"Ambassador voice-command failed: {e}")
             return {"action": "answer", "text": "Sorry, I couldn't process that.", "qa_id": None}
 
-        qa_id: Optional[str] = None
-        if action == "answer" and text:
-            # Persist spoken answers as Q&A so the Text tab replays them.
-            qa_id = f"vc_{uuid.uuid4().hex[:16]}"
-            try:
-                store.create_qa(conversation_id, qa_id, transcript)
-                store.set_qa_answer(conversation_id, qa_id, text, status="done")
-            except Exception as e:  # noqa: BLE001 — persistence is best-effort
-                logger.debug(f"voice-command qa persist failed: {e}")
-                qa_id = None
+        if action == "relay":
+            return {"action": "relay", "text": text, "qa_id": None}
 
-        return {"action": action, "text": text, "qa_id": qa_id}
+        # 2) Answer through the agentic core (tools + continuity), persisted as Q&A so
+        # the Text tab replays it. (The classifier's own answer text is discarded — the
+        # tool-grounded answer is the real one.)
+        qa_id = f"vc_{uuid.uuid4().hex[:16]}"
+        try:
+            store.create_qa(conversation_id, qa_id, transcript)
+            answer = await self._answer_to_text(
+                conversation_id=conversation_id, qa_id=qa_id, question=transcript,
+                agent_name=agent_name, artifacts=artifacts, profile=profile,
+                provider=provider, model_id=model_id, temperature=temperature, cfg=cfg,
+            )
+        except Exception as e:  # noqa: BLE001 — never break the call
+            logger.warning(f"Ambassador voice answer failed: {e}")
+            answer = ""
+        if not answer.strip():
+            # Nothing came back from the core — speak the classifier's text so the
+            # person always hears something, and settle the record.
+            answer = text or "Sorry, I didn't catch anything to answer."
+            try:
+                store.set_qa_answer(conversation_id, qa_id, answer, status="done")
+            except Exception:  # noqa: BLE001 — persistence is best-effort
+                pass
+
+        return {"action": "answer", "text": answer, "qa_id": qa_id}
 
     async def synthesize(
         self,

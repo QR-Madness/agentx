@@ -6428,7 +6428,8 @@ class AmbassadorServiceTest(TestCase):
             return [e async for e in agen]
 
         with patch.object(svc, "_resolve_profile", return_value=None), \
-                patch.object(svc, "_config", return_value=self._NO_TOOLS_CFG), \
+                patch.object(svc, "_grounding_context", return_value=""), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
                 patch.object(a, "_redis", return_value=fake):
             events = asyncio.run(
                 _collect(svc.answer_question("conv", "qa1", "what sources did it use?"))
@@ -6490,12 +6491,12 @@ class AmbassadorServiceTest(TestCase):
         )
         self.assertIn("what did it search for?", prompt)
         self.assertIn("county index", prompt)
-        self.assertIn("grounded only in", prompt)
+        self.assertIn("grounded in the conversation", prompt)
 
     def test_qa_prompt_handles_empty_conversation(self):
-        # 16.7 Slice 0: an empty/unstarted conversation must not silently produce a
-        # context-free prompt the model could hallucinate against — it's told plainly
-        # the conversation is empty so the grounded persona says "nothing here yet".
+        # 16.7: with no pre-loaded snippet, the prompt tells the model to read with its
+        # tools (tool-first) and to say so plainly if the conversation is empty — never
+        # a context-free prompt it could hallucinate against.
         from agentx_ai.agent.ambassador import AmbassadorService
 
         svc = AmbassadorService()
@@ -6504,7 +6505,7 @@ class AmbassadorServiceTest(TestCase):
             context="",
             agent_name="Atlas",
         )
-        self.assertIn("empty so far", prompt)
+        self.assertIn("read the conversation with your tools", prompt)
         self.assertIn("never invent", prompt)
 
     def test_answer_question_degrades_on_empty_conversation(self):
@@ -6530,8 +6531,8 @@ class AmbassadorServiceTest(TestCase):
             return [e async for e in agen]
 
         with patch.object(svc, "_resolve_profile", return_value=None), \
-                patch.object(svc, "_config", return_value=self._NO_TOOLS_CFG), \
                 patch.object(svc, "_grounding_context", return_value=""), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
                 patch.object(a, "_redis", return_value=fake):
             events = asyncio.run(
                 _collect(svc.answer_question("empty-conv", "qa1", "what's happened?"))
@@ -6600,36 +6601,35 @@ class AmbassadorServiceTest(TestCase):
             t.execute_tool("read_conversation", {}, active_conversation_id="conv"),
         )
 
-    _TOOLS_CFG = {
-        "enabled": True, "profile_id": None, "model": None, "max_context_turns": 8,
-        "max_tokens": None, "tools_enabled": True, "max_tool_rounds": 4,
-    }
-    # The one-shot streaming path (kill-switch off) — still the internal fallback,
-    # so it stays covered even though the tool loop is the default.
-    _NO_TOOLS_CFG = {**_TOOLS_CFG, "tools_enabled": False}
-
-    def test_answer_with_tools_executes_then_answers(self):
-        from agentx_ai.agent.ambassador import AmbassadorService
-        from agentx_ai.agent import ambassador_storage as a
-        from agentx_ai.providers.base import CompletionResult, ToolCall
-
-        rounds: list[dict] = []
-
-        async def _complete(messages, model_id, **kwargs):
-            rounds.append(kwargs)
-            if len(rounds) == 1:  # first round: ask to summarize
-                return CompletionResult(
-                    content="", finish_reason="tool_calls", model="m",
-                    tool_calls=[ToolCall(id="t1", name="summarize_conversation", arguments={})],
-                )
-            return CompletionResult(
-                content="It searched the county index for you.", finish_reason="stop", model="m"
-            )
-
+    @staticmethod
+    def _streaming_provider(stream_fn):
+        """A provider whose ``stream`` is the given async-generator fn + a registry."""
         provider = MagicMock()
-        provider.complete = _complete
+        provider.stream = stream_fn
         reg = MagicMock()
         reg.resolve_with_fallback.return_value = (provider, "m", None)
+        return provider, reg
+
+    def test_agentic_answer_executes_tool_then_answers(self):
+        # The unified core: round 1 streams a tool call (summarize), round 2 streams the
+        # answer. Tool SSE fires, the answer settles `done`, and a tool round happened.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        calls = {"n": 0}
+
+        async def _stream(messages, model_id, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:  # first round → ask to summarize
+                yield StreamChunk(
+                    content="", finish_reason="tool_calls",
+                    tool_calls=[ToolCall(id="t1", name="summarize_conversation", arguments={})],
+                )
+            else:  # second round → the answer
+                yield StreamChunk(content="It searched the county index for you.", finish_reason="stop")
+
+        provider, reg = self._streaming_provider(_stream)
         svc = AmbassadorService()
         svc._registry = reg
         fake = _FakeKVRedis()
@@ -6637,8 +6637,7 @@ class AmbassadorServiceTest(TestCase):
         async def _collect(agen):
             return [e async for e in agen]
 
-        with patch.object(svc, "_config", return_value=self._TOOLS_CFG), \
-                patch.object(svc, "_resolve_profile", return_value=None), \
+        with patch.object(svc, "_resolve_profile", return_value=None), \
                 patch.object(a, "_redis", return_value=fake), \
                 patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
                 patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
@@ -6652,24 +6651,21 @@ class AmbassadorServiceTest(TestCase):
         self.assertNotIn("Traceback", joined)
         self.assertEqual(record["status"], "done")
         self.assertIn("county index", record["answer"])
-        self.assertIn("tools", rounds[0])  # the belt was advertised
+        self.assertEqual(calls["n"], 2)  # one tool round + one answer round
 
-    def test_answer_with_tools_falls_back_when_provider_rejects_tools(self):
-        # A provider that can't take a `tools` arg must not break the turn — the loop
-        # degrades to a grounded one-shot answer and settles `done`.
+    def test_agentic_answer_falls_back_when_streaming_tools_rejected(self):
+        # A provider that can't stream with tools must not break the turn — the core
+        # degrades to a grounded one-shot (no tools) and settles `done`.
         from agentx_ai.agent.ambassador import AmbassadorService
         from agentx_ai.agent import ambassador_storage as a
-        from agentx_ai.providers.base import CompletionResult
+        from agentx_ai.providers.base import StreamChunk
 
-        async def _complete(messages, model_id, **kwargs):
-            if "tools" in kwargs:
-                raise RuntimeError("this provider does not support tools")
-            return CompletionResult(content="Here's the gist.", finish_reason="stop", model="m")
+        async def _stream(messages, model_id, **kwargs):
+            if kwargs.get("tools"):
+                raise RuntimeError("this provider can't stream tools")
+            yield StreamChunk(content="Here's the gist.", finish_reason="stop")
 
-        provider = MagicMock()
-        provider.complete = _complete
-        reg = MagicMock()
-        reg.resolve_with_fallback.return_value = (provider, "m", None)
+        provider, reg = self._streaming_provider(_stream)
         svc = AmbassadorService()
         svc._registry = reg
         fake = _FakeKVRedis()
@@ -6677,8 +6673,7 @@ class AmbassadorServiceTest(TestCase):
         async def _collect(agen):
             return [e async for e in agen]
 
-        with patch.object(svc, "_config", return_value=self._TOOLS_CFG), \
-                patch.object(svc, "_resolve_profile", return_value=None), \
+        with patch.object(svc, "_resolve_profile", return_value=None), \
                 patch.object(a, "_redis", return_value=fake), \
                 patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
                 patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
@@ -7551,53 +7546,80 @@ class AmbassadorTranscriptionTest(TestCase):
 class AmbassadorVoiceCommandTest(TestCase):
     """AmbassadorService.route_voice_command — intent routing + qa persistence."""
 
-    def _service_with_reply(self, reply: str):
-        """An AmbassadorService whose provider returns `reply` and whose profile/
-        grounding/registry are stubbed."""
+    def _service(self, classify_reply: str, *, answer_text: str = ""):
+        """An AmbassadorService whose ``complete`` classifies the intent (returns
+        ``classify_reply``) and whose ``stream`` is the agentic answer core (yields
+        ``answer_text``). Registry stubbed."""
         from types import SimpleNamespace
 
         from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.providers.base import StreamChunk
 
         svc = AmbassadorService()
         provider = MagicMock()
-        provider.complete = AsyncMock(return_value=SimpleNamespace(content=reply))
+        provider.complete = AsyncMock(return_value=SimpleNamespace(content=classify_reply))
+
+        async def _stream(messages, model_id, **kwargs):
+            yield StreamChunk(content=answer_text, finish_reason="stop")
+
+        provider.stream = _stream
         svc._registry = MagicMock()
         svc._registry.resolve_with_fallback.return_value = (provider, "anthropic:model", None)
         return svc
 
-    def test_answer_routes_and_persists_qa(self):
-        svc = self._service_with_reply('{"action": "answer", "text": "it searched the county index."}')
+    def test_answer_routes_through_core_and_persists_qa(self):
+        # classify → answer; the spoken answer is produced by the agentic core (stream),
+        # NOT the classifier's text, and is persisted to qa: for the Text tab.
+        from agentx_ai.agent import ambassador_storage as a
+
+        svc = self._service(
+            '{"action": "answer", "text": "discarded classifier text"}',
+            answer_text="it searched the county index.",
+        )
+        fake = _FakeKVRedis()
         with patch.object(svc, "_resolve_profile", return_value=None), \
              patch.object(svc, "_grounding_context", return_value=""), \
-             patch("agentx_ai.agent.ambassador.store.create_qa") as create_qa, \
-             patch("agentx_ai.agent.ambassador.store.set_qa_answer") as set_answer:
+             patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+             patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]), \
+             patch.object(a, "_redis", return_value=fake):
             result = asyncio.run(svc.route_voice_command("conv1", "what did it find?"))
+            rec = a.get_qa("conv1", result["qa_id"])
         self.assertEqual(result["action"], "answer")
         self.assertEqual(result["text"], "it searched the county index.")
         self.assertIsNotNone(result["qa_id"])
-        create_qa.assert_called_once()
-        set_answer.assert_called_once()
+        self.assertEqual(rec["answer"], "it searched the county index.")
+        self.assertEqual(rec["question"], "what did it find?")
 
     def test_relay_routes_without_persisting(self):
-        svc = self._service_with_reply('{"action": "relay", "text": "Use Postgres for the vector store."}')
+        from agentx_ai.agent import ambassador_storage as a
+
+        svc = self._service('{"action": "relay", "text": "Use Postgres for the vector store."}')
+        fake = _FakeKVRedis()
         with patch.object(svc, "_resolve_profile", return_value=None), \
              patch.object(svc, "_grounding_context", return_value=""), \
-             patch("agentx_ai.agent.ambassador.store.create_qa") as create_qa:
+             patch.object(a, "_redis", return_value=fake):
             result = asyncio.run(svc.route_voice_command("conv1", "tell it to use postgres"))
         self.assertEqual(result["action"], "relay")
         self.assertEqual(result["text"], "Use Postgres for the vector store.")
         self.assertIsNone(result["qa_id"])
-        create_qa.assert_not_called()
 
     def test_malformed_json_falls_back_to_answer(self):
-        svc = self._service_with_reply("I think they want to know about the search.")
+        # Non-JSON classify → answer action; the core still produces the spoken answer.
+        from agentx_ai.agent import ambassador_storage as a
+
+        svc = self._service(
+            "I think they want to know about the search.",
+            answer_text="They searched the registry for you.",
+        )
+        fake = _FakeKVRedis()
         with patch.object(svc, "_resolve_profile", return_value=None), \
              patch.object(svc, "_grounding_context", return_value=""), \
-             patch("agentx_ai.agent.ambassador.store.create_qa"), \
-             patch("agentx_ai.agent.ambassador.store.set_qa_answer"):
+             patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+             patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]), \
+             patch.object(a, "_redis", return_value=fake):
             result = asyncio.run(svc.route_voice_command("conv1", "what's up"))
         self.assertEqual(result["action"], "answer")
-        self.assertEqual(result["text"], "I think they want to know about the search.")
+        self.assertEqual(result["text"], "They searched the registry for you.")
 
     def test_empty_transcript_short_circuits(self):
         from agentx_ai.agent.ambassador import AmbassadorService
