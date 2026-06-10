@@ -86,7 +86,7 @@ export function ChatPanel() {
   const { getWorkflowById } = useAlloyWorkflow();
   const { openModal } = useModal();
   const isMobile = useIsMobile();
-  const { briefingForMessage } = useAmbassador();
+  const { briefingForMessage, ask: askAmbassador } = useAmbassador();
   const openAmbassador = useOpenAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
@@ -109,15 +109,21 @@ export function ChatPanel() {
     });
   }, [traceRun, openModal]);
 
-  // Open the Ambassador alongside the conversation. It runs in *parallel* and
-  // waits for you to ask — opening no longer auto-briefs the turn (you brief a
-  // specific turn or ask a question from inside the panel). Docks beside the chat
+  // CC the Ambassador on a turn — like forwarding it as an email *into* the Inquiry.
+  // The turn becomes a message in the ambassador's own thread (it never enters the
+  // chat) and it briefs that turn there. The ambassador runs in *parallel*; this is
+  // the per-turn path (the panel itself is conversation-level). Docks beside the chat
   // on a wide screen (both panels live); falls back to a sheet when too narrow.
   const handleAmbassador = useCallback(
-    (_message: AssistantMessage) => {
+    (message: AssistantMessage) => {
+      const sessionId = activeTab?.sessionId;
+      const turn = message.content.trim();
+      if (sessionId && turn) {
+        askAmbassador(sessionId, `Here's a turn from this conversation — brief me on it:\n\n"${turn}"`);
+      }
       openAmbassador();
     },
-    [openAmbassador],
+    [activeTab?.sessionId, askAmbassador, openAmbassador],
   );
 
   const ambassadorStatusFor = useCallback(

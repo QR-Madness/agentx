@@ -449,8 +449,9 @@ POST /api/agent/ambassador/voice-command
 POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
-GET   /api/agent/ambassador/thread/{thread_id}
-PATCH /api/agent/ambassador/thread/{thread_id}
+GET    /api/agent/ambassador/thread/{thread_id}
+PATCH  /api/agent/ambassador/thread/{thread_id}
+DELETE /api/agent/ambassador/thread/{thread_id}
 GET  /api/agent/ambassador/{conversation_id}
 ```
 
@@ -465,6 +466,7 @@ The **Ambassador** (Phase 16.6) is a dedicated agent that runs *parallel* to a c
 - **`GET /stream?run_id=`** — tail a briefing **or Q&A** run's namespaced SSE: `ambassador_start`, `ambassador_chunk` (one per streamed delta), `ambassador_done` (status `done` | `empty_provider` | `cancelled`), `ambassador_error`; `run_missing` if the buffer expired. Cancel via `POST /api/agent/chat/runs/{run_id}/cancel` (settles the sidecar to `cancelled`, preserving partial text). A missing/unreachable provider degrades gracefully to an `empty_provider` notice rather than failing.
 - **`GET /thread/{thread_id}`** — replay the unified ambassador thread (an **"Inquiry"**): `{thread_id, title, entries: [{id, kind: "briefing"|"qa", question, content, status, toolCalls, message_id?, run_id?, created_at, updated_at}]}`. Briefings and Q&A are one ordered conversation (oldest-first), each entry carrying its **persisted tool-call chips** (they now survive a reload), plus the thread's own `title`. `thread_id` defaults to the conversation id. The client renders this as one stream and lets you rename the Inquiry.
 - **`PATCH /thread/{thread_id}`** — rename the Inquiry, body `{title}` → `{thread_id, title}`. An empty title clears it (the client falls back to the chat conversation's title).
+- **`DELETE /thread/{thread_id}`** — clear the Inquiry (its briefings, answers, and title) → `{thread_id, cleared: true}`.
 - **`GET /{conversation_id}`** — **back-compat shim**: replay as the old `{conversation_id, briefings: [...], qa: [...]}` shape (now projected from the unified thread). New clients use `/thread/{thread_id}`.
 
 ### Agent Status

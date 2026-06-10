@@ -1281,6 +1281,30 @@ paths:
                     type: string
                   title:
                     type: string
+    delete:
+      tags: [Agent]
+      operationId: ambassadorThreadClear
+      summary: Clear an Ambassador thread ("Inquiry")
+      description: >-
+        Wipes the Inquiry — its briefings, answers, and title — from the sidecar.
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread_id:
+                    type: string
+                  cleared:
+                    type: boolean
 
   /agent/ambassador/{conversation_id}:
     get:

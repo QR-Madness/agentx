@@ -22,6 +22,8 @@ interface Props {
   title?: string;
   /** Rename the Inquiry (empty clears → falls back to the chat title). */
   onRename?: (title: string) => void;
+  /** `inline` = borderless ghost trigger (sits in the compact header bar). */
+  variant?: 'bordered' | 'inline';
 }
 
 export function AmbassadorConversationSwitcher({
@@ -31,6 +33,7 @@ export function AmbassadorConversationSwitcher({
   onSelect,
   title,
   onRename,
+  variant = 'bordered',
 }: Props) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -91,18 +94,25 @@ export function AmbassadorConversationSwitcher({
     );
   }
 
+  const triggerClass =
+    variant === 'inline'
+      ? 'inline-flex max-w-[200px] items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover data-[on=true]:bg-surface-hover'
+      : 'inline-flex max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:text-fg data-[on=true]:border-line-strong';
+
   return (
     <div ref={ref} className="relative inline-flex items-center gap-1">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         data-on={open || undefined}
-        className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:text-fg data-[on=true]:border-line-strong"
+        className={triggerClass}
         title="Switch which conversation the ambassador is on"
       >
-        <MessagesSquare size={12} className="shrink-0 text-fg-muted" />
+        {variant === 'bordered' && (
+          <MessagesSquare size={12} className="shrink-0 text-fg-muted" />
+        )}
         <span className="truncate">{label}</span>
-        <ChevronDown size={13} className="shrink-0" />
+        <ChevronDown size={13} className="shrink-0 opacity-70" />
       </button>
       {onRename && (
         <button

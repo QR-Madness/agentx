@@ -50,6 +50,8 @@ interface AmbassadorContextValue {
   titleFor: (conversationId: string | null | undefined) => string;
   /** Rename the Inquiry (persists to the sidecar; empty clears it). */
   renameThread: (conversationId: string, title: string) => void;
+  /** Clear the Inquiry — wipes its briefings + Q&A + title (local + sidecar). */
+  clearThread: (conversationId: string) => void;
   /** Ask the ambassador a free-form question about the conversation. */
   ask: (conversationId: string, question: string, opts?: AskOptions) => void;
   /** Cancel an in-flight Q&A answer. */
@@ -448,14 +450,29 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     void api.renameAmbassadorThread(conversationId, t).catch(() => {});
   }, []);
 
+  const clearThread = useCallback((conversationId: string) => {
+    if (!conversationId) return;
+    // Abort any in-flight runs for this conversation, then wipe local + sidecar state.
+    for (const key of Object.keys(controllers.current)) {
+      if (key.startsWith(`${conversationId}::`)) {
+        controllers.current[key]?.abort();
+        delete controllers.current[key];
+      }
+    }
+    setState((prev) => ({ ...prev, [conversationId]: {} }));
+    setQaState((prev) => ({ ...prev, [conversationId]: {} }));
+    setTitles((prev) => ({ ...prev, [conversationId]: '' }));
+    void api.clearAmbassadorThread(conversationId).catch(() => {});
+  }, []);
+
   const value = useMemo(
     () => ({
       briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
-      threadFor, titleFor, renameThread, ask, cancelQa, refresh,
+      threadFor, titleFor, renameThread, clearThread, ask, cancelQa, refresh,
     }),
     [
       briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
-      threadFor, titleFor, renameThread, ask, cancelQa, refresh,
+      threadFor, titleFor, renameThread, clearThread, ask, cancelQa, refresh,
     ],
   );
 

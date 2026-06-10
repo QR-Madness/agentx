@@ -323,6 +323,13 @@ export const ambassadorApi = {
     return { title: res.title ?? '' };
   },
 
+  /** Clear an ambassador thread ("Inquiry") — deletes its entries + title from the sidecar. */
+  async clearAmbassadorThread(threadId: string): Promise<void> {
+    await apiRequest(`/api/agent/ambassador/thread/${encodeURIComponent(threadId)}`, {
+      method: 'DELETE',
+    });
+  },
+
   /** Ask the ambassador a free-form question about a conversation. */
   async askAmbassador(req: AskAmbassadorRequest): Promise<{ run_id: string; qa_id: string }> {
     return apiRequest('/api/agent/ambassador/ask', {

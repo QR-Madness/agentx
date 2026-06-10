@@ -2269,7 +2269,11 @@ def ambassador_thread(request, thread_id):
         meta = ambassador_storage.set_thread_title(thread_id, body.get("title", ""))
         return JsonResponse({"thread_id": thread_id, "title": meta.get("title", "")})
 
-    return JsonResponse({"error": "GET or PATCH required"}, status=405)
+    if request.method == "DELETE":
+        ambassador_storage.clear(thread_id)
+        return JsonResponse({"thread_id": thread_id, "cleared": True})
+
+    return JsonResponse({"error": "GET, PATCH or DELETE required"}, status=405)
 
 
 @csrf_exempt

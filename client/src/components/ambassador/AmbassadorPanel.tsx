@@ -28,8 +28,6 @@ import {
   AlertTriangle,
   X,
   Sparkles,
-  RotateCcw,
-  Ban,
   Send,
   Wand2,
   CornerUpRight,
@@ -38,22 +36,37 @@ import {
   AudioLines,
   MessageSquare,
   Check,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Copy,
+  ArrowDown,
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
-import { isAssistantMessage, type AssistantMessage } from '../../lib/messages';
-import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { getAvatarIcon } from '../../lib/avatars';
 import { toolChipLabel } from '../../lib/ambassadorTools';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
+import { useStickyScroll } from '../../hooks/useStickyScroll';
 import { VoiceSurface } from './VoiceSurface';
 import { AmbassadorConversationSwitcher, type SwitcherItem } from './AmbassadorConversationSwitcher';
-import { Button } from '../ui';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui';
+import { useConfirm } from '../ui/ConfirmDialog';
 import { api } from '../../lib/api';
 import type { AmbassadorBriefing, AmbassadorQA, AmbassadorToolCall } from '../../lib/api';
 
 type PanelMode = 'ask' | 'relay';
+
+/** Creative, conversation-scoped openers for a fresh Inquiry (fire as an ask). */
+const STARTERS = ['Catch me up', "What's been decided?", "What's unresolved?"] as const;
 
 /** Per-item playback controls passed down from the panel's single `useSpeech`. */
 interface SpeechControls {
@@ -98,9 +111,48 @@ function SpeakButton({
   );
 }
 
-function snippet(text: string, max = 130): string {
-  const t = text.replace(/\s+/g, ' ').trim();
-  return t.length > max ? `${t.slice(0, max)}…` : t;
+/** Copy an answer/briefing to the clipboard, with a brief check confirmation. */
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard blocked — no-op */
+    }
+  };
+  return (
+    <button
+      type="button"
+      aria-label={copied ? 'Copied' : 'Copy'}
+      title={copied ? 'Copied' : 'Copy'}
+      onClick={copy}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent ${className}`}
+    >
+      {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+/** Compact relative timestamp ("now", "5m", "2h", "3d") from an ISO string. */
+function relativeTime(iso?: string): string {
+  if (!iso) return '';
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return 'now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 /** A streaming text cursor in the ambassador's accent. */
@@ -147,48 +199,6 @@ function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
   );
 }
 
-/** A section divider: uppercase label + count + hairline rule. */
-function SectionLabel({ children, count }: { children: ReactNode; count?: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
-        {children}
-      </span>
-      {typeof count === 'number' && <span className="text-[11px] text-fg-muted">{count}</span>}
-      <span className="h-px flex-1 bg-line" />
-    </div>
-  );
-}
-
-/** A small status chip mirroring the briefing's lifecycle. */
-function StatusChip({ status }: { status: AmbassadorBriefing['status'] | undefined }) {
-  if (!status) return null;
-  const base =
-    'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide';
-  switch (status) {
-    case 'streaming':
-      return (
-        <span className={`${base} bg-accent/15 text-accent`}>
-          <Loader2 size={10} className="animate-spin" /> briefing
-        </span>
-      );
-    case 'done':
-      return <span className={`${base} bg-surface-sunken text-success`}>briefed</span>;
-    case 'cancelled':
-      return (
-        <span className={`${base} bg-surface-sunken text-fg-muted`}>
-          <Ban size={10} /> cancelled
-        </span>
-      );
-    case 'error':
-      return <span className={`${base} bg-surface-sunken text-error`}>error</span>;
-    case 'empty_provider':
-      return <span className={`${base} bg-surface-sunken text-warning`}>no model</span>;
-    default:
-      return null;
-  }
-}
-
 function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }) {
   if (!briefing) return null;
   if (briefing.status === 'error') {
@@ -228,6 +238,7 @@ function QaItem({
 }) {
   const streaming = entry.status === 'streaming';
   const speakable = entry.status === 'done' && !!entry.answer.trim();
+  const copyable = !streaming && !!entry.answer.trim();
   return (
     <li className="flex flex-col gap-2">
       <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-sm leading-snug text-fg-inverse shadow-sm">
@@ -235,7 +246,7 @@ function QaItem({
       </div>
       <div className="flex max-w-[94%] items-start gap-2 self-start">
         <AmbassadorMark size={22} />
-        <div className="flex min-w-0 flex-col gap-1.5 pt-0.5 text-sm leading-relaxed text-fg">
+        <div className="flex min-w-0 flex-col gap-1 pt-0.5 text-sm leading-relaxed text-fg">
           <ToolChips calls={entry.toolCalls} />
           <div>
           {entry.status === 'error' ? (
@@ -266,15 +277,16 @@ function QaItem({
               <X size={12} /> cancel
             </button>
           )}
-          {speakable && (
-            <SpeakButton
-              id={`qa:${entry.qa_id}`}
-              text={entry.answer}
-              speech={speech}
-              className="ml-1 align-middle"
-            />
-          )}
           </div>
+          {!streaming && (
+            <div className="flex items-center gap-0.5 text-fg-muted">
+              {entry.created_at && (
+                <span className="mr-0.5 text-[10px] tabular-nums">{relativeTime(entry.created_at)}</span>
+              )}
+              {speakable && <SpeakButton id={`qa:${entry.qa_id}`} text={entry.answer} speech={speech} />}
+              {copyable && <CopyButton text={entry.answer} />}
+            </div>
+          )}
         </div>
       </div>
     </li>
@@ -295,28 +307,34 @@ function BriefingItem({
 }) {
   const streaming = briefing.status === 'streaming';
   const speakable = briefing.status === 'done' && !!briefing.summary.trim();
+  const copyable = !streaming && !!briefing.summary.trim();
   return (
     <li className="flex max-w-[94%] items-start gap-2 self-start">
       <AmbassadorMark size={22} />
-      <div className="flex min-w-0 flex-col gap-1.5 pt-0.5">
+      <div className="flex min-w-0 flex-col gap-1 pt-0.5">
         <ToolChips calls={briefing.toolCalls} />
         <BriefingBody briefing={briefing} />
-        {(streaming || speakable) && (
-          <div className="flex items-center gap-2">
-            {streaming && (
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors hover:text-error"
-                onClick={onCancel}
-                title="Cancel briefing"
-              >
-                <X size={12} /> cancel
-              </button>
-            )}
-            {speakable && (
-              <SpeakButton id={`brief:${briefing.message_id}`} text={briefing.summary} speech={speech} />
-            )}
-          </div>
+        {streaming ? (
+          <button
+            type="button"
+            className="inline-flex w-fit items-center gap-1 text-xs text-fg-muted transition-colors hover:text-error"
+            onClick={onCancel}
+            title="Cancel briefing"
+          >
+            <X size={12} /> cancel
+          </button>
+        ) : (
+          (briefing.created_at || speakable || copyable) && (
+            <div className="flex items-center gap-0.5 text-fg-muted">
+              {briefing.created_at && (
+                <span className="mr-0.5 text-[10px] tabular-nums">{relativeTime(briefing.created_at)}</span>
+              )}
+              {speakable && (
+                <SpeakButton id={`brief:${briefing.message_id}`} text={briefing.summary} speech={speech} />
+              )}
+              {copyable && <CopyButton text={briefing.summary} />}
+            </div>
+          )
         )}
       </div>
     </li>
@@ -326,9 +344,10 @@ function BriefingItem({
 export function AmbassadorPanel() {
   const { activeTab, tabs, relayToConversation } = useConversation();
   const {
-    briefingForMessage, briefingsFor, refresh, ccTurn, cancel, qaFor,
-    threadFor, titleFor, renameThread, ask, cancelQa,
+    briefingForMessage, briefingsFor, refresh, cancel, qaFor,
+    threadFor, titleFor, renameThread, clearThread, ask, cancelQa,
   } = useAmbassador();
+  const confirm = useConfirm();
   const { profiles, getAgentName } = useAgentProfile();
 
   // Conversations the ambassador can be pointed at — the open tabs that have a saved
@@ -360,6 +379,12 @@ export function AmbassadorPanel() {
   const [mode, setMode] = useState<PanelMode>('ask');
   const [refining, setRefining] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // Inline Inquiry rename (null = not renaming).
+  const [renamingTitle, setRenamingTitle] = useState<string | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (renamingTitle !== null) renameInputRef.current?.select();
+  }, [renamingTitle]);
 
   // The briefing ambassador — supplies the speech model/voice and the voice-mode
   // opt-in. profiles includes ambassador-kind entries (only chat routing filters).
@@ -396,9 +421,11 @@ export function AmbassadorPanel() {
     if (conversationId) void refresh(conversationId);
   }, [conversationId, refresh]);
 
-  // On focus switch: just stop any audio. (No seeding — loading is pure display.)
+  // On focus switch: stop audio, drop any half-typed rename, and re-pin to the latest.
   useEffect(() => {
     stopSpeech();
+    setRenamingTitle(null);
+    scrollToBottom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
@@ -411,42 +438,16 @@ export function AmbassadorPanel() {
     for (const q of qaFor(conversationId)) if (q.status === 'streaming') seen.add(`qa:${q.qa_id}`);
   }, [conversationId, briefingsFor, qaFor]);
 
-  // Per-turn briefing needs the conversation's in-memory transcript, which only the
-  // active tab has — so the turn list shows only when the focus is the active tab.
-  const messages = isFocusActive ? (activeTab?.messages ?? []) : [];
-  // Assistant turns (non-empty content), newest first, carrying their index.
-  const turns = useMemo(
-    () =>
-      (messages
-        .map((m, i) => ({ m, i }))
-        .filter((x) => isAssistantMessage(x.m) && x.m.content.trim().length > 0)
-        .reverse() as { m: AssistantMessage; i: number }[]),
-    [messages],
-  );
-
-  const brief = (m: AssistantMessage) => {
-    if (!conversationId) return;
-    const { userText, artifacts } = gatherTurnContext(messages, m.id);
-    const tabProfileName = activeTab?.profileId
-      ? profiles.find((p) => p.id === activeTab.profileId)?.name
-      : undefined;
-    const agentName = resolveTurnAgentName(m, {
-      nameByProfileId: (id) => profiles.find((p) => p.id === id)?.name,
-      fallback: tabProfileName ?? getAgentName(),
-    });
-    ccTurn(conversationId, m, { userText, artifacts, agentName });
-  };
-
-  const latest = turns[0];
-  const latestStreaming =
-    !!latest && briefingForMessage(conversationId, latest.m.id)?.status === 'streaming';
-
-  // The unified Inquiry — briefings + Q&A as one ordered conversation (oldest first;
-  // the newest sits next to the input). The per-turn trigger stays in the Turns strip;
-  // the briefing *result* shows here in the stream.
+  // The ambassador runs PARALLEL to your conversations — it isn't bound to one. The
+  // panel is its own space (the Inquiry). Turn-coupling lives in the chat's CC button;
+  // here you ask it, brief a whole conversation, or relay — it scopes via its own tools,
+  // so we never feed it per-turn artifacts.
   const thread = useMemo(() => threadFor(conversationId), [threadFor, conversationId]);
   // The Inquiry's own title, or the focused conversation's title as a fallback.
   const inquiryTitle = titleFor(conversationId);
+
+  // The Inquiry body follows new content while pinned to the bottom (jump pill otherwise).
+  const { ref: bodyRef, atBottom, scrollToBottom, onScroll } = useStickyScroll([thread]);
 
   const anyStreaming = useMemo(
     () =>
@@ -489,9 +490,6 @@ export function AmbassadorPanel() {
     [tabs, conversationId],
   );
 
-  const latestArtifacts = () =>
-    latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined;
-
   const runActive = !!focusTab?.activeRun?.runId;
 
   // The text currently being spoken (for the immersive surface caption).
@@ -517,11 +515,6 @@ export function AmbassadorPanel() {
     setTab('text');
   };
 
-  // Latest-turn substance (memoized) to ground voice commands.
-  const voiceArtifacts = useMemo(
-    () => (latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined),
-    [messages, latest],
-  );
   // Relay a confirmed voice draft into the FOCUSED conversation (a real user turn).
   // Only works when that conversation is open as a tab.
   const relayVoiceCommand = useCallback(
@@ -560,17 +553,22 @@ export function AmbassadorPanel() {
     window.setTimeout(() => setFlash((cur) => (cur === msg ? null : cur)), 2500);
   };
 
-  const submitAsk = () => {
+  const askAmbassador = (q: string) => {
     if (!conversationId) return;
-    const q = input.trim();
-    if (!q) return;
-    ask(conversationId, q, {
-      agentName: convAgentName,
-      artifacts: latestArtifacts(),
-      activeConversation,
-    });
+    const text = q.trim();
+    if (!text) return;
+    ask(conversationId, text, { agentName: convAgentName, activeConversation });
+  };
+
+  const submitAsk = () => {
+    if (!input.trim()) return;
+    askAmbassador(input);
     setInput('');
   };
+
+  // Brief the WHOLE conversation on demand — a one-tap question the ambassador answers
+  // with its conversation tools (no turn coupling; this is "brief me on this conversation").
+  const briefConversation = () => askAmbassador('Brief me on this conversation — what it is about and where it stands.');
 
   // Relay the message into the FOCUSED conversation (a real user turn, or a steer into
   // a running turn). The ambassador stays a non-participant — you're the author. Only
@@ -602,7 +600,6 @@ export function AmbassadorPanel() {
         conversation_id: conversationId,
         intent,
         agent_name: convAgentName,
-        artifacts: latestArtifacts(),
       });
       if (draft) setInput(draft);
     } catch {
@@ -621,81 +618,165 @@ export function AmbassadorPanel() {
     }
   };
 
+  // --- Inquiry actions (⋯ menu): rename + clear --------------------------------
+  const startRenameInquiry = () => setRenamingTitle(inquiryTitle || '');
+  const commitRenameInquiry = () => {
+    if (renamingTitle !== null && conversationId) renameThread(conversationId, renamingTitle);
+    setRenamingTitle(null);
+  };
+  const clearInquiry = async () => {
+    if (!conversationId) return;
+    const ok = await confirm({
+      title: 'Clear this Inquiry?',
+      body: 'Everything the ambassador has said here — briefings and answers — will be removed. This can’t be undone.',
+      confirmLabel: 'Clear',
+      danger: true,
+    });
+    if (ok) clearThread(conversationId);
+  };
+
   const footerHelp =
     flash ??
     (mode === 'relay'
       ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
       : 'Answered from the conversation only — never added to the transcript.');
 
+  // --- Header sub-elements (shared by the compact bar + the voice hero) --------
+
+  // The Inquiry title doubles as the conversation switcher; renaming swaps it for an input.
+  const titleControl = conversationId && (
+    renamingTitle !== null ? (
+      <input
+        ref={renameInputRef}
+        value={renamingTitle}
+        onChange={(e) => setRenamingTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitRenameInquiry();
+          else if (e.key === 'Escape') setRenamingTitle(null);
+        }}
+        onBlur={commitRenameInquiry}
+        placeholder={focusItem?.title || 'Name this Inquiry'}
+        aria-label="Rename this Inquiry"
+        className="min-w-0 max-w-[170px] rounded-md border border-line-strong bg-surface-raised px-1.5 py-0.5 text-sm text-fg outline-none"
+      />
+    ) : (
+      <AmbassadorConversationSwitcher
+        variant="inline"
+        items={conversationItems}
+        focusedId={conversationId}
+        activeId={activeConversationId}
+        onSelect={setFocusedConversationId}
+        title={inquiryTitle}
+      />
+    )
+  );
+
+  const modeToggle = voiceEnabled && conversationId && (
+    <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-surface-sunken p-0.5">
+      <button
+        type="button"
+        onClick={openVoiceTab}
+        data-on={tab === 'voice' || undefined}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
+        title="Immersive voice"
+        aria-label="Voice"
+      >
+        <AudioLines size={13} />
+      </button>
+      <button
+        type="button"
+        onClick={openTextTab}
+        data-on={tab === 'text' || undefined}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+        title="Text"
+        aria-label="Text"
+      >
+        <MessageSquare size={13} />
+      </button>
+    </div>
+  );
+
+  const overflowMenu = conversationId && (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title="Inquiry actions"
+          aria-label="Inquiry actions"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+        >
+          <MoreHorizontal size={16} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={briefConversation}>
+          <Sparkles size={14} /> Brief this conversation
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => window.setTimeout(startRenameInquiry, 0)}>
+          <Pencil size={14} /> Rename Inquiry
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => { void clearInquiry(); }}
+          className="text-error focus:text-error"
+        >
+          <Trash2 size={14} /> Clear Inquiry
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const contextLine: ReactNode = !conversationId
+    ? 'Your parallel operator — it watches your conversations and answers, without ever entering them.'
+    : isFocusActive
+      ? <>watching <span className="font-medium text-fg-secondary">{focusTitle}</span> · in parallel</>
+      : <>on <span className="font-medium text-fg-secondary">{focusTitle}</span> · stays put</>;
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header — identity zone (future home of the voice/TTS hero). */}
-      <div className="flex flex-col gap-1.5 border-b border-line px-4 pb-3.5 pt-4">
-        {/* pr clears the drawer shell's absolute close button (top-right, ~56px). */}
-        <div className="flex flex-wrap items-center gap-2.5 pr-12">
+      {/* Header — compact command bar (text) / immersive voice hero (voice). */}
+      {voiceActive && conversationId ? (
+        <div className="relative flex flex-col items-center gap-1.5 border-b border-line bg-gradient-to-b from-accent/12 via-accent/5 to-transparent px-4 pb-4 pt-6 text-center">
           <span className="relative inline-flex">
-            <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
             {anyStreaming && (
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
+              <span className="absolute -inset-1 animate-pulse rounded-full ring-2 ring-accent/40" />
             )}
+            <AmbassadorMark size={44} avatar={ambassadorProfile?.avatar} />
           </span>
-          <h2 className="text-base font-semibold text-fg">{ambassadorProfile?.name || 'Ambassador'}</h2>
-          {anyStreaming && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
-              live
-            </span>
-          )}
-          {voiceEnabled && conversationId && (
-            <div className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-surface-sunken p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={openVoiceTab}
-                data-on={tab === 'voice' || undefined}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-accent data-[on=true]:text-fg-inverse data-[on=true]:shadow-sm"
-                title="Immersive voice"
-              >
-                <AudioLines size={13} /> Voice
-              </button>
-              <button
-                type="button"
-                onClick={openTextTab}
-                data-on={tab === 'text' || undefined}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
-                title="Text"
-              >
-                <MessageSquare size={13} /> Text
-              </button>
-            </div>
-          )}
-        </div>
-        {conversationId && (
-          <div className="flex items-center gap-2 pr-12">
-            <AmbassadorConversationSwitcher
-              items={conversationItems}
-              focusedId={conversationId}
-              activeId={activeConversationId}
-              onSelect={setFocusedConversationId}
-              title={inquiryTitle}
-              onRename={(t) => renameThread(conversationId, t)}
-            />
+          <h2 className="text-sm font-semibold text-fg">{ambassadorProfile?.name || 'Ambassador'}</h2>
+          <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
+            {titleControl}
+            {modeToggle}
+            {overflowMenu}
           </div>
-        )}
-        <p className="text-xs leading-relaxed text-fg-muted">
-          {!conversationId ? (
-            'Your parallel interpreter — it reads a conversation and briefs or answers, without ever entering it.'
-          ) : isFocusActive ? (
-            <>
-              Interpreting <span className="font-medium text-fg-secondary">{focusTitle}</span> in
-              parallel — it briefs and answers without ever entering the conversation.
-            </>
-          ) : (
-            <>
-              Focused on <span className="font-medium text-fg-secondary">{focusTitle}</span> —
-              it stays here while you work elsewhere.
-            </>
-          )}
-        </p>
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 border-b border-line px-4 pb-2.5 pt-3.5">
+          {/* pr-10 clears the shell's absolute close button (top-right). */}
+          <div className="flex items-center gap-2 pr-10">
+            <span className="relative inline-flex shrink-0">
+              <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
+              {anyStreaming && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
+              )}
+            </span>
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              <span className="shrink-0 text-sm font-semibold text-fg">
+                {ambassadorProfile?.name || 'Ambassador'}
+              </span>
+              {conversationId && (
+                <>
+                  <span className="shrink-0 text-fg-muted">·</span>
+                  {titleControl}
+                </>
+              )}
+            </div>
+            {modeToggle}
+            {overflowMenu}
+          </div>
+          <p className="pl-[34px] text-[11px] leading-snug text-fg-muted">{contextLine}</p>
+        </div>
+      )}
 
       {voiceActive && conversationId && (
         <VoiceSurface
@@ -704,7 +785,6 @@ export function AmbassadorPanel() {
           agentName={convAgentName}
           ambassadorName={ambassadorProfile?.name}
           activeConversation={activeConversation}
-          artifacts={voiceArtifacts}
           ambientSpokenText={spokenText}
           onRelay={relayVoiceCommand}
           onAnswerPersisted={onAnswerPersisted}
@@ -723,109 +803,76 @@ export function AmbassadorPanel() {
 
       {!voiceActive && (
       <>
-      {/* Body */}
-      <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
-        {!conversationId ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
-            <p className="text-sm text-fg-muted">
-              Open a conversation and the ambassador can brief its turns or answer your questions
-              about it here.
-            </p>
-          </div>
-        ) : (
-          <>
-            {turns.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-line bg-surface-sunken p-4 text-center text-sm text-fg-muted">
-                No replies yet — you can still ask the ambassador about this conversation below.
+      {/* Body — the Inquiry (the ambassador's own conversation with you). */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={bodyRef}
+          onScroll={onScroll}
+          className="flex flex-1 flex-col gap-4 overflow-y-auto p-4"
+        >
+          {!conversationId ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
+              <p className="max-w-[18rem] text-sm text-fg-muted">
+                Open a conversation and the ambassador can answer, brief, and relay — in parallel,
+                without ever entering it.
               </p>
-            ) : (
-              <section className="flex flex-col gap-3">
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  loading={latestStreaming}
-                  onClick={() => latest && brief(latest.m)}
-                >
-                  {!latestStreaming && <Sparkles size={15} />}
-                  {latestStreaming ? 'Briefing the latest turn…' : 'Brief the latest turn'}
-                </Button>
-
-                <SectionLabel count={turns.length}>Turns</SectionLabel>
-
-                <ul className="flex flex-col gap-2">
-                  {turns.map(({ m }, idx) => {
-                    const briefing = briefingForMessage(conversationId, m.id);
-                    const turnNo = turns.length - idx; // oldest = 1
-                    const streaming = briefing?.status === 'streaming';
-                    const briefed = !!briefing && briefing.status !== 'streaming';
-                    return (
-                      <li
-                        key={m.id}
-                        className="flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-3 transition-colors data-[briefed=true]:border-line-strong"
-                        data-briefed={briefed || undefined}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-fg-secondary">
-                            Turn {turnNo}
-                          </span>
-                          <StatusChip status={briefing?.status} />
-                          {streaming ? (
-                            <button
-                              type="button"
-                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-error hover:text-error"
-                              onClick={() => cancel(conversationId, m.id)}
-                              title="Cancel briefing"
-                            >
-                              <X size={12} /> cancel
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="ml-auto inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent/15"
-                              onClick={() => brief(m)}
-                              title={briefing ? 'Brief this turn again' : 'Brief this turn'}
-                            >
-                              {briefing ? <RotateCcw size={12} /> : <Radio size={12} />}
-                              {briefing ? 're-brief' : 'brief'}
-                            </button>
-                          )}
-                        </div>
-                        <p className="border-l-2 border-line pl-2 text-xs italic text-fg-muted">
-                          {snippet(m.content)}
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
-            {thread.length > 0 && (
-              <section className="flex flex-col gap-3">
-                <SectionLabel count={thread.length}>Inquiry</SectionLabel>
-                <ul className="flex flex-col gap-3.5">
-                  {thread.map((item) =>
-                    item.kind === 'qa' ? (
-                      <QaItem
-                        key={`qa:${item.id}`}
-                        entry={item.qa}
-                        onCancel={() => cancelQa(conversationId, item.id)}
-                        speech={speech}
-                      />
-                    ) : (
-                      <BriefingItem
-                        key={`brief:${item.id}`}
-                        briefing={item.briefing}
-                        onCancel={() => cancel(conversationId, item.id)}
-                        speech={speech}
-                      />
-                    ),
-                  )}
-                </ul>
-              </section>
-            )}
-          </>
+            </div>
+          ) : thread.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
+              <AmbassadorMark size={38} avatar={ambassadorProfile?.avatar} />
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium text-fg">Start an Inquiry</p>
+                <p className="max-w-[18rem] text-xs text-fg-muted">
+                  Ask anything about your conversations, or have the ambassador brief this one.
+                </p>
+              </div>
+              <Button variant="primary" onClick={briefConversation}>
+                <Sparkles size={15} /> Brief this conversation
+              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {STARTERS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => askAmbassador(s)}
+                    className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-3.5">
+              {thread.map((item) =>
+                item.kind === 'qa' ? (
+                  <QaItem
+                    key={`qa:${item.id}`}
+                    entry={item.qa}
+                    onCancel={() => cancelQa(conversationId, item.id)}
+                    speech={speech}
+                  />
+                ) : (
+                  <BriefingItem
+                    key={`brief:${item.id}`}
+                    briefing={item.briefing}
+                    onCancel={() => cancel(conversationId, item.id)}
+                    speech={speech}
+                  />
+                ),
+              )}
+            </ul>
+          )}
+        </div>
+        {!atBottom && thread.length > 0 && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-line bg-surface-overlay px-3 py-1 text-xs text-fg-secondary shadow-md transition-colors hover:text-fg"
+          >
+            <ArrowDown size={13} /> Latest
+          </button>
         )}
       </div>
 

@@ -639,6 +639,22 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
 - [ ] **Follow-ups:** surface tool activity in the *voice* path too (it answers server-side,
       no live SSE today); tool chips in `QaItem`'s avatar still use the generic mark.
 
+**Slice 1d — parallel operator (de-couple the panel from turns)** — shipped (`0.21.83`)
+
+> The ambassador is **an operator in its own right**, not a turn-by-turn briefer (UI kept
+> *boringly stable*). The panel is **de-coupled from turns** — the Turns strip is gone. It's
+> conversation-level: **"Brief this conversation"** (`briefConversation` → an `ask`) + starter
+> chips + free-form ask/relay; it scopes to conversations via its read-only tools (no per-turn
+> `artifacts` passed). **Per-turn = CC**: the chat's `MessageActions` button forwards a turn
+> *into* the Inquiry as an `ask` ("brief me on this turn: …") — like an email into the thread —
+> and opens the panel (`ChatPanel.handleAmbassador`). Header redesigned (compact command bar /
+> accent-gradient **voice hero**); body **auto-scrolls** (`hooks/useStickyScroll` + jump pill);
+> a **⋯ menu** (brief / rename / clear → `DELETE /thread/{id}` via `clearThread`); answers carry
+> **copy** + relative timestamps. `AmbassadorConversationSwitcher` has an `inline` variant.
+> **Remaining:** voice mode still uses `VoiceSurface`'s orb/caption layout — mirror it onto the
+> shared Inquiry stream (same capability, different presentation) so text/voice are one body;
+> refine CC semantics (a CC'd turn as a first-class *message* that retains prior state, vs. an ask).
+
 **Slice 1c — conversations overhaul + active-conversation context** — shipped (`0.21.81`)
 
 > The ambassador was welded to the chat tab (`conversationId = activeTab.sessionId`).
