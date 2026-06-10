@@ -96,11 +96,11 @@ export function AmbassadorConversationSwitcher({
 
   const triggerClass =
     variant === 'inline'
-      ? 'inline-flex max-w-[200px] items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover data-[on=true]:bg-surface-hover'
-      : 'inline-flex max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:text-fg data-[on=true]:border-line-strong';
+      ? 'flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover data-[on=true]:bg-surface-hover'
+      : 'flex min-w-0 max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:text-fg data-[on=true]:border-line-strong';
 
   return (
-    <div ref={ref} className="relative inline-flex items-center gap-1">
+    <div ref={ref} className="relative flex min-w-0 items-center gap-1">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
