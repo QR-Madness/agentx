@@ -60,6 +60,7 @@ export const api = {
 // Public surface re-exports (preserve the `'.../lib/api'` specifier).
 export * from './types';
 export type {
+  AmbassadorActiveConversation,
   AmbassadorBriefing,
   AmbassadorQA,
   AmbassadorStatus,

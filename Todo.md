@@ -614,6 +614,29 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       tool activity in the *voice* path too (it answers server-side, no live SSE today);
       tool chips in `QaItem`'s avatar still use the generic mark.
 
+**Slice 1c — conversations overhaul + active-conversation context** — shipped (`0.21.81`)
+
+> The ambassador was welded to the chat tab (`conversationId = activeTab.sessionId`).
+> Fixed: **independent focus** (`focusedConversationId`, "stays put", switched via
+> `AmbassadorConversationSwitcher` + "current conversation" jump); **loading is pure
+> display** (`locallyStreamedRef` — voice auto-speak only fires for items streamed *this
+> session*, so switching/reopening never re-synthesizes TTS or speaks history — the
+> cost+speech bug); **active-conversation context** (`active_conversation` {id,title} on
+> ask/voice → `_active_conversation_note`, so it knows where the person is *now* even when
+> focused elsewhere); **dropped the single "active agent"** (`execute_tool` param renamed
+> `focused_conversation_id`; multi-agent answer persona names each agent from its own
+> conversation). Relay targets the focused conversation when open; per-turn briefing stays
+> gated to the active tab (needs in-memory messages).
+- [ ] **Switcher over server history too** (today: open tabs only) — the full command deck.
+
+**Command deck + ad-hoc delegation — roadmap (foundation laid in 1c)**
+- [ ] **Agent roster awareness** — a read-only `list_agents` tool (names + capability blurb
+      from each profile's system prompt) so the ambassador knows the roster.
+- [ ] **Capability/strength modelling + recognize the primary agent from history.**
+- [ ] **Ad-hoc delegation** — the ambassador (top-level agent) dispatches work to the right
+      agent, reusing the relay `target` seam. The active-conversation context + per-conversation
+      agent names from 1c are the inputs.
+
 **Slice 3 — voice mode confirms the tool call**
 - [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken
       intent maps to a tool (`summarize_conversation`/`explore_turn`/…), return the

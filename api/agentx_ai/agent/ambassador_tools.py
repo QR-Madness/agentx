@@ -181,25 +181,29 @@ def execute_tool(
     name: str,
     arguments: dict[str, Any],
     *,
-    active_conversation_id: str,
+    focused_conversation_id: str,
     agent_name: str = "",
 ) -> str:
     """Execute one ambassador tool, read-only. Returns a string for the model.
 
-    Never raises — an unknown tool or a read failure returns a short, readable
-    note so the agentic loop stays alive."""
+    ``focused_conversation_id`` is the conversation the ambassador is *discussing*
+    (the subject the no-id tools default to) — not "the one active agent". Agent
+    names come per-turn from the conversation itself (``metadata.agent_name``);
+    ``agent_name`` is only a fallback label for unstamped turns of the focused
+    conversation. Never raises — a bad/unknown call returns a readable note so the
+    agentic loop stays alive."""
     args = arguments if isinstance(arguments, dict) else {}
-    active_label = (agent_name or "").strip()
+    focused_label = (agent_name or "").strip()
 
     def _fallback_for(cid: str) -> str:
-        # Only the watched conversation may borrow the active agent's name for an
-        # unstamped turn; any *other* conversation falls back to a generic label so
-        # its turns are never mislabelled as the active agent.
-        return active_label if cid == active_conversation_id else ""
+        # Only the focused conversation may borrow the passed label for an unstamped
+        # turn; any *other* conversation falls back to a generic label so its turns
+        # are never mislabelled as the focused conversation's agent.
+        return focused_label if cid == focused_conversation_id else ""
 
     try:
         if name in ("summarize_conversation", "explore_conversation"):
-            cid = (args.get("conversation_id") or "").strip() or active_conversation_id
+            cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
             if not cid:
                 return "(There's no conversation open to read yet.)"
             body = _render_transcript(cid, _fallback_for(cid))

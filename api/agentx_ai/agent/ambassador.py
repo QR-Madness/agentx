@@ -144,22 +144,25 @@ def _answer_persona(agent_name: str = "") -> str:
     look, and keeps the second-person, names-the-agent, spoken-voice rules."""
     agent_ref = agent_name.strip() or "their agent"
     name_rule = (
-        f"- The agent in the conversation is named {agent_name.strip()}. Call it by that "
-        f"name, or 'your agent'. "
+        f"- The agent in the conversation they're asking about is named {agent_name.strip()}. "
+        f"Call it by that name. "
         if agent_name.strip()
-        else "- Call the agent 'your agent'. "
+        else "- Name agents by what the conversation shows; if you don't know a name, say "
+        "'your agent'. "
     )
     return (
-        "You are an Ambassador. The person you're talking to is watching a conversation "
-        "between themselves and an AI agent, and they're talking to YOU about it — asking a "
-        "question, asking you to summarize, or asking what's happened across their work. "
-        "Answer them directly. You are the interpreter standing beside them — not a "
-        "participant in the conversation, and you never continue or answer it yourself.\n\n"
+        "You are an Ambassador — the person's interpreter across ALL of their conversations "
+        "and AI agents (they have several). They talk to YOU about their work: a question, a "
+        "request to summarize, or 'what's happened across everything?'. Answer them directly. "
+        "You stand beside them — not a participant in any conversation, and you never continue "
+        "or answer one yourself.\n\n"
 
         "WHO IS WHO — get this right:\n"
         "- The person you're talking to is 'you'. Address them in the second person. NEVER "
         "call them 'the user'.\n"
-        f"{name_rule}NEVER call it 'the assistant', 'the AI', 'the model', or a bare 'it' "
+        "- The person has MORE THAN ONE agent. Name each agent by what its conversation shows "
+        "(don't assume one global agent). "
+        f"{name_rule}NEVER call an agent 'the assistant', 'the AI', 'the model', or a bare 'it' "
         "like a transcript.\n\n"
 
         "WHAT YOU CAN DO: you can read this conversation to summarize it or dig into any part "
@@ -599,6 +602,28 @@ class AmbassadorService:
         question (e.g. 'what just happened?') from needing a tool round."""
         return self._grounding_context(conversation_id, _LEAN_GROUNDING_TURNS, agent_name)
 
+    @staticmethod
+    def _active_conversation_note(active_conversation: Optional[dict]) -> str:
+        """A one-line ambient-context note telling the ambassador which conversation the
+        person is *currently in* (the active chat tab) — distinct from the conversation
+        it's focused on / discussing. Lets it answer 'what am I working on now?' and
+        offer to look at it, even though its focus stays put. Empty when unknown."""
+        if not active_conversation:
+            return ""
+        title = str(active_conversation.get("title") or "").strip()[:120]
+        acid = str(active_conversation.get("id") or "").strip()
+        if not title and not acid:
+            return ""
+        where = f'titled "{title}"' if title else f"id {acid}"
+        note = f"\n\nWHERE THE PERSON IS NOW: they are currently in the conversation {where}"
+        if acid:
+            note += f" (id {acid} — read_conversation it if they ask what they're working on right now)"
+        note += (
+            ". Your focus is the conversation they're asking about; only bring up their "
+            "current one if it's relevant."
+        )
+        return note
+
     def _seed_answer_messages(
         self,
         *,
@@ -609,15 +634,16 @@ class AmbassadorService:
         artifacts: Optional[dict],
         profile,
         with_tools: bool,
+        active_conversation: Optional[dict] = None,
     ) -> list[Message]:
-        """The message list for an answer turn: capability persona (+ tool belt) →
-        prior Q&A as continuity (`_thread_history`) → the lean snippet + the question.
-        Shared by text Q&A and voice so both get the same tools + memory."""
+        """The message list for an answer turn: capability persona (+ tool belt +
+        ambient active-conversation note) → prior Q&A as continuity (`_thread_history`)
+        → the lean snippet + the question. Shared by text Q&A and voice so both get the
+        same tools + memory + awareness of where the person currently is."""
+        persona = self._build_answer_persona(profile, agent_name, with_tools=with_tools)
+        persona += self._active_conversation_note(active_conversation)
         return [
-            Message(
-                role=MessageRole.SYSTEM,
-                content=self._build_answer_persona(profile, agent_name, with_tools=with_tools),
-            ),
+            Message(role=MessageRole.SYSTEM, content=persona),
             *self._thread_history(conversation_id, exclude_id=exclude_id),
             Message(
                 role=MessageRole.USER,
@@ -718,6 +744,7 @@ class AmbassadorService:
         *,
         agent_name: str = "",
         artifacts: Optional[dict] = None,
+        active_conversation: Optional[dict] = None,
     ) -> AsyncGenerator[str, None]:
         """Answer a free-form question about the conversation. Yields ``ambassador_*``
         SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client pump is
@@ -759,10 +786,12 @@ class AmbassadorService:
             messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=True,
+                active_conversation=active_conversation,
             ),
             fallback_messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=False,
+                active_conversation=active_conversation,
             ),
             on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
             on_done=lambda s: store.set_qa_answer(conversation_id, qa_id, s, status="done"),
@@ -870,7 +899,7 @@ class AmbassadorService:
                     output = execute_tool(
                         tc.name,
                         tc.arguments,
-                        active_conversation_id=conversation_id,
+                        focused_conversation_id=conversation_id,
                         agent_name=agent_name,
                     )
                     messages.append(
@@ -1051,6 +1080,7 @@ class AmbassadorService:
         model_id: str,
         temperature: float,
         cfg: dict[str, Any],
+        active_conversation: Optional[dict] = None,
     ) -> str:
         """Run the agentic answer core to completion (persisting to the ``qa:``
         sidecar) and return the final spoken text. The voice path uses this so a
@@ -1073,10 +1103,12 @@ class AmbassadorService:
             messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=True,
+                active_conversation=active_conversation,
             ),
             fallback_messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=False,
+                active_conversation=active_conversation,
             ),
             on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
             on_done=_done,
@@ -1096,6 +1128,7 @@ class AmbassadorService:
         *,
         agent_name: str = "",
         artifacts: Optional[dict] = None,
+        active_conversation: Optional[dict] = None,
     ) -> dict:
         """Interpret a spoken voice command: the ambassador first decides whether to
         **answer** it or draft a **relay** for the user to send. An *answer* is then
@@ -1166,6 +1199,7 @@ class AmbassadorService:
                 conversation_id=conversation_id, qa_id=qa_id, question=transcript,
                 agent_name=agent_name, artifacts=artifacts, profile=profile,
                 provider=provider, model_id=model_id, temperature=temperature, cfg=cfg,
+                active_conversation=active_conversation,
             )
         except Exception as e:  # noqa: BLE001 — never break the call
             logger.warning(f"Ambassador voice answer failed: {e}")

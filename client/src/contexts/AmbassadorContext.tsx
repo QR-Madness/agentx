@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { api } from '../lib/api';
 import type {
+  AmbassadorActiveConversation,
   AmbassadorBriefing,
   AmbassadorQA,
   AmbassadorStatus,
@@ -62,10 +63,12 @@ export interface CcTurnOptions {
 
 /** Caller-resolved grounding for a free-form question. */
 export interface AskOptions {
-  /** Resolved display name of the conversation's agent. */
+  /** Resolved display name of the focused conversation's agent. */
   agentName?: string;
   /** Latest-turn substance, as extra grounding. */
   artifacts?: AmbassadorTurnArtifacts;
+  /** Where the person currently is (ambient context, distinct from the focus). */
+  activeConversation?: AmbassadorActiveConversation;
 }
 
 const AmbassadorContext = createContext<AmbassadorContextValue | null>(null);
@@ -296,6 +299,7 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
           question: q,
           agent_name: opts?.agentName,
           artifacts: opts?.artifacts,
+          active_conversation: opts?.activeConversation,
         })
         .then(({ run_id }) => {
           setQa(conversationId, qaId, { run_id });

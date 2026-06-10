@@ -1987,6 +1987,11 @@ def ambassador_ask(request):
     question = (data.get("question") or "").strip()
     agent_name = data.get("agent_name") or ""
     artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
+    active_conversation = (
+        data.get("active_conversation")
+        if isinstance(data.get("active_conversation"), dict)
+        else None
+    )
     qa_id = (data.get("qa_id") or "").strip()
     if not conversation_id:
         return JsonResponse({"error": "conversation_id is required"}, status=400)
@@ -2008,6 +2013,7 @@ def ambassador_ask(request):
             question,
             agent_name=agent_name,
             artifacts=artifacts,
+            active_conversation=active_conversation,
         )
 
     run_id = start_chat_run(
@@ -2082,6 +2088,11 @@ async def ambassador_voice_command(request):
     transcript = (data.get("transcript") or "").strip()
     agent_name = data.get("agent_name") or ""
     artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
+    active_conversation = (
+        data.get("active_conversation")
+        if isinstance(data.get("active_conversation"), dict)
+        else None
+    )
     if not conversation_id:
         return JsonResponse({"error": "conversation_id is required"}, status=400)
     if not transcript:
@@ -2090,7 +2101,8 @@ async def ambassador_voice_command(request):
     from .agent.ambassador import get_ambassador
 
     result = await get_ambassador().route_voice_command(
-        conversation_id, transcript, agent_name=agent_name, artifacts=artifacts
+        conversation_id, transcript, agent_name=agent_name, artifacts=artifacts,
+        active_conversation=active_conversation,
     )
     return JsonResponse(result)
 

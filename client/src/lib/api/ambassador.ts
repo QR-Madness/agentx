@@ -82,6 +82,13 @@ export interface AmbassadorQA {
   toolCalls?: AmbassadorToolCall[];
 }
 
+/** The conversation the person is *currently in* (their active chat tab) — ambient
+ *  context distinct from the ambassador's focus, so it knows where they are now. */
+export interface AmbassadorActiveConversation {
+  id: string;
+  title?: string;
+}
+
 export interface AskAmbassadorRequest {
   conversation_id: string;
   /** Client-stable id the Q&A is keyed by. */
@@ -91,6 +98,8 @@ export interface AskAmbassadorRequest {
   agent_name?: string;
   /** Latest-turn substance, as extra grounding for the answer. */
   artifacts?: AmbassadorTurnArtifacts;
+  /** Where the person currently is (ambient context, distinct from the focus). */
+  active_conversation?: AmbassadorActiveConversation;
 }
 
 export interface DraftRelayRequest {
@@ -130,6 +139,8 @@ export interface VoiceCommandRequest {
   transcript: string;
   agent_name?: string;
   artifacts?: AmbassadorTurnArtifacts;
+  /** Where the person currently is (ambient context, distinct from the focus). */
+  active_conversation?: AmbassadorActiveConversation;
 }
 
 export interface VoiceCommandResult {

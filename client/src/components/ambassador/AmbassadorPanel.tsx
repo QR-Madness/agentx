@@ -48,6 +48,7 @@ import { toolChipLabel } from '../../lib/ambassadorTools';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { VoiceSurface } from './VoiceSurface';
+import { AmbassadorConversationSwitcher, type SwitcherItem } from './AmbassadorConversationSwitcher';
 import { Button } from '../ui';
 import { api } from '../../lib/api';
 import type { AmbassadorBriefing, AmbassadorQA, AmbassadorToolCall } from '../../lib/api';
@@ -281,11 +282,36 @@ function QaItem({
 }
 
 export function AmbassadorPanel() {
-  const { activeTab, relayToConversation } = useConversation();
+  const { activeTab, tabs, relayToConversation } = useConversation();
   const { briefingForMessage, briefingsFor, refresh, ccTurn, cancel, qaFor, ask, cancelQa } =
     useAmbassador();
   const { profiles, getAgentName } = useAgentProfile();
-  const conversationId = activeTab?.sessionId;
+
+  // Conversations the ambassador can be pointed at — the open tabs that have a saved
+  // session (id + title). (Server-history conversations are a follow-up for the full
+  // command deck.)
+  const conversationItems = useMemo<SwitcherItem[]>(
+    () =>
+      tabs
+        .filter((t) => !!t.sessionId)
+        .map((t) => ({ id: t.sessionId as string, title: t.title || 'Conversation' })),
+    [tabs],
+  );
+
+  // The conversation the person is *currently in* (their active chat tab).
+  const activeConversationId = activeTab?.sessionId ?? undefined;
+  // The ambassador's own focus — independent of the chat tab. Snapshots the active
+  // conversation when the panel first opens, then **stays put** (switching chat tabs
+  // never moves it); the switcher / "← current" change it explicitly.
+  const [focusedConversationId, setFocusedConversationId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusedConversationId === undefined && activeConversationId) {
+      setFocusedConversationId(activeConversationId);
+    }
+  }, [focusedConversationId, activeConversationId]);
+  const conversationId = focusedConversationId ?? activeConversationId;
+  const isFocusActive = !!conversationId && conversationId === activeConversationId;
+
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<PanelMode>('ask');
   const [refining, setRefining] = useState(false);
@@ -313,26 +339,37 @@ export function AmbassadorPanel() {
   // text panel as a secondary [Voice | Text] tab. Non-opted-in ⇒ text only.
   const [tab, setTab] = useState<'voice' | 'text'>('voice');
   const voiceActive = voiceEnabled && tab === 'voice';
-  // Items already auto-spoken in voice mode (so a re-render / history never replays).
+  // Items already auto-spoken in voice mode (so a re-render never replays).
   const spokenRef = useRef<Set<string>>(new Set());
+  // Items that were created HERE this session (seen in `streaming` state) — the only
+  // ones auto-speak may voice. Persisted items loaded by `refresh()` arrive already
+  // `done` and are never in here, so switching/reopening a conversation never speaks
+  // or re-synthesizes its history (no TTS request, no spend). The ambassador waits.
+  const locallyStreamedRef = useRef<Set<string>>(new Set());
 
-  // Subscribe: repopulate from the sidecar whenever the active conversation changes.
+  // Subscribe: repopulate from the sidecar whenever the focused conversation changes.
   useEffect(() => {
     if (conversationId) void refresh(conversationId);
   }, [conversationId, refresh]);
 
-  // On conversation switch: stop any audio + seed existing done items as
-  // already-spoken, so switching never auto-replays a conversation's history.
+  // On focus switch: just stop any audio. (No seeding — loading is pure display.)
   useEffect(() => {
     stopSpeech();
-    if (!conversationId) return;
-    const seed = spokenRef.current;
-    for (const b of briefingsFor(conversationId)) if (b.status === 'done') seed.add(`brief:${b.message_id}`);
-    for (const q of qaFor(conversationId)) if (q.status === 'done') seed.add(`qa:${q.qa_id}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  const messages = activeTab?.messages ?? [];
+  // Record items that stream locally (the user asked/briefed here this session), so
+  // only those are eligible for auto-speak.
+  useEffect(() => {
+    if (!conversationId) return;
+    const seen = locallyStreamedRef.current;
+    for (const b of briefingsFor(conversationId)) if (b.status === 'streaming') seen.add(`brief:${b.message_id}`);
+    for (const q of qaFor(conversationId)) if (q.status === 'streaming') seen.add(`qa:${q.qa_id}`);
+  }, [conversationId, briefingsFor, qaFor]);
+
+  // Per-turn briefing needs the conversation's in-memory transcript, which only the
+  // active tab has — so the turn list shows only when the focus is the active tab.
+  const messages = isFocusActive ? (activeTab?.messages ?? []) : [];
   // Assistant turns (non-empty content), newest first, carrying their index.
   const turns = useMemo(
     () =>
@@ -378,18 +415,44 @@ export function AmbassadorPanel() {
     [briefingsFor, qaFor, conversationId],
   );
 
-  // Conversation-level agent name + latest-turn substance, to ground a question/draft.
+  // Agent-name hint for the FOCUSED conversation: only when the focus is the active
+  // tab do we know it client-side; for any other conversation the backend names agents
+  // per-conversation (so we pass nothing rather than mislabel).
   const convAgentName = useMemo(() => {
+    if (!isFocusActive) return '';
     const tabProfileName = activeTab?.profileId
       ? profiles.find((p) => p.id === activeTab.profileId)?.name
       : undefined;
     return tabProfileName ?? getAgentName();
-  }, [activeTab?.profileId, profiles, getAgentName]);
+  }, [isFocusActive, activeTab?.profileId, profiles, getAgentName]);
+
+  // Display label for the focused conversation (agent name when active, else its title).
+  const focusItem = useMemo(
+    () => conversationItems.find((it) => it.id === conversationId),
+    [conversationItems, conversationId],
+  );
+  const focusTitle = isFocusActive ? (convAgentName || 'your agent') : (focusItem?.title || 'that conversation');
+
+  // Where the person is *now* (ambient context) — only worth sending when the
+  // ambassador is focused elsewhere (otherwise the focus already is where they are).
+  const activeConversation = useMemo(
+    () =>
+      !isFocusActive && activeConversationId
+        ? { id: activeConversationId, title: activeTab?.title }
+        : undefined,
+    [isFocusActive, activeConversationId, activeTab?.title],
+  );
+
+  // The focused conversation's open tab (if any) — relay needs an open tab to send into.
+  const focusTab = useMemo(
+    () => tabs.find((t) => t.sessionId === conversationId),
+    [tabs, conversationId],
+  );
 
   const latestArtifacts = () =>
     latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined;
 
-  const runActive = !!activeTab?.activeRun?.runId;
+  const runActive = !!focusTab?.activeRun?.runId;
 
   // The text currently being spoken (for the immersive surface caption).
   const spokenText = useMemo(() => {
@@ -405,15 +468,8 @@ export function AmbassadorPanel() {
     return '';
   }, [playingId, conversationId, briefingForMessage, qaFor]);
 
-  const seedSpoken = () => {
-    const seed = spokenRef.current;
-    for (const b of briefingsFor(conversationId)) if (b.status === 'done') seed.add(`brief:${b.message_id}`);
-    for (const q of qaFor(conversationId)) if (q.status === 'done') seed.add(`qa:${q.qa_id}`);
-  };
-
   const openVoiceTab = () => {
     unlock(); // bless the audio element on this gesture so autoplay works
-    seedSpoken(); // don't replay briefings already on screen
     setTab('voice');
   };
   const openTextTab = () => {
@@ -426,10 +482,11 @@ export function AmbassadorPanel() {
     () => (latest ? gatherTurnContext(messages, latest.m.id).artifacts : undefined),
     [messages, latest],
   );
-  // Relay a confirmed voice draft into the conversation (a real user turn).
+  // Relay a confirmed voice draft into the FOCUSED conversation (a real user turn).
+  // Only works when that conversation is open as a tab.
   const relayVoiceCommand = useCallback(
-    (text: string) => (activeTab ? relayToConversation(activeTab.id, text) : false),
-    [activeTab, relayToConversation],
+    (text: string) => (focusTab ? relayToConversation(focusTab.id, text) : false),
+    [focusTab, relayToConversation],
   );
   const onAnswerPersisted = useCallback(() => {
     if (conversationId) void refresh(conversationId);
@@ -446,7 +503,11 @@ export function AmbassadorPanel() {
     for (const q of qaFor(conversationId))
       if (q.status === 'done' && q.answer.trim())
         items.push({ id: `qa:${q.qa_id}`, text: q.answer, ts: Date.parse(q.updated_at ?? '') || 0 });
-    const fresh = items.filter((it) => !spokenRef.current.has(it.id));
+    // Only items created HERE this session (streamed locally) are eligible — never
+    // persisted history loaded from the sidecar. This is what keeps reopening silent.
+    const fresh = items.filter(
+      (it) => locallyStreamedRef.current.has(it.id) && !spokenRef.current.has(it.id),
+    );
     if (fresh.length === 0) return;
     fresh.sort((a, b) => a.ts - b.ts);
     for (const it of fresh) spokenRef.current.add(it.id); // mark all seen…
@@ -463,23 +524,31 @@ export function AmbassadorPanel() {
     if (!conversationId) return;
     const q = input.trim();
     if (!q) return;
-    ask(conversationId, q, { agentName: convAgentName, artifacts: latestArtifacts() });
+    ask(conversationId, q, {
+      agentName: convAgentName,
+      artifacts: latestArtifacts(),
+      activeConversation,
+    });
     setInput('');
   };
 
-  // Relay the message into the actual conversation (a real user turn, or a steer
-  // into the running turn). The ambassador stays a non-participant — you're the author.
+  // Relay the message into the FOCUSED conversation (a real user turn, or a steer into
+  // a running turn). The ambassador stays a non-participant — you're the author. Only
+  // works when the focused conversation is open as a tab.
   const submitRelay = () => {
-    if (!activeTab) return;
     const t = input.trim();
     if (!t) return;
-    const ok = relayToConversation(activeTab.id, t);
+    if (!focusTab) {
+      showFlash('Open this conversation to relay a message into it.');
+      return;
+    }
+    const ok = relayToConversation(focusTab.id, t);
     if (!ok) {
-      showFlash('Open the conversation to relay a message.');
+      showFlash('Open this conversation to relay a message into it.');
       return;
     }
     setInput('');
-    showFlash(runActive ? 'Folded into the running turn.' : 'Sent to the conversation.');
+    showFlash(focusTab.activeRun?.runId ? 'Folded into the running turn.' : 'Sent to the conversation.');
   };
 
   // Optional: let the ambassador shape a rough intent into a ready-to-send message.
@@ -559,14 +628,29 @@ export function AmbassadorPanel() {
             </div>
           )}
         </div>
+        {conversationId && (
+          <div className="flex items-center gap-2 pr-12">
+            <AmbassadorConversationSwitcher
+              items={conversationItems}
+              focusedId={conversationId}
+              activeId={activeConversationId}
+              onSelect={setFocusedConversationId}
+            />
+          </div>
+        )}
         <p className="text-xs leading-relaxed text-fg-muted">
-          {conversationId ? (
+          {!conversationId ? (
+            'Your parallel interpreter — it reads a conversation and briefs or answers, without ever entering it.'
+          ) : isFocusActive ? (
             <>
-              Interpreting <span className="font-medium text-fg-secondary">{convAgentName}</span> in
+              Interpreting <span className="font-medium text-fg-secondary">{focusTitle}</span> in
               parallel — it briefs and answers without ever entering the conversation.
             </>
           ) : (
-            'Your parallel interpreter — it reads a conversation and briefs or answers, without ever entering it.'
+            <>
+              Focused on <span className="font-medium text-fg-secondary">{focusTitle}</span> —
+              it stays here while you work elsewhere.
+            </>
           )}
         </p>
       </div>
@@ -577,6 +661,7 @@ export function AmbassadorPanel() {
           agentProfileId={ambassadorProfile?.id}
           agentName={convAgentName}
           ambassadorName={ambassadorProfile?.name}
+          activeConversation={activeConversation}
           artifacts={voiceArtifacts}
           ambientSpokenText={spokenText}
           onRelay={relayVoiceCommand}

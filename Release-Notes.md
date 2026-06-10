@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.80 -->
+<!-- release-version: 0.21.81 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -58,6 +58,12 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 - **You can watch the Ambassador work.** When it reads or surveys your conversations to answer,
   it now shows **live chips** — "reading the conversation…", "looking across your conversations…"
   — that tick to a check when each finishes, so you can see what it looked at instead of guessing.
+- **Point the Ambassador at any conversation — it stays put.** A **conversation switcher** in the
+  ambassador's header lets you choose which conversation it's focused on, independent of the chat
+  tab you're working in: chat in one, ask the ambassador about another. It no longer follows your
+  tab around — it stays where you put it, with a one-click **"Current conversation"** to jump it
+  to whatever you're in. And even when its focus is elsewhere, it still **knows which conversation
+  you're currently in**, so you can ask "what am I working on right now?" and it'll look there.
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,
@@ -227,6 +233,11 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **The Ambassador no longer briefs (and bills you for) every conversation you flip to.** In voice
+  mode, switching or reopening a conversation made it re-speak that conversation's saved briefings
+  — re-synthesizing speech each time (real cost) and talking when it should wait. Loading a
+  conversation is now **pure display**: it shows what's there silently and only speaks things you
+  ask for in that session.
 - **Voice mode no longer says the wrong name is "thinking."** While the ambassador worked, the
   status showed *your agent's* name ("Atlas is thinking…") instead of the ambassador's own. It
   now shows the ambassador's name.

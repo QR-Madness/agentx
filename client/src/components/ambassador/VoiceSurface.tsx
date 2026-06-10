@@ -16,7 +16,7 @@ import { Radio, Mic, Loader2, Settings2, Send, RotateCcw, CornerUpRight, X } fro
 import { useSpeech } from '../../hooks/useSpeech';
 import { useDictation } from '../../hooks/useDictation';
 import { api } from '../../lib/api';
-import type { AmbassadorTurnArtifacts } from '../../lib/api';
+import type { AmbassadorActiveConversation, AmbassadorTurnArtifacts } from '../../lib/api';
 import { appendCaption, type Caption } from '../../lib/voiceCaptions';
 
 type PttMode = 'hold' | 'toggle';
@@ -41,6 +41,8 @@ interface VoiceSurfaceProps {
   agentName: string;
   /** The ambassador's own display name — for its status ("Echo is thinking…"). */
   ambassadorName?: string;
+  /** Where the person currently is (ambient context, distinct from the focus). */
+  activeConversation?: AmbassadorActiveConversation;
   /** Latest-turn substance, to ground a voice command. */
   artifacts?: AmbassadorTurnArtifacts;
   /** Text the panel is currently speaking (e.g. an auto-played briefing). */
@@ -73,6 +75,7 @@ export function VoiceSurface({
   agentProfileId,
   agentName,
   ambassadorName,
+  activeConversation,
   artifacts,
   ambientSpokenText,
   onRelay,
@@ -112,6 +115,7 @@ export function VoiceSurface({
           transcript,
           agent_name: agentName,
           artifacts,
+          active_conversation: activeConversation,
         });
         if (res.action === 'relay') {
           setRelayDraft(res.text);
@@ -128,7 +132,7 @@ export function VoiceSurface({
         setRouting(false);
       }
     },
-    [conversationId, agentName, artifacts, speech, onAnswerPersisted, addCaption],
+    [conversationId, agentName, activeConversation, artifacts, speech, onAnswerPersisted, addCaption],
   );
 
   const dictation = useDictation({ agentProfileId, onTranscript: handleTranscript });

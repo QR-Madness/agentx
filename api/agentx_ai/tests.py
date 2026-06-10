@@ -6581,7 +6581,7 @@ class AmbassadorServiceTest(TestCase):
         ]
         with patch.object(t, "load_recent_labeled_turns", return_value=rows):
             summary = t.execute_tool(
-                "summarize_conversation", {}, active_conversation_id="conv", agent_name="Atlas"
+                "summarize_conversation", {}, focused_conversation_id="conv", agent_name="Atlas"
             )
         self.assertIn("county index", summary)
         self.assertIn("Atlas:", summary)
@@ -6592,16 +6592,16 @@ class AmbassadorServiceTest(TestCase):
             "agents": "Nimbus",
         }]
         with patch.object(t, "list_recent_conversations", return_value=convs):
-            listed = t.execute_tool("list_conversations", {"limit": 5}, active_conversation_id="conv")
+            listed = t.execute_tool("list_conversations", {"limit": 5}, focused_conversation_id="conv")
         self.assertIn("c1", listed)
         self.assertIn("build the registry", listed)
         self.assertIn("Nimbus", listed)  # the survey names each conversation's own agent
 
         # Unknown tool + a missing required arg degrade to notes (never raise).
-        self.assertIn("Unknown tool", t.execute_tool("nope", {}, active_conversation_id="conv"))
+        self.assertIn("Unknown tool", t.execute_tool("nope", {}, focused_conversation_id="conv"))
         self.assertIn(
             "needs a conversation_id",
-            t.execute_tool("read_conversation", {}, active_conversation_id="conv"),
+            t.execute_tool("read_conversation", {}, focused_conversation_id="conv"),
         )
 
     def test_ambassador_tools_label_each_conversation_by_its_own_agent(self):
@@ -6618,11 +6618,25 @@ class AmbassadorServiceTest(TestCase):
         with patch.object(t, "load_recent_labeled_turns", return_value=rows):
             out = t.execute_tool(
                 "read_conversation", {"conversation_id": "other"},
-                active_conversation_id="active", agent_name="Atlas",
+                focused_conversation_id="active", agent_name="Atlas",
             )
         self.assertIn("Nimbus: Done — used Postgres.", out)  # its own agent
         self.assertNotIn("Atlas:", out)  # never the active agent's name
         self.assertIn("Agent: Unstamped reply.", out)  # generic fallback, not "Atlas"
+
+    def test_active_conversation_note_tells_it_where_you_are(self):
+        # 16.7 overhaul: the ambassador's focus can sit on one conversation while the
+        # person is currently in another — it's told where they are now (ambient
+        # context), distinct from its focus, so "what am I working on now?" works.
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        note = AmbassadorService._active_conversation_note({"id": "c9", "title": "Deploy run"})
+        self.assertIn("Deploy run", note)
+        self.assertIn("c9", note)
+        self.assertIn("WHERE THE PERSON IS NOW", note)
+        # No ambient context → no note (back-compat / unknown).
+        self.assertEqual(AmbassadorService._active_conversation_note(None), "")
+        self.assertEqual(AmbassadorService._active_conversation_note({}), "")
 
     @staticmethod
     def _streaming_provider(stream_fn):
