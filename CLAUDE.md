@@ -15,6 +15,7 @@ Find the right doc before diving in — they're split deliberately so this file 
 | **[`Memory-Roadmap.md`](Memory-Roadmap.md)** | Memory-system hardening & experimental roadmap; pairs with the `memory-*` backlog files |
 | **[`Development-Notes.md`](Development-Notes.md)** | Deep subsystem internals + the full API/SSE reference (not auto-loaded — read when working that area) |
 | **[`Decisions.md`](Decisions.md)** | Load-bearing invariants + locked decisions (the "don't relitigate" list) — read before changing memory/ambassador/streaming internals |
+| **[`Repo-Questions.md`](Repo-Questions.md)** | Open hard design questions parked for a deep answer (Fable answers; resolutions fold into the docs above) |
 | **[`Release-Notes.md`](Release-Notes.md)** | Human-written notes for the *next* release (see the version rule below) |
 | `OpenApi.yaml` + `docs-site/.../api/endpoints.md` | Authoritative API contract |
 

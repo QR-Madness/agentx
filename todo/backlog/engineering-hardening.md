@@ -8,6 +8,13 @@
 
 > Grounded tech-debt / consistency items noticed during the model-fallback + context work.
 
+- [ ] **Dependency CVE triage + bump** — `task audit` (pip-audit) flags ~30 known CVEs; the
+      actionable ones cluster in auth/web-facing deps: **`pyjwt`** (×8 → 2.13.0), **`django`**
+      (CVE-2026-25673 → 5.2.12), **`python-multipart`** (→0.0.27), `requests` (→2.33.0), `urllib3`
+      (→2.6.3), `starlette`, `python-dotenv`, `sqlparse`, `idna`, `filelock`. A few (`torch`,
+      `transformers`) have no fix without a major bump — accept/track separately. Do a focused
+      bump-and-test pass (not a blind `uv lock --upgrade`); re-run `task test` after. *(Surfaced by
+      the static-analysis pass; pip-audit is advisory in `task release:check`.)*
 - [ ] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — subtask state is
       encoded as magic prefixes on the *result* string (`[FAILED: …]` / `[SKIPPED: …]` / `[ABANDONED: …]`)
       and re-parsed by `str.startswith` in **three** places (`plan_executor.py` `_build_synthesis_messages`,

@@ -108,6 +108,22 @@ memory are **rebuildable projections**. "No Memorization" = log without projecti
 Memory-Roadmap §1.1; recorded here as the *intended* direction so new write paths don't deepen the
 dual-write coupling. **Status:** aspirational — not yet the implemented write path.
 
+### ADR-7 — Ruff is configured lean; rules that fight our idioms are off by design
+**Decision:** `[tool.ruff.lint]` selects a *curated* set (`E4/E7/E9,F,B,C4,PIE,UP,ASYNC,S`), not
+"everything." Deliberately **off**: `E501` (line length — the codebase uses a compact-block style,
+[[project_ruff_check_not_format]]); `S110`/`S112` (try/except/pass *is* the never-raise idiom, INV-1);
+`S311` (random is agent-id/jitter, never crypto); `S101` (asserts are deliberate). `S608` is
+**per-file-ignored** on the four audited raw-SQL files (`views.py`, `memory/semantic.py`,
+`eval_consolidation.py`, `init_memory_schema.py`) — their SQL binds all values (`%s`/`:name`/Cypher
+`$params`) and interpolates only static fragments/identifiers; per-line `noqa` was rejected because
+the violations sit on multi-line `f"""` openings (can't append a comment without churning hot query
+code). `S608` stays active everywhere else to catch *new* raw SQL.
+**Why:** in a utilitarian repo, a linter that emits hundreds of findings against intentional idioms
+trains you to ignore it. Lean rules that *earn their keep* stay green and get read. The real fix for
+the raw-SQL surface is the §1.5 repository layer (Memory-Roadmap), not `noqa`-decoration.
+**Guard:** `task lint:python` runs clean at HEAD; `task docs:check` + `task audit` (pip-audit CVEs)
+round out the gate. **Source:** this session's static-analysis pass; pyproject comments point here.
+
 ---
 
 ## Maintenance
