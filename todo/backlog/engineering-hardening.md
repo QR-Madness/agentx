@@ -28,11 +28,13 @@
 > Built already: anchor-aware link checking + CLAUDE.md context-budget gate (`check_docs.py`),
 > the gate-script protocol doc (`scripts/README.md`). The rest, by leverage:
 
-- [ ] **(WS-1, highest) CI workflow (`ci.yml`)** — run the gates on push + PR: `ruff check` ·
-      `check_pyright_baseline.py` · client `tsc` · `check_docs.py` · `check_api_parity.py` ·
-      `uv lock --check` + `bun install --frozen-lockfile` · `test:quick`. No matrix, no model
-      downloads, target < 5 min. Converts every gate from laptop habit → guarantee. *(Needs a steer:
-      triggers + branch-protection intent.)*
+- [x] **(WS-1, highest) CI workflow (`ci.yml`)** — **shipped** (push to master + PRs): `uv sync
+      --frozen` + `bun install --frozen-lockfile` (lockfile checks) → ruff · pyright-baseline · tsc ·
+      docs:check (links/anchors/parity). Python pinned 3.14 to match the baseline. **Remaining:**
+      (a) add `test:quick` once WS-4 lands (7 auth-401 baseline failures today); (b) the workflow is
+      **unverified in Actions** (couldn't run CI locally) — first push may need an action-version
+      bump (`setup-uv`/`setup-bun`/`setup-task`); (c) optionally turn on branch protection requiring
+      the `gates` check.
 - [ ] **(WS-2) `task check:fast` + opt-in `task hooks:install`** — the sub-5s subset (docs+parity+
       ruff-on-changed+notes-marker) behind a plain 3-line `.git/hooks/pre-commit` (no pre-commit
       framework — see Decisions "Rejected"). Catches drift at commit time, not release time.

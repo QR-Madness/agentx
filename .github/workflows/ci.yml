@@ -1,0 +1,59 @@
+name: CI
+
+# Runs the same gates as the local dev loop (Taskfile), so "laptop discipline"
+# becomes a guarantee. Fast: no build matrix, no model downloads. test:quick joins
+# once WS-4 makes it green-or-regression (it has 7 known auth-401 baseline failures —
+# see todo/backlog/engineering-hardening.md).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: lint · types · docs-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (+ dependency cache, Python 3.14 to match the pyright baseline)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.14"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Task
+        uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install API deps (also asserts uv.lock is current)
+        run: uv sync --frozen
+
+      - name: Install client deps (also asserts bun.lock is current)
+        working-directory: client
+        run: bun install --frozen-lockfile
+
+      - name: Lint — ruff
+        run: task lint:python
+
+      - name: Types — Python (pyright baseline ratchet)
+        run: task check:types:python:baseline
+
+      - name: Types — client (tsc)
+        run: task check:types:client
+
+      - name: Doc + API-spec drift gate
+        run: task docs:check
