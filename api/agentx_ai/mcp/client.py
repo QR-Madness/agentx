@@ -484,7 +484,9 @@ class MCPClientManager:
             return {
                 "uri": uri,
                 "contents": [
-                    {"text": content.text if hasattr(content, "text") else str(content)}
+                    # noqa kept on getattr: pyright can't narrow .text across the
+                    # TextResourceContents|BlobResourceContents union via hasattr.
+                    {"text": getattr(content, "text") if hasattr(content, "text") else str(content)}  # noqa: B009
                     for content in result.contents
                 ],
             }

@@ -15,6 +15,13 @@
       `transformers`) have no fix without a major bump — accept/track separately. Do a focused
       bump-and-test pass (not a blind `uv lock --upgrade`); re-run `task test` after. *(Surfaced by
       the static-analysis pass; pip-audit is advisory in `task release:check`.)*
+- [ ] **Pay down the 48 pyright errors; ratchet `.pyright-baseline` toward 0** — the baseline read
+      `0` but the real count was **48 pre-existing** errors (proven: 48 at the pre-session commit),
+      accumulated because `check:types:python:baseline` was wired into *nothing* that runs (not
+      `release:check`/`check:static`). Re-baselined to 48 (honest current) and wired into CI so it
+      now blocks *new* errors. Dominant classes: `reportPossiblyUnbound` + `reportOptionalMemberAccess`
+      in `views.py`, dataclass `reportCallIssue` in `prompts/layers.py`/`profiles.py`. Fix in batches,
+      lowering the baseline each time. *(The old "type-checks clean at baseline 0" memory is stale.)*
 
 #### Workspace DX gates (from Fable's Super-Refinements — see [Repo-Questions.md](../../Repo-Questions.md))
 
