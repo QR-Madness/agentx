@@ -133,22 +133,22 @@ class PromptLayer(BaseModel):
     id: str = Field(..., description="Stable slug (built-ins use well-known ids)")
     title: str = Field(..., description="Display name")
     kind: Literal["builtin", "custom"] = Field(
-        "custom", description="'builtin' = shipped (has a default sidecar); 'custom' = user-created"
+        default="custom", description="'builtin' = shipped (has a default sidecar); 'custom' = user-created"
     )
     default: str | None = Field(
-        None, description="Shipped default content (built-ins only); the sidecar"
+        default=None, description="Shipped default content (built-ins only); the sidecar"
     )
     default_version: int = Field(
-        1, description="Bumped when the shipped default changes (drives update detection)"
+        default=1, description="Bumped when the shipped default changes (drives update detection)"
     )
     override: str | None = Field(
-        None, description="User edit; None means 'use the default'"
+        default=None, description="User edit; None means 'use the default'"
     )
     base_version: int | None = Field(
-        None, description="default_version the override was seeded/synced from"
+        default=None, description="default_version the override was seeded/synced from"
     )
-    enabled: bool = Field(True, description="Whether this layer is in the composed stack")
-    order: int = Field(0, description="Position in the stack (ascending)")
+    enabled: bool = Field(default=True, description="Whether this layer is in the composed stack")
+    order: int = Field(default=0, description="Position in the stack (ascending)")
 
     @property
     def effective(self) -> str:

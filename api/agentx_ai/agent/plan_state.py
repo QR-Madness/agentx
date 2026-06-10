@@ -195,7 +195,7 @@ class PlanStateStore:
         """
         try:
             client = _get_redis_client()
-            ttl = client.ttl(self._key(plan_id))
+            ttl = cast(int, client.ttl(self._key(plan_id)))
             return int(ttl) if ttl is not None and ttl >= 0 else None
         except Exception as e:
             logger.warning(f"Failed to read TTL for plan {plan_id}: {e}")

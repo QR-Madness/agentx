@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, UTC
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ def _list(index_key: str, item_key_for) -> list[dict]:
     """Return all records indexed by ``index_key``, pruning expired stragglers."""
     try:
         client = _redis()
-        ids = [_decode(m) for m in client.smembers(index_key)]
+        ids = [_decode(m) for m in cast(set, client.smembers(index_key))]
     except Exception as e:  # pragma: no cover - Redis offline
         logger.debug(f"ambassador list failed: {e}")
         return []
@@ -496,7 +497,7 @@ def clear(conversation_id: str) -> None:
             (_index_key(conversation_id), lambda i: _briefing_key(conversation_id, i)),
             (_qa_index_key(conversation_id), lambda i: _qa_key(conversation_id, i)),
         ):
-            for item_id in [_decode(m) for m in client.smembers(index_key)]:
+            for item_id in [_decode(m) for m in cast(set, client.smembers(index_key))]:
                 client.delete(key_for(item_id))
             client.delete(index_key)
         client.delete(_thread_meta_key(conversation_id))

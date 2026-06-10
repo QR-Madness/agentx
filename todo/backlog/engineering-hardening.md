@@ -15,13 +15,16 @@
       `transformers`) have no fix without a major bump — accept/track separately. Do a focused
       bump-and-test pass (not a blind `uv lock --upgrade`); re-run `task test` after. *(Surfaced by
       the static-analysis pass; pip-audit is advisory in `task release:check`.)*
-- [ ] **Pay down the 48 pyright errors; ratchet `.pyright-baseline` toward 0** — the baseline read
-      `0` but the real count was **48 pre-existing** errors (proven: 48 at the pre-session commit),
-      accumulated because `check:types:python:baseline` was wired into *nothing* that runs (not
-      `release:check`/`check:static`). Re-baselined to 48 (honest current) and wired into CI so it
-      now blocks *new* errors. Dominant classes: `reportPossiblyUnbound` + `reportOptionalMemberAccess`
-      in `views.py`, dataclass `reportCallIssue` in `prompts/layers.py`/`profiles.py`. Fix in batches,
-      lowering the baseline each time. *(The old "type-checks clean at baseline 0" memory is stale.)*
+- [x] **Paid down the 48 pyright errors → baseline 0** — the file read `0` but the tree had 48
+      pre-existing (proven at the pre-session commit), accumulated because the gate was wired into
+      nothing that runs. Cleared all 48 + the +1 I'd introduced: hoisted the `generate_sse`
+      persist-handler vars to bind on every path, narrowed `plan` via `assert`, cast the sync-redis
+      `ResponseT`/`smembers` returns, fixed a **real** stale import (`_qa_persona` → `_answer_persona`,
+      which would have `ImportError`'d the `/persona-defaults` endpoint live), and converted
+      `PromptLayer`/`AmbassadorConfig` positional `Field(x, …)` → `Field(default=x, …)` (pyright only
+      honors the keyword form). Baseline now 0 and CI-enforced. **Latent pattern worth a sweep:** any
+      pydantic model built with omitted positional-`Field()`-default fields will re-trigger this —
+      consider a repo-wide `Field(x,` → `Field(default=x,` pass.
 
 #### Workspace DX gates (from Fable's Super-Refinements — see [Repo-Questions.md](../../Repo-Questions.md))
 

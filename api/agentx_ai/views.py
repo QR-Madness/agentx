@@ -838,6 +838,15 @@ async def agent_chat_stream(request):
         task_id = str(uuid.uuid4())[:8]  # Short ID for UI display
         full_conversation_id = str(uuid.uuid4())  # Full UUID for database storage
         start_time = time.time()
+        # Bound on every path: the GeneratorExit/finally persist handlers below may run
+        # after a hard-stop mid-setup, so these must never be unassigned.
+        provider = None
+        model_id = ""
+        caps = None
+        loop_result = None
+        plan_result = None
+        plan_obj = None
+        persisted = False
 
         # Look up agent profile early to apply all settings
         logger.debug(
@@ -1547,6 +1556,7 @@ async def agent_chat_stream(request):
 
             decompose = plan is not None and len(plan.steps) > 1
             if decompose:
+                assert plan is not None  # decompose implies plan is not None
                 # Plan execution path — delegate to PlanExecutor
                 from .agent.plan_state import PlanStateStore
                 from .agent.plan_executor import PlanExecutor, PlanResult
@@ -1777,13 +1787,13 @@ async def agent_chat_stream(request):
                     partial = _parse_output(loop_result.content)
                     interrupted_meta = {
                         "model": model_id,
-                        "provider": provider.name,
+                        "provider": (provider.name if provider else ""),
                         "latency_ms": (time.time() - start_time) * 1000,
                         "tokens_input": loop_result.tokens_in,
                         "tokens_output": loop_result.tokens_out,
                         "interrupted": True,
                     }
-                    _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out)
+                    _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out) if caps else None
                     if _icost is not None:
                         interrupted_meta["cost_estimate"] = _icost["cost_total"]
                         interrupted_meta["cost_currency"] = _icost["currency"]
@@ -1793,7 +1803,7 @@ async def agent_chat_stream(request):
                     if _ian:
                         interrupted_meta["agent_name"] = _ian
 
-                    _persist_turns(
+                    _persist_turns(  # pyright: ignore[reportPossiblyUnboundVariable]
                         content=partial.content,
                         asst_metadata=interrupted_meta,
                         token_count=(loop_result.tokens_in + loop_result.tokens_out) or None,
@@ -1811,7 +1821,7 @@ async def agent_chat_stream(request):
                     from .agent.plan_executor import PlanExecutor as _PE
                     interrupted_meta = {
                         "model": model_id,
-                        "provider": provider.name,
+                        "provider": (provider.name if provider else ""),
                         "latency_ms": (time.time() - start_time) * 1000,
                         "tokens_input": plan_result.tokens_in,
                         "tokens_output": plan_result.tokens_out,
@@ -1823,7 +1833,7 @@ async def agent_chat_stream(request):
                     _ipn = getattr(agent_profile, "name", None)
                     if _ipn:
                         interrupted_meta["agent_name"] = _ipn
-                    _persist_turns(
+                    _persist_turns(  # pyright: ignore[reportPossiblyUnboundVariable]
                         content=plan_result.full_content or "",
                         asst_metadata=interrupted_meta,
                         token_count=(plan_result.tokens_in + plan_result.tokens_out) or None,
@@ -6000,11 +6010,11 @@ def ambassador_persona_defaults(request):
     GET /api/agent/ambassador/persona-defaults - The shipped default persona text
     for an ambassador's functional voices, so the editor can show + diff overrides.
     """
-    from .agent.ambassador import _default_persona, _qa_persona, _draft_persona
+    from .agent.ambassador import _default_persona, _answer_persona, _draft_persona
 
     return JsonResponse({
         "briefing": _default_persona(""),
-        "qa": _qa_persona(""),
+        "qa": _answer_persona(""),
         "draft": _draft_persona(""),
     })
 

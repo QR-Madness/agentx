@@ -64,46 +64,46 @@ class AmbassadorConfig(BaseModel):
     shipped default (``openrouter:microsoft/mai-voice-2``) in ``ambassador.py``.
     """
     enabled: bool = Field(
-        False, description="Legacy marker (pre-`kind`); an ambassador is now any profile with kind='ambassador'"
+        default=False, description="Legacy marker (pre-`kind`); an ambassador is now any profile with kind='ambassador'"
     )
     briefing_prompt: str = Field(
-        "",
+        default="",
         description="Extra instructions layered onto the briefing: what to surface / how to brief",
     )
     verbosity: Literal["brief", "normal", "deep"] = Field(
-        "normal", description="How detailed the briefing should be"
+        default="normal", description="How detailed the briefing should be"
     )
     # Functional persona overrides — the ambassador's load-bearing voices. None =
     # use the shipped code default (`_default_persona`/`_qa_persona`/`_draft_persona`
     # in ambassador.py). The *primary* customizable voice is the profile's
     # `system_prompt` (the "Communications"/personality prompt); these are advanced.
     briefing_persona: str | None = Field(
-        None, description="Override for the per-turn briefing persona (None = shipped default)"
+        default=None, description="Override for the per-turn briefing persona (None = shipped default)"
     )
     qa_persona: str | None = Field(
-        None, description="Override for the free-form Q&A persona (None = shipped default)"
+        default=None, description="Override for the free-form Q&A persona (None = shipped default)"
     )
     draft_persona: str | None = Field(
-        None, description="Override for the outbound-message draft persona (None = shipped default)"
+        default=None, description="Override for the outbound-message draft persona (None = shipped default)"
     )
     # Voice (TTS) — spoken briefings via OpenRouter's /audio/speech. STT (the
     # user-speaks half of two-way voice mode) is a separate, later seam.
     voice_mode: bool = Field(
-        False,
+        default=False,
         description="Opt-in: enable the immersive two-way voice surface for this ambassador",
     )
     speech_model: str | None = Field(
-        None,
+        default=None,
         description="TTS/speech model id for spoken briefings (None = shipped default microsoft/mai-voice-2)",
     )
     voice: str | None = Field(
-        None, description="Voice id for spoken briefings (None = the speech model's default voice)"
+        default=None, description="Voice id for spoken briefings (None = the speech model's default voice)"
     )
     speech_speed: float | None = Field(
-        None, description="Optional playback-speed multiplier for spoken briefings (provider-dependent)"
+        default=None, description="Optional playback-speed multiplier for spoken briefings (provider-dependent)"
     )
     transcription_model: str | None = Field(
-        None,
+        default=None,
         description="STT/transcription model id for voice input (None = shipped default openai/whisper-1)",
     )
 
