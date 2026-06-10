@@ -37,7 +37,10 @@ interface VoiceSurfaceProps {
   conversationId: string;
   /** Ambassador profile id — supplies the speech/STT models. */
   agentProfileId?: string;
+  /** The watched conversation's agent name — grounds voice commands. */
   agentName: string;
+  /** The ambassador's own display name — for its status ("Echo is thinking…"). */
+  ambassadorName?: string;
   /** Latest-turn substance, to ground a voice command. */
   artifacts?: AmbassadorTurnArtifacts;
   /** Text the panel is currently speaking (e.g. an auto-played briefing). */
@@ -69,6 +72,7 @@ export function VoiceSurface({
   conversationId,
   agentProfileId,
   agentName,
+  ambassadorName,
   artifacts,
   ambientSpokenText,
   onRelay,
@@ -250,7 +254,7 @@ export function VoiceSurface({
     : transcribing
       ? 'Transcribing…'
       : routing
-        ? `${agentName || 'The ambassador'} is thinking…`
+        ? `${ambassadorName || 'The ambassador'} is thinking…`
         : speaking
           ? 'Speaking…'
           : relayDraft !== null

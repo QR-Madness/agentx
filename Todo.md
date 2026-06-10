@@ -605,8 +605,14 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.29** (prot
       (no markdown, names the agent, never reads tool output back).
 - [x] **Voice answers fold through the same loop** (`0.21.78`) — spoken questions drive
       tools + continuity via the shared core.
-- [ ] **Follow-ups:** client tool-call chips (Slice 1b — the SSE `ambassador_tool_call`/
-      `_result` events are emitted; the client pump still no-ops them); watch live behavior.
+- [x] **Client tool-call chips** (`0.21.80`) — `streamAmbassador` now surfaces
+      `ambassador_tool_call`/`_result`; `AmbassadorContext` captures them onto the
+      qa/briefing record (`toolCalls`); `AmbassadorPanel` renders live `ToolChips`
+      (spinner → check) in Q&A + briefings (`lib/ambassadorTools.ts::toolChipLabel`).
+      *Live-only* (not persisted to the sidecar — gone on reload).
+- [ ] **Follow-ups:** persist tool calls to the sidecar so chips survive reload; surface
+      tool activity in the *voice* path too (it answers server-side, no live SSE today);
+      tool chips in `QaItem`'s avatar still use the generic mark.
 
 **Slice 3 — voice mode confirms the tool call**
 - [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken

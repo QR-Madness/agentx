@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.79 -->
+<!-- release-version: 0.21.80 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -55,6 +55,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
   to it, and it remembers your back-and-forth so follow-ups have context. Everything it does here
   is **read-only** — it looks, it never touches — and if a model can't drive tools it quietly
   falls back to answering from what it's given. Point the ambassador at a tool-capable model.
+- **You can watch the Ambassador work.** When it reads or surveys your conversations to answer,
+  it now shows **live chips** — "reading the conversation…", "looking across your conversations…"
+  — that tick to a check when each finishes, so you can see what it looked at instead of guessing.
 - **Conversations moved to a proper sidebar.** The cramped browser-style tab strip at the
   top is gone; the chat page now has a dedicated **Conversations rail** on the left — open
   conversations, anything still running ("Resume"), and your full history grouped by recency,
@@ -224,6 +227,9 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **Voice mode no longer says the wrong name is "thinking."** While the ambassador worked, the
+  status showed *your agent's* name ("Atlas is thinking…") instead of the ambassador's own. It
+  now shows the ambassador's name.
 - **The Ambassador now gets your agents' names right.** When it read across your
   conversations it labelled every one with whichever agent you were currently watching —
   so it only ever saw one agent and attributed the wrong one to other sessions. It now

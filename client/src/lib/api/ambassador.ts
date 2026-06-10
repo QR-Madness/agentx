@@ -10,6 +10,17 @@ import { getAuthToken, getActiveGatewayToken } from '../storage';
 
 export type AmbassadorStatus = 'streaming' | 'done' | 'error' | 'empty_provider' | 'cancelled';
 
+/** One read-only tool the *ambassador* called while answering (its own tool belt —
+ *  summarize/explore/read/list a conversation). Surfaced live as a chip so you can
+ *  see it reading/surveying. Distinct from `AmbassadorToolArtifact` (the watched
+ *  agent's tools). Live-only for now — not persisted to the sidecar. */
+export interface AmbassadorToolCall {
+  tool: string;
+  args?: Record<string, unknown>;
+  /** True once the tool returned (its `ambassador_tool_result` arrived). */
+  done?: boolean;
+}
+
 /** One persisted per-turn briefing (sidecar record / live state). */
 export interface AmbassadorBriefing {
   message_id: string;
@@ -19,6 +30,8 @@ export interface AmbassadorBriefing {
   run_id?: string;
   created_at?: string;
   updated_at?: string;
+  /** Read-only tools the ambassador called while composing this briefing (live). */
+  toolCalls?: AmbassadorToolCall[];
 }
 
 /** One tool the agent ran during the turn (compacted for grounding). */
@@ -65,6 +78,8 @@ export interface AmbassadorQA {
   run_id?: string;
   created_at?: string;
   updated_at?: string;
+  /** Read-only tools the ambassador called while answering this question (live). */
+  toolCalls?: AmbassadorToolCall[];
 }
 
 export interface AskAmbassadorRequest {
@@ -142,6 +157,10 @@ export interface AmbassadorStreamCallbacks {
   onChunk?: (text: string) => void;
   onDone?: (summary: string, status: AmbassadorStatus) => void;
   onError?: (error: string) => void;
+  /** The ambassador started a read-only tool (summarize/explore/read/list). */
+  onToolCall?: (tool: string, args?: Record<string, unknown>) => void;
+  /** A tool returned. */
+  onToolResult?: (tool: string) => void;
   /** The run's event buffer expired — fall back to the persisted briefing. */
   onMissing?: () => void;
 }
@@ -179,6 +198,13 @@ async function pumpAmbassadorSse(
         break;
       case 'ambassador_error':
         callbacks.onError?.(typeof data.error === 'string' ? data.error : 'Briefing failed');
+        break;
+      case 'ambassador_tool_call':
+        if (typeof data.tool === 'string')
+          callbacks.onToolCall?.(data.tool, (data.args as Record<string, unknown>) ?? undefined);
+        break;
+      case 'ambassador_tool_result':
+        if (typeof data.tool === 'string') callbacks.onToolResult?.(data.tool);
         break;
       case 'run_missing':
         callbacks.onMissing?.();

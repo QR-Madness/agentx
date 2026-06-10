@@ -23,6 +23,7 @@ import type {
   AmbassadorBriefing,
   AmbassadorQA,
   AmbassadorStatus,
+  AmbassadorToolCall,
   AmbassadorTurnArtifacts,
 } from '../lib/api';
 import type { AssistantMessage } from '../lib/messages';
@@ -124,6 +125,42 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // --- Tool-call chips: append on start, mark done on result (live) -----------
+  const appendToolCall = (list: AmbassadorToolCall[] | undefined, tool: string, args?: Record<string, unknown>) =>
+    [...(list ?? []), { tool, args, done: false }];
+  const settleToolCall = (list: AmbassadorToolCall[] | undefined, tool: string) => {
+    if (!list?.length) return list;
+    const idx = list.findIndex((t) => t.tool === tool && !t.done);
+    if (idx < 0) return list;
+    const next = list.slice();
+    next[idx] = { ...next[idx], done: true };
+    return next;
+  };
+
+  const updateQaTools = useCallback(
+    (conversationId: string, qaId: string, fn: (cur: AmbassadorToolCall[] | undefined) => AmbassadorToolCall[] | undefined) => {
+      setQaState((prev) => {
+        const conv = prev[conversationId] ?? {};
+        const existing = conv[qaId];
+        if (!existing) return prev;
+        return { ...prev, [conversationId]: { ...conv, [qaId]: { ...existing, toolCalls: fn(existing.toolCalls) } } };
+      });
+    },
+    [],
+  );
+
+  const updateBriefingTools = useCallback(
+    (conversationId: string, messageId: string, fn: (cur: AmbassadorToolCall[] | undefined) => AmbassadorToolCall[] | undefined) => {
+      setState((prev) => {
+        const conv = prev[conversationId] ?? {};
+        const existing = conv[messageId];
+        if (!existing) return prev;
+        return { ...prev, [conversationId]: { ...conv, [messageId]: { ...existing, toolCalls: fn(existing.toolCalls) } } };
+      });
+    },
+    [],
+  );
+
   const refresh = useCallback(async (conversationId: string) => {
     if (!conversationId) return;
     try {
@@ -160,6 +197,7 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
         status: 'streaming',
         summary: '',
         error: undefined,
+        toolCalls: [],
       });
 
       api
@@ -190,6 +228,10 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
                   },
                 };
               }),
+            onToolCall: (tool, args) =>
+              updateBriefingTools(conversationId, messageId, (cur) => appendToolCall(cur, tool, args)),
+            onToolResult: (tool) =>
+              updateBriefingTools(conversationId, messageId, (cur) => settleToolCall(cur, tool)),
             onDone: (summary, status) => {
               // onDone carries the authoritative full text — replace.
               setBriefing(conversationId, messageId, { summary, status });
@@ -245,7 +287,7 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
       if (!conversationId || !q) return;
       const qaId = newQaId();
       // Optimistic: show the question immediately, streaming its answer.
-      setQa(conversationId, qaId, { qa_id: qaId, question: q, answer: '', status: 'streaming' });
+      setQa(conversationId, qaId, { qa_id: qaId, question: q, answer: '', status: 'streaming', toolCalls: [] });
 
       api
         .askAmbassador({
@@ -275,6 +317,10 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
                   },
                 };
               }),
+            onToolCall: (tool, args) =>
+              updateQaTools(conversationId, qaId, (cur) => appendToolCall(cur, tool, args)),
+            onToolResult: (tool) =>
+              updateQaTools(conversationId, qaId, (cur) => settleToolCall(cur, tool)),
             onDone: (summary, status) => {
               setQa(conversationId, qaId, { answer: summary, status });
               delete controllers.current[qaCtrlKey(conversationId, qaId)];
@@ -297,7 +343,7 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
           });
         });
     },
-    [setQa, refresh],
+    [setQa, refresh, updateQaTools],
   );
 
   const cancelQa = useCallback(

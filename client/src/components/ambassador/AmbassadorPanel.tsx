@@ -37,18 +37,20 @@ import {
   Square,
   AudioLines,
   MessageSquare,
+  Check,
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { isAssistantMessage, type AssistantMessage } from '../../lib/messages';
 import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
 import { getAvatarIcon } from '../../lib/avatars';
+import { toolChipLabel } from '../../lib/ambassadorTools';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { VoiceSurface } from './VoiceSurface';
 import { Button } from '../ui';
 import { api } from '../../lib/api';
-import type { AmbassadorBriefing, AmbassadorQA } from '../../lib/api';
+import type { AmbassadorBriefing, AmbassadorQA, AmbassadorToolCall } from '../../lib/api';
 
 type PanelMode = 'ask' | 'relay';
 
@@ -117,6 +119,30 @@ function AmbassadorMark({ size = 20, avatar }: { size?: number; avatar?: string 
     >
       <Icon size={Math.round(size * 0.55)} className="text-accent" />
     </span>
+  );
+}
+
+/** Live chips for the read-only tools the ambassador calls while answering —
+ *  spinner while running, check when done — so you can see it reading/surveying. */
+function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
+  if (!calls?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {calls.map((c, i) => (
+        <span
+          key={`${c.tool}-${i}`}
+          className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-fg-secondary"
+        >
+          {c.done ? (
+            <Check size={11} className="text-success" />
+          ) : (
+            <Loader2 size={11} className="animate-spin text-accent" />
+          )}
+          {toolChipLabel(c.tool, c.args)}
+          {!c.done && '…'}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -208,7 +234,9 @@ function QaItem({
       </div>
       <div className="flex max-w-[94%] items-start gap-2 self-start">
         <AmbassadorMark size={22} />
-        <div className="min-w-0 pt-0.5 text-sm leading-relaxed text-fg">
+        <div className="flex min-w-0 flex-col gap-1.5 pt-0.5 text-sm leading-relaxed text-fg">
+          <ToolChips calls={entry.toolCalls} />
+          <div>
           {entry.status === 'error' ? (
             <span className="flex items-start gap-1.5 text-error">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -245,6 +273,7 @@ function QaItem({
               className="ml-1 align-middle"
             />
           )}
+          </div>
         </div>
       </div>
     </li>
@@ -547,6 +576,7 @@ export function AmbassadorPanel() {
           conversationId={conversationId}
           agentProfileId={ambassadorProfile?.id}
           agentName={convAgentName}
+          ambassadorName={ambassadorProfile?.name}
           artifacts={voiceArtifacts}
           ambientSpokenText={spokenText}
           onRelay={relayVoiceCommand}
@@ -646,6 +676,7 @@ export function AmbassadorPanel() {
                         <p className="border-l-2 border-line pl-2 text-xs italic text-fg-muted">
                           {snippet(m.content)}
                         </p>
+                        <ToolChips calls={briefing?.toolCalls} />
                         <BriefingBody briefing={briefing} />
                       </li>
                     );
