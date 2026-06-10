@@ -6572,13 +6572,14 @@ class AmbassadorServiceTest(TestCase):
         # 16.7 Slice 2: the tool belt is read-only and never raises — a bad/unknown
         # call returns a readable note instead of throwing.
         from agentx_ai.agent import ambassador_tools as t
-        from agentx_ai.providers.base import Message, MessageRole
 
-        turns = [
-            Message(role=MessageRole.USER, content="find the registry"),
-            Message(role=MessageRole.ASSISTANT, content="I searched the county index."),
+        # Labeled rows: (role, content, agent_name) — the transcript names each
+        # assistant turn by its OWN producing agent (here metadata says "Atlas").
+        rows = [
+            ("user", "find the registry", None),
+            ("assistant", "I searched the county index.", "Atlas"),
         ]
-        with patch.object(t, "load_recent_turns", return_value=turns):
+        with patch.object(t, "load_recent_labeled_turns", return_value=rows):
             summary = t.execute_tool(
                 "summarize_conversation", {}, active_conversation_id="conv", agent_name="Atlas"
             )
@@ -6588,11 +6589,13 @@ class AmbassadorServiceTest(TestCase):
         convs = [{
             "conversation_id": "c1", "first_user": "build the registry",
             "last_message": "done", "message_count": 4, "last_at": "2026-06-08",
+            "agents": "Nimbus",
         }]
         with patch.object(t, "list_recent_conversations", return_value=convs):
             listed = t.execute_tool("list_conversations", {"limit": 5}, active_conversation_id="conv")
         self.assertIn("c1", listed)
         self.assertIn("build the registry", listed)
+        self.assertIn("Nimbus", listed)  # the survey names each conversation's own agent
 
         # Unknown tool + a missing required arg degrade to notes (never raise).
         self.assertIn("Unknown tool", t.execute_tool("nope", {}, active_conversation_id="conv"))
@@ -6600,6 +6603,26 @@ class AmbassadorServiceTest(TestCase):
             "needs a conversation_id",
             t.execute_tool("read_conversation", {}, active_conversation_id="conv"),
         )
+
+    def test_ambassador_tools_label_each_conversation_by_its_own_agent(self):
+        # The bug: a cross-conversation read mislabeled another conversation's turns
+        # with the *active* agent. Now an assistant turn uses its own metadata name,
+        # and a non-active conversation never borrows the active agent's name.
+        from agentx_ai.agent import ambassador_tools as t
+
+        rows = [
+            ("user", "do the thing", None),
+            ("assistant", "Done — used Postgres.", "Nimbus"),
+            ("assistant", "Unstamped reply.", None),
+        ]
+        with patch.object(t, "load_recent_labeled_turns", return_value=rows):
+            out = t.execute_tool(
+                "read_conversation", {"conversation_id": "other"},
+                active_conversation_id="active", agent_name="Atlas",
+            )
+        self.assertIn("Nimbus: Done — used Postgres.", out)  # its own agent
+        self.assertNotIn("Atlas:", out)  # never the active agent's name
+        self.assertIn("Agent: Unstamped reply.", out)  # generic fallback, not "Atlas"
 
     @staticmethod
     def _streaming_provider(stream_fn):
@@ -6640,7 +6663,7 @@ class AmbassadorServiceTest(TestCase):
         with patch.object(svc, "_resolve_profile", return_value=None), \
                 patch.object(a, "_redis", return_value=fake), \
                 patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
-                patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]):
             events = asyncio.run(_collect(svc.answer_question("conv", "qa1", "summarize this")))
             record = a.get_qa("conv", "qa1")
 
@@ -6676,7 +6699,7 @@ class AmbassadorServiceTest(TestCase):
         with patch.object(svc, "_resolve_profile", return_value=None), \
                 patch.object(a, "_redis", return_value=fake), \
                 patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
-                patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]):
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]):
             events = asyncio.run(_collect(svc.answer_question("conv", "qa2", "what happened?")))
             record = a.get_qa("conv", "qa2")
 
@@ -7580,7 +7603,7 @@ class AmbassadorVoiceCommandTest(TestCase):
         with patch.object(svc, "_resolve_profile", return_value=None), \
              patch.object(svc, "_grounding_context", return_value=""), \
              patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
-             patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]), \
+             patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]), \
              patch.object(a, "_redis", return_value=fake):
             result = asyncio.run(svc.route_voice_command("conv1", "what did it find?"))
             rec = a.get_qa("conv1", result["qa_id"])
@@ -7615,7 +7638,7 @@ class AmbassadorVoiceCommandTest(TestCase):
         with patch.object(svc, "_resolve_profile", return_value=None), \
              patch.object(svc, "_grounding_context", return_value=""), \
              patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
-             patch("agentx_ai.agent.ambassador_tools.load_recent_turns", return_value=[]), \
+             patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]), \
              patch.object(a, "_redis", return_value=fake):
             result = asyncio.run(svc.route_voice_command("conv1", "what's up"))
         self.assertEqual(result["action"], "answer")

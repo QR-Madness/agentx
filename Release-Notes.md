@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.78 -->
+<!-- release-version: 0.21.79 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -224,6 +224,18 @@ providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel).
 
 ### Fixes
 
+- **The Ambassador now gets your agents' names right.** When it read across your
+  conversations it labelled every one with whichever agent you were currently watching —
+  so it only ever saw one agent and attributed the wrong one to other sessions. It now
+  names each conversation by **its own** agent, and a cross-conversation survey lists the
+  agent(s) in each session.
+- **The Ambassador panel shows the ambassador's own face.** The header was a static
+  "Ambassador" label and generic mark; it now shows your **customized ambassador's name
+  and avatar** (it's a profile you can style, not a fixed thing).
+- **No more scary "CancelledError" in the server log when you interrupt voice.** Talking
+  over the ambassador (barge-in) or navigating away mid-speech cancels the in-flight
+  request — which is fine and intended, but Python logged it as an error. That specific
+  benign cancellation is now quiet; every other error is untouched.
 - **A stopped Redis no longer floods the console.** If the datastore went down
   while the API kept running, the background-chat worker logged a connection
   warning every two seconds forever. It now backs off (up to 30s), logs the

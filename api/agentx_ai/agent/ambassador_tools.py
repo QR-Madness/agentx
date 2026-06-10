@@ -23,8 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..providers.base import MessageRole
-from .conversation_history import list_recent_conversations, load_recent_turns
+from .conversation_history import list_recent_conversations, load_recent_labeled_turns
 
 logger = logging.getLogger(__name__)
 
@@ -130,14 +129,22 @@ TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
 # --- Read helpers ------------------------------------------------------------
 
 
-def _render_transcript(conversation_id: str, agent_label: str) -> str:
-    msgs = load_recent_turns(conversation_id, token_budget=_READ_TOKEN_BUDGET)
-    if not msgs:
+def _render_transcript(conversation_id: str, fallback_label: str) -> str:
+    """Render a conversation read-only, labelling each assistant turn with **its own**
+    producing agent (``metadata.agent_name``) so the ambassador never mislabels one
+    conversation's agent with another's. ``fallback_label`` is used only for unstamped
+    assistant turns — pass the active agent's name for the watched conversation, and
+    an empty string (→ generic "Agent") for any *other* conversation."""
+    rows = load_recent_labeled_turns(conversation_id, token_budget=_READ_TOKEN_BUDGET)
+    if not rows:
         return "(That conversation is empty — nothing has happened in it yet.)"
     lines = []
-    for m in msgs:
-        who = "You" if m.role == MessageRole.USER else (agent_label or "Agent")
-        lines.append(f"{who}: {m.content}")
+    for role, content, agent_name in rows:
+        if role == "user":
+            who = "You"
+        else:
+            who = (agent_name or "").strip() or (fallback_label or "Agent")
+        lines.append(f"{who}: {content}")
     return "\n".join(lines)
 
 
@@ -156,7 +163,11 @@ def _render_survey(limit: int) -> str:
             last = last[:_SURVEY_SNIPPET].rstrip() + "…"
         count = c.get("message_count", 0)
         when = c.get("last_at", "")
-        piece = f"- id={cid} · {count} messages · last active {when}\n    topic: {title}"
+        agents = (c.get("agents") or "").strip()
+        piece = f"- id={cid} · {count} messages · last active {when}"
+        if agents:
+            piece += f"\n    agent(s): {agents}"
+        piece += f"\n    topic: {title}"
         if last:
             piece += f"\n    latest: {last}"
         lines.append(piece)
@@ -178,13 +189,20 @@ def execute_tool(
     Never raises — an unknown tool or a read failure returns a short, readable
     note so the agentic loop stays alive."""
     args = arguments if isinstance(arguments, dict) else {}
-    agent_label = (agent_name or "").strip() or "Agent"
+    active_label = (agent_name or "").strip()
+
+    def _fallback_for(cid: str) -> str:
+        # Only the watched conversation may borrow the active agent's name for an
+        # unstamped turn; any *other* conversation falls back to a generic label so
+        # its turns are never mislabelled as the active agent.
+        return active_label if cid == active_conversation_id else ""
+
     try:
         if name in ("summarize_conversation", "explore_conversation"):
             cid = (args.get("conversation_id") or "").strip() or active_conversation_id
             if not cid:
                 return "(There's no conversation open to read yet.)"
-            body = _render_transcript(cid, agent_label)
+            body = _render_transcript(cid, _fallback_for(cid))
             topic = (args.get("topic") or "").strip()
             if name == "explore_conversation" and topic:
                 return f"(Focus the deeper look on: {topic})\n\n{body}"
@@ -193,7 +211,7 @@ def execute_tool(
             cid = (args.get("conversation_id") or "").strip()
             if not cid:
                 return "(read_conversation needs a conversation_id — use list_conversations first.)"
-            return _render_transcript(cid, agent_label)
+            return _render_transcript(cid, _fallback_for(cid))
         if name == "list_conversations":
             try:
                 limit = int(args.get("limit") or 20)

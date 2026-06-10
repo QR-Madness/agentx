@@ -2067,6 +2067,9 @@ async def ambassador_voice_command(request):
     `{action: "answer"|"relay", text, qa_id?}`. Never fails the call — degrades to a
     spoken notice.
     """
+    from .logging_kit.async_noise import install as _quiet_async_noise
+    _quiet_async_noise()  # client barge-in/navigation cancels are benign, not errors
+
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
@@ -2105,6 +2108,9 @@ async def ambassador_speak(request):
     Degrades gracefully: a missing OpenRouter key or a non-speech model returns a
     structured 422 ({error, code}) instead of failing the panel.
     """
+    from .logging_kit.async_noise import install as _quiet_async_noise
+    _quiet_async_noise()  # aborting TTS playback (barge-in/navigation) is benign
+
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
@@ -2205,6 +2211,9 @@ async def ambassador_stream(request):
     events then follows live. Emits `run_missing` if the buffer expired (the
     client then falls back to the persisted briefing from the history endpoint).
     """
+    from .logging_kit.async_noise import install as _quiet_async_noise
+    _quiet_async_noise()  # closing the SSE tail (tab switch/navigation) is benign
+
     if request.method != "GET":
         return JsonResponse({"error": "GET required"}, status=405)
 

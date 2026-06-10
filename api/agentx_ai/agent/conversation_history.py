@@ -60,6 +60,63 @@ def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
         conn.close()
 
 
+def _default_labeled_reader(
+    conversation_id: str, limit: int
+) -> list[tuple[str, str, Optional[str]]]:
+    """Like :func:`_default_reader` but also returns each turn's producing agent
+    name (``metadata->>'agent_name'``, Phase 16 attribution) so a reader can label
+    each conversation by its *own* agent — used by the ambassador's tools so a
+    cross-conversation survey names the right agent per session, not one global name.
+    ``None`` for user turns / unstamped assistant turns.
+    """
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    conn: Any = PostgresConnection.get_engine().raw_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT role, content, metadata->>'agent_name'
+                FROM conversation_logs
+                WHERE conversation_id = %s AND role IN ('user', 'assistant')
+                ORDER BY turn_index DESC
+                LIMIT %s
+                """,
+                (conversation_id, limit),
+            )
+            return [(r[0], r[1] or "", r[2]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def load_recent_labeled_turns(
+    conversation_id: str,
+    *,
+    token_budget: int,
+    max_rows: int = _MAX_ROWS,
+    reader: Optional[Callable[[str, int], list[tuple[str, str, Optional[str]]]]] = None,
+) -> list[tuple[str, str, Optional[str]]]:
+    """Recent user/assistant turns as ``(role, content, agent_name)`` in chronological
+    order, fitting ``token_budget``. ``agent_name`` is the producing agent's display
+    name per turn (``None`` for user/unstamped). Empty on error."""
+    reader = reader or _default_labeled_reader
+    try:
+        rows = reader(conversation_id, max_rows)  # newest-first
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"labeled transcript load failed for {conversation_id}: {e}")
+        return []
+    picked: list[tuple[str, str, Optional[str]]] = []
+    used = 0
+    for role, content, agent_name in rows:
+        tokens = _estimate_tokens(content)
+        if picked and used + tokens > token_budget:
+            break
+        picked.append((role, content, agent_name))
+        used += tokens
+    picked.reverse()
+    return picked
+
+
 def _default_conversation_lister(limit: int) -> list[dict]:
     """Read the most-recent conversations (newest first) from ``conversation_logs``.
 
@@ -82,7 +139,12 @@ def _default_conversation_lister(limit: int) -> list[dict]:
                      ORDER BY s.turn_index ASC LIMIT 1) AS first_user,
                     (SELECT content FROM conversation_logs s
                      WHERE s.conversation_id = cl.conversation_id
-                     ORDER BY s.turn_index DESC LIMIT 1) AS last_message
+                     ORDER BY s.turn_index DESC LIMIT 1) AS last_message,
+                    (SELECT string_agg(DISTINCT s.metadata->>'agent_name', ', ')
+                     FROM conversation_logs s
+                     WHERE s.conversation_id = cl.conversation_id
+                       AND s.role = 'assistant'
+                       AND s.metadata->>'agent_name' IS NOT NULL) AS agents
                 FROM conversation_logs cl
                 GROUP BY cl.conversation_id
                 ORDER BY MAX(cl.timestamp) DESC
@@ -97,6 +159,7 @@ def _default_conversation_lister(limit: int) -> list[dict]:
                     "message_count": int(r[2] or 0),
                     "first_user": r[3] or "",
                     "last_message": r[4] or "",
+                    "agents": r[5] or "",
                 }
                 for r in cur.fetchall()
             ]

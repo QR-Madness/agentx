@@ -42,6 +42,7 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { isAssistantMessage, type AssistantMessage } from '../../lib/messages';
 import { gatherTurnContext, resolveTurnAgentName } from '../../lib/ambassadorTurn';
+import { getAvatarIcon } from '../../lib/avatars';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { VoiceSurface } from './VoiceSurface';
@@ -105,13 +106,16 @@ function Cursor() {
 }
 
 /** The ambassador's avatar motif — a small accent disc with the Radio mark. */
-function AmbassadorMark({ size = 20 }: { size?: number }) {
+/** The ambassador's identity mark — its customizable avatar (from the ambassador
+ *  profile) on an accent disc, falling back to the generic radio mark. */
+function AmbassadorMark({ size = 20, avatar }: { size?: number; avatar?: string }) {
+  const Icon = avatar ? getAvatarIcon(avatar) : Radio;
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full bg-accent/15"
       style={{ width: size, height: size }}
     >
-      <Radio size={Math.round(size * 0.55)} className="text-accent" />
+      <Icon size={Math.round(size * 0.55)} className="text-accent" />
     </span>
   );
 }
@@ -492,12 +496,12 @@ export function AmbassadorPanel() {
         {/* pr clears the drawer shell's absolute close button (top-right, ~56px). */}
         <div className="flex flex-wrap items-center gap-2.5 pr-12">
           <span className="relative inline-flex">
-            <AmbassadorMark size={26} />
+            <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
             {anyStreaming && (
               <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-accent" />
             )}
           </span>
-          <h2 className="text-base font-semibold text-fg">Ambassador</h2>
+          <h2 className="text-base font-semibold text-fg">{ambassadorProfile?.name || 'Ambassador'}</h2>
           {anyStreaming && (
             <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
               live
@@ -553,7 +557,7 @@ export function AmbassadorPanel() {
       {/* Voice mode but no conversation open yet — never render a blank surface. */}
       {voiceActive && !conversationId && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <AmbassadorMark size={40} />
+          <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
           <p className="text-sm text-fg-muted">
             Open a conversation and you can talk to the ambassador about it here.
           </p>
@@ -566,7 +570,7 @@ export function AmbassadorPanel() {
       <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
         {!conversationId ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <AmbassadorMark size={40} />
+            <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
             <p className="text-sm text-fg-muted">
               Open a conversation and the ambassador can brief its turns or answer your questions
               about it here.
