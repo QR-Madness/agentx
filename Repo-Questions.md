@@ -20,6 +20,8 @@
 
 ## Q1 — Memory Capability Registry: the minimal schema (Memory-Roadmap T2)
 
+> **✅ RESOLVED** → folded into [Memory-Roadmap §2.6](Memory-Roadmap.md). Answer below is the design record.
+
 **Context.** Memory capabilities are documented by hand in `architecture/memory-capabilities.md`;
 the roadmap (§1.2, §2.6) and `todo/phases/phase-16-multi-agent.md` ("Memory capability registry")
 want a code-side `@capability(...)` registry the doc is generated from or validated against. Four
@@ -119,6 +121,8 @@ couple to it; every other field is additive or derivable. Fix the naming scheme 
 
 ## Q2 — OpenAPI without DRF: hand-maintained + parity-check, or adopt a generator?
 
+> **✅ RESOLVED** → [Decisions.md ADR-8](Decisions.md). Answer below is the design record.
+
 **Context.** The API is hand-rolled Django views (no DRF / drf-spectacular), so `OpenApi.yaml`
 is hand-maintained and the CLAUDE.md rule is "update both `OpenApi.yaml` and `endpoints.md`."
 The cheap static guard available is a `urls.py` ↔ `OpenApi.yaml` path-parity check (Repo-Questions
@@ -175,6 +179,8 @@ acceptable floor for a single-deployment API whose only client is in the same re
 ---
 
 ## Q3 — Event-sourced write path (§1.1): the no-flag-day cutover
+
+> **✅ RESOLVED** → folded into [Memory-Roadmap §1.1](Memory-Roadmap.md). Answer below is the design record.
 
 **Context.** Memory-Roadmap §1.1 wants to invert the write path so a turn "succeeds when the
 `conversation_logs` row commits" and Neo4j/vector become rebuildable projections, with
@@ -252,6 +258,8 @@ state (`projected_at`) instead of a flag.
 ---
 
 ## Q4 — Bitemporal facts (§1.7): non-destructive migration from `temporal_context`
+
+> **✅ RESOLVED** → folded into [Memory-Roadmap §1.7](Memory-Roadmap.md). Answer below is the design record.
 
 **Context.** §1.7 replaces the `temporal_context ∈ {current,past,future}` label (which conflates
 *when true* with *when learned*) with `valid_from`/`valid_to` (world time) + `asserted_at`/

@@ -60,8 +60,19 @@ class recurs wherever two stores must agree (orphaned `ABOUT` edges needed the
   extraction": a transcript-only durable record *is* the log; "No Memorization" = log
   without projection.
 
-**Sequencing:** ship 1.2 first (measure drift) → rebuild command against the current path →
-flip the write path and delete the `_persist_turns` fallback patch.
+**Sequencing — RESOLVED ([Repo-Questions Q3](Repo-Questions.md#q3--event-sourced-write-path-11-the-no-flag-day-cutover)):**
+the 3-step shape holds, with two amendments. **Step 0 (do first):** the log isn't
+rebuild-complete today — `conversation_logs` has no `turn_id`/`user_id`, so a rebuild would
+mint fresh Turn UUIDs and orphan every `Fact.source_turn_id`. Add + backfill both columns *now*,
+while the graph is still authoritative to cross-fill from. Then: (1) ship the 1.2 checker;
+(2) reorder `store_turn` to PG-first + best-effort Neo4j with a `projected_at` marker — this *is*
+the no-flag-day flip (same method, PG authoritative in one commit) and the `_persist_turns`
+fallback dies in the **same PR** as proof; (3) extract `project_turn(row)` so the live path and
+`rebuild_memory_projections` are **one function, two callers** (fidelity true by construction);
+(4) land §2.1's per-turn `(consolidated_at, pipeline_version)` columns + point consolidation's
+reads/watermark at PG *before* trusting rebuild as recovery; (5) shadow-rebuild one channel, diff,
+then the invariant goes into `Decisions.md`. Riskiest seam = identity/bookkeeping that lives only
+in the projection (Turn UUIDs, `c.consolidated` watermark), not content.
 
 ### 1.2 Cross-store invariant checker `[REFINES: Todo "Memory-mending agent (memory janitor)"]`
 
@@ -158,6 +169,17 @@ conflates *when true* with *when learned*. Replace with:
 - Recall's 1.2×/0.7× multipliers become interval-overlap functions; keep the labels as a
   derived view for back-compat.
 
+**Migration — RESOLVED ([Repo-Questions Q4](Repo-Questions.md#q4--bitemporal-facts-17-non-destructive-migration-from-temporal_context)):**
+additive only — keep `temporal_context`, never derive `valid_to` from `expected_stability` (that
+invents world-time and silently re-ranks recall). Backfill only the honest bound: `current` →
+`valid_from=asserted_at`, `valid_to=NULL`; `past` → `valid_to=asserted_at`; `future`/NULL → no
+timestamps (label only). Stamp `temporal_provenance='backfill_v1'` so a later pass (generative
+replay §3.9) refines only those rows. **Scoring is two-path keyed by provenance** — `backfill_v1`
+uses today's label table (bit-identical ranking, by construction), `extracted` uses the overlap
+function; default-flip gated on `eval_recall` (§2.7). Corrections set `valid_to=now()` (the one
+moment world-time *is* known). Ship as the first numbered migration under §2.6; the importer runs
+old exports through the **same** backfill function (one mapping, two callers).
+
 ### 1.8 Context Ledger `[REFINES: shipped `assemble_turn_context` + Todo Foundation #3 "Stable memory core" + "Context Inspector"]`
 
 v0.21.30 shipped the token-budgeted assembler — but it fits **only the transcript** and
@@ -227,6 +249,19 @@ Backfills are one-off commands ("did this cluster get it?" is unanswerable). Mir
 applied by `init_memory_schema`/entrypoint. Convert existing backfills into numbered
 migrations. The capability registry (Todo, deferred) and this share a shape — a code-side
 registry the manifest/docs validate against; build them as siblings.
+
+**Registry schema — RESOLVED ([Repo-Questions Q1](Repo-Questions.md#q1--memory-capability-registry-the-minimal-schema-memory-roadmap-t2)):**
+a passive, import-time `@capability` registry in `kit/agent_memory/capabilities.py` whose only job
+is to be the *join key* — it stores nothing a consumer already owns. Fields:
+`name` (`<layer>.<slug>` — **the one-way door**, doc anchor + checker key), `layer`, `summary`,
+`stores: frozenset[Store]`, `flags` (config dot-paths *by reference*, not inlined metadata),
+`status`, `degrades_to` (pointer to a thinner capability), `channel_scope`, `entrypoint`
+(decorator-filled). **L-level is derived, never stored** (`min_level = lowest L whose available
+stores ⊇ cap.stores`; degradation is the `degrades_to` pointer, not a second number). The doc
+*matrix* is generated/validated row↔entry (prose stays hand-written); the §1.2 checker reads
+`stores`+`flags` for applicability and registers its own assertions; the Settings Manifest joins on
+`flags` by path. **When built, the checker must also assert every `degrades_to` resolves to a
+registered capability** (cheap integrity check).
 
 ### 2.7 `eval_recall` golden-set suite `[NEW — prerequisite for 3.5; sibling of Todo "Debug-harness extensions"]`
 `RecallMetrics` exists but there's no retrieval analog of `eval_consolidation` — with 5

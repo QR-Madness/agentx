@@ -124,6 +124,46 @@ the raw-SQL surface is the §1.5 repository layer (Memory-Roadmap), not `noqa`-d
 **Guard:** `task lint:python` runs clean at HEAD; `task docs:check` + `task audit` (pip-audit CVEs)
 round out the gate. **Source:** this session's static-analysis pass; pyproject comments point here.
 
+### ADR-8 — OpenAPI is spec-first and hand-maintained; no DRF/generator
+**Decision:** `OpenApi.yaml` stays the authoritative, hand-written contract; **code is checked
+against it**, never generated from it. Path drift is caught by `check_api_parity.py` (in
+`task docs:check`); response-shape drift will be caught by `schemathesis` running
+`response_schema_conformance` against the dev server (planned `task api:spec:test`, non-gating
+first). Promote the parity check to `--strict` (undocumented routes → error) once stable;
+`ALLOW_UNDOCUMENTED` is the escape hatch.
+**Why:** this codebase has **no serializers** (responses are hand-picked dicts —
+[[project_profile_serialization_handpicked]]), so drf-spectacular would mean writing a serializer
+layer for ~111 routes *just to document* — a large invasive rewrite that still can't express the
+SSE/multipart/stream surfaces where drift actually hurts. A generator would also make code
+authoritative and demote the spec to an artifact, contradicting the spec-first posture every other
+doc here takes. Endpoint count doesn't flip this; only a public/multi-tenant API would (the authz
+rewrite would carry DRF then). **Source:** [Repo-Questions Q2](Repo-Questions.md#q2--openapi-without-drf-hand-maintained--parity-check-or-adopt-a-generator).
+
+---
+
+## Rejected — do not relitigate
+
+Options weighed and declined (with the reason, so they don't return as "good ideas"):
+
+- **DRF / drf-spectacular migration** — no serializers exist; it's a rewrite that documents nothing
+  the spec-first posture doesn't already cover. See ADR-8 / Repo-Questions Q2.
+- **A code-derived OpenAPI generator** — would make code authoritative and demote the hand-written
+  spec to an artifact, against the repo's spec-first posture.
+- **Coverage mandates / line-coverage thresholds** — measure lines, not safety. The eval harnesses
+  (`eval_consolidation`, planned `eval_recall`) are this repo's real quality instruments.
+- **pre-commit framework / husky / commitlint** — each imports a config ecosystem to do what a
+  3-line git hook + the existing gates already do (see the planned `task hooks:install`).
+- **Monorepo orchestrators (nx / turbo / moon)** — Taskfile is already the orchestration layer;
+  a second task runner is drift by construction.
+- **CODEOWNERS / PR-template machinery** — human-team review-routing ceremony; in an agent-first
+  workspace the Documentation Map is the ownership model and gates outrank reviewers.
+- **Storing the memory degradation L-level on a capability/store** — it's derivable from `stores`;
+  a stored copy can contradict it (Repo-Questions Q1).
+- **Deriving bitemporal `valid_to` from `expected_stability`** — invents world-time data and
+  silently re-ranks recall (Repo-Questions Q4).
+
+> Source: Fable's "Considered and rejected" list (Repo-Questions) + the Q1–Q4 resolutions.
+
 ---
 
 ## Maintenance
