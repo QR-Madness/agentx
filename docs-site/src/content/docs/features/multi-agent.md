@@ -122,6 +122,31 @@ singleton (mirroring `ProfileManager`). CRUD is exposed under `/api/alloy/workfl
 On the client, `AlloyWorkflowContext` (`contexts/AlloyWorkflowContext.tsx`) manages the
 workflow list and selection; the active workflow's id is passed to the chat stream.
 
+## Ambassador — the parallel relay
+
+An **ambassador** is a normal agent profile (`kind: 'ambassador'`) that runs *parallel* to a
+conversation and briefs you on it — **without ever entering or polluting the main transcript**.
+That no-pollution invariant is load-bearing: the ambassador writes only to a Redis **sidecar**
+(the `amb_thread:` family), never `conversation_logs` / `conv_summary:`, and its tool belt is
+**SELECT-only**.
+
+- **What it does** — you ask it about the conversation ("what did my agents decide?",
+  "summarize this", "explore that turn") and it answers from a curated read-only tool belt
+  (`summarize_conversation` · `explore_conversation` · `read_conversation` · `list_conversations`)
+  over a bounded agentic loop. It briefs *to you* (second person, names the agent) and never
+  speaks into the transcript as itself.
+- **Two-way voice** — spoken briefings (TTS via a provider's `/audio/speech`) and hold-to-talk
+  questions (STT via `/audio/transcriptions`); a transcript routes through the same answer core,
+  so voice gets the same tools and continuity as text.
+- **Outbound relay** — it can *draft* a message you review and send into the conversation as a
+  real **user** turn (ghostwriter, not speaker) — so the invariant still holds.
+- **One thread** — briefings and Q&A are one ordered "Inquiry" thread; the panel docks beside the
+  chat (non-modal), so you can watch the agent work and talk to the ambassador at once.
+
+Configure it in **Settings → Ambassador** (the default ambassador profile) and per-profile (the
+`ambassador` block: personas, speech/voice model, verbosity). **Ambassador v2** — a fully
+conversational, tool-using relay with a standalone command-deck thread — is in progress.
+
 ## Status
 
 Shipped (v1 plus the routing/delegation waves through v0.21.5):
@@ -136,5 +161,5 @@ Shipped (v1 plus the routing/delegation waves through v0.21.5):
 - **@-mention routing** — an inline `@agent-id` / `@name` routes a turn; `AgentParticipant` graph nodes + a client `@`-autocomplete composer
 
 Deferred (see [Roadmap → Phase 16](../roadmap.md)): the visual **Factory canvas** editor,
-execution of declarative `routes` (accepted and stored but ignored), the **Ambassador**
-dual-presentation layer, async (background) delegation, and per-workflow tool subsetting.
+execution of declarative `routes` (accepted and stored but ignored), async (background)
+delegation, and per-workflow tool subsetting.
