@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.88 -->
+<!-- release-version: 0.21.89 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,6 +44,7 @@ the client at your own API server and bring your own model providers.
 - **Briefings settle cleanly.** No mid-sentence truncation on thinking models, no perpetual "briefing…" spinner after cancel, reliable agent naming on restored turns.
 - **Layering + diffs.** Dialogs from inside a full-screen modal layer on top; prompt diffs are colored everywhere (incl. memory prompts); accent-tint contrast fixes across the UI.
 - Web search is bounded by a wall-clock cap; plan resume no longer duplicates the user turn or sticks in `running`.
+- **Snappier conversation sidebar.** The list no longer rebuilds on every streaming token (stable tab projection + memoized rows), so only the active row updates while a reply streams; pinned/grouped conversations that are also open now show a small "open" dot.
 - **Ambassador polish.** One stable header across voice/text (switching modes no longer reshuffles the top bar or strands you — same Inquiry, only the input swaps), a header that holds together at any dock width (controls no longer slide off-screen), and a conversation switcher + mode toggle rebuilt on the app's standard themed components so they read correctly in every theme.
 
 ### Getting started

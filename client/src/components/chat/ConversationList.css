@@ -203,6 +203,19 @@
   color: var(--accent-primary);
 }
 
+/* "Open in a tab" indicator — a small accent dot shown on tab-backed rows in the
+   Pinned / group sections, where the section heading doesn't already imply it. */
+.history-item-openflag {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  flex: none;
+}
+
 /* Section toggle (collapsible groups / archived) */
 .history-section-toggle {
   display: flex;

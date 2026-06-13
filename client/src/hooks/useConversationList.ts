@@ -36,6 +36,25 @@ export interface ConversationItem {
   conversationId?: string;     // server id (tab.sessionId for tabs)
 }
 
+/** Stable, row-facing handler bundle passed to a memoized `ConversationRow`. */
+export interface RowHandlers {
+  openItem: (it: ConversationItem) => void;
+  closeOpenTab: (it: ConversationItem) => void;
+  deleteItem: (it: ConversationItem) => void | Promise<void>;
+  startRename: (it: ConversationItem) => void;
+  commitRename: (it: ConversationItem) => void;
+  renameKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, it: ConversationItem) => void;
+  setDraftTitle: (v: string) => void;
+  togglePin: (it: ConversationItem) => void;
+  toggleArchive: (it: ConversationItem) => void;
+  setGroup: (it: ConversationItem, group: string | undefined) => void;
+  setColor: (key: string, color: string | undefined) => void;
+  toggleSelect: (key: string) => void;
+  enterSelection: (key?: string) => void;
+  existingGroups: string[];
+  formatDate: (dateStr: string | null) => string;
+}
+
 const GROUPS_COLLAPSED_KEY = 'agentx:conv-groups-collapsed';
 const ARCHIVED_COLLAPSED_KEY = 'agentx:conv-archived-collapsed';
 
@@ -98,17 +117,30 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   }, [refreshHistory, autoFocusSearch]);
 
   const query = searchQuery.toLowerCase();
-  const liveRuns = useMemo(() => orphanedRuns(runs, tabs), [runs, tabs]);
-  const filteredLiveRuns = liveRuns.filter(r => r.message.toLowerCase().includes(query));
 
-  // Open-tab / live-run session ids excluded from server history (no dupes).
-  const openSessionIds = new Set([
-    ...tabs.map(t => t.sessionId).filter(Boolean),
-    ...liveRuns.map(r => r.session_id).filter(Boolean),
-  ]);
+  // Cheap projection signature over only the tab fields the sidebar reads. It
+  // stays byte-identical across streaming content tokens (`updateMessage` grows
+  // a message body but touches neither the title, message count, lastMessageAt
+  // nor isStreaming), so keying the memos below on `tabSig` instead of the
+  // `tabs` reference stops the whole list from rebuilding on every token.
+  const tabSig = tabs
+    .map(t => `${t.id}|${t.sessionId ?? ''}|${t.title}|${t.lastMessageAt ?? ''}|${t.messages.length}|${t.isStreaming ? 1 : 0}`)
+    .join('§');
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reads tabs, keyed on tabSig
+  const liveRuns = useMemo(() => orphanedRuns(runs, tabs), [runs, tabSig]);
+  const filteredLiveRuns = useMemo(
+    () => liveRuns.filter(r => r.message.toLowerCase().includes(query)),
+    [liveRuns, query],
+  );
 
   // --- Normalize into one item list ---
   const items = useMemo<ConversationItem[]>(() => {
+    // Open-tab / live-run session ids excluded from server history (no dupes).
+    const openSessionIds = new Set<string>([
+      ...tabs.map(t => t.sessionId).filter((s): s is string => Boolean(s)),
+      ...liveRuns.map(r => r.session_id).filter((s): s is string => Boolean(s)),
+    ]);
     const out: ConversationItem[] = [];
     for (const tab of tabs) {
       const key = tab.sessionId ?? tab.id;
@@ -129,28 +161,29 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
       });
     }
     return out;
-    // openSessionIds is derived from tabs+liveRuns; metaVersion re-pulls getMeta()
+    // tabSig captures the relevant tab fields; metaVersion re-pulls getMeta()
     // so pin/archive/icon/color/group changes reflect immediately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabs, serverConversations, liveRuns, metaVersion]);
+  }, [tabSig, serverConversations, liveRuns, metaVersion]);
 
-  const matches = (it: ConversationItem) =>
-    it.title.toLowerCase().includes(query) || (it.preview ?? '').toLowerCase().includes(query);
-
-  const visible = items.filter(matches);
-
-  // --- Partition by meta ---
+  // --- Partition by meta (memoized so identity is stable across re-renders) ---
   // Precedence (each item has exactly one home): archived > group > pinned >
   // open/past. So "move to group" always visibly relocates an item even if it's
   // pinned (the pin flag still renders on the row), and archiving always hides it.
-  const archived = visible.filter(it => it.meta.archived);
-  const live = visible.filter(it => !it.meta.archived);
-  const grouped = live.filter(it => it.meta.group);
-  const ungrouped = live.filter(it => !it.meta.group);
+  const visible = useMemo(
+    () => items.filter(it =>
+      it.title.toLowerCase().includes(query) || (it.preview ?? '').toLowerCase().includes(query)),
+    [items, query],
+  );
+  const archived = useMemo(() => visible.filter(it => it.meta.archived), [visible]);
+  const live = useMemo(() => visible.filter(it => !it.meta.archived), [visible]);
+  const grouped = useMemo(() => live.filter(it => it.meta.group), [live]);
+  const ungrouped = useMemo(() => live.filter(it => !it.meta.group), [live]);
 
-  const pinned = ungrouped
+  const pinned = useMemo(() => ungrouped
     .filter(it => it.meta.pinned)
-    .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime());
+    .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime()),
+    [ungrouped]);
 
   const groups = useMemo(() => {
     const byGroup = new Map<string, ConversationItem[]>();
@@ -167,9 +200,10 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     return [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [grouped]);
 
-  const openItems = ungrouped
+  const openItems = useMemo(() => ungrouped
     .filter(it => it.kind === 'tab' && !it.meta.pinned)
-    .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime());
+    .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime()),
+    [ungrouped]);
 
   const pastByBucket = useMemo(() => {
     const order: RecencyBucket[] = ['Today', 'Yesterday', 'This week', 'Older'];
@@ -185,8 +219,15 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const itemByKey = useMemo(() => new Map(items.map(it => [it.key, it])), [items]);
 
   const totalCount = visible.length + filteredLiveRuns.length;
+  const existingGroups = useMemo(() => listGroups(), [metaVersion]);
 
-  const formatDate = (dateStr: string | null): string => {
+  // Inline rename reads the live draft through a ref so the commit callbacks stay
+  // identity-stable across keystrokes (only the editing row re-renders, not the
+  // whole list). `setDraft` keeps the controlled input value + the ref in sync.
+  const draftTitleRef = useRef('');
+  const setDraft = useCallback((v: string) => { draftTitleRef.current = v; setDraftTitle(v); }, []);
+
+  const formatDate = useCallback((dateStr: string | null): string => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
@@ -194,15 +235,10 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     if (days === 1) return 'Yesterday';
     if (days < 7) return `${days} days ago`;
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  };
+  }, []);
 
   // --- Activation ---
-  const openItem = (it: ConversationItem) => {
-    if (it.kind === 'tab' && it.tabId) { switchTab(it.tabId); onActivated(); return; }
-    if (it.kind === 'server') { void handleRestore(it); }
-  };
-
-  const handleRestore = async (it: ConversationItem) => {
+  const handleRestore = useCallback(async (it: ConversationItem) => {
     setRestoringId(it.key);
     try {
       await restoreConversation(it.key);
@@ -212,19 +248,24 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     } finally {
       setRestoringId(null);
     }
-  };
+  }, [restoreConversation, onActivated, notifyError]);
 
-  const handleResume = async (run: ActiveChatRun) => {
+  const openItem = useCallback((it: ConversationItem) => {
+    if (it.kind === 'tab' && it.tabId) { switchTab(it.tabId); onActivated(); return; }
+    if (it.kind === 'server') { void handleRestore(it); }
+  }, [switchTab, onActivated, handleRestore]);
+
+  const handleResume = useCallback(async (run: ActiveChatRun) => {
     setRestoringId(run.run_id);
     try { await resumeRun(run); onActivated(); }
     catch (err) { notifyError(err, 'Failed to resume run'); }
     finally { setRestoringId(null); }
-  };
+  }, [resumeRun, onActivated, notifyError]);
 
-  const closeOpenTab = (it: ConversationItem) => { if (it.tabId) closeTab(it.tabId); };
+  const closeOpenTab = useCallback((it: ConversationItem) => { if (it.tabId) closeTab(it.tabId); }, [closeTab]);
 
   // --- Delete (themed confirm) ---
-  const deleteItem = async (it: ConversationItem) => {
+  const deleteItem = useCallback(async (it: ConversationItem) => {
     const ok = await confirm({
       title: 'Delete conversation?',
       body: `"${it.title}" will be permanently removed from the server. This can't be undone.`,
@@ -240,43 +281,45 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     } finally {
       setDeletingId(null);
     }
-  };
+  }, [confirm, deleteConversation, deleteServerConversation, notifyError]);
 
   // --- Inline rename ---
-  const startRename = (it: ConversationItem) => { setEditingKey(it.key); setDraftTitle(it.title); };
-  const commitRename = (it: ConversationItem) => {
-    const next = draftTitle.trim();
+  const startRename = useCallback((it: ConversationItem) => {
+    setEditingKey(it.key); setDraft(it.title);
+  }, [setDraft]);
+  const commitRename = useCallback((it: ConversationItem) => {
+    const next = draftTitleRef.current.trim();
     if (next) {
       if (it.kind === 'tab' && it.tabId) renameTab(it.tabId, next);
       else setTitleOverride(it.key, next);
     }
     setEditingKey(null);
-  };
-  const renameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, it: ConversationItem) => {
+  }, [renameTab]);
+  const renameKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, it: ConversationItem) => {
     if (e.key === 'Enter') { e.preventDefault(); commitRename(it); }
     else if (e.key === 'Escape') { e.preventDefault(); setEditingKey(null); }
-  };
+  }, [commitRename]);
 
-  // --- Management mutators ---
-  const togglePin = (it: ConversationItem) => patchMeta(it.key, { pinned: !it.meta.pinned });
-  const toggleArchive = (it: ConversationItem) => patchMeta(it.key, { archived: !it.meta.archived });
-  const setGroup = (it: ConversationItem, group: string | undefined) => patchMeta(it.key, { group });
-  const setGroupByKey = (key: string, group: string | undefined) => patchMeta(key, { group });
-  const setIcon = (key: string, icon: string | undefined) => patchMeta(key, { icon });
-  const setColor = (key: string, color: string | undefined) => patchMeta(key, { color });
+  // --- Management mutators (patchMeta is module-level, so these are stable) ---
+  const togglePin = useCallback((it: ConversationItem) => patchMeta(it.key, { pinned: !it.meta.pinned }), []);
+  const toggleArchive = useCallback((it: ConversationItem) => patchMeta(it.key, { archived: !it.meta.archived }), []);
+  const setGroup = useCallback((it: ConversationItem, group: string | undefined) => patchMeta(it.key, { group }), []);
+  const setGroupByKey = useCallback((key: string, group: string | undefined) => patchMeta(key, { group }), []);
+  const setIcon = useCallback((key: string, icon: string | undefined) => patchMeta(key, { icon }), []);
+  const setColor = useCallback((key: string, color: string | undefined) => patchMeta(key, { color }), []);
 
   // --- Multi-select + bulk ---
-  const toggleSelect = (key: string) =>
-    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  const enterSelection = (key?: string) => {
+  const toggleSelect = useCallback((key: string) =>
+    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; }), []);
+  const enterSelection = useCallback((key?: string) => {
     setSelectionMode(true);
     if (key) setSelected(new Set([key]));
-  };
+  }, []);
   const clearSelection = useCallback(() => { setSelectionMode(false); setSelected(new Set()); }, []);
 
-  const bulkPin = () => { selected.forEach(k => patchMeta(k, { pinned: true })); clearSelection(); };
-  const bulkArchive = () => { selected.forEach(k => patchMeta(k, { archived: true })); clearSelection(); };
-  const bulkDelete = async () => {
+  const bulkPin = useCallback(() => { selected.forEach(k => patchMeta(k, { pinned: true })); clearSelection(); }, [selected, clearSelection]);
+  const bulkArchive = useCallback(() => { selected.forEach(k => patchMeta(k, { archived: true })); clearSelection(); }, [selected, clearSelection]);
+  const bulkDelete = useCallback(async () => {
     const keys = [...selected];
     if (keys.length === 0) return;
     const ok = await confirm({
@@ -298,30 +341,45 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     }
     setDeletingId(null);
     clearSelection();
-  };
+  }, [selected, confirm, itemByKey, deleteConversation, deleteServerConversation, notifyError, clearSelection]);
 
   // --- Section collapse ---
-  const toggleGroupCollapse = (group: string) =>
+  const toggleGroupCollapse = useCallback((group: string) =>
     setGroupsCollapsed(prev => {
       const n = new Set(prev); n.has(group) ? n.delete(group) : n.add(group);
       writeSet(GROUPS_COLLAPSED_KEY, n); return n;
-    });
-  const toggleArchivedCollapse = () =>
+    }), []);
+  const toggleArchivedCollapse = useCallback(() =>
     setArchivedCollapsed(prev => {
       const n = !prev; try { localStorage.setItem(ARCHIVED_COLLAPSED_KEY, n ? '1' : '0'); } catch { /* ignore */ }
       return n;
-    });
+    }), []);
+
+  // Stable bundle of the row-facing handlers + the few values rows read, so a
+  // memoized `ConversationRow` only re-renders when its own item/flags change
+  // (not on every parent render during streaming).
+  const rowHandlers = useMemo<RowHandlers>(() => ({
+    openItem, closeOpenTab, deleteItem,
+    startRename, commitRename, renameKeyDown, setDraftTitle: setDraft,
+    togglePin, toggleArchive, setGroup, setColor,
+    toggleSelect, enterSelection,
+    existingGroups, formatDate,
+  }), [
+    openItem, closeOpenTab, deleteItem, startRename, commitRename, renameKeyDown,
+    setDraft, togglePin, toggleArchive, setGroup, setColor, toggleSelect,
+    enterSelection, existingGroups, formatDate,
+  ]);
 
   return {
     // search + state
     searchQuery, setSearchQuery, searchRef, query,
     activeTabId, isLoadingHistory, restoringId, deletingId,
-    editingKey, draftTitle, setDraftTitle,
+    editingKey, draftTitle, setDraftTitle: setDraft,
     // data
     pinned, groups, openItems, pastByBucket, archived, filteredLiveRuns,
     totalCount, openCount: tabs.length,
     groupsCollapsed, archivedCollapsed,
-    existingGroups: listGroups(),
+    existingGroups,
     // selection
     selectionMode, selected, toggleSelect, enterSelection, clearSelection,
     bulkPin, bulkArchive, bulkDelete,
@@ -331,5 +389,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     togglePin, toggleArchive, setGroup, setGroupByKey, setIcon, setColor,
     toggleGroupCollapse, toggleArchivedCollapse,
     formatDate,
+    // stable bundle for ConversationRow
+    rowHandlers,
   };
 }

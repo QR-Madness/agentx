@@ -6,12 +6,12 @@
  * input. All logic lives in `useConversationList`.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, X, Loader2, Radio, ChevronDown, ChevronRight,
   Pin, Archive, Trash2, CheckSquare, Star,
 } from 'lucide-react';
-import { useConversationList } from '../../hooks/useConversationList';
+import { useConversationList, type ConversationItem } from '../../hooks/useConversationList';
 import { ConversationRow } from './ConversationRow';
 import { AvatarPicker } from '../common/AvatarPicker';
 import { getMeta } from '../../lib/conversationMeta';
@@ -35,7 +35,28 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
     if (newGroupKey) requestAnimationFrame(() => newGroupRef.current?.focus());
   }, [newGroupKey]);
 
-  const rowProps = { c, onOpenIconPicker: setIconPickerKey, onNewGroup: (key: string) => { setNewGroupKey(key); setNewGroupName(''); } };
+  const onNewGroup = useCallback((key: string) => { setNewGroupKey(key); setNewGroupName(''); }, []);
+
+  // Render one row with its per-row state flattened to primitive props so the
+  // memoized `ConversationRow` only re-renders when its own flags change.
+  // `showOpenBadge` marks tab-backed rows as open in the Pinned/group sections
+  // (where the section heading doesn't already imply it).
+  const renderRow = (it: ConversationItem, showOpenBadge = false) => (
+    <ConversationRow
+      key={it.key}
+      item={it}
+      handlers={c.rowHandlers}
+      isActive={it.kind === 'tab' && it.tabId === c.activeTabId}
+      editing={c.editingKey === it.key}
+      busy={c.deletingId === it.key || c.restoringId === it.key}
+      checked={c.selected.has(it.key)}
+      selectionMode={c.selectionMode}
+      draftTitle={c.editingKey === it.key ? c.draftTitle : undefined}
+      showOpenBadge={showOpenBadge && it.kind === 'tab'}
+      onOpenIconPicker={setIconPickerKey}
+      onNewGroup={onNewGroup}
+    />
+  );
 
   const commitNewGroup = () => {
     const name = newGroupName.trim();
@@ -90,7 +111,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
         {c.pinned.length > 0 && (
           <>
             <div className="history-section-label"><Star size={11} /> Pinned</div>
-            {c.pinned.map(it => <ConversationRow key={it.key} item={it} {...rowProps} />)}
+            {c.pinned.map(it => renderRow(it, true))}
           </>
         )}
 
@@ -102,7 +123,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
               <button className="history-section-label history-section-toggle" onClick={() => c.toggleGroupCollapse(group)}>
                 {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />} {group} <span className="history-section-count">{convs.length}</span>
               </button>
-              {!collapsed && convs.map(it => <ConversationRow key={it.key} item={it} {...rowProps} />)}
+              {!collapsed && convs.map(it => renderRow(it, true))}
             </div>
           );
         })}
@@ -129,7 +150,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
         {c.openItems.length > 0 && (
           <>
             <div className="history-section-label">Open</div>
-            {c.openItems.map(it => <ConversationRow key={it.key} item={it} {...rowProps} />)}
+            {c.openItems.map(it => renderRow(it))}
           </>
         )}
 
@@ -137,7 +158,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
         {c.pastByBucket.map(([bucket, convs]) => (
           <div key={bucket}>
             <div className="history-section-label">{bucket}</div>
-            {convs.map(it => <ConversationRow key={it.key} item={it} {...rowProps} />)}
+            {convs.map(it => renderRow(it))}
           </div>
         ))}
 
@@ -147,7 +168,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
             <button className="history-section-label history-section-toggle" onClick={c.toggleArchivedCollapse}>
               {c.archivedCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />} Archived <span className="history-section-count">{c.archived.length}</span>
             </button>
-            {!c.archivedCollapsed && c.archived.map(it => <ConversationRow key={it.key} item={it} {...rowProps} />)}
+            {!c.archivedCollapsed && c.archived.map(it => renderRow(it))}
           </>
         )}
 
