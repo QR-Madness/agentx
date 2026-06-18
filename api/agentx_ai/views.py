@@ -1111,90 +1111,147 @@ async def agent_chat_stream(request):
                 agent_system_prompt=agent_system_prompt,
             )
 
-            messages = [
-                Message(
-                    role=MessageRole.SYSTEM,
-                    content=system_prompt or "You are a helpful AI assistant."
+            # --- Build the turn preamble as Context Ledger blocks -------------
+            # Each contributor registers with a priority + optional shrink_fn; one
+            # allocator (assemble_ledger) decides what fits the token budget,
+            # shrinking mid-priority blocks and dropping the lowest-priority ones
+            # under pressure instead of letting a growing preamble silently crowd
+            # out the verbatim transcript. Emission order is the registration order
+            # below (independent of priority), so the rendered prompt stays stable.
+            from .agent.context_ledger import (
+                LedgerBlock,
+                assemble_ledger,
+                dedup_recall_against_core,
+                shrink_lines_newest_n,
+                shrink_memory_to_facts,
+                shrink_tail,
+            )
+
+            blocks: list[LedgerBlock] = [
+                LedgerBlock(
+                    key="base_prompt",
+                    priority=100,
+                    mandatory=True,  # the system prompt is never dropped
+                    content=system_prompt or "You are a helpful AI assistant.",
                 )
             ]
 
-            # When a workflow is active, layer the Alloy supervisor framing on
-            # top of the profile's normal system prompt.
+            # When a workflow is active, layer the Alloy supervisor framing on top
+            # of the profile's normal system prompt (mandatory — the workflow run
+            # depends on it). Otherwise, in a multi-agent (non-workflow)
+            # conversation, make this agent aware of the others that have spoken
+            # (Phase 16.2); suppressed under a workflow — the supervisor prompt
+            # already frames the team.
             if active_workflow is not None:
                 from .alloy.prompts import build_supervisor_prompt
-                messages.append(Message(
-                    role=MessageRole.SYSTEM,
+                blocks.append(LedgerBlock(
+                    key="supervisor",
+                    priority=95,
+                    mandatory=True,
                     content=build_supervisor_prompt(active_workflow),
                 ))
-            # Otherwise, in a multi-agent (non-workflow) conversation, make this
-            # agent aware of the others that have spoken (Phase 16.2). Suppressed
-            # under a workflow — the supervisor prompt already frames the team.
             elif len(session.participants) > 1:
                 from .prompts.multi_agent import build_participants_block
                 participants_block = build_participants_block(
                     agent.config.agent_id, session.participants
                 )
                 if participants_block:
-                    messages.append(Message(
-                        role=MessageRole.SYSTEM,
+                    blocks.append(LedgerBlock(
+                        key="participants",
+                        priority=90,
                         content=participants_block,
+                        shrink_fn=shrink_tail,
                     ))
 
-            # Re-inject any model-authored checkpoints for this conversation.
-            # They live in Redis and are appended fresh each turn so trajectory
-            # compression cannot strip them.
+            # Re-inject any model-authored checkpoints for this conversation. They
+            # live in Redis and are appended fresh each turn so trajectory
+            # compression cannot strip them; keep the newest under budget pressure.
             try:
                 from .agent.checkpoint_storage import render_checkpoints_block
                 checkpoints_block = render_checkpoints_block(conv_id)
                 if checkpoints_block:
-                    messages.append(Message(
-                        role=MessageRole.SYSTEM,
+                    blocks.append(LedgerBlock(
+                        key="checkpoints",
+                        priority=80,
                         content=checkpoints_block,
+                        shrink_fn=shrink_lines_newest_n,
                     ))
             except Exception as cp_err:
                 logger.debug(f"Checkpoint injection skipped: {cp_err}")
 
             # Re-inject any model-authored scratchpad notes for this conversation.
-            # Same Redis-backed, append-fresh-each-turn pattern as checkpoints, so
-            # they also survive trajectory compression.
+            # Same Redis-backed, append-fresh-each-turn pattern as checkpoints.
             try:
                 from .agent.scratchpad_storage import render_scratchpad_block
                 scratchpad_block = render_scratchpad_block(conv_id)
                 if scratchpad_block:
-                    messages.append(Message(
-                        role=MessageRole.SYSTEM,
+                    blocks.append(LedgerBlock(
+                        key="scratchpad",
+                        priority=75,
                         content=scratchpad_block,
+                        shrink_fn=shrink_tail,
                     ))
             except Exception as sp_err:
                 logger.debug(f"Scratchpad injection skipped: {sp_err}")
 
-            # Retrieve relevant memories and inject into context
+            # Memory (Foundation #3): a STABLE high-salience core injected every
+            # turn (maintained, not searched) + a lower-priority, query-specific
+            # recall *supplement*. The core carries durable knowledge so it no
+            # longer hinges on the immediate query matching; the supplement is the
+            # first block dropped when the budget tightens (priority < history).
             memory_bundle = None
+            core_bundle = None
             if use_memory and agent.memory:
                 try:
                     emit_status("recalling")
+                    core_bundle = agent.memory.get_salient_core()
                     memory_bundle = agent.memory.remember(
-                        query=message,  # Use full message for memory retrieval
+                        query=message,  # Use full message for the recall supplement
                         top_k=agent.config.memory_top_k,
                         time_window_hours=agent.config.memory_time_window_hours,
                     )
-                    if memory_bundle:
-                        # Inject memory **facts/entities** only — the verbatim
-                        # transcript is now rehydrated + assembled below, so the
-                        # old current-conversation turn dump (`max_turns`,
-                        # `current_conversation_id`) is redundant and would
-                        # double-inject the same turns in a second shape. Cross-
-                        # conversation recall stays opt-in via `recall_user_history`.
-                        memory_context = memory_bundle.to_context_string(
+                    if memory_bundle is not None:
+                        # The always-on reflex procedures ("how we work here") are
+                        # maintained-not-searched like the salient core, so render
+                        # them in the stable block, not the droppable supplement.
+                        core_bundle.procedures = memory_bundle.procedures
+                        memory_bundle.procedures = []
+                        # Don't inject the same fact/entity twice across both blocks.
+                        dedup_recall_against_core(memory_bundle, core_bundle)
+
+                    core_context = core_bundle.to_context_string(max_turns=0)
+                    if core_context:
+                        blocks.append(LedgerBlock(
+                            key="stable_core",
+                            priority=70,
+                            content=f"Stable context:\n{core_context}",
+                            min_tokens=40,
+                            shrink_fn=shrink_memory_to_facts,
+                        ))
+
+                    if memory_bundle is not None:
+                        # Facts/entities only — the verbatim transcript is assembled
+                        # below, so the old current-conversation turn dump
+                        # (`max_turns`, `current_conversation_id`) is redundant.
+                        # Cross-conversation recall stays opt-in via
+                        # `recall_user_history`.
+                        recall_context = memory_bundle.to_context_string(
                             turn_char_limit=agent.config.memory_recall_turn_chars,
                             max_turns=0,
                         )
-                        if memory_context:
-                            messages.append(Message(
-                                role=MessageRole.SYSTEM,
-                                content=f"Relevant information from memory:\n{memory_context}"
+                        if recall_context:
+                            blocks.append(LedgerBlock(
+                                key="recall",
+                                priority=30,
+                                content=f"Relevant information from memory:\n{recall_context}",
+                                shrink_fn=shrink_memory_to_facts,
                             ))
-                            logger.debug(f"Injected memory context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities")
+                    logger.debug(
+                        "Memory blocks: core=%d facts/%d entities, recall=%d facts/%d entities",
+                        len(core_bundle.facts), len(core_bundle.entities),
+                        len(memory_bundle.facts) if memory_bundle else 0,
+                        len(memory_bundle.entities) if memory_bundle else 0,
+                    )
                 except Exception as mem_err:
                     logger.warning(f"Failed to retrieve memories: {mem_err}")
 
@@ -1207,25 +1264,25 @@ async def agent_chat_stream(request):
             max_output_override = overrides.get("max_output_tokens")
             max_output_tokens = max_output_override or caps.max_output_tokens or 4096
 
-            # Inject the (persisted) rolling summary as a system block — it covers
-            # turns older than the verbatim budget. No message-count trim; the
-            # assembler fits the transcript to the real window.
+            # The (persisted) rolling summary covers turns older than the verbatim
+            # budget — keep it above the transcript but droppable under hard pressure.
             if session.summary:
-                messages.append(Message(
-                    role=MessageRole.SYSTEM,
+                blocks.append(LedgerBlock(
+                    key="summary",
+                    priority=65,
                     content=f"Earlier conversation summary: {session.summary}",
+                    shrink_fn=shrink_tail,
                 ))
 
-            # One budget-fit assembly (context-window-based, not message-count):
-            # keep every system block, fit the most recent verbatim transcript
+            # One budget-fit allocation (context-window-based, not message-count):
+            # fit the highest-priority blocks + the most recent verbatim transcript
             # within a fraction of the window, drop the oldest overflow (covered by
-            # the summary), then append the new user turn. Replaces the old scattered
-            # count-trim + extend.
+            # the summary) and the lowest-priority blocks, then append the new turn.
+            # The per-block allocation report is the Context Inspector's data seam.
             _cfg = get_config_manager()
-            from .agent.context import ContextManager, ContextConfig
             emit_status("composing")
-            messages = ContextManager(ContextConfig()).assemble_turn_context(
-                system_blocks=messages,
+            ledger_result = assemble_ledger(
+                blocks=blocks,
                 history=[m for m in context if m.role != MessageRole.SYSTEM],
                 new_message=Message(role=MessageRole.USER, content=message_for_context),
                 context_window=context_window,
@@ -1233,6 +1290,8 @@ async def agent_chat_stream(request):
                 verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
                 recent_floor=int(_cfg.get("context.recent_floor", 4)),
             )
+            messages = ledger_result.messages
+            logger.debug("ledger allocation: %s", ledger_result.allocations)
 
             # Get MCP tools for function calling
             tools = agent._get_tools_for_provider()
@@ -1307,20 +1366,27 @@ async def agent_chat_stream(request):
             }
             yield f"event: start\ndata: {json.dumps(start_data)}\n\n"
 
-            # Emit memory_context event if memories were retrieved
-            if memory_bundle and (memory_bundle.facts or memory_bundle.entities or memory_bundle.relevant_turns):
-                logger.debug(f"Emitting memory_context: {len(memory_bundle.facts)} facts, {len(memory_bundle.entities)} entities, {len(memory_bundle.relevant_turns)} turns")
+            # Emit memory_context event reflecting *everything injected* — the
+            # stable high-salience core plus the deduped recall supplement (recall
+            # was already deduped against the core, so concatenation has no dupes).
+            _ev_facts = list(core_bundle.facts if core_bundle else [])
+            _ev_facts += list(memory_bundle.facts if memory_bundle else [])
+            _ev_entities = list(core_bundle.entities if core_bundle else [])
+            _ev_entities += list(memory_bundle.entities if memory_bundle else [])
+            _ev_turns = list(memory_bundle.relevant_turns if memory_bundle else [])
+            if _ev_facts or _ev_entities or _ev_turns:
+                logger.debug(f"Emitting memory_context: {len(_ev_facts)} facts, {len(_ev_entities)} entities, {len(_ev_turns)} turns")
                 memory_event = {
                     'facts': [
                         {'claim': f.get('claim', '') if isinstance(f, dict) else f.claim,
                          'confidence': f.get('confidence', 0) if isinstance(f, dict) else f.confidence,
                          'source': f.get('source_turn_id') if isinstance(f, dict) else getattr(f, 'source_turn_id', None)}
-                        for f in memory_bundle.facts
+                        for f in _ev_facts
                     ],
                     'entities': [
                         {'name': e.get('name', '') if isinstance(e, dict) else e.name,
                          'type': e.get('entity_type', e.get('type', 'unknown')) if isinstance(e, dict) else getattr(e, 'entity_type', 'unknown')}
-                        for e in memory_bundle.entities
+                        for e in _ev_entities
                     ],
                     'relevant_turns': [
                         {
@@ -1328,7 +1394,7 @@ async def agent_chat_stream(request):
                             'role': t.get('role', 'unknown'),
                             'content': (t.get('content') or '')[:200],
                         }
-                        for t in memory_bundle.relevant_turns[:5]
+                        for t in _ev_turns[:5]
                     ],
                     'query': message,
                 }

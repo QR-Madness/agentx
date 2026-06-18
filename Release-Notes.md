@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.89 -->
+<!-- release-version: 0.21.90 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -32,6 +32,7 @@ the client at your own API server and bring your own model providers.
 - **New "Professional" theme + warmer Light.** A deep monochrome theme where color means emphasis; a system-wide pass moved hardcoded colors onto theme tokens so switches apply everywhere (incl. code highlighting).
 - **Durable, layered system prompt + block editor.** The global prompt is a stack of editable blocks that persist across restarts; Settings → Intelligence is a two-pane composer (drag-reorder, autosave, per-layer reset/diff, custom layers, in-place enhance).
 - **Redesigned agent-profile editor.** A control-center: hero identity header over control cards, segmented reasoning, temperature gradient, a searchable ~95-icon avatar picker, and a per-agent signature color.
+- **Stabler memory in long chats.** A stable high-salience "core" of what the agent knows is now kept in view every turn (no longer re-guessed from each message), with query-specific recall as a supplement. A new context *ledger* budgets the whole preamble by priority, so a growing sidecar can no longer silently crowd out the live transcript.
 - **Calmer chain-of-thought.** Reasoning streams live then collapses into a "Thinking" affordance once the answer lands; thoughts are process, not persisted.
 - **Unified model picker + sturdier plans.** Memory/planner/enhancer settings share the full filterable model picker; plans restore, resume, and terminate cleanly across a cold load.
 - **Desktop navbar refresh.** The chat tab is now **Agents** with an animated galaxy and an aurora "expand" on the active item (honors reduced-motion).

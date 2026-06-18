@@ -207,6 +207,12 @@ class Settings(BaseSettings):
     # Reflex core (always-on procedure injection into the prompt)
     reflex_core_enabled: bool = True
     reflex_core_limit: int = 5
+    # Stable salient core (Foundation #3): always-on high-salience fact/entity
+    # injection — maintained, not searched. Limit kept <=10 to match the
+    # to_context_string render cap. Min salience filters out low-value/forgotten.
+    salient_core_enabled: bool = True
+    salient_core_limit: int = 8
+    salient_core_min_salience: float = 0.6
 
     # --- Confidence Calibration (map LLM certainty to calibrated scores) ---
     confidence_explicit: float = 0.95  # User directly stated
@@ -404,6 +410,9 @@ def get_consolidation_settings() -> dict[str, Any]:
         "procedural_distill_batch_limit": settings.procedural_distill_batch_limit,
         "reflex_core_enabled": settings.reflex_core_enabled,
         "reflex_core_limit": settings.reflex_core_limit,
+        "salient_core_enabled": settings.salient_core_enabled,
+        "salient_core_limit": settings.salient_core_limit,
+        "salient_core_min_salience": settings.salient_core_min_salience,
 
         # Entity linking
         "entity_linking_enabled": settings.entity_linking_enabled,

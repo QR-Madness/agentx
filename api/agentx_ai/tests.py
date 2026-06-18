@@ -6114,6 +6114,153 @@ class ConversationContextTest(TestCase):
             set_sum.assert_called_once()
 
 
+class ContextLedgerTest(TestCase):
+    """Foundation #3 — priority-based budget allocator (Context Ledger)."""
+
+    def _history(self, n, size=400):
+        from agentx_ai.providers.base import Message, MessageRole
+        return [Message(role=MessageRole.USER if i % 2 == 0 else MessageRole.ASSISTANT,
+                        content="x" * size) for i in range(n)]
+
+    def test_priority_shrink_and_drop(self):
+        from agentx_ai.agent.context_ledger import (
+            LedgerBlock, assemble_ledger, shrink_tail,
+        )
+        from agentx_ai.providers.base import Message, MessageRole
+        history = self._history(20)
+        new = Message(role=MessageRole.USER, content="now")
+        base = LedgerBlock(key="base", priority=100, mandatory=True, content="SYS-PROMPT")
+        mid = LedgerBlock(key="mid", priority=70, content="m" * 8000,
+                          min_tokens=10, shrink_fn=shrink_tail)
+        low = LedgerBlock(key="low", priority=30, content="l" * 8000)
+
+        # Generous window: everything full, canonical (registration) order, history kept.
+        big = assemble_ledger(blocks=[base, mid, low], history=history, new_message=new,
+                              context_window=1_000_000, reserved_tokens=1000)
+        st = {a.key: a.status for a in big.allocations}
+        self.assertEqual(st, {"base": "full", "mid": "full", "low": "full"})
+        self.assertEqual([m.content[:3] for m in big.messages[:3]], ["SYS", "mmm", "lll"])
+        self.assertEqual(big.history_kept, 20)
+        self.assertEqual(big.messages[-1].content, "now")
+
+        # Tight window: low dropped, mid shrunk, base survives, history honors floor.
+        tight = assemble_ledger(blocks=[base, mid, low], history=history, new_message=new,
+                                context_window=2000, reserved_tokens=200, recent_floor=4)
+        st2 = {a.key: a.status for a in tight.allocations}
+        self.assertEqual(st2["base"], "full")
+        self.assertEqual(st2["low"], "dropped")
+        self.assertEqual(st2["mid"], "shrunk")
+        kept = [m for m in tight.messages if m.role != MessageRole.SYSTEM
+                and m.content != "now"]
+        self.assertGreaterEqual(len(kept), 4)  # recent_floor honored
+        self.assertEqual(tight.messages[-1].content, "now")
+        # Shrunk block actually fits what it was granted.
+        mid_alloc = next(a for a in tight.allocations if a.key == "mid")
+        self.assertLessEqual(mid_alloc.granted_tokens, mid_alloc.requested_tokens)
+        self.assertGreaterEqual(mid_alloc.granted_tokens, 10)
+
+    def test_emission_preserves_registration_order(self):
+        from agentx_ai.agent.context_ledger import LedgerBlock, assemble_ledger
+        from agentx_ai.providers.base import Message, MessageRole
+        new = Message(role=MessageRole.USER, content="now")
+        # Registered low→high priority, but emission must follow registration order.
+        blocks = [
+            LedgerBlock(key="a", priority=10, content="AAA"),
+            LedgerBlock(key="b", priority=99, content="BBB"),
+            LedgerBlock(key="c", priority=50, content="CCC"),
+        ]
+        res = assemble_ledger(blocks=blocks, history=[], new_message=new,
+                              context_window=1_000_000, reserved_tokens=1000)
+        self.assertEqual([m.content for m in res.messages], ["AAA", "BBB", "CCC", "now"])
+
+    def test_mandatory_survives_window_too_small(self):
+        from agentx_ai.agent.context_ledger import LedgerBlock, assemble_ledger
+        from agentx_ai.providers.base import Message, MessageRole
+        new = Message(role=MessageRole.USER, content="now")
+        base = LedgerBlock(key="base", priority=100, mandatory=True, content="K" * 4000)
+        drop = LedgerBlock(key="drop", priority=30, content="D" * 4000)
+        # Budget far smaller than the mandatory block — it must still be emitted.
+        res = assemble_ledger(blocks=[base, drop], history=[], new_message=new,
+                              context_window=200, reserved_tokens=50)
+        st = {a.key: a.status for a in res.allocations}
+        self.assertEqual(st["base"], "full")
+        self.assertEqual(st["drop"], "dropped")
+        self.assertEqual(res.messages[0].content, base.content)
+        self.assertEqual(res.messages[-1].content, "now")
+
+    def test_dedup_recall_against_core(self):
+        from agentx_ai.agent.context_ledger import dedup_recall_against_core
+        from agentx_ai.kit.agent_memory.models import MemoryBundle
+        core = MemoryBundle()
+        core.facts = [{"id": "f1", "claim": "a"}, {"id": "f2", "claim": "b"}]
+        core.entities = [{"id": "e1", "name": "X"}]
+        recall = MemoryBundle()
+        recall.facts = [{"id": "f2", "claim": "b"}, {"id": "f3", "claim": "c"}]
+        recall.entities = [{"id": "e1", "name": "X"}, {"id": "e2", "name": "Y"}]
+        dedup_recall_against_core(recall, core)
+        self.assertEqual([f["id"] for f in recall.facts], ["f3"])
+        self.assertEqual([e["id"] for e in recall.entities], ["e2"])
+
+
+class SalientCoreTest(TestCase):
+    """Foundation #3 — stable high-salience core memory method."""
+
+    def test_get_salient_facts_maps_and_orders(self):
+        from agentx_ai.kit.agent_memory.memory import semantic as sem_mod
+        records = [
+            {"id": "f1", "claim": "high", "confidence": 0.9, "channel": "_global",
+             "salience": 0.95, "temporal_context": "current"},
+            {"id": "f2", "claim": "mid", "confidence": 0.7, "channel": "_global",
+             "salience": 0.7, "temporal_context": "current"},
+        ]
+        mock_session = MagicMock()
+        mock_session.run.return_value = records
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_session
+        cm.__exit__.return_value = False
+        with patch.object(sem_mod.Neo4jConnection, "session", return_value=cm):
+            out = sem_mod.SemanticMemory().get_salient_facts(["_global"], limit=8)
+        self.assertEqual([f["id"] for f in out], ["f1", "f2"])
+        self.assertIsInstance(out[0], dict)
+        out[0]["final_score"] = 1.0  # must be a mutable plain dict
+
+    def test_get_salient_facts_empty_channels_short_circuits(self):
+        from agentx_ai.kit.agent_memory.memory import semantic as sem_mod
+        with patch.object(sem_mod.Neo4jConnection, "session") as sess:
+            out = sem_mod.SemanticMemory().get_salient_facts([], limit=8)
+        self.assertEqual(out, [])
+        sess.assert_not_called()  # no DB round-trip when there are no channels
+
+    def test_get_salient_core_gated_off_returns_empty(self):
+        from types import SimpleNamespace
+        from agentx_ai.kit.agent_memory.memory import interface as iface_mod
+        with patch.object(iface_mod, "get_embedder", return_value=MagicMock()):
+            mem = iface_mod.AgentMemory(user_id="tester")
+        mem._settings = SimpleNamespace(salient_core_enabled=False)
+        mem.semantic = MagicMock()
+        bundle = mem.get_salient_core()
+        self.assertEqual(bundle.facts, [])
+        self.assertEqual(bundle.entities, [])
+        mem.semantic.get_salient_facts.assert_not_called()
+
+    def test_get_salient_core_collects_facts_and_entities(self):
+        from types import SimpleNamespace
+        from agentx_ai.kit.agent_memory.memory import interface as iface_mod
+        with patch.object(iface_mod, "get_embedder", return_value=MagicMock()):
+            mem = iface_mod.AgentMemory(user_id="tester")
+        mem._settings = SimpleNamespace(
+            salient_core_enabled=True, salient_core_limit=8, salient_core_min_salience=0.6,
+        )
+        mem.semantic = MagicMock()
+        mem.semantic.get_salient_facts.return_value = [{"id": "f1", "claim": "x"}]
+        mem.semantic.get_salient_entities.return_value = [{"id": "e1", "name": "Y"}]
+        with patch.object(iface_mod.AgentMemory, "_default_recall_channels",
+                          return_value=["_global"]):
+            bundle = mem.get_salient_core()
+        self.assertEqual([f["id"] for f in bundle.facts], ["f1"])
+        self.assertEqual([e["id"] for e in bundle.entities], ["e1"])
+
+
 class CheckpointMechanicsTest(TestCase):
     """Slice 6 — checkpoint anchor-preserving eviction + replace."""
 

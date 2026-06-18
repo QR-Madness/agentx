@@ -24,9 +24,17 @@
    bubble inline; client composer stays live (Stop **+** Steer). **Follow-ups:** hard interrupt (abort
    the in-flight provider stream) + persisting the steer as a real `conversation_logs` turn. See
    cluster below.
-3. **Stable memory core** — kill transient memory injection (`remember(query=message)` re-ranks every
-   turn); inject a stable high-salience core + recall as a supplement. Correctness; rides the Slice-6
-   `assemble_turn_context` preamble budget.
+3. ~~**Stable memory core**~~ — **shipped** as the Context Ledger (Memory-Roadmap §1.8). The transient
+   `remember(query=message)` block is now a low-priority, droppable *supplement*; a stable high-salience
+   core (`AgentMemory.get_salient_core` → cheap non-vector `ORDER BY salience`, maintained-not-searched
+   like the reflex core) is injected every turn. `assemble_turn_context` evolved into `assemble_ledger`
+   (`agent/context_ledger.py`): every preamble contributor registers `(priority, min/max_tokens,
+   shrink_fn, mandatory)` and one allocator decides what fits — so a growing sidecar can no longer
+   silently shrink the transcript (recall now yields to history). Per-block allocation report = the
+   Context Inspector's data seam (logged). Settings: `salient_core_*`. **Follow-ups:** migrate the
+   `agent/core.py` + `alloy/executor.py` context builders to native ledger blocks (they keep the
+   byte-identical `assemble_turn_context` wrapper for now); surface the allocation report as a real
+   Context Inspector view.
 4. **Finish the reliability guarantees** — extend the Slice-5 model fallback to the remaining feature
    sites (reasoning/drafting/`planner`/`alloy`, still raw `get_provider_for_model`); **hydrate the
    Alloy + background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm.

@@ -727,6 +727,46 @@ class AgentMemory:
             self._default_recall_channels(), limit=limit
         )
 
+    def get_salient_core(
+        self,
+        *,
+        limit: int | None = None,
+        min_salience: float | None = None,
+    ) -> MemoryBundle:
+        """The stable high-salience memory core (Foundation #3).
+
+        Cheap, non-vector top-salient facts/entities for this instance's recall
+        channels — *maintained, not searched*, recomputed each turn so it stays
+        fresh after a ``learn_fact``/``boost_salience`` without any caching. Mirrors
+        the reflex-core gating (``salient_core_*`` settings) and never raises: on
+        failure it logs and returns an empty bundle so a turn is never broken.
+
+        Injected as a high-priority, stable preamble block while query-specific
+        ``remember`` recall rides along as a lower-priority supplement.
+        """
+        bundle = MemoryBundle()
+        if not getattr(self._settings, "salient_core_enabled", True):
+            return bundle
+        lim = int(
+            limit if limit is not None
+            else getattr(self._settings, "salient_core_limit", 8)
+        )
+        floor = float(
+            min_salience if min_salience is not None
+            else getattr(self._settings, "salient_core_min_salience", 0.6)
+        )
+        channels = self._default_recall_channels()
+        try:
+            bundle.facts = self.semantic.get_salient_facts(
+                channels, limit=lim, min_salience=floor
+            )
+            bundle.entities = self.semantic.get_salient_entities(
+                channels, limit=lim, min_salience=floor
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"get_salient_core failed: {e}")
+        return bundle
+
     def list_procedures(
         self, channel: str = "_global", offset: int = 0, limit: int = 20
     ) -> tuple[list[dict[str, Any]], int]:

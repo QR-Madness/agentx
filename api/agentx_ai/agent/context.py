@@ -150,29 +150,34 @@ class ContextManager:
         The budget is ``min(verbatim_ratio · window, window − reserved_tokens)`` so
         verbatim history can't crowd out the reserved response/tool tokens, and the
         whole prompt stays within a sane fraction of the real context window.
+
+        This is now a thin wrapper over :func:`assemble_ledger` that registers every
+        system block as **mandatory** (always emitted full, never dropped) — exactly
+        the "keep every system block by fiat" behaviour above. Callers that want
+        priority-based shrink/drop should build :class:`LedgerBlock`\\ s and call
+        ``assemble_ledger`` directly (see the chat-stream path in ``views.py``).
         """
-        input_budget = min(
-            int(context_window * verbatim_ratio),
-            context_window - reserved_tokens,
-        )
-        system_tokens = self.estimate_tokens(system_blocks)
-        new_tokens = self.estimate_tokens([new_message])
-        remaining = input_budget - system_tokens - new_tokens
+        from .context_ledger import LedgerBlock, assemble_ledger
 
-        if remaining <= 0:
-            # Preamble alone is over budget — still keep a floor of recent turns.
-            floor = history[-recent_floor:] if recent_floor > 0 else []
-            return system_blocks + floor + [new_message]
-
-        fitted: list[Message] = []
-        used = 0
-        for msg in reversed(history):  # newest → oldest
-            tokens = self.estimate_tokens([msg])
-            if fitted and used + tokens > remaining and len(fitted) >= recent_floor:
-                break
-            fitted.insert(0, msg)
-            used += tokens
-        return system_blocks + fitted + [new_message]
+        blocks = [
+            LedgerBlock(
+                key=f"system_{i}",
+                priority=100,
+                content=m.content,
+                mandatory=True,
+                role=m.role,
+            )
+            for i, m in enumerate(system_blocks)
+        ]
+        return assemble_ledger(
+            blocks=blocks,
+            history=history,
+            new_message=new_message,
+            context_window=context_window,
+            reserved_tokens=reserved_tokens,
+            verbatim_ratio=verbatim_ratio,
+            recent_floor=recent_floor,
+        ).messages
 
     async def _summarize_messages(self, messages: list[Message]) -> str:
         """Summarize a list of messages."""

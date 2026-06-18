@@ -27,6 +27,7 @@ each one and how it feeds the others.
 | Fact verification (3-layer) | jobs | shipped | hash → semantic → entity-scoped → `check_contradictions` | per channel |
 | Corrections / supersession | jobs | shipped | `check_correction`, `_handle_user_correction` | per channel |
 | Recall (5 techniques) | recall | shipped | `RecallLayer.recall` (hybrid, entity-centric, query-expansion, HyDE, self-query) | `[active, _self_, _global]` |
+| Stable salient core | recall | shipped | `AgentMemory.get_salient_core` → `get_salient_facts`/`get_salient_entities` (`memory/semantic.py`); injected as the prio-70 ledger block (`agent/context_ledger.py`) | `[active, _self_, _global]` |
 | Context gating | context | shipped | `ToolOutputCompressor`, `tool_output_chunker`, trajectory compression | active |
 | Cross-channel promotion | lifecycle | shipped | `promote_to_global` | → `_global` |
 | Salience decay | lifecycle | shipped | decay job (`consolidation/`) | all |
@@ -107,6 +108,12 @@ graph TD
 - **RecallLayer** offers five techniques (hybrid BM25+vector, entity-centric, query
   expansion, HyDE, self-query) over the channel list `[active, _self_{agent_id}, _global]`,
   so an agent sees the user's context, its own self-knowledge, and global facts together.
+- **Stable salient core** (`get_salient_core`) injects a high-priority, *maintained-not-searched*
+  block of the top-salience facts/entities (cheap non-vector `ORDER BY salience`, excludes
+  superseded/retired) every turn, so durable knowledge no longer depends on the current message
+  matching it. The query-driven RecallLayer rides along as a lower-priority **supplement** (deduped
+  against the core); the **Context Ledger** (`agent/context_ledger.py`) budgets both — see
+  *Conversation Context* in `Development-Notes.md`.
 
 ### Context gating
 - Oversized tool outputs are compressed and indexed (`ToolOutputCompressor`), chunked and

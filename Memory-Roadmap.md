@@ -180,27 +180,30 @@ function; default-flip gated on `eval_recall` (§2.7). Corrections set `valid_to
 moment world-time *is* known). Ship as the first numbered migration under §2.6; the importer runs
 old exports through the **same** backfill function (one mapping, two callers).
 
-### 1.8 Context Ledger `[REFINES: shipped `assemble_turn_context` + Todo Foundation #3 "Stable memory core" + "Context Inspector"]`
+### 1.8 Context Ledger `[SHIPPED v0.21.90 — was: shipped `assemble_turn_context` + Todo Foundation #3 "Stable memory core" + "Context Inspector"]`
 
-v0.21.30 shipped the token-budgeted assembler — but it fits **only the transcript** and
-keeps every SYSTEM block by fiat, while the preamble keeps growing (checkpoints, scratchpad,
-summary, memory bundle, participants, reflex core, budget header, soon the workspace
-manifest). When sidecars grow, the transcript silently shrinks.
+v0.21.30 shipped the token-budgeted assembler — but it fit **only the transcript** and kept
+every SYSTEM block by fiat, while the preamble kept growing (checkpoints, scratchpad, summary,
+memory bundle, participants, reflex core, budget header, soon the workspace manifest). When
+sidecars grew, the transcript silently shrank. **v0.21.90 lands the ledger** (`agent/context_ledger.py`).
 
-- Evolve the assembler into a **ledger**: each contributor registers
-  `(block, priority, min_tokens, max_tokens, shrink_fn)`; one allocator decides what fits.
-  `shrink_fn` = graceful degradation (memory bundle → facts-only; checkpoints → newest N;
-  community summary instead of raw facts, 3.7).
-- **Foundation #3 lands here**: the stable high-salience core (Tier-1 watchdog digest,
-  Todo §Active Recall) is a high-priority persistent block; query-specific recall is a
-  lower-priority supplement block. The ledger is the mechanism that makes "stable core,
-  minimal transient" enforceable rather than aspirational.
-- The **Context Inspector** (Todo §Observability) is the ledger's debug view for free —
-  per-block token counts and the allocation decision are the ledger's own bookkeeping.
-- One enforcement point: superseded/retired facts never enter the prompt; the budget-header
-  nudge reads the configurable ratio (kills the hardcoded "70%", Todo §tech-debt).
-- The **workspace manifest block** (Todo §⭐ Workspaces, "manifest injected stably") should
-  be built *as a ledger block from day one*, not another bespoke injector.
+- ✅ The assembler is now a **ledger**: each contributor registers a `LedgerBlock(priority,
+  min_tokens, max_tokens, shrink_fn, mandatory)`; `assemble_ledger` allocates by priority,
+  shrinking then dropping under pressure. Ships `shrink_tail` / `shrink_lines_newest_n` (checkpoints
+  → newest N) / `shrink_memory_to_facts` (memory bundle → facts-only). `assemble_turn_context` is now
+  a thin **wrapper** (all-mandatory blocks) so the other callers stay byte-identical.
+- ✅ **Foundation #3 landed here**: the stable high-salience core (`AgentMemory.get_salient_core` →
+  cheap non-vector `ORDER BY salience`, maintained-not-searched) is a high-priority persistent block
+  (prio 70, with the reflex procedures); query-specific `remember` recall is a lower-priority (30),
+  droppable supplement that now yields to the transcript. Recall is deduped against the core by id.
+- ✅ **Context Inspector** seam: `LedgerResult.allocations` carries per-block requested/granted/status
+  + budget/used totals (logged today; a UI view is the remaining follow-up).
+- ✅ Superseded (`superseded_at`) / retired (`temporal_context=past`, salience 0.05) facts are excluded
+  from the core at the query; the allocator reads the configurable `context.verbatim_budget_ratio`
+  (no hardcoded "70%" in the path).
+- ⏭ **Follow-ups:** migrate `agent/core.py` + `alloy/executor.py` to native ledger blocks (they keep
+  the wrapper for now); build the **workspace manifest** (Todo §⭐ Workspaces) *as a ledger block from
+  day one*; surface the allocation report as a real Context Inspector view.
 
 ---
 

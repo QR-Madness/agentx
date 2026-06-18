@@ -1151,6 +1151,85 @@ class SemanticMemory:
                 facts.append(fact)
             return facts, total
 
+    def get_salient_facts(
+        self,
+        channels: list[str],
+        *,
+        limit: int = 8,
+        min_salience: float = 0.6,
+        min_confidence: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """The stable high-salience core: top facts by salience across ``channels``.
+
+        Non-vector and *maintained, not searched* (mirrors
+        :meth:`ProceduralMemory.get_reflex_procedures`) — injected every turn as a
+        stable block, independent of the current query. Excludes superseded facts
+        (``superseded_at``) and retired/forgotten ones (``forget`` drops salience to
+        0.05 and flips ``temporal_context`` to ``past``), so only durable, current,
+        high-value knowledge surfaces.
+        """
+        if not channels:
+            return []
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                """
+                MATCH (f:Fact)
+                WHERE f.channel IN $channels
+                  AND f.superseded_at IS NULL
+                  AND coalesce(f.temporal_context, 'current') <> 'past'
+                  AND coalesce(f.salience, 0.5) >= $min_salience
+                  AND coalesce(f.confidence, 0.0) >= $min_confidence
+                RETURN f.id AS id,
+                       f.claim AS claim,
+                       f.confidence AS confidence,
+                       f.channel AS channel,
+                       coalesce(f.salience, 0.5) AS salience,
+                       f.temporal_context AS temporal_context
+                ORDER BY salience DESC, f.confidence DESC
+                LIMIT $limit
+            """,
+                channels=channels,
+                limit=limit,
+                min_salience=min_salience,
+                min_confidence=min_confidence,
+            )
+            return [convert_record_datetimes(dict(record)) for record in result]
+
+    def get_salient_entities(
+        self,
+        channels: list[str],
+        *,
+        limit: int = 8,
+        min_salience: float = 0.6,
+    ) -> list[dict[str, Any]]:
+        """Companion to :meth:`get_salient_facts` — top entities by salience.
+
+        Same maintained-not-searched contract; surfaces the durable entities the
+        agent should always keep in view alongside the salient facts.
+        """
+        if not channels:
+            return []
+        with Neo4jConnection.session() as session:
+            result = session.run(
+                """
+                MATCH (e:Entity)
+                WHERE e.channel IN $channels
+                  AND coalesce(e.salience, 0.5) >= $min_salience
+                RETURN e.id AS id,
+                       e.name AS name,
+                       e.type AS type,
+                       e.channel AS channel,
+                       coalesce(e.salience, 0.5) AS salience,
+                       e.description AS description
+                ORDER BY salience DESC, e.last_accessed DESC
+                LIMIT $limit
+            """,
+                channels=channels,
+                limit=limit,
+                min_salience=min_salience,
+            )
+            return [convert_record_datetimes(dict(record)) for record in result]
+
     def get_entity_by_id(
         self,
         entity_id: str,
