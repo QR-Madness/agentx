@@ -424,6 +424,9 @@ class RecallLayer:
         WHERE f.user_id = $user_id
           AND f.channel IN $channels
           AND f.superseded_at IS NULL
+          // Exclude forgotten/retired facts (forget_fact: past + salience≈0.05).
+          AND NOT (coalesce(f.temporal_context, 'current') = 'past'
+                   AND coalesce(f.salience, 0.5) < 0.1)
         RETURN f.id AS id,
                f.claim AS claim,
                f.confidence AS confidence,
@@ -611,6 +614,9 @@ class RecallLayer:
           AND f.user_id = $user_id
           AND f.channel IN $channels
           AND f.superseded_at IS NULL
+          // Exclude forgotten/retired facts (forget_fact: past + salience≈0.05).
+          AND NOT (coalesce(f.temporal_context, 'current') = 'past'
+                   AND coalesce(f.salience, 0.5) < 0.1)
         RETURN DISTINCT f.id AS id,
                f.claim AS claim,
                f.confidence AS confidence,

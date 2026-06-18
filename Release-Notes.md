@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.90 -->
+<!-- release-version: 0.21.91 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,6 +44,7 @@ the client at your own API server and bring your own model providers.
 - **Quieter logs.** A downed Redis backs off instead of flooding; verbose LLM logs show a one-line console summary (full payload in the Log panel); benign voice-cancel `CancelledError` is silenced.
 - **Briefings settle cleanly.** No mid-sentence truncation on thinking models, no perpetual "briefing…" spinner after cancel, reliable agent naming on restored turns.
 - **Layering + diffs.** Dialogs from inside a full-screen modal layer on top; prompt diffs are colored everywhere (incl. memory prompts); accent-tint contrast fixes across the UI.
+- **Forgotten facts stay forgotten.** Soft-forgetting a fact now removes it from recall outright (vector, keyword, and entity search) instead of merely lowering its rank — genuinely-past but still-valid facts are unaffected.
 - Web search is bounded by a wall-clock cap; plan resume no longer duplicates the user turn or sticks in `running`.
 - **Snappier conversation sidebar.** The list no longer rebuilds on every streaming token (stable tab projection + memoized rows), so only the active row updates while a reply streams; pinned/grouped conversations that are also open now show a small "open" dot.
 - **Ambassador polish.** One stable header across voice/text (switching modes no longer reshuffles the top bar or strands you — same Inquiry, only the input swaps), a header that holds together at any dock width (controls no longer slide off-screen), and a conversation switcher + mode toggle rebuilt on the app's standard themed components so they read correctly in every theme.

@@ -675,6 +675,11 @@ class SemanticMemory:
                 YIELD node AS f, score
                 WHERE f.confidence >= $min_confidence
                   AND f.superseded_at IS NULL
+                  // Exclude forgotten/retired facts (forget_fact stamps
+                  // temporal_context='past' + salience≈0.05); a genuinely-past
+                  // but still-valid fact keeps normal salience and is kept.
+                  AND NOT (coalesce(f.temporal_context, 'current') = 'past'
+                           AND coalesce(f.salience, 0.5) < 0.1)
                   {filters.build_inline()}
 
                 // Update access stats (like Entity does)

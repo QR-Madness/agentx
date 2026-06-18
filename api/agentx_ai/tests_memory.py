@@ -1545,6 +1545,38 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
         recent = memory.working.get_recent_turns(limit=1)
         self.assertEqual(len(recent), 1)
 
+    def test_forgotten_fact_excluded_from_recall(self) -> None:
+        """forget_fact() retires a fact from remember() recall, not just de-ranks it.
+
+        Regression: forgotten facts (forget_fact stamps temporal_context='past' +
+        salience≈0.05) still surfaced through vector / BM25 / entity-centric recall
+        because those queries only filtered ``superseded_at``. They must be excluded
+        outright, while a genuinely-past but still-valid fact (normal salience) stays.
+        """
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch (local=768 vs schema=1536)")
+
+        memory = AgentMemory(
+            user_id=self.test_user_id,
+            conversation_id=self.test_conversation_id,
+            channel="_global",
+        )
+        kept = memory.learn_fact(
+            "The user's favourite colour is teal", source="explicit", confidence=0.95
+        )
+        forgotten = memory.learn_fact(
+            "The user's favourite colour is orange", source="explicit", confidence=0.95
+        )
+
+        memory.forget_fact(forgotten.id, hard=False)
+
+        bundle = memory.remember("What is the user's favourite colour?", top_k=10)
+        recalled_ids = {f.get("id") for f in bundle.facts}
+        self.assertIn(kept.id, recalled_ids, "kept fact should still be recalled")
+        self.assertNotIn(
+            forgotten.id, recalled_ids, "forgotten fact must not be recalled"
+        )
+
     def test_remember_retrieves_stored_turn(self) -> None:
         """remember() finds previously stored turn by semantic similarity."""
 
