@@ -109,6 +109,13 @@ DEFAULT_CONFIG = {
         "default_reasoning_strategy": "auto",
         "enable_memory_by_default": True,
     },
+    "pricing": {
+        # Audio (TTS/STT) rate overrides, keyed by `provider:model` →
+        # {per_1k_chars, per_minute}. Shipped defaults live in providers/pricing.py
+        # (an added default here wouldn't reach installs with an existing config.json);
+        # this is the user-override slot the usage ledger reads. Foundation #5.
+        "audio": {},
+    },
     "session": {
         "rolling_summary": {
             "enabled": True,

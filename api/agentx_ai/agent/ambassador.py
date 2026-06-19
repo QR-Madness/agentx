@@ -1309,13 +1309,28 @@ class AmbassadorService:
             ) from e
 
         try:
-            return await provider.synthesize_speech(
+            result = await provider.synthesize_speech(
                 text,
                 model=model_id,
                 voice=speech_voice,
                 response_format="mp3",
                 speed=speed,
             )
+            # Usage ledger (Foundation #5): TTS is billed per input character.
+            try:
+                from .usage_ledger import record_usage
+                from ..providers.pricing import estimate_audio_cost
+                record_usage(
+                    source="ambassador_tts",
+                    model=speech_model,
+                    provider=getattr(provider, "name", None),
+                    agent_id=getattr(profile, "agent_id", None),
+                    units={"chars": len(text)},
+                    cost=estimate_audio_cost(model=speech_model, chars=len(text)),
+                )
+            except Exception as _uerr:  # noqa: BLE001 — metering never breaks voice
+                logger.debug(f"TTS usage record skipped: {_uerr}")
+            return result
         except NotImplementedError as e:
             raise SpeechUnavailable(
                 f"'{speech_model}' does not support speech synthesis. "
@@ -1382,6 +1397,32 @@ class AmbassadorService:
         except Exception as e:  # noqa: BLE001 — surface a clean failure
             logger.warning(f"Ambassador transcription failed: {e}")
             raise SpeechUnavailable(str(e)[:300], code="transcription_failed") from e
+
+        # Usage ledger (Foundation #5): STT is billed per minute of audio. The
+        # provider may or may not report duration — probe the usage block under a
+        # few likely key names; when absent we still record the byte size (cost
+        # stays null rather than fabricated).
+        try:
+            from .usage_ledger import record_usage
+            from ..providers.pricing import estimate_audio_cost
+            seconds = None
+            usage = (result.raw_response or {}).get("usage") if result.raw_response else None
+            if isinstance(usage, dict):
+                for k in ("audio_seconds", "seconds", "duration", "duration_seconds"):
+                    v = usage.get(k)
+                    if isinstance(v, (int, float)):
+                        seconds = float(v)
+                        break
+            record_usage(
+                source="ambassador_stt",
+                model=stt_model,
+                provider=getattr(provider, "name", None),
+                agent_id=getattr(profile, "agent_id", None),
+                units={"audio_seconds": seconds, "bytes": len(audio)},
+                cost=estimate_audio_cost(model=stt_model, seconds=seconds),
+            )
+        except Exception as _uerr:  # noqa: BLE001 — metering never breaks voice
+            logger.debug(f"STT usage record skipped: {_uerr}")
 
         return result.text
 

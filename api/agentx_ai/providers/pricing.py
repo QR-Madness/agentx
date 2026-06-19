@@ -54,3 +54,62 @@ def estimate_cost(
             "cost_per_1k_output": out_rate,
         },
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Audio pricing (Foundation #5) — TTS billed per 1k input chars, STT per minute
+# ──────────────────────────────────────────────────────────────────────────────
+# Provider APIs don't reliably expose audio pricing, so rates live here (code) and
+# are overridable via `config.pricing.audio.{provider:model}` — an override map,
+# because an added default wouldn't reach installs with a pre-existing config.json.
+_DEFAULT_AUDIO_PRICING: dict[str, dict[str, float | None]] = {
+    # The shipped ambassador voices. TTS ≈ $0.015 / 1k chars; STT (whisper) $0.006 / min.
+    "openrouter:microsoft/mai-voice-2": {"per_1k_chars": 0.015, "per_minute": None},
+    "openrouter:openai/whisper-1": {"per_1k_chars": None, "per_minute": 0.006},
+}
+
+
+def _audio_rates() -> dict[str, dict]:
+    """Shipped defaults merged with any `config.pricing.audio` overrides."""
+    merged: dict[str, dict] = dict(_DEFAULT_AUDIO_PRICING)
+    try:
+        from ..config import get_config_manager
+        overrides = get_config_manager().get("pricing.audio") or {}
+        if isinstance(overrides, dict):
+            merged.update(overrides)
+    except Exception:  # noqa: BLE001 — pricing is best-effort
+        pass
+    return merged
+
+
+def estimate_audio_cost(
+    *, model: str, chars: int | None = None, seconds: float | None = None
+) -> dict | None:
+    """Estimate TTS/STT cost from the configurable per-model audio rate table.
+
+    Returns a normalized dict (``cost_total``/``currency``/``pricing_snapshot``) —
+    deliberately NOT the token ``CostEstimate`` (audio has no input/output split) —
+    or ``None`` when the model has no configured rate or no measurable units (e.g.
+    the provider didn't report audio duration).
+    """
+    rate = _audio_rates().get(model)
+    if not rate:
+        return None
+
+    per_1k_chars = rate.get("per_1k_chars")
+    per_minute = rate.get("per_minute")
+    cost = 0.0
+    snapshot: dict[str, float] = {}
+    measured = False
+    if chars is not None and per_1k_chars:
+        cost += (chars / 1000.0) * per_1k_chars
+        snapshot["per_1k_chars"] = per_1k_chars
+        measured = True
+    if seconds is not None and per_minute:
+        cost += (seconds / 60.0) * per_minute
+        snapshot["per_minute"] = per_minute
+        measured = True
+
+    if not measured:
+        return None
+    return {"cost_total": cost, "currency": "USD", "pricing_snapshot": snapshot}

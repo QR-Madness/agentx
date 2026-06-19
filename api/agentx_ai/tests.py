@@ -6133,6 +6133,23 @@ class UsageLedgerTest(TestCase):
         self.assertEqual(recorded["units"]["tokens_out"], 50)
         self.assertIsNotNone(recorded["cost"])  # priced model → cost estimated
 
+    def test_estimate_audio_cost(self):
+        from agentx_ai.providers.pricing import estimate_audio_cost
+        # TTS: per-1k-chars rate (shipped default for mai-voice-2 = $0.015/1k).
+        tts = estimate_audio_cost(model="openrouter:microsoft/mai-voice-2", chars=2000)
+        self.assertIsNotNone(tts)
+        self.assertAlmostEqual(tts["cost_total"], 0.03)
+        self.assertIn("per_1k_chars", tts["pricing_snapshot"])
+        # STT: per-minute rate (whisper-1 = $0.006/min).
+        stt = estimate_audio_cost(model="openrouter:openai/whisper-1", seconds=120)
+        self.assertIsNotNone(stt)
+        self.assertAlmostEqual(stt["cost_total"], 0.012)
+        # No rate for the model → None.
+        self.assertIsNone(estimate_audio_cost(model="local:whatever", chars=100))
+        # Rate exists but the supplied unit isn't priced (whisper has no char rate,
+        # no seconds given) → None, not a fabricated zero.
+        self.assertIsNone(estimate_audio_cost(model="openrouter:openai/whisper-1", chars=100))
+
 
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
