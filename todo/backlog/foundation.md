@@ -48,8 +48,13 @@
    conversation) and already resume warm through deliberate shared-channel recall (`remember(query=task)`
    surfaces relevant prior workflow/specialist turns); raw-transcript hydration would break that scoping
    and duplicate the existing mechanism. **Foundation #4 complete.**
-5. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
-   model** (UI gap), and the **full persisted tool outputs** debugging surface (heavier backend).
+5. **Cost + gaps** — (a) ~~**cost tracking**~~ + (b) ~~**configure the global default model** (UI gap)~~
+   **shipped `[v0.21.92–98]`**: a unified content-free **usage ledger** (`usage_events`) every spend
+   site writes to — chat, Alloy, the Ambassador, and **voice TTS/STT** (per-char / per-minute audio
+   pricing) — surfaced in `/metrics/usage` with a **by-source** dashboard breakdown; plus a Settings
+   control for the global default model. **Still open:** **per-turn search credit budget** (Tavily
+   spend) and the **full persisted tool outputs** debugging surface (the backend store + API already
+   exist — only a budget gate / a browser UI remain).
 6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
    (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
 

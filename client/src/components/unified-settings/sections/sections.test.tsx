@@ -26,6 +26,7 @@ vi.mock('../../../contexts/NotificationContext', () => {
 
 vi.mock('../../../lib/api', () => ({
   api: {
+    getConfig: vi.fn().mockResolvedValue({ preferences: { default_model: '' } }),
     getContextLimits: vi.fn().mockResolvedValue({
       lmstudio: { context_window: 8192, max_output_tokens: 2048 },
       models: {},
@@ -33,6 +34,12 @@ vi.mock('../../../lib/api', () => ({
     updateConfig: vi.fn().mockResolvedValue({}),
     updateContextLimits: vi.fn().mockResolvedValue({}),
   },
+}));
+
+// ModelsSection now embeds ModelPickerField, whose effect fetches the model
+// catalog — stub it so the section renders without hitting the network.
+vi.mock('../../common/modelCatalog', () => ({
+  fetchModelsOnce: vi.fn().mockResolvedValue([]),
 }));
 
 import ProvidersSection from './ProvidersSection';
@@ -54,8 +61,10 @@ describe('ProvidersSection', () => {
 });
 
 describe('ModelsSection', () => {
-  it('renders the header and loads the LM Studio limits card', async () => {
+  it('renders the default-model picker, header and the LM Studio limits card', async () => {
     render(<ModelsSection />);
+    expect(screen.getByText('Default Model')).toBeInTheDocument();
+    expect(screen.getByText('Global default model')).toBeInTheDocument();
     expect(screen.getByText('Model Context Limits')).toBeInTheDocument();
     // getContextLimits resolves → the limits card appears.
     expect(await screen.findByText('Local')).toBeInTheDocument();
