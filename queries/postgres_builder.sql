@@ -125,6 +125,36 @@ CREATE INDEX IF NOT EXISTS idx_proc_candidates_status ON procedure_candidates (s
 CREATE INDEX IF NOT EXISTS idx_proc_candidates_conversation ON procedure_candidates (conversation_id);
 
 -- ============================================
+-- USAGE EVENTS (cost / usage ledger — Foundation #5)
+-- ============================================
+-- Content-free spend ledger: one row per metered model call across every
+-- surface (chat, alloy specialists, ambassador LLM, voice TTS/STT). Stores ONLY
+-- metering (model/units/cost) — never message text — so the ambassador can record
+-- spend without violating the "never pollute the transcript" invariant.
+-- `/metrics/usage` aggregates this. `ref` (conversation_id:turn_index for
+-- chat/alloy) lets the live writer and the history backfill UPSERT the same turn
+-- instead of double-counting. `units` is JSONB so token rows ({tokens_in,
+-- tokens_out}) and audio rows ({chars} | {audio_seconds,bytes}) coexist.
+CREATE TABLE IF NOT EXISTS usage_events (
+    id BIGSERIAL PRIMARY KEY,
+    ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source VARCHAR(40) NOT NULL,            -- chat | alloy | ambassador_llm | ambassador_tts | ambassador_stt
+    conversation_id TEXT,
+    agent_id VARCHAR(100),
+    provider VARCHAR(60),
+    model VARCHAR(140),
+    units JSONB NOT NULL DEFAULT '{}',
+    cost_total DOUBLE PRECISION,
+    currency VARCHAR(10) NOT NULL DEFAULT 'USD',
+    pricing_snapshot JSONB,
+    ref TEXT UNIQUE                          -- dedupe key for chat/alloy (conversation_id:turn_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_events USING BRIN (ts);
+CREATE INDEX IF NOT EXISTS idx_usage_source ON usage_events (source);
+CREATE INDEX IF NOT EXISTS idx_usage_model ON usage_events (model);
+
+-- ============================================
 -- USER PROFILES
 -- ============================================
 -- User preferences and profiles (user-scoped, no channel needed)

@@ -5999,6 +5999,72 @@ class ModelFallbackTest(TestCase):
             self.assertEqual(svc._resolve_stage_model(""), "anthropic:main")
 
 
+class UsageLedgerTest(TestCase):
+    """Foundation #5 — the content-free usage/cost ledger writer."""
+
+    def _mock_session(self):
+        from unittest.mock import MagicMock
+        session = MagicMock()
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return session, cm
+
+    def test_record_usage_writes_normalized_row(self):
+        from unittest.mock import patch
+        from agentx_ai.agent import usage_ledger
+        session, cm = self._mock_session()
+        cost = {
+            "cost_total": 0.0123, "currency": "USD",
+            "pricing_snapshot": {"cost_per_1k_input": 1.0, "cost_per_1k_output": 2.0},
+        }
+        with patch.object(usage_ledger, "get_postgres_session", return_value=cm, create=True), \
+             patch("agentx_ai.kit.agent_memory.connections.get_postgres_session", return_value=cm):
+            usage_ledger.record_usage(
+                source="ambassador_llm", model="anthropic:opus", provider="anthropic",
+                conversation_id="c1", agent_id="amb-1",
+                units={"tokens_in": 10, "tokens_out": 20, "tokens_total": 30}, cost=cost,
+            )
+        session.execute.assert_called_once()
+        params = session.execute.call_args.args[1]
+        self.assertEqual(params["source"], "ambassador_llm")
+        self.assertEqual(params["cost_total"], 0.0123)
+        self.assertEqual(params["currency"], "USD")
+        self.assertIn("tokens_total", params["units"])      # JSON-encoded units
+        self.assertIsNone(params["ref"])                    # ambassador rows always insert
+        session.commit.assert_called_once()
+
+    def test_record_usage_ref_is_passed_for_dedupe(self):
+        from unittest.mock import patch
+        from agentx_ai.agent import usage_ledger
+        session, cm = self._mock_session()
+        with patch("agentx_ai.kit.agent_memory.connections.get_postgres_session", return_value=cm):
+            usage_ledger.record_usage(
+                source="chat", model="m", conversation_id="c1",
+                units={"tokens_in": 1, "tokens_out": 1, "tokens_total": 2},
+                cost=None, ref=usage_ledger.turn_ref("c1", 4),
+            )
+        params = session.execute.call_args.args[1]
+        self.assertEqual(params["ref"], "c1:4")
+        self.assertIsNone(params["cost_total"])             # no pricing → null cost, still recorded
+        self.assertEqual(params["currency"], "USD")
+
+    def test_record_usage_never_raises(self):
+        from unittest.mock import patch
+        from agentx_ai.agent import usage_ledger
+        # A DB failure must never break a turn.
+        with patch("agentx_ai.kit.agent_memory.connections.get_postgres_session",
+                   side_effect=RuntimeError("postgres down")):
+            usage_ledger.record_usage(source="chat", model="m", units={}, cost=None)
+        # No exception == pass.
+
+    def test_turn_ref_requires_both_parts(self):
+        from agentx_ai.agent.usage_ledger import turn_ref
+        self.assertEqual(turn_ref("c1", 0), "c1:0")
+        self.assertIsNone(turn_ref(None, 3))
+        self.assertIsNone(turn_ref("c1", None))
+
+
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
 
