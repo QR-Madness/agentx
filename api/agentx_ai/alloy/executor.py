@@ -296,7 +296,15 @@ class AlloyExecutor:
                     "agent_id": target_agent_id,
                     "agent_name": profile.name,
                     "task": task[:500],
+                    "tokens_input": loop_result.tokens_in,
+                    "tokens_output": loop_result.tokens_out,
                 }
+                # Carry the cost into the turn metadata (parity with the chat path)
+                # so it persists and the usage backfill can read it.
+                if cost is not None:
+                    delegation_metadata["cost_estimate"] = cost["cost_total"]
+                    delegation_metadata["cost_currency"] = cost["currency"]
+                    delegation_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
                 memory_for_goal.store_turn(Turn(
                     conversation_id=self.session.id,
                     index=turn_index,
@@ -310,6 +318,34 @@ class AlloyExecutor:
                 ))
             except Exception as e:
                 logger.warning(f"Failed to store delegation turn: {e}")
+
+            # Cost ledger (Foundation #5): record the specialist's spend, keyed by
+            # the same turn_index so the history backfill upserts (no double-count).
+            try:
+                from ..agent.usage_ledger import record_usage, turn_ref
+                _cost = None
+                if cost is not None:
+                    _cost = {
+                        "cost_total": cost["cost_total"],
+                        "currency": cost["currency"],
+                        "pricing_snapshot": cost["pricing_snapshot"],
+                    }
+                record_usage(
+                    source="alloy",
+                    model=model_id,
+                    provider=provider.name,
+                    conversation_id=self.session.id,
+                    agent_id=target_agent_id,
+                    units={
+                        "tokens_in": loop_result.tokens_in,
+                        "tokens_out": loop_result.tokens_out,
+                        "tokens_total": loop_result.tokens_in + loop_result.tokens_out,
+                    },
+                    cost=_cost,
+                    ref=turn_ref(self.session.id, turn_index),
+                )
+            except Exception as _uerr:  # pragma: no cover - best-effort
+                logger.debug(f"alloy usage-ledger record skipped: {_uerr}")
         if child_goal_id and memory_for_goal is not None:
             try:
                 memory_for_goal.complete_goal(

@@ -1544,6 +1544,35 @@ async def agent_chat_stream(request):
                                     )
                         logger.debug(f"Stored {stored}/{len(turns)} turns in memory for conversation {conv_id}")
 
+                        # Cost ledger (Foundation #5): record this turn's spend
+                        # keyed by the assistant turn_index so the history backfill
+                        # upserts the same row (no double-count). Mirrors the cost
+                        # already written into the assistant turn's metadata.
+                        if asst is not None:
+                            try:
+                                from .agent.usage_ledger import record_usage, turn_ref
+                                _ti = asst_metadata.get("tokens_input") or 0
+                                _to = asst_metadata.get("tokens_output") or 0
+                                _cost = None
+                                if "cost_estimate" in asst_metadata:
+                                    _cost = {
+                                        "cost_total": asst_metadata.get("cost_estimate"),
+                                        "currency": asst_metadata.get("cost_currency", "USD"),
+                                        "pricing_snapshot": asst_metadata.get("pricing_snapshot"),
+                                    }
+                                record_usage(
+                                    source="chat",
+                                    model=model,
+                                    provider=asst_metadata.get("provider"),
+                                    conversation_id=conv_id,
+                                    agent_id=agent_id,
+                                    units={"tokens_in": _ti, "tokens_out": _to, "tokens_total": _ti + _to},
+                                    cost=_cost,
+                                    ref=turn_ref(conv_id, asst.index),
+                                )
+                            except Exception as _uerr:  # pragma: no cover - best-effort
+                                logger.debug(f"chat usage-ledger record skipped: {_uerr}")
+
                         # Procedural memory — encode loop (Slice 0): stage the
                         # highest-signal candidates from this turn. Corrections
                         # (steers) and explicit user rules; no LLM, best-effort.

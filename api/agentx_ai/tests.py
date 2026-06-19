@@ -6064,6 +6064,33 @@ class UsageLedgerTest(TestCase):
         self.assertIsNone(turn_ref(None, 3))
         self.assertIsNone(turn_ref("c1", None))
 
+    def test_backfill_classifies_and_keys_rows(self):
+        """The history backfill tags alloy vs chat and keys each row by
+        conversation_id:turn_index so re-runs upsert (no double-count)."""
+        from unittest.mock import patch, MagicMock
+        from types import SimpleNamespace
+        from django.core.management import call_command
+        rows = [
+            SimpleNamespace(conversation_id="c1", turn_index=2, agent_id="a1", model="m",
+                            provider="anthropic", tokens_in=5, tokens_out=7, tokens_total=12,
+                            cost_total=0.01, currency="USD", pricing_snapshot=None, is_alloy=False),
+            SimpleNamespace(conversation_id="c1", turn_index=3, agent_id="spec", model="m2",
+                            provider="openai", tokens_in=1, tokens_out=2, tokens_total=3,
+                            cost_total=None, currency="USD", pricing_snapshot=None, is_alloy=True),
+        ]
+        session, cm = self._mock_session()
+        select_result = MagicMock()
+        select_result.fetchall.return_value = rows
+        session.execute.side_effect = [select_result, MagicMock(), MagicMock()]
+        with patch("agentx_ai.kit.agent_memory.connections.get_postgres_session", return_value=cm):
+            call_command("backfill_usage_ledger")
+        self.assertEqual(session.execute.call_count, 3)  # 1 select + 2 upserts
+        up1 = session.execute.call_args_list[1].args[1]
+        self.assertEqual((up1["source"], up1["ref"]), ("chat", "c1:2"))
+        up2 = session.execute.call_args_list[2].args[1]
+        self.assertEqual((up2["source"], up2["ref"]), ("alloy", "c1:3"))
+        self.assertIn("tokens_total", up2["units"])
+
 
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
