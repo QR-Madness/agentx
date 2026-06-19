@@ -46,6 +46,7 @@ STATUS_PHASES: dict[str, str] = {
     "thinking": "Thinking…",
     "running_tool": "Running tool…",
     "reading": "Reading results…",
+    "model_fallback": "Switching model…",
     # --- reserved for deep sub-phases (not emitted yet) ---
     "embedding": "Embedding…",
     "reranking": "Reranking…",

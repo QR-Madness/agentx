@@ -204,11 +204,9 @@ class CandidateGenerator(DraftingStrategy):
     ) -> Candidate | None:
         """Generate a single candidate."""
         try:
-            provider, model_id = self.registry.get_provider_for_model(model)
-            
-            result = await provider.complete(
+            result = await self.registry.complete_with_fallback(
+                model,
                 messages,
-                model_id,
                 temperature=temperature,
                 max_tokens=kwargs.get("max_tokens"),
             )
@@ -296,7 +294,7 @@ class CandidateGenerator(DraftingStrategy):
             return candidates
         
         try:
-            provider, model_id = self.registry.get_provider_for_model(
+            provider, model_id, _ = self.registry.resolve_with_fallback(
                 self.cand_config.verifier_model
             )
         except ValueError as e:

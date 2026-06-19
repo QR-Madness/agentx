@@ -150,7 +150,7 @@ class ModelPipeline(DraftingStrategy):
             logger.info(f"Pipeline stage {i + 1}/{len(self.pipeline_config.stages)}: {stage.name}")
             
             try:
-                provider, model_id = self.registry.get_provider_for_model(stage.model)
+                provider, model_id, _ = self.registry.resolve_with_fallback(stage.model)
             except ValueError as e:
                 logger.error(f"Stage {stage.name} failed: {e}")
                 if self.pipeline_config.stop_on_failure:

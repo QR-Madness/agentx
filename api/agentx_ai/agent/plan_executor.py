@@ -456,7 +456,7 @@ class PlanExecutor:
     def _execute_subtask_sync(self, plan: TaskPlan, subtask: Subtask) -> str:
         """Execute a single subtask synchronously using _complete_with_tools."""
         messages = self._build_subtask_messages(plan, subtask)
-        provider, model_id = self.agent.registry.get_provider_for_model(
+        provider, model_id, _ = self.agent.registry.resolve_with_fallback(
             self.agent.config.default_model
         )
         use_tools = bool(subtask.tools_needed)
@@ -664,7 +664,7 @@ class PlanExecutor:
     def _compose_answer_sync(self, plan: TaskPlan) -> str:
         """Compose final answer from subtask results via a single LLM call."""
         messages = self._build_synthesis_messages(plan)
-        provider, model_id = self.agent.registry.get_provider_for_model(
+        provider, model_id, _ = self.agent.registry.resolve_with_fallback(
             self.agent.config.default_model
         )
         result = provider.complete(messages, model_id, temperature=0.5, max_tokens=4000)

@@ -343,7 +343,7 @@ class TreeOfThought(ReasoningStrategy):
         context: list[Message] | None,
     ) -> tuple[list[TreeNode], int]:
         """Generate child nodes by exploring different thought paths."""
-        provider, model_id = self.registry.get_provider_for_model(
+        provider, model_id, _ = self.registry.resolve_with_fallback(
             self.tot_config.model
         )
         loader = get_prompt_loader()
@@ -413,7 +413,7 @@ class TreeOfThought(ReasoningStrategy):
     ) -> tuple[float, int]:
         """Evaluate a node's promise for solving the task."""
         eval_model = self.tot_config.evaluator_model or self.tot_config.model
-        provider, model_id = self.registry.get_provider_for_model(eval_model)
+        provider, model_id, _ = self.registry.resolve_with_fallback(eval_model)
         loader = get_prompt_loader()
 
         prompt = self.tot_config.evaluation_prompt or loader.get(

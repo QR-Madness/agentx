@@ -114,13 +114,13 @@ class ReflectiveReasoner(ReasoningStrategy):
         """
         start_time = time.time()
 
-        provider, model_id = self.registry.get_provider_for_model(
+        provider, model_id, _ = self.registry.resolve_with_fallback(
             self.ref_config.model
         )
 
         # Get reflection model (may be same as main model)
         reflection_model = self.ref_config.reflection_model or self.ref_config.model
-        ref_provider, ref_model_id = self.registry.get_provider_for_model(
+        ref_provider, ref_model_id, _ = self.registry.resolve_with_fallback(
             reflection_model
         )
 

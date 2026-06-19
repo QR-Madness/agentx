@@ -320,7 +320,7 @@ class TaskPlanner:
 
         # For complex tasks, use LLM to decompose
         logger.info(f"Planner decomposing task with model={self.model}")
-        provider, model_id = self.registry.get_provider_for_model(self.model)
+        provider, model_id, _ = self.registry.resolve_with_fallback(self.model)
         loader = get_prompt_loader()
         system_prompt = self.prompt_override or loader.get("planner.decompose")
 

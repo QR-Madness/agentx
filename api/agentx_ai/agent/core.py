@@ -723,7 +723,7 @@ class Agent:
                 ]
             else:
                 # Direct completion without reasoning
-                provider, model_id = self.registry.get_provider_for_model(
+                provider, model_id, _ = self.registry.resolve_with_fallback(
                     self.config.default_model
                 )
 
@@ -901,7 +901,7 @@ class Agent:
         try:
             if simple_mode:
                 # Direct completion without planning/reasoning - best for chat
-                provider, model_id = self.registry.get_provider_for_model(
+                provider, model_id, _ = self.registry.resolve_with_fallback(
                     self.config.default_model
                 )
 

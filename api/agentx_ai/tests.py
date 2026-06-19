@@ -5873,11 +5873,15 @@ class WebSearchCapabilityTest(TestCase):
 
 
 class ModelFallbackTest(TestCase):
-    """Slice 5 — universal model fallback (registry) + memory stage inheritance.
+    """Slice 5 + Foundation #4 — universal model fallback (registry) + memory
+    stage inheritance + feature-site coverage.
 
     A feature whose configured model is unavailable (provider unconfigured or
     unreachable) must fall back to the active/default model instead of crashing
-    the turn; the main chat path stays strict.
+    the turn. Foundation #4 extends this from the Ambassador to every feature
+    site (chat path, reasoning, drafting, planner, alloy); specialized model
+    roles (speculative draft/target pair, TTS/STT) and the explicit availability
+    probes (`validate()`, cost estimation) intentionally stay strict.
     """
 
     def _registry(self, *, configured, default_model="anthropic:claude-haiku-4-5",
@@ -5948,6 +5952,32 @@ class ModelFallbackTest(TestCase):
         good.assert_awaited_once()
         # lmstudio is now cached-unhealthy from the observed failure
         self.assertTrue(reg._is_cached_unhealthy("lmstudio"))
+
+    def test_reasoning_site_routes_through_fallback(self):
+        """A reasoning strategy (representative feature site) resolves via
+        resolve_with_fallback, so an unavailable sub-model degrades to the
+        fallback model rather than hard-failing the turn."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from agentx_ai.reasoning.chain_of_thought import ChainOfThought, CoTConfig
+
+        reasoner = ChainOfThought(CoTConfig(model="lmstudio:gemma", extract_steps=False))
+
+        completion = MagicMock(content="Answer: 42", usage={"total_tokens": 7})
+        fake_provider = MagicMock(complete=AsyncMock(return_value=completion))
+        reg = MagicMock()
+        # The configured sub-model is "unavailable" → resolver substitutes the default.
+        reg.resolve_with_fallback.return_value = (fake_provider, "claude-haiku-4-5", "substituted")
+        reasoner._registry = reg
+
+        result = asyncio.run(reasoner.reason("what is 6 * 7?"))
+
+        # Routed through the fallback resolver with the configured model...
+        reg.resolve_with_fallback.assert_called_once_with("lmstudio:gemma")
+        reg.get_provider_for_model.assert_not_called()
+        # ...and ran against the substituted model, not the unavailable one.
+        self.assertEqual(fake_provider.complete.await_args.args[1], "claude-haiku-4-5")
+        self.assertEqual(result.answer, "42")
 
     def test_stage_model_inheritance(self):
         from unittest.mock import MagicMock, patch

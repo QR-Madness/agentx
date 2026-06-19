@@ -35,9 +35,13 @@
    `agent/core.py` + `alloy/executor.py` context builders to native ledger blocks (they keep the
    byte-identical `assemble_turn_context` wrapper for now); surface the allocation report as a real
    Context Inspector view.
-4. **Finish the reliability guarantees** — extend the Slice-5 model fallback to the remaining feature
-   sites (reasoning/drafting/`planner`/`alloy`, still raw `get_provider_for_model`); **hydrate the
-   Alloy + background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm.
+4. **Finish the reliability guarantees** — (a) ~~extend the Slice-5 model fallback to the remaining
+   feature sites~~ **shipped `[v0.21.92]`**: every feature site now resolves via
+   `resolve_with_fallback`/`complete_with_fallback` (chat path + reasoning/drafting/`planner`/
+   `plan_executor`/`alloy`/summarization/prompt-enhance); specialized roles (speculative draft/target,
+   ambassador TTS/STT) and availability probes (`validate()`, cost-est) stay strict by design; the
+   chat path surfaces a swap as a `model_fallback` status notice. (b) **hydrate the Alloy +
+   background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm — **next**.
 5. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
    model** (UI gap), and the **full persisted tool outputs** debugging surface (heavier backend).
 6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs

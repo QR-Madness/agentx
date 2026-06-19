@@ -188,7 +188,7 @@ class ReActAgent(ReasoningStrategy):
         """
         start_time = time.time()
 
-        provider, model_id = self.registry.get_provider_for_model(
+        provider, model_id, _ = self.registry.resolve_with_fallback(
             self.react_config.model
         )
 

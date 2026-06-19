@@ -1093,10 +1093,16 @@ async def agent_chat_stream(request):
         ))
 
         try:
-            # Get provider and model
-            provider, model_id = agent.registry.get_provider_for_model(
+            # Get provider and model — fall back when the configured provider is
+            # unconfigured or cached-unhealthy so a single bad provider never
+            # hard-fails the turn (the agent model is the requested floor here, so
+            # the chain falls through to the global default). A substitution is
+            # surfaced as a status notice rather than swapping models silently.
+            provider, model_id, fallback_note = agent.registry.resolve_with_fallback(
                 agent.config.default_model
             )
+            if fallback_note:
+                emit_status("model_fallback", fallback_note)
 
             # Build messages with system prompt
             prompt_manager = get_prompt_manager()
@@ -2660,7 +2666,7 @@ async def agent_plan_resume(request, plan_id):
             if use_memory and agent.memory:
                 agent.memory.conversation_id = conv_id
 
-            provider, model_id = agent.registry.get_provider_for_model(
+            provider, model_id, _ = agent.registry.resolve_with_fallback(
                 agent.config.default_model
             )
             tools = agent._get_tools_for_provider()
@@ -3558,7 +3564,6 @@ Guidelines:
         from .providers.base import Message, MessageRole
 
         registry = get_registry()
-        provider, model_id = registry.get_provider_for_model(model)
 
         # Build messages
         messages = [
@@ -3581,10 +3586,11 @@ Guidelines:
                 content=f"Enhance this prompt:\n{prompt}"
             ))
 
-        # Call the LLM
-        result = await provider.complete(
+        # Call the LLM — fall back transparently if the enhancement model's
+        # provider is down/unconfigured (also retries runtime provider errors).
+        result = await registry.complete_with_fallback(
+            model,
             messages,
-            model_id,
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -3592,13 +3598,13 @@ Guidelines:
         enhanced_prompt = result.content.strip()
 
         # Log usage for debugging
-        logger.info(f"Prompt enhancement: {len(prompt)} chars → {len(enhanced_prompt)} chars using {model_id}")
+        logger.info(f"Prompt enhancement: {len(prompt)} chars → {len(enhanced_prompt)} chars")
 
         return JsonResponse({
             "enhanced_prompt": enhanced_prompt,
             "original_length": len(prompt),
             "enhanced_length": len(enhanced_prompt),
-            "model": model_id,
+            "model": result.model or model,
         })
 
     except AgentXError as e:

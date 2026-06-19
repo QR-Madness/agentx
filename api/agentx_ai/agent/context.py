@@ -185,7 +185,7 @@ class ContextManager:
             return ""
         
         try:
-            provider, model_id = self.registry.get_provider_for_model(
+            provider, model_id, _ = self.registry.resolve_with_fallback(
                 self.config.summary_model
             )
             

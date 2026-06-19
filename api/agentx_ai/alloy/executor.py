@@ -202,7 +202,7 @@ class AlloyExecutor:
         messages = self._build_specialist_messages(profile, task, specialist)
 
         # ------- pick provider + tool list -------
-        provider, model_id = specialist.registry.get_provider_for_model(
+        provider, model_id, _ = specialist.registry.resolve_with_fallback(
             specialist.config.default_model
         )
         tools = specialist._get_tools_for_provider() if profile.enable_tools else None
