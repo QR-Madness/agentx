@@ -1,11 +1,11 @@
 /**
  * UsageMetricsSection — Dashboard "Usage & Cost" hero.
  *
- * Aggregates token / cost / latency from conversation_logs via
- * GET /api/metrics/usage. Renders KPI tiles (incl. month-to-date
- * projection), a dual-axis ComposedChart (tokens + cost over time),
- * a cost-by-model bar chart, and side-by-side leaderboards for
- * Top Models and Per-Agent usage.
+ * Aggregates token / cost / latency from the unified usage_events ledger
+ * (chat + multi-agent + ambassador + voice) via GET /api/metrics/usage.
+ * Renders KPI tiles (incl. month-to-date projection), a dual-axis
+ * ComposedChart (tokens + cost over time), a cost-by-model bar chart, and
+ * leaderboards for Top Models, Per-Agent, and By-Source usage.
  */
 
 import { useMemo, useState } from 'react';
@@ -23,6 +23,15 @@ import { Button } from '../ui';
 import './UsageMetricsSection.css';
 
 const RANGES = [7, 14, 30] as const;
+
+// Friendly labels for usage_events.source (Foundation #5 by-source breakdown).
+const SOURCE_LABELS: Record<string, string> = {
+  chat: 'Chat',
+  alloy: 'Multi-agent',
+  ambassador_llm: 'Ambassador',
+  ambassador_tts: 'Voice · TTS',
+  ambassador_stt: 'Voice · STT',
+};
 
 // Chart colors pull from the active theme so they follow theme switches.
 const COLOR_ACCENT = 'var(--accent-primary)';
@@ -128,6 +137,16 @@ export function UsageMetricsSection() {
       };
     });
   }, [usage?.by_agent, profiles]);
+
+  // Per-source leaderboard (chat vs multi-agent vs ambassador vs voice).
+  const bySource = useMemo(() => {
+    return (usage?.by_source || []).map((s) => ({
+      name: SOURCE_LABELS[s.source] ?? s.source,
+      turns: s.turns,
+      tokens: s.tokens_total,
+      cost: s.cost_total,
+    }));
+  }, [usage?.by_source]);
 
   return (
     <div className="usage-section card glass">
@@ -275,6 +294,18 @@ export function UsageMetricsSection() {
               ])}
               emptyText="No agent activity"
             />
+            <LeaderboardTable
+              title="By source"
+              headers={['Source', 'Events', 'Tokens', 'Cost']}
+              rows={bySource.map((s) => [
+                s.name,
+                s.turns.toLocaleString(),
+                formatCompact(s.tokens),
+                s.cost > 0 ? formatCost(s.cost, currency) : '—',
+              ])}
+              emptyText="No activity"
+              nameCol={0}
+            />
           </div>
         </>
       )}
@@ -300,11 +331,12 @@ function Tile({ icon, label, value, sub }: {
   );
 }
 
-function LeaderboardTable({ title, headers, rows, emptyText }: {
+function LeaderboardTable({ title, headers, rows, emptyText, nameCol = 1 }: {
   title: string;
   headers: string[];
   rows: string[][];
   emptyText: string;
+  nameCol?: number;  // which column is the (left-aligned) label column
 }) {
   return (
     <div className="usage-table">
@@ -316,7 +348,7 @@ function LeaderboardTable({ title, headers, rows, emptyText }: {
           <thead>
             <tr>
               {headers.map((h, i) => (
-                <th key={i} className={i === 1 ? 'col-name' : 'col-num'}>{h}</th>
+                <th key={i} className={i === nameCol ? 'col-name' : 'col-num'}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -324,7 +356,7 @@ function LeaderboardTable({ title, headers, rows, emptyText }: {
             {rows.map((cells, r) => (
               <tr key={r}>
                 {cells.map((c, i) => (
-                  <td key={i} className={i === 1 ? 'col-name' : 'col-num'}>{c}</td>
+                  <td key={i} className={i === nameCol ? 'col-name' : 'col-num'}>{c}</td>
                 ))}
               </tr>
             ))}

@@ -3058,10 +3058,12 @@ paths:
       operationId: usageMetrics
       summary: Aggregated token/cost/latency usage
       description: >-
-        Aggregates assistant turns from `conversation_logs` into overall totals,
-        a per-model breakdown, and a daily time series for the last `days` days.
-        Degrades gracefully (zeros + `unavailable: true`, HTTP 200) when the
-        database is offline.
+        Aggregates the unified `usage_events` spend ledger (chat, multi-agent,
+        ambassador, and voice TTS/STT) into overall totals plus per-model,
+        per-agent, per-source breakdowns and a daily time series for the last
+        `days` days. `avg_latency_ms` is read from `conversation_logs`. Degrades
+        gracefully (zeros + `unavailable: true`, HTTP 200) when the database is
+        offline.
       parameters:
         - name: days
           in: query
@@ -3103,11 +3105,26 @@ paths:
                         cost_total: { type: number }
                   by_agent:
                     type: array
-                    description: Per-agent breakdown grouped by `conversation_logs.agent_id`. NULL rows fall under the literal `_default`.
+                    description: Per-agent breakdown grouped by `usage_events.agent_id`. NULL rows fall under the literal `_default`.
                     items:
                       type: object
                       properties:
                         agent_id: { type: string }
+                        turns: { type: integer }
+                        tokens_input: { type: integer }
+                        tokens_output: { type: integer }
+                        tokens_total: { type: integer }
+                        cost_total: { type: number }
+                  by_source:
+                    type: array
+                    description: >-
+                      Per-source breakdown — `chat`, `alloy`, `ambassador_llm`,
+                      `ambassador_tts`, `ambassador_stt`. Audio sources contribute
+                      cost but zero tokens.
+                    items:
+                      type: object
+                      properties:
+                        source: { type: string }
                         turns: { type: integer }
                         tokens_input: { type: integer }
                         tokens_output: { type: integer }

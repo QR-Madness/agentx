@@ -6150,6 +6150,46 @@ class UsageLedgerTest(TestCase):
         # no seconds given) → None, not a fabricated zero.
         self.assertIsNone(estimate_audio_cost(model="openrouter:openai/whisper-1", chars=100))
 
+    @override_settings(AGENTX_AUTH_ENABLED=False)
+    def test_usage_metrics_includes_by_source(self):
+        """GET /api/metrics/usage aggregates the ledger with a by-source breakdown."""
+        from unittest.mock import patch, MagicMock
+        from django.test import Client
+
+        def fake_execute(stmt, params=None):
+            sql = str(stmt)
+            res = MagicMock()
+            if "GROUP BY source" in sql:
+                res.mappings.return_value.all.return_value = [
+                    {"source": "chat", "turns": 3, "tokens_input": 10, "tokens_output": 5,
+                     "tokens_total": 15, "cost_total": 0.02},
+                    {"source": "ambassador_tts", "turns": 1, "tokens_input": 0, "tokens_output": 0,
+                     "tokens_total": 0, "cost_total": 0.001},
+                ]
+            elif "avg_latency_ms" in sql:
+                res.scalar.return_value = 1200.0
+            elif "FROM usage_events" in sql and "GROUP BY" not in sql:
+                res.mappings.return_value.first.return_value = {
+                    "turns": 4, "tokens_input": 10, "tokens_output": 5,
+                    "tokens_total": 15, "cost_total": 0.021, "cost_currency": "USD"}
+            else:
+                res.mappings.return_value.all.return_value = []
+            return res
+
+        session = MagicMock()
+        session.execute.side_effect = fake_execute
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch("agentx_ai.kit.agent_memory.connections.get_postgres_session", return_value=cm):
+            resp = Client().get("/api/metrics/usage?days=7")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        sources = {row["source"]: row for row in data["by_source"]}
+        self.assertIn("ambassador_tts", sources)
+        self.assertEqual(sources["chat"]["cost_total"], 0.02)
+        self.assertEqual(data["totals"]["avg_latency_ms"], 1200.0)
+
 
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""

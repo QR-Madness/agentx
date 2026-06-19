@@ -1052,9 +1052,10 @@ Returns total counts and per-channel breakdowns.
 GET /api/metrics/usage
 ```
 
-Aggregates assistant turns from `conversation_logs` into overall totals, a per-model
-breakdown, and a daily time series. Degrades gracefully (zeros + `"unavailable": true`,
-HTTP 200) when the database is offline.
+Aggregates the unified `usage_events` spend ledger (chat, multi-agent, ambassador, and
+voice TTS/STT) into overall totals plus per-model, per-agent, and per-source breakdowns
+and a daily time series. `avg_latency_ms` is read from `conversation_logs`. Degrades
+gracefully (zeros + `"unavailable": true`, HTTP 200) when the database is offline.
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -1077,6 +1078,12 @@ HTTP 200) when the database is offline.
      "tokens_output": 4500, "tokens_total": 13500, "cost_total": 0.11},
     {"agent_id": "_default", "turns": 4, "tokens_input": 1200,
      "tokens_output": 600, "tokens_total": 1800, "cost_total": 0.012}
+  ],
+  "by_source": [
+    {"source": "chat", "turns": 30, "tokens_input": 15000,
+     "tokens_output": 7000, "tokens_total": 22000, "cost_total": 0.16},
+    {"source": "ambassador_tts", "turns": 6, "tokens_input": 0,
+     "tokens_output": 0, "tokens_total": 0, "cost_total": 0.004}
   ],
   "daily": [
     {"date": "2026-05-28", "turns": 20, "tokens_total": 13000, "cost_total": 0.09}

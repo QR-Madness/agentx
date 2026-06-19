@@ -930,6 +930,14 @@ export interface UsageMetrics {
     tokens_total: number;
     cost_total: number;
   }>;
+  by_source: Array<{
+    source: string;         // chat | alloy | ambassador_llm | ambassador_tts | ambassador_stt
+    turns: number;
+    tokens_input: number;
+    tokens_output: number;
+    tokens_total: number;
+    cost_total: number;
+  }>;
   daily: Array<{
     date: string;        // YYYY-MM-DD
     turns: number;
