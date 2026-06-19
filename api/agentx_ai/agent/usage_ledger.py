@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,8 @@ def record_usage(
     provider: str | None = None,
     conversation_id: str | None = None,
     agent_id: str | None = None,
-    units: dict[str, Any] | None = None,
-    cost: dict[str, Any] | None = None,
+    units: Mapping[str, Any] | None = None,
+    cost: Mapping[str, Any] | None = None,
     ref: str | None = None,
 ) -> None:
     """Append one usage event. Best-effort: never raises.

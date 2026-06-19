@@ -734,6 +734,8 @@ class AmbassadorService:
             ),
             empty_text="(The ambassador returned an empty briefing.)",
             log_label="briefing",
+            conversation_id=conversation_id,
+            agent_id=getattr(profile, "agent_id", None),
         ):
             yield ev
 
@@ -800,6 +802,7 @@ class AmbassadorService:
             on_error=lambda e: store.set_qa_status(conversation_id, qa_id, "error", run_id=run_id, error=e),
             empty_text="(The ambassador had no answer.)",
             log_label="Q&A",
+            agent_id=getattr(profile, "agent_id", None),
         ):
             yield ev
 
@@ -821,6 +824,7 @@ class AmbassadorService:
         on_error,
         empty_text: str,
         log_label: str,
+        agent_id: str | None = None,
     ) -> AsyncGenerator[str]:
         """The unified streaming agentic answer core (text Q&A + voice).
 
@@ -841,6 +845,7 @@ class AmbassadorService:
         # Accumulated tool-call chips, persisted onto the entry as they happen so they
         # survive a reload (the live SSE drives them in-session; this is the durable copy).
         tool_chips: list[dict] = []
+        tokens_in = tokens_out = 0  # summed across all tool rounds for the usage ledger
         try:
             for _round in range(_MAX_TOOL_ROUNDS):
                 last_round = _round == _MAX_TOOL_ROUNDS - 1
@@ -857,6 +862,9 @@ class AmbassadorService:
                 ):
                     if chunk.finish_reason:
                         finish_reason = chunk.finish_reason
+                    if chunk.usage:
+                        tokens_in += chunk.usage.get("prompt_tokens", 0) or 0
+                        tokens_out += chunk.usage.get("completion_tokens", 0) or 0
                     if chunk.tool_calls:
                         round_calls = chunk.tool_calls
                     if chunk.content:
@@ -953,6 +961,8 @@ class AmbassadorService:
                     on_error=on_error,
                     empty_text=empty_text,
                     log_label=f"{log_label} (fallback)",
+                    conversation_id=conversation_id,
+                    agent_id=agent_id,
                 ):
                     yield ev
                 settled = True
@@ -963,6 +973,13 @@ class AmbassadorService:
         finally:
             if not settled:
                 on_cancel()
+            # Record the spend accumulated across this answer's tool rounds. (If we
+            # degraded, the fallback _stream_and_settle records its own spend too —
+            # both were genuinely paid for.)
+            self._record_llm_usage(
+                provider=provider, model_id=model_id, conversation_id=conversation_id,
+                agent_id=agent_id, tokens_in=tokens_in, tokens_out=tokens_out,
+            )
 
     async def draft_relay_message(
         self,
@@ -1010,6 +1027,13 @@ class AmbassadorService:
                 temperature=temperature,
                 max_tokens=self._max_tokens(profile, cfg),
             )
+            if result.usage:
+                self._record_llm_usage(
+                    provider=provider, model_id=model_id, conversation_id=conversation_id,
+                    agent_id=getattr(profile, "agent_id", None),
+                    tokens_in=result.usage.get("prompt_tokens", 0) or 0,
+                    tokens_out=result.usage.get("completion_tokens", 0) or 0,
+                )
             return (result.content or "").strip() or intent
         except Exception as e:  # noqa: BLE001 — never block the relay
             logger.warning(f"Ambassador draft failed: {e}")
@@ -1127,6 +1151,7 @@ class AmbassadorService:
             on_error=lambda e: store.set_qa_status(conversation_id, qa_id, "error", error=e),
             empty_text="(The ambassador had no answer.)",
             log_label="voice Q&A",
+            agent_id=getattr(profile, "agent_id", None),
         )
         async for _ev in agen:  # consume the SSE (no client tail on the voice path)
             pass
@@ -1192,6 +1217,13 @@ class AmbassadorService:
                 temperature=temperature,
                 max_tokens=self._max_tokens(profile, cfg),
             )
+            if result.usage:
+                self._record_llm_usage(
+                    provider=provider, model_id=model_id, conversation_id=conversation_id,
+                    agent_id=getattr(profile, "agent_id", None),
+                    tokens_in=result.usage.get("prompt_tokens", 0) or 0,
+                    tokens_out=result.usage.get("completion_tokens", 0) or 0,
+                )
             action, text = self._parse_voice_command(result.content)
         except Exception as e:  # noqa: BLE001 — the call must never break
             logger.warning(f"Ambassador voice-command failed: {e}")
@@ -1353,6 +1385,38 @@ class AmbassadorService:
 
         return result.text
 
+    def _record_llm_usage(
+        self, *, provider, model_id: str, conversation_id: str | None,
+        agent_id: str | None, tokens_in: int, tokens_out: int,
+    ) -> None:
+        """Record one ambassador LLM spend event (Foundation #5).
+
+        Best-effort + content-free: only model/tokens/cost reach the ledger, so the
+        ambassador's "never pollute the transcript" invariant holds. No-op when the
+        provider reported no usage (some streams don't)."""
+        if not (tokens_in or tokens_out):
+            return
+        try:
+            from .usage_ledger import record_usage
+            from ..providers.pricing import estimate_cost
+            cost = None
+            try:
+                cost = estimate_cost(provider.get_capabilities(model_id), tokens_in, tokens_out)
+            except Exception:  # noqa: BLE001 — pricing is optional
+                pass
+            record_usage(
+                source="ambassador_llm",
+                model=model_id,
+                provider=getattr(provider, "name", None),
+                conversation_id=conversation_id,
+                agent_id=agent_id,
+                units={"tokens_in": tokens_in, "tokens_out": tokens_out,
+                       "tokens_total": tokens_in + tokens_out},
+                cost=cost,
+            )
+        except Exception as e:  # noqa: BLE001 — metering never breaks a turn
+            logger.debug(f"ambassador usage record skipped: {e}")
+
     async def _stream_and_settle(
         self,
         *,
@@ -1368,6 +1432,8 @@ class AmbassadorService:
         on_error,
         empty_text: str,
         log_label: str,
+        conversation_id: str | None = None,
+        agent_id: str | None = None,
     ) -> AsyncGenerator[str]:
         """Shared streaming core for briefings + Q&A: token-stream the completion,
         persist via the injected callbacks, and settle the sidecar on done / cancel
@@ -1377,12 +1443,16 @@ class AmbassadorService:
         accumulated = ""
         settled = False
         finish_reason = None
+        tokens_in = tokens_out = 0
         try:
             async for chunk in provider.stream(
                 messages, model_id, temperature=temperature, max_tokens=max_tokens
             ):
                 if chunk.finish_reason:
                     finish_reason = chunk.finish_reason
+                if chunk.usage:
+                    tokens_in += chunk.usage.get("prompt_tokens", 0) or 0
+                    tokens_out += chunk.usage.get("completion_tokens", 0) or 0
                 if not chunk.content:
                     continue
                 accumulated += chunk.content
@@ -1417,6 +1487,10 @@ class AmbassadorService:
             # Belt-and-suspenders: any exotic exit path still settles the record.
             if not settled:
                 on_cancel()
+            self._record_llm_usage(
+                provider=provider, model_id=model_id, conversation_id=conversation_id,
+                agent_id=agent_id, tokens_in=tokens_in, tokens_out=tokens_out,
+            )
 
 
 # Module-level singleton

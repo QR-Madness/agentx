@@ -6091,6 +6091,48 @@ class UsageLedgerTest(TestCase):
         self.assertEqual((up2["source"], up2["ref"]), ("alloy", "c1:3"))
         self.assertIn("tokens_total", up2["units"])
 
+    def test_ambassador_stream_records_usage(self):
+        """The ambassador's streaming answer sums chunk usage and records an
+        `ambassador_llm` event (content-free) when it settles."""
+        import asyncio
+        from unittest.mock import patch
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.providers.base import StreamChunk, ModelCapabilities
+
+        class FakeProvider:
+            name = "anthropic"
+            def get_capabilities(self, _m):
+                return ModelCapabilities(cost_per_1k_input=1.0, cost_per_1k_output=2.0)
+            async def stream(self, messages, model_id, **kw):
+                yield StreamChunk(content="Hello")
+                yield StreamChunk(usage={"prompt_tokens": 100, "completion_tokens": 50},
+                                  finish_reason="stop")
+
+        svc = AmbassadorService()
+        recorded: dict = {}
+
+        async def _run():
+            agen = svc._stream_and_settle(
+                item_id="x", provider=FakeProvider(), model_id="anthropic:opus",
+                temperature=0.2, max_tokens=100, messages=[],
+                on_chunk=lambda t: None, on_done=lambda s: None,
+                on_cancel=lambda: None, on_error=lambda e: None,
+                empty_text="(empty)", log_label="test",
+                conversation_id="c1", agent_id="amb-1",
+            )
+            async for _ in agen:
+                pass
+
+        with patch("agentx_ai.agent.usage_ledger.record_usage",
+                   side_effect=lambda **kw: recorded.update(kw)):
+            asyncio.run(_run())
+
+        self.assertEqual(recorded["source"], "ambassador_llm")
+        self.assertEqual(recorded["agent_id"], "amb-1")
+        self.assertEqual(recorded["units"]["tokens_in"], 100)
+        self.assertEqual(recorded["units"]["tokens_out"], 50)
+        self.assertIsNotNone(recorded["cost"])  # priced model → cost estimated
+
 
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
