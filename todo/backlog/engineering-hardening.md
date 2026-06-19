@@ -89,12 +89,31 @@
       duplicate the subtask loop (select → run → mark/handle-failure → safety-net → synthesize). Parity is
       now restored (safety net mirrored), but the two skeletons can still drift. Sharing the loop body is
       awkward across sync/async; revisit only if `Agent.run` (the sync path) grows.
-- [ ] **Extend the universal model fallback to the remaining feature sites** — Slice 5 wired
-      `resolve_with_fallback` into memory/recall/recap/compression, but **reasoning** (CoT/ToT/ReAct/
-      Reflection), **drafting** (speculative/pipeline/candidate), `agent/planner.py`, and
-      `alloy/executor.py` still call `registry.get_provider_for_model` directly, so a missing/unreachable
-      model there can still hard-fail those features. Route them through `resolve_with_fallback`
-      (passing the agent model as `preferred_fallback`) for the same "never crash the turn" guarantee.
+- [x] **Extend the universal model fallback to the remaining feature sites** — **shipped `[v0.21.92]`
+      (Foundation #4a).** Routed the chat stream, reasoning (CoT/ToT/ReAct/Reflection), drafting
+      (candidate + pipeline stages), `agent/planner.py`, `plan_executor.py`, `agent/core.py`,
+      conversation summarization, the prompt enhancer, and `alloy/executor.py` through
+      `resolve_with_fallback`/`complete_with_fallback`. Specialized roles (speculative draft/target,
+      ambassador TTS/STT) and the explicit availability probes (`validate()`, cost estimation) stay
+      strict by design. **Two follow-ups split out below** (sub-model `preferred_fallback` threading;
+      streaming first-call resilience).
+- [ ] **Thread the agent model as `preferred_fallback` at reasoning/drafting sub-model sites** —
+      Foundation #4a routed these through `resolve_with_fallback` but with **no `preferred_fallback`**,
+      so a broken sub-model (`cot_config.model`, a drafting `stage.model`, `verifier_model`) falls
+      straight to the *global* default rather than the agent's own working model. The reasoner/drafter
+      classes hold only their own config (`CoTConfig` etc.), no handle to the agent's `default_model` —
+      threading one is a constructor-signature change across the reasoning + drafting subsystems
+      (deferred from #4a as scope creep). Worth it so a sub-feature degrades to the *active agent* model,
+      not the global floor. Cross-file; own pass.
+- [ ] **Streaming model-fallback is first-call-fragile** — the streaming sites (chat `views.py`, plan
+      resume, Alloy specialists) use `resolve_with_fallback`, which only skips providers **already
+      cached-unhealthy**; unlike `complete_with_fallback` it has no runtime-retry, and a stream-only path
+      never *feeds* the health cache. So the **first** turn against a configured-but-down provider still
+      hard-fails (it's only caught once a failed call or a `/providers/health` poll marks it unhealthy).
+      Minimal fix: wrap the stream kickoff so a provider/connection error **before first token** marks the
+      provider unhealthy + retries `resolve_with_fallback` once. Full **mid-stream** failover is the
+      separate deferred "hard interrupt" work (abort + resume the in-flight provider stream). Pairs with
+      the proactive provider-health refresh item below (a background refresh would also pre-empt this).
 - [ ] **Consolidate token estimation (4 copies)** — `estimate_tokens` now exists in
       `streaming/helpers.py`, `agent/context.py`, `agent/session.py`, and `agent/conversation_history.py`,
       all the same rough `len/4`. Unify into one shared util — and consider using **`tiktoken`** (already
