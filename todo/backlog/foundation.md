@@ -40,8 +40,14 @@
    `resolve_with_fallback`/`complete_with_fallback` (chat path + reasoning/drafting/`planner`/
    `plan_executor`/`alloy`/summarization/prompt-enhance); specialized roles (speculative draft/target,
    ambassador TTS/STT) and availability probes (`validate()`, cost-est) stay strict by design; the
-   chat path surfaces a swap as a `model_fallback` status notice. (b) **hydrate the Alloy +
-   background-chat paths** (Slice-6 follow-up) so multi-agent/queued chats also resume warm — **next**.
+   chat path surfaces a swap as a `model_fallback` status notice. (b) **warm-resume the queued/multi-agent
+   paths** — **shipped `[v0.21.93]`**: the **background-chat** path now hydrates inside `Agent.chat()`
+   (mirrors the interactive stream), so a queued job picking up an existing conversation resumes warm.
+   The **Alloy specialist** path was investigated and **intentionally left as-is**: specialists are
+   task-scoped by contract (the system prompt explicitly tells them they *don't* see the user's
+   conversation) and already resume warm through deliberate shared-channel recall (`remember(query=task)`
+   surfaces relevant prior workflow/specialist turns); raw-transcript hydration would break that scoping
+   and duplicate the existing mechanism. **Foundation #4 complete.**
 5. **Cost + gaps** — **per-turn search credit budget** (Tavily spend), **configure the global default
    model** (UI gap), and the **full persisted tool outputs** debugging surface (heavier backend).
 6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs

@@ -6095,6 +6095,23 @@ class ConversationContextTest(TestCase):
         self.assertEqual(hydrate_session_from_history(s2, "c2", token_budget=10_000, reader=reader), 0)
         self.assertEqual([m.content for m in s2.messages], ["live"])
 
+    def test_chat_rehydrates_cold_session(self):
+        """Foundation #4b — agent.chat() hydrates from durable history before the
+        turn, so the queued/background-chat path resumes warm (not just the
+        interactive stream). Hydration runs early, so it's captured even when the
+        downstream completion can't resolve a provider in the test env."""
+        from unittest.mock import patch
+        from agentx_ai.agent.core import Agent, AgentConfig
+        agent = Agent(AgentConfig(enable_memory=False, enable_tools=False))
+        with patch(
+            "agentx_ai.agent.conversation_history.hydrate_session_from_history",
+            return_value=0,
+        ) as hyd:
+            agent.chat("hello", session_id="conv-xyz")
+        hyd.assert_called_once()
+        # Hydrated against the conversation the turn belongs to.
+        self.assertEqual(hyd.call_args.args[1], "conv-xyz")
+
     def test_assemble_turn_context_budget_fit(self):
         from agentx_ai.agent.context import ContextManager, ContextConfig
         from agentx_ai.providers.base import Message, MessageRole

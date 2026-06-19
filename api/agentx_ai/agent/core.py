@@ -841,6 +841,18 @@ class Agent:
         session = self._session_manager.get_or_create(session_id)
         conversation_id = session_id or session.id
 
+        # Rehydrate a cold session (new process / evicted / a queued background
+        # job picking up an existing conversation) from durable history before
+        # the new turn is appended. Idempotent — a no-op on an already-live or
+        # already-hydrated session — so it never clobbers in-process state. This
+        # is what makes the background-chat path resume warm (the interactive
+        # stream hydrates separately in views.py).
+        try:
+            from .conversation_history import hydrate_session_from_history
+            hydrate_session_from_history(session, conversation_id, token_budget=10_000_000)
+        except Exception as _hy_err:  # pragma: no cover - DB offline
+            logger.debug(f"Session rehydration skipped: {_hy_err}")
+
         # Update memory with conversation context if available
         if self.memory:
             self.memory.conversation_id = conversation_id
