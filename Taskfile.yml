@@ -93,8 +93,10 @@ tasks:
 # ============================================================================
 
   dev:
-    desc: "Start full dev environment (Docker + API + Client + memory worker)"
-    deps: [check, db:up]
+    desc: "Start full dev environment (Docker + migrations + API + Client + memory worker)"
+    # db:migrate (Alembic PG + Neo4j) runs every startup — idempotent + sub-second
+    # when current, so the schema is always up to date before the API boots.
+    deps: [check, db:migrate]
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
