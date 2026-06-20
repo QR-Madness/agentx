@@ -93,14 +93,15 @@ tasks:
 # ============================================================================
 
   dev:
-    desc: "Start full dev environment (Docker + migrations + API + Client + memory worker)"
-    # db:migrate (Alembic PG + Neo4j) runs every startup — idempotent + sub-second
-    # when current, so the schema is always up to date before the API boots.
-    deps: [check, db:migrate]
+    desc: "Start full dev environment (API + Client + memory worker) against running DBs"
+    # Hot runner: ensures the DBs are up-and-healthy (db:up --wait) then runs the
+    # processes. It deliberately does NOT migrate or tear anything down — schema
+    # is a localized concern (`task db:migrate`), and the DBs persist across dev
+    # restarts so you're not cold-starting (and racing) them every time.
+    deps: [check, db:up]
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - defer: { task: db:down }
       # WORKER runs the autonomous consolidation loop (consolidate, distill_procedures,
       # …) so procedural/semantic memory actually accrues during development.
       - bunx concurrently -n "API,CLIENT,WORKER" -c "blue.bold,magenta.bold,green.bold"
@@ -254,11 +255,14 @@ tasks:
 # ============================================================================
 
   db:up:
-    desc: "Start database services (Neo4j, PostgreSQL, Redis)"
+    desc: "Start database services (Neo4j, PostgreSQL, Redis) — waits until healthy"
     aliases: [runners]
     deps: [check]
     cmds:
-      - docker-compose up -d
+      # --wait blocks until every service passes its compose healthcheck, so any
+      # dependent (db:migrate, db:init:schemas, dev) gets a DB that's actually
+      # accepting connections — no more racing Neo4j's Bolt port on a cold start.
+      - docker-compose up -d --wait
 
   db:down:
     desc: "Stop database services"
@@ -299,9 +303,9 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
+      # db:up (dep) already blocked until every service was healthy, so there's
+      # no need to sleep-and-pray for readiness here.
       - echo "🗄️ Initializing memory system schemas..."
-      - echo "   (Waiting for databases to be ready...)"
-      - sleep 25
       - uv run alembic upgrade head                                  # PostgreSQL (Alembic)
       - uv run python api/manage.py init_memory_schema --verbose     # Neo4j + Redis
       - echo ""
