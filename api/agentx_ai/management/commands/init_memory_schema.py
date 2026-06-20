@@ -1,16 +1,16 @@
 """
 Django management command to initialize memory system database schemas.
 
-This command sets up the required schemas in Neo4j, PostgreSQL, and Redis
-for the agent memory system to function properly.
+This command sets up the **Neo4j** schema and verifies **Redis**. **PostgreSQL is
+managed by Alembic** (`alembic upgrade head` / `task db:migrate:pg`) — this command
+no longer touches it (`--postgres-only` is a no-op pointer).
 
 Usage:
     python manage.py init_memory_schema
     python manage.py init_memory_schema --neo4j-only
-    python manage.py init_memory_schema --postgres-only
     python manage.py init_memory_schema --redis-only
     python manage.py init_memory_schema --verify
-    python manage.py init_memory_schema --force-recreate-indexes
+    python manage.py init_memory_schema --force-recreate-indexes   # Neo4j vector indexes
 """
 
 import re
@@ -28,7 +28,7 @@ VECTOR_INDEXES = [
 
 
 class Command(BaseCommand):
-    help = "Initialize memory system database schemas (Neo4j, PostgreSQL, Redis)"
+    help = "Initialize memory schemas: Neo4j + Redis (PostgreSQL is managed by Alembic)"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -39,7 +39,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--postgres-only",
             action="store_true",
-            help="Only initialize PostgreSQL schemas",
+            help="Deprecated no-op — PostgreSQL is managed by Alembic (task db:migrate:pg)",
         )
         parser.add_argument(
             "--redis-only",
@@ -81,11 +81,16 @@ class Command(BaseCommand):
             else:
                 results["neo4j"] = self._handle_neo4j(verify_only, verbose)
 
-        if do_all or postgres_only:
-            if force_recreate:
-                results["postgres"] = self._force_recreate_postgres_indexes(verbose)
-            else:
-                results["postgres"] = self._handle_postgres(verify_only, verbose)
+        # PostgreSQL is owned by Alembic now (`alembic upgrade head` /
+        # `task db:migrate:pg`). This command only handles Neo4j + Redis; surface a
+        # pointer rather than touching PG (incl. for --postgres-only / force-recreate).
+        if postgres_only or (force_recreate and not (neo4j_only or redis_only)):
+            self.stdout.write(self.style.WARNING(  # type: ignore[attr-defined]
+                "PostgreSQL schema is managed by Alembic — run `task db:migrate:pg` "
+                "(alembic upgrade head); skipping PostgreSQL here."
+            ))
+        elif do_all:
+            self.stdout.write("\n🐘 PostgreSQL: managed by Alembic (`task db:migrate:pg`)")
 
         if do_all or redis_only:
             results["redis"] = self._handle_redis(verify_only, verbose)
@@ -146,14 +151,6 @@ class Command(BaseCommand):
         return re.sub(
             r"(`vector\.dimensions`:\s*)\d+",
             rf"\g<1>{dims}",
-            schema_content,
-        )
-
-    def _substitute_postgres_dims(self, schema_content: str, dims: int) -> str:
-        """Replace vector(N) column types in SQL schema with configured dims."""
-        return re.sub(
-            r"vector\(\d+\)",
-            f"vector({dims})",
             schema_content,
         )
 
@@ -384,173 +381,6 @@ class Command(BaseCommand):
                         )
 
             return {"success": True, "message": f"Recreated {len(create_stmts)} vector indexes at {dims} dims"}
-
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-
-    def _handle_postgres(self, verify_only: bool, verbose: bool) -> dict:
-        """Initialize or verify PostgreSQL schemas."""
-        self.stdout.write("\n🐘 PostgreSQL Schema Initialization")
-        self.stdout.write("-" * 40)
-
-        try:
-            from agentx_ai.kit.agent_memory.connections import get_postgres_session
-            from sqlalchemy import text
-        except ImportError as e:
-            return {"success": False, "message": f"Import error: {e}"}
-
-        # Load schema file (api/agentx_ai/management/commands/ -> project_root/queries/)
-        project_root = Path(__file__).parent.parent.parent.parent.parent
-        queries_dir = project_root / "queries"
-        schema_file = queries_dir / "postgres_builder.sql"
-
-        if not schema_file.exists():
-            return {"success": False, "message": f"Schema file not found: {schema_file}"}
-
-        schema_content = schema_file.read_text()
-
-        # Substitute vector dimensions from config
-        dims = self._get_configured_dims()
-        schema_content = self._substitute_postgres_dims(schema_content, dims)
-
-        if verify_only:
-            try:
-                with get_postgres_session() as session:
-                    # Check for key tables
-                    result = session.execute(text("""
-                        SELECT table_name FROM information_schema.tables
-                        WHERE table_schema = 'public'
-                        AND table_name IN (
-                            'conversation_logs', 'memory_timeline', 'tool_invocations',
-                            'user_profiles', 'memory_audit_log', 'schema_version',
-                            'user_files', 'artifacts', 'blob_cache', 'usage_events'
-                        )
-                    """))
-                    tables = [r[0] for r in result.fetchall()]
-
-                    # Check for channel columns
-                    result = session.execute(text("""
-                        SELECT table_name, column_name FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                        AND column_name = 'channel'
-                    """))
-                    channel_cols = [(r[0], r[1]) for r in result.fetchall()]
-
-                self.stdout.write(f"  Found {len(tables)} memory tables")
-                self.stdout.write(f"  Found {len(channel_cols)} tables with 'channel' column")
-                return {
-                    "success": True,
-                    "message": f"{len(tables)} tables, {len(channel_cols)} with channel",
-                }
-            except Exception as e:
-                return {"success": False, "message": str(e)}
-
-        # Execute schema (PostgreSQL handles IF NOT EXISTS gracefully)
-        try:
-            with get_postgres_session() as session:
-                # Execute the entire schema as a single transaction
-                # Split by statements for better error reporting
-                session.execute(text(schema_content))
-                session.commit()
-
-                # Verify key components
-                result = session.execute(text("""
-                    SELECT table_name FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name IN (
-                        'conversation_logs', 'memory_timeline', 'tool_invocations',
-                        'user_profiles', 'memory_audit_log', 'schema_version',
-                        'user_files', 'artifacts', 'blob_cache', 'procedure_candidates',
-                        'usage_events'
-                    )
-                """))
-                tables = [r[0] for r in result.fetchall()]
-
-                # Get schema version
-                result = session.execute(text(
-                    "SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1"
-                ))
-                version_row = result.fetchone()
-                if version_row:
-                    self.stdout.write(f"  Schema version: {version_row[0]} ({version_row[1]})")
-
-                self.stdout.write(f"  ✓ Created/verified {len(tables)} tables")
-
-                # Check audit log partitions
-                result = session.execute(text("""
-                    SELECT COUNT(*) FROM pg_class c
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    WHERE c.relname LIKE 'memory_audit_log_%'
-                    AND n.nspname = 'public'
-                """))
-                partition_count = result.scalar()
-                self.stdout.write(f"  ✓ Created/verified {partition_count} audit log partitions")
-
-            return {"success": True, "message": f"{len(tables)} tables, {partition_count} partitions"}
-
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-
-    def _force_recreate_postgres_indexes(self, verbose: bool) -> dict:
-        """Recreate PostgreSQL vector columns and indexes with correct dimensions."""
-        self.stdout.write("\n🐘 PostgreSQL Vector Index Recreation")
-        self.stdout.write("-" * 40)
-
-        try:
-            from agentx_ai.kit.agent_memory.connections import get_postgres_session
-            from sqlalchemy import text
-        except ImportError as e:
-            return {"success": False, "message": f"Import error: {e}"}
-
-        dims = self._get_configured_dims()
-        self.stdout.write(f"  Target dimensions: {dims}")
-
-        # Tables with embedding columns and their ivfflat indexes
-        tables = [
-            ("conversation_logs", "idx_logs_embedding"),
-            ("memory_timeline", "idx_timeline_embedding"),
-        ]
-
-        try:
-            with get_postgres_session() as session:
-                for table, idx_name in tables:
-                    # Check if table exists
-                    result = session.execute(text(
-                        "SELECT 1 FROM information_schema.tables "
-                        "WHERE table_schema = 'public' AND table_name = :table"
-                    ), {"table": table})
-                    if not result.fetchone():
-                        self.stdout.write(f"  ⚠ Table {table} does not exist, skipping")
-                        continue
-
-                    # Drop the ivfflat index
-                    session.execute(text(f"DROP INDEX IF EXISTS {idx_name}"))
-                    self.stdout.write(f"  ✓ Dropped index: {idx_name}")
-
-                    # Alter the column type to new dimensions
-                    session.execute(text(
-                        f"ALTER TABLE {table} ALTER COLUMN embedding TYPE vector({dims})"
-                    ))
-                    self.stdout.write(f"  ✓ Altered {table}.embedding to vector({dims})")
-
-                    # NULL out stale embeddings
-                    result = session.execute(text(
-                        f"UPDATE {table} SET embedding = NULL WHERE embedding IS NOT NULL"
-                    ))
-                    count = getattr(result, "rowcount", 0) or 0
-                    if count > 0:
-                        self.stdout.write(f"  ✓ Cleared {count} stale embeddings from {table}")
-
-                    # Recreate ivfflat index
-                    session.execute(text(
-                        f"CREATE INDEX {idx_name} ON {table} "
-                        f"USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
-                    ))
-                    self.stdout.write(f"  ✓ Created index: {idx_name}")
-
-                session.commit()
-
-            return {"success": True, "message": f"Recreated vector indexes at {dims} dims for {len(tables)} tables"}
 
         except Exception as e:
             return {"success": False, "message": str(e)}

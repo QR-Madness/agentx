@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+# (agentx_ai resolves at runtime via alembic.ini `prepend_sys_path = api`.)
 import os
 import sys
 from logging.config import fileConfig

@@ -49,7 +49,9 @@ auto_init() {
   log "running database migrations + memory schema init..."
   local attempt=1 max=5
   while [ "$attempt" -le "$max" ]; do
+    # Django ORM (SQLite) → memory Postgres (Alembic) → Neo4j + Redis (home-grown).
     if uv run python "$APP_DIR/api/manage.py" migrate --noinput \
+       && (cd "$APP_DIR" && uv run alembic upgrade head) \
        && uv run python "$APP_DIR/api/manage.py" init_memory_schema; then
       log "schema init complete"
       return 0

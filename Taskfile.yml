@@ -300,7 +300,8 @@ tasks:
       - echo "🗄️ Initializing memory system schemas..."
       - echo "   (Waiting for databases to be ready...)"
       - sleep 25
-      - uv run python api/manage.py init_memory_schema --verbose
+      - uv run alembic upgrade head                                  # PostgreSQL (Alembic)
+      - uv run python api/manage.py init_memory_schema --verbose     # Neo4j + Redis
       - echo ""
       - echo "✅ Schema initialization complete!"
 
@@ -310,7 +311,8 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py init_memory_schema --verify
+      - uv run alembic current                                       # PostgreSQL (Alembic)
+      - uv run python api/manage.py init_memory_schema --verify      # Neo4j + Redis
 
   db:dedupe:entities:
     desc: "Dry-run dedupe of legacy :Entity duplicates (no graph mutation). Pass --cross-channel via CLI_ARGS."
@@ -353,23 +355,26 @@ tasks:
       - uv run python api/manage.py debug_attribution {{.CLI_ARGS}}
 
   db:migrate:
-    desc: "Apply pending schema migrations (PostgreSQL + Neo4j)"
+    desc: "Apply pending schema migrations (PostgreSQL via Alembic + Neo4j)"
     deps: [db:up]
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py migrate_schema --verbose
+      - uv run alembic upgrade head                                  # PostgreSQL (Alembic)
+      - uv run python api/manage.py migrate_schema --verbose         # Neo4j
 
   db:migrate:status:
-    desc: "Show current schema versions and list pending migrations"
+    desc: "Show current schema versions (Alembic PG + Neo4j) and pending migrations"
     deps: [db:up]
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
+      - uv run alembic current
+      - uv run alembic heads
       - uv run python api/manage.py migrate_schema --status
 
   db:migrate:dry-run:
-    desc: "Preview pending migrations without applying"
+    desc: "Preview pending Neo4j migrations without applying (PG: see `alembic upgrade --sql`)"
     deps: [db:up]
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings

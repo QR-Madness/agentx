@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.98 -->
+<!-- release-version: 0.21.99 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -39,6 +39,7 @@ the client at your own API server and bring your own model providers.
 
 ### Fixes
 
+- **PostgreSQL schema now managed by Alembic.** Self-hosters get reliable, incremental DB upgrades — the container applies pending migrations on start (your existing data is adopted in place, never recreated). Neo4j keeps its own migrator. *Upgrading: be on a recent prior version first so your DB is already current before this switch.*
 - **Public gateway hardening.** Long gateway tokens no longer overflow nginx's hash bucket; CORS preflight passes through (browser/Tauri clients reach tunneled instances); `AGENTX_PUBLIC_HOST` works in Docker; dashboard-managed Cloudflare Tunnel overlay shipped.
 - **Ambassador correctness.** Loading a conversation is pure display (no re-speaking/re-billing saved briefings); it names each conversation's own agent; the panel shows the ambassador's own name/avatar; voice shows the ambassador thinking, not your agent.
 - **Quieter logs.** A downed Redis backs off instead of flooding; verbose LLM logs show a one-line console summary (full payload in the Log panel); benign voice-cancel `CancelledError` is silenced.

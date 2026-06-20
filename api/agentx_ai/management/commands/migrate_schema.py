@@ -1,15 +1,14 @@
 """
-Django management command to apply incremental database schema migrations.
+Django management command to apply incremental **Neo4j** schema migrations.
 
-Scans queries/migrations/NNNN_*.sql and queries/neo4j_migrations/NNNN_*.cypher,
-checks the current schema version, and applies all pending files in order.
+Scans queries/neo4j_migrations/NNNN_*.cypher, checks `_SchemaMeta.version`, and
+applies all pending files in order. **PostgreSQL migrations are managed by
+Alembic** now (`alembic upgrade head` / `task db:migrate:pg`).
 
 Usage:
     python manage.py migrate_schema
     python manage.py migrate_schema --status
     python manage.py migrate_schema --dry-run
-    python manage.py migrate_schema --postgres-only
-    python manage.py migrate_schema --neo4j-only
     python manage.py migrate_schema --verbose
 """
 
@@ -36,19 +35,9 @@ def _description_from_filename(filename: str) -> str:
 
 
 class Command(BaseCommand):
-    help = "Apply pending schema migrations (PostgreSQL + Neo4j)"
+    help = "Apply pending Neo4j schema migrations (PostgreSQL is managed by Alembic)"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--postgres-only",
-            action="store_true",
-            help="Only run PostgreSQL migrations",
-        )
-        parser.add_argument(
-            "--neo4j-only",
-            action="store_true",
-            help="Only run Neo4j migrations",
-        )
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -66,134 +55,21 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        postgres_only = options["postgres_only"]
-        neo4j_only = options["neo4j_only"]
         dry_run = options["dry_run"]
         status_only = options["status"]
         verbose = options["verbose"]
 
-        do_all = not (postgres_only or neo4j_only)
-
         project_root = Path(__file__).parent.parent.parent.parent.parent
-        pg_migrations_dir = project_root / "queries" / "migrations"
         neo4j_migrations_dir = project_root / "queries" / "neo4j_migrations"
 
-        pg_ok = True
-        neo4j_ok = True
-
-        if do_all or postgres_only:
-            pg_ok = self._run_postgres(
-                pg_migrations_dir, dry_run=dry_run, status_only=status_only, verbose=verbose
-            )
-
-        if do_all or neo4j_only:
-            neo4j_ok = self._run_neo4j(
-                neo4j_migrations_dir, dry_run=dry_run, status_only=status_only, verbose=verbose
-            )
-
-        if not (pg_ok and neo4j_ok):
+        if not self._run_neo4j(
+            neo4j_migrations_dir, dry_run=dry_run, status_only=status_only, verbose=verbose
+        ):
             raise CommandError("One or more migrations failed.")
-
-    # ------------------------------------------------------------------
-    # PostgreSQL
-    # ------------------------------------------------------------------
-
-    def _get_pg_version(self, session, text) -> int:
-        """Return the current max version from schema_version, or 0 if missing."""
-        try:
-            result = session.execute(text("SELECT MAX(version) FROM schema_version"))
-            row = result.fetchone()
-            return row[0] if row and row[0] is not None else 0
-        except Exception:
-            return 0
 
     def _get_configured_dims(self) -> int:
         from agentx_ai.kit.agent_memory.config import get_settings
         return get_settings().embedding_dimensions
-
-    def _substitute_pg_dims(self, sql: str, dims: int) -> str:
-        return re.sub(r"vector\(\d+\)", f"vector({dims})", sql)
-
-    def _run_postgres(
-        self, migrations_dir: Path, *, dry_run: bool, status_only: bool, verbose: bool
-    ) -> bool:
-        self.stdout.write("\n🐘 PostgreSQL Migrations")
-        self.stdout.write("-" * 40)
-
-        try:
-            from agentx_ai.kit.agent_memory.connections import get_postgres_session
-            from sqlalchemy import text
-        except ImportError as e:
-            self.stdout.write(self.style.ERROR(f"  Import error: {e}"))  # type: ignore[attr-defined]
-            return False
-
-        if not migrations_dir.exists():
-            self.stdout.write(self.style.ERROR(f"  Migrations dir not found: {migrations_dir}"))  # type: ignore[attr-defined]
-            return False
-
-        # Collect and sort migration files
-        files = sorted(
-            (f for f in migrations_dir.glob("*.sql") if _extract_version(f.name) is not None),
-            key=lambda f: _extract_version(f.name),  # type: ignore[arg-type, return-value]
-        )
-
-        try:
-            with get_postgres_session() as session:
-                current_version = self._get_pg_version(session, text)
-                self.stdout.write(f"  Current version: {current_version}")
-
-                pending = [f for f in files if _extract_version(f.name) > current_version]  # type: ignore[operator]
-
-                if not pending:
-                    self.stdout.write("  No pending migrations.")
-                    return True
-
-                if status_only or dry_run:
-                    label = "Pending" if not dry_run else "Would apply"
-                    self.stdout.write(f"  {label} ({len(pending)}):")
-                    for f in pending:
-                        self.stdout.write(f"    {f.name}")
-                    return True
-
-                dims = self._get_configured_dims()
-                applied = 0
-
-                for mfile in pending:
-                    version = _extract_version(mfile.name)
-                    description = _description_from_filename(mfile.name)
-                    sql = self._substitute_pg_dims(mfile.read_text(), dims)
-
-                    # Skip pure marker files (only comments/whitespace)
-                    executable = "\n".join(
-                        line for line in sql.splitlines()
-                        if line.strip() and not line.strip().startswith("--")
-                    ).strip()
-
-                    if verbose:
-                        self.stdout.write(f"  Applying {mfile.name}...")
-
-                    try:
-                        if executable:
-                            session.execute(text(sql))
-                        # Record as applied (idempotent: skip if already present)
-                        session.execute(text(
-                            "INSERT INTO schema_version (version, description, filename) "
-                            "SELECT :v, :d, :f WHERE NOT EXISTS "
-                            "(SELECT 1 FROM schema_version WHERE version = :v)"
-                        ), {"v": version, "d": description, "f": mfile.name})
-                        session.commit()
-                        applied += 1
-                        self.stdout.write(f"  ✓ {mfile.name}")
-                    except Exception as e:
-                        self.stdout.write(self.style.ERROR(f"  ✗ {mfile.name}: {e}"))  # type: ignore[attr-defined]
-                        return False
-
-                self.stdout.write(f"  Applied {applied} migration(s).")
-                return True
-
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"  Error: {e}"))  # type: ignore[attr-defined]
-            return False
 
     # ------------------------------------------------------------------
     # Neo4j

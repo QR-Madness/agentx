@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+# (agentx_ai resolves at runtime via alembic.ini `prepend_sys_path = api`.)
 """Shared helpers for Alembic revisions (memory Postgres).
 
 Keeps the vector-dimension substitution in one place so the baseline and any
