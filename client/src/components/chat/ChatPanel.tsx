@@ -65,7 +65,8 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
-import { getMeta } from '../../lib/conversationMeta';
+import { getMeta, useConversationMeta } from '../../lib/conversationMeta';
+import { WorkspaceBadge } from './WorkspaceBadge';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
@@ -91,6 +92,10 @@ export function ChatPanel() {
   const openAmbassador = useOpenAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
   const { notifyError } = useNotify();
+  useConversationMeta();  // re-render when the conversation↔workspace tag changes
+  const attachedWorkspaceId = activeTab
+    ? getMeta(activeTab.sessionId ?? activeTab.id).workspaceId
+    : undefined;
 
   // When a workflow is selected, the supervisor profile takes over.
   // Otherwise, the tab's per-tab profile (or the global active profile) is used.
@@ -777,6 +782,12 @@ export function ChatPanel() {
             conversationId={activeTab.sessionId}
             flashSignal={checkpointSignal}
           />
+          {attachedWorkspaceId && (
+            <WorkspaceBadge
+              workspaceId={attachedWorkspaceId}
+              onOpen={() => openModal(SURFACES.workspaces)}
+            />
+          )}
           {traceRun && (
             <button
               type="button"

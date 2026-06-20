@@ -18,8 +18,12 @@
 > (`conversationMeta.workspaceId`); `lib/api/workspaces.ts` (+ FormData support in `core.ts`); the chat
 > stream sends `workspace_id`. v1 complete. See `kit/workspaces/` + Development-Notes.
 >
-> **Next (future):** code-aware/AST chunking, folder/repo ingestion, `web_crawl → workspace`,
-> cross-workspace search, Alloy-team shared workspaces, sha256 snapshots/restore.
+> **Next (future):** ⭐ **Agent shells spawn *inside* the workspace** — when agent shell/exec support
+> lands, the shell's CWD should be a materialized working tree of the workspace's files (the blob store is
+> content-addressed by sha256, so materialize filename→bytes into a temp/work dir scoped to the workspace),
+> so the agent can operate on the actual files, not just RAG over them. Then: code-aware/AST chunking,
+> folder/repo ingestion, `web_crawl → workspace`, cross-workspace search, Alloy-team shared workspaces,
+> sha256 snapshots/restore.
 
 > Confirmed absent: no upload endpoint, no file/document store, no workspace, no ingestion. Agents can
 > RAG over their *learned memory* (Neo4j + pgvector) and the *web* (Tavily), but a user can't hand them

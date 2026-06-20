@@ -216,29 +216,30 @@ export function WorkspacesPanel() {
                   <span className="shrink-0 text-xs text-fg-muted">Open a chat to attach</span>
                 )}
               </div>
-              <div
+              {/* Click-to-browse is the primary path — HTML5 drag-drop doesn't
+                  deliver files in the Tauri webview, so it's best-effort (web only). */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => {
                   e.preventDefault(); setDragOver(false);
                   if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
                 }}
-                className={`m-3 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center text-sm ${
-                  dragOver ? 'border-accent bg-accent-secondary' : 'border-line text-fg-muted'
+                disabled={uploading}
+                className={`m-3 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${
+                  dragOver ? 'border-accent bg-accent-secondary' : 'border-line text-fg-muted hover:border-accent hover:text-fg'
                 }`}
               >
                 {uploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                <span>Drag files here, or{' '}
-                  <button className="text-accent underline" onClick={() => fileInputRef.current?.click()}>
-                    browse
-                  </button>
-                </span>
+                <span><span className="text-accent">Click to upload</span> a file, or drop it here</span>
                 <span className="text-xs">PDF, text, markdown, or code</span>
                 <input
                   ref={fileInputRef} type="file" multiple className="hidden"
                   onChange={e => { if (e.target.files?.length) void uploadFiles(e.target.files); e.target.value = ''; }}
                 />
-              </div>
+              </button>
 
               <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-3">
                 {documents.length === 0 ? (
