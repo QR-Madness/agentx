@@ -24,15 +24,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..providers.base import Message, MessageRole
+from ..tokens import FALLBACK_CHARS_PER_TOKEN, estimate_messages, estimate_tokens
 
 logger = logging.getLogger(__name__)
 
 
-# Rough char→token estimate, kept identical to ContextManager.estimate_tokens so
-# the ledger and the legacy assembler agree. (tiktoken consolidation is Foundation #6.)
 def estimate_text_tokens(text: str) -> int:
-    """Estimate tokens for a raw string (pre-``Message``). ~4 chars/token + overhead."""
-    return (len(text) // 4) + 10
+    """Estimate tokens for a raw string (pre-``Message``).
+
+    Thin alias over the shared :func:`agentx_ai.tokens.estimate_tokens` (tiktoken-backed)
+    so the ledger and every other budget consumer agree on token sizing.
+    """
+    return estimate_tokens(text)
 
 
 @dataclass
@@ -83,9 +86,8 @@ _HISTORY_KEY = "__history__"
 
 
 def _estimate_messages(messages: list[Message]) -> int:
-    """Token estimate for a list of messages (mirrors ContextManager.estimate_tokens)."""
-    total_chars = sum(len(m.content) for m in messages)
-    return (total_chars // 4) + len(messages) * 10
+    """Token estimate for a list of messages (shared estimator + per-message overhead)."""
+    return estimate_messages(messages)
 
 
 def fit_history(
@@ -239,15 +241,22 @@ _MARKER = "\n…[truncated]"
 def shrink_tail(content: str, target_tokens: int) -> str:
     """Keep the head, drop the tail, so the result estimates to ≤ ``target_tokens``.
 
-    ``estimate_text_tokens`` adds a fixed +10 overhead and the truncation marker
-    costs a few chars, so the char budget is ``(target − overhead) · 4`` — without
-    this margin the shrunk text re-estimates just over budget and the allocator
-    would reject every shrink.
+    Derives a first char budget from the chars/token fallback ratio (less the marker),
+    then verifies against the shared, tiktoken-backed estimator and trims further if
+    the estimate is still over — so the result fits regardless of how a given string
+    tokenizes, rather than relying on a fixed chars/token assumption.
     """
-    budget_chars = max(0, (target_tokens - 10) * 4 - len(_MARKER))
-    if len(content) <= budget_chars or len(content) // 4 + 10 <= target_tokens:
+    if target_tokens <= 0:
+        return ""
+    if estimate_text_tokens(content) <= target_tokens:
         return content
-    return content[:budget_chars].rstrip() + _MARKER
+    budget_chars = max(0, target_tokens * FALLBACK_CHARS_PER_TOKEN - len(_MARKER))
+    out = (content[:budget_chars].rstrip() + _MARKER) if budget_chars else _MARKER.strip()
+    # tiktoken can count denser than chars/4 for some text; trim until it fits.
+    while budget_chars > 0 and estimate_text_tokens(out) > target_tokens:
+        budget_chars = int(budget_chars * 0.85)
+        out = (content[:budget_chars].rstrip() + _MARKER) if budget_chars else _MARKER.strip()
+    return out
 
 
 def shrink_lines_newest_n(content: str, target_tokens: int) -> str:

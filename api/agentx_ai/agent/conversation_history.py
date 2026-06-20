@@ -16,12 +16,9 @@ from typing import Any
 from collections.abc import Callable
 
 from ..providers.base import Message, MessageRole
+from ..tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
-
-# Rough char→token estimate (mirrors ContextManager.estimate_tokens / helpers).
-_CHARS_PER_TOKEN = 4
-_PER_MESSAGE_OVERHEAD = 10
 
 # Hard ceiling on rows pulled from the DB regardless of budget (a guard against
 # pathologically long threads); the token budget normally bites first.
@@ -30,10 +27,6 @@ _MAX_ROWS = 400
 TurnReader = Callable[[str, int], list[tuple[str, str]]]
 # A conversation lister returns recent conversations newest-first as dicts.
 ConversationLister = Callable[[int], list[dict]]
-
-
-def _estimate_tokens(text: str) -> int:
-    return len(text) // _CHARS_PER_TOKEN + _PER_MESSAGE_OVERHEAD
 
 
 def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
@@ -109,7 +102,7 @@ def load_recent_labeled_turns(
     picked: list[tuple[str, str, str | None]] = []
     used = 0
     for role, content, agent_name in rows:
-        tokens = _estimate_tokens(content)
+        tokens = estimate_tokens(content)
         if picked and used + tokens > token_budget:
             break
         picked.append((role, content, agent_name))
@@ -204,7 +197,7 @@ def load_recent_turns(
     picked: list[Message] = []
     used = 0
     for role, content in rows:
-        tokens = _estimate_tokens(content)
+        tokens = estimate_tokens(content)
         if picked and used + tokens > token_budget:
             break
         picked.append(

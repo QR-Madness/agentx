@@ -683,10 +683,9 @@ class Agent:
                 if memory_bundle and context:
                     from .context import ContextManager, ContextConfig
                     if self._context_manager is None:
-                        self._context_manager = ContextManager(ContextConfig(
-                            max_tokens=self.config.max_context_tokens,
-                            summarize_threshold=self.config.summarize_threshold,
-                        ))
+                        # ContextManager here is used only for inject_memory; the
+                        # legacy token-budget knobs were retired in Foundation #6.
+                        self._context_manager = ContextManager(ContextConfig())
                     reasoning_context = self._context_manager.inject_memory(context, memory_bundle)
 
                 if strategy == "auto":
@@ -735,10 +734,9 @@ class Agent:
                 if memory_bundle:
                     from .context import ContextManager, ContextConfig
                     if self._context_manager is None:
-                        self._context_manager = ContextManager(ContextConfig(
-                            max_tokens=self.config.max_context_tokens,
-                            summarize_threshold=self.config.summarize_threshold,
-                        ))
+                        # ContextManager here is used only for inject_memory; the
+                        # legacy token-budget knobs were retired in Foundation #6.
+                        self._context_manager = ContextManager(ContextConfig())
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
 
                 # Get MCP tools for function calling
@@ -940,10 +938,9 @@ class Agent:
                 if memory_bundle:
                     from .context import ContextManager, ContextConfig
                     if self._context_manager is None:
-                        self._context_manager = ContextManager(ContextConfig(
-                            max_tokens=self.config.max_context_tokens,
-                            summarize_threshold=self.config.summarize_threshold,
-                        ))
+                        # ContextManager here is used only for inject_memory; the
+                        # legacy token-budget knobs were retired in Foundation #6.
+                        self._context_manager = ContextManager(ContextConfig())
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
 
                 logger.info(f"Agent chat {task_id} using {model_id}")

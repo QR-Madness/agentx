@@ -12,16 +12,12 @@ from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
 from ..providers.base import Message, MessageRole
+from ..tokens import estimate_tokens
 
 if TYPE_CHECKING:
     from .models import AgentProfile
 
 logger = logging.getLogger(__name__)
-
-
-def _estimate_tokens(text: str) -> int:
-    """Rough char→token estimate (mirrors ContextManager.estimate_tokens)."""
-    return len(text or "") // 4 + 10
 
 
 @dataclass
@@ -54,27 +50,18 @@ class Session:
     # conversation_logs.agent_id attribution (16.1) plus the active agent.
     participants: dict[str, AgentProfile] = field(default_factory=dict)
 
-    # Settings
-    max_messages: int = 100
-    auto_summarize_at: int = 50
-    
     def add_message(self, message: Message) -> None:
-        """Add a message to the session."""
+        """Add a message to the session.
+
+        Growth is bounded by the token-based rolling summary
+        (:meth:`SessionManager.maybe_update_summary`), which ages old turns into
+        ``summary`` and trims the in-memory tail — so there's no fixed message-count
+        cap here (the legacy ``max_messages``/``auto_summarize_at`` knobs were retired
+        in Foundation #6).
+        """
         self.messages.append(message)
         self.last_active = time.time()
-        
-        # Check if we need to summarize
-        if len(self.messages) >= self.auto_summarize_at and not self.summary:
-            # Mark for summarization (actual summarization done externally)
-            pass
-        
-        # Trim if too long
-        if len(self.messages) > self.max_messages:
-            # Keep system messages and recent history
-            system_messages = [m for m in self.messages if m.role == MessageRole.SYSTEM]
-            recent = self.messages[-(self.max_messages - len(system_messages)):]
-            self.messages = system_messages + recent
-    
+
     def get_messages(self, limit: int | None = None) -> list[Message]:
         """Get messages from the session."""
         if limit:
@@ -238,7 +225,7 @@ class SessionManager:
         used = 0
         keep = 0
         for m in reversed(non_system):
-            used += _estimate_tokens(m.content)
+            used += estimate_tokens(m.content)
             keep += 1
             if keep >= recent_floor and used >= token_threshold:
                 break

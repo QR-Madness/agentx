@@ -6407,6 +6407,76 @@ class ConversationContextTest(TestCase):
             set_sum.assert_called_once()
 
 
+class TokenEstimatorTest(TestCase):
+    """Foundation #6 — the shared tiktoken-backed token estimator.
+
+    Resets the module-level encoder cache around each test so the lazy singleton
+    doesn't leak the loaded/failed state between cases.
+    """
+
+    def setUp(self):
+        import agentx_ai.tokens as tokens
+        self.tokens = tokens
+        self._saved = (tokens._encoder, tokens._encoder_failed)
+
+    def tearDown(self):
+        self.tokens._encoder, self.tokens._encoder_failed = self._saved
+
+    def test_empty_input_is_zero(self):
+        self.assertEqual(self.tokens.estimate_tokens(""), 0)
+        self.assertEqual(self.tokens.estimate_tokens(None), 0)
+
+    def test_tiktoken_path_returns_positive(self):
+        # Real encoder path — a non-trivial sentence is at least a few tokens.
+        n = self.tokens.estimate_tokens(
+            "Consider whether the premise actually supports the conclusion."
+        )
+        self.assertGreater(n, 3)
+
+    def test_falls_back_to_char_heuristic_when_tiktoken_unavailable(self):
+        import builtins
+        tokens = self.tokens
+        tokens._encoder = None
+        tokens._encoder_failed = False
+        real_import = builtins.__import__
+
+        def _no_tiktoken(name, *args, **kwargs):
+            if name == "tiktoken":
+                raise ImportError("simulated missing tiktoken")
+            return real_import(name, *args, **kwargs)
+
+        text = "y" * 400  # under the fast-path cutoff, so it would normally tokenize
+        with patch("builtins.__import__", side_effect=_no_tiktoken):
+            self.assertEqual(
+                tokens.estimate_tokens(text),
+                len(text) // tokens.FALLBACK_CHARS_PER_TOKEN,
+            )
+        self.assertTrue(tokens._encoder_failed)  # failure is cached, logged once
+
+    def test_messages_add_per_message_overhead(self):
+        from agentx_ai.providers.base import Message, MessageRole
+        tokens = self.tokens
+        msgs = [
+            Message(role=MessageRole.USER, content="alpha beta"),
+            Message(role=MessageRole.ASSISTANT, content="gamma delta"),
+        ]
+        expected = (
+            sum(tokens.estimate_tokens(m.content) for m in msgs)
+            + len(msgs) * tokens._PER_MESSAGE_OVERHEAD
+        )
+        self.assertEqual(tokens.estimate_messages(msgs), expected)
+
+    def test_large_string_uses_char_fast_path(self):
+        tokens = self.tokens
+        big = "reason " * 4000  # 28k chars, above _EXACT_MAX_CHARS
+        self.assertGreater(len(big), tokens._EXACT_MAX_CHARS)
+        # Above the cutoff we skip tiktoken entirely and use chars/4.
+        self.assertEqual(
+            tokens.estimate_tokens(big),
+            len(big) // tokens.FALLBACK_CHARS_PER_TOKEN,
+        )
+
+
 class ContextLedgerTest(TestCase):
     """Foundation #3 — priority-based budget allocator (Context Ledger)."""
 

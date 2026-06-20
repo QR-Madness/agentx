@@ -60,8 +60,12 @@
    outputs** debugging surface shipped `[v0.21.101]`: a command-palette "Tool Outputs" drawer
    (`components/toolkit/ToolOutputsPanel.tsx`) lists/filters/reads/prunes the Redis-backed store over
    the existing `/api/tool-outputs` API. **Foundation #5 complete.**
-6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
-   (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
+6. ~~**Tech-debt sweep**~~ — **shipped (v0.21.102).** All token estimators now flow through one
+   `tiktoken`-backed module (`api/agentx_ai/tokens.py`: `estimate_tokens`/`estimate_messages`, chars/4
+   fallback + a >20K-char fast path); the ledger's `shrink_tail` verifies against it instead of assuming a
+   fixed ratio. Dead knobs removed: `auto_summarize_at`, `max_messages`, the superseded
+   `ContextManager.prepare_context`/`estimate_tokens`, and the stale `ContextConfig` fields (only
+   `summary_model` remains).
 
 > ⭐ **Major missing capability — File Workspaces & Document RAG** (see section below). Slots near the
 > top once the chat-legibility slice lands: today agents can search learned *memory* + the *web* but

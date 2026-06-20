@@ -7,6 +7,7 @@ Extracted from views.py to reduce complexity and enable reuse.
 import logging
 from typing import Any, TypeVar
 
+from ..tokens import estimate_messages
 from .constants import (
     CHAR_TO_TOKEN_RATIO,
     MIN_TOOL_CONTENT_SIZE,
@@ -22,8 +23,8 @@ def estimate_tokens(messages: list[Any]) -> int:
     """
     Estimate token count from messages.
 
-    Uses a conservative char-to-token ratio. Each message's content
-    is summed and divided by the ratio.
+    Delegates to the shared :func:`agentx_ai.tokens.estimate_messages` (tiktoken-backed,
+    with a chars/4 fallback) so every budget consumer agrees on token sizing.
 
     Args:
         messages: List of Message objects with content attribute
@@ -31,8 +32,7 @@ def estimate_tokens(messages: list[Any]) -> int:
     Returns:
         Estimated token count
     """
-    total_chars = sum(len(m.content or "") for m in messages)
-    return total_chars // CHAR_TO_TOKEN_RATIO
+    return estimate_messages(messages)
 
 
 def truncate_tool_messages(

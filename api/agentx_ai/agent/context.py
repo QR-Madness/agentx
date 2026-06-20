@@ -19,113 +19,36 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContextConfig:
-    """Configuration for context management."""
-    max_tokens: int = 8000
-    summarize_threshold: int = 6000
-    min_recent_messages: int = 4
-    summary_model: str = "gpt-3.5-turbo"
-    tokens_per_message_estimate: int = 100
+    """Configuration for context management.
+
+    Only the rolling-summary model remains here — the legacy token-budget knobs were
+    retired in Foundation #6 along with the superseded ``prepare_context`` assembler
+    (per-turn assembly now flows through the Context Ledger / ``assemble_turn_context``).
+    """
+    summary_model: str = "anthropic:claude-haiku-4-5-20251001"
 
 
 class ContextManager:
     """
     Manages conversation context to fit within model limits.
-    
-    Strategies:
-    1. Sliding window: Keep most recent messages
-    2. Summarization: Summarize old context
-    3. Priority selection: Keep important messages
-    
-    Example usage:
-        manager = ContextManager(ContextConfig(max_tokens=8000))
-        context = await manager.prepare_context(messages, new_message)
+
+    Surviving responsibilities after Foundation #6:
+    - :meth:`assemble_turn_context` — sync, budget-fit turn assembly (Context Ledger).
+    - :meth:`_summarize_messages` — LLM rolling-summary (used by ``SessionManager``).
+    - :meth:`inject_memory` — splice a memory bundle into the message list.
     """
-    
+
     def __init__(self, config: ContextConfig):
         self.config = config
         self._registry = None
-    
+
     @property
     def registry(self):
         """Lazy-load the provider registry."""
         if self._registry is None:
             self._registry = get_registry()
         return self._registry
-    
-    def estimate_tokens(self, messages: list[Message]) -> int:
-        """Estimate token count for messages."""
-        # Rough estimate: ~4 chars per token on average
-        total_chars = sum(len(m.content) for m in messages)
-        # Add overhead for role markers, formatting
-        overhead = len(messages) * 10
-        return (total_chars // 4) + overhead
-    
-    async def prepare_context(
-        self,
-        history: list[Message],
-        new_message: Message,
-        reserved_tokens: int = 1000,
-    ) -> list[Message]:
-        """
-        Prepare context that fits within token limits.
-        
-        Args:
-            history: Previous messages
-            new_message: The new user message
-            reserved_tokens: Tokens to reserve for the response
-            
-        Returns:
-            List of messages that fit within context window
-        """
-        available_tokens = self.config.max_tokens - reserved_tokens
-        
-        # Start with system messages (always keep)
-        system_messages = [m for m in history if m.role == MessageRole.SYSTEM]
-        other_messages = [m for m in history if m.role != MessageRole.SYSTEM]
-        
-        # Estimate tokens
-        system_tokens = self.estimate_tokens(system_messages)
-        new_message_tokens = self.estimate_tokens([new_message])
-        
-        remaining = available_tokens - system_tokens - new_message_tokens
-        
-        if remaining <= 0:
-            # Even system + new message is too big
-            logger.warning("Context window too small for system messages")
-            return system_messages + [new_message]
-        
-        # Check if all history fits
-        history_tokens = self.estimate_tokens(other_messages)
-        
-        if history_tokens <= remaining:
-            # All fits
-            return system_messages + other_messages + [new_message]
-        
-        # Need to trim - try summarization first
-        if history_tokens > self.config.summarize_threshold:
-            summary = await self._summarize_messages(other_messages[:-self.config.min_recent_messages])
-            recent = other_messages[-self.config.min_recent_messages:]
-            
-            summary_message = Message(
-                role=MessageRole.SYSTEM,
-                content=f"Previous conversation summary: {summary}"
-            )
-            
-            return system_messages + [summary_message] + recent + [new_message]
-        
-        # Fall back to sliding window
-        messages_to_include = []
-        tokens_used = 0
-        
-        for msg in reversed(other_messages):
-            msg_tokens = self.estimate_tokens([msg])
-            if tokens_used + msg_tokens > remaining:
-                break
-            messages_to_include.insert(0, msg)
-            tokens_used += msg_tokens
-        
-        return system_messages + messages_to_include + [new_message]
-    
+
     def assemble_turn_context(
         self,
         *,
