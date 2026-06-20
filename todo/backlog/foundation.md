@@ -56,9 +56,10 @@
    **search-spend metering** shipped `[v0.21.100]`: `web_search`/`web_research` now log a
    `source="search"` usage row (estimated credits) and a per-turn window
    (`search.per_turn_limit`, default 8; `agent/search_budget.py`, opened in `streaming_tool_loop`)
-   short-circuits a runaway tool loop — background callers stay unbounded. **Still open:** the
-   **full persisted tool outputs** debugging surface (backend store + API exist — only a browser UI
-   remains; Slice B).
+   short-circuits a runaway tool loop — background callers stay unbounded. The **persisted tool
+   outputs** debugging surface shipped `[v0.21.101]`: a command-palette "Tool Outputs" drawer
+   (`components/toolkit/ToolOutputsPanel.tsx`) lists/filters/reads/prunes the Redis-backed store over
+   the existing `/api/tool-outputs` API. **Foundation #5 complete.**
 6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
    (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
 

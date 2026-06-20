@@ -18,6 +18,7 @@ export type SurfaceKey =
   | 'plans'
   | 'translation'
   | 'logs'
+  | 'toolOutputBrowser'
   | 'profileEditor'
   | 'conversations'
   | 'changePassword';
@@ -31,6 +32,7 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   plans: { id: 'plans-drawer', type: 'drawer', component: 'plans', position: 'right', size: 'xxl' },
   translation: { id: 'translation-modal', type: 'modal', component: 'translation', size: 'lg' },
   logs: { id: 'logs-drawer', type: 'drawer', component: 'logs', position: 'right', size: 'xxl' },
+  toolOutputBrowser: { id: 'tool-output-browser', type: 'drawer', component: 'toolOutputBrowser', position: 'right', size: 'xxl' },
   profileEditor: { id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full' },
   conversations: { id: 'conversations-drawer', type: 'drawer', component: 'conversations', position: 'right', size: 'md' },
   changePassword: { id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' },

@@ -14,6 +14,7 @@ import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
 import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
 import { ConversationList } from '../chat/ConversationList';
+import { ToolOutputsPanel } from '../toolkit/ToolOutputsPanel';
 import { Button } from '../ui';
 
 // Re-export ProfileEditorModal for the modal registry
@@ -65,6 +66,16 @@ export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="memory-modal-content">
       <LogsPanel />
+    </div>
+  );
+}
+
+export function ToolOutputBrowserContent({ onClose: _onClose }: ModalContentProps) {
+  // Definite-height host so the master-detail panel fills the drawer and scrolls
+  // internally (same pattern as Logs/Memory).
+  return (
+    <div className="memory-modal-content">
+      <ToolOutputsPanel />
     </div>
   );
 }
