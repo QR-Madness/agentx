@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.102 -->
+<!-- release-version: 0.21.103 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -51,6 +51,7 @@ the client at your own API server and bring your own model providers.
 - **Forgotten facts stay forgotten.** Soft-forgetting a fact now removes it from recall outright (vector, keyword, and entity search) instead of merely lowering its rank — genuinely-past but still-valid facts are unaffected.
 - Web search is bounded by a wall-clock cap; plan resume no longer duplicates the user turn or sticks in `running`.
 - **More consistent context budgeting.** Chat, memory, the rolling summary, and the context ledger now share one tiktoken-backed token estimator (instead of four divergent chars/4 heuristics), so "what fits the window" is judged the same everywhere; unused legacy context knobs were removed.
+- **Hand your agent files (Workspaces & Document RAG — backend foundation).** New workspaces you can upload documents into (PDF + text/markdown/code): each file is parsed, chunked, embedded into pgvector, and auto-tagged + summarized in the background, so it becomes searchable. Bytes are stored content-addressed (dedup) with per-file + per-workspace quotas. This is the backend slice; retrieval tools and the upload UI land next.
 - **Browse stored tool outputs.** A debug surface (command palette → "Tool Outputs") lists every large tool result stashed in the cache — filter by tool, read the full body, copy, and prune individually or all at once.
 - **Snappier conversation sidebar.** The list no longer rebuilds on every streaming token (stable tab projection + memoized rows), so only the active row updates while a reply streams; pinned/grouped conversations that are also open now show a small "open" dot.
 - **Ambassador polish.** One stable header across voice/text (switching modes no longer reshuffles the top bar or strands you — same Inquiry, only the input swaps), a header that holds together at any dock width (controls no longer slide off-screen), and a conversation switcher + mode toggle rebuilt on the app's standard themed components so they read correctly in every theme.

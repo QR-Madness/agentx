@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import views
 from . import views_logs
+from . import workspace_views
 from .auth import views as auth_views
 
 urlpatterns = [
@@ -59,6 +60,11 @@ urlpatterns = [
     # Tool output storage endpoints
     path("tool-outputs", views.tool_outputs_list, name="tool-outputs-list"),
     path("tool-outputs/<str:storage_key>", views.tool_outputs_detail, name="tool-outputs-detail"),
+    # File Workspaces & Document RAG
+    path("workspaces", workspace_views.workspaces, name="workspaces"),
+    path("workspaces/<str:workspace_id>", workspace_views.workspace_detail, name="workspace-detail"),
+    path("workspaces/<str:workspace_id>/documents", workspace_views.workspace_documents, name="workspace-documents"),
+    path("workspaces/<str:workspace_id>/documents/<str:document_id>", workspace_views.workspace_document_detail, name="workspace-document-detail"),
     # Agent profile endpoints
     path("agent/profiles", views.agent_profiles_list, name="agent-profiles-list"),
     path("agent/profiles/<str:profile_id>", views.agent_profile_detail, name="agent-profile-detail"),

@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.102"
+version = "0.21.103"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.10"
 dependencies = [
@@ -49,6 +49,7 @@ dependencies = [
     "tavily-python>=0.7.25",
     "rich>=15.0.0",
     "alembic>=1.18.4",
+    "pypdf>=6.13.3",
 ]
 
 # ----------------------------------------------------------------------------

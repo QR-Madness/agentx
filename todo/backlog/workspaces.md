@@ -6,6 +6,12 @@
 
 ### ⭐ Workspaces & Document RAG (major foundation gap)
 
+> **Slice 1 shipped (v0.21.103)** — backend foundation: `workspaces`/`documents`/`document_chunks`
+> schema (Alembic `0002`), content-addressed blob store, CRUD + multipart upload API
+> (`/api/workspaces*`), background ingestion (parse→chunk→embed→auto tag+summary), quotas, and a
+> self-driven e2e harness (`api/agentx_ai/scripts/rag_e2e.py`). **Next:** Slice 2 (retrieval tools +
+> manifest ledger block), Slice 3 (client UX). See `kit/workspaces/` + Development-Notes.
+
 > Confirmed absent: no upload endpoint, no file/document store, no workspace, no ingestion. Agents can
 > RAG over their *learned memory* (Neo4j + pgvector) and the *web* (Tavily), but a user can't hand them
 > a PDF / codebase / folder of docs. **Retrieval is trivial on our stack** (reuse chunker + embeddings

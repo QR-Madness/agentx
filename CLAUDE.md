@@ -71,6 +71,7 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 detection↔translation code bridging)
 - `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query). ★
+- `kit/workspaces/` — File Workspaces & Document RAG: three-store separation (blob store `storage.py` / Postgres manifest `repository.py` / pgvector `document_chunks`); `ingestion.py` parse→chunk→embed→auto-tag+summary; `service.py` upload policy; API in `workspace_views.py`. Self-driven e2e: `scripts/rag_e2e.py`. (Slice 1; retrieval tools + manifest ledger block next.)
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE); configure via `mcp_servers.json`
 - `providers/` — abstract `ModelProvider` (LM Studio/Anthropic/OpenAI/OpenRouter/Vercel); `models.yaml` configs + defaults, `pricing.py` cost. Resolution/fallback ★
 - `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback

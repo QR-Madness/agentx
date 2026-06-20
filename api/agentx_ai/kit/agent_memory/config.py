@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     embedding_cache_max_size: int = 2048
     embedding_cache_ttl_seconds: float = 900.0
 
+    # Workspaces / Document RAG (todo/backlog/workspaces.md). Bytes live in a
+    # content-addressed blob store on disk; manifest in PG; vectors in pgvector.
+    workspace_quota_bytes: int = 512 * 1024 * 1024      # per-workspace byte budget (512 MiB)
+    workspace_max_file_bytes: int = 50 * 1024 * 1024    # per-file cap (50 MiB)
+    workspace_chunk_size: int = 1000                    # chars per chunk for ingestion
+    workspace_chunk_overlap: int = 150                  # char overlap between chunks
+    workspace_allowed_extensions: list[str] = [         # parseable file types (v1)
+        "pdf", "txt", "md", "markdown", "rst", "csv", "json", "yaml", "yml",
+        "py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "c", "h", "cpp",
+        "sh", "sql", "html", "css", "toml", "ini", "log", "text",
+    ]
+    workspace_summary_model: str = ""                   # blank → feature_default_model / fallback
+
     # Memory settings
     episodic_retention_days: int = 90
     fact_confidence_threshold: float = 0.7

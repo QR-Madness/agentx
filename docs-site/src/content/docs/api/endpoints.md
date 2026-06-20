@@ -587,6 +587,40 @@ metadata only (`metadata_only=true`). `404` if the key is missing or expired.
 
 ---
 
+## Workspaces
+
+File workspaces & document RAG. A workspace is a named, persistent container of uploaded
+files with a searchable manifest. Bytes live in a content-addressed blob store; the
+manifest in Postgres; chunk vectors in pgvector. Upload validates type/size/quota then
+ingests in the background (parse → chunk → embed → auto tag + summary), so a document
+moves `pending` → `ready` (or `failed`).
+
+```
+GET    /api/workspaces                               # list
+POST   /api/workspaces                               # { "name": "..." } → 201
+GET    /api/workspaces/{workspace_id}                # detail (with document_count, used_bytes)
+PATCH  /api/workspaces/{workspace_id}                # { "name": "..." } rename
+DELETE /api/workspaces/{workspace_id}                # delete (cascades documents + blobs)
+GET    /api/workspaces/{workspace_id}/documents      # manifest list (tags/summary/status)
+POST   /api/workspaces/{workspace_id}/documents      # multipart field `file` → 201 (status=pending)
+GET    /api/workspaces/{workspace_id}/documents/{document_id}
+DELETE /api/workspaces/{workspace_id}/documents/{document_id}
+```
+
+**Response (manifest list):**
+```json
+{ "documents": [ {
+  "id": "doc_…", "filename": "report.pdf", "content_type": "application/pdf",
+  "size_bytes": 174892, "sha256": "…", "tags": ["…"], "summary": "…",
+  "status": "ready", "error": null, "created_at": "…", "updated_at": "…"
+} ] }
+```
+
+Upload errors: `415` unsupported file type, `413` per-file size limit or workspace quota
+exceeded. Supported v1 types: PDF + text/markdown/code.
+
+---
+
 ## Agent Profiles
 
 Agent profiles define identity plus per-agent settings (model, temperature, prompt, memory channel).

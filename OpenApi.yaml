@@ -40,6 +40,8 @@ tags:
     description: Queued, pollable conversations.
   - name: Tool Outputs
     description: Stored oversized tool outputs.
+  - name: Workspaces
+    description: File workspaces & document RAG (upload, manifest, retrieval).
   - name: Agent Profiles
     description: Per-agent identity and settings.
   - name: Multi-Agent
@@ -1772,6 +1774,203 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+
+  /workspaces:
+    get:
+      tags: [Workspaces]
+      operationId: workspacesList
+      summary: List workspaces
+      responses:
+        '200':
+          description: Workspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workspace'
+    post:
+      tags: [Workspaces]
+      operationId: workspaceCreate
+      summary: Create a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+
+  /workspaces/{workspace_id}:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceDetail
+      summary: Get a workspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Workspaces]
+      operationId: workspaceRename
+      summary: Rename a workspace
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Workspaces]
+      operationId: workspaceDelete
+      summary: Delete a workspace (and its documents + blobs)
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workspaces/{workspace_id}/documents:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceDocumentsList
+      summary: List a workspace's document manifest
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkspaceDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Workspaces]
+      operationId: workspaceDocumentUpload
+      summary: Upload a document (multipart); ingested in the background
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Accepted; ingestion starts in the background (status=pending)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '413':
+          description: File too large or workspace quota exceeded
+        '415':
+          description: Unsupported file type
+
+  /workspaces/{workspace_id}/documents/{document_id}:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceDocumentDetail
+      summary: Get document metadata
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Workspaces]
+      operationId: workspaceDocumentDelete
+      summary: Delete a document and its blob
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /agent/profiles:
     get:
@@ -3844,6 +4043,18 @@ components:
       required: true
       schema:
         type: string
+    WorkspaceId:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: string
     ChannelName:
       name: name
       in: path
@@ -4181,6 +4392,64 @@ components:
         size:
           type: integer
         created_at:
+          type: string
+          format: date-time
+
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        document_count:
+          type: integer
+        used_bytes:
+          type: integer
+          description: Total bytes of documents in the workspace (vs the configured quota).
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkspaceDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        filename:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          description: Auto-generated topic tags (manifest enrichment).
+        summary:
+          type: string
+          description: Auto-generated one-to-two sentence description.
+        status:
+          type: string
+          enum: [pending, ready, failed]
+          description: Ingestion status (parse → chunk → embed → enrich).
+        error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
           type: string
           format: date-time
 

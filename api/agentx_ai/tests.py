@@ -6477,6 +6477,79 @@ class TokenEstimatorTest(TestCase):
         )
 
 
+class WorkspaceIngestionTest(TestCase):
+    """File Workspaces & Document RAG — Slice 1 (parsing/storage are pure; the full
+    ingestion path skips without a healthy Postgres or local embeddings)."""
+
+    def test_extension_and_support(self):
+        from agentx_ai.kit.workspaces import parsing
+        self.assertEqual(parsing.extension_of("Report.PDF"), "pdf")
+        self.assertEqual(parsing.extension_of("notes.md"), "md")
+        self.assertTrue(parsing.is_supported("a.py", ["py", "md"]))
+        self.assertFalse(parsing.is_supported("a.exe", ["py", "md"]))
+
+    def test_parse_strips_nul_bytes(self):
+        # Postgres TEXT rejects 0x00; PDF extraction emits them — must be stripped.
+        from agentx_ai.kit.workspaces import parsing
+        out = parsing.parse_to_text(b"hel\x00lo world", "note.txt")
+        self.assertNotIn("\x00", out)
+        self.assertEqual(out, "hello world")
+
+    def test_blob_roundtrip_is_content_addressed(self):
+        import hashlib
+        from agentx_ai.kit.workspaces import storage
+        raw = b"the premise does not entail the conclusion"
+        sha, key = storage.store_blob("ws_test_unit", raw)
+        try:
+            self.assertEqual(sha, hashlib.sha256(raw).hexdigest())
+            self.assertTrue(key.endswith(sha))
+            self.assertEqual(storage.read_blob(key), raw)
+            # Same bytes → same key (dedup), idempotent store.
+            sha2, key2 = storage.store_blob("ws_test_unit", raw)
+            self.assertEqual((sha, key), (sha2, key2))
+        finally:
+            storage.delete_blob(key)
+
+    def test_full_ingestion_against_postgres(self):
+        from agentx_ai.kit.agent_memory.connections import PostgresConnection, get_postgres_session
+        if PostgresConnection.health_check().get("status") != "healthy":
+            self.skipTest("Postgres unavailable")
+        from agentx_ai.kit.workspaces import ingestion, repository, storage
+        try:
+            from agentx_ai.kit.agent_memory.embeddings import get_embedder
+            get_embedder().embed(["warmup"])
+        except Exception as e:  # embeddings model not available
+            self.skipTest(f"embeddings unavailable: {e}")
+
+        ws = repository.create_workspace(name="unit-test-ingestion")
+        try:
+            raw = (
+                b"Deductive reasoning guarantees the conclusion when the premises hold. "
+                b"Inductive reasoning only makes it probable."
+            )
+            sha, key = storage.store_blob(ws["id"], raw)
+            doc = repository.create_document(
+                workspace_id=ws["id"], filename="reasoning.txt",
+                content_type="text/plain", size_bytes=len(raw), sha256=sha, storage_key=key,
+            )
+            result = ingestion.ingest_document(doc["id"])
+            self.assertEqual(result["status"], "ready", result)
+            with get_postgres_session() as s:
+                from sqlalchemy import text
+                n = s.execute(
+                    text("SELECT COUNT(*) FROM document_chunks WHERE document_id=:id AND embedding IS NOT NULL"),
+                    {"id": doc["id"]},
+                ).scalar()
+            self.assertGreater(n or 0, 0)
+            self.assertEqual(repository.get_document(doc["id"])["status"], "ready")
+        finally:
+            for d in repository.list_documents(ws["id"]):
+                full = repository.get_document(d["id"])
+                if full and full.get("storage_key"):
+                    storage.delete_blob(full["storage_key"])
+            repository.delete_workspace(ws["id"])
+
+
 class ContextLedgerTest(TestCase):
     """Foundation #3 — priority-based budget allocator (Context Ledger)."""
 
