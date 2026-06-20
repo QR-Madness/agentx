@@ -2227,19 +2227,35 @@ class WebSearchToolTest(TestCase):
         self.internal_tools._SEARCH_CACHE.clear()
         get_config_manager().set("search", self._orig_search)
 
-    def test_tavily_success(self):
-        from unittest.mock import patch
+    def _fake_tavily(self, search):
+        """A patch for `_tavily_client` whose `.search` is the given callable/Mock.
 
+        The Tavily path goes through the SDK client (`client.search`), so tests
+        mock at that seam rather than the raw HTTP transport.
+        """
+        from unittest.mock import MagicMock, patch
+
+        client = MagicMock()
+        client.search.side_effect = search if callable(search) else None
+        if not callable(search):
+            client.search.return_value = search
+        return patch.object(self.internal_tools, "_tavily_client", return_value=client)
+
+    def test_tavily_success(self):
         tavily_payload = {"results": [
             {"title": "T1", "url": "https://a", "content": "snippet one"},
             {"title": "T2", "url": "https://b", "content": "snippet two"},
         ]}
-        with patch.object(self.internal_tools, "_http_post_json", return_value=tavily_payload):
+        with self._fake_tavily(tavily_payload):
             out = self.internal_tools.web_search("hello world")
         self.assertTrue(out["success"])
         self.assertEqual(out["backend"], "tavily")
         self.assertEqual(out["count"], 2)
-        self.assertEqual(out["results"][0], {"title": "T1", "url": "https://a", "snippet": "snippet one"})
+        r0 = out["results"][0]
+        self.assertEqual(
+            {k: r0[k] for k in ("title", "url", "snippet")},
+            {"title": "T1", "url": "https://a", "snippet": "snippet one"},
+        )
 
     def test_fallback_to_brave(self):
         from unittest.mock import patch
@@ -2247,17 +2263,21 @@ class WebSearchToolTest(TestCase):
         brave_payload = {"web": {"results": [
             {"title": "B1", "url": "https://x", "description": "brave snippet"},
         ]}}
-        with patch.object(self.internal_tools, "_http_post_json", side_effect=RuntimeError("tavily down")), \
+        with self._fake_tavily(RuntimeError("tavily down")), \
              patch.object(self.internal_tools, "_http_get_json", return_value=brave_payload):
             out = self.internal_tools.web_search("hello")
         self.assertTrue(out["success"])
         self.assertEqual(out["backend"], "brave")
-        self.assertEqual(out["results"][0], {"title": "B1", "url": "https://x", "snippet": "brave snippet"})
+        r0 = out["results"][0]
+        self.assertEqual(
+            {k: r0[k] for k in ("title", "url", "snippet")},
+            {"title": "B1", "url": "https://x", "snippet": "brave snippet"},
+        )
 
     def test_both_down_graceful_empty(self):
         from unittest.mock import patch
 
-        with patch.object(self.internal_tools, "_http_post_json", side_effect=RuntimeError("tavily down")), \
+        with self._fake_tavily(RuntimeError("tavily down")), \
              patch.object(self.internal_tools, "_http_get_json", side_effect=RuntimeError("brave down")):
             out = self.internal_tools.web_search("hello")
         self.assertFalse(out["success"])
@@ -2265,15 +2285,11 @@ class WebSearchToolTest(TestCase):
         self.assertIn("error", out)
 
     def test_cache_hit_avoids_second_call(self):
-        from unittest.mock import patch
-
         tavily_payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
-        with patch.object(
-            self.internal_tools, "_http_post_json", return_value=tavily_payload
-        ) as mock_post:
+        with self._fake_tavily(tavily_payload) as mock_client:
             first = self.internal_tools.web_search("cached query")
             second = self.internal_tools.web_search("cached query")
-        self.assertEqual(mock_post.call_count, 1)
+        self.assertEqual(mock_client.return_value.search.call_count, 1)
         self.assertFalse(first["cached"])
         self.assertTrue(second["cached"])
 
@@ -2281,6 +2297,44 @@ class WebSearchToolTest(TestCase):
         out = self.internal_tools.web_search("   ")
         self.assertFalse(out["success"])
         self.assertEqual(out["results"], [])
+
+    def test_per_turn_budget_exhausts_after_limit(self):
+        """Within a budget window, calls past the limit short-circuit without
+        hitting a backend (Foundation #5). Distinct queries dodge the cache."""
+        from agentx_ai.agent.search_budget import search_budget_window
+
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload) as mock_client, search_budget_window(2):
+            ok1 = self.internal_tools.web_search("budget q1")
+            ok2 = self.internal_tools.web_search("budget q2")
+            blocked = self.internal_tools.web_search("budget q3")
+        self.assertTrue(ok1["success"])
+        self.assertTrue(ok2["success"])
+        self.assertFalse(blocked["success"])
+        self.assertIn("budget", blocked["error"].lower())
+        # Backend hit only for the two allowed calls; the third never reached it.
+        self.assertEqual(mock_client.return_value.search.call_count, 2)
+
+    def test_no_window_means_unlimited(self):
+        """Without a budget window (e.g. background callers) searches aren't gated."""
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload):
+            outs = [self.internal_tools.web_search(f"unbounded {i}") for i in range(5)]
+        self.assertTrue(all(o["success"] for o in outs))
+
+    def test_records_search_spend_to_ledger(self):
+        """A successful search writes one source='search' usage row (best-effort)."""
+        from unittest.mock import patch
+
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as mock_rec:
+            self.internal_tools.web_search("ledger query")
+        self.assertEqual(mock_rec.call_count, 1)
+        kwargs = mock_rec.call_args.kwargs
+        self.assertEqual(kwargs["source"], "search")
+        self.assertEqual(kwargs["units"]["credits"], 1)
+        self.assertIn("cost_total", kwargs["cost"])
 
 
 class IntentAwareRetrievalTest(TestCase):

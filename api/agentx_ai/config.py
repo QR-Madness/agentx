@@ -156,6 +156,14 @@ DEFAULT_CONFIG = {
         # the tool loop, so an unbounded call (Tavily's SDK default is ~60s) blocks
         # the turn and stalls Stop until it returns. Cap both backends here.
         "timeout": 15,
+        # Per-turn search budget (Foundation #5). Max web_search/web_research calls
+        # one user turn may make before the tool returns a budget error instead of
+        # hitting the backend. Bounds a runaway tool loop's Tavily spend. 0 = unlimited.
+        # A soft cap: high enough to never bite normal use, only clips loops.
+        "per_turn_limit": 8,
+        # Ledger cost estimate only (search spend is logged to usage_events).
+        # Tavily bills per credit: a basic search = 1 credit, advanced = 2.
+        "cost_per_credit_usd": 0.008,
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
         "brave_api_key": None,

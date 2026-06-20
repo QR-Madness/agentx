@@ -52,9 +52,13 @@
    **shipped `[v0.21.92–98]`**: a unified content-free **usage ledger** (`usage_events`) every spend
    site writes to — chat, Alloy, the Ambassador, and **voice TTS/STT** (per-char / per-minute audio
    pricing) — surfaced in `/metrics/usage` with a **by-source** dashboard breakdown; plus a Settings
-   control for the global default model. **Still open:** **per-turn search credit budget** (Tavily
-   spend) and the **full persisted tool outputs** debugging surface (the backend store + API already
-   exist — only a budget gate / a browser UI remain).
+   control for the global default model. The **per-turn search credit budget** (Tavily spend) +
+   **search-spend metering** shipped `[v0.21.100]`: `web_search`/`web_research` now log a
+   `source="search"` usage row (estimated credits) and a per-turn window
+   (`search.per_turn_limit`, default 8; `agent/search_budget.py`, opened in `streaming_tool_loop`)
+   short-circuits a runaway tool loop — background callers stay unbounded. **Still open:** the
+   **full persisted tool outputs** debugging surface (backend store + API exist — only a browser UI
+   remains; Slice B).
 6. **Tech-debt sweep** — consolidate the 4 token estimators (→ `tiktoken`), retire dead context knobs
    (`auto_summarize_at`/`max_messages`/stale `ContextConfig`/superseded `prepare_context`).
 

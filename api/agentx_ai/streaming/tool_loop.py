@@ -467,6 +467,50 @@ async def streaming_tool_loop(
     # cooperative — checked at round boundaries (existing await/yield points).
     check_cancel = cancel_check or _ambient_cancel_check
 
+    # Open a per-turn web-search budget window (Foundation #5). web_search /
+    # web_research run synchronously inside this loop, so the window is ambiently
+    # resolvable. No window ⇒ unlimited, so this is the only gating site for an
+    # interactive turn; background callers (alloy/planner) stay unbounded.
+    from ..config import get_config_manager
+    from ..agent.search_budget import search_budget_window
+
+    _search_limit = int(get_config_manager().get("search.per_turn_limit", 8) or 0)
+    _conv_id = getattr(getattr(agent, "session", None), "id", None)
+    _agent_id = getattr(agent, "agent_id", None)
+    with search_budget_window(_search_limit, conversation_id=_conv_id, agent_id=_agent_id):
+        async for _event in _run_tool_loop(
+            provider, model_id, messages, tools, agent,
+            temperature=temperature, max_tokens=max_tokens,
+            max_tool_rounds=max_tool_rounds, max_context_tokens=max_context_tokens,
+            context_window=context_window, context_warning_threshold=context_warning_threshold,
+            task_context=task_context, emit_trajectory_info=emit_trajectory_info,
+            truncate_on_overflow=truncate_on_overflow, capture_tool_turns=capture_tool_turns,
+            result=result, check_cancel=check_cancel,
+        ):
+            yield _event
+
+
+async def _run_tool_loop(
+    provider,
+    model_id: str,
+    messages: list[Message],
+    tools: list[dict[str, Any]] | None,
+    agent,
+    *,
+    temperature: float,
+    max_tokens: int,
+    max_tool_rounds: int,
+    max_context_tokens: int,
+    context_window: int | None,
+    context_warning_threshold: float,
+    task_context: str,
+    emit_trajectory_info: bool,
+    truncate_on_overflow: bool,
+    capture_tool_turns: bool,
+    result: ToolLoopResult,
+    check_cancel: Callable[[], bool],
+) -> AsyncGenerator[str]:
+    """Inner loop body — runs inside the per-turn search-budget window."""
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
         round_content = ""

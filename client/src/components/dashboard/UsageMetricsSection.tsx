@@ -31,6 +31,7 @@ const SOURCE_LABELS: Record<string, string> = {
   ambassador_llm: 'Ambassador',
   ambassador_tts: 'Voice · TTS',
   ambassador_stt: 'Voice · STT',
+  search: 'Web search',
 };
 
 // Chart colors pull from the active theme so they follow theme switches.

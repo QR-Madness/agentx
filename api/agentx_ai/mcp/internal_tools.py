@@ -1427,6 +1427,58 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
 _SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
 
 
+def _check_search_budget() -> dict[str, Any] | None:
+    """Charge one call against the per-turn search budget (Foundation #5).
+
+    Returns a budget-error dict when the turn's window is exhausted (caller must
+    return it without hitting a backend), or ``None`` when the call may proceed.
+    No active window ⇒ unlimited.
+    """
+    from ..agent.search_budget import consume
+
+    allowed, used, limit = consume(1)
+    if allowed:
+        return None
+    return {
+        "results": [],
+        "count": 0,
+        "success": False,
+        "error": f"web-search budget exhausted for this turn ({used}/{limit} calls; "
+        "raise search.per_turn_limit or 0 to disable)",
+    }
+
+
+def _record_search_spend(backend: str, credits: int) -> None:
+    """Best-effort log of one search call to the usage ledger (source='search').
+
+    Cost is an estimate (Tavily bills per credit); Brave's free tier carries no
+    per-credit cost so its rows record 0. Never raises — metering must not break
+    a turn (mirrors usage_ledger's own contract).
+    """
+    try:
+        from ..config import get_config_manager
+        from ..agent.usage_ledger import record_usage
+        from ..agent.search_budget import attribution
+
+        per_credit = 0.0
+        if backend == "tavily":
+            per_credit = float(get_config_manager().get("search.cost_per_credit_usd", 0.008) or 0.0)
+        cost_total = round(per_credit * credits, 6)
+        conv_id, agent_id = attribution()
+        record_usage(
+            source="search",
+            model=backend,
+            provider=backend,
+            conversation_id=conv_id,
+            agent_id=agent_id,
+            units={"queries": 1, "credits": credits},
+            cost={"cost_total": cost_total, "currency": "USD",
+                  "pricing_snapshot": {"per_credit_usd": per_credit, "credits": credits}},
+        )
+    except Exception as e:  # noqa: BLE001 — metering is best-effort
+        logger.debug(f"search usage_ledger record failed (backend={backend}): {e}")
+
+
 @register_tool(
     name="web_search",
     description=_TOOL_BASE_DESC["web_search"],
@@ -1455,7 +1507,16 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
     now = time.time()
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
+        # A cache hit spends nothing, so it bypasses the budget gate.
         return {**cached[1], "cached": True, "success": True}
+
+    # Per-turn budget gate (spend only — cached hits above are free).
+    budget_error = _check_search_budget()
+    if budget_error is not None:
+        return budget_error
+
+    # Credits estimate for the ledger: Tavily bills advanced depth at 2 credits.
+    credits = 2 if str(opts.get("search_depth", "")).lower() == "advanced" else 1
 
     # Backend order: configured primary, then the other (if fallback enabled)
     primary = backend if backend in _SEARCH_BACKENDS else "tavily"
@@ -1489,6 +1550,7 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
             if "answer" in response:
                 cacheable["answer"] = response["answer"]
             _SEARCH_CACHE[cache_key] = (now + ttl, cacheable)
+        _record_search_spend(name, credits)
         return response
 
     return {
@@ -1632,6 +1694,11 @@ def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]
     if not get_config_manager().get("web_research.enabled", True):
         return {"error": "web_research is disabled (web_research.enabled)", "success": False}
 
+    # Per-turn budget gate (deep research is one call, but a costly one).
+    budget_error = _check_search_budget()
+    if budget_error is not None:
+        return {"error": budget_error["error"], "success": False}
+
     model = depth if depth in ("auto", "mini", "pro") else "auto"
     try:
         client = _tavily_client()
@@ -1656,6 +1723,8 @@ def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]
         elif isinstance(s, str):
             results.append({"title": s, "url": s})
     report = data.get("answer") or data.get("report") or data.get("output") or ""
+    # Deep research burns many credits; estimate by model tier for the ledger.
+    _record_search_spend("tavily", {"mini": 5, "auto": 10, "pro": 20}.get(model, 10))
     return {"report": report, "results": results, "count": len(results), "success": True}
 
 
