@@ -71,11 +71,13 @@ export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
   );
 }
 
-export function WorkspacesDrawerContent({ onClose: _onClose }: ModalContentProps) {
+export function WorkspacesDrawerContent({ onClose }: ModalContentProps) {
   // Definite-height host so the panel fills the drawer and scrolls internally.
+  // The panel renders its own inline close button (floating ones fail cross-plat),
+  // so it's in SELF_CLOSING and gets `onClose`.
   return (
     <div className="memory-modal-content">
-      <WorkspacesPanel />
+      <WorkspacesPanel onClose={onClose} />
     </div>
   );
 }

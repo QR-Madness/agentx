@@ -50,6 +50,7 @@ const SELF_CLOSING = new Set<string>([
   'toolOutput',
   'alloyFactory',
   'alloyRunTrace',
+  'workspaces',
   // NOTE: 'promptLibrary' intentionally omitted — its standalone modal has no
   // header close button of its own, so it relies on the shell close button.
 ]);

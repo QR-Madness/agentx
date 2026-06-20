@@ -2,17 +2,21 @@
  * WorkspacesPanel — manage file workspaces & their documents (Document RAG).
  *
  * Left: workspace list (create / select / rename / delete). Right: the selected
- * workspace's document manifest with ingestion status, plus drag-drop / picker
- * upload. Polls while any document is still ingesting (pending).
+ * workspace's document manifest with ingestion status, plus click-to-upload (drop
+ * is best-effort — the Tauri webview doesn't deliver dropped files). Polls while
+ * any document is still ingesting (pending).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, FolderPlus, Link2, Link2Off, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  Check, FileText, FolderPlus, Link2, Link2Off, Loader2, Pencil, Plus, Trash2, Upload, X,
+} from 'lucide-react';
 import { api, type Workspace, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
+import { Input } from '../ui';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -26,7 +30,7 @@ const STATUS_STYLE: Record<WorkspaceDocument['status'], string> = {
   failed: 'text-error',
 };
 
-export function WorkspacesPanel() {
+export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
   const notify = useNotify();
   const confirm = useConfirm();
   const { activeTab } = useConversation();
@@ -45,6 +49,9 @@ export function WorkspacesPanel() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -82,16 +89,29 @@ export function WorkspacesPanel() {
   }, [selectedId, documents, refreshDocuments]);
 
   const createWorkspace = useCallback(async () => {
-    const name = window.prompt('Workspace name?')?.trim();
-    if (!name) return;
+    const name = draftName.trim();
+    if (!name) { setCreating(false); return; }
     try {
       const { workspace } = await api.createWorkspace(name);
+      setCreating(false); setDraftName('');
       await refreshWorkspaces();
       setSelectedId(workspace.id);
     } catch (err) {
       notify.notifyError(err, 'Could not create workspace');
     }
-  }, [notify, refreshWorkspaces]);
+  }, [draftName, notify, refreshWorkspaces]);
+
+  const renameWorkspace = useCallback(async () => {
+    const name = draftName.trim();
+    if (!selectedId || !name) { setRenaming(false); return; }
+    try {
+      await api.renameWorkspace(selectedId, name);
+      setRenaming(false); setDraftName('');
+      await refreshWorkspaces();
+    } catch (err) {
+      notify.notifyError(err, 'Could not rename workspace');
+    }
+  }, [draftName, selectedId, notify, refreshWorkspaces]);
 
   const deleteWorkspace = useCallback(async (ws: Workspace) => {
     const ok = await confirm({
@@ -147,44 +167,76 @@ export function WorkspacesPanel() {
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <FolderPlus size={18} /> Workspaces
         </h2>
-        <button
-          onClick={createWorkspace}
-          className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-sm text-fg-inverse hover:opacity-90"
-        >
-          <Plus size={15} /> New
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { setCreating(true); setDraftName(''); }}
+            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-sm text-fg-inverse hover:opacity-90"
+          >
+            <Plus size={15} /> New
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="ml-1 rounded-md p-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         {/* Workspace list */}
         <aside className="w-56 shrink-0 overflow-y-auto border-r border-line p-2">
+          {creating && (
+            <form
+              onSubmit={e => { e.preventDefault(); void createWorkspace(); }}
+              className="mb-2 flex items-center gap-1"
+            >
+              <Input
+                autoFocus value={draftName} placeholder="Workspace name…"
+                onChange={e => setDraftName(e.target.value)}
+                onBlur={() => { if (!draftName.trim()) setCreating(false); }}
+                onKeyDown={e => { if (e.key === 'Escape') { setCreating(false); setDraftName(''); } }}
+                className="h-8 text-sm"
+              />
+              <button type="submit" aria-label="Create" className="rounded p-1.5 text-accent hover:bg-surface-hover">
+                <Check size={15} />
+              </button>
+            </form>
+          )}
           {loading ? (
             <div className="flex items-center gap-2 p-3 text-sm text-fg-muted">
               <Loader2 size={15} className="animate-spin" /> Loading…
             </div>
-          ) : workspaces.length === 0 ? (
+          ) : workspaces.length === 0 && !creating ? (
             <p className="p-3 text-sm text-fg-muted">No workspaces yet. Create one to upload files.</p>
           ) : (
             workspaces.map(ws => (
-              <button
+              <div
                 key={ws.id}
-                onClick={() => setSelectedId(ws.id)}
-                className={`group flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm ${
+                className={`group flex items-center justify-between rounded-md px-2.5 py-2 text-sm ${
                   ws.id === selectedId ? 'bg-accent-secondary text-fg' : 'hover:bg-surface-hover'
                 }`}
               >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{ws.name}</span>
+                <button onClick={() => setSelectedId(ws.id)} className="min-w-0 flex-1 text-left">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate font-medium">{ws.name}</span>
+                    {ws.id === attachedId && <Link2 size={12} className="shrink-0 text-accent" />}
+                  </span>
                   <span className="block text-xs text-fg-muted">
                     {ws.document_count} files · {formatBytes(ws.used_bytes)}
                   </span>
-                </span>
-                <Trash2
-                  size={14}
-                  className="ml-1 shrink-0 text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
-                  onClick={e => { e.stopPropagation(); void deleteWorkspace(ws); }}
-                />
-              </button>
+                </button>
+                <button
+                  aria-label={`Delete ${ws.name}`}
+                  className="ml-1 shrink-0 rounded p-1 text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
+                  onClick={() => void deleteWorkspace(ws)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))
           )}
         </aside>
@@ -198,7 +250,34 @@ export function WorkspacesPanel() {
           ) : (
             <>
               <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
-                <span className="min-w-0 truncate text-sm font-medium">{selected.name}</span>
+                {renaming ? (
+                  <form
+                    onSubmit={e => { e.preventDefault(); void renameWorkspace(); }}
+                    className="flex min-w-0 flex-1 items-center gap-1"
+                  >
+                    <Input
+                      autoFocus value={draftName}
+                      onChange={e => setDraftName(e.target.value)}
+                      onBlur={() => setRenaming(false)}
+                      onKeyDown={e => { if (e.key === 'Escape') setRenaming(false); }}
+                      className="h-8 text-sm"
+                    />
+                    <button type="submit" aria-label="Save name" className="rounded p-1.5 text-accent hover:bg-surface-hover">
+                      <Check size={15} />
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate text-sm font-medium">{selected.name}</span>
+                    <button
+                      aria-label="Rename workspace"
+                      className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg"
+                      onClick={() => { setRenaming(true); setDraftName(selected.name); }}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </div>
+                )}
                 {convKey ? (
                   <button
                     onClick={() => toggleAttach(selected.id)}
@@ -216,8 +295,9 @@ export function WorkspacesPanel() {
                   <span className="shrink-0 text-xs text-fg-muted">Open a chat to attach</span>
                 )}
               </div>
-              {/* Click-to-browse is the primary path — HTML5 drag-drop doesn't
-                  deliver files in the Tauri webview, so it's best-effort (web only). */}
+
+              {/* Click-to-upload is the primary path — HTML5 drag-drop doesn't
+                  deliver files in the Tauri webview, so drop is best-effort (web only). */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -254,7 +334,8 @@ export function WorkspacesPanel() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium">{doc.filename}</span>
-                          <span className={`text-xs ${STATUS_STYLE[doc.status]}`}>
+                          <span className={`flex shrink-0 items-center gap-1 text-xs ${STATUS_STYLE[doc.status]}`}>
+                            {doc.status === 'pending' && <Loader2 size={11} className="animate-spin" />}
                             {doc.status === 'pending' ? 'ingesting…' : doc.status}
                           </span>
                         </div>
@@ -271,11 +352,13 @@ export function WorkspacesPanel() {
                         {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
                         <span className="mt-0.5 block text-[11px] text-fg-muted">{formatBytes(doc.size_bytes)}</span>
                       </div>
-                      <Trash2
-                        size={14}
-                        className="shrink-0 cursor-pointer text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
+                      <button
+                        aria-label={`Remove ${doc.filename}`}
+                        className="shrink-0 rounded p-1 text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
                         onClick={() => void deleteDocument(doc)}
-                      />
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </li>
                   ))
                 )}
