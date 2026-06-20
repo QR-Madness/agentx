@@ -376,6 +376,25 @@ tasks:
     cmds:
       - uv run python api/manage.py migrate_schema --dry-run
 
+  # --- PostgreSQL schema via Alembic (Neo4j stays on migrate_schema) ---
+  db:migrate:pg:
+    desc: "Apply pending PostgreSQL migrations (Alembic) to head"
+    deps: [db:up]
+    cmds:
+      - uv run alembic upgrade head
+
+  db:migrate:pg:status:
+    desc: "Show current vs head Alembic revision (PostgreSQL)"
+    deps: [db:up]
+    cmds:
+      - uv run alembic current
+      - uv run alembic heads
+
+  db:revision:
+    desc: 'Create a new empty Alembic revision. Usage: task db:revision -- "add foo table"'
+    cmds:
+      - uv run alembic revision -m "{{.CLI_ARGS}}"
+
   memory:worker:
     desc: "Start background memory consolidation worker"
     deps: [db:up]
