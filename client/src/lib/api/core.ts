@@ -76,6 +76,11 @@ export async function request<T>(
     'Content-Type': 'application/json',
   };
 
+  // Multipart uploads: let the browser set `Content-Type` (with the boundary).
+  if (options.body instanceof FormData) {
+    delete defaultHeaders['Content-Type'];
+  }
+
   // Cluster gateway header — required when the API is fronted by the
   // Nginx gateway in docker-compose.cluster.yml. Absent for local/LAN
   // servers, in which case the header simply isn't sent.

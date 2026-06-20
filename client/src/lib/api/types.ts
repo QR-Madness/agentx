@@ -196,6 +196,7 @@ export interface ChatRequest {
   temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
   use_memory?: boolean;  // Enable memory retrieval (default true)
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
+  workspace_id?: string;  // Optional attached document workspace (Document RAG)
 }
 
 export interface ChatResponse {

@@ -12,8 +12,14 @@
 > two-tier retrieval (`retrieval.py`: manifest catalog + pgvector semantic), three agent tools
 > (`workspace_search`/`document_query`/`read_document`, workspace-scoped via the internal-tool context),
 > auto `doc` citations, and a stable **workspace-manifest ledger block** so the agent knows its corpus.
-> Verified end-to-end by `api/agentx_ai/scripts/rag_e2e.py`. **Next:** Slice 3 (client UX — Workspaces
-> drawer, drag-drop upload, conversation→workspace tagging). See `kit/workspaces/` + Development-Notes.
+> Verified end-to-end by `api/agentx_ai/scripts/rag_e2e.py`. **Slice 3 shipped (v0.21.105)** — client UX:
+> Workspaces drawer (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`) with CRUD,
+> drag-drop/picker upload + live ingest status, and conversation→workspace attach
+> (`conversationMeta.workspaceId`); `lib/api/workspaces.ts` (+ FormData support in `core.ts`); the chat
+> stream sends `workspace_id`. v1 complete. See `kit/workspaces/` + Development-Notes.
+>
+> **Next (future):** code-aware/AST chunking, folder/repo ingestion, `web_crawl → workspace`,
+> cross-workspace search, Alloy-team shared workspaces, sha256 snapshots/restore.
 
 > Confirmed absent: no upload endpoint, no file/document store, no workspace, no ingestion. Agents can
 > RAG over their *learned memory* (Neo4j + pgvector) and the *web* (Tavily), but a user can't hand them

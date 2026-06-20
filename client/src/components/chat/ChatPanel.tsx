@@ -65,6 +65,7 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
+import { getMeta } from '../../lib/conversationMeta';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
@@ -403,6 +404,7 @@ export function ChatPanel() {
       model: activeTab.modelOverride || undefined,
       use_memory: useMemory,
       workflow_id: activeTab.workflowId || undefined,
+      workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
     });
   };
 
@@ -441,6 +443,7 @@ export function ChatPanel() {
               model: activeTab.modelOverride || undefined,
               use_memory: useMemory,
               workflow_id: activeTab.workflowId || undefined,
+              workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
             });
           })
           .catch(() => notifyError('Could not check the plan status.'));
@@ -462,6 +465,7 @@ export function ChatPanel() {
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
         workflow_id: activeTab.workflowId || undefined,
+        workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
     },
     [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send, notifyError],
@@ -492,6 +496,7 @@ export function ChatPanel() {
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
         workflow_id: activeTab.workflowId || undefined,
+        workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
     },
     [activeTab, isTyping, stream.steer, stream.send, appendMessage, profiles, tabProfile?.id, useMemory],

@@ -33,6 +33,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   conversations: lazy(() => import('./stubs').then(m => ({ default: m.ConversationsDrawerContent }))),
   logs: lazy(() => import('./stubs').then(m => ({ default: m.LogsDrawerContent }))),
   toolOutputBrowser: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputBrowserContent }))),
+  workspaces: lazy(() => import('./stubs').then(m => ({ default: m.WorkspacesDrawerContent }))),
 };
 
 /**

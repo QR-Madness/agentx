@@ -15,6 +15,7 @@ import { ToolkitPage } from '../toolkit/ToolkitPage';
 import { UnifiedProfileEditor } from '../unified-profile-editor/UnifiedProfileEditor';
 import { ConversationList } from '../chat/ConversationList';
 import { ToolOutputsPanel } from '../toolkit/ToolOutputsPanel';
+import { WorkspacesPanel } from '../workspaces/WorkspacesPanel';
 import { Button } from '../ui';
 
 // Re-export ProfileEditorModal for the modal registry
@@ -66,6 +67,15 @@ export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
   return (
     <div className="memory-modal-content">
       <LogsPanel />
+    </div>
+  );
+}
+
+export function WorkspacesDrawerContent({ onClose: _onClose }: ModalContentProps) {
+  // Definite-height host so the panel fills the drawer and scrolls internally.
+  return (
+    <div className="memory-modal-content">
+      <WorkspacesPanel />
     </div>
   );
 }

@@ -14,7 +14,7 @@
 import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
-  ScrollText, Moon, Sun, Contrast, Monitor, MessagesSquare, FileStack,
+  ScrollText, Moon, Sun, Contrast, Monitor, MessagesSquare, FileStack, FolderOpen,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -83,6 +83,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb', 'translations'], run: open('translation') },
       { id: 'open-logs', group: 'Workspace', label: 'Open Logs', icon: <ScrollText size={16} />, keywords: ['console', 'debug', 'server', 'trace'], run: open('logs') },
       { id: 'open-tool-outputs', group: 'Workspace', label: 'Open Tool Outputs', icon: <FileStack size={16} />, keywords: ['debug', 'stored', 'cache', 'outputs', 'tool', 'results'], run: open('toolOutputBrowser') },
+      { id: 'open-workspaces', group: 'Workspace', label: 'Open Workspaces', icon: <FolderOpen size={16} />, keywords: ['files', 'documents', 'upload', 'rag', 'pdf', 'corpus', 'knowledge'], run: open('workspaces') },
       { id: 'open-profile', group: 'Workspace', label: 'Agent profiles', icon: <BrainCircuit size={16} />, keywords: ['profile', 'profiles', 'agent', 'agents', 'persona', 'model', 'temperature', 'prompt', 'edit'], run: open('profileEditor') },
       { id: 'focus', group: 'Workspace', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen', icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: ['zen', 'immersive', 'hide', 'chrome'], run: () => { toggleFocusMode(); onClose(); } },
 

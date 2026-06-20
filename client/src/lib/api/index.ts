@@ -28,6 +28,7 @@ import { historyApi } from './history';
 import { streamingApi } from './streaming';
 import { ambassadorApi } from './ambassador';
 import { logsApi } from './logs';
+import { workspacesApi } from './workspaces';
 
 /**
  * The API client singleton. Flat method surface (`api.health()`, `api.chat()`,
@@ -55,6 +56,7 @@ export const api = {
   ...streamingApi,
   ...ambassadorApi,
   ...logsApi,
+  ...workspacesApi,
 };
 
 // Public surface re-exports (preserve the `'.../lib/api'` specifier).
@@ -83,6 +85,11 @@ export type {
   LogFilters,
   LogStreamCallbacks,
 } from './logs';
+export type {
+  Workspace,
+  WorkspaceDocument,
+  WorkspaceDocumentStatus,
+} from './workspaces';
 export * from './errors';
 export * from './version';
 export { setAuthRequired } from './core';
