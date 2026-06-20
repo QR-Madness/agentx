@@ -216,6 +216,50 @@ def citation_exhibit_from_web_search(
     )
 
 
+def citation_exhibit_from_document_query(
+    results: Any, *, exhibit_id: str
+) -> Exhibit | None:
+    """Build a passive ``doc`` citation exhibit from ``document_query`` results.
+
+    Each hit (``{document_id, filename, text, score}``) becomes a passive
+    :class:`CitationSource` with ``source_type="doc"`` — deduped by document, a
+    short quote from the matched chunk. Returns ``None`` when there's nothing to show.
+    Mirrors :func:`citation_exhibit_from_web_search` for the workspace corpus.
+    """
+    if not isinstance(results, (list, tuple)):
+        return None
+    sources: list[CitationSource] = []
+    seen: set[str] = set()
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        doc_id = (r.get("document_id") or "").strip()
+        label = (r.get("filename") or doc_id or "").strip()
+        if not label or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        quote = " ".join((r.get("text") or "").split())[:240] or None
+        sources.append(
+            CitationSource(
+                label=label,
+                url=f"/workspaces/documents/{doc_id}" if doc_id else None,
+                quote=quote,
+                source_type="doc",
+                kind="passive",
+            )
+        )
+        if len(sources) >= MAX_CITATION_SOURCES:
+            break
+    if not sources:
+        return None
+    return Exhibit(
+        schema_version=EXHIBIT_SCHEMA_VERSION,
+        id=exhibit_id,
+        layout="stack",
+        elements=[CitationElement(type="citation", sources=sources)],
+    )
+
+
 def exhibit_from_present_call(arguments: dict[str, Any]) -> Exhibit:
     """Build + validate an :class:`Exhibit` from ``present_exhibit`` tool args.
 

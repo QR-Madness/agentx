@@ -6,11 +6,14 @@
 
 ### ⭐ Workspaces & Document RAG (major foundation gap)
 
-> **Slice 1 shipped (v0.21.103)** — backend foundation: `workspaces`/`documents`/`document_chunks`
-> schema (Alembic `0002`), content-addressed blob store, CRUD + multipart upload API
-> (`/api/workspaces*`), background ingestion (parse→chunk→embed→auto tag+summary), quotas, and a
-> self-driven e2e harness (`api/agentx_ai/scripts/rag_e2e.py`). **Next:** Slice 2 (retrieval tools +
-> manifest ledger block), Slice 3 (client UX). See `kit/workspaces/` + Development-Notes.
+> **Slices 1–2 shipped (v0.21.103–104)** — Slice 1: backend foundation
+> (`workspaces`/`documents`/`document_chunks` schema via Alembic `0002`, content-addressed blob store,
+> CRUD + multipart upload API, background ingestion parse→chunk→embed→auto tag+summary, quotas). Slice 2:
+> two-tier retrieval (`retrieval.py`: manifest catalog + pgvector semantic), three agent tools
+> (`workspace_search`/`document_query`/`read_document`, workspace-scoped via the internal-tool context),
+> auto `doc` citations, and a stable **workspace-manifest ledger block** so the agent knows its corpus.
+> Verified end-to-end by `api/agentx_ai/scripts/rag_e2e.py`. **Next:** Slice 3 (client UX — Workspaces
+> drawer, drag-drop upload, conversation→workspace tagging). See `kit/workspaces/` + Development-Notes.
 
 > Confirmed absent: no upload endpoint, no file/document store, no workspace, no ingestion. Agents can
 > RAG over their *learned memory* (Neo4j + pgvector) and the *web* (Tavily), but a user can't hand them

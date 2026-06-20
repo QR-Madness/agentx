@@ -44,6 +44,9 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "tool_output_path",
     "read_user_message",
     "recall_user_history",
+    "workspace_search",
+    "document_query",
+    "read_document",
 })
 
 
@@ -585,6 +588,102 @@ def checkpoint(
         "note": "Checkpoint will be re-injected into system context every turn.",
         "success": True,
     }
+
+
+# --- File Workspaces & Document RAG (todo/backlog/workspaces.md) -------------
+# Two-tier retrieval over the conversation's attached workspace: workspace_search
+# (catalog → which file) then document_query (semantic → which passage), with
+# read_document for full paginated text. All scope to the active workspace_id from
+# the per-turn internal context; no workspace attached → a clear, non-fatal error.
+
+def _active_workspace_id() -> str | None:
+    from .internal_context import current_context
+
+    ctx = current_context()
+    return ctx.workspace_id if ctx else None
+
+
+@register_tool(
+    name="workspace_search",
+    description=(
+        "Search the attached workspace's documents by filename, tag, or topic "
+        "(catalog search). Use this FIRST to find which file is relevant, then "
+        "`document_query` for the exact passage. Returns documents with their "
+        "id, filename, tags, and summary."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Keywords, filename, or topic."},
+            "limit": {"type": "integer", "description": "Max files (default 10).", "default": 10},
+        },
+        "required": ["query"],
+    },
+)
+def workspace_search(query: str, limit: int = 10) -> dict[str, Any]:
+    from ..kit.workspaces import retrieval
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {"error": "No workspace is attached to this conversation.", "success": False}
+    results = retrieval.search_manifest(workspace_id, query, limit=limit)
+    return {"results": results, "count": len(results), "success": True}
+
+
+@register_tool(
+    name="document_query",
+    description=(
+        "Semantic search across the attached workspace's document contents — finds "
+        "the passages most relevant to a natural-language question. Returns chunks "
+        "with their document_id, filename, text, and similarity score. Use "
+        "`read_document` to read more around a hit."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Natural-language question or topic."},
+            "top_k": {"type": "integer", "description": "Max passages (default 5).", "default": 5},
+        },
+        "required": ["query"],
+    },
+)
+def document_query(query: str, top_k: int = 5) -> dict[str, Any]:
+    from ..kit.workspaces import retrieval
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {"error": "No workspace is attached to this conversation.", "success": False}
+    results = retrieval.query_chunks(workspace_id, query, top_k=top_k)
+    return {"results": results, "count": len(results), "success": True}
+
+
+@register_tool(
+    name="read_document",
+    description=(
+        "Read a document's full text (paginated), scoped to the attached workspace. "
+        "Use after `workspace_search`/`document_query` to read more context around a "
+        "hit. Returns a slice with has_more/total_chars for further pagination."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string", "description": "Document id from a search result."},
+            "offset": {"type": "integer", "description": "Start character (default 0).", "default": 0},
+            "limit": {"type": "integer", "description": "Max characters (default 12000).", "default": 12000},
+        },
+        "required": ["document_id"],
+    },
+)
+def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
+    from ..kit.workspaces import retrieval
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {"error": "No workspace is attached to this conversation.", "success": False}
+    doc = retrieval.read_document(document_id, offset=offset, limit=limit, workspace_id=workspace_id)
+    if doc is None:
+        return {"error": f"Document {document_id} not found in this workspace.", "success": False}
+    return {**doc, "success": True}
 
 
 @register_tool(

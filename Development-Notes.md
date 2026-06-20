@@ -41,9 +41,18 @@ utf-8 for text/code; strips NUL — PG `TEXT` rejects `0x00`) → `chunk_text` (
 auto-tag + summary (degrades to a snippet on failure so the doc still reaches `ready`); status
 `pending`→`ready`/`failed`. **Upload policy** (`service.py`): allow-list extension, per-file size, and
 per-workspace quota (`SUM(size_bytes)`) checks → typed `WorkspaceError` (415/413). API in
-`workspace_views.py` (`/api/workspaces*`). Self-driven e2e harness: `scripts/rag_e2e.py` (create →
-upload seed PDF → poll ready → assert blob+chunks+embeddings). Slice 2 adds retrieval tools + the
-manifest ledger block; Slice 3 the client UX.
+`workspace_views.py` (`/api/workspaces*`). **Retrieval (Slice 2, v0.21.104)** — two-tier (`retrieval.py`): `search_manifest` (catalog: filename/tag/summary
+ILIKE → the right *file*) and `query_chunks` (semantic: embed query → pgvector cosine `<=>` over
+`document_chunks` → the right *passage*), plus `read_document` (paginated). Surfaced to the model as three
+internal tools (`mcp/internal_tools.py` `@register_tool`: `workspace_search`/`document_query`/`read_document`,
+in `RETRIEVAL_TOOL_NAMES` so they bypass size-gating), scoped to the turn's workspace via
+`InternalToolContext.workspace_id` (set in the chat-stream view from the request's `workspace_id`). A
+`document_query` hit auto-emits a passive `source_type="doc"` citation (`streaming/exhibits.py::citation_exhibit_from_document_query`
++ `tool_loop._DOC_CITATION_TOOLS`). **Manifest awareness**: when a workspace is attached, the chat-stream
+ledger gets a stable `workspace_manifest` `LedgerBlock` (priority 85, `render_manifest_block` — file names +
+tags + summaries, bounded) so the agent knows its corpus before retrieving. Self-driven e2e harness:
+`scripts/rag_e2e.py` (create → upload seed PDF → poll ready → assert blob+chunks+embeddings → retrieve +
+exercise tools, asserting the right passage). Slice 3 = client UX.
 
 ### Ambassador (`agent/ambassador.py` + `ambassador_storage.py`, Phase 16.6)
 

@@ -23,6 +23,7 @@ class InternalToolContext:
     channel: str | None = None
     agent_id: str | None = None
     conversation_id: str | None = None
+    workspace_id: str | None = None  # active workspace for document-RAG tools
 
 
 _active: contextvars.ContextVar[InternalToolContext | None] = contextvars.ContextVar(

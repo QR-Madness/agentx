@@ -144,6 +144,40 @@ def main() -> int:
         check((total or 0) > 0, f"document_chunks populated (n={total})")
         check(total == embedded, f"every chunk embedded ({embedded}/{total})")
 
+        # --- 5. Retrieve (deterministic, no chat LLM needed) -------------
+        from agentx_ai.kit.workspaces import retrieval
+
+        query = "programming languages and total coding time"
+        hits = retrieval.query_chunks(workspace_id, query, top_k=3)
+        check(len(hits) > 0, f"document_query returns chunks for {query!r} (n={len(hits)})")
+        if hits:
+            top = hits[0]
+            check(top["filename"] == seed.name, f"top hit is the seed doc ({top['filename']})")
+            check(top["score"] > 0.1, f"top hit has a real similarity score ({top['score']})")
+            _log(f"  top chunk #{top['chunk_index']} score={top['score']} :: {top['text'][:70]!r}")
+
+        manifest = retrieval.search_manifest(workspace_id, seed.stem[:8])
+        check(len(manifest) > 0, f"workspace_search finds the file by name (n={len(manifest)})")
+
+        # The agent-facing tools, scoped via the per-turn internal context.
+        from agentx_ai.mcp.internal_context import (
+            InternalToolContext, reset_context, set_context,
+        )
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        tok = set_context(InternalToolContext(user_id="default", workspace_id=workspace_id))
+        try:
+            tool_res = execute_internal_tool("document_query", {"query": query, "top_k": 3})
+            import json as _json
+            payload = _json.loads(tool_res.content[0]["text"]) if tool_res.content else {}
+            check(tool_res.success and payload.get("count", 0) > 0,
+                  f"document_query tool returns results (count={payload.get('count')})")
+            read_res = execute_internal_tool("read_document", {"document_id": document_id, "limit": 500})
+            read_payload = _json.loads(read_res.content[0]["text"]) if read_res.content else {}
+            check(read_res.success and bool(read_payload.get("content")),
+                  "read_document tool returns content")
+        finally:
+            reset_context(tok)
+
     finally:
         if workspace_id and not args.keep:
             client.delete(f"/api/workspaces/{workspace_id}")
@@ -154,7 +188,7 @@ def main() -> int:
     if failures:
         _log(f"FAIL — {len(failures)} check(s) failed: {failures}")
         return 1
-    _log("PASS — full ingestion path verified end to end")
+    _log("PASS — full ingest + retrieval path verified end to end")
     return 0
 
 

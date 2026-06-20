@@ -6549,6 +6549,75 @@ class WorkspaceIngestionTest(TestCase):
                     storage.delete_blob(full["storage_key"])
             repository.delete_workspace(ws["id"])
 
+    def test_retrieval_and_tools_against_postgres(self):
+        from agentx_ai.kit.agent_memory.connections import PostgresConnection
+        if PostgresConnection.health_check().get("status") != "healthy":
+            self.skipTest("Postgres unavailable")
+        from agentx_ai.kit.workspaces import ingestion, repository, retrieval, storage
+        try:
+            from agentx_ai.kit.agent_memory.embeddings import get_embedder
+            get_embedder().embed(["warmup"])
+        except Exception as e:
+            self.skipTest(f"embeddings unavailable: {e}")
+
+        ws = repository.create_workspace(name="unit-test-retrieval")
+        try:
+            raw = (
+                b"Photosynthesis converts sunlight, water, and carbon dioxide into "
+                b"glucose and oxygen inside the chloroplast."
+            )
+            sha, key = storage.store_blob(ws["id"], raw)
+            doc = repository.create_document(
+                workspace_id=ws["id"], filename="biology.txt",
+                content_type="text/plain", size_bytes=len(raw), sha256=sha, storage_key=key,
+            )
+            self.assertEqual(ingestion.ingest_document(doc["id"])["status"], "ready")
+
+            # Semantic retrieval finds the passage from a paraphrased query.
+            hits = retrieval.query_chunks(ws["id"], "how do plants make energy from light", top_k=3)
+            self.assertTrue(hits and hits[0]["filename"] == "biology.txt")
+            self.assertGreater(hits[0]["score"], 0.1)
+            # Manifest (catalog) search finds the file by name.
+            self.assertTrue(retrieval.search_manifest(ws["id"], "biology"))
+
+            # The agent-facing tools resolve the active workspace from context.
+            from agentx_ai.mcp.internal_context import (
+                InternalToolContext, reset_context, set_context,
+            )
+            from agentx_ai.mcp.internal_tools import execute_internal_tool
+            tok = set_context(InternalToolContext(user_id="default", workspace_id=ws["id"]))
+            try:
+                res = execute_internal_tool("document_query", {"query": "glucose and oxygen"})
+                self.assertTrue(res.success)
+                # No workspace bound → a clear, non-fatal error (not a crash).
+                reset_context(tok)
+                tok = set_context(InternalToolContext(user_id="default", workspace_id=None))
+                res2 = execute_internal_tool("document_query", {"query": "x"})
+                payload2 = json.loads(res2.content[0]["text"])
+                self.assertFalse(payload2.get("success"))
+            finally:
+                reset_context(tok)
+        finally:
+            for d in repository.list_documents(ws["id"]):
+                full = repository.get_document(d["id"])
+                if full and full.get("storage_key"):
+                    storage.delete_blob(full["storage_key"])
+            repository.delete_workspace(ws["id"])
+
+    def test_render_manifest_block_pure(self):
+        # Pure formatting check (no DB) via monkeypatching the document list.
+        from agentx_ai.kit.workspaces import retrieval
+        from unittest.mock import patch
+        docs = [
+            {"filename": "a.pdf", "tags": ["finance"], "summary": "Q3 report.", "status": "ready"},
+            {"filename": "b.md", "tags": [], "summary": "", "status": "pending"},  # excluded
+        ]
+        with patch.object(retrieval.repository, "list_documents", return_value=docs):
+            block = retrieval.render_manifest_block("ws_x")
+        self.assertIn("a.pdf", block)
+        self.assertIn("finance", block)
+        self.assertNotIn("b.md", block)  # only ready docs appear
+
 
 class ContextLedgerTest(TestCase):
     """Foundation #3 — priority-based budget allocator (Context Ledger)."""

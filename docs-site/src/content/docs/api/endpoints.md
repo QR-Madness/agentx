@@ -619,6 +619,10 @@ DELETE /api/workspaces/{workspace_id}/documents/{document_id}
 Upload errors: `415` unsupported file type, `413` per-file size limit or workspace quota
 exceeded. Supported v1 types: PDF + text/markdown/code.
 
+**Attaching to a conversation:** pass `workspace_id` in the `/api/agent/chat/stream` request body.
+The agent then sees the workspace's file manifest in its context and can call the workspace tools
+(`workspace_search`, `document_query`, `read_document`); document hits are auto-cited (`source_type: "doc"`).
+
 ---
 
 ## Agent Profiles

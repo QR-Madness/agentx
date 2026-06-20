@@ -155,6 +155,7 @@ def _emit_exhibit_event(tc) -> list[str]:
 # return a normalized `results: [{title, url}]` list.
 WEB_SEARCH_TOOL_NAME = "web_search"
 _AUTO_CITATION_TOOLS: frozenset[str] = frozenset({"web_search", "web_research"})
+_DOC_CITATION_TOOLS: frozenset[str] = frozenset({"document_query"})
 
 
 def _emit_web_search_citation(tm) -> list[str]:
@@ -181,6 +182,30 @@ def _emit_web_search_citation(tm) -> list[str]:
     from .exhibits import citation_exhibit_from_web_search
 
     exhibit = citation_exhibit_from_web_search(results, exhibit_id=f"exh_src_{tm.tool_call_id}")
+    if exhibit is None:
+        return []
+    return [_sse("exhibit", exhibit.model_dump())]
+
+
+def _emit_document_citation(tm) -> list[str]:
+    """Auto-capture a `document_query` result as a passive `doc` citation exhibit."""
+    from ..config import get_config_manager
+
+    if not get_config_manager().get("citations.auto_capture_document_query", True):
+        return []
+    try:
+        data = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+    results = data.get("results") or []
+    if not results:
+        return []
+
+    from .exhibits import citation_exhibit_from_document_query
+
+    exhibit = citation_exhibit_from_document_query(results, exhibit_id=f"exh_doc_{tm.tool_call_id}")
     if exhibit is None:
         return []
     return [_sse("exhibit", exhibit.model_dump())]
@@ -377,6 +402,10 @@ async def _execute_and_emit_tools(
             # these are the sources"). Fires for web_search and web_research.
             if tm.name in _AUTO_CITATION_TOOLS and not is_error:
                 for event_str in _emit_web_search_citation(tm):
+                    yield event_str
+            # Workspace document hits become passive `doc` citations (Bibliography).
+            elif tm.name in _DOC_CITATION_TOOLS and not is_error:
+                for event_str in _emit_document_citation(tm):
                     yield event_str
 
         if capture_tool_turns:

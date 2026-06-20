@@ -818,6 +818,7 @@ async def agent_chat_stream(request):
         temperature = data.get("temperature")  # None if not specified
         use_memory = data.get("use_memory", True)
         workflow_id = data.get("workflow_id")  # Optional Agent Alloy workflow
+        workspace_id = data.get("workspace_id")  # Optional attached document workspace
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -1090,6 +1091,7 @@ async def agent_chat_stream(request):
             channel=agent.config.memory_channel,
             agent_id=agent.config.agent_id,
             conversation_id=conv_id,
+            workspace_id=workspace_id,
         ))
 
         try:
@@ -1199,6 +1201,24 @@ async def agent_chat_stream(request):
                     ))
             except Exception as sp_err:
                 logger.debug(f"Scratchpad injection skipped: {sp_err}")
+
+            # Workspace manifest (Document RAG): when a workspace is attached, inject
+            # its file list (names + tags + summary) as a STABLE block so the agent
+            # knows *what corpus it has* before retrieving — this awareness is what
+            # makes it a workspace, not just a vector store. High priority, bounded.
+            if workspace_id:
+                try:
+                    from .kit.workspaces.retrieval import render_manifest_block
+                    manifest_block = render_manifest_block(workspace_id)
+                    if manifest_block:
+                        blocks.append(LedgerBlock(
+                            key="workspace_manifest",
+                            priority=85,
+                            content=manifest_block,
+                            shrink_fn=shrink_tail,
+                        ))
+                except Exception as ws_err:
+                    logger.debug(f"Workspace manifest injection skipped: {ws_err}")
 
             # Memory (Foundation #3): a STABLE high-salience core injected every
             # turn (maintained, not searched) + a lower-priority, query-specific
