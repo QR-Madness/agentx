@@ -94,12 +94,16 @@ only** (per-agent prompt stays in the profile), debounced autosave, **no named p
 **Why:** untouched layers keep getting release improvements while edits are pinned and never silently
 overwritten — fixes the original lost-on-restart durability bug. **Source:** Todo §18.13.
 
-### ADR-5 — The main chat path stays strict on model resolution
-**Decision:** chat uses `get_provider_for_model` (the agent's chosen model is the floor); only
-*non-chat features* (memory/recall/recap/reasoning/…) use `resolve_with_fallback` to never hard-fail.
-**Why:** silently swapping the user's chosen chat model is worse than surfacing the error; background
-features failing the turn is the thing we actually want to prevent. **Source:** CLAUDE.md / Model
-Resolution (`Development-Notes.md`).
+### ADR-5 — Model resolution falls back everywhere; a chat swap is surfaced, not silent
+**Decision:** **(updated, Foundation #4a)** *every* model-using site resolves through
+`resolve_with_fallback` / `complete_with_fallback` so a missing/unhealthy provider never hard-fails the
+turn — including the main chat path, which now falls back **but emits a `model_fallback` status notice**
+so the swap is visible rather than silent. Strict-by-design exceptions (a generic chat fallback would be
+*wrong*): speculative-decoding draft/target, ambassador TTS/STT, and explicit availability probes
+(`validate()`, cost estimation). Kill-switch: `models.fallback_enabled`. *(Supersedes the original
+"chat stays strict" decision — surfacing the swap resolved the "silent swap is worse" concern.)*
+**Why:** crashing a turn because one provider blipped is the worse failure; visibility (the notice)
+addresses the original objection. **Source:** Model Resolution (`Development-Notes.md`); ModelFallbackTest.
 
 ### ADR-6 — `conversation_logs` is the transcript record; memory extraction is decoupled (direction)
 **Decision (target):** a turn's durable truth is its `conversation_logs` row; graph/vector/working-
@@ -113,8 +117,8 @@ dual-write coupling. **Status:** aspirational — not yet the implemented write 
 "everything." Deliberately **off**: `E501` (line length — the codebase uses a compact-block style,
 [[project_ruff_check_not_format]]); `S110`/`S112` (try/except/pass *is* the never-raise idiom, INV-1);
 `S311` (random is agent-id/jitter, never crypto); `S101` (asserts are deliberate). `S608` is
-**per-file-ignored** on the four audited raw-SQL files (`views.py`, `memory/semantic.py`,
-`eval_consolidation.py`, `init_memory_schema.py`) — their SQL binds all values (`%s`/`:name`/Cypher
+**per-file-ignored** on the three audited raw-SQL files (`views.py`, `memory/semantic.py`,
+`eval_consolidation.py`) — their SQL binds all values (`%s`/`:name`/Cypher
 `$params`) and interpolates only static fragments/identifiers; per-line `noqa` was rejected because
 the violations sit on multi-line `f"""` openings (can't append a comment without churning hot query
 code). `S608` stays active everywhere else to catch *new* raw SQL.
@@ -138,6 +142,23 @@ SSE/multipart/stream surfaces where drift actually hurts. A generator would also
 authoritative and demote the spec to an artifact, contradicting the spec-first posture every other
 doc here takes. Endpoint count doesn't flip this; only a public/multi-tenant API would (the authz
 rewrite would carry DRF then). **Source:** [Repo-Questions Q2](Repo-Questions.md#q2--openapi-without-drf-hand-maintained--parity-check-or-adopt-a-generator).
+
+### ADR-9 — PostgreSQL schema is Alembic; Neo4j stays on the home-grown runner
+**Decision:** the memory **Postgres** schema is managed by **Alembic** (`alembic upgrade head`; wired
+into the Docker entrypoint + `task db:migrate:pg`). The cutover **adopted the existing schema in place**:
+revision `0001_baseline` applies the frozen `alembic/baseline.sql` (the former `postgres_builder.sql`,
+all `CREATE … IF NOT EXISTS`), so `upgrade head` no-ops a populated DB and only stamps `alembic_version`.
+Every future PG change is a **new revision**; `alembic/baseline.sql` is **frozen** (sha-gated by
+`scripts/check_alembic.py`, which also enforces a **single head** — both run in `task docs:check`).
+**Neo4j** keeps the home-grown Cypher runner (`migrate_schema`, now Neo4j-only): the Python Neo4j
+migration libs are 0.1.x/single-maintainer and `neo4j-migrations`/Liquibase are JVM — wrong for a
+`uv`/`bun` stack with ~3 graph migrations.
+**Why:** the bootstrap-vs-migrations **dual source** let `usage_events` ship into the baseline file yet
+never reach a running DB until a manual re-init. Alembic gives one forward-only, auto-applied PG system;
+the frozen baseline + single-head gate make that class of bug impossible.
+**Caveat:** the baseline assumes a DB is fresh **or** already at the pre-Alembic head — it doesn't
+re-run intermediate `ALTER`s; continuous auto-init means deployed instances already are.
+**Source:** this session; `alembic/README`.
 
 ---
 

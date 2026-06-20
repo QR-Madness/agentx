@@ -207,7 +207,7 @@ Conversation node, conversation→user linkage, `AgentParticipant.first_seen`. C
 (the row carries text, embedding, agent_id, channel); the identifiers silently fork.
 
 **Step 0 — make the log self-sufficient (additive, zero behavior change).**
-`conversation_logs` today has no `turn_id` and no `user_id` (see `queries/postgres_builder.sql`) —
+`conversation_logs` today has no `turn_id` and no `user_id` (see `alembic/baseline.sql`) —
 a rebuild would mint fresh Turn UUIDs and orphan every fact's provenance, and consolidation reads
 `u.id` from the graph. Add both columns, stamp them on write, and backfill from Neo4j *now*, while
 the graph is still authoritative — this is the one window where both stores exist to cross-fill.
@@ -321,7 +321,8 @@ opens at/after old open interval".
 
 **Mechanics:** ship as the first numbered graph migration under §2.6 (`graph_migrations/` +
 `(:SchemaVersion)`) — idempotent Cypher batched with `WHERE f.temporal_provenance IS NULL`; the
-repo already has the PG precedent (`queries/migrations/000N_*.sql`). Build §2.6's runner and this
+repo already has the precedent in `queries/neo4j_migrations/000N_*.cypher` (the home-grown Neo4j
+runner; PostgreSQL moved to Alembic — see Decisions.md ADR-9). Build §2.6's runner and this
 backfill as one slice. The export envelope gains the four fields + `temporal_provenance` (schema
 version bump); `MemoryImporter` runs old exports through the *same* backfill function as the
 migration — one mapping implementation, two callers, mirroring Q3's single-projector rule.

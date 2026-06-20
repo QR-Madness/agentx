@@ -53,7 +53,7 @@ jobs:
       - name: Types — client (tsc)
         run: task check:types:client
 
-      - name: Doc + API-spec drift gate
+      - name: Doc + API-spec + schema (Alembic) drift gate
         run: task docs:check
 
       - name: Backend tests (quick — no models, no Docker)

@@ -1,1 +1,42 @@
-Generic single-database configuration.
+Alembic — memory PostgreSQL schema
+==================================
+
+Alembic owns the memory Postgres schema (the `agent_memory` DB accessed via
+SQLAlchemy in `api/agentx_ai/kit/agent_memory/`). Neo4j is NOT here — it stays on
+the home-grown runner (`manage.py migrate_schema`, Neo4j-only). Django's own
+SQLite ORM is separate (`manage.py migrate`). See Decisions.md ADR-9.
+
+Layout
+------
+- alembic.ini            — config; `prepend_sys_path = api`, URL comes from env.py.
+- env.py                 — builds the URL from `get_settings().postgres_uri`
+                           (creds never in VCS); adds this dir to sys.path so
+                           revisions can `import helpers`.
+- helpers.py             — `with_vector_dims(sql)` (pgvector dim substitution) and
+                           `exec_sql_file(path)` (raw multi-statement DDL).
+- baseline.sql           — FROZEN starting-point schema (the former
+                           queries/postgres_builder.sql). Do NOT edit — sha-gated.
+- baseline.sql.sha256    — the frozen hash (scripts/check_alembic.py enforces it).
+- versions/              — revisions. `0001_baseline` applies baseline.sql.
+
+Day-to-day
+----------
+Apply pending migrations (PG):     task db:migrate:pg     # alembic upgrade head
+Status (current vs head):          task db:migrate:pg:status
+New migration:                     task db:revision -- "add foo table"
+  then edit versions/<id>_*.py:
+    def upgrade():
+        op.execute("ALTER TABLE ... ADD COLUMN ...")        # plain DDL, or
+        from helpers import with_vector_dims                 # for vector columns
+        op.get_bind().execute(sa.text(with_vector_dims(sql)))
+Apply both stores:                 task db:migrate          # PG (alembic) + Neo4j
+
+Rules (enforced by scripts/check_alembic.py in `task docs:check`)
+----------------------------------------------------------------
+1. baseline.sql is frozen — never edit it; author a new revision instead.
+2. Single head — keep history linear (no forks). Author against current head.
+3. New PG table/column/index = a revision. Never reach for a "bootstrap" file.
+
+Caveat: the baseline adopts an existing schema in place (CREATE … IF NOT EXISTS),
+so it does NOT re-run intermediate ALTERs — a DB must be fresh or already at the
+pre-Alembic head before first `upgrade head`.

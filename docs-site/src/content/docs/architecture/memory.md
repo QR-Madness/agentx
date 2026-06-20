@@ -555,6 +555,9 @@ CREATE TABLE schema_version (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+> **Note:** `schema_version` is now **vestigial** — PostgreSQL migrations are managed by **Alembic**
+> (its own `alembic_version` table; baseline in `alembic/baseline.sql`). Neo4j tracks its version on a
+> `_SchemaMeta` node. See Decisions.md ADR-9.
 
 ## Data Flow
 

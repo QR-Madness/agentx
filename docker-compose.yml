@@ -59,9 +59,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-agent_memory}
     volumes:
       - ${AGENTX_DB_DIR:-./data}/postgres:/var/lib/postgresql/data
-      # Baseline schema (extensions + tables) is applied app-side by the API's
-      # self-init (init_memory_schema runs queries/postgres_builder.sql, idempotent),
-      # so no docker-entrypoint-initdb.d bind-mount is needed.
+      # Baseline schema (extensions + tables) is applied app-side by the API
+      # entrypoint via Alembic (`alembic upgrade head`, idempotent), so no
+      # docker-entrypoint-initdb.d bind-mount is needed.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent} -d ${POSTGRES_DB:-agent_memory}"]
       interval: 10s

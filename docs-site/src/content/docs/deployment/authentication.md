@@ -9,7 +9,7 @@ machine.
 - **One root user.** AgentX is single-tenant: one server = one user. There is a single `root`
   account, no registration.
 - **Password**: hashed with bcrypt (cost 12) and stored in the PostgreSQL `agentx_auth` table
-  (`api/agentx_ai/auth/service.py`, schema in `queries/postgres_builder.sql`).
+  (`api/agentx_ai/auth/service.py`, schema in `alembic/baseline.sql`).
 - **Sessions**: a 32-byte URL-safe token stored in Redis under `agentx:session:{token}`. The
   session carries `user_id`, `username`, `created_at`, `last_active`, and the client IP/UA.
 - **TTL**: `AGENTX_SESSION_TTL` (default `86400`, 24h). The TTL is **extended on every

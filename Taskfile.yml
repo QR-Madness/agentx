@@ -559,11 +559,12 @@ tasks:
       - bunx vercel --prod
 
   docs:check:
-    desc: "Doc drift gate — links/anchors, orphan todo/ files, version drift, Release-Notes/CLAUDE size, API parity, docs-site"
+    desc: "Doc + schema drift gate — links/anchors, orphan todo/ files, version drift, API parity, docs-site, Alembic head/baseline"
     cmds:
       - python3 scripts/check_docs.py {{.CLI_ARGS}}
       - python3 scripts/check_api_parity.py {{.CLI_ARGS}}
       - python3 scripts/check_docs_site.py {{.CLI_ARGS}}
+      - python3 scripts/check_alembic.py
 
 # ============================================================================
 # CLEANUP & RESET

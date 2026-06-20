@@ -122,14 +122,23 @@ task install            # Install all deps (uv sync + bun install)
 task db:up / db:down    # Start / stop services (aliases: runners / teardown)
 task db:status
 task db:init            # Create local data dirs (data/neo4j, data/postgres, data/redis)
-task db:init:schemas    # Init memory schemas (Neo4j indexes, PG tables)
+task db:init:schemas    # Init schemas: PG via Alembic (upgrade head) + Neo4j/Redis
 task db:verify:schemas  # Read-only schema check
+task db:migrate         # Apply pending migrations: PG (Alembic) + Neo4j
+task db:migrate:pg      # PG only (alembic upgrade head); db:migrate:pg:status to inspect
+task db:revision -- "msg"  # New Alembic (PostgreSQL) revision — see alembic/README
 task db:shell:postgres  # psql / db:shell:redis (redis-cli) / db:shell:neo4j (cypher-shell)
 
 # Django
 task api:run            # Dev server (alias: api:runserver)
 task api:migrate / api:makemigrations / api:shell
 ```
+
+> **Schema migrations:** the memory **PostgreSQL** schema is managed by **Alembic**
+> (`alembic/`; baseline frozen, single-head — gated in `task docs:check`). **Neo4j** stays on the
+> home-grown runner (`manage.py migrate_schema`, Neo4j-only). Django's own SQLite ORM is separate
+> (`api:migrate`). New PG change = an Alembic revision (never edit `alembic/baseline.sql`); see
+> [Decisions.md](Decisions.md) ADR-9 + `alembic/README`.
 
 ### Testing
 

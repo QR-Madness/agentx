@@ -83,4 +83,3 @@ ignore = [
 "api/agentx_ai/views.py" = ["S608"]
 "api/agentx_ai/kit/agent_memory/memory/semantic.py" = ["S608"]
 "api/agentx_ai/management/commands/eval_consolidation.py" = ["S608"]
-"api/agentx_ai/management/commands/init_memory_schema.py" = ["S608"]
