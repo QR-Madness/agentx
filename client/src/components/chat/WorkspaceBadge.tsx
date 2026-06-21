@@ -15,11 +15,11 @@ export function WorkspaceBadge({ workspaceId, onOpen }: { workspaceId: string; o
     <button
       type="button"
       onClick={onOpen}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs bg-surface-sunken text-fg-secondary hover:text-fg"
+      className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/15 px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-fg-inverse"
       title={`Attached workspace: ${name} — manage in Workspaces`}
     >
-      <FolderOpen size={12} />
-      <span className="max-w-[10rem] truncate">{name}</span>
+      <FolderOpen size={14} />
+      <span className="max-w-[12rem] truncate">{name}</span>
     </button>
   );
 }

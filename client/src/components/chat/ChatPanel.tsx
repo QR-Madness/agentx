@@ -759,11 +759,6 @@ export function ChatPanel() {
             </button>
           )}
           <span className="chat-panel-title">{activeTab.title}</span>
-          {activeTab.sessionId && (
-            <span className="chat-panel-session">
-              Session: {activeTab.sessionId.slice(0, 8)}...
-            </span>
-          )}
           {contextInfo && (
             <div className="context-usage" title={`${contextInfo.used.toLocaleString()} / ${contextInfo.window.toLocaleString()} tokens`}>
               <Layers size={12} />
