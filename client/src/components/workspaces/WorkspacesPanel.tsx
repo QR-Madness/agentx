@@ -17,6 +17,7 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { Input } from '../ui';
+import { WorkspaceContainerCard } from './WorkspaceContainerCard';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -119,6 +120,16 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
       await refreshWorkspaces();
     } catch (err) {
       notify.notifyError(err, 'Could not change shell access');
+    }
+  }, [notify, refreshWorkspaces]);
+
+  const setBackend = useCallback(async (ws: Workspace, backend: 'bubblewrap' | 'container') => {
+    if (ws.shell_backend === backend) return;
+    try {
+      await api.setWorkspaceShellBackend(ws.id, backend);
+      await refreshWorkspaces();
+    } catch (err) {
+      notify.notifyError(err, 'Could not change shell backend');
     }
   }, [notify, refreshWorkspaces]);
 
@@ -322,6 +333,33 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                   )}
                 </div>
               </div>
+
+              {selected.allow_shell && (
+                <div className="border-b border-line px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-fg-muted">Shell backend:</span>
+                    {(['bubblewrap', 'container'] as const).map(b => (
+                      <button
+                        key={b}
+                        onClick={() => setBackend(selected, b)}
+                        className={`rounded px-2 py-0.5 ${
+                          selected.shell_backend === b
+                            ? 'bg-accent text-fg-inverse'
+                            : 'border border-line text-fg-secondary hover:bg-surface-hover'
+                        }`}
+                        title={b === 'container'
+                          ? 'Persistent Docker container — installs + network'
+                          : 'Lightweight jail — no install, no network'}
+                      >
+                        {b === 'container' ? 'Container' : 'Bubblewrap'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selected.allow_shell && selected.shell_backend === 'container' && (
+                <WorkspaceContainerCard workspaceId={selected.id} />
+              )}
 
               {/* Click-to-upload is the primary path — HTML5 drag-drop doesn't
                   deliver files in the Tauri webview, so drop is best-effort (web only). */}

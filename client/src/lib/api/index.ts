@@ -89,6 +89,9 @@ export type {
   Workspace,
   WorkspaceDocument,
   WorkspaceDocumentStatus,
+  ShellBackend,
+  ContainerAction,
+  ContainerStatus,
 } from './workspaces';
 export * from './errors';
 export * from './version';

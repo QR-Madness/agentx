@@ -1,0 +1,43 @@
+# Container shell backend — Docker-in-Docker sidecar (validated TLS pattern).
+#
+# Apply ALONGSIDE docker-compose.yml to let workspaces use the 'container' shell backend
+# (per-workspace `shell_backend=container`). Also set `shell.docker.enabled=true` in config.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.shell.yml --profile production up -d
+#
+# The API talks to the sidecar's OWN Docker daemon over **mutually-authenticated TLS** on the
+# internal compose network (port 2376 is NOT published to the host, and requires the client
+# certs dind generates). The host's /var/run/docker.sock is NEVER mounted — so a compromised
+# API can reach only the contained sidecar daemon, never host root. The sidecar runs
+# --privileged (that privilege is contained to it) with its own image/container storage.
+#
+# Validated: dind comes up listening on TLS :2376 + writes client certs to /certs/client, and
+# runs nested containers. (A plain unix-socket/`--host` override does NOT work — the dind
+# entrypoint forces an *unauthenticated* tcp://0.0.0.0:2375 in that mode; hence TLS here.)
+
+services:
+  dind:
+    image: docker:27-dind
+    profiles: [production]
+    privileged: true                       # run a nested daemon (privilege contained here)
+    # Default DOCKER_TLS_CERTDIR=/certs → dind serves TLS on :2376 and drops client certs
+    # into /certs/client. No ports are published; only compose services on the network reach it.
+    volumes:
+      - dind-storage:/var/lib/docker       # nested images/containers (isolated from host)
+      - dind-certs:/certs/client           # client certs, shared read-only into the api
+    restart: unless-stopped
+
+  api:
+    environment:
+      DOCKER_HOST: "tcp://dind:2376"
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: "/certs/client"
+    volumes:
+      - dind-certs:/certs/client:ro
+    depends_on:
+      dind:
+        condition: service_started
+
+volumes:
+  dind-storage: {}
+  dind-certs: {}
