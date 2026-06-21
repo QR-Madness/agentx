@@ -42,6 +42,7 @@ def _serialize_workspace(ws: dict[str, Any]) -> dict[str, Any]:
         "name": ws["name"],
         "user_id": ws.get("user_id", "default"),
         "allow_shell": bool(ws.get("allow_shell", False)),
+        "shell_backend": ws.get("shell_backend", "bubblewrap"),
         "document_count": int(ws.get("document_count", 0) or 0),
         "used_bytes": int(ws.get("used_bytes", 0) or 0),
         "created_at": _iso(ws.get("created_at")),
@@ -108,6 +109,13 @@ def workspace_detail(request, workspace_id: str):
             ws = repository.rename_workspace(workspace_id, name)
         if "allow_shell" in data:
             ws = repository.set_allow_shell(workspace_id, bool(data.get("allow_shell")))
+        if "shell_backend" in data:
+            try:
+                ws = repository.set_shell_backend(workspace_id, str(data.get("shell_backend")))
+            except ValueError as e:
+                return json_error(str(e), status=400)
+            if data.get("shell_backend") == "container":
+                _prepull_shell_image()  # warm the base image so first use doesn't block
         if not ws:
             return json_error("Workspace not found", status=404)
         return json_success({"workspace": _serialize_workspace(ws)})
@@ -122,7 +130,18 @@ def workspace_detail(request, workspace_id: str):
         return json_error("Workspace not found", status=404)
     for key in keys:
         storage.delete_blob(key)
+    _remove_shell_container(workspace_id)  # best-effort: drop any per-workspace container + volume
     return json_success({"status": "deleted", "workspace_id": workspace_id})
+
+
+def _remove_shell_container(workspace_id: str) -> None:
+    """Best-effort removal of a workspace's shell container (no-op if Docker is absent)."""
+    try:
+        from .kit.shell import container as sc
+        if sc.docker_available():
+            sc.remove(workspace_id)
+    except Exception as e:  # pragma: no cover - best-effort cleanup
+        logger.debug("shell container cleanup skipped for %s: %s", workspace_id, e)
 
 
 @csrf_exempt
@@ -167,3 +186,45 @@ def workspace_document_detail(request, workspace_id: str, document_id: str):
     if storage_key:
         storage.delete_blob(storage_key)
     return json_success({"status": "deleted", "document_id": document_id})
+
+
+def _prepull_shell_image() -> None:
+    try:
+        from .kit.shell import container as sc
+        if sc.docker_available():
+            sc.pull_image_async()
+    except Exception as e:  # pragma: no cover - best-effort
+        logger.debug("shell image pre-pull skipped: %s", e)
+
+
+_SHELL_ACTIONS = {"start", "stop", "reset", "remove"}
+
+
+@csrf_exempt
+@require_methods("GET")
+def workspace_shell_container(request, workspace_id: str):
+    """Status + live stats for a workspace's shell container (UI resource card)."""
+    if repository.get_workspace(workspace_id) is None:
+        return json_error("Workspace not found", status=404)
+    from .kit.shell import container as sc
+    if not sc.docker_available():
+        return json_success({"container": {"state": "unavailable"}})
+    return json_success({"container": sc.status(workspace_id)})
+
+
+@csrf_exempt
+@require_methods("POST")
+def workspace_shell_container_action(request, workspace_id: str, action: str):
+    """Lifecycle action on a workspace's shell container: start|stop|reset|remove."""
+    if action not in _SHELL_ACTIONS:
+        return json_error(f"Unknown action: {action}", status=400)
+    if repository.get_workspace(workspace_id) is None:
+        return json_error("Workspace not found", status=404)
+    from .kit.shell import container as sc
+    if not sc.docker_available():
+        return json_error("Docker is not available", status=503)
+    if action == "remove":
+        sc.remove(workspace_id)
+        return json_success({"container": {"state": "none"}})
+    result = {"start": sc.start, "stop": sc.stop, "reset": sc.reset}[action](workspace_id)
+    return json_success({"container": result})

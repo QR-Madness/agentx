@@ -701,39 +701,28 @@ def _shell_context() -> tuple[str | None, str | None]:
     return ctx.workspace_id, ctx.conversation_id
 
 
-def _shell_workdir(require_command_sandbox: bool):
-    """Resolve config + work dir for a shell tool. Returns (workdir, error_dict)."""
-    from ..config import get_config_manager
-    from ..kit.shell import workdir as wd
-
-    cfg = get_config_manager()
+def _shell_guard() -> tuple[str | None, str | None, dict[str, Any] | None]:
+    """Gate a shell tool: returns (workspace_id, conversation_id, error_dict|None)."""
     if not _shell_allowed():
-        return None, {
+        return None, None, {
             "error": "Shell is not enabled for this workspace. Turn on 'Allow shell' for the "
                      "workspace attached to this conversation.",
             "success": False,
         }
-    _ws, conv = _shell_context()
+    ws, conv = _shell_context()
     if not conv:
-        return None, {"error": "Shell requires an active conversation.", "success": False}
-    try:
-        workdir = wd.ensure_workdir(
-            _ws, conv,
-            max_materialize_bytes=int(cfg.get("shell.max_materialize_bytes", 134217728)),
-            cleanup_days=int(cfg.get("shell.workdir_cleanup_days", 7)),
-        )
-    except wd.WorkdirError as e:
-        return None, {"error": str(e), "success": False}
-    return workdir, None
+        return None, None, {"error": "Shell requires an active conversation.", "success": False}
+    return ws, conv, None
 
 
 @register_tool(
     name="run_command",
     description=(
         "Run a shell command in the attached workspace (a sandboxed working copy of its "
-        "files). The command runs in a jail: filesystem limited to the workspace dir, no "
-        "network, with a time limit. Use for inspecting/transforming files (ls, grep, sed, "
-        "python3, etc.). Returns stdout, stderr, and exit_code."
+        "files). It runs in this workspace's shell backend — a locked-down bubblewrap jail "
+        "(no network) or a persistent container (installs + network), per the workspace's "
+        "setting. Use for inspecting/transforming files (ls, grep, sed, python3, etc.). "
+        "Returns stdout, stderr, and exit_code."
     ),
     input_schema={
         "type": "object",
@@ -746,8 +735,12 @@ def _shell_workdir(require_command_sandbox: bool):
 )
 def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
     from ..config import get_config_manager
-    from ..kit.shell import policy
-    from ..kit.shell.sandbox import get_sandbox
+    from ..kit.shell import dispatch, policy
+
+    ws, conv, err = _shell_guard()
+    if err:
+        return err
+    assert conv is not None
 
     cfg = get_config_manager()
     deny = policy.DEFAULT_DENY_PATTERNS + list(cfg.get("shell.deny_patterns", []) or [])
@@ -755,28 +748,14 @@ def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
     if reason:
         return {"error": reason, "blocked": True, "success": False}
 
-    sandbox = get_sandbox(allow_unsandboxed=bool(cfg.get("shell.allow_unsandboxed", False)))
-    if sandbox is None:
-        return {
-            "error": "No shell sandbox available (bubblewrap missing). Install bubblewrap "
-                     "or set shell.allow_unsandboxed.",
-            "success": False,
-        }
-    workdir, err = _shell_workdir(require_command_sandbox=True)
-    if err:
-        return err
-    assert workdir is not None  # err is None here → workdir is set
+    try:
+        result = dispatch.run(ws, conv, command, timeout=timeout)
+    except dispatch.ShellUnavailable as e:
+        return {"error": str(e), "success": False}
 
-    configured = float(cfg.get("shell.timeout_seconds", 20))
-    t = min(float(timeout) if timeout else configured, max(configured, 300.0))
-    result = sandbox.run(
-        command, cwd=workdir, timeout=t, allow_network=bool(cfg.get("shell.allow_network", False)),
-    )
     max_chars = int(cfg.get("shell.max_output_chars", 20000))
     out, out_trunc = policy.cap_output(result.stdout, max_chars)
     errout, err_trunc = policy.cap_output(result.stderr, max_chars)
-
-    ws, conv = _shell_context()
     logger.info(
         "🐚 SHELL run ws=%s conv=%s rc=%s timed_out=%s dur=%dms sandbox=%s cmd=%r",
         ws, conv, result.exit_code, result.timed_out, result.duration_ms, result.sandbox,
@@ -785,8 +764,7 @@ def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
     return {
         "stdout": out, "stderr": errout, "exit_code": result.exit_code,
         "timed_out": result.timed_out, "duration_ms": result.duration_ms,
-        "sandbox": result.sandbox, "cwd": str(workdir),
-        "truncated": out_trunc or err_trunc,
+        "sandbox": result.sandbox, "truncated": out_trunc or err_trunc,
         "success": result.exit_code == 0 and not result.timed_out,
     }
 
@@ -807,20 +785,13 @@ def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
     },
 )
 def write_file(path: str, content: str) -> dict[str, Any]:
-    from ..kit.shell import workdir as wd
+    from ..kit.shell import dispatch
 
-    workdir, err = _shell_workdir(require_command_sandbox=False)
+    ws, conv, err = _shell_guard()
     if err:
         return err
-    assert workdir is not None  # err is None here → workdir is set
-    try:
-        target = wd.resolve_in_workdir(workdir, path)
-    except wd.WorkdirError as e:
-        return {"error": str(e), "success": False}
-    target.parent.mkdir(parents=True, exist_ok=True)
-    data = content or ""
-    target.write_text(data)
-    return {"path": path, "bytes": len(data.encode("utf-8")), "success": True}
+    assert conv is not None
+    return dispatch.write_file(ws, conv, path, content)
 
 
 @register_tool(
@@ -837,24 +808,13 @@ def write_file(path: str, content: str) -> dict[str, Any]:
     },
 )
 def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
-    from ..kit.shell import workdir as wd
+    from ..kit.shell import dispatch
 
-    workdir, err = _shell_workdir(require_command_sandbox=False)
+    ws, conv, err = _shell_guard()
     if err:
         return err
-    assert workdir is not None  # err is None here → workdir is set
-    try:
-        target = wd.resolve_in_workdir(workdir, path)
-    except wd.WorkdirError as e:
-        return {"error": str(e), "success": False}
-    if not target.is_file():
-        return {"error": f"No such file: {path}", "success": False}
-    text = target.read_text(errors="replace")
-    sliced = text[offset:offset + limit]
-    return {
-        "path": path, "content": sliced, "offset": offset, "limit": limit,
-        "total_chars": len(text), "has_more": (offset + len(sliced)) < len(text), "success": True,
-    }
+    assert conv is not None
+    return dispatch.read_file(ws, conv, path, offset=offset, limit=limit)
 
 
 @register_tool(
@@ -863,19 +823,13 @@ def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
     input_schema={"type": "object", "properties": {}},
 )
 def list_files() -> dict[str, Any]:
-    from ..kit.shell.workdir import _MARKER
+    from ..kit.shell import dispatch
 
-    workdir, err = _shell_workdir(require_command_sandbox=False)
+    ws, conv, err = _shell_guard()
     if err:
         return err
-    assert workdir is not None  # err is None here → workdir is set
-    files: list[dict[str, Any]] = []
-    for p in sorted(workdir.rglob("*")):
-        if p.is_file() and p.name != _MARKER:
-            files.append({"path": str(p.relative_to(workdir)), "bytes": p.stat().st_size})
-        if len(files) >= 500:
-            break
-    return {"files": files, "count": len(files), "success": True}
+    assert conv is not None
+    return dispatch.list_files(ws, conv)
 
 
 @register_tool(

@@ -1853,6 +1853,9 @@ paths:
                   type: string
                 allow_shell:
                   type: boolean
+                shell_backend:
+                  type: string
+                  enum: [bubblewrap, container]
       responses:
         '200':
           description: Updated
@@ -1972,6 +1975,54 @@ paths:
                 additionalProperties: true
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /workspaces/{workspace_id}/shell/container:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceShellContainerStatus
+      summary: Shell container status + live stats (container backend)
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Container status (state, stats, idle-GC ETA)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  container:
+                    type: object
+                    additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workspaces/{workspace_id}/shell/container/{action}:
+    post:
+      tags: [Workspaces]
+      operationId: workspaceShellContainerAction
+      summary: Lifecycle action on the shell container (start|stop|reset|remove)
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [start, stop, reset, remove]
+      responses:
+        '200':
+          description: Updated container status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  container:
+                    type: object
+                    additionalProperties: true
+        '503':
+          description: Docker is not available
 
   /agent/profiles:
     get:
@@ -4408,6 +4459,10 @@ components:
         allow_shell:
           type: boolean
           description: Per-workspace opt-in for sandboxed agent shell tools (default false).
+        shell_backend:
+          type: string
+          enum: [bubblewrap, container]
+          description: Which shell sandbox this workspace uses (default bubblewrap).
         document_count:
           type: integer
         used_bytes:

@@ -65,6 +65,8 @@ urlpatterns = [
     path("workspaces/<str:workspace_id>", workspace_views.workspace_detail, name="workspace-detail"),
     path("workspaces/<str:workspace_id>/documents", workspace_views.workspace_documents, name="workspace-documents"),
     path("workspaces/<str:workspace_id>/documents/<str:document_id>", workspace_views.workspace_document_detail, name="workspace-document-detail"),
+    path("workspaces/<str:workspace_id>/shell/container", workspace_views.workspace_shell_container, name="workspace-shell-container"),
+    path("workspaces/<str:workspace_id>/shell/container/<str:action>", workspace_views.workspace_shell_container_action, name="workspace-shell-container-action"),
     # Agent profile endpoints
     path("agent/profiles", views.agent_profiles_list, name="agent-profiles-list"),
     path("agent/profiles/<str:profile_id>", views.agent_profile_detail, name="agent-profile-detail"),

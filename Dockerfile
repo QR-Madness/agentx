@@ -7,12 +7,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System dependencies. curl: healthcheck. bubblewrap: the agent-shell sandbox
-# (opt-in `shell.enabled`); installs setuid so it jails without --privileged. If
-# absent, agent shells stay unavailable unless `shell.allow_unsandboxed` is set.
+# System dependencies. curl: healthcheck. bubblewrap: the bubblewrap shell sandbox
+# (installs setuid so it jails without --privileged). docker.io: provides the `docker`
+# CLI so the container shell backend can drive the dind sidecar via DOCKER_HOST — the
+# bundled daemon is never started here (the API only ever acts as a Docker *client*).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     bubblewrap \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # uv for Python package management — pinned official binary (reproducible, and

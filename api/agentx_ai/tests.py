@@ -6683,6 +6683,28 @@ class ShellSandboxTest(TestCase):
         self.assertNotIn("run_command", {t.name for t in get_internal_tools()})
 
 
+class ContainerShellTest(TestCase):
+    """Container shell backend — pure routing/jail checks (full e2e is scripts/shell_container_e2e.py)."""
+
+    def test_safe_rel_path_jail(self):
+        from agentx_ai.kit.shell.container import ContainerError, _safe_rel
+        self.assertEqual(_safe_rel("a/b.txt"), "a/b.txt")
+        self.assertEqual(_safe_rel("./a/./b"), "a/b")
+        with self.assertRaises(ContainerError):
+            _safe_rel("../escape")
+        with self.assertRaises(ContainerError):
+            _safe_rel("/etc/passwd")
+
+    def test_backend_for_defaults_bubblewrap(self):
+        # No workspace → bubblewrap (no DB needed); the container backend is opt-in per workspace.
+        from agentx_ai.kit.shell.dispatch import backend_for
+        self.assertEqual(backend_for(None), "bubblewrap")
+
+    def test_docker_available_is_bool(self):
+        from agentx_ai.kit.shell.container import docker_available
+        self.assertIsInstance(docker_available(), bool)
+
+
 class ContextLedgerTest(TestCase):
     """Foundation #3 — priority-based budget allocator (Context Ledger)."""
 

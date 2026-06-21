@@ -118,6 +118,18 @@ DEFAULT_CONFIG = {
         "workdir_cleanup_days": 7,
         "deny_patterns": [],             # extends the built-in deny-list (kit/shell/policy.py)
         "require_confirmation": False,   # future hook
+        # Container backend (workspace.shell_backend='container'): a persistent per-workspace
+        # Docker container the agent can install into. Needs a reachable Docker daemon
+        # (dev: host Docker; prod: the dind sidecar via DOCKER_HOST). Off unless enabled.
+        "docker": {
+            "enabled": False,
+            "image": "python:3.12-slim",
+            "memory": "2g",
+            "cpus": "2",
+            "pids_limit": 512,
+            "network": "agentx-shell-net",
+            "idle_ttl_days": 7,
+        },
     },
     "preferences": {
         "default_model": None,
