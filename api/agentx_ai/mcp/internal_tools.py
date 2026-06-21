@@ -686,6 +686,194 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
     return {**doc, "success": True}
 
 
+# --- Agent shells (sandboxed command execution — kit/shell) ------------------
+# Opt-in (shell.enabled). Commands run in a bubblewrap jail scoped to the
+# conversation's work dir (materialized from the attached workspace); env scrubbed
+# of secrets, network off. The file tools are the safe structured subset (path-jailed,
+# no subprocess). All resolve workspace_id + conversation_id from the per-turn context.
+
+def _shell_context() -> tuple[str | None, str | None]:
+    from .internal_context import current_context
+
+    ctx = current_context()
+    if ctx is None:
+        return None, None
+    return ctx.workspace_id, ctx.conversation_id
+
+
+def _shell_workdir(require_command_sandbox: bool):
+    """Resolve config + work dir for a shell tool. Returns (workdir, error_dict)."""
+    from ..config import get_config_manager
+    from ..kit.shell import workdir as wd
+
+    cfg = get_config_manager()
+    if not cfg.get("shell.enabled", False):
+        return None, {"error": "Shell is disabled (set shell.enabled to use it).", "success": False}
+    _ws, conv = _shell_context()
+    if not conv:
+        return None, {"error": "Shell requires an active conversation.", "success": False}
+    try:
+        workdir = wd.ensure_workdir(
+            _ws, conv,
+            max_materialize_bytes=int(cfg.get("shell.max_materialize_bytes", 134217728)),
+            cleanup_days=int(cfg.get("shell.workdir_cleanup_days", 7)),
+        )
+    except wd.WorkdirError as e:
+        return None, {"error": str(e), "success": False}
+    return workdir, None
+
+
+@register_tool(
+    name="run_command",
+    description=(
+        "Run a shell command in the attached workspace (a sandboxed working copy of its "
+        "files). The command runs in a jail: filesystem limited to the workspace dir, no "
+        "network, with a time limit. Use for inspecting/transforming files (ls, grep, sed, "
+        "python3, etc.). Returns stdout, stderr, and exit_code."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "The shell command (run via sh -lc)."},
+            "timeout": {"type": "integer", "description": "Max seconds (capped by config)."},
+        },
+        "required": ["command"],
+    },
+)
+def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
+    from ..config import get_config_manager
+    from ..kit.shell import policy
+    from ..kit.shell.sandbox import get_sandbox
+
+    cfg = get_config_manager()
+    deny = policy.DEFAULT_DENY_PATTERNS + list(cfg.get("shell.deny_patterns", []) or [])
+    reason = policy.check_command(command, deny)
+    if reason:
+        return {"error": reason, "blocked": True, "success": False}
+
+    sandbox = get_sandbox(allow_unsandboxed=bool(cfg.get("shell.allow_unsandboxed", False)))
+    if sandbox is None:
+        return {
+            "error": "No shell sandbox available (bubblewrap missing). Install bubblewrap "
+                     "or set shell.allow_unsandboxed.",
+            "success": False,
+        }
+    workdir, err = _shell_workdir(require_command_sandbox=True)
+    if err:
+        return err
+    assert workdir is not None  # err is None here → workdir is set
+
+    configured = float(cfg.get("shell.timeout_seconds", 20))
+    t = min(float(timeout) if timeout else configured, max(configured, 300.0))
+    result = sandbox.run(
+        command, cwd=workdir, timeout=t, allow_network=bool(cfg.get("shell.allow_network", False)),
+    )
+    max_chars = int(cfg.get("shell.max_output_chars", 20000))
+    out, out_trunc = policy.cap_output(result.stdout, max_chars)
+    errout, err_trunc = policy.cap_output(result.stderr, max_chars)
+
+    ws, conv = _shell_context()
+    logger.info(
+        "🐚 SHELL run ws=%s conv=%s rc=%s timed_out=%s dur=%dms sandbox=%s cmd=%r",
+        ws, conv, result.exit_code, result.timed_out, result.duration_ms, result.sandbox,
+        command[:200],
+    )
+    return {
+        "stdout": out, "stderr": errout, "exit_code": result.exit_code,
+        "timed_out": result.timed_out, "duration_ms": result.duration_ms,
+        "sandbox": result.sandbox, "cwd": str(workdir),
+        "truncated": out_trunc or err_trunc,
+        "success": result.exit_code == 0 and not result.timed_out,
+    }
+
+
+@register_tool(
+    name="write_file",
+    description=(
+        "Create or overwrite a text file in the attached workspace working copy (path is "
+        "relative to the workspace root; no escaping it). Safer/more reliable than echo/heredoc."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Relative path within the workspace."},
+            "content": {"type": "string", "description": "File contents (UTF-8 text)."},
+        },
+        "required": ["path", "content"],
+    },
+)
+def write_file(path: str, content: str) -> dict[str, Any]:
+    from ..kit.shell import workdir as wd
+
+    workdir, err = _shell_workdir(require_command_sandbox=False)
+    if err:
+        return err
+    assert workdir is not None  # err is None here → workdir is set
+    try:
+        target = wd.resolve_in_workdir(workdir, path)
+    except wd.WorkdirError as e:
+        return {"error": str(e), "success": False}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = content or ""
+    target.write_text(data)
+    return {"path": path, "bytes": len(data.encode("utf-8")), "success": True}
+
+
+@register_tool(
+    name="read_file",
+    description="Read a text file from the attached workspace working copy (relative path).",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Relative path within the workspace."},
+            "offset": {"type": "integer", "description": "Start character (default 0).", "default": 0},
+            "limit": {"type": "integer", "description": "Max characters (default 12000).", "default": 12000},
+        },
+        "required": ["path"],
+    },
+)
+def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
+    from ..kit.shell import workdir as wd
+
+    workdir, err = _shell_workdir(require_command_sandbox=False)
+    if err:
+        return err
+    assert workdir is not None  # err is None here → workdir is set
+    try:
+        target = wd.resolve_in_workdir(workdir, path)
+    except wd.WorkdirError as e:
+        return {"error": str(e), "success": False}
+    if not target.is_file():
+        return {"error": f"No such file: {path}", "success": False}
+    text = target.read_text(errors="replace")
+    sliced = text[offset:offset + limit]
+    return {
+        "path": path, "content": sliced, "offset": offset, "limit": limit,
+        "total_chars": len(text), "has_more": (offset + len(sliced)) < len(text), "success": True,
+    }
+
+
+@register_tool(
+    name="list_files",
+    description="List files in the attached workspace working copy (relative paths).",
+    input_schema={"type": "object", "properties": {}},
+)
+def list_files() -> dict[str, Any]:
+    from ..kit.shell.workdir import _MARKER
+
+    workdir, err = _shell_workdir(require_command_sandbox=False)
+    if err:
+        return err
+    assert workdir is not None  # err is None here → workdir is set
+    files: list[dict[str, Any]] = []
+    for p in sorted(workdir.rglob("*")):
+        if p.is_file() and p.name != _MARKER:
+            files.append({"path": str(p.relative_to(workdir)), "bytes": p.stat().st_size})
+        if len(files) >= 500:
+            break
+    return {"files": files, "count": len(files), "success": True}
+
+
 @register_tool(
     name="scratchpad_note",
     description=(
@@ -1863,14 +2051,26 @@ def get_internal_tools() -> list[ToolInfo]:
     (executable) regardless; this only governs what the model is told about.
     """
     backend = resolve_active_search_backend()
+    shell_on = _shell_enabled()
     tools: list[ToolInfo] = []
     for tool in _INTERNAL_TOOLS.values():
         if tool.name in _CAPABILITY_GATED_TOOLS and backend != "tavily":
             continue
         if tool.name == "web_search" and backend is None:
             continue
+        if tool.name in _SHELL_TOOL_NAMES and not shell_on:
+            continue  # agent shells are opt-in (shell.enabled)
         tools.append(_advertise_tool(tool, backend))
     return tools
+
+
+_SHELL_TOOL_NAMES: frozenset[str] = frozenset({"run_command", "write_file", "read_file", "list_files"})
+
+
+def _shell_enabled() -> bool:
+    from ..config import get_config_manager
+
+    return bool(get_config_manager().get("shell.enabled", False))
 
 
 def find_internal_tool(name: str) -> ToolInfo | None:

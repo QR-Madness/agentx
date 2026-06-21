@@ -7,9 +7,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System dependencies (curl is used by the healthcheck).
+# System dependencies. curl: healthcheck. bubblewrap: the agent-shell sandbox
+# (opt-in `shell.enabled`); installs setuid so it jails without --privileged. If
+# absent, agent shells stay unavailable unless `shell.allow_unsandboxed` is set.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # uv for Python package management — pinned official binary (reproducible, and

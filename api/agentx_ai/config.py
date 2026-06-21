@@ -104,6 +104,22 @@ DEFAULT_CONFIG = {
         "complexity_threshold": "complex",   # "simple" | "moderate" | "complex"
         "max_subtasks": 6,                   # Hard cap on decomposed subtasks
     },
+    "shell": {
+        # Agent shells = LLM-driven command execution. OFF by default (opt-in): this is
+        # arbitrary code execution, so it's a deliberate exception to "experimental ships ON".
+        # Commands run in a bubblewrap jail (FS limited to the conversation work dir, no
+        # secret access; network off) — see kit/shell. Granting the tool to an agent ALSO
+        # requires the profile's allowed_tools to include `_internal.run_command`.
+        "enabled": False,
+        "allow_network": False,          # jail keeps network off unless True (exfil risk)
+        "allow_unsandboxed": False,      # DANGEROUS: bare subprocess if bubblewrap is missing
+        "timeout_seconds": 20,
+        "max_output_chars": 20000,
+        "max_materialize_bytes": 134217728,  # 128 MiB — cap workspace materialization
+        "workdir_cleanup_days": 7,
+        "deny_patterns": [],             # extends the built-in deny-list (kit/shell/policy.py)
+        "require_confirmation": False,   # future hook
+    },
     "preferences": {
         "default_model": None,
         "default_reasoning_strategy": "auto",

@@ -6619,6 +6619,72 @@ class WorkspaceIngestionTest(TestCase):
         self.assertNotIn("b.md", block)  # only ready docs appear
 
 
+class ShellSandboxTest(TestCase):
+    """Agent shells — sandbox, policy, path-jail (pure); bwrap jail (skips if absent)."""
+
+    def test_minimal_env_has_no_secrets(self):
+        from agentx_ai.kit.shell.env import minimal_env
+        env = minimal_env("/work")
+        self.assertEqual(env["HOME"], "/work")
+        for secret in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "POSTGRES_PASSWORD", "NEO4J_PASSWORD"):
+            self.assertNotIn(secret, env)
+
+    def test_policy_blocks_destructive(self):
+        from agentx_ai.kit.shell import policy
+        self.assertIsNone(policy.check_command("ls -la && grep foo bar.txt"))
+        self.assertIsNotNone(policy.check_command("sudo apt install x"))
+        self.assertIsNotNone(policy.check_command("rm -rf /"))
+        self.assertIsNotNone(policy.check_command(""))
+
+    def test_cap_output(self):
+        from agentx_ai.kit.shell import policy
+        capped, trunc = policy.cap_output("x" * 100, 10)
+        self.assertTrue(trunc)
+        self.assertTrue(capped.startswith("x" * 10))
+        same, trunc2 = policy.cap_output("short", 100)
+        self.assertFalse(trunc2)
+        self.assertEqual(same, "short")
+
+    def test_path_jail(self):
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.kit.shell.workdir import WorkdirError, resolve_in_workdir
+        with tempfile.TemporaryDirectory() as t:
+            wd = Path(t)
+            ok = resolve_in_workdir(wd, "a/b.txt")
+            self.assertTrue(str(ok).startswith(str(wd.resolve())))
+            with self.assertRaises(WorkdirError):
+                resolve_in_workdir(wd, "../escape")
+            with self.assertRaises(WorkdirError):
+                resolve_in_workdir(wd, "/etc/passwd")
+
+    def test_bubblewrap_jail(self):
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.kit.shell.sandbox import BubblewrapSandbox, bubblewrap_works
+        if not bubblewrap_works():
+            self.skipTest("bubblewrap unavailable")
+        sb = BubblewrapSandbox()
+        with tempfile.TemporaryDirectory() as t:
+            wd = Path(t)
+            ok = sb.run("echo hello", cwd=wd, timeout=10, allow_network=False)
+            self.assertEqual(ok.exit_code, 0)
+            self.assertEqual(ok.stdout.strip(), "hello")
+            # Network is off → curl fails.
+            net = sb.run("curl -m3 https://example.com", cwd=wd, timeout=10, allow_network=False)
+            self.assertNotEqual(net.exit_code, 0)
+            # Timeout kills a long command.
+            slow = sb.run("sleep 5", cwd=wd, timeout=1, allow_network=False)
+            self.assertTrue(slow.timed_out)
+
+    def test_run_command_hidden_when_disabled(self):
+        from agentx_ai.config import get_config_manager
+        from agentx_ai.mcp.internal_tools import get_internal_tools
+        if get_config_manager().get("shell.enabled", False):
+            self.skipTest("shell enabled in local config")
+        self.assertNotIn("run_command", {t.name for t in get_internal_tools()})
+
+
 class ContextLedgerTest(TestCase):
     """Foundation #3 — priority-based budget allocator (Context Ledger)."""
 

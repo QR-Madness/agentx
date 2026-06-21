@@ -18,10 +18,12 @@
 > (`conversationMeta.workspaceId`); `lib/api/workspaces.ts` (+ FormData support in `core.ts`); the chat
 > stream sends `workspace_id`. v1 complete. See `kit/workspaces/` + Development-Notes.
 >
-> **Next (future):** ⭐ **Agent shells spawn *inside* the workspace** — when agent shell/exec support
-> lands, the shell's CWD should be a materialized working tree of the workspace's files (the blob store is
-> content-addressed by sha256, so materialize filename→bytes into a temp/work dir scoped to the workspace),
-> so the agent can operate on the actual files, not just RAG over them. Then: code-aware/AST chunking,
+> ⭐ **Agent shells spawn *inside* the workspace — shipped v0.21.108** (`kit/shell/`): opt-in
+> (`shell.enabled`), bubblewrap-jailed `run_command` + path-jailed `write_file`/`read_file`/`list_files`,
+> with the workspace materialized into a per-conversation work dir as the CWD (network off, FS jailed, env
+> scrubbed). See Development-Notes → "Agent Shells". **Shell follow-ups:** sync agent edits back into the
+> workspace; client Settings toggle + per-agent "Allow shell" checkbox + terminal-style rendering;
+> seccomp/egress allow-list; per-command confirmation. **Workspace follow-ups:** code-aware/AST chunking,
 > folder/repo ingestion, `web_crawl → workspace`, cross-workspace search, Alloy-team shared workspaces,
 > sha256 snapshots/restore.
 
