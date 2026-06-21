@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Check, FileText, FolderPlus, Link2, Link2Off, Loader2, Pencil, Plus, Trash2, Upload, X,
+  Check, FileText, FolderPlus, Link2, Link2Off, Loader2, Pencil, Plus, Terminal, Trash2, Upload, X,
 } from 'lucide-react';
 import { api, type Workspace, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
@@ -112,6 +112,15 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
       notify.notifyError(err, 'Could not rename workspace');
     }
   }, [draftName, selectedId, notify, refreshWorkspaces]);
+
+  const toggleShell = useCallback(async (ws: Workspace) => {
+    try {
+      await api.setWorkspaceShell(ws.id, !ws.allow_shell);
+      await refreshWorkspaces();
+    } catch (err) {
+      notify.notifyError(err, 'Could not change shell access');
+    }
+  }, [notify, refreshWorkspaces]);
 
   const deleteWorkspace = useCallback(async (ws: Workspace) => {
     const ok = await confirm({
@@ -278,22 +287,40 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                     </button>
                   </div>
                 )}
-                {convKey ? (
+                <div className="flex shrink-0 items-center gap-1.5">
                   <button
-                    onClick={() => toggleAttach(selected.id)}
-                    className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                      attachedId === selected.id
-                        ? 'bg-accent text-fg-inverse'
+                    onClick={() => toggleShell(selected)}
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
+                      selected.allow_shell
+                        ? 'bg-warning/15 text-warning'
                         : 'border border-line text-fg-secondary hover:bg-surface-hover'
                     }`}
-                    title="Attach this workspace to the active conversation so the agent can use it"
+                    title={
+                      selected.allow_shell
+                        ? 'Agents attached to this workspace can run sandboxed shell commands. Click to disable.'
+                        : 'Allow agents to run sandboxed shell commands against this workspace (off by default).'
+                    }
                   >
-                    {attachedId === selected.id ? <Link2Off size={13} /> : <Link2 size={13} />}
-                    {attachedId === selected.id ? 'Attached — detach' : 'Attach to conversation'}
+                    <Terminal size={13} />
+                    {selected.allow_shell ? 'Shell on' : 'Allow shell'}
                   </button>
-                ) : (
-                  <span className="shrink-0 text-xs text-fg-muted">Open a chat to attach</span>
-                )}
+                  {convKey ? (
+                    <button
+                      onClick={() => toggleAttach(selected.id)}
+                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
+                        attachedId === selected.id
+                          ? 'bg-accent text-fg-inverse'
+                          : 'border border-line text-fg-secondary hover:bg-surface-hover'
+                      }`}
+                      title="Attach this workspace to the active conversation so the agent can use it"
+                    >
+                      {attachedId === selected.id ? <Link2Off size={13} /> : <Link2 size={13} />}
+                      {attachedId === selected.id ? 'Attached — detach' : 'Attach to conversation'}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-fg-muted">Open a chat to attach</span>
+                  )}
+                </div>
               </div>
 
               {/* Click-to-upload is the primary path — HTML5 drag-drop doesn't

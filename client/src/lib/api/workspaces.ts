@@ -5,6 +5,8 @@ export interface Workspace {
   id: string;
   name: string;
   user_id: string;
+  /** Per-workspace opt-in for sandboxed agent shell tools (default false). */
+  allow_shell: boolean;
   document_count: number;
   used_bytes: number;
   created_at: string | null;
@@ -50,6 +52,13 @@ export const workspacesApi = {
     return apiRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
+    });
+  },
+
+  async setWorkspaceShell(id: string, allowShell: boolean): Promise<{ workspace: Workspace }> {
+    return apiRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ allow_shell: allowShell }),
     });
   },
 

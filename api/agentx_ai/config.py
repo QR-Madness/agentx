@@ -105,12 +105,11 @@ DEFAULT_CONFIG = {
         "max_subtasks": 6,                   # Hard cap on decomposed subtasks
     },
     "shell": {
-        # Agent shells = LLM-driven command execution. OFF by default (opt-in): this is
-        # arbitrary code execution, so it's a deliberate exception to "experimental ships ON".
-        # Commands run in a bubblewrap jail (FS limited to the conversation work dir, no
-        # secret access; network off) — see kit/shell. Granting the tool to an agent ALSO
-        # requires the profile's allowed_tools to include `_internal.run_command`.
-        "enabled": False,
+        # Agent shells = LLM-driven command execution (arbitrary code), so it's OFF by
+        # default and **enabled per-workspace** (set `allow_shell` on the workspace, not a
+        # global flag). Commands run in a bubblewrap jail (FS limited to the conversation
+        # work dir, no secret access; network off) — see kit/shell. These are the global
+        # sandbox knobs; enablement lives on the workspace.
         "allow_network": False,          # jail keeps network off unless True (exfil risk)
         "allow_unsandboxed": False,      # DANGEROUS: bare subprocess if bubblewrap is missing
         "timeout_seconds": 20,

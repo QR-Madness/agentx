@@ -46,7 +46,6 @@ def main() -> int:
     import django
     django.setup()
 
-    from agentx_ai.config import get_config_manager
     from agentx_ai.kit.agent_memory.connections import PostgresConnection
     from agentx_ai.kit.shell.sandbox import bubblewrap_works
     from agentx_ai.kit.workspaces import repository, storage
@@ -59,8 +58,6 @@ def main() -> int:
     if not bubblewrap_works():
         _log("NOTE: bubblewrap unavailable — jail/net/env assertions can't run here.")
 
-    cfg = get_config_manager()
-    orig_enabled = cfg.get("shell.enabled", False)
     failures: list[str] = []
     workspace_id = None
     token = None
@@ -71,15 +68,11 @@ def main() -> int:
             failures.append(label)
 
     try:
-        cfg.set("shell.enabled", True)
-
-        # Gating sanity: tool present when enabled.
-        names = {t.name for t in get_internal_tools()}
-        check("run_command" in names, "run_command advertised when shell.enabled")
-
-        # Build a workspace with one file (no embeddings needed — set status ready directly).
+        # Build a workspace with one file (no embeddings needed — set status ready directly),
+        # and opt it into shell (per-workspace enablement).
         ws = repository.create_workspace(name="shell-e2e")
         workspace_id = ws["id"]
+        repository.set_allow_shell(workspace_id, True)
         body = b"alpha\nbeta\ngamma\n"
         sha, key = storage.store_blob(workspace_id, body)
         doc = repository.create_document(
@@ -91,6 +84,10 @@ def main() -> int:
         token = set_context(InternalToolContext(
             user_id="default", conversation_id=CONV_ID, workspace_id=workspace_id,
         ))
+
+        # Gating sanity: tool present when the attached workspace allows shell.
+        check("run_command" in {t.name for t in get_internal_tools()},
+              "run_command advertised when workspace.allow_shell")
 
         # 1. Command runs in the materialized workspace.
         r = _tool("run_command", {"command": "ls; wc -l < notes.txt"})
@@ -128,15 +125,14 @@ def main() -> int:
         esc = _tool("write_file", {"path": "../escape.txt", "content": "x"})
         check(not esc.get("success"), "path jail rejects ../escape")
 
-        # 7. Gating off.
-        cfg.set("shell.enabled", False)
-        names_off = {t.name for t in get_internal_tools()}
-        check("run_command" not in names_off, "run_command hidden when shell.enabled=False")
+        # 7. Gating off — flip the workspace's allow_shell off.
+        repository.set_allow_shell(workspace_id, False)
+        check("run_command" not in {t.name for t in get_internal_tools()},
+              "run_command hidden when workspace.allow_shell=False")
 
     finally:
         if token is not None:
             reset_context(token)
-        cfg.set("shell.enabled", orig_enabled)
         if workspace_id and not args.keep:
             for d in repository.list_documents(workspace_id):
                 full = repository.get_document(d["id"])

@@ -1838,8 +1838,8 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       tags: [Workspaces]
-      operationId: workspaceRename
-      summary: Rename a workspace
+      operationId: workspaceUpdate
+      summary: Update a workspace (rename and/or toggle shell access)
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -1848,10 +1848,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
               properties:
                 name:
                   type: string
+                allow_shell:
+                  type: boolean
       responses:
         '200':
           description: Updated
@@ -4404,6 +4405,9 @@ components:
           type: string
         user_id:
           type: string
+        allow_shell:
+          type: boolean
+          description: Per-workspace opt-in for sandboxed agent shell tools (default false).
         document_count:
           type: integer
         used_bytes:

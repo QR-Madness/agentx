@@ -56,9 +56,9 @@ exercise tools, asserting the right passage). Slice 3 = client UX.
 
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
-Opt-in (`shell.enabled`, **off by default** — LLM-driven arbitrary code execution is a deliberate
-exception to "experimental ships ON"). Lets an agent run commands against a **sandboxed working copy of
-the attached workspace**. **Threat model:** the LLM is the actor and can be prompt-injected (malicious doc
+**Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code
+execution is a deliberate exception to "experimental ships ON"; enablement lives on the *workspace*, not a
+global flag). Lets an agent run commands against a **sandboxed working copy of the attached workspace**. **Threat model:** the LLM is the actor and can be prompt-injected (malicious doc
 / web result / MCP output) → the "lethal trifecta" (secrets in `data/`, untrusted instructions, network
 egress). So v1 runs every command in a **bubblewrap jail**: `--unshare-all` (network OFF; `--share-net`
 only when `shell.allow_network`), `--clearenv` + scrubbed `minimal_env` (no API keys/passwords),
@@ -71,8 +71,9 @@ same shape as web_search. **Work dir:** `${AGENTX_DB_DIR:-./data}/shell/{workspa
 materialized from the workspace's ready docs (`filename → bytes`, idempotent via a manifest marker, size-capped
 by `shell.max_materialize_bytes`); agent edits persist across commands in the conversation (not synced back to
 blobs in v1); stale dirs GC'd by mtime (`shell.workdir_cleanup_days`). Tools (`mcp/internal_tools.py`,
-gated out of `get_internal_tools` unless `shell.enabled`, and still subject to per-profile
-`allowed_tools`): `run_command` (jailed `sh -lc`), plus path-jailed `write_file`/`read_file`/`list_files`
+gated out of `get_internal_tools` unless the turn's attached workspace has `allow_shell=true` — resolved
+from `InternalToolContext.workspace_id`; runtime-rechecked in the tools too — and still subject to
+per-profile `allowed_tools`): `run_command` (jailed `sh -lc`), plus path-jailed `write_file`/`read_file`/`list_files`
 (safe structured subset, no subprocess). `policy.py` deny-list is secondary defense (the jail is primary).
 Every command is audit-logged (cmd, cwd, workspace/conversation ids, exit, timed_out, sandbox). `bubblewrap`
 is installed in the API `Dockerfile`. Self-driven harness: `scripts/shell_e2e.py`.

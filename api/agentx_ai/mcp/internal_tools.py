@@ -707,8 +707,12 @@ def _shell_workdir(require_command_sandbox: bool):
     from ..kit.shell import workdir as wd
 
     cfg = get_config_manager()
-    if not cfg.get("shell.enabled", False):
-        return None, {"error": "Shell is disabled (set shell.enabled to use it).", "success": False}
+    if not _shell_allowed():
+        return None, {
+            "error": "Shell is not enabled for this workspace. Turn on 'Allow shell' for the "
+                     "workspace attached to this conversation.",
+            "success": False,
+        }
     _ws, conv = _shell_context()
     if not conv:
         return None, {"error": "Shell requires an active conversation.", "success": False}
@@ -2051,7 +2055,7 @@ def get_internal_tools() -> list[ToolInfo]:
     (executable) regardless; this only governs what the model is told about.
     """
     backend = resolve_active_search_backend()
-    shell_on = _shell_enabled()
+    shell_on = _shell_allowed()
     tools: list[ToolInfo] = []
     for tool in _INTERNAL_TOOLS.values():
         if tool.name in _CAPABILITY_GATED_TOOLS and backend != "tavily":
@@ -2059,7 +2063,7 @@ def get_internal_tools() -> list[ToolInfo]:
         if tool.name == "web_search" and backend is None:
             continue
         if tool.name in _SHELL_TOOL_NAMES and not shell_on:
-            continue  # agent shells are opt-in (shell.enabled)
+            continue  # agent shells are opt-in per-workspace (workspace.allow_shell)
         tools.append(_advertise_tool(tool, backend))
     return tools
 
@@ -2067,10 +2071,16 @@ def get_internal_tools() -> list[ToolInfo]:
 _SHELL_TOOL_NAMES: frozenset[str] = frozenset({"run_command", "write_file", "read_file", "list_files"})
 
 
-def _shell_enabled() -> bool:
-    from ..config import get_config_manager
+def _shell_allowed() -> bool:
+    """Shell tools are gated **per-workspace**: the turn's attached workspace must have
+    ``allow_shell=true``. No workspace attached → no shell."""
+    workspace_id, _conv = _shell_context()
+    if not workspace_id:
+        return False
+    from ..kit.workspaces import repository
 
-    return bool(get_config_manager().get("shell.enabled", False))
+    ws = repository.get_workspace(workspace_id)
+    return bool(ws and ws.get("allow_shell"))
 
 
 def find_internal_tool(name: str) -> ToolInfo | None:

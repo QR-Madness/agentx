@@ -41,6 +41,7 @@ def _serialize_workspace(ws: dict[str, Any]) -> dict[str, Any]:
         "id": ws["id"],
         "name": ws["name"],
         "user_id": ws.get("user_id", "default"),
+        "allow_shell": bool(ws.get("allow_shell", False)),
         "document_count": int(ws.get("document_count", 0) or 0),
         "used_bytes": int(ws.get("used_bytes", 0) or 0),
         "created_at": _iso(ws.get("created_at")),
@@ -97,10 +98,16 @@ def workspace_detail(request, workspace_id: str):
         data, err = parse_json_body(request)
         if err:
             return err
-        name = (data.get("name") or "").strip()
-        if not name:
-            return json_error("Missing required field: name", status=400)
-        ws = repository.rename_workspace(workspace_id, name)
+        ws = repository.get_workspace(workspace_id)
+        if not ws:
+            return json_error("Workspace not found", status=404)
+        if "name" in data:
+            name = (data.get("name") or "").strip()
+            if not name:
+                return json_error("name cannot be empty", status=400)
+            ws = repository.rename_workspace(workspace_id, name)
+        if "allow_shell" in data:
+            ws = repository.set_allow_shell(workspace_id, bool(data.get("allow_shell")))
         if not ws:
             return json_error("Workspace not found", status=404)
         return json_success({"workspace": _serialize_workspace(ws)})

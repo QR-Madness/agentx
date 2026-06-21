@@ -44,7 +44,7 @@ def list_workspaces(user_id: str = "default") -> list[dict[str, Any]]:
         rows = s.execute(
             text(
                 """
-                SELECT w.id, w.user_id, w.name, w.created_at, w.updated_at,
+                SELECT w.id, w.user_id, w.name, w.allow_shell, w.created_at, w.updated_at,
                        COUNT(d.id)                       AS document_count,
                        COALESCE(SUM(d.size_bytes), 0)    AS used_bytes
                 FROM workspaces w
@@ -64,7 +64,7 @@ def get_workspace(workspace_id: str) -> dict[str, Any] | None:
         row = s.execute(
             text(
                 """
-                SELECT w.id, w.user_id, w.name, w.created_at, w.updated_at,
+                SELECT w.id, w.user_id, w.name, w.allow_shell, w.created_at, w.updated_at,
                        COUNT(d.id)                       AS document_count,
                        COALESCE(SUM(d.size_bytes), 0)    AS used_bytes
                 FROM workspaces w
@@ -85,6 +85,19 @@ def rename_workspace(workspace_id: str, name: str) -> dict[str, Any] | None:
                 "UPDATE workspaces SET name = :name, updated_at = NOW() WHERE id = :id"
             ),
             {"id": workspace_id, "name": name},
+        )
+        s.commit()
+        if getattr(res, "rowcount", 0) == 0:
+            return None
+    return get_workspace(workspace_id)
+
+
+def set_allow_shell(workspace_id: str, allow_shell: bool) -> dict[str, Any] | None:
+    """Toggle per-workspace agent-shell access (opt-in; default false)."""
+    with get_postgres_session() as s:
+        res = s.execute(
+            text("UPDATE workspaces SET allow_shell = :v, updated_at = NOW() WHERE id = :id"),
+            {"id": workspace_id, "v": bool(allow_shell)},
         )
         s.commit()
         if getattr(res, "rowcount", 0) == 0:

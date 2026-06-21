@@ -6677,11 +6677,9 @@ class ShellSandboxTest(TestCase):
             slow = sb.run("sleep 5", cwd=wd, timeout=1, allow_network=False)
             self.assertTrue(slow.timed_out)
 
-    def test_run_command_hidden_when_disabled(self):
-        from agentx_ai.config import get_config_manager
+    def test_run_command_hidden_without_shell_workspace(self):
+        # No shell-allowed workspace bound in context → shell tools are not advertised.
         from agentx_ai.mcp.internal_tools import get_internal_tools
-        if get_config_manager().get("shell.enabled", False):
-            self.skipTest("shell enabled in local config")
         self.assertNotIn("run_command", {t.name for t in get_internal_tools()})
 
 
