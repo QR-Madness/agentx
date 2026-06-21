@@ -598,13 +598,15 @@ moves `pending` → `ready` (or `failed`).
 ```
 GET    /api/workspaces                               # list
 POST   /api/workspaces                               # { "name": "..." } → 201
-GET    /api/workspaces/{workspace_id}                # detail (with document_count, used_bytes)
-PATCH  /api/workspaces/{workspace_id}                # { "name": "..." } rename
-DELETE /api/workspaces/{workspace_id}                # delete (cascades documents + blobs)
+GET    /api/workspaces/{workspace_id}                # detail (document_count, used_bytes, allow_shell, shell_backend)
+PATCH  /api/workspaces/{workspace_id}                # { name?, allow_shell?, shell_backend? }
+DELETE /api/workspaces/{workspace_id}                # delete (cascades documents + blobs + shell container)
 GET    /api/workspaces/{workspace_id}/documents      # manifest list (tags/summary/status)
 POST   /api/workspaces/{workspace_id}/documents      # multipart field `file` → 201 (status=pending)
 GET    /api/workspaces/{workspace_id}/documents/{document_id}
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
+GET    /api/workspaces/{workspace_id}/shell/container          # container backend: status + live stats
+POST   /api/workspaces/{workspace_id}/shell/container/{action} # action ∈ start|stop|reset|remove
 ```
 
 **Response (manifest list):**
@@ -622,6 +624,24 @@ exceeded. Supported v1 types: PDF + text/markdown/code.
 **Attaching to a conversation:** pass `workspace_id` in the `/api/agent/chat/stream` request body.
 The agent then sees the workspace's file manifest in its context and can call the workspace tools
 (`workspace_search`, `document_query`, `read_document`); document hits are auto-cited (`source_type: "doc"`).
+
+**Agent shells (opt-in, per workspace).** Set `allow_shell: true` on a workspace to expose sandboxed
+shell tools (`run_command`, `write_file`/`read_file`/`list_files`) to agents whose conversation is
+attached to it. `shell_backend` picks the sandbox:
+- `bubblewrap` (default) — a locked-down jail: filesystem limited to a per-conversation working copy of
+  the workspace, **no network**, scrubbed env, time-limited. Needs `bubblewrap` on the server.
+- `container` — a **persistent per-workspace Docker container** the agent can `pip`/`apt`-install into,
+  with **network on** (its own bridge; no access to AgentX's DBs/secrets). Requires `shell.docker.enabled`
+  and a reachable Docker daemon (dev: host Docker; prod: the dind sidecar in `docker-compose.shell.yml`).
+  Manage it via the `/shell/container` endpoints (status/stats + `start`/`stop`/`reset`/`remove`); the
+  container is removed when the workspace is deleted.
+
+```json
+// GET /api/workspaces/{id}/shell/container
+{ "container": { "state": "running", "image": "python:3.12-slim",
+  "memory_usage": "48MiB / 2GiB", "cpu_percent": "0.10%", "install_size": "12MB (virtual 160MB)",
+  "last_used_at": 1718900000, "idle_gc_at": 1719504800 } }
+```
 
 ---
 
