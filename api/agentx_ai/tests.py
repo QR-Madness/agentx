@@ -8405,7 +8405,11 @@ class AmbassadorVoiceCommandTest(TestCase):
 
         svc = AmbassadorService()
         provider = MagicMock()
-        provider.complete = AsyncMock(return_value=SimpleNamespace(content=classify_reply))
+        # A CompletionResult-shaped stub: route_voice_command reads `.usage`, so the
+        # classifier reply must carry it (None here) — not just `.content`.
+        provider.complete = AsyncMock(
+            return_value=SimpleNamespace(content=classify_reply, usage=None)
+        )
 
         async def _stream(messages, model_id, **kwargs):
             yield StreamChunk(content=answer_text, finish_reason="stop")

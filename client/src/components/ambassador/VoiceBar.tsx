@@ -38,8 +38,8 @@ interface VoiceBarProps {
   ambassadorName?: string;
   /** Where the person currently is (ambient context, distinct from the focus). */
   activeConversation?: AmbassadorActiveConversation;
-  /** Relay a confirmed draft into the conversation. Returns false if not sendable. */
-  onRelay: (text: string) => boolean;
+  /** Relay a confirmed draft into the conversation. Returns where it landed (or why not). */
+  onRelay: (text: string) => { ok: boolean; note: string };
   /** Called after an answer is persisted, so the Inquiry stream refreshes it in. */
   onAnswerPersisted: () => void;
 }
@@ -62,6 +62,9 @@ export function VoiceBar({
   const [hasAnswer, setHasAnswer] = useState(false);
   const [relayDraft, setRelayDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Transient confirmation after a successful relay ("Sent to …") — so voice gets the
+  // same closure the text composer's flash gives.
+  const [sent, setSent] = useState<string | null>(null);
   const lastTranscript = useRef('');
 
   // Route a captured transcript through the ambassador's intent inference. The answer
@@ -104,6 +107,7 @@ export function VoiceBar({
     speech.unlock();
     speech.stop();
     setHasAnswer(false); // a fresh turn — retire the prior answer's override affordance
+    setSent(null); // and the prior relay confirmation
     void startCapture();
   }, [speech, startCapture]);
 
@@ -129,6 +133,7 @@ export function VoiceBar({
     setHasAnswer(false);
     setRelayDraft(null);
     setError(null);
+    setSent(null);
     lastTranscript.current = '';
   }, [conversationId]);
 
@@ -182,12 +187,22 @@ export function VoiceBar({
           ? 'Speaking…'
           : relayDraft !== null
             ? 'Review & send to the agent'
-            : 'Hold to talk';
+            : sent
+              ? sent
+              : 'Hold to talk';
 
   const sendRelay = () => {
     const text = (relayDraft ?? '').trim();
     if (!text) return;
-    if (onRelay(text)) setRelayDraft(null);
+    const res = onRelay(text);
+    if (res.ok) {
+      setRelayDraft(null);
+      setError(null);
+      setSent(res.note);
+      window.setTimeout(() => setSent((cur) => (cur === res.note ? null : cur)), 2500);
+    } else {
+      setError(res.note); // keep the draft so the user can edit & retry
+    }
   };
   const retake = () => {
     setRelayDraft(null);

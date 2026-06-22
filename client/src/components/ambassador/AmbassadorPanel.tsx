@@ -46,6 +46,7 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import { toolChipLabel } from '../../lib/ambassadorTools';
+import { relayToActiveConversation } from '../../lib/ambassadorRelay';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useStickyScroll } from '../../hooks/useStickyScroll';
@@ -484,13 +485,9 @@ export function AmbassadorPanel() {
     [isFocusActive, activeConversationId, activeTab?.title],
   );
 
-  // The focused conversation's open tab (if any) — relay needs an open tab to send into.
-  const focusTab = useMemo(
-    () => tabs.find((t) => t.sessionId === conversationId),
-    [tabs, conversationId],
-  );
-
-  const runActive = !!focusTab?.activeRun?.runId;
+  // Relay only ever reaches the conversation the person is *in* (the active tab) — it is
+  // the one conversation with a live send handler (ChatPanel registers it per active tab).
+  const runActive = !!activeTab?.activeRun?.runId;
 
   const openVoiceTab = () => {
     unlock(); // bless the audio element on this gesture so autoplay works
@@ -501,11 +498,12 @@ export function AmbassadorPanel() {
     setTab('text');
   };
 
-  // Relay a confirmed voice draft into the FOCUSED conversation (a real user turn).
-  // Only works when that conversation is open as a tab.
-  const relayVoiceCommand = useCallback(
-    (text: string) => (focusTab ? relayToConversation(focusTab.id, text) : false),
-    [focusTab, relayToConversation],
+  // Relay a message into the active conversation — a real user turn (or a steer into its
+  // running turn). The ambassador stays a non-participant; you are the author. Returns
+  // where it landed (or why it couldn't) so voice + text both give the same closure.
+  const relay = useCallback(
+    (text: string) => relayToActiveConversation(text, activeTab, relayToConversation),
+    [activeTab, relayToConversation],
   );
   const onAnswerPersisted = useCallback(() => {
     if (conversationId) void refresh(conversationId);
@@ -556,23 +554,13 @@ export function AmbassadorPanel() {
   // with its conversation tools (no turn coupling; this is "brief me on this conversation").
   const briefConversation = () => askAmbassador('Brief me on this conversation — what it is about and where it stands.');
 
-  // Relay the message into the FOCUSED conversation (a real user turn, or a steer into
-  // a running turn). The ambassador stays a non-participant — you're the author. Only
-  // works when the focused conversation is open as a tab.
+  // Relay the message into the active conversation (a real user turn, or a steer into a
+  // running turn). The ambassador stays a non-participant — you're the author.
   const submitRelay = () => {
-    const t = input.trim();
-    if (!t) return;
-    if (!focusTab) {
-      showFlash('Open this conversation to relay a message into it.');
-      return;
-    }
-    const ok = relayToConversation(focusTab.id, t);
-    if (!ok) {
-      showFlash('Open this conversation to relay a message into it.');
-      return;
-    }
-    setInput('');
-    showFlash(focusTab.activeRun?.runId ? 'Folded into the running turn.' : 'Sent to the conversation.');
+    if (!input.trim()) return;
+    const res = relay(input);
+    if (res.ok) setInput('');
+    showFlash(res.note);
   };
 
   // Optional: let the ambassador shape a rough intent into a ready-to-send message.
@@ -832,7 +820,7 @@ export function AmbassadorPanel() {
           agentName={convAgentName}
           ambassadorName={ambassadorProfile?.name}
           activeConversation={activeConversation}
-          onRelay={relayVoiceCommand}
+          onRelay={relay}
           onAnswerPersisted={onAnswerPersisted}
         />
       ) : (

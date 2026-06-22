@@ -515,15 +515,35 @@
       ties into ad-hoc delegation (aides are the read-side, worker agents the write-side). Bound
       fan-out width + per-aide budget; never-raise per aide (one bad read doesn't sink the survey).
 
-**Slice 3 — voice mode confirms the tool call**
-- [ ] **`route_voice_command` → `{action: answer|relay|tool, ...}`.** When the spoken
-      intent maps to a tool (`summarize_conversation`/`explore_turn`/…), return the
-      inferred tool + args; the `VoiceSurface` confirm strip (already there for relay)
-      shows a **"Summarize this conversation?" / "Explore that turn?"** confirm before
-      running, then the ambassador runs the tool-loop and **speaks the result**.
-- [ ] **Barge-in + retake** extend to tool confirmations (discard/redo before run).
-- [ ] Captions name the action ("Summarizing…", "Exploring that turn…") so voice is
-      never a silent wait.
+**Slice 3 — voice relay that works + read-only tools auto-run** — shipped (`0.21.113`)
+
+> **Reframed from "voice confirms the tool call."** Decision: **confirm writes only**.
+> All current ambassador tools are SELECT-only, so spoken read-only intents
+> ("summarize this", "explore that") **auto-run** through the existing voice `answer`
+> path (`_answer_to_text` → `_agentic_answer`, `with_tools=True`) and speak the result —
+> no confirm strip needed. The only **write** is relay, which already confirms. So the
+> `{action:'tool'}` generalization + a tool-confirm strip is **deferred** until there are
+> real write/dispatch actions (e.g. cross-agent delegation) to confirm.
+
+- [x] **Voice relay actually delivers** (`0.21.113`). Root cause: the relay seam
+      (`ConversationContext.relayToConversation`) only has a registered handler for the
+      **active tab** (`ChatPanel` registers `relayMessage` per `activeTab`), but the panel
+      relayed to its **focused** conversation → silent `false` whenever focus ≠ active, and
+      `VoiceBar.sendRelay` swallowed the failure (dead button). Fixed: one pure helper
+      (`lib/ambassadorRelay.ts::relayToActiveConversation`) targets the **active**
+      conversation (the one with a live handler) and returns `{ok, note}`; `AmbassadorPanel`
+      (voice + text) and `VoiceBar` both report where it landed — on failure the draft is
+      kept + an error shown. Persona hardened so clear imperatives route to `relay` and the
+      ambassador never answers that it "can't talk to the agent". Tests:
+      `ambassadorRelay.test.ts`; backend `AmbassadorVoiceCommandTest` (stale `usage` mock
+      fixed). The "↦ relay instead" override remains the recovery for a misroute.
+- [-] *(deferred)* **`route_voice_command` → `{action: answer|relay|tool, ...}`** + a
+      voice tool-confirm strip ("Summarize this conversation?") with barge-in/retake +
+      action-naming captions — re-opens once there's a **write/dispatch** action to confirm.
+- [-] *(deferred)* **Relay to *any* conversation** (not just the active tab): a server-side
+      `POST /api/agent/ambassador/relay` reusing `enqueue_background_chat(session_id=…)`
+      (warm-hydrates, appends a real user turn, runs the agent headless, persists) + a
+      conversation→profile resolver. Invariant holds (relay is a USER turn via the chat path).
 
 **Slice 4 — command deck: the ambassador as orchestrator (the north-star)**
 - [ ] **Standalone, top-level ambassador surface** not bound to a tab (a command-deck

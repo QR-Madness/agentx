@@ -244,7 +244,10 @@ def _voice_command_persona(agent_name: str = "") -> str:
         '- For "answer": "text" is your spoken reply — plain, conversational, no markdown, no lists.\n'
         '- For "relay": "text" is the first-person message to the agent — direct, ready to send, no '
         "preamble or quotation marks.\n"
-        'When genuinely unsure, prefer "answer". Output nothing but the JSON object.'
+        f"You CAN relay messages to {agent_ref} — any instruction or request directed at it (even an "
+        'implicit one) is a "relay"; never refuse it or answer that you "can\'t talk to the agent". '
+        'Only choose "answer" when they are genuinely asking YOU about the conversation. When truly '
+        'ambiguous, prefer "relay" for commands and "answer" for questions. Output nothing but the JSON object.'
     )
 
 
