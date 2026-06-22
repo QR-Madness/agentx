@@ -7476,6 +7476,51 @@ class AmbassadorServiceTest(TestCase):
         self.assertIn("about: Researches archives.", out)
         self.assertIn("about: You are a vision specialist.", out)
 
+    def test_survey_conversations_prefers_rolling_summary(self):
+        # 16.7 Slice 4 (brick 2): survey enriches each conversation with its own rolling
+        # summary (the digest) when present, falling back to the first/last snippet — so
+        # the ambassador can compose an app-wide summary without reading transcripts.
+        from agentx_ai.agent import ambassador_tools as t
+
+        convs = [
+            {  # has a rolling summary → use it
+                "conversation_id": "a1", "first_user": "build the index",
+                "last_message": "indexing done", "message_count": 40, "last_at": "2026-06-20",
+                "agents": "Atlas",
+            },
+            {  # no summary yet → fall back to topic/latest snippet
+                "conversation_id": "b2", "first_user": "quick question", "last_message": "thanks",
+                "message_count": 2, "last_at": "2026-06-21", "agents": "Nimbus",
+            },
+        ]
+        summaries = {"a1": "Catalogued the county archives and reconciled duplicates."}
+
+        with patch.object(t, "list_recent_conversations", return_value=convs) as lister, \
+             patch.object(t, "get_summary", side_effect=lambda cid: summaries.get(cid)):
+            out = t.execute_tool(
+                "survey_conversations", {"limit": 99}, focused_conversation_id="conv"
+            )
+
+        # The limit is clamped in dispatch before hitting the lister.
+        lister.assert_called_once_with(30)
+        # a1: its rolling summary (the digest), not the snippet.
+        self.assertIn("summary: Catalogued the county archives", out)
+        # b2: no summary → topic/latest snippet fallback.
+        self.assertIn("topic: quick question", out)
+        self.assertIn("latest: thanks", out)
+        self.assertNotIn("summary: thanks", out)
+        # Both name their own agent.
+        self.assertIn("Atlas", out)
+        self.assertIn("Nimbus", out)
+
+    def test_survey_conversations_never_raises(self):
+        # Never-raise: a failure assembling the survey returns a readable note.
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch.object(t, "list_recent_conversations", side_effect=RuntimeError("db down")):
+            out = t.execute_tool("survey_conversations", {}, focused_conversation_id="conv")
+        self.assertIn("survey_conversations tool couldn't complete", out)
+
     def test_list_agents_never_raises(self):
         # Tool-level never-raise: a failure in roster assembly returns a readable
         # note (not an exception), so the agentic loop stays alive.

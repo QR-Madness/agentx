@@ -11,7 +11,10 @@ The tools map to the user's intents:
   * ``summarize_conversation`` — "can you summarize this?"
   * ``explore_conversation``  — "can you explore more on this?" (a deeper dig, optionally on a topic)
   * ``read_conversation``     — read a *specific* conversation (used after a survey)
-  * ``list_conversations``    — enumerate recent sessions ("what have my agents discovered?")
+  * ``list_conversations``    — enumerate recent sessions (a quick index)
+  * ``survey_conversations``  — a digest-rich cross-conversation view (each session's own
+                                running summary when it has one) for an application-wide
+                                "what have my agents been working on?" summary
   * ``list_agents``           — the agent roster: who the agents are, their roles, and
                                 **what each one's model can do** (modalities — image/audio/
                                 vision/tools) — the input for multi-modal routing.
@@ -27,6 +30,7 @@ import logging
 from typing import Any
 
 from .conversation_history import list_recent_conversations, load_recent_labeled_turns
+from .conversation_summary_storage import get_summary
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,9 @@ logger = logging.getLogger(__name__)
 # read returns (rough token budget; the reader trims oldest-first).
 _READ_TOKEN_BUDGET = 3000
 _SURVEY_SNIPPET = 160
+# A conversation's rolling summary is already condensed, but cap it so a survey
+# across many conversations can't blow the tool output.
+_SURVEY_SUMMARY = 600
 # Each agent's role blurb in the roster is capped so a long system prompt can't
 # blow the tool output.
 _ROSTER_BLURB = 200
@@ -112,9 +119,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "name": "list_conversations",
             "description": (
                 "List the person's recent conversations (their agents' sessions), newest "
-                "first, with a short preview of each. Use this for cross-conversation "
-                "questions like 'what have my agents discovered?' — then read the ones "
-                "that look relevant with read_conversation."
+                "first, with a short preview of each — a quick index. Use this to find a "
+                "specific session, then read it with read_conversation. For a digest-rich "
+                "'what have my agents been working on?' picture, use survey_conversations."
             ),
             "parameters": {
                 "type": "object",
@@ -122,6 +129,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "limit": {
                         "type": "integer",
                         "description": "How many recent conversations to list (default 20, max 50).",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "survey_conversations",
+            "description": (
+                "Survey the person's recent conversations and compose an application-wide "
+                "summary — 'what have my agents been working on / discovered lately?'. Each "
+                "conversation comes with its own running summary when it has one (longer "
+                "sessions), so you get the gist across many conversations at once without "
+                "reading each transcript. Prefer this over list_conversations for "
+                "cross-conversation questions; use read_conversation to dig into one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "How many recent conversations to survey (default 12, max 30).",
                     }
                 },
             },
@@ -193,6 +223,48 @@ def _render_survey(limit: int) -> str:
             piece += f"\n    latest: {last}"
         lines.append(piece)
     return "Recent conversations (newest first):\n" + "\n".join(lines)
+
+
+def _render_deep_survey(limit: int) -> str:
+    """A digest-rich cross-conversation view: each recent conversation with its own
+    rolling summary (``get_summary`` — already condensed) when it has one, else the
+    first/last snippet. Lets the ambassador compose an application-wide summary without
+    reading each transcript. Read-only (Postgres list + a Redis GET); never raises."""
+    convs = list_recent_conversations(limit)
+    if not convs:
+        return "(No conversations found.)"
+    lines = []
+    for c in convs:
+        cid = c.get("conversation_id", "")
+        count = c.get("message_count", 0)
+        when = c.get("last_at", "")
+        agents = (c.get("agents") or "").strip()
+        piece = f"- id={cid} · {count} messages · last active {when}"
+        if agents:
+            piece += f"\n    agent(s): {agents}"
+
+        summary = (get_summary(cid) or "").strip().replace("\n", " ")
+        if summary:
+            if len(summary) > _SURVEY_SUMMARY:
+                summary = summary[:_SURVEY_SUMMARY].rstrip() + "…"
+            piece += f"\n    summary: {summary}"
+        else:
+            # No rolling summary yet (a short / fresh conversation) — fall back to the
+            # opening + latest snippet, like the quick index.
+            title = (c.get("first_user") or "Untitled").strip().replace("\n", " ")
+            if len(title) > _SURVEY_SNIPPET:
+                title = title[:_SURVEY_SNIPPET].rstrip() + "…"
+            last = (c.get("last_message") or "").strip().replace("\n", " ")
+            if len(last) > _SURVEY_SNIPPET:
+                last = last[:_SURVEY_SNIPPET].rstrip() + "…"
+            piece += f"\n    topic: {title}"
+            if last:
+                piece += f"\n    latest: {last}"
+        lines.append(piece)
+    return (
+        "Survey of recent conversations (newest first; compose an application-wide "
+        "summary from these):\n" + "\n".join(lines)
+    )
 
 
 def _blurb_for(profile: Any) -> str:
@@ -322,6 +394,13 @@ def execute_tool(
             except (TypeError, ValueError):
                 limit = 20
             return _render_survey(limit)
+        if name == "survey_conversations":
+            try:
+                limit = int(args.get("limit") or 12)
+            except (TypeError, ValueError):
+                limit = 12
+            limit = max(1, min(limit, 30))  # heavier rows than the quick index → tighter cap
+            return _render_deep_survey(limit)
         if name == "list_agents":
             return _render_roster()
     except Exception as e:  # noqa: BLE001 — a tool never breaks the loop

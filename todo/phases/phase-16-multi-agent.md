@@ -557,11 +557,23 @@
       entry in the command palette / a global Ambassador surface) — the app's front
       door: "What have my agents discovered?" The worker conversations are still
       reachable directly through the UI (dual entry); this is the layer *above* them.
-- [ ] **`survey_conversations`** enumerates active/recent worker sessions (over
-      `/api/conversations`), pulls each one's results read-only
-      (`read_conversation_results`), and the ambassador composes an **application-wide
-      summary** across long-running sessions. Read-only, never-raise, degrades per
-      conversation (one offline session doesn't sink the survey).
+- [x] **`survey_conversations`** — shipped (`0.21.115`), **lean / model-free**. Enumerates
+      recent sessions (`list_recent_conversations`) and enriches each with its own **rolling
+      summary** (`conversation_summary_storage.get_summary` — already a digest) when present,
+      else the first/last snippet; the ambassador composes the **application-wide summary**
+      from that block (its own model, already in the loop). Read-only (Postgres list + Redis
+      GET), never-raise, no new coupling, **zero extra model calls**. The summary's payoff is
+      concentrated in long/aged conversations (short ones degrade to the snippet ≈
+      `list_conversations`). (`agent/ambassador_tools.py`; tests
+      `AmbassadorServiceTest.test_survey_conversations_*`.) Follow-ons:
+  - [ ] **Per-conversation goals** — surface each session's goal outcomes. Needs
+        `conversation_id` on the `(:Goal)` node (it's audit-log-only today) + populating it
+        at the `planner`/`alloy.executor`/`hooks` `add_goal`/`complete_goal` call sites + a
+        `get_goals_for_conversation` query.
+  - [ ] **Aide swarm** — fan out cheap per-conversation digests (`registry.complete_with_fallback`
+        + `asyncio.gather`, bridged via `utils/async_bridge.run_coro_sync`) for fresh digests +
+        a lean ambassador context even with no stored summary; metered, so it needs a per-survey
+        budget cap + timeouts. Retrofits across all read tools (`summarize`/`read`/`survey`).
 - [ ] **Dispatch seam (write-side, later).** The orchestration write-side — the
       ambassador handing a task to a worker — reuses the relay/`target` (16.6) and grows
       into real cross-agent delegation. v1 stays read + relay (you confirm); the seam is
