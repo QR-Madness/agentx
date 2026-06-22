@@ -495,9 +495,16 @@
       with no chat title to borrow — that lands with Slice 4's standalone `thread_id` minting.
 
 **Command deck + ad-hoc delegation — roadmap (foundation laid in 1c)**
-- [ ] **Agent roster awareness** — a read-only `list_agents` tool (names + capability blurb
-      from each profile's system prompt) so the ambassador knows the roster. Reads from the
-      global **Delegation Handbook ("Dossier")** (§16 multi-agent roadmap) once it lands.
+- [x] **Agent roster awareness** — a read-only `list_agents` tool — shipped (`0.21.114`).
+      Lists `kind=='agent'` profiles (ambassadors excluded) with each agent's role tags,
+      delegation availability, a role blurb (`description` → first paragraph of
+      `system_prompt`), and — load-bearing for **multi-modal routing** — its model's **live
+      provider capabilities**: input/output modalities + tools/vision/speech/transcription
+      flags, resolved via `registry.resolve_with_fallback` → `provider.get_capabilities`
+      (degrades **per agent**; never-raise). The `is_default` agent is flagged `primary`.
+      Auto-advertised through the existing answer/voice agentic loop — no API/SSE change.
+      (`agent/ambassador_tools.py`; tests `AmbassadorServiceTest.test_list_agents_*`.)
+      Future: fold in the global **Delegation Handbook ("Dossier")** (§16 roadmap) once it lands.
 - [ ] **Capability/strength modelling + recognize the primary agent from history.**
 - [ ] **Ad-hoc delegation** — the ambassador (top-level agent) dispatches work to the right
       agent, reusing the relay `target` seam. The active-conversation context + per-conversation

@@ -7415,6 +7415,78 @@ class AmbassadorServiceTest(TestCase):
             t.execute_tool("read_conversation", {}, focused_conversation_id="conv"),
         )
 
+    def test_list_agents_roster_with_model_capabilities(self):
+        # 16.7 Slice 4 (brick 1): the roster names each agent, its role, delegation
+        # availability, role blurb, and — load-bearing for multi-modal routing — its
+        # model's live capabilities (modalities + flags) resolved from the provider.
+        from agentx_ai.agent import ambassador_tools as t
+        from agentx_ai.agent.models import AgentProfile
+        from agentx_ai.providers.base import ModelCapabilities
+
+        primary = AgentProfile(  # type: ignore[call-arg]
+            id="1", name="Atlas", agent_id="atlas-agent", is_default=True,
+            default_model="anthropic:claude-x", tags=["research", "fast"],
+            description="Researches archives.", available_for_delegation=False,
+        )
+        # No description → blurb falls back to the system prompt's first paragraph;
+        # a bogus model → capabilities degrade *per agent* (still listed).
+        specialist = AgentProfile(  # type: ignore[call-arg]
+            id="2", name="Vista", agent_id="vista-agent", default_model="nope:ghost",
+            available_for_delegation=True,
+            system_prompt="You are a vision specialist.\n\nMore detail follows here.",
+        )
+
+        pm = MagicMock()
+        pm.list_profiles_by_kind.return_value = [primary, specialist]
+
+        caps = ModelCapabilities(
+            supports_tools=True, supports_vision=True,
+            input_modalities=["text", "image"], output_modalities=["text"],
+        )
+        provider = MagicMock()
+        provider.get_capabilities.return_value = caps
+        reg = MagicMock()
+
+        def _resolve(model, **kw):
+            if model.startswith("nope:"):
+                raise ValueError("provider not configured")
+            return (provider, model.split(":", 1)[1], None)
+
+        reg.resolve_with_fallback.side_effect = _resolve
+
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=reg):
+            out = t.execute_tool("list_agents", {}, focused_conversation_id="conv")
+
+        # Only agents are requested (ambassadors are excluded by ProfileManager).
+        pm.list_profiles_by_kind.assert_called_once_with("agent")
+        # Identity + the default agent flagged as primary.
+        self.assertIn("Atlas (id=atlas-agent) · primary", out)
+        self.assertIn("Vista (id=vista-agent)", out)
+        # Role tags + delegation availability per agent.
+        self.assertIn("role: research, fast", out)
+        self.assertIn("delegation: not available", out)  # Atlas
+        self.assertIn("delegation: available", out)       # Vista
+        # The capability line surfaces modalities + flags (the multi-modal payload).
+        self.assertIn("in: text, image", out)
+        self.assertIn("vision ✓", out)
+        # A bad model degrades per-agent — Vista is still listed.
+        self.assertIn("(capabilities unavailable)", out)
+        # Blurb: Atlas uses its description; Vista falls back to its system prompt.
+        self.assertIn("about: Researches archives.", out)
+        self.assertIn("about: You are a vision specialist.", out)
+
+    def test_list_agents_never_raises(self):
+        # Tool-level never-raise: a failure in roster assembly returns a readable
+        # note (not an exception), so the agentic loop stays alive.
+        from agentx_ai.agent import ambassador_tools as t
+
+        pm = MagicMock()
+        pm.list_profiles_by_kind.side_effect = RuntimeError("boom")
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            out = t.execute_tool("list_agents", {}, focused_conversation_id="conv")
+        self.assertIn("list_agents tool couldn't complete", out)
+
     def test_ambassador_tools_label_each_conversation_by_its_own_agent(self):
         # The bug: a cross-conversation read mislabeled another conversation's turns
         # with the *active* agent. Now an assistant turn uses its own metadata name,

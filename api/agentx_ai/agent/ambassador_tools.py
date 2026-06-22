@@ -12,6 +12,9 @@ The tools map to the user's intents:
   * ``explore_conversation``  — "can you explore more on this?" (a deeper dig, optionally on a topic)
   * ``read_conversation``     — read a *specific* conversation (used after a survey)
   * ``list_conversations``    — enumerate recent sessions ("what have my agents discovered?")
+  * ``list_agents``           — the agent roster: who the agents are, their roles, and
+                                **what each one's model can do** (modalities — image/audio/
+                                vision/tools) — the input for multi-modal routing.
 
 ``execute_tool`` dispatches by name, is **read-only**, and **never raises** — a
 failure returns a short human string the model can read, so a tool hiccup never
@@ -31,6 +34,9 @@ logger = logging.getLogger(__name__)
 # read returns (rough token budget; the reader trims oldest-first).
 _READ_TOKEN_BUDGET = 3000
 _SURVEY_SNIPPET = 160
+# Each agent's role blurb in the roster is capped so a long system prompt can't
+# blow the tool output.
+_ROSTER_BLURB = 200
 
 
 # --- OpenAI-style function schemas (advertised to tool-capable models) --------
@@ -121,6 +127,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_agents",
+            "description": (
+                "List the person's agents (the roster), with each agent's role and — "
+                "importantly — what its model can do: input/output modalities and whether "
+                "it supports tools, vision, speech (audio out), or transcription (audio in). "
+                "Use this to answer 'who are my agents?', 'what can <name> do?', or to pick "
+                "the right agent for a task — especially a multi-modal one ('which agent can "
+                "handle an image / audio?')."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
@@ -174,6 +195,85 @@ def _render_survey(limit: int) -> str:
     return "Recent conversations (newest first):\n" + "\n".join(lines)
 
 
+def _blurb_for(profile: Any) -> str:
+    """A short capability blurb: the profile's own ``description`` when set, else the
+    first paragraph of its ``system_prompt``, length-capped. Never the full prompt."""
+    desc = (getattr(profile, "description", None) or "").strip()
+    if not desc:
+        prompt = (getattr(profile, "system_prompt", None) or "").strip()
+        desc = prompt.split("\n\n", 1)[0].strip() if prompt else ""
+    desc = desc.replace("\n", " ").strip()
+    if len(desc) > _ROSTER_BLURB:
+        desc = desc[:_ROSTER_BLURB].rstrip() + "…"
+    return desc
+
+
+def _flag(ok: bool) -> str:
+    return "✓" if ok else "✗"
+
+
+def _caps_line(model: str, caps: Any) -> str:
+    """A compact, routing-relevant capability line for one model. Pure formatting —
+    reports only what the provider reported (never asserts an unstated capability)."""
+    in_mods = ", ".join(getattr(caps, "input_modalities", None) or ["text"])
+    out_mods = ", ".join(getattr(caps, "output_modalities", None) or ["text"])
+    return (
+        f"model: {model} · in: {in_mods} · out: {out_mods} · "
+        f"tools {_flag(getattr(caps, 'supports_tools', False))} · "
+        f"vision {_flag(getattr(caps, 'supports_vision', False))} · "
+        f"speech {_flag(getattr(caps, 'supports_speech', False))} · "
+        f"transcribe {_flag(getattr(caps, 'supports_transcription', False))}"
+    )
+
+
+def _render_roster() -> str:
+    """List the agent profiles (``kind == 'agent'`` only — ambassadors are excluded
+    everywhere) with role, delegation availability, role blurb, and each agent's live
+    model capabilities resolved from the provider. Capability resolution degrades
+    **per agent**, so one unresolvable model never drops the agent from the roster."""
+    from ..providers.registry import get_registry
+    from .profiles import get_profile_manager
+
+    agents = get_profile_manager().list_profiles_by_kind("agent")
+    if not agents:
+        return "(No agent profiles found.)"
+
+    registry = get_registry()
+    blocks: list[str] = []
+    for p in agents:
+        head = f"- {p.name} (id={p.agent_id})"
+        if getattr(p, "is_default", False):
+            head += " · primary"
+        rows = [head]
+
+        tags = [t.strip() for t in (getattr(p, "tags", None) or []) if t and t.strip()]
+        if tags:
+            rows.append(f"    role: {', '.join(tags)}")
+        rows.append(
+            f"    delegation: {'available' if getattr(p, 'available_for_delegation', False) else 'not available'}"
+        )
+
+        model = (getattr(p, "default_model", None) or "").strip()
+        if not model:
+            # The live floor is the agent profile's model, threaded per-turn; there's
+            # no clean global-default accessor, so don't guess — just say so.
+            rows.append("    model: (inherits the default model)")
+        else:
+            try:
+                provider, model_id, _ = registry.resolve_with_fallback(model)
+                rows.append("    " + _caps_line(model, provider.get_capabilities(model_id)))
+            except Exception as e:  # noqa: BLE001 — one bad model never drops its agent
+                logger.warning(f"list_agents: capabilities for '{model}' unavailable: {e}")
+                rows.append(f"    model: {model} · (capabilities unavailable)")
+
+        blurb = _blurb_for(p)
+        if blurb:
+            rows.append(f"    about: {blurb}")
+        blocks.append("\n".join(rows))
+
+    return "Your agents:\n" + "\n".join(blocks)
+
+
 # --- Dispatch ----------------------------------------------------------------
 
 
@@ -222,6 +322,8 @@ def execute_tool(
             except (TypeError, ValueError):
                 limit = 20
             return _render_survey(limit)
+        if name == "list_agents":
+            return _render_roster()
     except Exception as e:  # noqa: BLE001 — a tool never breaks the loop
         logger.warning(f"ambassador tool '{name}' failed: {e}")
         return f"(The {name} tool couldn't complete: {str(e)[:160]})"
