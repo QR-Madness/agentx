@@ -19,7 +19,7 @@ each one and how it feeds the others.
 | Procedural strategies | procedural | shipped | `record_tool_usage`, `detect_patterns` (`memory/procedural.py`) | active / `_self_` |
 | Procedural distillation + reflex core | procedural | shipped | encode (`stage_procedure_candidate`) → distill (`distill_procedures`) → `learn_procedure` + `get_reflex_procedures` (`memory/procedural.py`) | `_self_{agent_id}` (corrections) / channel (rules) |
 | Working memory | working | shipped | `WorkingMemory` (Redis, TTL) | active |
-| Goal tracking | semantic | shipped | `add_goal` / `complete_goal`; `TaskPlanner` | active |
+| Goal tracking | semantic | shipped | `add_goal` / `complete_goal` / `get_goals_for_conversation`; `TaskPlanner` | active, conversation-scoped |
 | Relevance + extraction | extraction | shipped | `ExtractionService.check_relevance_and_extract[_assistant]` | — |
 | Consolidation (episodic→semantic) | jobs | shipped | `consolidate_episodic_to_semantic()` (15-min) | global sweep |
 | Subject-aware attribution | extraction/jobs | shipped | `_resolve_agent_attribution`, `_resolve_subject_channel` | routes to subject's channel |
@@ -77,7 +77,7 @@ graph TD
   duplicated), and the **reflex core** (`get_reflex_procedures`) injects the top-strength ones into
   every prompt. → feeds the **Agent prompt** directly.
 - **Working** — short-lived Redis context with TTL refresh.
-- **Goals** — `add_goal`/`complete_goal`, linked from `TaskPlanner` so plans track intent.
+- **Goals** — `add_goal`/`complete_goal`, linked from `TaskPlanner` so plans track intent. Each goal is stamped with the `conversation_id` that opened it, so `get_goals_for_conversation` attributes goals per conversation (surfaced in the ambassador's cross-conversation survey). Forward-looking: goals created before this carry no `conversation_id`.
 
 ### Extraction & consolidation
 - **Extraction** turns raw text into candidate entities/facts in one LLM call

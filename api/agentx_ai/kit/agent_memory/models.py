@@ -174,6 +174,8 @@ class Goal(BaseModel):
     created_at: datetime = Field(default_factory=_utc_now)
     deadline: datetime | None = None
     channel: str = "_global"
+    # The conversation that opened the goal (set per-run; None for older/global goals).
+    conversation_id: str | None = None
 
     @field_validator("created_at", "deadline", mode="before")
     @classmethod

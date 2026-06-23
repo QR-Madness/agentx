@@ -336,6 +336,44 @@ class GoalMemoryTest(TestCase):
                 GoalMemory().get_goal("missing", user_id="user-A", channel="_global")
             )
 
+    def test_add_goal_stamps_conversation_id(self) -> None:
+        # 16.7 Slice 4 follow-on: goals carry the conversation that opened them so the
+        # ambassador survey can attribute them.
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+        from agentx_ai.kit.agent_memory.models import Goal
+
+        mock_session = create_mock_neo4j_session()
+        mock_session.run.return_value = MagicMock()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            GoalMemory(audit_logger=None).add_goal(
+                Goal(description="ship it", embedding=[0.1]),
+                user_id="user-A", channel="_global", conversation_id="conv-9",
+            )
+            create_query = mock_session.run.call_args_list[0][0][0]
+            self.assertIn("conversation_id: $conversation_id", create_query)
+            self.assertEqual(mock_session.run.call_args_list[0][1]["conversation_id"], "conv-9")
+
+    def test_get_goals_for_conversation_filters_by_conversation(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.goal import GoalMemory
+
+        mock_session = create_mock_neo4j_session()
+        record = {
+            "g": {"id": "g1", "description": "d", "status": "active",
+                  "priority": 3, "channel": "_self_x", "conversation_id": "conv-9"},
+            "parent": None,
+        }
+        mock_session.run.return_value = [record]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session') as mock_neo4j:
+            mock_neo4j.return_value = mock_session
+            goals = GoalMemory().get_goals_for_conversation("conv-9", user_id="user-A")
+            query = mock_session.run.call_args[0][0]
+            self.assertIn("g.conversation_id = $conversation_id", query)
+            self.assertNotIn("g.channel", query)  # no channel filter — any channel
+            self.assertEqual(mock_session.run.call_args[1]["conversation_id"], "conv-9")
+            self.assertEqual(len(goals), 1)
+            self.assertEqual(goals[0].conversation_id, "conv-9")
+
 
 class EntityTypeValidationTest(TestCase):
     """Test entity type whitelist validation."""

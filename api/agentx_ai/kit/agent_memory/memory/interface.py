@@ -941,6 +941,11 @@ class AgentMemory:
         """
         return self.goal.get_active_goals(user_id=self.user_id, channel=self.channel)
 
+    def get_goals_for_conversation(self, conversation_id: str) -> list[Goal]:
+        """All goals opened in a conversation (any channel), active first. Used by the
+        ambassador's cross-conversation survey to show what each agent set out to do."""
+        return self.goal.get_goals_for_conversation(conversation_id, user_id=self.user_id)
+
     def get_user_context(self) -> dict[str, Any]:
         """
         Get user profile and preferences scoped to accessible channels.

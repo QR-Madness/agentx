@@ -7555,6 +7555,41 @@ class AmbassadorServiceTest(TestCase):
         self.assertIn("Atlas", out)
         self.assertIn("Nimbus", out)
 
+    def test_survey_conversations_shows_goals_and_degrades(self):
+        # 16.7 Slice 4 follow-on: the survey surfaces each conversation's goals (what its
+        # agent set out to do), best-effort — a goal-store failure degrades to no goals
+        # line without sinking the survey (goal reads hit Neo4j, which can be down).
+        from types import SimpleNamespace
+        from agentx_ai.agent import ambassador_tools as t
+
+        convs = [{
+            "conversation_id": "g1", "first_user": "build the index", "last_message": "done",
+            "message_count": 12, "last_at": "2026-06-22", "agents": "Atlas",
+        }]
+        goals = [
+            SimpleNamespace(description="Catalogue the county archives", status="completed"),
+            SimpleNamespace(description="Reconcile duplicate records", status="active"),
+        ]
+        mem = MagicMock()
+        mem.get_goals_for_conversation.return_value = goals
+
+        with patch.object(t, "list_recent_conversations", return_value=convs), \
+             patch.object(t, "get_summary", return_value=None), \
+             patch("agentx_ai.kit.memory_utils.get_agent_memory", return_value=mem):
+            out = t.execute_tool("survey_conversations", {}, focused_conversation_id="conv")
+        mem.get_goals_for_conversation.assert_called_once_with("g1")
+        self.assertIn("goals:", out)
+        self.assertIn("✓ Catalogue the county archives", out)
+        self.assertIn("◷ Reconcile duplicate records", out)
+
+        # Goal store unavailable (Neo4j down) → no goals line, survey still renders.
+        with patch.object(t, "list_recent_conversations", return_value=convs), \
+             patch.object(t, "get_summary", return_value=None), \
+             patch("agentx_ai.kit.memory_utils.get_agent_memory", side_effect=RuntimeError("neo4j down")):
+            out2 = t.execute_tool("survey_conversations", {}, focused_conversation_id="conv")
+        self.assertIn("id=g1", out2)
+        self.assertNotIn("goals:", out2)
+
     def test_survey_conversations_never_raises(self):
         # Never-raise: a failure assembling the survey returns a readable note.
         from agentx_ai.agent import ambassador_tools as t

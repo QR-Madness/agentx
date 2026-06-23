@@ -225,11 +225,44 @@ def _render_survey(limit: int) -> str:
     return "Recent conversations (newest first):\n" + "\n".join(lines)
 
 
+_GOAL_MARK = {"completed": "✓", "active": "◷", "abandoned": "✗", "blocked": "⊘"}
+_MAX_GOALS = 4
+_GOAL_DESC = 80
+
+
+def _conversation_goals_line(conversation_id: str) -> str:
+    """A best-effort ``goals: …`` line for a conversation — what its agent set out to do
+    (completed/active/…). Reads the memory graph, which (unlike the Postgres/Redis reads)
+    fails fast when Neo4j is down, so this is wrapped to degrade to ``""`` — the survey
+    must never depend on it. Only goals created after conversation-stamping shipped carry
+    a ``conversation_id``; older ones simply won't appear."""
+    try:
+        from ..kit.memory_utils import get_agent_memory
+
+        memory = get_agent_memory(user_id="default")  # the user the agent writes goals under
+        if memory is None:
+            return ""
+        goals = memory.get_goals_for_conversation(conversation_id)
+        if not goals:
+            return ""
+        parts = []
+        for g in goals[:_MAX_GOALS]:
+            desc = " ".join((g.description or "").split())
+            if len(desc) > _GOAL_DESC:
+                desc = desc[:_GOAL_DESC].rstrip() + "…"
+            parts.append(f"{_GOAL_MARK.get(g.status, '•')} {desc}")
+        return "    goals: " + " · ".join(parts)
+    except Exception as e:  # noqa: BLE001 — goals are optional; never sink the survey
+        logger.debug(f"survey goals unavailable for {conversation_id}: {e}")
+        return ""
+
+
 def _render_deep_survey(limit: int) -> str:
     """A digest-rich cross-conversation view: each recent conversation with its own
     rolling summary (``get_summary`` — already condensed) when it has one, else the
-    first/last snippet. Lets the ambassador compose an application-wide summary without
-    reading each transcript. Read-only (Postgres list + a Redis GET); never raises."""
+    first/last snippet, plus each conversation's goals (best-effort). Lets the ambassador
+    compose an application-wide summary without reading each transcript. Read-only;
+    never raises."""
     convs = list_recent_conversations(limit)
     if not convs:
         return "(No conversations found.)"
@@ -260,6 +293,10 @@ def _render_deep_survey(limit: int) -> str:
             piece += f"\n    topic: {title}"
             if last:
                 piece += f"\n    latest: {last}"
+
+        goals_line = _conversation_goals_line(cid)
+        if goals_line:
+            piece += f"\n{goals_line}"
         lines.append(piece)
     return (
         "Survey of recent conversations (newest first; compose an application-wide "

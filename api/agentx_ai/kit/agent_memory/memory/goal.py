@@ -60,6 +60,7 @@ class GoalMemory:
                         status: $status,
                         priority: $priority,
                         channel: $channel,
+                        conversation_id: $conversation_id,
                         created_at: datetime(),
                         embedding: $embedding
                     })
@@ -71,6 +72,7 @@ class GoalMemory:
                     status=goal.status,
                     priority=goal.priority,
                     channel=channel,
+                    conversation_id=conversation_id,
                     embedding=goal.embedding
                 )
                 if goal.parent_goal_id:
@@ -208,6 +210,32 @@ class GoalMemory:
                 RETURN g, parent
                 ORDER BY g.priority DESC
             """, user_id=user_id, channel=channel)
+
+            goals: list[Goal] = []
+            for record in result:
+                goal_data: dict[str, Any] = dict(record["g"])
+                if record["parent"]:
+                    goal_data["parent"] = dict(record["parent"])
+                goals.append(Goal(**goal_data))
+            return goals
+
+    def get_goals_for_conversation(
+        self,
+        conversation_id: str,
+        user_id: str,
+    ) -> list[Goal]:
+        """All goals opened in a given conversation, regardless of channel (a
+        conversation's goals may sit on the agent's self-channel). Active first, then
+        by recency. Only goals created after conversation stamping shipped have a
+        ``conversation_id``; older goals simply won't match."""
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (u:User {id: $user_id})-[:HAS_GOAL]->(g:Goal)
+                WHERE g.conversation_id = $conversation_id
+                OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
+                RETURN g, parent
+                ORDER BY (g.status = 'active') DESC, g.created_at DESC
+            """, user_id=user_id, conversation_id=conversation_id)
 
             goals: list[Goal] = []
             for record in result:

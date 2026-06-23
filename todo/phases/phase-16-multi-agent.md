@@ -580,10 +580,13 @@
       concentrated in long/aged conversations (short ones degrade to the snippet ≈
       `list_conversations`). (`agent/ambassador_tools.py`; tests
       `AmbassadorServiceTest.test_survey_conversations_*`.) Follow-ons:
-  - [ ] **Per-conversation goals** — surface each session's goal outcomes. Needs
-        `conversation_id` on the `(:Goal)` node (it's audit-log-only today) + populating it
-        at the `planner`/`alloy.executor`/`hooks` `add_goal`/`complete_goal` call sites + a
-        `get_goals_for_conversation` query.
+  - [x] **Per-conversation goals** — shipped (`0.21.118`). `GoalMemory.add_goal` now persists
+        `conversation_id` on the `(:Goal)` node (the value already flowed per-run via the memory
+        facade — `core.py` sets `memory.conversation_id`; only the CREATE Cypher needed it),
+        backed by Neo4j index `goal_conversation` (migration `0004`). New
+        `get_goals_for_conversation` (any channel) feeds a best-effort `goals:` line in
+        `survey_conversations` (never-raise — a down/disabled Neo4j degrades to no line). **Backfill
+        caveat:** only goals created after this carry `conversation_id`; older goals won't appear.
   - [ ] **Aide swarm** — fan out cheap per-conversation digests (`registry.complete_with_fallback`
         + `asyncio.gather`, bridged via `utils/async_bridge.run_coro_sync`) for fresh digests +
         a lean ambassador context even with no stored summary; metered, so it needs a per-survey
