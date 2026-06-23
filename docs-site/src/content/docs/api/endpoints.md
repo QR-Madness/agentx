@@ -468,6 +468,7 @@ POST /api/agent/ambassador/voice-command
 POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
+POST /api/agent/ambassador/relay
 GET  /api/agent/ambassador/threads
 POST /api/agent/ambassador/threads
 GET    /api/agent/ambassador/thread/{thread_id}

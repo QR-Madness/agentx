@@ -2159,6 +2159,50 @@ def ambassador_ask(request):
 
 
 @csrf_exempt
+def ambassador_relay(request):
+    """
+    POST /api/agent/ambassador/relay  {conversation_id, text}
+
+    Deliver a relayed message into *any* conversation as a real **user** turn — even one
+    with no open client tab — by running its agent headless via the background-chat worker
+    (warm-hydrates, appends the user turn + the agent's reply to conversation_logs). The
+    user is the author; the ambassador never speaks into the transcript itself. The target
+    agent is recovered from the conversation's most recent stamped turn (else the default).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (ValueError, TypeError) as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    conversation_id = (data.get("conversation_id") or "").strip()
+    text = (data.get("text") or "").strip()
+    if not conversation_id or not text:
+        return JsonResponse({"error": "conversation_id and text are required"}, status=400)
+
+    from .agent.conversation_history import latest_agent_name, load_recent_labeled_turns
+    from .agent.profiles import get_profile_manager
+    from .background import enqueue_background_chat
+
+    # Only relay into a real conversation — never spawn turns into a phantom id.
+    if not load_recent_labeled_turns(conversation_id, token_budget=1):
+        return JsonResponse({"ok": False, "error": "no such conversation"}, status=404)
+
+    pm = get_profile_manager()
+    name = latest_agent_name(conversation_id)
+    profile = (pm.get_profile_by_name(name) if name else None) or pm.get_default_profile()
+
+    job_id = enqueue_background_chat(
+        user_id=_bg_user_id(request),
+        message=text,
+        session_id=conversation_id,
+        agent_profile_id=getattr(profile, "id", None),
+    )
+    return JsonResponse({"ok": True, "job_id": job_id})
+
+
+@csrf_exempt
 async def ambassador_draft(request):
     """
     POST /api/agent/ambassador/draft

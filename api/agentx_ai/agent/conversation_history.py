@@ -111,6 +111,42 @@ def load_recent_labeled_turns(
     return picked
 
 
+def latest_agent_name(conversation_id: str) -> str:
+    """The display name of the agent that produced the conversation's most recent
+    *stamped* assistant turn (``metadata->>'agent_name'``, Phase 16 attribution), or ``""``.
+
+    Used to recover which agent a conversation belongs to when there's no open client tab
+    — e.g. the ambassador relaying a message into a conversation headlessly. Sync;
+    never raises (→ ``""``)."""
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    try:
+        conn: Any = PostgresConnection.get_engine().raw_connection()
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"latest_agent_name connect failed for {conversation_id}: {e}")
+        return ""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT metadata->>'agent_name'
+                FROM conversation_logs
+                WHERE conversation_id = %s AND role = 'assistant'
+                  AND metadata->>'agent_name' IS NOT NULL
+                ORDER BY turn_index DESC
+                LIMIT 1
+                """,
+                (conversation_id,),
+            )
+            row = cur.fetchone()
+            return (row[0] or "").strip() if row else ""
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"latest_agent_name query failed for {conversation_id}: {e}")
+        return ""
+    finally:
+        conn.close()
+
+
 def _default_conversation_lister(limit: int) -> list[dict]:
     """Read the most-recent conversations (newest first) from ``conversation_logs``.
 

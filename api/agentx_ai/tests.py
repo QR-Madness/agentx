@@ -7643,6 +7643,19 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(listed[0]["title"], "Alpha")
         self.assertNotIn("inq:u:ghost", zset)  # self-healed out of the registry
 
+    def test_latest_agent_name_reads_newest_stamped_assistant_turn(self):
+        # Relay recovers a conversation's agent from its most recent stamped turn.
+        from agentx_ai.agent import conversation_history as ch
+
+        fake_conn = MagicMock()
+        cur = fake_conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("Atlas",)
+        with patch("agentx_ai.kit.agent_memory.connections.PostgresConnection.get_engine") as ge:
+            ge.return_value.raw_connection.return_value = fake_conn
+            self.assertEqual(ch.latest_agent_name("c1"), "Atlas")
+            cur.fetchone.return_value = None
+            self.assertEqual(ch.latest_agent_name("c1"), "")  # none stamped → ""
+
     def test_list_agents_never_raises(self):
         # Tool-level never-raise: a failure in roster assembly returns a readable
         # note (not an exception), so the agentic loop stays alive.
@@ -7815,6 +7828,64 @@ class _FakeConfigManager:
 
     def save(self):
         return True
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint test; don't gate on local .env auth
+class AmbassadorRelayEndpointTest(TestCase):
+    """POST /api/agent/ambassador/relay — delivers a relay into any conversation as a real
+    user turn via the background-chat worker (the headless path; the user is the author)."""
+
+    def _post(self, body: dict):
+        return self.client.post(
+            "/api/agent/ambassador/relay", data=json.dumps(body), content_type="application/json"
+        )
+
+    def test_requires_conversation_id_and_text(self):
+        self.assertEqual(self._post({"text": "hi"}).status_code, 400)
+        self.assertEqual(self._post({"conversation_id": "c1"}).status_code, 400)
+
+    def test_unknown_conversation_is_rejected(self):
+        with patch("agentx_ai.agent.conversation_history.load_recent_labeled_turns", return_value=[]):
+            res = self._post({"conversation_id": "ghost", "text": "hello"})
+        self.assertEqual(res.status_code, 404)
+        self.assertFalse(res.json()["ok"])
+
+    def test_relays_to_resolved_agent_via_background_chat(self):
+        from types import SimpleNamespace
+
+        pm = MagicMock()
+        pm.get_profile_by_name.return_value = SimpleNamespace(id="prof-atlas")
+        with patch("agentx_ai.agent.conversation_history.load_recent_labeled_turns",
+                   return_value=[("assistant", "prior", "Atlas")]), \
+             patch("agentx_ai.agent.conversation_history.latest_agent_name", return_value="Atlas"), \
+             patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.background.enqueue_background_chat", return_value="job-1") as enq:
+            res = self._post({"conversation_id": "c1", "text": "use metric units"})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"ok": True, "job_id": "job-1"})
+        # Real user turn into the target conversation, run by the conversation's own agent.
+        enq.assert_called_once()
+        kw = enq.call_args.kwargs
+        self.assertEqual(kw["session_id"], "c1")
+        self.assertEqual(kw["message"], "use metric units")
+        self.assertEqual(kw["agent_profile_id"], "prof-atlas")
+
+    def test_falls_back_to_default_profile_when_unstamped(self):
+        from types import SimpleNamespace
+
+        pm = MagicMock()
+        pm.get_default_profile.return_value = SimpleNamespace(id="prof-default")
+        with patch("agentx_ai.agent.conversation_history.load_recent_labeled_turns",
+                   return_value=[("user", "hi", None)]), \
+             patch("agentx_ai.agent.conversation_history.latest_agent_name", return_value=""), \
+             patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.background.enqueue_background_chat", return_value="job-2") as enq:
+            res = self._post({"conversation_id": "c1", "text": "hello"})
+
+        self.assertEqual(res.status_code, 200)
+        pm.get_profile_by_name.assert_not_called()  # no name → straight to default
+        self.assertEqual(enq.call_args.kwargs["agent_profile_id"], "prof-default")
 
 
 class PromptLayerStoreTest(TestCase):

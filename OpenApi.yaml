@@ -1221,6 +1221,48 @@ paths:
                   qa: { type: string }
                   draft: { type: string }
 
+  /agent/ambassador/relay:
+    post:
+      tags: [Agent]
+      operationId: ambassadorRelay
+      summary: Relay a message into any conversation as a real user turn
+      description: >-
+        Delivers a relayed message into a conversation as a real **user** turn — even one
+        with no open client tab — by running its agent headless via the background-chat
+        worker (warm-hydrates, appends the user turn + the agent's reply to the durable
+        history). The person is the author; the ambassador never speaks into the transcript.
+        The target agent is recovered from the conversation's most recent stamped turn (else
+        the default profile). Use for relaying from the command deck or to a conversation the
+        ambassador is focused on but isn't open. Returns the background job id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, text]
+              properties:
+                conversation_id:
+                  type: string
+                text:
+                  type: string
+                  description: The message to relay (becomes the user's turn).
+      responses:
+        '200':
+          description: Relay enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  job_id:
+                    type: string
+        '400':
+          description: conversation_id and text are required
+        '404':
+          description: No such conversation
   /agent/ambassador/threads:
     get:
       tags: [Agent]

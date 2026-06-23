@@ -575,8 +575,12 @@
         `AmbassadorService._maybe_autotitle` titles an empty thread from its first question
         (text + voice) via `ambassador_storage.derive_title`; a `title_auto` flag on
         `set_thread_title` guards a manual rename from being clobbered.
-  - [ ] **Relay from the deck** to a chosen conversation — needs the deferred server-side
-        `POST /ambassador/relay` (Slice 3) so relay doesn't require an open tab.
+  - [~] **Relay from the deck** to a chosen conversation. **Backend shipped (`0.21.121`):**
+        `POST /agent/ambassador/relay {conversation_id, text}` runs the target conversation's
+        agent headless via `enqueue_background_chat` (real user turn; profile resolved from the
+        conversation's last stamped turn via `latest_agent_name`/`get_profile_by_name`, else
+        default). **Remaining (client `0.21.122`):** `planRelay` (in-tab when active, else server),
+        the panel relaying to its focused conversation off-tab, and the deck target picker.
 - [x] **`survey_conversations`** — shipped (`0.21.115`), **lean / model-free**. Enumerates
       recent sessions (`list_recent_conversations`) and enriches each with its own **rolling
       summary** (`conversation_summary_storage.get_summary` — already a digest) when present,
