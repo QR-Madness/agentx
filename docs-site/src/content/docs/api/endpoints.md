@@ -468,6 +468,8 @@ POST /api/agent/ambassador/voice-command
 POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
+GET  /api/agent/ambassador/threads
+POST /api/agent/ambassador/threads
 GET    /api/agent/ambassador/thread/{thread_id}
 PATCH  /api/agent/ambassador/thread/{thread_id}
 DELETE /api/agent/ambassador/thread/{thread_id}

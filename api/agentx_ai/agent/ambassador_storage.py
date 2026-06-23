@@ -296,6 +296,67 @@ def derive_title(question: str, *, limit: int = 48) -> str:
     return cut + "…"
 
 
+# --- per-user thread registry (standalone "Inquiries") ----------------------
+#
+# Threads are otherwise reachable only by a known thread_id. This ZSET lets the
+# command deck enumerate a user's *standalone* Inquiries (the home `deck:{user}`
+# thread + minted `inq:{user}:{uuid}` threads). Written from the views (which hold
+# the user id — storage itself is thread-keyed, with no user dimension). Score is
+# a recency timestamp so the list is newest-first.
+
+
+def _user_threads_key(user_id: str) -> str:
+    return f"amb_user:{user_id}:threads"
+
+
+def register_thread(user_id: str, thread_id: str) -> None:
+    """Record a standalone Inquiry under a user (idempotent; bumps recency). Best-effort."""
+    if not user_id or not thread_id:
+        return
+    try:
+        client = _redis()
+        key = _user_threads_key(user_id)
+        client.zadd(key, {thread_id: datetime.now(UTC).timestamp()})
+        client.expire(key, AMBASSADOR_TTL_SECONDS)
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.warning(f"ambassador thread register failed: {e}")
+
+
+def unregister_thread(user_id: str, thread_id: str) -> None:
+    """Drop a thread from a user's registry (on delete). Best-effort."""
+    if not user_id or not thread_id:
+        return
+    try:
+        _redis().zrem(_user_threads_key(user_id), thread_id)
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.debug(f"ambassador thread unregister failed: {e}")
+
+
+def list_user_threads(user_id: str) -> list[dict]:
+    """A user's standalone Inquiries, newest-first: ``[{thread_id, title, created_at,
+    updated_at}]``. Self-healing — an id whose meta has aged out (TTL) or been cleared
+    is dropped from the registry so the list never shows ghosts. Never raises."""
+    try:
+        client = _redis()
+        ids = [_decode(t) for t in client.zrevrange(_user_threads_key(user_id), 0, -1)]
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.debug(f"ambassador thread list failed: {e}")
+        return []
+    out: list[dict] = []
+    for tid in ids:
+        meta = get_thread_meta(tid)
+        if not meta:
+            unregister_thread(user_id, tid)  # ghost — meta gone
+            continue
+        out.append({
+            "thread_id": tid,
+            "title": meta.get("title") or "",
+            "created_at": meta.get("created_at"),
+            "updated_at": meta.get("updated_at"),
+        })
+    return out
+
+
 # --- wire serialization (replay endpoint) -----------------------------------
 
 

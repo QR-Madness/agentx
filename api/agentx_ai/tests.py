@@ -7598,6 +7598,51 @@ class AmbassadorServiceTest(TestCase):
             out = t.execute_tool("survey_conversations", {}, focused_conversation_id="conv")
         self.assertIn("survey_conversations tool couldn't complete", out)
 
+    def test_rename_inquiry_writes_only_its_own_thread_title(self):
+        # 16.7 Slice 4: the belt's lone write — the ambassador titles its OWN current
+        # Inquiry (sidecar meta), never the conversation. auto=True so a user rename wins.
+        from agentx_ai.agent import ambassador_tools as t
+        from agentx_ai.agent import ambassador_storage as s
+
+        with patch.object(s, "set_thread_title") as set_title:
+            out = t.execute_tool(
+                "rename_inquiry", {"title": "  Migration audit  "},
+                focused_conversation_id="deck:1",
+            )
+        set_title.assert_called_once_with("deck:1", "Migration audit", auto=True)
+        self.assertIn("Migration audit", out)
+
+        # Degrades (never raises) on a blank title or no open Inquiry.
+        with patch.object(s, "set_thread_title") as set_title:
+            self.assertIn("needs a title", t.execute_tool("rename_inquiry", {}, focused_conversation_id="deck:1"))
+            self.assertIn("no Inquiry open", t.execute_tool("rename_inquiry", {"title": "x"}, focused_conversation_id=""))
+            set_title.assert_not_called()
+
+    def test_user_thread_registry_lists_and_self_heals(self):
+        # The per-user Inquiry registry: register → list (newest-first); an id whose meta
+        # has aged out is dropped from the registry (no ghosts).
+        from agentx_ai.agent import ambassador_storage as s
+
+        zset: dict[str, float] = {}
+        fake = MagicMock()
+        fake.zadd.side_effect = lambda key, mapping: zset.update(mapping)
+        fake.zrem.side_effect = lambda key, member: zset.pop(member, None)
+        fake.zrevrange.side_effect = lambda key, lo, hi: [
+            k for k, _ in sorted(zset.items(), key=lambda kv: kv[1], reverse=True)
+        ]
+        metas = {"inq:u:a": {"title": "Alpha", "created_at": "t1", "updated_at": "t2"}}
+
+        with patch.object(s, "_redis", return_value=fake), \
+             patch.object(s, "get_thread_meta", side_effect=lambda tid: metas.get(tid)):
+            s.register_thread("u", "inq:u:a")
+            s.register_thread("u", "inq:u:ghost")  # registered but meta is gone
+            listed = s.list_user_threads("u")
+
+        ids = [r["thread_id"] for r in listed]
+        self.assertEqual(ids, ["inq:u:a"])  # ghost dropped
+        self.assertEqual(listed[0]["title"], "Alpha")
+        self.assertNotIn("inq:u:ghost", zset)  # self-healed out of the registry
+
     def test_list_agents_never_raises(self):
         # Tool-level never-raise: a failure in roster assembly returns a readable
         # note (not an exception), so the agentic loop stays alive.

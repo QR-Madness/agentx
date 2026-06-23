@@ -18,10 +18,14 @@ The tools map to the user's intents:
   * ``list_agents``           — the agent roster: who the agents are, their roles, and
                                 **what each one's model can do** (modalities — image/audio/
                                 vision/tools) — the input for multi-modal routing.
+  * ``rename_inquiry``        — set the CURRENT Inquiry's own title (the sole **write**: it
+                                touches only the ambassador's thread meta, never a conversation)
 
-``execute_tool`` dispatches by name, is **read-only**, and **never raises** — a
-failure returns a short human string the model can read, so a tool hiccup never
-breaks the ambassador's turn.
+``execute_tool`` dispatches by name and **never raises** — a failure returns a short
+human string the model can read, so a tool hiccup never breaks the ambassador's turn.
+Every tool is read-only over the conversation world; the lone exception is
+``rename_inquiry``, which writes only the ambassador's *own* Inquiry title (its Redis
+sidecar meta), so the no-pollution guarantee is intact.
 """
 
 from __future__ import annotations
@@ -170,6 +174,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "handle an image / audio?')."
             ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rename_inquiry",
+            "description": (
+                "Rename the current Inquiry (this thread) to a short, descriptive title that "
+                "reflects what it's about — do this once you know the focus, especially in the "
+                "command deck where Inquiries are named workspaces. Retitles only your own "
+                "Inquiry; it never renames or touches the conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The new Inquiry title (a few words).",
+                    }
+                },
+                "required": ["title"],
+            },
         },
     },
 ]
@@ -440,6 +466,18 @@ def execute_tool(
             return _render_deep_survey(limit)
         if name == "list_agents":
             return _render_roster()
+        if name == "rename_inquiry":
+            # The belt's only write — and self-scoped: it titles the ambassador's OWN
+            # current Inquiry (its sidecar meta), never the conversation.
+            title = (args.get("title") or "").strip()
+            if not title:
+                return "(rename_inquiry needs a title.)"
+            if not focused_conversation_id:
+                return "(There's no Inquiry open to rename.)"
+            from .ambassador_storage import set_thread_title
+
+            set_thread_title(focused_conversation_id, title, auto=True)
+            return f"(Renamed this Inquiry to “{title[:80]}”.)"
     except Exception as e:  # noqa: BLE001 — a tool never breaks the loop
         logger.warning(f"ambassador tool '{name}' failed: {e}")
         return f"(The {name} tool couldn't complete: {str(e)[:160]})"

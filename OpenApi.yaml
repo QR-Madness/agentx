@@ -1221,6 +1221,53 @@ paths:
                   qa: { type: string }
                   draft: { type: string }
 
+  /agent/ambassador/threads:
+    get:
+      tags: [Agent]
+      operationId: ambassadorThreadsList
+      summary: List the user's standalone Ambassador Inquiries (command deck)
+      description: >-
+        The user's standalone command-deck Inquiries, newest-first — the home
+        `deck:{user}` thread (always present, pinned) plus any minted `inq:{user}:{uuid}`
+        threads. Chat-bound Inquiries are reached through their conversation, not here.
+      responses:
+        '200':
+          description: The user's Inquiries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threads:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        thread_id: { type: string }
+                        title: { type: string }
+                        created_at: { type: string, nullable: true }
+                        updated_at: { type: string, nullable: true }
+                  deck_thread_id:
+                    type: string
+                    description: The home deck thread id (pin this one first)
+    post:
+      tags: [Agent]
+      operationId: ambassadorThreadCreate
+      summary: Mint a new standalone Ambassador Inquiry
+      description: >-
+        Creates and registers a new standalone Inquiry (`inq:{user}:{uuid}`) under the
+        user, for the command deck. Returns its thread id; title is set later via PATCH
+        or auto-titled from the first question.
+      responses:
+        '200':
+          description: The new Inquiry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread_id:
+                    type: string
   /agent/ambassador/thread/{thread_id}:
     get:
       tags: [Agent]

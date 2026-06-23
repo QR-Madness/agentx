@@ -190,13 +190,17 @@ def _answer_persona(agent_name: str = "") -> str:
 # the ambassador knows the concrete moves behind "what you can do". Mirrors
 # ``ambassador_tools.TOOL_SCHEMAS``.
 _TOOLS_NOTE = (
-    "YOUR TOOLS (read-only — you look, you never change anything). Use them before you "
-    "answer about the conversation; you may call several:\n"
+    "YOUR TOOLS (read-only over the conversation world — you look, you never change a "
+    "conversation). Use them before you answer; you may call several:\n"
     "- summarize_conversation — read the conversation you're watching, to summarize it.\n"
     "- explore_conversation — read it and dig deeper (optionally on a topic).\n"
-    "- list_conversations — list the person's recent sessions (for 'what have my agents "
-    "found across everything?').\n"
-    "- read_conversation — read one specific conversation by id (after listing).\n\n"
+    "- list_conversations — list the person's recent sessions (a quick index).\n"
+    "- survey_conversations — a digest of recent sessions, to summarize what your agents "
+    "have been working on across everything.\n"
+    "- read_conversation — read one specific conversation by id (after listing/surveying).\n"
+    "- list_agents — the agent roster and what each agent's model can do.\n"
+    "- rename_inquiry — give THIS Inquiry a short, descriptive title once you know its "
+    "focus (titles your own Inquiry only; never the conversation).\n\n"
     "When you have what you need, answer the person directly in your own spoken voice — "
     "never read tool output back verbatim, never mention the tools."
 )

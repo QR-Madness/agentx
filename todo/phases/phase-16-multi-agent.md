@@ -563,8 +563,12 @@
       relay, the conversation switcher) drop away; the cross-conversation tools (survey /
       roster) + free-form ask + voice carry it. Worker conversations stay reachable directly
       (dual entry). Follow-ons:
-  - [ ] **Multiple named standalone Inquiries** + a switcher over them — needs a per-user
-        thread registry/index + a `GET /ambassador/threads` list endpoint (none today).
+  - [~] **Multiple named standalone Inquiries** + a switcher over them. **Backend shipped
+        (`0.21.119`):** per-user registry (Redis ZSET `amb_user:{user}:threads`,
+        `register/unregister/list_user_threads`, self-healing) + `GET/POST /agent/ambassador/threads`
+        (list / mint `inq:{user}:{uuid}`; `deck:{user}` pinned) + the ambassador's `rename_inquiry`
+        tool (the belt's lone, self-scoped write — its own Inquiry title only). **Remaining:** the
+        client deck multi-Inquiry switcher UI (create / switch / rename / delete).
   - [x] **Auto-titling** an Inquiry from its first question — shipped (`0.21.117`), model-free.
         `AmbassadorService._maybe_autotitle` titles an empty thread from its first question
         (text + voice) via `ambassador_storage.derive_title`; a `title_auto` flag on

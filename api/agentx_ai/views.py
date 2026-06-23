@@ -2399,13 +2399,51 @@ def ambassador_thread(request, thread_id):
         except (ValueError, TypeError):
             return JsonResponse({"error": "invalid JSON body"}, status=400)
         meta = ambassador_storage.set_thread_title(thread_id, body.get("title", ""))
+        # A rename keeps the Inquiry in the user's registry (and bumps recency).
+        ambassador_storage.register_thread(_bg_user_id(request), thread_id)
         return JsonResponse({"thread_id": thread_id, "title": meta.get("title", "")})
 
     if request.method == "DELETE":
         ambassador_storage.clear(thread_id)
+        ambassador_storage.unregister_thread(_bg_user_id(request), thread_id)
         return JsonResponse({"thread_id": thread_id, "cleared": True})
 
     return JsonResponse({"error": "GET, PATCH or DELETE required"}, status=405)
+
+
+@csrf_exempt
+def ambassador_threads(request):
+    """
+    GET  /api/agent/ambassador/threads  → {threads: [{thread_id, title, …}], deck_thread_id}
+    POST /api/agent/ambassador/threads  → {thread_id}   (mint a new standalone Inquiry)
+
+    The user's standalone command-deck Inquiries: the home ``deck:{user}`` thread (always
+    present, pinned) + any minted ``inq:{user}:{uuid}`` threads. Chat-bound Inquiries are
+    reached through their conversation, not here.
+    """
+    from .agent import ambassador_storage
+
+    user_id = _bg_user_id(request)
+    deck_thread_id = f"deck:{user_id}"
+
+    if request.method == "GET":
+        # Ensure the home deck always appears (register lazily if never written to).
+        if not any(t["thread_id"] == deck_thread_id for t in ambassador_storage.list_user_threads(user_id)):
+            ambassador_storage.register_thread(user_id, deck_thread_id)
+        return JsonResponse({
+            "threads": ambassador_storage.list_user_threads(user_id),
+            "deck_thread_id": deck_thread_id,
+        })
+
+    if request.method == "POST":
+        import uuid
+
+        thread_id = f"inq:{user_id}:{uuid.uuid4().hex[:8]}"
+        ambassador_storage.set_thread_title(thread_id, "")  # mint meta
+        ambassador_storage.register_thread(user_id, thread_id)
+        return JsonResponse({"thread_id": thread_id})
+
+    return JsonResponse({"error": "GET or POST required"}, status=405)
 
 
 @csrf_exempt
