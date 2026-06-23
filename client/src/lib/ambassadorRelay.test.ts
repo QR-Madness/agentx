@@ -1,5 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { relayToActiveConversation } from './ambassadorRelay';
+import { relayToActiveConversation, planRelay } from './ambassadorRelay';
+
+describe('planRelay', () => {
+  const activeTab = { id: 't1', sessionId: 'conv-A' };
+  it('relays in-tab when the target IS the active tab', () => {
+    expect(planRelay('conv-A', activeTab)).toEqual({ mode: 'tab', tabId: 't1' });
+  });
+  it('relays via server when the target is a different (or non-open) conversation', () => {
+    expect(planRelay('conv-B', activeTab)).toEqual({ mode: 'server' });
+    expect(planRelay('conv-B', null)).toEqual({ mode: 'server' });
+  });
+  it('is none when there is no target', () => {
+    expect(planRelay('', activeTab)).toEqual({ mode: 'none' });
+    expect(planRelay(undefined, activeTab)).toEqual({ mode: 'none' });
+  });
+});
 
 describe('relayToActiveConversation', () => {
   it('sends to the active tab and names where it landed', () => {

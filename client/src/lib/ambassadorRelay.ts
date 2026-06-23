@@ -11,8 +11,36 @@
 
 export interface RelayTab {
   id: string;
+  /** The conversation/session id this tab is showing (matched against a relay target). */
+  sessionId?: string | null;
   title?: string;
   activeRun?: { runId?: string | null } | null;
+}
+
+/**
+ * Decide how to relay to a target conversation:
+ *  - `tab`   — the target IS the active tab, which is the only tab with a live relay handler
+ *              (ChatPanel registers one for the active tab only) → relay live in-tab (instant,
+ *              can steer a running turn).
+ *  - `server`— the target isn't the active tab → relay headless via POST /ambassador/relay
+ *              (the user turn + reply land in that conversation's history).
+ *  - `none`  — no target chosen/known.
+ * Pure so it's unit-testable; callers execute the chosen mode.
+ */
+export type RelayPlan =
+  | { mode: 'tab'; tabId: string }
+  | { mode: 'server' }
+  | { mode: 'none' };
+
+export function planRelay(
+  targetConversationId: string | null | undefined,
+  activeTab: RelayTab | null | undefined,
+): RelayPlan {
+  if (!targetConversationId) return { mode: 'none' };
+  if (activeTab && activeTab.sessionId === targetConversationId) {
+    return { mode: 'tab', tabId: activeTab.id };
+  }
+  return { mode: 'server' };
 }
 
 export interface RelayOutcome {

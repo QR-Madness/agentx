@@ -38,8 +38,9 @@ interface VoiceBarProps {
   ambassadorName?: string;
   /** Where the person currently is (ambient context, distinct from the focus). */
   activeConversation?: AmbassadorActiveConversation;
-  /** Relay a confirmed draft into the conversation. Returns where it landed (or why not). */
-  onRelay: (text: string) => { ok: boolean; note: string };
+  /** Relay a confirmed draft into the conversation (may go to the server when off-tab).
+   *  Returns where it landed (or why not). */
+  onRelay: (text: string) => { ok: boolean; note: string } | Promise<{ ok: boolean; note: string }>;
   /** Called after an answer is persisted, so the Inquiry stream refreshes it in. */
   onAnswerPersisted: () => void;
 }
@@ -191,10 +192,10 @@ export function VoiceBar({
               ? sent
               : 'Hold to talk';
 
-  const sendRelay = () => {
+  const sendRelay = async () => {
     const text = (relayDraft ?? '').trim();
     if (!text) return;
-    const res = onRelay(text);
+    const res = await onRelay(text);
     if (res.ok) {
       setRelayDraft(null);
       setError(null);
@@ -281,7 +282,7 @@ export function VoiceBar({
             </button>
             <button
               type="button"
-              onClick={sendRelay}
+              onClick={() => void sendRelay()}
               disabled={!relayDraft.trim()}
               className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
             >

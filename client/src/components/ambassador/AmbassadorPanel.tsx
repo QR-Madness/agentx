@@ -36,6 +36,7 @@ import {
   AudioLines,
   MessageSquare,
   Check,
+  ChevronDown,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -46,7 +47,7 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import { toolChipLabel } from '../../lib/ambassadorTools';
-import { relayToActiveConversation } from '../../lib/ambassadorRelay';
+import { planRelay, type RelayOutcome } from '../../lib/ambassadorRelay';
 import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
 import { AmbassadorInquirySwitcher } from './AmbassadorInquirySwitcher';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
@@ -59,6 +60,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui';
@@ -405,6 +407,9 @@ export function AmbassadorPanel({
   const [mode, setMode] = useState<PanelMode>('ask');
   const [refining, setRefining] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // Deck relay (no focused conversation → pick a target). Lazily-loaded conversation list.
+  const [deckRelayTarget, setDeckRelayTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deckConvs, setDeckConvs] = useState<{ id: string; title: string }[]>([]);
   // Inline Inquiry rename (null = not renaming).
   const [renamingTitle, setRenamingTitle] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -523,15 +528,40 @@ export function AmbassadorPanel({
     setTab('text');
   };
 
-  // Relay a message into the active conversation — a real user turn (or a steer into its
-  // running turn). The ambassador stays a non-participant; you are the author. Returns
-  // where it landed (or why it couldn't) so voice + text both give the same closure.
+  // Relay a message into a conversation as a real USER turn — the ambassador stays a
+  // non-participant; you are the author. Live in-tab when the target is the active tab
+  // (steer-aware); else headless via the server so it reaches a conversation that isn't
+  // open. Target = the panel's focused conversation, or (deck) the picked one. Returns
+  // where it landed so voice + text give the same closure.
   const relay = useCallback(
-    (text: string) =>
-      isDeck
-        ? { ok: false, note: "Relay isn't available from the command deck — open the conversation to relay." }
-        : relayToActiveConversation(text, activeTab, relayToConversation),
-    [isDeck, activeTab, relayToConversation],
+    async (text: string): Promise<RelayOutcome> => {
+      const t = text.trim();
+      if (!t) return { ok: false, note: 'Nothing to send.' };
+      const target = isDeck ? deckRelayTarget?.id : conversationId;
+      const plan = planRelay(target, activeTab);
+      if (plan.mode === 'none') {
+        return { ok: false, note: isDeck ? 'Pick a conversation to relay into.' : 'Open a conversation to relay into.' };
+      }
+      if (plan.mode === 'tab') {
+        if (!relayToConversation(plan.tabId, t)) {
+          return { ok: false, note: 'Could not send to the conversation.' };
+        }
+        return {
+          ok: true,
+          note: activeTab?.activeRun?.runId ? 'Folded into the running turn.' : `Sent to ${activeTab?.title || 'the conversation'}.`,
+        };
+      }
+      const title = (isDeck ? deckRelayTarget?.title : focusTitle) || 'the conversation';
+      try {
+        const res = await api.relayAmbassador({ conversation_id: target as string, text: t });
+        return res.ok
+          ? { ok: true, note: `Sent to ${title} — open it to see the reply.` }
+          : { ok: false, note: 'Could not relay to that conversation.' };
+      } catch {
+        return { ok: false, note: 'Relay failed — try again.' };
+      }
+    },
+    [isDeck, deckRelayTarget, conversationId, activeTab, relayToConversation, focusTitle],
   );
   const onAnswerPersisted = useCallback(() => {
     if (conversationId) void refresh(conversationId);
@@ -584,12 +614,29 @@ export function AmbassadorPanel({
 
   // Relay the message into the active conversation (a real user turn, or a steer into a
   // running turn). The ambassador stays a non-participant — you're the author.
-  const submitRelay = () => {
+  const submitRelay = async () => {
     if (!input.trim()) return;
-    const res = relay(input);
+    const res = await relay(input);
     if (res.ok) setInput('');
     showFlash(res.note);
   };
+
+  // Deck relay needs a target conversation — lazily load the list when the user opens
+  // relay mode in the deck (the same conversations the sidebar shows).
+  useEffect(() => {
+    if (isDeck && mode === 'relay' && deckConvs.length === 0) {
+      void api
+        .listConversations({ limit: 30 })
+        .then((res) => {
+          const items = (res.conversations ?? []).map((c) => ({
+            id: c.conversation_id,
+            title: c.title || c.preview || 'Conversation',
+          }));
+          setDeckConvs(items);
+        })
+        .catch(() => {});
+    }
+  }, [isDeck, mode, deckConvs.length]);
 
   // Optional: let the ambassador shape a rough intent into a ready-to-send message.
   const refine = async () => {
@@ -611,7 +658,10 @@ export function AmbassadorPanel({
     }
   };
 
-  const submit = () => (mode === 'ask' ? submitAsk() : submitRelay());
+  const submit = () => {
+    if (mode === 'ask') submitAsk();
+    else void submitRelay();
+  };
 
   const onInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -903,8 +953,8 @@ export function AmbassadorPanel({
         />
       ) : (
         <div className="flex flex-col gap-2 border-t border-line p-3">
-          {/* Mode toggle — segmented control. Hidden in the deck (relay needs an open tab). */}
-          {!isDeck && (
+          {/* Mode toggle — segmented control (Ask / Relay). In the deck, relay routes
+              through the server to a picked conversation; elsewhere to the focused one. */}
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1 text-xs">
             <button
               type="button"
@@ -920,9 +970,44 @@ export function AmbassadorPanel({
               className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
               data-on={mode === 'relay' || undefined}
             >
-              <CornerUpRight size={12} /> Relay to agent
+              <CornerUpRight size={12} /> Relay
             </button>
           </div>
+
+          {/* Deck relay needs a target conversation — pick one (no focused conversation here). */}
+          {isDeck && mode === 'relay' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center justify-between gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                >
+                  <span className="truncate">
+                    {deckRelayTarget ? `Relay to: ${deckRelayTarget.title}` : 'Relay to: pick a conversation…'}
+                  </span>
+                  <ChevronDown size={13} className="shrink-0 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-72 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto">
+                <DropdownMenuLabel>Relay into…</DropdownMenuLabel>
+                {deckConvs.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-fg-muted">No conversations found.</p>
+                ) : (
+                  deckConvs.map((c) => (
+                    <DropdownMenuItem
+                      key={c.id}
+                      onSelect={() => setDeckRelayTarget(c)}
+                      data-on={c.id === deckRelayTarget?.id || undefined}
+                      className="data-[on=true]:text-accent"
+                    >
+                      <MessageSquare size={14} className="shrink-0 opacity-70" />
+                      <span className="flex-1 truncate">{c.title}</span>
+                      {c.id === deckRelayTarget?.id && <Check size={14} className="shrink-0 text-accent" />}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
@@ -936,13 +1021,15 @@ export function AmbassadorPanel({
                   ? isDeck
                     ? 'Ask about your agents and their work…'
                     : `Ask ${convAgentName ? `about ${convAgentName}` : 'about this conversation'}…`
-                  : runActive
-                    ? `Tell ${convAgentName} something — folds into the running turn…`
-                    : `Tell ${convAgentName} something — sent as your message…`
+                  : isDeck
+                    ? (deckRelayTarget ? `Message ${deckRelayTarget.title} as you…` : 'Pick a conversation to relay into…')
+                    : runActive
+                      ? `Tell ${convAgentName} something — folds into the running turn…`
+                      : `Tell ${convAgentName} something — sent as your message…`
               }
               className="max-h-32 flex-1 resize-none bg-transparent p-0 text-sm text-fg outline-none placeholder:text-fg-muted max-[600px]:text-base"
             />
-            {mode === 'relay' && (
+            {mode === 'relay' && !isDeck && (
               <button
                 type="button"
                 onClick={refine}

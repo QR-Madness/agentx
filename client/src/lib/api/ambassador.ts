@@ -351,6 +351,15 @@ export const ambassadorApi = {
     return apiRequest('/api/agent/ambassador/threads', { method: 'POST' });
   },
 
+  /** Relay a message into any conversation as a real user turn, run headless on the
+   *  server (for a conversation that isn't the open tab). The person is the author. */
+  async relayAmbassador(req: { conversation_id: string; text: string }): Promise<{ ok: boolean; job_id?: string }> {
+    return apiRequest('/api/agent/ambassador/relay', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
   /** Ask the ambassador a free-form question about a conversation. */
   async askAmbassador(req: AskAmbassadorRequest): Promise<{ run_id: string; qa_id: string }> {
     return apiRequest('/api/agent/ambassador/ask', {
