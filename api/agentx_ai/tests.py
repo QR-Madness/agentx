@@ -7415,6 +7415,48 @@ class AmbassadorServiceTest(TestCase):
             t.execute_tool("read_conversation", {}, focused_conversation_id="conv"),
         )
 
+    def test_derive_title_truncates_on_word_boundary(self):
+        from agentx_ai.agent import ambassador_storage as s
+
+        self.assertEqual(s.derive_title("  what is   the plan?  "), "what is the plan?")
+        self.assertEqual(s.derive_title(""), "")
+        long = "summarize everything the research agents have uncovered across all my recent threads"
+        out = s.derive_title(long, limit=48)
+        self.assertLessEqual(len(out), 49)  # +1 for the ellipsis
+        self.assertTrue(out.endswith("…"))
+        self.assertNotIn(" …", out)  # trimmed on a word boundary, no dangling space
+
+    def test_autotitle_only_on_first_question_and_never_clobbers_manual(self):
+        # 16.7 Slice 4 follow-on: a brand-new Inquiry is titled from its first question,
+        # idempotently, and a manual rename is never overwritten.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador as amb
+
+        stored = {"title": "", "auto": True}
+
+        def fake_set(_tid, t, *, auto=False):  # noqa: A002 - mirror the real kwarg
+            stored["title"], stored["auto"] = t, auto
+
+        with patch.object(amb.store, "list_thread", return_value=[]), \
+             patch.object(amb.store, "get_thread_meta", return_value=None), \
+             patch.object(amb.store, "set_thread_title", side_effect=fake_set):
+            AmbassadorService._maybe_autotitle("deck:1", "Catch me up on the migration work")
+        self.assertEqual(stored["title"], "Catch me up on the migration work")
+        self.assertTrue(stored["auto"])  # marked machine-derived
+
+        # A non-empty thread (entries exist) is left alone.
+        with patch.object(amb.store, "list_thread", return_value=[{"id": "e1"}]), \
+             patch.object(amb.store, "set_thread_title") as set_spy:
+            AmbassadorService._maybe_autotitle("deck:1", "another question")
+            set_spy.assert_not_called()
+
+        # A manual title (title_auto False) is never clobbered.
+        with patch.object(amb.store, "list_thread", return_value=[]), \
+             patch.object(amb.store, "get_thread_meta", return_value={"title": "My Inquiry", "title_auto": False}), \
+             patch.object(amb.store, "set_thread_title") as set_spy:
+            AmbassadorService._maybe_autotitle("deck:1", "first question")
+            set_spy.assert_not_called()
+
     def test_list_agents_roster_with_model_capabilities(self):
         # 16.7 Slice 4 (brick 1): the roster names each agent, its role, delegation
         # availability, role blurb, and — load-bearing for multi-modal routing — its

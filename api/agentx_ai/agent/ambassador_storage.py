@@ -265,10 +265,15 @@ def get_thread_title(thread_id: str) -> str:
     return (get_thread_meta(thread_id) or {}).get("title") or ""
 
 
-def set_thread_title(thread_id: str, title: str) -> dict:
-    """Set/rename the thread's title. Best-effort; returns the meta record."""
+def set_thread_title(thread_id: str, title: str, *, auto: bool = False) -> dict:
+    """Set/rename the thread's title. Best-effort; returns the meta record.
+
+    ``auto`` marks a machine-derived title (vs. a user rename). Auto-titling only ever
+    fills a thread that has no manual title, so a person's rename is never clobbered —
+    see ``AmbassadorService._maybe_autotitle``."""
     meta = get_thread_meta(thread_id) or {"thread_id": thread_id, "created_at": _now()}
     meta["title"] = (title or "").strip()[:200]
+    meta["title_auto"] = bool(auto)
     meta["updated_at"] = _now()
     try:
         client = _redis()
@@ -277,6 +282,18 @@ def set_thread_title(thread_id: str, title: str) -> dict:
     except Exception as e:  # pragma: no cover - Redis offline
         logger.warning(f"ambassador title write failed: {e}")
     return meta
+
+
+def derive_title(question: str, *, limit: int = 48) -> str:
+    """A short, human title derived from an Inquiry's first question — model-free.
+
+    Collapses whitespace and truncates on a word boundary. Pure (no I/O) so it's
+    testable and cheap; the UI already frames the string as an "Inquiry", so no prefix."""
+    text = " ".join((question or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip() or text[:limit].rstrip()
+    return cut + "…"
 
 
 # --- wire serialization (replay endpoint) -----------------------------------

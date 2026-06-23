@@ -742,6 +742,23 @@ class AmbassadorService:
         ):
             yield ev
 
+    @staticmethod
+    def _maybe_autotitle(thread_id: str, question: str) -> None:
+        """Title a brand-new Inquiry from its first question (model-free). Fires only on
+        an empty thread with no manual title, so it's idempotent and never clobbers a
+        rename. Call *before* the first entry is written. Best-effort — never raises."""
+        try:
+            if store.list_thread(thread_id):
+                return  # not the first entry
+            meta = store.get_thread_meta(thread_id)
+            if meta and meta.get("title") and not meta.get("title_auto"):
+                return  # a manual title already stands
+            title = store.derive_title(question)
+            if title:
+                store.set_thread_title(thread_id, title, auto=True)
+        except Exception as e:  # noqa: BLE001 — titling never breaks the answer
+            logger.debug(f"ambassador auto-title skipped: {e}")
+
     async def answer_question(
         self,
         conversation_id: str,
@@ -759,6 +776,7 @@ class AmbassadorService:
         persists only to the Q&A sidecar."""
         cfg = self._config()
         run_id = self._current_run_id()
+        self._maybe_autotitle(conversation_id, question)
         store.create_qa(conversation_id, qa_id, question, run_id=run_id)
         yield _sse("ambassador_start", {"message_id": qa_id, "run_id": run_id})
 
@@ -1240,6 +1258,7 @@ class AmbassadorService:
         # tool-grounded answer is the real one.)
         qa_id = f"vc_{uuid.uuid4().hex[:16]}"
         try:
+            self._maybe_autotitle(conversation_id, transcript)
             store.create_qa(conversation_id, qa_id, transcript)
             answer = await self._answer_to_text(
                 conversation_id=conversation_id, qa_id=qa_id, question=transcript,

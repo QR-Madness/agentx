@@ -565,8 +565,10 @@
       (dual entry). Follow-ons:
   - [ ] **Multiple named standalone Inquiries** + a switcher over them — needs a per-user
         thread registry/index + a `GET /ambassador/threads` list endpoint (none today).
-  - [ ] **Auto-titling** an Inquiry from its first question (now unblocked by standalone
-        thread minting).
+  - [x] **Auto-titling** an Inquiry from its first question — shipped (`0.21.117`), model-free.
+        `AmbassadorService._maybe_autotitle` titles an empty thread from its first question
+        (text + voice) via `ambassador_storage.derive_title`; a `title_auto` flag on
+        `set_thread_title` guards a manual rename from being clobbered.
   - [ ] **Relay from the deck** to a chosen conversation — needs the deferred server-side
         `POST /ambassador/relay` (Slice 3) so relay doesn't require an open tab.
 - [x] **`survey_conversations`** — shipped (`0.21.115`), **lean / model-free**. Enumerates
