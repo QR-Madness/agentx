@@ -211,6 +211,26 @@ def _emit_document_citation(tm) -> list[str]:
     return [_sse("exhibit", exhibit.model_dump())]
 
 
+def _emit_image_exhibit(tm) -> list[str]:
+    """Auto-render a `generate_image` result as an `image` exhibit (the user-facing
+    artifact). Reads the tool result for the served-blob url + prompt."""
+    try:
+        data = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict) or not data.get("success") or not data.get("url"):
+        return []
+
+    from .exhibits import image_exhibit_from_generate
+
+    exhibit = image_exhibit_from_generate(
+        data["url"], exhibit_id=f"exh_img_{tm.tool_call_id}", alt=data.get("prompt"),
+    )
+    if exhibit is None:
+        return []
+    return [_sse("exhibit", exhibit.model_dump())]
+
+
 async def _run_delegations(
     delegation_calls: list,
     alloy_executor,
@@ -406,6 +426,10 @@ async def _execute_and_emit_tools(
             # Workspace document hits become passive `doc` citations (Bibliography).
             elif tm.name in _DOC_CITATION_TOOLS and not is_error:
                 for event_str in _emit_document_citation(tm):
+                    yield event_str
+            # A generated image renders inline as an `image` exhibit.
+            elif tm.name == "generate_image" and not is_error:
+                for event_str in _emit_image_exhibit(tm):
                     yield event_str
 
         if capture_tool_turns:

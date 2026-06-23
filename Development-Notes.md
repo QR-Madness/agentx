@@ -74,6 +74,19 @@ object URL via `lib/avatarImage.ts`, mirroring the TTS blob pattern) and falls b
 that the feature needs (`DEFAULT_IMAGE_MODEL`/`DEFAULT_AVATAR_STYLE_PROMPT`) are module constants in `config.py` —
 `_load` doesn't merge new keys into a pre-existing `config.json`, so callers fall back to the constants.
 
+**Image generation in a conversation (v0.21.127).** A `generate_image` **internal tool**
+(`mcp/internal_tools.py`, `@register_tool`) lets an agent make an image mid-chat: it self-gates on
+`config.images.enabled`, resolves the image model, bridges the async `provider.generate_image` from the
+sync tool via `utils/async_bridge.run_coro_sync`, stores the bytes via `store_media` into the
+conversation's attached workspace (else the user's **Home**) under a `generated/` prefix, records cost
+(source `image`), and returns `{success, url, prompt}` (never the bytes — vision input is separate). The
+result renders inline as a new **`image` exhibit**: `streaming/exhibits.py` adds an `ImageElement`
+(`{type:"image", url, alt}`) + `image_exhibit_from_generate`; `tool_loop.py`'s `_emit_image_exhibit(tm)`
+auto-emits it (parsing the tool result, mirroring the citation auto-capture) so the chat shows the picture
+without the model re-describing it. Client: `lib/exhibits.ts` gains the `image` element; the
+`components/chat/exhibits/ImageElement` renderer (registered in `elementRegistry`) resolves the served-blob
+URL to an authed object URL via `lib/mediaImage.ts::resolveMediaImage` (the shared helper avatars also use).
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code

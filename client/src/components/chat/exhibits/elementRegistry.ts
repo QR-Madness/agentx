@@ -15,6 +15,7 @@ import { MermaidElement } from './MermaidElement';
 import { ChoiceElement } from './ChoiceElement';
 import { TableElement } from './TableElement';
 import { CitationElement } from './CitationElement';
+import { ImageElement } from './ImageElement';
 
 export type { ElementRenderProps };
 
@@ -25,4 +26,5 @@ export const elementRegistry: Partial<
   choice: ChoiceElement,
   table: TableElement,
   citation: CitationElement,
+  image: ImageElement,
 };

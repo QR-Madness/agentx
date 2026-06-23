@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, field_validator
 EXHIBIT_SCHEMA_VERSION = 1
 
 # The allow-list. Adding an element type = add it here + a client renderer.
-ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice", "table", "citation"})
+ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice", "table", "citation", "image"})
 
 # Upper bound on choice options — keep the rendered button set usable.
 MAX_CHOICE_OPTIONS = 10
@@ -136,10 +136,21 @@ class CitationElement(BaseModel):
     title: str | None = None
 
 
+class ImageElement(BaseModel):
+    """A generated/stored image, displayed inline. ``url`` is a served-blob path
+    (``/api/workspaces/{ws}/documents/{doc}/raw``); the client fetches it through the
+    authed API client and object-URLs it (a raw <img src> can't carry auth)."""
+
+    type: Literal["image"]
+    url: str
+    alt: str | None = None
+    title: str | None = None
+
+
 # Element union — discriminated on `type`; the discriminator enforces the
 # allow-list (an unknown type raises). Widen as new element types ship.
 Element = Annotated[
-    MermaidElement | ChoiceElement | TableElement | CitationElement,
+    MermaidElement | ChoiceElement | TableElement | CitationElement | ImageElement,
     Field(discriminator="type"),
 ]
 
@@ -257,6 +268,19 @@ def citation_exhibit_from_document_query(
         id=exhibit_id,
         layout="stack",
         elements=[CitationElement(type="citation", sources=sources)],
+    )
+
+
+def image_exhibit_from_generate(url: str, *, exhibit_id: str, alt: str | None = None) -> Exhibit | None:
+    """Build an ``image`` exhibit from a ``generate_image`` tool result. ``url`` is the
+    served-blob path; ``alt`` is the generating prompt. Returns ``None`` when there's no url."""
+    if not url:
+        return None
+    return Exhibit(
+        schema_version=EXHIBIT_SCHEMA_VERSION,
+        id=exhibit_id,
+        layout="stack",
+        elements=[ImageElement(type="image", url=url, alt=alt)],
     )
 
 

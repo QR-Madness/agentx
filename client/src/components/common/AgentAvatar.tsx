@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { getAvatarIcon, isImageAvatar } from '../../lib/avatars';
-import { resolveAvatarImage } from '../../lib/avatarImage';
+import { resolveAvatarImage } from '../../lib/mediaImage';
 
 interface AgentAvatarProps {
   avatar?: string;

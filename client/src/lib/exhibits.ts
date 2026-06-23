@@ -52,8 +52,21 @@ export interface CitationElement {
   title?: string;
 }
 
+export interface ImageElement {
+  type: 'image';
+  /** A served-blob path (…/documents/{doc}/raw); resolved to an authed object URL at render. */
+  url: string;
+  alt?: string;
+  title?: string;
+}
+
 /** Union of element kinds. Widen as new element types ship. */
-export type ExhibitElement = MermaidElement | ChoiceElement | TableElement | CitationElement;
+export type ExhibitElement =
+  | MermaidElement
+  | ChoiceElement
+  | TableElement
+  | CitationElement
+  | ImageElement;
 
 /** UI-shape exhibit. */
 export interface Exhibit {
@@ -80,6 +93,8 @@ export interface ExhibitWireElement {
     kind?: string;
     source_type?: string;
   }>;
+  url?: string;
+  alt?: string;
   title?: string;
 }
 
@@ -98,6 +113,7 @@ const KNOWN_ELEMENT_TYPES = new Set<ExhibitElement['type']>([
   'choice',
   'table',
   'citation',
+  'image',
 ]);
 
 export function isKnownElementType(type: string): type is ExhibitElement['type'] {
@@ -133,6 +149,9 @@ function elementFromWire(el: ExhibitWireElement): ExhibitElement {
       })),
       title: el.title,
     };
+  }
+  if (el.type === 'image') {
+    return { type: 'image', url: el.url ?? '', alt: el.alt, title: el.title };
   }
   // mermaid (and any unknown type) — unknown types survive at runtime; the
   // element registry misses and ExhibitBubble shows a source-as-code fallback.

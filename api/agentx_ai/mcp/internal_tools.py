@@ -686,6 +686,96 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
     return {**doc, "success": True}
 
 
+# --- Image generation (multi-modal; the result renders as an image exhibit) --
+
+_IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+
+
+@register_tool(
+    name="generate_image",
+    description=(
+        "Generate an image from a text prompt and show it to the user in this conversation. "
+        "Use when the user asks you to draw / create / generate an image, diagram, or picture. "
+        "The image is rendered for the user automatically — you don't get the pixels back, so "
+        "just confirm what you made; don't try to describe it pixel-by-pixel."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string", "description": "What to depict — be specific and visual."},
+        },
+        "required": ["prompt"],
+    },
+)
+def generate_image(prompt: str) -> dict[str, Any]:
+    from datetime import UTC, datetime
+
+    from ..config import DEFAULT_IMAGE_MODEL, get_config_manager
+    from .internal_context import current_context
+
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return {"error": "prompt is required", "success": False}
+
+    cfg = get_config_manager()
+    if not cfg.get("images.enabled", True):
+        return {"error": "Image generation is disabled in settings.", "success": False}
+
+    ctx = current_context()
+    user_id = ctx.user_id if ctx else "default"
+    model = (cfg.get("images.default_model", DEFAULT_IMAGE_MODEL) or "").strip()
+
+    try:
+        from ..providers.registry import get_registry
+        from ..utils.async_bridge import run_coro_sync
+
+        provider, model_id, _ = get_registry().resolve_with_fallback(model)
+        result = run_coro_sync(provider.generate_image(prompt, model=model_id), timeout=120.0)
+    except NotImplementedError:
+        return {"error": "The configured provider can't generate images.", "success": False}
+    except Exception as e:  # noqa: BLE001 — a tool error never breaks the turn
+        logger.warning(f"generate_image failed: {e}")
+        return {"error": f"Image generation failed: {str(e)[:200]}", "success": False}
+
+    try:
+        from ..kit.workspaces import repository
+        from ..kit.workspaces.service import store_media
+
+        # Store in the conversation's workspace if one is attached, else the user's Home.
+        workspace_id = (ctx.workspace_id if ctx and ctx.workspace_id else None) or repository.ensure_home_workspace(user_id)["id"]
+        ext = _IMAGE_EXT.get(result.content_type, "png")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+        doc = store_media(
+            workspace_id=workspace_id,
+            filename=f"generated/{stamp}.{ext}",
+            content_type=result.content_type,
+            raw=result.image,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"generate_image store failed: {e}")
+        return {"error": f"Couldn't store the image: {str(e)[:160]}", "success": False}
+
+    try:  # metering is best-effort
+        from ..agent.usage_ledger import record_usage
+        from ..providers.pricing import estimate_image_cost
+        record_usage(
+            source="image", model=model, provider=getattr(provider, "name", None),
+            conversation_id=(ctx.conversation_id if ctx else None),
+            agent_id=(ctx.agent_id if ctx else None),
+            units={"images": 1}, cost=estimate_image_cost(model=model, images=1),
+        )
+    except Exception as _uerr:  # noqa: BLE001
+        logger.debug(f"image usage record skipped: {_uerr}")
+
+    return {
+        "success": True,
+        "doc_id": doc["id"],
+        "workspace_id": workspace_id,
+        "url": f"/api/workspaces/{workspace_id}/documents/{doc['id']}/raw",
+        "prompt": prompt,
+    }
+
+
 # --- Agent shells (sandboxed command execution — kit/shell) ------------------
 # Opt-in (shell.enabled). Commands run in a bubblewrap jail scoped to the
 # conversation's work dir (materialized from the attached workspace); env scrubbed

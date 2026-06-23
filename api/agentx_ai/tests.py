@@ -8466,6 +8466,92 @@ def _fake_async_client(response, captured: dict):
     return _FakeClient
 
 
+class GenerateImageToolTest(TestCase):
+    """The `generate_image` internal tool + its image-exhibit emission."""
+
+    def _ctx(self, **kw):
+        from agentx_ai.mcp.internal_context import InternalToolContext
+
+        defaults = {"user_id": "default", "conversation_id": "conv1", "workspace_id": None, "agent_id": "a1"}
+        defaults.update(kw)
+        return InternalToolContext(**defaults)
+
+    def test_generate_image_stores_and_returns_url(self):
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.providers.base import ImageResult
+
+        img = ImageResult(image=b"PNG", content_type="image/png", model="m")
+        provider = MagicMock()
+        provider.name = "openrouter"
+        provider.generate_image = AsyncMock(return_value=img)
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "flux", None)
+
+        captured = {}
+        def _store(*, workspace_id, filename, content_type, raw):
+            captured.update(workspace_id=workspace_id, filename=filename, content_type=content_type)
+            return {"id": "doc_x"}
+
+        with patch("agentx_ai.mcp.internal_context.current_context", return_value=self._ctx()), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
+             patch("agentx_ai.utils.async_bridge.run_coro_sync", side_effect=lambda coro, timeout=120.0: img), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace", return_value={"id": "ws_home"}), \
+             patch("agentx_ai.kit.workspaces.service.store_media", side_effect=_store), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as rec, \
+             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value={"cost_total": 0.01, "currency": "USD", "pricing_snapshot": {}}):
+            out = it.generate_image("a sunset over mountains")
+
+        self.assertTrue(out["success"])
+        self.assertEqual(out["url"], "/api/workspaces/ws_home/documents/doc_x/raw")
+        self.assertEqual(captured["workspace_id"], "ws_home")  # no attached ws → Home
+        self.assertTrue(captured["filename"].startswith("generated/"))
+        self.assertEqual(rec.call_args.kwargs["source"], "image")
+
+    def test_generate_image_uses_attached_workspace_when_present(self):
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.providers.base import ImageResult
+
+        img = ImageResult(image=b"PNG", content_type="image/png", model="m")
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (MagicMock(name="p"), "flux", None)
+        seen = {}
+        with patch("agentx_ai.mcp.internal_context.current_context", return_value=self._ctx(workspace_id="ws_attached")), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
+             patch("agentx_ai.utils.async_bridge.run_coro_sync", return_value=img), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace") as home, \
+             patch("agentx_ai.kit.workspaces.service.store_media", side_effect=lambda **kw: seen.update(kw) or {"id": "d"}), \
+             patch("agentx_ai.agent.usage_ledger.record_usage"), \
+             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value=None):
+            out = it.generate_image("x")
+        self.assertTrue(out["success"])
+        self.assertEqual(seen["workspace_id"], "ws_attached")
+        home.assert_not_called()  # attached ws used; Home not minted
+
+    def test_generate_image_degrades_on_provider_error(self):
+        from agentx_ai.mcp import internal_tools as it
+
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (MagicMock(), "flux", None)
+        with patch("agentx_ai.mcp.internal_context.current_context", return_value=self._ctx()), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
+             patch("agentx_ai.utils.async_bridge.run_coro_sync", side_effect=RuntimeError("boom")):
+            out = it.generate_image("x")
+        self.assertFalse(out["success"])
+        self.assertIn("error", out)
+
+    def test_image_exhibit_builder(self):
+        from agentx_ai.streaming.exhibits import ALLOWED_ELEMENT_TYPES, image_exhibit_from_generate
+
+        self.assertIn("image", ALLOWED_ELEMENT_TYPES)
+        ex = image_exhibit_from_generate("/api/workspaces/w/documents/d/raw", exhibit_id="exh_img_1", alt="a cat")
+        self.assertIsNotNone(ex)
+        el = ex.elements[0]
+        self.assertEqual(el.type, "image")
+        self.assertEqual(el.url, "/api/workspaces/w/documents/d/raw")
+        self.assertEqual(el.alt, "a cat")
+        self.assertIsNone(image_exhibit_from_generate("", exhibit_id="x"))
+
+
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class WorkspaceMediaTest(TestCase):
     """Binary image media in the workspace blob store: store-without-ingestion + the
@@ -8538,7 +8624,6 @@ class AvatarGenerateEndpointTest(TestCase):
         self.assertEqual(self._post({}).status_code, 400)
 
     def test_generates_stores_in_home_and_returns_url(self):
-        from types import SimpleNamespace
         from agentx_ai.providers.base import ImageResult
 
         img = ImageResult(image=b"PNG", content_type="image/png", model="m", generation_id="g")

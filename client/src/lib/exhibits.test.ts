@@ -28,6 +28,17 @@ describe('exhibitFromWire', () => {
     });
     expect(ex.elements[0].type === 'citation' && ex.elements[0].sources[0].source_type).toBe(undefined);
   });
+
+  it('maps an image element (url/alt) for a generated image', () => {
+    const ex = exhibitFromWire({
+      id: 'e4',
+      elements: [{ type: 'image', url: '/api/workspaces/ws_home/documents/doc_1/raw', alt: 'a sunset' }],
+    });
+    const el = ex.elements[0];
+    expect(el.type).toBe('image');
+    expect(el.type === 'image' && el.url).toBe('/api/workspaces/ws_home/documents/doc_1/raw');
+    expect(el.type === 'image' && el.alt).toBe('a sunset');
+  });
 });
 
 describe('citationExhibitFromWebSearch', () => {
