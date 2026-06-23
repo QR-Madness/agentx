@@ -91,6 +91,8 @@ export interface ModelInfo {
   max_output_tokens?: number | null;
   supports_tools?: boolean;
   supports_vision?: boolean;
+  /** Image *output* (generation) — distinct from `supports_vision` (image input). */
+  supports_image?: boolean;
   supports_streaming?: boolean;
   supports_json_mode?: boolean;
   supports_speech?: boolean;

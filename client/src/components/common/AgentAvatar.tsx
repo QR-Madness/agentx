@@ -39,11 +39,19 @@ export function AgentAvatar({ avatar, size = 20, className, fill }: AgentAvatarP
 
   if (isImage && url) {
     // Fill the wrapping circle (inherit its radius) at boxed sites; else explicit px.
+    // `aspect-ratio` (not height:100%) sets the height — webkit2gtk (Tauri) doesn't
+    // resolve a flex child's percentage height reliably, which left the image collapsed.
     const style: React.CSSProperties = fill
-      ? { width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', display: 'block' }
+      ? { width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 'inherit', display: 'block' }
       : { width: size, height: size };
     return (
-      <img src={url} alt="" className={fill ? className : `rounded-full object-cover ${className ?? ''}`} style={style} />
+      <img
+        src={url}
+        alt=""
+        className={fill ? className : `rounded-full object-cover ${className ?? ''}`}
+        style={style}
+        onError={() => setUrl(null)}  // a broken blob falls back to the icon, not a broken-image glyph
+      />
     );
   }
 

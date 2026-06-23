@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, RefreshCw, Search, Check, Wrench, Eye, Braces, Zap, Loader2, Volume2, Mic,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import {
@@ -33,11 +34,17 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const KNOWN_PROVIDER_ORDER = ['anthropic', 'openrouter', 'vercel', 'lmstudio', 'openai'];
 
-type CapabilityKey = 'tools' | 'vision' | 'json' | 'streaming' | 'speech' | 'transcription';
+type CapabilityKey = 'tools' | 'vision' | 'image' | 'json' | 'streaming' | 'speech' | 'transcription';
+
+// Image *output* (generation): the model emits images (`output_modalities` includes "image"),
+// distinct from `vision` which is image *input*.
+const _outputsImage = (m: ModelInfo): boolean =>
+  !!m.supports_image || !!m.output_modalities?.includes('image');
 
 const CAPABILITIES: { key: CapabilityKey; label: string; icon: React.ReactNode; match: (m: ModelInfo) => boolean }[] = [
   { key: 'tools',         label: 'Tools',     icon: <Wrench size={13} />, match: m => !!m.supports_tools },
   { key: 'vision',        label: 'Vision',    icon: <Eye size={13} />,    match: m => !!m.supports_vision },
+  { key: 'image',         label: 'Image gen', icon: <ImageIcon size={13} />, match: _outputsImage },
   { key: 'json',          label: 'JSON mode', icon: <Braces size={13} />, match: m => !!m.supports_json_mode },
   { key: 'streaming',     label: 'Streaming', icon: <Zap size={13} />,    match: m => m.supports_streaming !== false },
   { key: 'speech',        label: 'Speech',    icon: <Volume2 size={13} />, match: m => !!m.supports_speech },

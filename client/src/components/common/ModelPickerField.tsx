@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ChevronRight, Wrench, Eye } from 'lucide-react';
+import { ChevronRight, Wrench, Eye, Image as ImageIcon } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import { fetchModelsOnce } from './modelCatalog';
 import { ModelPickerModal } from './ModelPickerModal';
@@ -95,6 +95,9 @@ export function ModelPickerField({
           )}
           {selected?.supports_vision && (
             <span className="mpf-trigger-cap" title="Vision"><Eye size={12} /></span>
+          )}
+          {(selected?.supports_image || selected?.output_modalities?.includes('image')) && (
+            <span className="mpf-trigger-cap" title="Image generation"><ImageIcon size={12} /></span>
           )}
           <ChevronRight size={14} className="mpf-trigger-chev" />
         </div>

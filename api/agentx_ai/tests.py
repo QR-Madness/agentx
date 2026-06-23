@@ -906,6 +906,51 @@ class DependencyInjectionTest(TestCase):
             self.assertIs(agent.registry, fake)
             getter.assert_called_once()
 
+    def _agent_with_caps(self, *, supports_tools, fetch_models=None):
+        from types import SimpleNamespace
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        caps_seq = supports_tools if isinstance(supports_tools, list) else [supports_tools]
+        provider = MagicMock()
+        provider.get_capabilities.side_effect = [
+            SimpleNamespace(supports_tools=v) for v in caps_seq
+        ]
+        if fetch_models is None:
+            del provider.fetch_models  # no lazy catalog → no warm path
+        else:
+            provider.fetch_models = fetch_models
+        fake = MagicMock()
+        fake.resolve_with_fallback.return_value = (provider, "m", None)
+        return Agent(AgentConfig(default_model="openrouter:x"), registry=fake), provider
+
+    def test_model_supports_tools_true(self) -> None:
+        agent, _ = self._agent_with_caps(supports_tools=True)
+        self.assertTrue(agent._model_supports_tools())
+
+    def test_model_supports_tools_false_disables(self) -> None:
+        # Confirmed tool-less (no lazy catalog to warm) → tools are skipped.
+        agent, _ = self._agent_with_caps(supports_tools=False)
+        self.assertFalse(agent._model_supports_tools())
+
+    def test_model_supports_tools_warms_catalog_before_disabling(self) -> None:
+        # Cold lazy catalog reports False first; after a warm it reports True → keep tools.
+        from unittest.mock import AsyncMock
+
+        agent, provider = self._agent_with_caps(
+            supports_tools=[False, True], fetch_models=AsyncMock(return_value=[]),
+        )
+        with patch("agentx_ai.utils.async_bridge.run_coro_sync", return_value=[]):
+            self.assertTrue(agent._model_supports_tools())
+        self.assertEqual(provider.get_capabilities.call_count, 2)  # re-checked after warm
+
+    def test_model_supports_tools_defaults_true_on_probe_error(self) -> None:
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        fake = MagicMock()
+        fake.resolve_with_fallback.side_effect = RuntimeError("no provider")
+        agent = Agent(AgentConfig(default_model="x"), registry=fake)
+        self.assertTrue(agent._model_supports_tools())  # never strip tools on a probe miss
+
     def test_set_and_reset_registry(self) -> None:
         """set_registry injects the global; reset_registry rebuilds on next access."""
         from agentx_ai.providers.registry import (

@@ -326,8 +326,40 @@ class Agent:
                     "parameters": t.input_schema or {"type": "object"},
                 },
             })
-        
-        return tools if tools else None
+
+        if not tools:
+            return None
+
+        # Don't send tools to a model that can't use them — OpenRouter 404s
+        # ("no endpoints support tool use") rather than ignoring them. Gate on the
+        # resolved model's capability, but only disable when *confirmed* tool-less:
+        # a provider with a lazy model catalog (OpenRouter) reports tools=False for an
+        # uncached model, so warm the catalog once and re-check before stripping tools.
+        if not self._model_supports_tools():
+            logger.info(
+                f"[tool-gate] model {self.config.default_model!r} has no tool support — sending no tools"
+            )
+            return None
+        return tools
+
+    def _model_supports_tools(self) -> bool:
+        """Whether the agent's chat model supports tool/function calling. Defaults to
+        True on any uncertainty (never strip tools from a capable model on a probe miss)."""
+        try:
+            provider, model_id, _ = self.registry.resolve_with_fallback(self.config.default_model)
+            caps = provider.get_capabilities(model_id)
+            if caps.supports_tools:
+                return True
+            # Possibly a cold lazy catalog → warm it once, then re-check authoritatively.
+            warm = getattr(provider, "fetch_models", None)
+            if warm is not None:
+                from ..utils.async_bridge import run_coro_sync
+                run_coro_sync(warm(), timeout=15.0)
+                caps = provider.get_capabilities(model_id)
+            return bool(caps.supports_tools)
+        except Exception as e:  # noqa: BLE001 — never block tools on a capability-probe failure
+            logger.debug(f"[tool-gate] capability probe failed, assuming tools ok: {e}")
+            return True
     
     def _execute_tool_calls(self, tool_calls: list[ToolCall], task_context: str = "") -> list[Message]:
         """

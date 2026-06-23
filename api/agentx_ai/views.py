@@ -636,6 +636,7 @@ async def providers_models(request):
                     "max_output_tokens": caps.max_output_tokens,
                     "supports_tools": caps.supports_tools,
                     "supports_vision": caps.supports_vision,
+                    "supports_image": "image" in (caps.output_modalities or []),
                     "supports_streaming": caps.supports_streaming,
                     "supports_json_mode": caps.supports_json_mode,
                     "supports_speech": caps.supports_speech,
