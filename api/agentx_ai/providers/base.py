@@ -196,6 +196,19 @@ class SpeechResult:
 
 
 @dataclass
+class ImageResult:
+    """Result of an image-generation request.
+
+    ``image`` is the raw encoded image (e.g. PNG bytes), ready to store as a blob or
+    serve to an ``<img>``. ``content_type`` is the MIME type (``image/png``).
+    """
+    image: bytes
+    content_type: str = "image/png"
+    model: str = ""
+    generation_id: str | None = None
+
+
+@dataclass
 class TranscriptionResult:
     """Result of a speech-to-text (transcription) request."""
     text: str
@@ -372,6 +385,27 @@ class ModelProvider(ABC):
         """
         raise NotImplementedError(
             f"{self.name} does not support speech synthesis"
+        )
+
+    async def generate_image(
+        self,
+        prompt: str,
+        *,
+        model: str,
+        **kwargs: Any,
+    ) -> ImageResult:
+        """Generate an image from ``prompt``.
+
+        Default raises — only providers exposing an image backend (currently OpenRouter,
+        via the chat-completions endpoint with ``modalities: ["image","text"]``) override
+        this. Callers should resolve an image-capable model (``output_modalities`` includes
+        ``image``) and surface a clear "image generation unconfigured" message otherwise.
+
+        Returns:
+            ImageResult with the encoded image bytes.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not support image generation"
         )
 
     async def transcribe_speech(

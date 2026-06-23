@@ -142,6 +142,21 @@ DEFAULT_CONFIG = {
         # (an added default here wouldn't reach installs with an existing config.json);
         # this is the user-override slot the usage ledger reads. Foundation #5.
         "audio": {},
+        # Image rate overrides, keyed by `provider:model` → {per_image}. Shipped
+        # defaults in providers/pricing.py; this is the user-override slot.
+        "images": {},
+    },
+    "images": {
+        # Image generation (avatars first; multi-modal pipelines later). OpenRouter-only
+        # today (chat-completions + modalities:["image","text"]).
+        "enabled": True,
+        "default_model": "openrouter:black-forest-labs/flux.2-klein-4b",
+        # App-level avatar STYLE prompt; the per-profile SUBJECT prompt is appended at
+        # generation time (e.g. "mobius should be a gray-haired strategist").
+        "avatar_style_prompt": (
+            "A photorealistic headshot portrait, centered, clean studio lighting, "
+            "subtle depth of field, with a softly rounded border."
+        ),
     },
     "session": {
         "rolling_summary": {

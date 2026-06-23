@@ -32,6 +32,7 @@ SOURCES = (
     "ambassador_tts",
     "ambassador_stt",
     "search",
+    "image",
 )
 
 

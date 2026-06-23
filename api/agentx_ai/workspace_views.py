@@ -188,6 +188,25 @@ def workspace_document_detail(request, workspace_id: str, document_id: str):
     return json_success({"status": "deleted", "document_id": document_id})
 
 
+@csrf_exempt
+@require_methods("GET")
+def workspace_document_raw(request, workspace_id: str, document_id: str):
+    """Serve a document's raw bytes (the blob) with its content-type. The stable URL for
+    stored media — e.g. generated avatars in the Home workspace. The client fetches this
+    through the authed API client (then object-URLs it), so it works under auth."""
+    from django.http import HttpResponse
+
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        return json_error("Document not found", status=404)
+    raw = storage.read_blob(doc["storage_key"])
+    if raw is None:
+        return json_error("Blob not found", status=404)
+    resp = HttpResponse(raw, content_type=doc.get("content_type") or "application/octet-stream")
+    resp["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
 def _prepull_shell_image() -> None:
     try:
         from .kit.shell import container as sc

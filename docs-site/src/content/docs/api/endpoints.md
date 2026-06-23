@@ -608,6 +608,7 @@ GET    /api/workspaces/{workspace_id}/documents      # manifest list (tags/summa
 POST   /api/workspaces/{workspace_id}/documents      # multipart field `file` → 201 (status=pending)
 GET    /api/workspaces/{workspace_id}/documents/{document_id}
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
+GET    /api/workspaces/{workspace_id}/documents/{document_id}/raw   # serve blob bytes (e.g. generated avatars)
 GET    /api/workspaces/{workspace_id}/shell/container          # container backend: status + live stats
 POST   /api/workspaces/{workspace_id}/shell/container/{action} # action ∈ start|stop|reset|remove
 ```

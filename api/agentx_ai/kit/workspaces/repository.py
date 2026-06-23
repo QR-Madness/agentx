@@ -39,6 +39,33 @@ def create_workspace(name: str, user_id: str = "default") -> dict[str, Any]:
     return get_workspace(ws_id)  # type: ignore[return-value]
 
 
+# Reserved, well-known workspace id for the user's personal "Home" space (avatars,
+# custom icons, personal files). Visible + renamable like any other workspace.
+HOME_WORKSPACE_ID = "ws_home"
+
+
+def ensure_workspace(workspace_id: str, name: str, user_id: str = "default") -> dict[str, Any]:
+    """Get-or-create a workspace with an *explicit* id (idempotent). Used for reserved
+    workspaces like Home; a rename later won't be clobbered (we only insert if absent)."""
+    with get_postgres_session() as s:
+        s.execute(
+            text(
+                """
+                INSERT INTO workspaces (id, user_id, name) VALUES (:id, :uid, :name)
+                ON CONFLICT (id) DO NOTHING
+                """
+            ),
+            {"id": workspace_id, "uid": user_id, "name": name},
+        )
+        s.commit()
+    return get_workspace(workspace_id)  # type: ignore[return-value]
+
+
+def ensure_home_workspace(user_id: str = "default") -> dict[str, Any]:
+    """The user's reserved personal workspace (avatars + personal files)."""
+    return ensure_workspace(HOME_WORKSPACE_ID, "Home", user_id)
+
+
 def list_workspaces(user_id: str = "default") -> list[dict[str, Any]]:
     with get_postgres_session() as s:
         rows = s.execute(
@@ -157,7 +184,11 @@ def create_document(
     size_bytes: int,
     sha256: str,
     storage_key: str,
+    status: str = "pending",
 ) -> dict[str, Any]:
+    """Create a document row. ``status`` defaults to ``pending`` (text docs await
+    ingestion); binary media stored via ``service.store_media`` pass ``ready`` since
+    there's no parse/chunk/embed step."""
     doc_id = _new_id("doc")
     with get_postgres_session() as s:
         s.execute(
@@ -165,12 +196,12 @@ def create_document(
                 """
                 INSERT INTO documents
                     (id, workspace_id, filename, content_type, size_bytes, sha256, storage_key, status)
-                VALUES (:id, :wid, :fn, :ct, :sz, :sha, :key, 'pending')
+                VALUES (:id, :wid, :fn, :ct, :sz, :sha, :key, :status)
                 """
             ),
             {
                 "id": doc_id, "wid": workspace_id, "fn": filename, "ct": content_type,
-                "sz": size_bytes, "sha": sha256, "key": storage_key,
+                "sz": size_bytes, "sha": sha256, "key": storage_key, "status": status,
             },
         )
         s.execute(text("UPDATE workspaces SET updated_at = NOW() WHERE id = :id"), {"id": workspace_id})

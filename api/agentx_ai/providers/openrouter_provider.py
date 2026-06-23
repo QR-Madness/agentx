@@ -15,6 +15,7 @@ import httpx
 
 from .base import (
     CompletionResult,
+    ImageResult,
     Message,
     ModelCapabilities,
     ModelProvider,
@@ -319,6 +320,65 @@ class OpenRouterProvider(ModelProvider):
             model=model,
             voice=voice or "",
             generation_id=generation_id,
+        )
+
+    async def generate_image(
+        self,
+        prompt: str,
+        *,
+        model: str,
+        **kwargs: Any,
+    ) -> ImageResult:
+        """Generate an image via OpenRouter's chat-completions endpoint with
+        ``modalities: ["image","text"]``. The image comes back as a base64 data URL on
+        ``choices[0].message.images[0].image_url.url`` (per OpenRouter's image-gen API),
+        which we decode to raw bytes. Raises on a non-2xx or a response with no image."""
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "modalities": ["image", "text"],
+        }
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        if self._site_url:
+            headers["HTTP-Referer"] = self._site_url
+        if self._app_name:
+            headers["X-Title"] = self._app_name
+
+        base = self.config.base_url or OPENROUTER_BASE_URL
+        logger.debug(f"OpenRouter image gen: model={model}, prompt_chars={len(prompt)}")
+
+        async with httpx.AsyncClient(timeout=self.config.timeout or 120.0) as http_client:
+            response = await http_client.post(
+                f"{base}/chat/completions", headers=headers, json=body
+            )
+            if response.status_code >= 400:
+                detail = response.text[:500]
+                raise RuntimeError(
+                    f"OpenRouter image generation failed ({response.status_code}): {detail}"
+                )
+            data = response.json()
+
+        try:
+            message = data["choices"][0]["message"]
+            images = message.get("images") or []
+            data_url = images[0]["image_url"]["url"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise RuntimeError(
+                f"OpenRouter returned no image (model '{model}' may not support image output)"
+            ) from e
+
+        # data_url is "data:{content_type};base64,{b64}"
+        if not data_url.startswith("data:") or "," not in data_url:
+            raise RuntimeError("OpenRouter image url was not a base64 data URL")
+        header, b64 = data_url.split(",", 1)
+        content_type = header[len("data:"):].split(";", 1)[0] or "image/png"
+        image_bytes = base64.b64decode(b64)
+
+        return ImageResult(
+            image=image_bytes,
+            content_type=content_type,
+            model=model,
+            generation_id=data.get("id"),
         )
 
     async def transcribe_speech(

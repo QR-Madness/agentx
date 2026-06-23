@@ -2065,6 +2065,29 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /workspaces/{workspace_id}/documents/{document_id}/raw:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceDocumentRaw
+      summary: Serve a document's raw bytes (blob)
+      description: >-
+        Returns the document's stored bytes with its content-type — the stable URL for
+        binary media such as generated agent avatars (held in the reserved "Home"
+        workspace). Clients fetch this through the authed API client and object-URL it.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Raw blob bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /workspaces/{workspace_id}/shell/container:
     get:
       tags: [Workspaces]

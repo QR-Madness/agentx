@@ -113,3 +113,41 @@ def estimate_audio_cost(
     if not measured:
         return None
     return {"cost_total": cost, "currency": "USD", "pricing_snapshot": snapshot}
+
+
+# Per-image rates (USD). A shipped *estimate* — the authoritative rate for an install
+# belongs in `config.pricing.images.{provider:model}` (the override map below), since an
+# added default wouldn't reach installs with a pre-existing config.json. flux klein is a
+# small/cheap model; treat 0.01/image as a rough placeholder.
+_DEFAULT_IMAGE_PRICING: dict[str, dict[str, float]] = {
+    "openrouter:black-forest-labs/flux.2-klein-4b": {"per_image": 0.01},
+}
+
+
+def _image_rates() -> dict[str, dict]:
+    """Shipped defaults merged with any `config.pricing.images` overrides."""
+    merged: dict[str, dict] = dict(_DEFAULT_IMAGE_PRICING)
+    try:
+        from ..config import get_config_manager
+        overrides = get_config_manager().get("pricing.images") or {}
+        if isinstance(overrides, dict):
+            merged.update(overrides)
+    except Exception:  # noqa: BLE001 — pricing is best-effort
+        pass
+    return merged
+
+
+def estimate_image_cost(*, model: str, images: int = 1) -> dict | None:
+    """Estimate image-generation cost from the configurable per-model rate table.
+
+    Returns ``{cost_total, currency, pricing_snapshot}`` (mirrors ``estimate_audio_cost`` —
+    not the token ``CostEstimate``) or ``None`` when the model has no configured rate."""
+    rate = _image_rates().get(model)
+    if not rate or not rate.get("per_image"):
+        return None
+    per_image = rate["per_image"]
+    return {
+        "cost_total": images * per_image,
+        "currency": "USD",
+        "pricing_snapshot": {"per_image": per_image},
+    }

@@ -54,6 +54,15 @@ tags + summaries, bounded) so the agent knows its corpus before retrieving. Self
 `scripts/rag_e2e.py` (create → upload seed PDF → poll ready → assert blob+chunks+embeddings → retrieve +
 exercise tools, asserting the right passage). Slice 3 = client UX.
 
+**Binary media + serving (v0.21.123).** The blob store also holds non-text media (images): `service.store_media`
+mirrors `upload_document` but validates an image content-type (png/jpeg/webp/gif), **skips ingestion**
+(no parse/chunk/embed), and writes the doc `status="ready"`. **`GET /api/workspaces/{id}/documents/{doc}/raw`**
+(`workspace_views.workspace_document_raw`) serves the stored bytes with their content-type — the **stable image
+URL** (clients fetch it via the authed API client and object-URL it, so it works under auth). A reserved,
+visible **"Home"** workspace (`repository.ensure_home_workspace`, id `ws_home`) is the user's personal space —
+generated avatars land there under an `avatars/` filename prefix (a flat-list naming convention; `temp/` reserved
+for scratch). This is the image-transport foundation for the broader multi-modal pipeline.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code

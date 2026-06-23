@@ -63,3 +63,50 @@ def upload_document(
     )
     ingestion.ingest_document_async(doc["id"])
     return doc
+
+
+# Image media the blob store can hold + serve (no text ingestion).
+MEDIA_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+def store_media(
+    *, workspace_id: str, filename: str, content_type: str, raw: bytes
+) -> dict[str, Any]:
+    """Store a binary image blob + a manifest row, **skipping text ingestion** (images
+    aren't parsed/chunked/embedded). The row is ``ready`` immediately. Reuses the same
+    size/quota policy as uploads. Raises :class:`WorkspaceError` on a policy failure."""
+    settings = get_settings()
+
+    if repository.get_workspace(workspace_id) is None:
+        raise WorkspaceError("not_found", f"workspace {workspace_id} not found")
+    if content_type not in MEDIA_CONTENT_TYPES:
+        raise WorkspaceError(
+            "unsupported",
+            f"media type not supported (allowed: {', '.join(sorted(MEDIA_CONTENT_TYPES))})",
+        )
+
+    size = len(raw)
+    if size == 0:
+        raise WorkspaceError("unsupported", "image is empty")
+    if size > settings.workspace_max_file_bytes:
+        raise WorkspaceError(
+            "too_large",
+            f"image is {size} bytes; per-file limit is {settings.workspace_max_file_bytes}",
+        )
+    used = repository.workspace_usage_bytes(workspace_id)
+    if used + size > settings.workspace_quota_bytes:
+        raise WorkspaceError(
+            "quota_exceeded",
+            f"workspace quota exceeded ({used + size} > {settings.workspace_quota_bytes} bytes)",
+        )
+
+    sha256, storage_key = storage.store_blob(workspace_id, raw)
+    return repository.create_document(
+        workspace_id=workspace_id,
+        filename=filename,
+        content_type=content_type,
+        size_bytes=size,
+        sha256=sha256,
+        storage_key=storage_key,
+        status="ready",  # no ingestion for binary media
+    )

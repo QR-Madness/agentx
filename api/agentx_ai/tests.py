@@ -6204,6 +6204,21 @@ class UsageLedgerTest(TestCase):
         # no seconds given) → None, not a fabricated zero.
         self.assertIsNone(estimate_audio_cost(model="openrouter:openai/whisper-1", chars=100))
 
+    def test_estimate_image_cost(self):
+        from agentx_ai.providers.pricing import estimate_image_cost
+        # Shipped per-image default for flux klein.
+        one = estimate_image_cost(model="openrouter:black-forest-labs/flux.2-klein-4b")
+        self.assertIsNotNone(one)
+        self.assertAlmostEqual(one["cost_total"], 0.01)
+        self.assertIn("per_image", one["pricing_snapshot"])
+        # Scales with image count.
+        self.assertAlmostEqual(
+            estimate_image_cost(model="openrouter:black-forest-labs/flux.2-klein-4b", images=3)["cost_total"],
+            0.03,
+        )
+        # Unpriced model → None (no fabricated zero).
+        self.assertIsNone(estimate_image_cost(model="local:whatever"))
+
     @override_settings(AGENTX_AUTH_ENABLED=False)
     def test_usage_metrics_includes_by_source(self):
         """GET /api/metrics/usage aggregates the ledger with a by-source breakdown."""
@@ -8417,6 +8432,18 @@ class _FakeSpeechResponse:
         self.text = text
 
 
+class _FakeJsonResponse:
+    """Stand-in for an httpx Response carrying a JSON body (e.g. image-gen choices)."""
+
+    def __init__(self, payload, status_code: int = 200, text: str = ""):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
 def _fake_async_client(response, captured: dict):
     """Build a fake httpx.AsyncClient class whose `post` records the call."""
 
@@ -8437,6 +8464,64 @@ def _fake_async_client(response, captured: dict):
             return response
 
     return _FakeClient
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class WorkspaceMediaTest(TestCase):
+    """Binary image media in the workspace blob store: store-without-ingestion + the
+    raw-serving endpoint (the stable image URL for generated avatars)."""
+
+    def test_store_media_skips_ingestion_and_marks_ready(self):
+        from agentx_ai.kit.workspaces import service
+
+        repo = MagicMock()
+        repo.get_workspace.return_value = {"id": "ws_home"}
+        repo.workspace_usage_bytes.return_value = 0
+        repo.create_document.return_value = {"id": "doc_1", "status": "ready"}
+        store = MagicMock()
+        store.store_blob.return_value = ("sha", "ws_home/sha")
+        with patch.object(service, "repository", repo), patch.object(service, "storage", store):
+            doc = service.store_media(
+                workspace_id="ws_home", filename="avatars/a.png",
+                content_type="image/png", raw=b"\x89PNG bytes",
+            )
+        self.assertEqual(doc["id"], "doc_1")
+        # Stored ready (no parse/chunk/embed), with the image content-type + prefix name.
+        kw = repo.create_document.call_args.kwargs
+        self.assertEqual(kw["status"], "ready")
+        self.assertEqual(kw["content_type"], "image/png")
+        self.assertEqual(kw["filename"], "avatars/a.png")
+
+    def test_store_media_rejects_non_image(self):
+        from agentx_ai.kit.workspaces import service
+
+        repo = MagicMock()
+        repo.get_workspace.return_value = {"id": "ws_home"}
+        with patch.object(service, "repository", repo):
+            with self.assertRaises(service.WorkspaceError) as ctx:
+                service.store_media(
+                    workspace_id="ws_home", filename="x.txt",
+                    content_type="text/plain", raw=b"hi",
+                )
+        self.assertEqual(ctx.exception.code, "unsupported")
+
+    def test_raw_endpoint_serves_blob_bytes(self):
+        from agentx_ai import workspace_views as wv
+
+        doc = {"workspace_id": "ws_home", "storage_key": "ws_home/sha", "content_type": "image/png"}
+        with patch.object(wv.repository, "get_document", return_value=doc), \
+             patch.object(wv.storage, "read_blob", return_value=b"PNGDATA"):
+            res = self.client.get("/api/workspaces/ws_home/documents/doc_1/raw")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "image/png")
+        self.assertEqual(res.content, b"PNGDATA")
+
+    def test_raw_endpoint_404_for_unknown_doc(self):
+        from agentx_ai import workspace_views as wv
+
+        with patch.object(wv.repository, "get_document", return_value=None):
+            res = self.client.get("/api/workspaces/ws_home/documents/ghost/raw")
+        self.assertEqual(res.status_code, 404)
 
 
 class OpenRouterSpeechTest(TestCase):
@@ -8511,6 +8596,37 @@ class OpenRouterSpeechTest(TestCase):
         provider = LMStudioProvider(ProviderConfig())
         with self.assertRaises(NotImplementedError):
             asyncio.run(provider.synthesize_speech("hi", model="x"))
+
+    def test_generate_image_posts_chat_completions_and_decodes_data_url(self):
+        import base64 as _b64
+        from agentx_ai.providers import openrouter_provider as orp
+
+        png = b"\x89PNG\r\n\x1a\n fake bytes"
+        data_url = "data:image/png;base64," + _b64.b64encode(png).decode()
+        payload = {"id": "gen_img_1", "choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]}
+        resp = _FakeJsonResponse(payload)
+        provider = self._provider()
+        captured: dict = {}
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            result = asyncio.run(
+                provider.generate_image("a gray-haired strategist", model="black-forest-labs/flux.2-klein-4b")
+            )
+        self.assertEqual(result.image, png)
+        self.assertEqual(result.content_type, "image/png")
+        self.assertEqual(result.generation_id, "gen_img_1")
+        self.assertTrue(captured["url"].endswith("/chat/completions"))
+        self.assertEqual(captured["json"]["modalities"], ["image", "text"])
+        self.assertEqual(captured["json"]["messages"][0]["content"], "a gray-haired strategist")
+
+    def test_generate_image_raises_when_no_image_returned(self):
+        from agentx_ai.providers import openrouter_provider as orp
+
+        resp = _FakeJsonResponse({"choices": [{"message": {"content": "I can't draw."}}]})
+        provider = self._provider()
+        captured: dict = {}
+        with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(provider.generate_image("x", model="text/only"))
 
 
 class AmbassadorSpeechTest(TestCase):
