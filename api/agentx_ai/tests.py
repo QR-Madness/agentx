@@ -8679,7 +8679,7 @@ class OpenRouterSpeechTest(TestCase):
         self.assertEqual(result.content_type, "image/png")
         self.assertEqual(result.generation_id, "gen_img_1")
         self.assertTrue(captured["url"].endswith("/chat/completions"))
-        self.assertEqual(captured["json"]["modalities"], ["image", "text"])
+        self.assertEqual(captured["json"]["modalities"], ["image"])
         self.assertEqual(captured["json"]["messages"][0]["content"], "a gray-haired strategist")
 
     def test_generate_image_raises_when_no_image_returned(self):

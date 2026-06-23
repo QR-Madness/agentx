@@ -333,10 +333,13 @@ class OpenRouterProvider(ModelProvider):
         ``modalities: ["image","text"]``. The image comes back as a base64 data URL on
         ``choices[0].message.images[0].image_url.url`` (per OpenRouter's image-gen API),
         which we decode to raw bytes. Raises on a non-2xx or a response with no image."""
+        # Request image output only. Image-only models (e.g. flux) reject ["image","text"]
+        # ("no endpoints support the requested output modalities"), and we never use the
+        # text part anyway — ["image"] is accepted by image-capable models either way.
         body: dict[str, Any] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "modalities": ["image", "text"],
+            "modalities": ["image"],
         }
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
         if self._site_url:

@@ -397,7 +397,7 @@ class ModelProvider(ABC):
         """Generate an image from ``prompt``.
 
         Default raises — only providers exposing an image backend (currently OpenRouter,
-        via the chat-completions endpoint with ``modalities: ["image","text"]``) override
+        via the chat-completions endpoint with ``modalities: ["image"]``) override
         this. Callers should resolve an image-capable model (``output_modalities`` includes
         ``image``) and surface a clear "image generation unconfigured" message otherwise.
 
