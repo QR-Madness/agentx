@@ -360,6 +360,20 @@ export const ambassadorApi = {
     });
   },
 
+  /** Generate an agent avatar (OpenRouter image model) → stored in the Home workspace.
+   *  Returns the served blob URL (relative; resolve against the active server base). */
+  async generateAvatar(req: {
+    subject_prompt: string;
+    agent_profile_id?: string;
+    style_prompt?: string;
+    model?: string;
+  }): Promise<{ ok: boolean; url: string; doc_id: string; workspace_id: string }> {
+    return apiRequest('/api/agent/avatar/generate', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
   /** Ask the ambassador a free-form question about a conversation. */
   async askAmbassador(req: AskAmbassadorRequest): Promise<{ run_id: string; qa_id: string }> {
     return apiRequest('/api/agent/ambassador/ask', {
@@ -404,6 +418,16 @@ export const ambassadorApi = {
         /* non-JSON error body — keep the generic message */
       }
       throw { message, status: response.status, kind: 'http', details: { code } };
+    }
+    return response.blob();
+  },
+
+  /** Fetch stored media (e.g. a generated avatar) as a Blob via the authed client, so
+   *  an <img> can use an object URL (a raw <img src> can't carry the auth header). */
+  async fetchMediaBlob(rawPath: string): Promise<Blob> {
+    const response = await fetch(`${getBaseUrl()}${rawPath}`, { headers: authHeaders() });
+    if (!response.ok) {
+      throw { message: `Media fetch failed (${response.status})`, status: response.status, kind: 'http' };
     }
     return response.blob();
   },

@@ -14,7 +14,7 @@ import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useModal } from '../../contexts/ModalContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './AgentSelectorDropdown.css';
 
@@ -205,11 +205,10 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
             Agent is set by the active workflow. Switch to <strong>Workflows → No workflow</strong> to choose one.
           </div>
           {profiles.map(profile => {
-            const AvatarIcon = getAvatarIcon(profile.avatar);
             const isSupervisor = profile.agentId === supervisorAgentId;
             return (
               <div key={profile.id} className={`agent-selector-item locked ${isSupervisor ? 'active' : ''}`}>
-                <div className="agent-item-avatar"><AvatarIcon size={15} /></div>
+                <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} /></div>
                 <div className="agent-item-info">
                   <span className="agent-item-name">
                     {profile.name}
@@ -236,7 +235,6 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       return <div className="agent-selector-empty">No agents match “{query}”.</div>;
     }
     return filteredProfiles.map((profile, i) => {
-      const AvatarIcon = getAvatarIcon(profile.avatar);
       const isActive = profile.id === activeProfile?.id;
       return (
         <div
@@ -247,7 +245,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
           onClick={() => handleSelect(profile.id)}
           onMouseEnter={() => setHighlight(i)}
         >
-          <div className="agent-item-avatar"><AvatarIcon size={15} /></div>
+          <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} /></div>
           <div className="agent-item-info">
             <span className="agent-item-name">
               {profile.name}

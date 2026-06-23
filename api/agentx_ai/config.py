@@ -16,6 +16,15 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Image-generation defaults. Module constants (not just DEFAULT_CONFIG keys) so callers can
+# fall back to them on installs whose pre-existing config.json predates the `images` block —
+# `_load` does NOT merge new defaults into an existing file.
+DEFAULT_IMAGE_MODEL = "openrouter:black-forest-labs/flux.2-klein-4b"
+DEFAULT_AVATAR_STYLE_PROMPT = (
+    "A photorealistic headshot portrait, centered, clean studio lighting, "
+    "subtle depth of field, with a softly rounded border."
+)
+
 # Default configuration structure
 DEFAULT_CONFIG = {
     "providers": {
@@ -150,13 +159,10 @@ DEFAULT_CONFIG = {
         # Image generation (avatars first; multi-modal pipelines later). OpenRouter-only
         # today (chat-completions + modalities:["image","text"]).
         "enabled": True,
-        "default_model": "openrouter:black-forest-labs/flux.2-klein-4b",
+        "default_model": DEFAULT_IMAGE_MODEL,
         # App-level avatar STYLE prompt; the per-profile SUBJECT prompt is appended at
         # generation time (e.g. "mobius should be a gray-haired strategist").
-        "avatar_style_prompt": (
-            "A photorealistic headshot portrait, centered, clean studio lighting, "
-            "subtle depth of field, with a softly rounded border."
-        ),
+        "avatar_style_prompt": DEFAULT_AVATAR_STYLE_PROMPT,
     },
     "session": {
         "rolling_summary": {

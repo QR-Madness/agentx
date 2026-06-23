@@ -7,7 +7,22 @@
 - [ ] Global Default Model (ultimate fallback model) not Configurable
 - [ ] Store Consolidation costs
 - [ ] Chat steaming affect is very disorientating: use animation smoothing avoid ripping the page scroll around
-- [ ] Generative Agent Avatar + Extended Icon Base (ie. cool robot face, or funny cat face, etc) -  blocked by image capabilities for models
+- [x] Generative Agent Avatar — shipped (`0.21.124`). AvatarPicker "Generate" tab → `POST /api/agent/avatar/generate`
+      (OpenRouter `flux.2-klein-4b` default; app-level style prompt in Settings → Images + per-agent subject prompt;
+      cost-tracked, source `image`). Stored as a blob in the personal **"Home"** workspace and referenced as
+      `media:{ws}/{doc}` on `profile.avatar` (rendered via `AgentAvatar`). Built on the new **image transport**
+      (blob serving + `store_media`, `0.21.123`).
+
+### Multi-modal pipeline (next, builds on the image transport)
+
+- [ ] **Agent image-generation tool** — an internal tool so an agent can generate an image mid-conversation
+      (reuses `provider.generate_image` + `store_media`), emitting it as an exhibit/attachment.
+- [ ] **Image-in-context (vision input)** — send images to vision-capable models (multimodal message content
+      blocks); the model capabilities (`supports_vision`, `input_modalities`) are already surfaced via `list_agents`.
+- [ ] **Conversation default workspace** — auto-attach the personal **"Home"** workspace to a conversation that
+      lacks one when it needs to store media, with a `temp/` scratch namespace + UI to view/clean it.
+- [ ] **"Shared" agent-store workspace** — a reserved cross-agent shared workspace (distinct from per-user "Home").
+- [ ] **Audio analysis** — agent-side audio understanding (beyond the ambassador's TTS/STT).
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)
 - [ ] Disabled memory conversation prompt message banner - informs the model that memory is off for this conversation and the details are not persistent, and also that the conversation may contain confidential material.
 - [ ] Nightly consolidation scheduler — persistent job scheduler (Django Q, Celery, or custom) with cron-like registration, restart survival, graceful shutdown

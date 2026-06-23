@@ -2202,6 +2202,90 @@ def ambassador_relay(request):
     return JsonResponse({"ok": True, "job_id": job_id})
 
 
+_IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+
+
+@csrf_exempt
+async def avatar_generate(request):
+    """
+    POST /api/agent/avatar/generate  {subject_prompt, agent_profile_id?, style_prompt?, model?}
+
+    Generate an agent avatar via OpenRouter (image model), store it in the user's reserved
+    **Home** workspace (under ``avatars/``), and return the served blob URL. The final prompt
+    is the app-level **style** prompt (Settings → Images, or `style_prompt` override) + the
+    per-request **subject** prompt. Cost is recorded to the usage ledger (source ``image``).
+    Degrades to a structured 422 when images are disabled / OpenRouter is unconfigured / the
+    model can't produce an image.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (ValueError, TypeError) as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    subject = (data.get("subject_prompt") or "").strip()
+    if not subject:
+        return JsonResponse({"error": "subject_prompt is required"}, status=400)
+
+    from .config import DEFAULT_AVATAR_STYLE_PROMPT, DEFAULT_IMAGE_MODEL, get_config_manager
+
+    cfg = get_config_manager()
+    if not cfg.get("images.enabled", True):
+        return JsonResponse({"error": "Image generation is disabled in settings.", "code": "disabled"}, status=422)
+
+    # Fall back to module defaults — installs whose config.json predates the `images`
+    # block won't have these keys (defaults aren't merged into an existing file).
+    model = (data.get("model") or cfg.get("images.default_model", DEFAULT_IMAGE_MODEL) or "").strip()
+    style = (data.get("style_prompt") or cfg.get("images.avatar_style_prompt", DEFAULT_AVATAR_STYLE_PROMPT) or "").strip()
+    prompt = f"{style}\n\n{subject}".strip()
+
+    from .providers.registry import get_registry
+
+    try:
+        provider, model_id, _ = get_registry().resolve_with_fallback(model)
+        result = await provider.generate_image(prompt, model=model_id)
+    except NotImplementedError:
+        return JsonResponse({"error": "The configured provider can't generate images.", "code": "unsupported"}, status=422)
+    except Exception as e:  # noqa: BLE001 — surface a clean error, don't 500
+        logger.warning(f"avatar generation failed: {e}")
+        return JsonResponse({"error": f"Image generation failed: {str(e)[:200]}", "code": "failed"}, status=422)
+
+    from .kit.workspaces import repository
+    from .kit.workspaces.service import WorkspaceError, store_media
+
+    from datetime import datetime
+
+    ext = _IMAGE_EXT.get(result.content_type, "png")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    ws = repository.ensure_home_workspace(_bg_user_id(request))
+    try:
+        doc = store_media(
+            workspace_id=ws["id"],
+            filename=f"avatars/avatar-{stamp}.{ext}",
+            content_type=result.content_type,
+            raw=result.image,
+        )
+    except WorkspaceError as e:
+        return JsonResponse({"error": e.message, "code": e.code}, status=422)
+
+    try:  # cost metering is best-effort — never fail the generation over it
+        from .agent.usage_ledger import record_usage
+        from .providers.pricing import estimate_image_cost
+        record_usage(
+            source="image",
+            model=model,
+            provider=getattr(provider, "name", None),
+            units={"images": 1},
+            cost=estimate_image_cost(model=model, images=1),
+        )
+    except Exception as _uerr:  # noqa: BLE001
+        logger.debug(f"image usage record skipped: {_uerr}")
+
+    url = f"/api/workspaces/{ws['id']}/documents/{doc['id']}/raw"
+    return JsonResponse({"ok": True, "doc_id": doc["id"], "workspace_id": ws["id"], "url": url})
+
+
 @csrf_exempt
 async def ambassador_draft(request):
     """

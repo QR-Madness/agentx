@@ -9,7 +9,7 @@
 
 import { AtSign } from 'lucide-react';
 import type { AgentProfile } from '../../lib/api/types';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './MentionAutocomplete.css';
 
@@ -49,7 +49,6 @@ export function MentionAutocomplete({
           <span>Mention an agent</span>
         </div>
         {items.map((profile, i) => {
-          const AvatarIcon = getAvatarIcon(profile.avatar);
           return (
             <div
               key={profile.id}
@@ -60,7 +59,7 @@ export function MentionAutocomplete({
               onMouseDown={(e) => { e.preventDefault(); onPick(profile); }}
               onMouseEnter={() => onHover(i)}
             >
-              <div className="mention-ac-avatar"><AvatarIcon size={14} /></div>
+              <div className="mention-ac-avatar"><AgentAvatar avatar={profile.avatar} size={14} /></div>
               <div className="mention-ac-info">
                 <span className="mention-ac-name">{profile.name}</span>
                 <span className="mention-ac-id">{profile.agentId}</span>

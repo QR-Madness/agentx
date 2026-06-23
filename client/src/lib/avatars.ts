@@ -194,6 +194,27 @@ export function getAvatarOption(avatarId: string | undefined): AvatarOption | un
   return AVATAR_OPTIONS.find(o => o.id === avatarId);
 }
 
+/**
+ * A generated/stored image avatar (vs. a lucide icon id). Stored on the profile's `avatar`
+ * field as `media:{workspaceId}/{docId}` — portable across servers (the served URL is
+ * resolved against the active server base at render time). See `lib/avatarImage.ts`.
+ */
+export function isImageAvatar(avatar: string | undefined | null): boolean {
+  return !!avatar && avatar.startsWith('media:');
+}
+
+/** Parse a `media:{ws}/{doc}` avatar into its raw-blob API path, or null if not a media ref. */
+export function mediaAvatarPath(avatar: string | undefined | null): string | null {
+  if (!isImageAvatar(avatar)) return null;
+  const ref = avatar!.slice('media:'.length);
+  const slash = ref.indexOf('/');
+  if (slash <= 0) return null;
+  const ws = ref.slice(0, slash);
+  const doc = ref.slice(slash + 1);
+  if (!ws || !doc) return null;
+  return `/api/workspaces/${encodeURIComponent(ws)}/documents/${encodeURIComponent(doc)}/raw`;
+}
+
 /** Filter the catalog by a free-text query over id / label / category / keywords. */
 export function searchAvatars(query: string): AvatarOption[] {
   const q = query.trim().toLowerCase();

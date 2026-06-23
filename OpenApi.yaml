@@ -1221,6 +1221,47 @@ paths:
                   qa: { type: string }
                   draft: { type: string }
 
+  /agent/avatar/generate:
+    post:
+      tags: [Agent]
+      operationId: avatarGenerate
+      summary: Generate an agent avatar (OpenRouter image model)
+      description: >-
+        Generates an avatar from the app-level style prompt (Settings → Images, or a
+        `style_prompt` override) + the per-request subject prompt, stores it in the user's
+        reserved "Home" workspace under `avatars/`, records cost (usage source `image`), and
+        returns the served blob URL. Degrades to 422 when images are disabled / OpenRouter is
+        unconfigured / the model can't produce an image.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_prompt]
+              properties:
+                subject_prompt:
+                  type: string
+                  description: What the avatar should depict (combined with the app style prompt).
+                agent_profile_id: { type: string }
+                style_prompt: { type: string, description: Override the app-level style prompt. }
+                model: { type: string, description: Override the configured image model. }
+      responses:
+        '200':
+          description: Generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  doc_id: { type: string }
+                  workspace_id: { type: string }
+                  url: { type: string, description: Relative served-blob path for the avatar. }
+        '400':
+          description: subject_prompt is required
+        '422':
+          description: Disabled, unconfigured, or generation failed (carries an error code)
   /agent/ambassador/relay:
     post:
       tags: [Agent]

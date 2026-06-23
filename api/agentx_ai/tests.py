@@ -8524,6 +8524,70 @@ class WorkspaceMediaTest(TestCase):
         self.assertEqual(res.status_code, 404)
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class AvatarGenerateEndpointTest(TestCase):
+    """POST /api/agent/avatar/generate — compose style+subject, generate, store in Home,
+    record cost, return the served URL; degrade to 422 when unavailable."""
+
+    def _post(self, body: dict):
+        return self.client.post(
+            "/api/agent/avatar/generate", data=json.dumps(body), content_type="application/json"
+        )
+
+    def test_requires_subject_prompt(self):
+        self.assertEqual(self._post({}).status_code, 400)
+
+    def test_generates_stores_in_home_and_returns_url(self):
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import ImageResult
+
+        img = ImageResult(image=b"PNG", content_type="image/png", model="m", generation_id="g")
+        provider = MagicMock()
+        provider.name = "openrouter"
+        provider.generate_image = AsyncMock(return_value=img)
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "black-forest-labs/flux.2-klein-4b", None)
+
+        captured = {}
+        def _store(*, workspace_id, filename, content_type, raw):
+            captured.update(workspace_id=workspace_id, filename=filename, content_type=content_type)
+            return {"id": "doc_av"}
+
+        with patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace", return_value={"id": "ws_home"}), \
+             patch("agentx_ai.kit.workspaces.service.store_media", side_effect=_store), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as rec, \
+             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value={"cost_total": 0.01, "currency": "USD", "pricing_snapshot": {}}):
+            res = self._post({"subject_prompt": "a gray-haired strategist"})
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["url"], "/api/workspaces/ws_home/documents/doc_av/raw")
+        # Final prompt = app style prompt + the subject.
+        prompt = provider.generate_image.call_args.args[0]
+        self.assertIn("a gray-haired strategist", prompt)
+        self.assertGreater(len(prompt), len("a gray-haired strategist"))  # style prepended
+        # Stored in Home under the avatars/ prefix as an image.
+        self.assertEqual(captured["workspace_id"], "ws_home")
+        self.assertTrue(captured["filename"].startswith("avatars/"))
+        self.assertEqual(captured["content_type"], "image/png")
+        # Cost recorded against the image source.
+        self.assertEqual(rec.call_args.kwargs["source"], "image")
+
+    @override_settings()
+    def test_disabled_returns_422(self):
+        from agentx_ai.config import get_config_manager
+
+        cfg = get_config_manager()
+        cfg.set("images.enabled", False)
+        try:
+            res = self._post({"subject_prompt": "x"})
+        finally:
+            cfg.set("images.enabled", True)
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["code"], "disabled")
+
+
 class OpenRouterSpeechTest(TestCase):
     """OpenRouter's /audio/speech synthesis + the supports_speech capability."""
 

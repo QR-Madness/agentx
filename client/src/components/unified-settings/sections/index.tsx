@@ -19,7 +19,8 @@ import {
   Globe,
   Users,
   Radio,
-  SquareStack
+  SquareStack,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 export interface Section {
@@ -63,6 +64,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Globe size={18} />,
         component: lazy(() => import('./SearchSection')),
         keywords: ['search', 'web search', 'tavily', 'brave', 'backend']
+      },
+      {
+        id: 'images',
+        label: 'Images',
+        icon: <ImageIcon size={18} />,
+        component: lazy(() => import('./ImagesSection')),
+        keywords: ['image', 'images', 'avatar', 'avatars', 'generate', 'flux', 'openrouter', 'multimodal']
       },
     ]
   },

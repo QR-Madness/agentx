@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.123 -->
+<!-- release-version: 0.21.124 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -23,6 +23,7 @@ the client at your own API server and bring your own model providers.
 
 ### Highlights
 
+- **Generated agent avatars (multi-modal groundwork).** Give an agent a real face: in the avatar picker's **Generate** tab, describe it ("a gray-haired strategist…") and an image is generated via OpenRouter and set as its avatar. The app-wide style lives in **Settings → Images**; cost is tracked (Usage → Images / Avatars). Under the hood this adds the **image transport** — a reusable blob store + serving + a personal **"Home" workspace** — that the broader multi-modal pipeline (images in conversations, vision) will build on.
 - **The Ambassador is now a parallel operator — with a standalone Command Deck.** A dedicated agent that runs *beside* your conversations (never in them). Its panel is an **Inquiry** you ask, brief, or talk to — with read-only tools to read across your conversations, **survey them all and summarize what your agents have been working on** (including each conversation's goals), and know its **agent roster** (each agent's role, what its model can do — image/audio/vision/tools — and whether it's delegable; groundwork for multi-modal routing). Open it from anywhere as a full-screen **Command Deck** (⌘K → "Open Command Deck") — no conversation required; the deck holds **multiple named Inquiries** (create / switch / rename / delete), Inquiries **auto-title from your first question**, and the ambassador can **retitle its own Inquiry** as its focus sharpens.
 - **Talk to the Ambassador.** Voice mode is the *same* Inquiry, just hands-free: hold-to-talk and it answers out loud (your spoken Q&A lands right in the thread), and drafts relays you approve before sending — now into **any** conversation (the one it's focused on, or one you pick in the deck), even when it isn't open, as a real message from you.
 - **One nameable Inquiry thread.** Briefings + Q&A are a single ordered conversation with live tool chips that survive reload; rename or clear it. CC a turn from the chat to forward it *into* the Inquiry; "Brief this conversation" reads the whole thing.

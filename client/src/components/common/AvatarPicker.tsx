@@ -8,12 +8,11 @@
  */
 
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Pencil, Sparkles, Search } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { Pencil, Sparkles, Search, Loader2, Wand2 } from 'lucide-react';
 import {
   AVATAR_CATEGORIES,
   AVATAR_OPTIONS,
-  getAvatarIcon,
   getAvatarOption,
   searchAvatars,
   type AvatarOption,
@@ -22,6 +21,8 @@ import type { AgentAccent } from '../../lib/agentAccent';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, SegmentedControl,
 } from '../ui';
+import { AgentAvatar } from './AgentAvatar';
+import { api, apiErrorMessage } from '../../lib/api';
 import './AvatarPicker.css';
 
 const RECENTS_KEY = 'agentx:avatar-recents';
@@ -61,7 +62,13 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
   const [recents, setRecents] = useState<string[]>(loadRecents);
   const reduce = useReducedMotion();
 
-  const TriggerIcon = getAvatarIcon(value);
+  // Generate tab state.
+  const [subject, setSubject] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genRef, setGenRef] = useState<string | null>(null); // media:{ws}/{doc} of the last result
+
+  const triggerPx = size === 'lg' ? 28 : size === 'sm' ? 16 : 20;
   const results = useMemo(() => searchAvatars(query), [query]);
   const grouped = useMemo(() => {
     return AVATAR_CATEGORIES.map(cat => ({
@@ -72,13 +79,33 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
 
   const previewId = hovered ?? value;
   const previewOpt = getAvatarOption(previewId);
-  const PreviewIcon = getAvatarIcon(previewId);
 
   const pick = (id: string) => {
     onChange(id);
     const next = [id, ...recents.filter(r => r !== id)].slice(0, RECENTS_MAX);
     setRecents(next);
     try { localStorage.setItem(RECENTS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    setOpen(false);
+  };
+
+  const generate = async () => {
+    const prompt = subject.trim();
+    if (!prompt || generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await api.generateAvatar({ subject_prompt: prompt });
+      setGenRef(`media:${res.workspace_id}/${res.doc_id}`);
+    } catch (err) {
+      setGenError(apiErrorMessage(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const useGenerated = () => {
+    if (!genRef) return;
+    onChange(genRef); // a media: ref — not an icon id, so it skips the recents row
     setOpen(false);
   };
 
@@ -113,7 +140,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
           aria-label={ariaLabel ?? 'Choose avatar'}
         >
           <span className="avatar-trigger__aura" />
-          <TriggerIcon className="avatar-trigger__icon" />
+          <AgentAvatar avatar={value} size={triggerPx} className="avatar-trigger__icon" />
           <span className="avatar-trigger__edit"><Pencil size={size === 'lg' ? 14 : 11} /></span>
         </button>
       )}
@@ -131,7 +158,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
               onChange={(v) => setTab(v)}
               options={[
                 { value: 'browse', label: 'Browse' },
-                { value: 'generate', label: '✨ Generate', disabled: true, title: 'Coming soon' },
+                { value: 'generate', label: '✨ Generate' },
               ]}
             />
 
@@ -139,7 +166,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
               <div className="avatar-pick__body">
                 <aside className="avatar-pick__preview" style={auraStyle}>
                   <span className="avatar-pick__preview-aura" />
-                  <PreviewIcon size={44} className="avatar-pick__preview-icon" />
+                  <AgentAvatar avatar={previewId} size={44} className="avatar-pick__preview-icon" />
                   <span className="avatar-pick__preview-label">{previewOpt?.label ?? '—'}</span>
                   <span className="avatar-pick__preview-cat">
                     {AVATAR_CATEGORIES.find(c => c.id === previewOpt?.category)?.label ?? ''}
@@ -200,17 +227,46 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
               </div>
             ) : (
               <div className="avatar-pick__generate">
-                <AnimatePresence>
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="avatar-pick__generate-inner"
-                  >
+                <div className="avatar-pick__generate-inner" style={{ gap: 12, width: '100%', maxWidth: 420 }}>
+                  {genRef ? (
+                    <AgentAvatar avatar={genRef} size={120} />
+                  ) : (
                     <Sparkles size={28} />
-                    <div className="avatar-pick__generate-title">Generate a custom icon</div>
-                    <div className="avatar-pick__generate-sub">Coming soon — describe your agent and we'll draw it.</div>
-                  </motion.div>
-                </AnimatePresence>
+                  )}
+                  <div className="avatar-pick__generate-title">Generate an avatar</div>
+                  <div className="avatar-pick__generate-sub">
+                    Describe the agent — the app-wide style is set in Settings → Images. Uses
+                    OpenRouter.
+                  </div>
+                  <textarea
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    rows={2}
+                    placeholder="e.g. a gray-haired strategist with glasses"
+                    className="w-full resize-none rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg outline-none focus:border-line-strong"
+                  />
+                  {genError && <div className="text-xs text-error">{genError}</div>}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={generate}
+                      disabled={!subject.trim() || generating}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-sm text-fg-inverse shadow-sm transition hover:brightness-110 disabled:opacity-40"
+                    >
+                      {generating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                      {genRef ? 'Regenerate' : 'Generate'}
+                    </button>
+                    {genRef && (
+                      <button
+                        type="button"
+                        onClick={useGenerated}
+                        className="inline-flex h-8 items-center rounded-md border border-line px-3 text-sm text-fg transition-colors hover:border-line-strong"
+                      >
+                        Use this avatar
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>

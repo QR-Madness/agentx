@@ -2,17 +2,16 @@ import { MessageContent } from '../MessageContent';
 import { ThinkingBubble } from '../ThinkingBubble';
 import { MessageActions } from '../MessageActions';
 import { MetadataBar } from '../MetadataBar';
-import { getAvatarIcon } from '../../../lib/avatars';
+import { AgentAvatar } from '../../common/AgentAvatar';
 import type { BubbleProps } from './types';
 
 export function AssistantBubble({ message, agentName, avatarId, onRegenerate, onAmbassador, ambassadorStatus }: BubbleProps<'assistant'>) {
   const displayName = message.agentName || agentName || 'Assistant';
-  const AvatarIcon = getAvatarIcon(avatarId);
 
   return (
     <div className="message-bubble assistant">
       <div className="message-avatar assistant-avatar">
-        <AvatarIcon size={16} />
+        <AgentAvatar avatar={avatarId} size={16} />
       </div>
       <div className="message-body">
         <div className="assistant-header">

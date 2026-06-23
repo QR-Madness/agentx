@@ -16,7 +16,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { ConversationList } from './ConversationList';
 import './ConversationSidebar.css';
 
@@ -66,7 +66,7 @@ export function ConversationSidebar() {
   };
 
   const avatarFor = (profileId: string | null) =>
-    getAvatarIcon(profiles.find(p => p.id === profileId)?.avatar);
+    profiles.find(p => p.id === profileId)?.avatar;
 
   if (collapsed) {
     return (
@@ -79,7 +79,6 @@ export function ConversationSidebar() {
         </button>
         <div className="conv-rail-tabs">
           {tabs.map(tab => {
-            const Avatar = avatarFor(tab.profileId);
             return (
               <button
                 key={tab.id}
@@ -87,7 +86,7 @@ export function ConversationSidebar() {
                 onClick={() => switchTab(tab.id)}
                 title={tab.title}
               >
-                <Avatar size={16} />
+                <AgentAvatar avatar={avatarFor(tab.profileId)} size={16} />
                 {tab.isStreaming && <span className="conv-rail-streaming" />}
               </button>
             );

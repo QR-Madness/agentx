@@ -698,6 +698,11 @@ export interface ConfigUpdate {
     max_context_turns?: number;
     max_tokens?: number;
   };
+  images?: {
+    enabled?: boolean;
+    default_model?: string;
+    avatar_style_prompt?: string;
+  };
 }
 
 // === Memory Explorer Types ===

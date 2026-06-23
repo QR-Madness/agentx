@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Plus, User } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { navVariants } from '../unified-settings/animations/transitions';
 
 interface ProfileNavProps {
@@ -33,7 +33,6 @@ export function ProfileNav({
 
       <div className="profile-nav-list">
         {profiles.map(profile => {
-          const AvatarIcon = getAvatarIcon(profile.avatar);
           const isActive = !isCreatingNew && selectedProfileId === profile.id;
           return (
             <button
@@ -42,7 +41,7 @@ export function ProfileNav({
               onClick={() => onSelectProfile(profile.id)}
             >
               <div className="profile-nav-avatar">
-                <AvatarIcon size={15} />
+                <AgentAvatar avatar={profile.avatar} size={15} />
               </div>
               <div className="profile-nav-info">
                 <span className="profile-nav-name">{profile.name}</span>

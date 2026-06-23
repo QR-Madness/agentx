@@ -63,6 +63,17 @@ visible **"Home"** workspace (`repository.ensure_home_workspace`, id `ws_home`) 
 generated avatars land there under an `avatars/` filename prefix (a flat-list naming convention; `temp/` reserved
 for scratch). This is the image-transport foundation for the broader multi-modal pipeline.
 
+**Avatar generation (v0.21.124).** `POST /api/agent/avatar/generate {subject_prompt, agent_profile_id?, style_prompt?, model?}`
+(`views.avatar_generate`) composes the app-level **style** prompt (`config.images.avatar_style_prompt`, Settings →
+Images) + the per-request **subject** prompt, resolves the image model (`config.images.default_model`, default
+`flux.2-klein-4b`) via `registry.resolve_with_fallback`, calls `provider.generate_image`, stores the bytes in **Home**
+via `store_media`, records cost (`usage_ledger` source `image`, `pricing.estimate_image_cost`), and returns the served
+`…/raw` URL. Degrades to 422 (disabled / unconfigured / non-image model). Client: `AvatarPicker`'s Generate tab calls
+it and sets `profile.avatar = media:{ws}/{doc}`; `common/AgentAvatar` renders image avatars (resolved to an authed
+object URL via `lib/avatarImage.ts`, mirroring the TTS blob pattern) and falls back to the lucide icon. Config defaults
+that the feature needs (`DEFAULT_IMAGE_MODEL`/`DEFAULT_AVATAR_STYLE_PROMPT`) are module constants in `config.py` —
+`_load` doesn't merge new keys into a pre-existing `config.json`, so callers fall back to the constants.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code
