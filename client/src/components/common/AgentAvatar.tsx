@@ -14,9 +14,12 @@ interface AgentAvatarProps {
   size?: number;
   /** Applied to the lucide icon (color etc.); the image is always rounded + cover. */
   className?: string;
+  /** Image avatars **fill** their container (for sites that wrap the avatar in a fixed-size
+   *  circle — most of them) instead of rendering at the icon-glyph `size`. */
+  fill?: boolean;
 }
 
-export function AgentAvatar({ avatar, size = 20, className }: AgentAvatarProps) {
+export function AgentAvatar({ avatar, size = 20, className, fill }: AgentAvatarProps) {
   const isImage = isImageAvatar(avatar);
   const [url, setUrl] = useState<string | null>(null);
 
@@ -35,13 +38,12 @@ export function AgentAvatar({ avatar, size = 20, className }: AgentAvatarProps) 
   }, [avatar, isImage]);
 
   if (isImage && url) {
+    // Fill the wrapping circle (inherit its radius) at boxed sites; else explicit px.
+    const style: React.CSSProperties = fill
+      ? { width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', display: 'block' }
+      : { width: size, height: size };
     return (
-      <img
-        src={url}
-        alt=""
-        className={`rounded-full object-cover ${className ?? ''}`}
-        style={{ width: size, height: size }}
-      />
+      <img src={url} alt="" className={fill ? className : `rounded-full object-cover ${className ?? ''}`} style={style} />
     );
   }
 

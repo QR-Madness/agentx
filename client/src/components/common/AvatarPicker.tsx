@@ -140,7 +140,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
           aria-label={ariaLabel ?? 'Choose avatar'}
         >
           <span className="avatar-trigger__aura" />
-          <AgentAvatar avatar={value} size={triggerPx} className="avatar-trigger__icon" />
+          <AgentAvatar avatar={value} size={triggerPx} className="avatar-trigger__icon" fill />
           <span className="avatar-trigger__edit"><Pencil size={size === 'lg' ? 14 : 11} /></span>
         </button>
       )}

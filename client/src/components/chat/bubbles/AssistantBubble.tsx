@@ -11,7 +11,7 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate, on
   return (
     <div className="message-bubble assistant">
       <div className="message-avatar assistant-avatar">
-        <AgentAvatar avatar={avatarId} size={16} />
+        <AgentAvatar avatar={avatarId} size={16} fill />
       </div>
       <div className="message-body">
         <div className="assistant-header">

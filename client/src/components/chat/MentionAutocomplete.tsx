@@ -59,7 +59,7 @@ export function MentionAutocomplete({
               onMouseDown={(e) => { e.preventDefault(); onPick(profile); }}
               onMouseEnter={() => onHover(i)}
             >
-              <div className="mention-ac-avatar"><AgentAvatar avatar={profile.avatar} size={14} /></div>
+              <div className="mention-ac-avatar"><AgentAvatar avatar={profile.avatar} size={14} fill /></div>
               <div className="mention-ac-info">
                 <span className="mention-ac-name">{profile.name}</span>
                 <span className="mention-ac-id">{profile.agentId}</span>

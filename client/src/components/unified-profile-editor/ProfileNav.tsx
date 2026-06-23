@@ -41,7 +41,7 @@ export function ProfileNav({
               onClick={() => onSelectProfile(profile.id)}
             >
               <div className="profile-nav-avatar">
-                <AgentAvatar avatar={profile.avatar} size={15} />
+                <AgentAvatar avatar={profile.avatar} size={15} fill />
               </div>
               <div className="profile-nav-info">
                 <span className="profile-nav-name">{profile.name}</span>

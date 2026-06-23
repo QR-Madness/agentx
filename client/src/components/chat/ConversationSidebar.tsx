@@ -86,7 +86,7 @@ export function ConversationSidebar() {
                 onClick={() => switchTab(tab.id)}
                 title={tab.title}
               >
-                <AgentAvatar avatar={avatarFor(tab.profileId)} size={16} />
+                <AgentAvatar avatar={avatarFor(tab.profileId)} size={16} fill />
                 {tab.isStreaming && <span className="conv-rail-streaming" />}
               </button>
             );

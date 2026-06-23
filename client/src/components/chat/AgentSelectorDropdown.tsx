@@ -208,7 +208,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
             const isSupervisor = profile.agentId === supervisorAgentId;
             return (
               <div key={profile.id} className={`agent-selector-item locked ${isSupervisor ? 'active' : ''}`}>
-                <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} /></div>
+                <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} fill /></div>
                 <div className="agent-item-info">
                   <span className="agent-item-name">
                     {profile.name}
@@ -245,7 +245,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
           onClick={() => handleSelect(profile.id)}
           onMouseEnter={() => setHighlight(i)}
         >
-          <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} /></div>
+          <div className="agent-item-avatar"><AgentAvatar avatar={profile.avatar} size={15} fill /></div>
           <div className="agent-item-info">
             <span className="agent-item-name">
               {profile.name}
