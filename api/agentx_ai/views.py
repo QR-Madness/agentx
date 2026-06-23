@@ -2427,9 +2427,11 @@ def ambassador_threads(request):
     deck_thread_id = f"deck:{user_id}"
 
     if request.method == "GET":
-        # Ensure the home deck always appears (register lazily if never written to).
-        if not any(t["thread_id"] == deck_thread_id for t in ambassador_storage.list_user_threads(user_id)):
-            ambassador_storage.register_thread(user_id, deck_thread_id)
+        # Ensure the home deck always appears: it needs *meta* (not just registry
+        # membership), since list_user_threads self-heals away ids whose meta is gone.
+        if ambassador_storage.get_thread_meta(deck_thread_id) is None:
+            ambassador_storage.set_thread_title(deck_thread_id, "")  # mint empty meta
+        ambassador_storage.register_thread(user_id, deck_thread_id)
         return JsonResponse({
             "threads": ambassador_storage.list_user_threads(user_id),
             "deck_thread_id": deck_thread_id,

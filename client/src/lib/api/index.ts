@@ -64,6 +64,7 @@ export * from './types';
 export type {
   AmbassadorActiveConversation,
   AmbassadorBriefing,
+  AmbassadorInquiry,
   AmbassadorQA,
   AmbassadorStatus,
   AmbassadorStreamCallbacks,

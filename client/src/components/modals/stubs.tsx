@@ -2,7 +2,7 @@
  * Modal content components — wrappers for tabs rendered in modals/drawers
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
@@ -10,6 +10,7 @@ import { SourcesPanel } from '../bibliography/SourcesPanel';
 import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
 import { deckThreadId } from '../../lib/ambassadorDeck';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { LogsPanel } from '../logs/LogsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
@@ -64,13 +65,31 @@ export function AmbassadorDrawerContent({ onClose: _onClose }: ModalContentProps
 }
 
 export function AmbassadorDeckContent({ onClose: _onClose }: ModalContentProps) {
-  // The standalone command deck: the ambassador with no conversation, against a single
-  // persistent per-user thread. Full-screen host (like Memory) so the Inquiry stream fills
-  // the dialog and scrolls internally; the shell owns the close button.
+  // The standalone command deck: the ambassador with no conversation. Holds multiple named
+  // Inquiries (the home deck thread + minted ones); this owns which one is selected and the
+  // registry list. Full-screen host (like Memory) so the stream fills the dialog; the shell
+  // owns the close button.
   const { sessionInfo } = useAuth();
+  const { inquiries, listInquiries, createInquiry } = useAmbassador();
+  const homeId = deckThreadId(sessionInfo?.user_id);
+  const [selectedId, setSelectedId] = useState(homeId);
+
+  useEffect(() => { void listInquiries(); }, [listInquiries]);
+
+  const onNewInquiry = async () => {
+    const id = await createInquiry();
+    if (id) setSelectedId(id);
+  };
+
   return (
     <div className="memory-modal-content">
-      <AmbassadorPanel deckThreadId={deckThreadId(sessionInfo?.user_id)} />
+      <AmbassadorPanel
+        deckThreadId={selectedId}
+        deckHomeId={homeId}
+        deckInquiries={inquiries}
+        onSelectInquiry={setSelectedId}
+        onNewInquiry={onNewInquiry}
+      />
     </div>
   );
 }

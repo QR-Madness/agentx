@@ -102,6 +102,14 @@ export interface AmbassadorThreadEntry {
   updated_at?: string;
 }
 
+/** A standalone command-deck Inquiry (thread) in the user's registry. */
+export interface AmbassadorInquiry {
+  thread_id: string;
+  title: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 /** The conversation the person is *currently in* (their active chat tab) — ambient
  *  context distinct from the ambassador's focus, so it knows where they are now. */
 export interface AmbassadorActiveConversation {
@@ -328,6 +336,19 @@ export const ambassadorApi = {
     await apiRequest(`/api/agent/ambassador/thread/${encodeURIComponent(threadId)}`, {
       method: 'DELETE',
     });
+  },
+
+  /** List the user's standalone command-deck Inquiries (home deck pinned + minted ones). */
+  async listAmbassadorThreads(): Promise<{ threads: AmbassadorInquiry[]; deck_thread_id: string }> {
+    const res = await apiRequest<{ threads?: AmbassadorInquiry[]; deck_thread_id: string }>(
+      '/api/agent/ambassador/threads',
+    );
+    return { threads: res.threads ?? [], deck_thread_id: res.deck_thread_id };
+  },
+
+  /** Mint a new standalone Inquiry; returns its thread id. */
+  async createAmbassadorThread(): Promise<{ thread_id: string }> {
+    return apiRequest('/api/agent/ambassador/threads', { method: 'POST' });
   },
 
   /** Ask the ambassador a free-form question about a conversation. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deckThreadId, DECK_STARTERS } from './ambassadorDeck';
+import { deckThreadId, DECK_STARTERS, orderInquiries, inquiryLabel } from './ambassadorDeck';
 
 describe('deckThreadId', () => {
   it('scopes by user id when one is present', () => {
@@ -20,6 +20,36 @@ describe('deckThreadId', () => {
   it('uses the deck: prefix so it can never collide with a real conversation id', () => {
     expect(deckThreadId(7).startsWith('deck:')).toBe(true);
     expect(deckThreadId(7)).toContain(':'); // hex-uuid conversation ids have no colon
+  });
+});
+
+describe('orderInquiries', () => {
+  const DECK = 'deck:u';
+  it('pins the home deck first, then newest-first by updated_at', () => {
+    const threads = [
+      { thread_id: 'inq:u:a', title: 'A', updated_at: '2026-06-20' },
+      { thread_id: DECK, title: '', updated_at: '2026-06-10' },
+      { thread_id: 'inq:u:b', title: 'B', updated_at: '2026-06-22' },
+    ];
+    expect(orderInquiries(threads, DECK).map((t) => t.thread_id)).toEqual([
+      DECK, 'inq:u:b', 'inq:u:a',
+    ]);
+  });
+
+  it('handles a missing home deck (deck not in list yet)', () => {
+    const threads = [{ thread_id: 'inq:u:a', title: 'A', updated_at: '2026-06-20' }];
+    expect(orderInquiries(threads, DECK).map((t) => t.thread_id)).toEqual(['inq:u:a']);
+  });
+});
+
+describe('inquiryLabel', () => {
+  const DECK = 'deck:u';
+  it('uses the title when present', () => {
+    expect(inquiryLabel({ thread_id: 'inq:u:a', title: 'Migration' }, DECK)).toBe('Migration');
+  });
+  it('falls back to Command Deck for the home thread, New Inquiry otherwise', () => {
+    expect(inquiryLabel({ thread_id: DECK, title: '' }, DECK)).toBe('Command Deck');
+    expect(inquiryLabel({ thread_id: 'inq:u:a', title: '  ' }, DECK)).toBe('New Inquiry');
   });
 });
 

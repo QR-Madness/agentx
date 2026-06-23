@@ -47,7 +47,8 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import { toolChipLabel } from '../../lib/ambassadorTools';
 import { relayToActiveConversation } from '../../lib/ambassadorRelay';
-import { DECK_STARTERS } from '../../lib/ambassadorDeck';
+import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
+import { AmbassadorInquirySwitcher } from './AmbassadorInquirySwitcher';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useStickyScroll } from '../../hooks/useStickyScroll';
@@ -349,12 +350,27 @@ function BriefingItem({
  * conversation-coupled affordances (brief-this-conversation, relay, the conversation
  * switcher) drop away; the cross-conversation tools (survey/roster) carry the experience.
  */
-export function AmbassadorPanel({ deckThreadId }: { deckThreadId?: string } = {}) {
+interface AmbassadorPanelProps {
+  /** Command-deck mode: bind to this standalone thread instead of a conversation. */
+  deckThreadId?: string;
+  /** The home deck thread id (pinned in the Inquiry switcher). */
+  deckHomeId?: string;
+  /** The user's standalone Inquiries, for the deck switcher. */
+  deckInquiries?: DeckInquiry[];
+  /** Switch the deck's active Inquiry. */
+  onSelectInquiry?: (threadId: string) => void;
+  /** Mint + switch to a new Inquiry. */
+  onNewInquiry?: () => void;
+}
+
+export function AmbassadorPanel({
+  deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry,
+}: AmbassadorPanelProps = {}) {
   const isDeck = !!deckThreadId;
   const { activeTab, tabs, relayToConversation } = useConversation();
   const {
     briefingsFor, refresh, cancel, qaFor,
-    threadFor, titleFor, renameThread, clearThread, ask, cancelQa,
+    threadFor, titleFor, renameThread, clearThread, ask, cancelQa, listInquiries,
   } = useAmbassador();
   const confirm = useConfirm();
   const { profiles, getAgentName } = useAgentProfile();
@@ -607,7 +623,10 @@ export function AmbassadorPanel({ deckThreadId }: { deckThreadId?: string } = {}
   // --- Inquiry actions (⋯ menu): rename + clear --------------------------------
   const startRenameInquiry = () => setRenamingTitle(inquiryTitle || '');
   const commitRenameInquiry = () => {
-    if (renamingTitle !== null && conversationId) renameThread(conversationId, renamingTitle);
+    if (renamingTitle !== null && conversationId) {
+      renameThread(conversationId, renamingTitle);
+      if (isDeck) void listInquiries(); // keep the deck switcher labels in sync
+    }
     setRenamingTitle(null);
   };
   const clearInquiry = async () => {
@@ -618,7 +637,15 @@ export function AmbassadorPanel({ deckThreadId }: { deckThreadId?: string } = {}
       confirmLabel: 'Clear',
       danger: true,
     });
-    if (ok) clearThread(conversationId);
+    if (ok) {
+      clearThread(conversationId);
+      if (isDeck) {
+        // In the deck, clearing also drops the Inquiry from the registry — leave it and
+        // fall back to the home deck thread.
+        void listInquiries();
+        if (conversationId !== deckHomeId) onSelectInquiry?.(deckHomeId as string);
+      }
+    }
   };
 
   const footerHelp =
@@ -648,10 +675,14 @@ export function AmbassadorPanel({ deckThreadId }: { deckThreadId?: string } = {}
         className="min-w-0 max-w-[170px] rounded-md border border-line-strong bg-surface-raised px-1.5 py-0.5 text-sm text-fg outline-none"
       />
     ) : isDeck ? (
-      // The deck has a single thread — no conversations to switch between; just the title.
-      <span className="min-w-0 truncate text-sm font-medium text-fg-secondary">
-        {inquiryTitle || 'Command Deck'}
-      </span>
+      // The deck switches among the user's standalone Inquiries (+ "New Inquiry").
+      <AmbassadorInquirySwitcher
+        inquiries={deckInquiries ?? []}
+        selectedId={deckThreadId as string}
+        deckThreadId={deckHomeId ?? (deckThreadId as string)}
+        onSelect={(id) => onSelectInquiry?.(id)}
+        onNew={() => onNewInquiry?.()}
+      />
     ) : (
       <AmbassadorConversationSwitcher
         variant="inline"

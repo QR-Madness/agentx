@@ -22,6 +22,7 @@ import { api } from '../lib/api';
 import type {
   AmbassadorActiveConversation,
   AmbassadorBriefing,
+  AmbassadorInquiry,
   AmbassadorQA,
   AmbassadorStatus,
   AmbassadorToolCall,
@@ -58,6 +59,12 @@ interface AmbassadorContextValue {
   cancelQa: (conversationId: string, qaId: string) => void;
   /** Replay persisted briefings + Q&A from the server sidecar. */
   refresh: (conversationId: string) => Promise<void>;
+  /** The user's standalone command-deck Inquiries (registry list). */
+  inquiries: AmbassadorInquiry[];
+  /** Refresh the standalone-Inquiry registry list from the server. */
+  listInquiries: () => Promise<void>;
+  /** Mint a new standalone Inquiry; returns its thread id (and refreshes the list). */
+  createInquiry: () => Promise<string | null>;
 }
 
 /** One item in the unified ambassador thread — a briefing or a Q&A, tagged + timestamped
@@ -103,6 +110,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
   const [qaState, setQaState] = useState<Record<string, ConversationQA>>({});
   // conversationId -> the Inquiry's own title ("" → fall back to the chat title)
   const [titles, setTitles] = useState<Record<string, string>>({});
+  // The user's standalone command-deck Inquiries (registry list; loaded on demand).
+  const [inquiries, setInquiries] = useState<AmbassadorInquiry[]>([]);
   // Active SSE controllers, keyed so a live stream isn't clobbered by a refresh
   // and can be aborted on cancel. Briefings + Q&A share the ref via disjoint keys.
   const controllers = useRef<Record<string, { abort: () => void }>>({});
@@ -465,14 +474,41 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     void api.clearAmbassadorThread(conversationId).catch(() => {});
   }, []);
 
+  const listInquiries = useCallback(async () => {
+    try {
+      const { threads } = await api.listAmbassadorThreads();
+      setInquiries(threads);
+      // Seed local titles so the switcher labels are right before each thread is opened.
+      setTitles((prev) => {
+        const next = { ...prev };
+        for (const t of threads) if (t.title) next[t.thread_id] = t.title;
+        return next;
+      });
+    } catch {
+      /* registry unavailable — leave the list as-is */
+    }
+  }, []);
+
+  const createInquiry = useCallback(async (): Promise<string | null> => {
+    try {
+      const { thread_id } = await api.createAmbassadorThread();
+      await listInquiries();
+      return thread_id;
+    } catch {
+      return null;
+    }
+  }, [listInquiries]);
+
   const value = useMemo(
     () => ({
       briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
       threadFor, titleFor, renameThread, clearThread, ask, cancelQa, refresh,
+      inquiries, listInquiries, createInquiry,
     }),
     [
       briefingsFor, briefingForMessage, ccTurn, cancel, qaFor,
       threadFor, titleFor, renameThread, clearThread, ask, cancelQa, refresh,
+      inquiries, listInquiries, createInquiry,
     ],
   );
 
