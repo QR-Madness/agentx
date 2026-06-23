@@ -8,6 +8,8 @@ import { MemoryPanel } from '../memory/MemoryPanel';
 import { PlansPanel } from '../plans/PlansPanel';
 import { SourcesPanel } from '../bibliography/SourcesPanel';
 import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
+import { deckThreadId } from '../../lib/ambassadorDeck';
+import { useAuth } from '../../contexts/AuthContext';
 import { LogsPanel } from '../logs/LogsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
@@ -57,6 +59,18 @@ export function AmbassadorDrawerContent({ onClose: _onClose }: ModalContentProps
   return (
     <div className="modal-content-wrapper">
       <AmbassadorPanel />
+    </div>
+  );
+}
+
+export function AmbassadorDeckContent({ onClose: _onClose }: ModalContentProps) {
+  // The standalone command deck: the ambassador with no conversation, against a single
+  // persistent per-user thread. Full-screen host (like Memory) so the Inquiry stream fills
+  // the dialog and scrolls internally; the shell owns the close button.
+  const { sessionInfo } = useAuth();
+  return (
+    <div className="memory-modal-content">
+      <AmbassadorPanel deckThreadId={deckThreadId(sessionInfo?.user_id)} />
     </div>
   );
 }

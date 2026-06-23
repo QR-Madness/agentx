@@ -47,6 +47,7 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon } from '../../lib/avatars';
 import { toolChipLabel } from '../../lib/ambassadorTools';
 import { relayToActiveConversation } from '../../lib/ambassadorRelay';
+import { DECK_STARTERS } from '../../lib/ambassadorDeck';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useStickyScroll } from '../../hooks/useStickyScroll';
@@ -342,7 +343,14 @@ function BriefingItem({
   );
 }
 
-export function AmbassadorPanel() {
+/**
+ * `deckThreadId` switches the panel into **command-deck mode**: conversation-less, bound to
+ * a single persistent thread (passed where a conversation_id normally goes). The
+ * conversation-coupled affordances (brief-this-conversation, relay, the conversation
+ * switcher) drop away; the cross-conversation tools (survey/roster) carry the experience.
+ */
+export function AmbassadorPanel({ deckThreadId }: { deckThreadId?: string } = {}) {
+  const isDeck = !!deckThreadId;
   const { activeTab, tabs, relayToConversation } = useConversation();
   const {
     briefingsFor, refresh, cancel, qaFor,
@@ -373,8 +381,9 @@ export function AmbassadorPanel() {
       setFocusedConversationId(activeConversationId);
     }
   }, [focusedConversationId, activeConversationId]);
-  const conversationId = focusedConversationId ?? activeConversationId;
-  const isFocusActive = !!conversationId && conversationId === activeConversationId;
+  // In deck mode the panel is bound to its own persistent thread, not a conversation.
+  const conversationId = isDeck ? deckThreadId : (focusedConversationId ?? activeConversationId);
+  const isFocusActive = !isDeck && !!conversationId && conversationId === activeConversationId;
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<PanelMode>('ask');
@@ -502,8 +511,11 @@ export function AmbassadorPanel() {
   // running turn). The ambassador stays a non-participant; you are the author. Returns
   // where it landed (or why it couldn't) so voice + text both give the same closure.
   const relay = useCallback(
-    (text: string) => relayToActiveConversation(text, activeTab, relayToConversation),
-    [activeTab, relayToConversation],
+    (text: string) =>
+      isDeck
+        ? { ok: false, note: "Relay isn't available from the command deck — open the conversation to relay." }
+        : relayToActiveConversation(text, activeTab, relayToConversation),
+    [isDeck, activeTab, relayToConversation],
   );
   const onAnswerPersisted = useCallback(() => {
     if (conversationId) void refresh(conversationId);
@@ -611,9 +623,11 @@ export function AmbassadorPanel() {
 
   const footerHelp =
     flash ??
-    (mode === 'relay'
-      ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
-      : 'Answered from the conversation only — never added to the transcript.');
+    (isDeck
+      ? 'Answered from your conversations via read-only tools — nothing is added to any transcript.'
+      : mode === 'relay'
+        ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
+        : 'Answered from the conversation only — never added to the transcript.');
 
   // --- Header sub-elements (shared by the compact bar + the voice hero) --------
 
@@ -633,6 +647,11 @@ export function AmbassadorPanel() {
         aria-label="Rename this Inquiry"
         className="min-w-0 max-w-[170px] rounded-md border border-line-strong bg-surface-raised px-1.5 py-0.5 text-sm text-fg outline-none"
       />
+    ) : isDeck ? (
+      // The deck has a single thread — no conversations to switch between; just the title.
+      <span className="min-w-0 truncate text-sm font-medium text-fg-secondary">
+        {inquiryTitle || 'Command Deck'}
+      </span>
     ) : (
       <AmbassadorConversationSwitcher
         variant="inline"
@@ -683,9 +702,11 @@ export function AmbassadorPanel() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={briefConversation}>
-          <Sparkles size={14} /> Brief this conversation
-        </DropdownMenuItem>
+        {!isDeck && (
+          <DropdownMenuItem onSelect={briefConversation}>
+            <Sparkles size={14} /> Brief this conversation
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => window.setTimeout(startRenameInquiry, 0)}>
           <Pencil size={14} /> Rename Inquiry
         </DropdownMenuItem>
@@ -700,7 +721,9 @@ export function AmbassadorPanel() {
     </DropdownMenu>
   );
 
-  const contextLine: ReactNode = !conversationId
+  const contextLine: ReactNode = isDeck
+    ? 'Your command deck — ask across everything your agents are doing, survey their work, and see the roster.'
+    : !conversationId
     ? 'Your parallel operator — it watches your conversations and answers, without ever entering them.'
     : isFocusActive
       ? <>watching <span className="font-medium text-fg-secondary">{focusTitle}</span> · in parallel</>
@@ -755,30 +778,54 @@ export function AmbassadorPanel() {
               </p>
             </div>
           ) : thread.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
-              <AmbassadorMark size={38} avatar={ambassadorProfile?.avatar} />
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium text-fg">Start an Inquiry</p>
-                <p className="max-w-[18rem] text-xs text-fg-muted">
-                  Ask anything about your conversations, or have the ambassador brief this one.
-                </p>
+            isDeck ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
+                <AmbassadorMark size={38} avatar={ambassadorProfile?.avatar} />
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-fg">Your command deck</p>
+                  <p className="max-w-[20rem] text-xs text-fg-muted">
+                    Ask across everything your agents are doing — no conversation needed.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {DECK_STARTERS.map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => askAmbassador(s.prompt)}
+                      className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <Button variant="primary" onClick={briefConversation}>
-                <Sparkles size={15} /> Brief this conversation
-              </Button>
-              <div className="flex flex-wrap items-center justify-center gap-1.5">
-                {STARTERS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => askAmbassador(s)}
-                    className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
-                  >
-                    {s}
-                  </button>
-                ))}
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
+                <AmbassadorMark size={38} avatar={ambassadorProfile?.avatar} />
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-fg">Start an Inquiry</p>
+                  <p className="max-w-[18rem] text-xs text-fg-muted">
+                    Ask anything about your conversations, or have the ambassador brief this one.
+                  </p>
+                </div>
+                <Button variant="primary" onClick={briefConversation}>
+                  <Sparkles size={15} /> Brief this conversation
+                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {STARTERS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => askAmbassador(s)}
+                      className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <ul className="flex flex-col gap-3.5">
               {thread.map((item) =>
@@ -825,7 +872,8 @@ export function AmbassadorPanel() {
         />
       ) : (
         <div className="flex flex-col gap-2 border-t border-line p-3">
-          {/* Mode toggle — segmented control. */}
+          {/* Mode toggle — segmented control. Hidden in the deck (relay needs an open tab). */}
+          {!isDeck && (
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1 text-xs">
             <button
               type="button"
@@ -844,6 +892,7 @@ export function AmbassadorPanel() {
               <CornerUpRight size={12} /> Relay to agent
             </button>
           </div>
+          )}
 
           <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
             <textarea
@@ -853,7 +902,9 @@ export function AmbassadorPanel() {
               rows={mode === 'relay' ? 2 : 1}
               placeholder={
                 mode === 'ask'
-                  ? `Ask ${convAgentName ? `about ${convAgentName}` : 'about this conversation'}…`
+                  ? isDeck
+                    ? 'Ask about your agents and their work…'
+                    : `Ask ${convAgentName ? `about ${convAgentName}` : 'about this conversation'}…`
                   : runActive
                     ? `Tell ${convAgentName} something — folds into the running turn…`
                     : `Tell ${convAgentName} something — sent as your message…`

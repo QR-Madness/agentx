@@ -553,10 +553,22 @@
       conversation→profile resolver. Invariant holds (relay is a USER turn via the chat path).
 
 **Slice 4 — command deck: the ambassador as orchestrator (the north-star)**
-- [ ] **Standalone, top-level ambassador surface** not bound to a tab (a command-deck
-      entry in the command palette / a global Ambassador surface) — the app's front
-      door: "What have my agents discovered?" The worker conversations are still
-      reachable directly through the UI (dual entry); this is the layer *above* them.
+- [x] **Standalone, top-level ambassador surface** — shipped (`0.21.116`) as the **Command
+      Deck**: a full-screen, app-wide surface (`SURFACES.ambassadorDeck`, ⌘K → "Open Command
+      Deck") that mounts `AmbassadorPanel` in a conversation-less **deck mode**
+      (`deckThreadId` prop) against a single persistent per-user thread (`deck:{user}`,
+      `lib/ambassadorDeck.ts`). Reuses the `conversation_id` seam as the thread key →
+      **zero backend changes**; the deck thread never touches `conversation_logs`, so it
+      can't pollute its own survey. Conversation-bound affordances (brief-this-conversation,
+      relay, the conversation switcher) drop away; the cross-conversation tools (survey /
+      roster) + free-form ask + voice carry it. Worker conversations stay reachable directly
+      (dual entry). Follow-ons:
+  - [ ] **Multiple named standalone Inquiries** + a switcher over them — needs a per-user
+        thread registry/index + a `GET /ambassador/threads` list endpoint (none today).
+  - [ ] **Auto-titling** an Inquiry from its first question (now unblocked by standalone
+        thread minting).
+  - [ ] **Relay from the deck** to a chosen conversation — needs the deferred server-side
+        `POST /ambassador/relay` (Slice 3) so relay doesn't require an open tab.
 - [x] **`survey_conversations`** — shipped (`0.21.115`), **lean / model-free**. Enumerates
       recent sessions (`list_recent_conversations`) and enriches each with its own **rolling
       summary** (`conversation_summary_storage.get_summary` — already a digest) when present,
