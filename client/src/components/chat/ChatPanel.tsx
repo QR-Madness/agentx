@@ -43,6 +43,7 @@ import {
   type PlanExecutionMessage,
   type ExhibitMessage,
   type AssistantMessage,
+  type ConversationMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
@@ -155,6 +156,19 @@ export function ChatPanel() {
     : activeTab?.profileId
       ? getProfileById(activeTab.profileId)
       : activeProfile;
+
+  // Resolve the avatar for a specific message from *its own* producing agent (the
+  // turn carries `agentName` from multi-agent attribution), not the tab's agent — so
+  // a 2–3 agent conversation shows each agent's own face instead of one avatar for
+  // every bubble. Falls back to the tab agent when a turn has no attribution.
+  const avatarForMessage = useCallback(
+    (m: ConversationMessage): string | undefined => {
+      const name = 'agentName' in m ? (m as { agentName?: string }).agentName : undefined;
+      const byAgent = name ? profiles.find((p) => p.name === name) : undefined;
+      return (byAgent ?? tabProfile)?.avatar;
+    },
+    [profiles, tabProfile],
+  );
 
   const [input, setInput] = useState('');
   // @-mention autocomplete state (16.5 client). span = the @token being typed.
@@ -839,7 +853,7 @@ export function ChatPanel() {
           if (message.type === 'plan_execution') {
             return (
               <div key={message.id} data-plan-anchor={message.planId}>
-                <MessageBubble message={message} agentName={agentName} avatarId={tabProfile?.avatar} onSubmitChoice={submitChoice} busy={isTyping} />
+                <MessageBubble message={message} agentName={agentName} avatarId={avatarForMessage(message)} onSubmitChoice={submitChoice} busy={isTyping} />
               </div>
             );
           }
@@ -848,7 +862,7 @@ export function ChatPanel() {
               key={message.id}
               message={message}
               agentName={agentName}
-              avatarId={tabProfile?.avatar}
+              avatarId={avatarForMessage(message)}
               onSubmitChoice={submitChoice}
               onAmbassador={handleAmbassador}
               ambassadorStatus={message.type === 'assistant' ? ambassadorStatusFor(message.id) : undefined}
