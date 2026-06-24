@@ -101,6 +101,23 @@ the request-level `use_memory`, so a memory-off profile still got recall). Clien
 the profile editor's Advanced tab (`ProfileContent.tsx`), locked-on + info-noted when the selected model is
 image-only.
 
+**Image-output models in conversation (v0.21.131).** When a **direct-mode** agent's model can
+*output images* (`caps.output_modalities` has `image` — flux, gemini-flash-image), a chat turn
+makes a *picture*, not text: its completion carries the image in `message.images`, which the
+streaming text loop ignores (→ "empty completion"). `views.agent_chat_stream` detects this via
+`_model_outputs_image(provider, model_id, caps)` (warms the catalog once when caps look cold,
+mirroring `core._model_supports_tools`; `False` on any probe error) and, instead of
+`streaming_tool_loop`, runs `_run_image_generation` → the shared `agent/image_gen.py::
+generate_and_store_image` (proven non-streaming `provider.generate_image` → `store_media` into the
+attached workspace else **Home**, under `generated/`, + `record_usage(source="image")`). The result
+is emitted as an **`image` exhibit** and **persisted as a synthetic `present_exhibit` tool turn** so
+the existing reload path (`mapServerMessages` `present_exhibit` branch) rebuilds it (exhibits have no
+persistence of their own). The same `generate_and_store_image` helper backs the `generate_image`
+**tool** (DRY). Gated on direct mode so a text+image model still chats normally; non-direct
+inline-image capture in the streaming path is out of scope. Planning is extracted to
+`_compose_plan_if_complex` (skipped for an image turn) to keep the generator within pyright's
+path-analysis budget — same discipline as `_resolve_direct_mode`/`_resolve_delegation_tool`.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code

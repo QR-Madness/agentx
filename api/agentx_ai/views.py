@@ -62,6 +62,95 @@ def _resolve_direct_mode(agent_config, caps) -> tuple[bool, bool]:
     return direct_mode, image_only
 
 
+async def _model_outputs_image(provider, model_id, caps) -> bool:
+    """True when the model can output images (``output_modalities`` includes ``image``).
+
+    An uncached model reports the default ``["text"]``, so — mirroring
+    ``core._model_supports_tools`` — warm the provider catalog once when caps look cold
+    and re-check. Never raises: returns ``False`` on any probe error (degrade to the
+    normal text path rather than wrongly routing a turn to image generation).
+    """
+    try:
+        mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
+        if "image" in mods:
+            return True
+        warm = getattr(provider, "fetch_models", None)
+        if warm is not None:
+            await warm()
+            caps = provider.get_capabilities(model_id)
+            mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
+        return "image" in mods
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[image-detect] capability probe failed, treating as non-image: {e}")
+        return False
+
+
+async def _compose_plan_if_complex(message, messages, *, provider, model_id, agent, use_memory, emit):
+    """Compose a structured plan with the main agent model when the turn looks complex
+    enough to warrant it; otherwise return None.
+
+    A cheap local heuristic (`_assess_complexity`) gates whether we spend the extra
+    compose call. Factored out of the chat-stream generator to keep its conditional-path
+    count within the type-checker's analysis budget.
+    """
+    from .agent.planner import TaskComplexity, TaskPlanner
+    from .config import get_config_manager
+
+    cfg = get_config_manager()
+    if not cfg.get("planner.enabled", True):
+        return None
+    rank = {"simple": 0, "moderate": 1, "complex": 2}
+    want = rank.get((cfg.get("planner.complexity_threshold", "complex") or "complex").lower(), 2)
+    planner = TaskPlanner(
+        cfg.get("planner.model") or agent.config.default_model,
+        temperature=cfg.get("planner.temperature", 0.3),
+        max_tokens=cfg.get("planner.max_tokens", 1000),
+        prompt_override=cfg.get("planner.prompt_override", ""),
+        max_subtasks=cfg.get("planner.max_subtasks", 6),
+    )
+    assessed = planner._assess_complexity(message)
+    if assessed == TaskComplexity.SIMPLE or rank.get(assessed.value, 0) < want:
+        return None
+    emit("composing", "Planning approach")
+    return await planner.compose_with_model(
+        provider, model_id, messages, message, memory=agent.memory if use_memory else None,
+    )
+
+
+async def _run_image_generation(
+    prompt, *, provider, model_id, task_id, workspace_id, user_id, conversation_id, agent_id
+):
+    """Generate an image for a direct image-mode turn.
+
+    Returns ``(exhibit_wire | None, full_content, tool_turns_data)``. The exhibit is
+    persisted as a synthetic ``present_exhibit`` tool turn so the existing reload path
+    rebuilds it (exhibits have no persistence of their own). Never raises — a failure
+    becomes a short error message as the turn's content. Kept out of the chat-stream
+    generator so its conditional-path count stays within the type-checker's budget.
+    """
+    from .agent.image_gen import generate_and_store_image
+    from .streaming.exhibits import image_exhibit_from_generate
+
+    try:
+        info = await generate_and_store_image(
+            prompt, provider=provider, model=model_id, workspace_id=workspace_id,
+            user_id=user_id, conversation_id=conversation_id, agent_id=agent_id,
+        )
+        exhibit = image_exhibit_from_generate(
+            info["url"], exhibit_id=f"exh_img_{task_id}", alt=prompt,
+        )
+        if exhibit is None:
+            return None, "🖼️ Generated an image.", []
+        wire = exhibit.model_dump()
+        return wire, "🖼️ Generated an image.", [{
+            "type": "tool_call", "tool": "present_exhibit",
+            "tool_call_id": f"exh_img_{task_id}", "arguments": wire,
+        }]
+    except Exception as e:  # noqa: BLE001 — never break the turn
+        logger.warning(f"Image-mode generation failed: {e}")
+        return None, f"Image generation failed: {str(e)[:200]}", []
+
+
 def _resolve_delegation_tool(agent, active_workflow):
     """Build the `delegate_to` tool descriptor for this turn, or None.
 
@@ -1688,47 +1777,22 @@ async def agent_chat_stream(request):
             # Hard limit for context to prevent corruption (leave room for output)
             max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
 
-            # Plan execution: assess complexity and branch
-            from .agent.planner import TaskPlanner, TaskComplexity
-            from .config import get_config_manager
-            planner_config = get_config_manager()
-            planner_enabled = planner_config.get("planner.enabled", True)
-            planner_model = planner_config.get("planner.model") or agent.config.default_model
-            planner_temperature = planner_config.get("planner.temperature", 0.3)
-            planner_max_tokens = planner_config.get("planner.max_tokens", 1000)
-            planner_prompt_override = planner_config.get("planner.prompt_override", "")
-            planner_max_subtasks = planner_config.get("planner.max_subtasks", 6)
-            planner_threshold_name = (
-                planner_config.get("planner.complexity_threshold", "complex") or "complex"
-            ).lower()
-            _threshold_rank = {"simple": 0, "moderate": 1, "complex": 2}
-            planner_threshold_rank = _threshold_rank.get(planner_threshold_name, 2)
+            # Image-generation turn: a direct-mode agent on an image-output model (flux,
+            # gemini-flash-image) makes a *picture*, not text. Such a model's chat
+            # completion carries the image in `message.images` — which the streaming text
+            # loop ignores (→ "empty completion") — so we route the turn through the
+            # proven non-streaming generate→store→exhibit path instead. Gated on direct
+            # mode so a normal text+image model still chats normally. (Decided trigger.)
+            image_mode = direct_mode and await _model_outputs_image(provider, model_id, caps)
 
-            # Planning is composed by the MAIN agent model (it has the full
-            # system prompt + memory + conversation context), returning a
-            # structured JSON plan — not a separate, context-blind planner call
-            # with a brittle SUBTASK regex. A cheap local complexity heuristic
-            # gates whether we even spend the extra call: trivial/simple turns
-            # skip it, and the model itself opts out ({"plan": null}) otherwise.
-            plan = None
-            if planner_enabled:
-                planner = TaskPlanner(
-                    planner_model,
-                    temperature=planner_temperature,
-                    max_tokens=planner_max_tokens,
-                    prompt_override=planner_prompt_override,
-                    max_subtasks=planner_max_subtasks,
-                )
-                assessed = planner._assess_complexity(message)
-                if (
-                    assessed != TaskComplexity.SIMPLE
-                    and _threshold_rank.get(assessed.value, 0) >= planner_threshold_rank
-                ):
-                    emit_status("composing", "Planning approach")
-                    plan = await planner.compose_with_model(
-                        provider, model_id, messages, message,
-                        memory=agent.memory if use_memory else None,
-                    )
+            # Plan execution: assess complexity and branch. Planning is composed by the
+            # MAIN agent model (full system prompt + memory + context) → structured JSON
+            # plan, gated by a cheap local complexity heuristic. Skipped for an image turn
+            # (an image model doesn't plan). See `_compose_plan_if_complex`.
+            plan = None if image_mode else await _compose_plan_if_complex(
+                message, messages, provider=provider, model_id=model_id,
+                agent=agent, use_memory=use_memory, emit=emit_status,
+            )
 
             decompose = plan is not None and len(plan.steps) > 1
             if decompose:
@@ -1806,6 +1870,18 @@ async def agent_chat_stream(request):
                         for s in plan.steps
                     ],
                 }
+
+            elif image_mode:
+                # Direct image-generation turn (no tool loop): a picture, not text.
+                from .streaming.tool_loop import _sse
+                emit_status("generating_image", "Generating image")
+                wire, full_content, tool_turns_data = await _run_image_generation(
+                    message, provider=provider, model_id=model_id, task_id=task_id,
+                    workspace_id=workspace_id, user_id=(agent.config.user_id or "default"),
+                    conversation_id=conv_id, agent_id=getattr(agent_profile, "agent_id", None),
+                )
+                if wire is not None:
+                    yield _sse("exhibit", wire)
 
             else:
                 # Standard single-pass path (simple tasks)

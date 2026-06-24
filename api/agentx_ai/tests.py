@@ -1068,6 +1068,109 @@ class DirectModeTest(TestCase):
             self.assertTrue(reloaded.direct_mode)
 
 
+class ImageConversationTest(TestCase):
+    """Image-output models used *as* the conversation agent: `_model_outputs_image`
+    detection (with cold-cache warm) + the shared `generate_and_store_image` helper."""
+
+    def _caps(self, output_modalities):
+        from types import SimpleNamespace
+        return SimpleNamespace(output_modalities=output_modalities)
+
+    def _provider(self, *, caps_seq, has_fetch=False):
+        """Provider whose get_capabilities returns each caps in turn; optional warm."""
+        from unittest.mock import AsyncMock, MagicMock
+        p = MagicMock()
+        p.get_capabilities.side_effect = caps_seq
+        if has_fetch:
+            p.fetch_models = AsyncMock(return_value=[])
+        else:
+            del p.fetch_models
+        return p
+
+    async def _outputs_image(self, provider, caps):
+        from agentx_ai.views import _model_outputs_image
+        return await _model_outputs_image(provider, "m", caps)
+
+    def test_detects_image_from_warm_caps(self) -> None:
+        from asgiref.sync import async_to_sync
+        caps = self._caps(["image"])
+        provider = self._provider(caps_seq=[caps])
+        self.assertTrue(async_to_sync(self._outputs_image)(provider, caps))
+
+    def test_warms_catalog_when_caps_cold(self) -> None:
+        # Cold caps report text-only; after a warm the model reveals image output.
+        from asgiref.sync import async_to_sync
+        cold, warm = self._caps(["text"]), self._caps(["text", "image"])
+        provider = self._provider(caps_seq=[warm], has_fetch=True)
+        self.assertTrue(async_to_sync(self._outputs_image)(provider, cold))
+        provider.fetch_models.assert_awaited_once()
+
+    def test_text_model_is_not_image(self) -> None:
+        from asgiref.sync import async_to_sync
+        caps = self._caps(["text"])
+        provider = self._provider(caps_seq=[caps])  # no fetch_models → no warm
+        self.assertFalse(async_to_sync(self._outputs_image)(provider, caps))
+
+    def test_probe_error_degrades_to_false(self) -> None:
+        from asgiref.sync import async_to_sync
+        from unittest.mock import MagicMock
+        provider = MagicMock()
+        provider.get_capabilities.side_effect = RuntimeError("boom")
+        # Pass caps=None so the helper must probe → hits the error → False.
+        self.assertFalse(async_to_sync(self._outputs_image)(provider, None))
+
+    def test_generate_and_store_image_stores_and_returns_url(self) -> None:
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        from agentx_ai.agent.image_gen import generate_and_store_image
+
+        provider = SimpleNamespace(
+            name="openrouter",
+            generate_image=AsyncMock(return_value=SimpleNamespace(
+                image=b"\x89PNG_bytes", content_type="image/png",
+            )),
+        )
+        # Patch where the helper looks them up (its own module imports lazily from these).
+        with patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                   return_value={"id": "ws_home"}), \
+             patch("agentx_ai.kit.workspaces.service.store_media",
+                   return_value={"id": "doc_xyz"}) as store, \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as rec:
+            info = async_to_sync(generate_and_store_image)(
+                "a mountain", provider=provider, model="m", user_id="u",
+            )
+
+        self.assertEqual(info["url"], "/api/workspaces/ws_home/documents/doc_xyz/raw")
+        self.assertEqual(info["doc_id"], "doc_xyz")
+        store.assert_called_once()
+        self.assertEqual(store.call_args.kwargs["content_type"], "image/png")
+        self.assertTrue(store.call_args.kwargs["filename"].startswith("generated/"))
+        rec.assert_called_once()  # image usage metered
+
+    def test_generate_and_store_image_uses_attached_workspace(self) -> None:
+        # An attached workspace is used directly; Home is never minted.
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        from agentx_ai.agent.image_gen import generate_and_store_image
+
+        provider = SimpleNamespace(
+            name="openrouter",
+            generate_image=AsyncMock(return_value=SimpleNamespace(image=b"x", content_type="image/png")),
+        )
+        with patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace") as home, \
+             patch("agentx_ai.kit.workspaces.service.store_media",
+                   return_value={"id": "d"}) as store, \
+             patch("agentx_ai.agent.usage_ledger.record_usage"):
+            info = async_to_sync(generate_and_store_image)(
+                "x", provider=provider, model="m", workspace_id="ws_attached",
+            )
+        self.assertEqual(store.call_args.kwargs["workspace_id"], "ws_attached")
+        self.assertEqual(info["workspace_id"], "ws_attached")
+        home.assert_not_called()
+
+
 class ExceptionHierarchyTest(TestCase):
     """The AgentX exception hierarchy (roadmap item 9)."""
 
@@ -8597,56 +8700,27 @@ class GenerateImageToolTest(TestCase):
         defaults.update(kw)
         return InternalToolContext(**defaults)
 
-    def test_generate_image_stores_and_returns_url(self):
+    def test_generate_image_delegates_and_wraps_result(self):
+        # The tool now delegates generate→store→meter to the shared helper (covered by
+        # ImageConversationTest) and wraps its dict into the tool's success shape. Patch
+        # the helper so no real coroutine is created, and the bridge returns its result.
         from agentx_ai.mcp import internal_tools as it
-        from agentx_ai.providers.base import ImageResult
 
-        img = ImageResult(image=b"PNG", content_type="image/png", model="m")
-        provider = MagicMock()
-        provider.name = "openrouter"
-        provider.generate_image = AsyncMock(return_value=img)
         reg = MagicMock()
-        reg.resolve_with_fallback.return_value = (provider, "flux", None)
-
-        captured = {}
-        def _store(*, workspace_id, filename, content_type, raw):
-            captured.update(workspace_id=workspace_id, filename=filename, content_type=content_type)
-            return {"id": "doc_x"}
-
+        reg.resolve_with_fallback.return_value = (MagicMock(name="p"), "flux", None)
+        info = {"url": "/api/workspaces/ws_home/documents/doc_x/raw", "doc_id": "doc_x",
+                "workspace_id": "ws_home", "content_type": "image/png", "prompt": "x"}
         with patch("agentx_ai.mcp.internal_context.current_context", return_value=self._ctx()), \
              patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
-             patch("agentx_ai.utils.async_bridge.run_coro_sync", side_effect=lambda coro, timeout=120.0: img), \
-             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace", return_value={"id": "ws_home"}), \
-             patch("agentx_ai.kit.workspaces.service.store_media", side_effect=_store), \
-             patch("agentx_ai.agent.usage_ledger.record_usage") as rec, \
-             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value={"cost_total": 0.01, "currency": "USD", "pricing_snapshot": {}}):
+             patch("agentx_ai.agent.image_gen.generate_and_store_image", MagicMock()), \
+             patch("agentx_ai.utils.async_bridge.run_coro_sync", return_value=info):
             out = it.generate_image("a sunset over mountains")
 
         self.assertTrue(out["success"])
         self.assertEqual(out["url"], "/api/workspaces/ws_home/documents/doc_x/raw")
-        self.assertEqual(captured["workspace_id"], "ws_home")  # no attached ws → Home
-        self.assertTrue(captured["filename"].startswith("generated/"))
-        self.assertEqual(rec.call_args.kwargs["source"], "image")
-
-    def test_generate_image_uses_attached_workspace_when_present(self):
-        from agentx_ai.mcp import internal_tools as it
-        from agentx_ai.providers.base import ImageResult
-
-        img = ImageResult(image=b"PNG", content_type="image/png", model="m")
-        reg = MagicMock()
-        reg.resolve_with_fallback.return_value = (MagicMock(name="p"), "flux", None)
-        seen = {}
-        with patch("agentx_ai.mcp.internal_context.current_context", return_value=self._ctx(workspace_id="ws_attached")), \
-             patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
-             patch("agentx_ai.utils.async_bridge.run_coro_sync", return_value=img), \
-             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace") as home, \
-             patch("agentx_ai.kit.workspaces.service.store_media", side_effect=lambda **kw: seen.update(kw) or {"id": "d"}), \
-             patch("agentx_ai.agent.usage_ledger.record_usage"), \
-             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value=None):
-            out = it.generate_image("x")
-        self.assertTrue(out["success"])
-        self.assertEqual(seen["workspace_id"], "ws_attached")
-        home.assert_not_called()  # attached ws used; Home not minted
+        self.assertEqual(out["doc_id"], "doc_x")
+        self.assertEqual(out["workspace_id"], "ws_home")
+        self.assertEqual(out["prompt"], "a sunset over mountains")
 
     def test_generate_image_degrades_on_provider_error(self):
         from agentx_ai.mcp import internal_tools as it
