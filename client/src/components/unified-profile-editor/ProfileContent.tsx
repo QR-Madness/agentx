@@ -168,6 +168,7 @@ export function ProfileContent({
     enableMemory, setEnableMemory,
     memoryChannel, setMemoryChannel,
     enableTools, setEnableTools,
+    directMode, setDirectMode,
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
@@ -227,6 +228,14 @@ export function ProfileContent({
     return parts.length > 1 ? parts.slice(1).join(':') : defaultModel;
   })();
   const selectedProviderLabel = selectedModel?.provider ?? (defaultModel.includes(':') ? defaultModel.split(':')[0] : '');
+  // Image-only model: outputs images but not text (e.g. flux). It can't act on a
+  // system prompt or call tools, so Direct mode is auto-forced server-side; reflect
+  // that here (toggle locked on + an info note recommending it).
+  const _outMods = selectedModel?.output_modalities;
+  const modelIsImageOnly = !!selectedModel
+    && (!!selectedModel.supports_image || !!_outMods?.includes('image'))
+    && Array.isArray(_outMods) && !_outMods.includes('text');
+  const directModeEffective = directMode || modelIsImageOnly;
   const ctxLabel = selectedCtx
     ? (selectedCtx >= 1000 ? `${Math.round(selectedCtx / 1000)}k ctx` : `${selectedCtx} ctx`)
     : '';
@@ -743,6 +752,43 @@ export function ProfileContent({
                           placeholder="_global"
                         />
                         <span className="profile-form-hint">Isolate memories to a specific channel</span>
+                      </div>
+                    )}
+                  </ControlCard>
+
+                  <ControlCard
+                    icon={<Zap size={14} />}
+                    title="Direct mode"
+                    summary={directModeEffective ? 'on' : 'off'}
+                  >
+                    <label className="profile-toggle-row">
+                      <span className="profile-toggle-label">
+                        <Zap size={15} />
+                        Prompt only
+                      </span>
+                      <div className="profile-toggle-right">
+                        <input
+                          type="checkbox"
+                          checked={directModeEffective}
+                          disabled={modelIsImageOnly}
+                          onChange={e => setDirectMode(e.target.checked)}
+                          className="profile-toggle-input"
+                        />
+                        <span className={`profile-toggle-switch ${directModeEffective ? 'active' : ''}`} />
+                      </div>
+                    </label>
+                    <span className="profile-form-hint">
+                      Sends the model only your message — no system prompt, memory, or tools.
+                      Best for a transform-only model (a fast classifier/rewriter) or an image
+                      generator.
+                    </span>
+                    {modelIsImageOnly && (
+                      <div className="profile-nested" style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <AlertCircle size={14} style={{ marginTop: 2, flexShrink: 0 }} className="text-info" />
+                        <span className="profile-form-hint" style={{ margin: 0 }}>
+                          This is an image-only model, so Direct mode is always on — it can’t use a
+                          prompt or tools, only the text you send becomes the image prompt.
+                        </span>
                       </div>
                     )}
                   </ControlCard>

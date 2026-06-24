@@ -18,6 +18,7 @@ interface RawAgentProfile {
   enable_memory: boolean;
   memory_channel: string;
   enable_tools: boolean;
+  direct_mode?: boolean;
   // Phase 18.9.x: per-tool gating. Omitted/`null` = all enabled.
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
@@ -58,6 +59,7 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
     enableMemory: p.enable_memory,
     memoryChannel: p.memory_channel,
     enableTools: p.enable_tools,
+    directMode: p.direct_mode ?? false,
     allowedTools: p.allowed_tools ?? null,
     blockedTools: p.blocked_tools ?? [],
     availableForDelegation: p.available_for_delegation ?? true,

@@ -157,6 +157,17 @@ class AgentProfile(BaseModel):
     enable_memory: bool = Field(True, description="Whether to use the memory system")
     memory_channel: str = Field("_global", description="Memory channel to use for this profile")
     enable_tools: bool = Field(True, description="Whether to enable MCP tools")
+    # Direct mode: bypass the whole agent harness for this turn — no global/layered
+    # system prompt, no memory (core + recall), no tools. The model receives only the
+    # user's message. The right primitive for a "transform-only" model (a fast
+    # classifier/rewriter) and *required* for an image-only model (e.g. flux), which
+    # can't act on a system prompt or call tools and otherwise just returns nothing.
+    # Auto-forced at request time when the resolved model is image-output-only, so it
+    # can't be misconfigured; this flag is the manual opt-in for other cases.
+    direct_mode: bool = Field(
+        False,
+        description="Bypass system prompt + memory + tools; send only the user message (auto-on for image-only models)",
+    )
     # Phase 18.2 / 18.9.x: per-profile tool gating. Entries are fully-qualified
     # `server.tool` keys — built-in tools are `_internal.<tool_name>` (e.g.
     # `_internal.checkpoint`); MCP tools are `<server_name>.<tool_name>`. The

@@ -4715,6 +4715,12 @@ components:
           type: string
         enable_tools:
           type: boolean
+        direct_mode:
+          type: boolean
+          description: >-
+            When true, the model receives only the user message — no system
+            prompt, memory, or tools. Auto-forced server-side for image-only
+            models (output_modalities includes image but not text).
         allowed_tools:
           type: array
           nullable: true

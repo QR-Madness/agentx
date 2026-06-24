@@ -992,6 +992,82 @@ class DependencyInjectionTest(TestCase):
         self.assertTrue(fake_cm.get_provider_value.called)
 
 
+class DirectModeTest(TestCase):
+    """`_resolve_direct_mode` + the per-profile direct_mode field.
+
+    Direct mode strips the whole harness (system prompt + memory + tools) and sends
+    the model only the user message — the right primitive for a transform-only model
+    and *required* for an image-only model that can't act on a harness.
+    """
+
+    def _caps(self, output_modalities, supports_tools=True):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            output_modalities=output_modalities, supports_tools=supports_tools
+        )
+
+    def _cfg(self, direct_mode=False):
+        from types import SimpleNamespace
+        return SimpleNamespace(direct_mode=direct_mode)
+
+    def test_image_only_model_forces_direct_mode(self) -> None:
+        """A model that outputs image but not text (e.g. flux) auto-forces direct mode."""
+        from agentx_ai.views import _resolve_direct_mode
+
+        direct, image_only = _resolve_direct_mode(self._cfg(False), self._caps(["image"]))
+        self.assertTrue(direct)
+        self.assertTrue(image_only)
+
+    def test_text_and_image_model_is_not_image_only(self) -> None:
+        """A multimodal-output model (text + image) is not image-only — no auto-force."""
+        from agentx_ai.views import _resolve_direct_mode
+
+        direct, image_only = _resolve_direct_mode(
+            self._cfg(False), self._caps(["text", "image"])
+        )
+        self.assertFalse(direct)
+        self.assertFalse(image_only)
+
+    def test_profile_flag_enables_direct_mode_on_text_model(self) -> None:
+        """The manual profile flag turns direct mode on for an ordinary text model."""
+        from agentx_ai.views import _resolve_direct_mode
+
+        direct, image_only = _resolve_direct_mode(self._cfg(True), self._caps(["text"]))
+        self.assertTrue(direct)
+        self.assertFalse(image_only)  # on by choice, not because the model is image-only
+
+    def test_plain_text_model_without_flag_is_not_direct(self) -> None:
+        from agentx_ai.views import _resolve_direct_mode
+
+        direct, _ = _resolve_direct_mode(self._cfg(False), self._caps(["text"]))
+        self.assertFalse(direct)
+
+    def test_empty_modalities_defaults_to_not_image_only(self) -> None:
+        """Unknown/empty output modalities must not be mistaken for image-only."""
+        from agentx_ai.views import _resolve_direct_mode
+
+        direct, image_only = _resolve_direct_mode(self._cfg(False), self._caps(None))
+        self.assertFalse(direct)
+        self.assertFalse(image_only)
+
+    def test_profile_field_round_trips(self) -> None:
+        """direct_mode persists through ProfileManager save/load (4th serialization site)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+        from agentx_ai.agent.profiles import ProfileManager
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = ProfileManager(config_path=path)
+            mgr.create_profile(AgentProfile(id="img", name="Imager", direct_mode=True))
+            # Reload from disk → field survived the YAML round-trip.
+            reloaded = ProfileManager(config_path=path).get_profile("img")
+            self.assertIsNotNone(reloaded)
+            assert reloaded is not None
+            self.assertTrue(reloaded.direct_mode)
+
+
 class ExceptionHierarchyTest(TestCase):
     """The AgentX exception hierarchy (roadmap item 9)."""
 

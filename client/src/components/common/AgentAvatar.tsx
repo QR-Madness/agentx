@@ -24,10 +24,13 @@ export function AgentAvatar({ avatar, size = 20, className, fill }: AgentAvatarP
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isImage || !avatar) {
-      setUrl(null);
-      return;
-    }
+    // Clear any prior image first. Without this, when React reuses this instance
+    // for a *different* agent (same position in a list), the previous agent's blob
+    // URL lingers in `url` until the new one resolves — which renders as "every
+    // agent shows the first avatar". Resetting on every avatar change makes the
+    // image strictly track the current `avatar` prop.
+    setUrl(null);
+    if (!isImage || !avatar) return;
     let alive = true;
     resolveAvatarImage(avatar)
       .then((u) => alive && setUrl(u))

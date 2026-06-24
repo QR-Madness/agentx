@@ -431,6 +431,9 @@ export interface AgentProfile {
   enableMemory: boolean;
   memoryChannel: string;
   enableTools: boolean;
+  // Direct mode: send the model only the user message — no system prompt, no
+  // memory, no tools. Auto-forced server-side for image-only models.
+  directMode?: boolean;
   // Phase 18.9.x: per-tool gating. Entries are fully-qualified `server.tool`
   // (`_internal.<name>` for built-ins). `allowedTools === null` (or omitted)
   // means all tools enabled; blockedTools always wins.
@@ -484,6 +487,7 @@ export interface AgentProfileCreate {
   enable_memory?: boolean;
   memory_channel?: string;
   enable_tools?: boolean;
+  direct_mode?: boolean;
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;

@@ -46,6 +46,39 @@ def _iso_or_str(value: Any) -> str:
     return str(isoformat()) if callable(isoformat) else str(value or "")
 
 
+def _resolve_direct_mode(agent_config, caps) -> tuple[bool, bool]:
+    """Decide whether this turn runs in *direct mode* (the model gets only the user
+    message — no system prompt, memory, or tools).
+
+    Returns ``(direct_mode, image_only)``. Direct mode is on when the agent profile
+    opts in (``AgentConfig.direct_mode``) **or** the model is image-output-only
+    (``output_modalities`` has ``image`` but not ``text`` — e.g. flux), which can't
+    act on a harness and otherwise just returns nothing. Kept as a module-level
+    helper so the (already very large) chat-stream generator stays analyzable.
+    """
+    out_mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
+    image_only = ("image" in out_mods) and ("text" not in out_mods)
+    direct_mode = bool(getattr(agent_config, "direct_mode", False)) or image_only
+    return direct_mode, image_only
+
+
+def _resolve_delegation_tool(agent, active_workflow):
+    """Build the `delegate_to` tool descriptor for this turn, or None.
+
+    A workflow supervisor delegates to the workflow's specialists; outside a
+    workflow, an agent with an attached ad-hoc executor (Phase 16.4) delegates to
+    any other agent. Factored out of the chat-stream generator to keep its
+    conditional-path count within the type-checker's analysis budget.
+    """
+    if active_workflow is not None and active_workflow.specialists():
+        from .alloy.delegation_tool import build_delegation_tool
+        return build_delegation_tool(active_workflow)
+    if getattr(agent, "_active_alloy_executor", None) is not None:
+        from .alloy.delegation_tool import build_adhoc_delegation_tool
+        return build_adhoc_delegation_tool(agent.config.agent_id or "")
+    return None
+
+
 def index(request):
     return JsonResponse({'message': 'Hello, AgentX AI!'})
 
@@ -826,8 +859,9 @@ async def agent_chat_stream(request):
 
     async def generate_sse():
         """Async generator that yields SSE events."""
-        # @-mention routing (16.5) may override the request's target_agent_id.
-        nonlocal target_agent_id
+        # @-mention routing (16.5) may override the request's target_agent_id;
+        # the profile's enable_memory may force use_memory off below.
+        nonlocal target_agent_id, use_memory
         import time
         import uuid
         from .agent import Agent, AgentConfig
@@ -920,8 +954,12 @@ async def agent_chat_stream(request):
             logger.debug("No agent_profile_id in request")
 
         # Build agent config from profile + request overrides
-        # Priority: request params > agent profile > defaults
-        config_kwargs = {
+        # Priority: request params > agent profile > defaults.
+        # Honor the *profile's* enable_memory too: the streaming path previously read
+        # only the request-level use_memory, so a profile with memory turned off (e.g.
+        # an image/transform agent) still got recall. Either source off → memory off.
+        use_memory = use_memory and (agent_profile.enable_memory if agent_profile is not None else True)
+        config_kwargs: dict[str, Any] = {
             "enable_memory": use_memory,
         }
 
@@ -955,6 +993,7 @@ async def agent_chat_stream(request):
             if agent_profile.agent_id:
                 # Needed for server-side allowed_agent_ids gate in _get_tools_for_provider.
                 config_kwargs.setdefault("agent_id", agent_profile.agent_id)
+            config_kwargs["direct_mode"] = bool(agent_profile.direct_mode)
 
         # When a workflow is active, the supervisor agent must use the
         # workflow's shared memory channel and inherit the supervisor profile's
@@ -1107,7 +1146,25 @@ async def agent_chat_stream(request):
             if fallback_note:
                 emit_status("model_fallback", fallback_note)
 
-            # Build messages with system prompt
+            # Resolve the model's real context window + capabilities up front: they
+            # drive both the token-budget assembly and the direct-mode decision below.
+            from .config import get_context_limit_overrides, get_config_manager
+            caps = provider.get_capabilities(model_id)
+            overrides = get_context_limit_overrides(model_id, provider.name)
+            context_window = overrides.get("context_window") or caps.context_window
+            max_output_override = overrides.get("max_output_tokens")
+            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
+
+            # Direct mode (bare turn): the model receives ONLY the user message — no
+            # system prompt, no memory, no tools. Manual via the agent profile, and
+            # auto-forced for an image-only model. The branchy decision lives in
+            # `_resolve_direct_mode` so it stays out of this (already huge) generator.
+            direct_mode, _img_only = _resolve_direct_mode(agent.config, caps)
+            if direct_mode:
+                emit_status("direct_mode", "sending prompt only — direct mode")
+
+            # Build messages with system prompt. (Composed even in direct mode, but
+            # then discarded — the ledger that would carry it is skipped below.)
             prompt_manager = get_prompt_manager()
 
             # Get agent name and custom system prompt from profile
@@ -1136,6 +1193,9 @@ async def agent_chat_stream(request):
                 shrink_tail,
             )
 
+            # In direct mode every block built here is discarded (the ledger is
+            # skipped below in favour of a bare user turn) — so we don't special-case
+            # each contributor; we just bypass memory recall (its I/O) and the ledger.
             blocks: list[LedgerBlock] = [
                 LedgerBlock(
                     key="base_prompt",
@@ -1228,7 +1288,7 @@ async def agent_chat_stream(request):
             # first block dropped when the budget tightens (priority < history).
             memory_bundle = None
             core_bundle = None
-            if use_memory and agent.memory:
+            if use_memory and agent.memory and not direct_mode:
                 try:
                     emit_status("recalling")
                     core_bundle = agent.memory.get_salient_core()
@@ -1282,14 +1342,8 @@ async def agent_chat_stream(request):
                 except Exception as mem_err:
                     logger.warning(f"Failed to retrieve memories: {mem_err}")
 
-            # Resolve the model's real context window (provider caps + config
-            # override) — drives the token-budget assembly below and downstream.
-            from .config import get_context_limit_overrides, get_config_manager
-            caps = provider.get_capabilities(model_id)
-            overrides = get_context_limit_overrides(model_id, provider.name)
-            context_window = overrides.get("context_window") or caps.context_window
-            max_output_override = overrides.get("max_output_tokens")
-            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
+            # (Context window + capabilities were resolved up front, before the
+            # direct-mode decision.)
 
             # The (persisted) rolling summary covers turns older than the verbatim
             # budget — keep it above the transcript but droppable under hard pressure.
@@ -1308,43 +1362,62 @@ async def agent_chat_stream(request):
             # The per-block allocation report is the Context Inspector's data seam.
             _cfg = get_config_manager()
             emit_status("composing")
-            ledger_result = assemble_ledger(
-                blocks=blocks,
-                history=[m for m in context if m.role != MessageRole.SYSTEM],
-                new_message=Message(role=MessageRole.USER, content=message_for_context),
-                context_window=context_window,
-                reserved_tokens=max_output_tokens + 2000,
-                verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
-                recent_floor=int(_cfg.get("context.recent_floor", 4)),
-            )
-            messages = ledger_result.messages
-            logger.debug("ledger allocation: %s", ledger_result.allocations)
-
-            # Get MCP tools for function calling
-            tools = agent._get_tools_for_provider()
-            logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
-
-            # When a workflow is active, append the delegate_to tool so the
-            # supervisor can hand work to specialists. Outside a workflow, the
-            # same tool is offered for ad-hoc delegation (Phase 16.4) whenever an
-            # ad-hoc executor was attached above.
-            if active_workflow is not None and active_workflow.specialists():
-                from .alloy.delegation_tool import build_delegation_tool
-                desc = build_delegation_tool(active_workflow)
-            elif getattr(agent, "_active_alloy_executor", None) is not None:
-                from .alloy.delegation_tool import build_adhoc_delegation_tool
-                desc = build_adhoc_delegation_tool(agent.config.agent_id or "")
+            # A single direct-mode branch (kept to one decision point so this very
+            # large generator stays within the type-checker's path-analysis budget):
+            # the whole harness — ledger preamble + history, MCP/delegation tools, and
+            # the token-budget header — is replaced by a bare user turn with no tools.
+            if direct_mode:
+                messages = [Message(role=MessageRole.USER, content=message_for_context)]
+                tools = None
             else:
-                desc = None
-            if desc is not None:
-                tools = (tools or []) + [{
-                    "type": "function",
-                    "function": {
-                        "name": desc["name"],
-                        "description": desc["description"],
-                        "parameters": desc["input_schema"],
-                    },
-                }]
+                ledger_result = assemble_ledger(
+                    blocks=blocks,
+                    history=[m for m in context if m.role != MessageRole.SYSTEM],
+                    new_message=Message(role=MessageRole.USER, content=message_for_context),
+                    context_window=context_window,
+                    reserved_tokens=max_output_tokens + 2000,
+                    verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
+                    recent_floor=int(_cfg.get("context.recent_floor", 4)),
+                )
+                messages = ledger_result.messages
+                logger.debug("ledger allocation: %s", ledger_result.allocations)
+
+                # MCP tools for function calling.
+                tools = agent._get_tools_for_provider()
+                logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
+
+                # When a workflow is active, append the delegate_to tool so the
+                # supervisor can hand work to specialists. Outside a workflow, the
+                # same tool is offered for ad-hoc delegation (Phase 16.4) whenever an
+                # ad-hoc executor was attached above.
+                desc = _resolve_delegation_tool(agent, active_workflow)
+                if desc is not None:
+                    tools = (tools or []) + [{
+                        "type": "function",
+                        "function": {
+                            "name": desc["name"],
+                            "description": desc["description"],
+                            "parameters": desc["input_schema"],
+                        },
+                    }]
+
+                # Token budget header: a one-line system message telling the model how
+                # full its context window is, so it can self-pace (wrap up, checkpoint,
+                # summarize) before automatic compression kicks in.
+                try:
+                    used_tokens = estimate_tokens(messages)
+                    pct = (used_tokens / context_window * 100.0) if context_window else 0.0
+                    messages.append(Message(
+                        role=MessageRole.SYSTEM,
+                        content=(
+                            f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
+                            f"({pct:.0f}% used). When usage approaches 70% consider "
+                            f"calling the `checkpoint` tool to anchor progress before "
+                            f"automatic compression."
+                        ),
+                    ))
+                except Exception as bh_err:
+                    logger.debug(f"Token budget header skipped: {bh_err}")
 
             # Resolve prompt profile name for metadata
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
@@ -1356,25 +1429,6 @@ async def agent_chat_stream(request):
                 f"Using context limits for {provider.name}/{model_id}: "
                 f"window={context_window:,}, max_output={max_output_tokens:,}"
             )
-
-            # Token budget header: a one-line system message telling the model
-            # how full its context window is, so it can self-pace (wrap up,
-            # checkpoint, summarize) before automatic compression kicks in.
-            try:
-                used_tokens = estimate_tokens(messages)
-                pct = (used_tokens / context_window * 100.0) if context_window else 0.0
-                budget_line = (
-                    f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
-                    f"({pct:.0f}% used). When usage approaches 70% consider "
-                    f"calling the `checkpoint` tool to anchor progress before "
-                    f"automatic compression."
-                )
-                messages.append(Message(
-                    role=MessageRole.SYSTEM,
-                    content=budget_line,
-                ))
-            except Exception as bh_err:
-                logger.debug(f"Token budget header skipped: {bh_err}")
 
             # Send start event with enhanced metadata. Includes session_id so the
             # client can persist it on the tab at turn *start* (not just on done)
@@ -6123,6 +6177,7 @@ def agent_profiles_list(request):
                     "enable_memory": p.enable_memory,
                     "memory_channel": p.memory_channel,
                     "enable_tools": p.enable_tools,
+                    "direct_mode": p.direct_mode,
                     "allowed_tools": list(p.allowed_tools) if p.allowed_tools is not None else None,
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "available_for_delegation": p.available_for_delegation,
@@ -6171,6 +6226,7 @@ def agent_profiles_list(request):
                     "enable_memory": created.enable_memory,
                     "memory_channel": created.memory_channel,
                     "enable_tools": created.enable_tools,
+                    "direct_mode": created.direct_mode,
                     "allowed_tools": list(created.allowed_tools) if created.allowed_tools is not None else None,
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "available_for_delegation": created.available_for_delegation,
@@ -6223,6 +6279,7 @@ def agent_profile_detail(request, profile_id):
                 "enable_memory": profile.enable_memory,
                 "memory_channel": profile.memory_channel,
                 "enable_tools": profile.enable_tools,
+                "direct_mode": profile.direct_mode,
                 "allowed_tools": list(profile.allowed_tools) if profile.allowed_tools is not None else None,
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "available_for_delegation": profile.available_for_delegation,
@@ -6260,6 +6317,7 @@ def agent_profile_detail(request, profile_id):
                 "enable_memory": updated.enable_memory,
                 "memory_channel": updated.memory_channel,
                 "enable_tools": updated.enable_tools,
+                "direct_mode": updated.direct_mode,
                 "allowed_tools": list(updated.allowed_tools) if updated.allowed_tools is not None else None,
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "available_for_delegation": updated.available_for_delegation,

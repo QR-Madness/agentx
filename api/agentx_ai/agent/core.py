@@ -92,7 +92,11 @@ class AgentConfig:
     enable_drafting: bool = False
     enable_memory: bool = True
     enable_tools: bool = True
-    
+    # Direct mode: send the model only the user message — no system prompt, no memory,
+    # no tools. Set from the agent profile (and auto-forced for image-only models in the
+    # streaming chat path). See AgentProfile.direct_mode.
+    direct_mode: bool = False
+
     # Reasoning settings
     default_reasoning_strategy: str = "auto"  # "auto", "cot", "tot", "react", "reflection"
     

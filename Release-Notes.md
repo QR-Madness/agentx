@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.128 -->
+<!-- release-version: 0.21.129 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -57,7 +57,8 @@ the client at your own API server and bring your own model providers.
 - **Browse stored tool outputs.** A debug surface (command palette → "Tool Outputs") lists every large tool result stashed in the cache — filter by tool, read the full body, copy, and prune individually or all at once.
 - **Snappier conversation sidebar.** The list no longer rebuilds on every streaming token (stable tab projection + memoized rows), so only the active row updates while a reply streams; pinned/grouped conversations that are also open now show a small "open" dot.
 - **Ambassador polish.** One stable header across voice/text (switching modes no longer reshuffles the top bar or strands you — same Inquiry, only the input swaps), a header that holds together at any dock width (controls no longer slide off-screen), and a conversation switcher + mode toggle rebuilt on the app's standard themed components so they read correctly in every theme.
-- **Model-capability awareness.** An agent on a model that can't use tools no longer 404s on its first turn — tools are simply not sent to it. The model picker now shows an **Image gen** badge (image *output*) alongside Vision (image *input*), so you can pick the right model for generation. Generated avatars also render at full size now (they were collapsed to a dot on the desktop webview).
+- **Model-capability awareness.** An agent on a model that can't use tools no longer 404s on its first turn — tools are simply not sent to it. The model picker now shows an **Image gen** badge (image *output*) alongside Vision (image *input*), so you can pick the right model for generation. Generated avatars render at full size now (they were collapsed to a dot on the desktop webview) and each agent shows its *own* avatar (a generated picture no longer leaked across agents).
+- **Direct mode for bare models.** New per-agent **Direct mode** (Settings → agent → Advanced) sends the model only your message — no system prompt, no memory, no tools. It's the right setting for a transform-only model (a fast classifier/rewriter) and is **auto-enabled for image-only models** (e.g. flux), which can't act on a full agent harness and otherwise just go quiet. The profile also now honors its own **memory toggle** in chat (previously only the request-level switch applied).
 
 ### Getting started
 

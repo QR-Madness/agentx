@@ -87,6 +87,20 @@ without the model re-describing it. Client: `lib/exhibits.ts` gains the `image` 
 `components/chat/exhibits/ImageElement` renderer (registered in `elementRegistry`) resolves the served-blob
 URL to an authed object URL via `lib/mediaImage.ts::resolveMediaImage` (the shared helper avatars also use).
 
+**Direct mode (v0.21.129).** A per-profile `AgentProfile.direct_mode` (mirrored on `AgentConfig`) makes a
+turn **bare**: the model receives only the user message — no system prompt, no memory (core + recall), no
+tools, no token-budget header, no prior history. The chat-stream generator (`views.agent_chat_stream`)
+resolves it via the module helper `_resolve_direct_mode(agent.config, caps)`, which returns
+`(direct_mode, image_only)` — on when the profile flag is set **or** the resolved model is *image-only*
+(`caps.output_modalities` has `image` but not `text`, e.g. flux), so an image model that can't act on a
+harness can't be misconfigured. Direct mode is one consolidated `if`-branch over the ledger/tools/budget
+section (kept to a single decision point so the giant generator stays within pyright's path-analysis
+budget; the delegation-tool descriptor moved to the `_resolve_delegation_tool` helper for the same reason).
+**Separately**, the chat-stream path now honors the profile's own `enable_memory` (it previously read only
+the request-level `use_memory`, so a memory-off profile still got recall). Client: a "Direct mode" card in
+the profile editor's Advanced tab (`ProfileContent.tsx`), locked-on + info-noted when the selected model is
+image-only.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code

@@ -30,6 +30,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [enableMemory, setEnableMemory] = useState(true);
   const [memoryChannel, setMemoryChannel] = useState('_global');
   const [enableTools, setEnableTools] = useState(true);
+  // Direct mode: bare turn (no system prompt / memory / tools). Auto-forced
+  // server-side for image-only models regardless of this flag.
+  const [directMode, setDirectMode] = useState(false);
   // Phase 18.9.x — per-tool gating. `allowedTools === null` ⇔ "allow all"; a
   // non-null array switches to whitelist mode. `blockedTools` always wins.
   const [allowedTools, setAllowedTools] = useState<string[] | null>(null);
@@ -77,6 +80,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setEnableMemory(profile.enableMemory);
       setMemoryChannel(profile.memoryChannel);
       setEnableTools(profile.enableTools);
+      setDirectMode(profile.directMode ?? false);
       setAllowedTools(profile.allowedTools ?? null);
       setBlockedTools(profile.blockedTools ?? []);
       setAvailableForDelegation(profile.availableForDelegation ?? true);
@@ -103,6 +107,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setEnableMemory(true);
       setMemoryChannel('_global');
       setEnableTools(true);
+      setDirectMode(false);
       setAllowedTools(null);
       setBlockedTools([]);
       setAvailableForDelegation(true);
@@ -165,6 +170,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     enable_memory: enableMemory,
     memory_channel: memoryChannel,
     enable_tools: enableTools,
+    direct_mode: directMode,
     // Send `null` explicitly when allow-all so the server clears any prior
     // whitelist; otherwise pass the array as-is. Always send blockedTools
     // (server defaults to []).
@@ -225,7 +231,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     name, avatar, description, tags, defaultModel, temperature, reasoningStrategy,
-    baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools,
+    baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools, directMode,
     allowedTools, blockedTools, availableForDelegation, kind,
     ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
     voiceMode, speechModel, voice, transcriptionModel,
@@ -293,6 +299,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     enableMemory, setEnableMemory,
     memoryChannel, setMemoryChannel,
     enableTools, setEnableTools,
+    directMode, setDirectMode,
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,

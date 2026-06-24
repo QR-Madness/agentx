@@ -686,6 +686,7 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
   "enable_memory": true,
   "memory_channel": "_global",
   "enable_tools": true,
+  "direct_mode": false,
   "allowed_tools": null,
   "blocked_tools": [],
   "is_default": true,

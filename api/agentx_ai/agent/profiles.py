@@ -257,6 +257,7 @@ class ProfileManager:
                     "enable_memory": p.enable_memory,
                     "memory_channel": p.memory_channel,
                     "enable_tools": p.enable_tools,
+                    "direct_mode": p.direct_mode,
                     # Per-profile tool gating — previously dropped here, so gating
                     # was lost on restart (Phase 18.2+ regression). blocked_tools
                     # defaults to [] (kept); allowed_tools is None=all (filtered out).
