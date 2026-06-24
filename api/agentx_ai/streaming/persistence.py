@@ -19,7 +19,14 @@ def _turn_id(conv_id: str, suffix: str) -> str:
     return f"{conv_id}-{uuid.uuid4().hex[:8]}-{suffix}"
 
 
-def build_user_turn(conv_id: str, content: str, index: int, *, turn_id: str | None = None):
+def build_user_turn(
+    conv_id: str,
+    content: str,
+    index: int,
+    *,
+    turn_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+):
     from ..kit.agent_memory.models import Turn
 
     return Turn(
@@ -28,6 +35,7 @@ def build_user_turn(conv_id: str, content: str, index: int, *, turn_id: str | No
         role="user",
         content=content,
         index=index,
+        metadata=metadata or {},
     )
 
 

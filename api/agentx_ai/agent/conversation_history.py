@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from ..providers.base import Message, MessageRole
 from ..tokens import estimate_tokens
@@ -24,16 +24,20 @@ logger = logging.getLogger(__name__)
 # pathologically long threads); the token budget normally bites first.
 _MAX_ROWS = 400
 
-TurnReader = Callable[[str, int], list[tuple[str, str]]]
+# A turn reader returns rows newest-first as either (role, content) or — for the
+# default reader — (role, content, metadata); `load_recent_turns` handles both arities.
+TurnReader = Callable[[str, int], Sequence[tuple]]
 # A conversation lister returns recent conversations newest-first as dicts.
 ConversationLister = Callable[[int], list[dict]]
 
 
-def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
+def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str, dict | None]]:
     """Read up to ``limit`` most-recent user/assistant turns (newest first).
 
-    Tool_call/tool_result rows are intentionally excluded — they're ephemeral and
-    the in-turn trajectory compressor already handles tool growth.
+    Returns ``(role, content, metadata)`` — the metadata carries vision-input image
+    refs (``metadata['images']``) on user turns so they can be re-fed to a vision
+    model after a cold rehydration. Tool_call/tool_result rows are excluded — they're
+    ephemeral and the in-turn trajectory compressor already handles tool growth.
     """
     from ..kit.agent_memory.connections import PostgresConnection
 
@@ -42,14 +46,14 @@ def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str]]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT role, content FROM conversation_logs
+                SELECT role, content, metadata FROM conversation_logs
                 WHERE conversation_id = %s AND role IN ('user', 'assistant')
                 ORDER BY turn_index DESC
                 LIMIT %s
                 """,
                 (conversation_id, limit),
             )
-            return [(r[0], r[1] or "") for r in cur.fetchall()]
+            return [(r[0], r[1] or "", r[2]) for r in cur.fetchall()]
     finally:
         conn.close()
 
@@ -147,6 +151,78 @@ def latest_agent_name(conversation_id: str) -> str:
         conn.close()
 
 
+def list_conversation_images(conversation_id: str, *, limit: int = 12) -> list[dict]:
+    """Images created earlier in this conversation, for history *awareness*.
+
+    Scans the durable ``generate_image`` tool-result turns (each carries the stored
+    image's ``doc_id``/``workspace_id``/``prompt``) so the agent can be told an image
+    exists and choose to ``view_image`` it — we never re-inject the pixels automatically.
+    Newest-first, deduped by doc_id. Read-only; empty on any error."""
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    try:
+        conn: Any = PostgresConnection.get_engine().raw_connection()
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"conversation image scan connect failed for {conversation_id}: {e}")
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT content FROM conversation_logs
+                WHERE conversation_id = %s AND role = 'tool_result'
+                  AND metadata->>'tool' = 'generate_image'
+                ORDER BY turn_index DESC
+                LIMIT 100
+                """,
+                (conversation_id,),
+            )
+            rows = cur.fetchall()
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"conversation image scan failed for {conversation_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+    import json as _json
+
+    seen: set[str] = set()
+    images: list[dict] = []
+    for (content,) in rows:
+        try:
+            data = _json.loads(content or "{}")
+        except (ValueError, TypeError):
+            continue
+        doc_id = data.get("doc_id") or data.get("document_id")
+        if not data.get("success") or not doc_id or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        images.append({
+            "doc_id": doc_id,
+            "workspace_id": data.get("workspace_id"),
+            "prompt": (data.get("prompt") or "").strip(),
+        })
+        if len(images) >= limit:
+            break
+    return images
+
+
+def render_conversation_images_block(conversation_id: str) -> str:
+    """A stable awareness note listing images made earlier in this conversation, so the
+    agent knows it can ``view_image`` them. Empty when there are none."""
+    images = list_conversation_images(conversation_id)
+    if not images:
+        return ""
+    lines = [
+        "Images created earlier in this conversation — to actually see one, call "
+        "`view_image(document_id=…)` (you won't see it otherwise):"
+    ]
+    for img in images:
+        desc = f" — {img['prompt']}" if img.get("prompt") else ""
+        lines.append(f"- document_id={img['doc_id']}{desc}")
+    return "\n".join(lines)
+
+
 def _default_conversation_lister(limit: int) -> list[dict]:
     """Read the most-recent conversations (newest first) from ``conversation_logs``.
 
@@ -230,21 +306,70 @@ def load_recent_turns(
         logger.debug(f"transcript load failed for {conversation_id}: {e}")
         return []
 
+    # Re-feeding base64 images on every turn is expensive, so only the most-recent K
+    # user turns that carry images get them back; older turns rehydrate text-only (the
+    # durable transcript still keeps the refs for the client to render).
+    refeed_recent = _vision_refeed_recent_turns()
+    image_turns_used = 0
+
     picked: list[Message] = []
     used = 0
-    for role, content in rows:
+    for row in rows:  # newest-first
+        role, content = row[0], row[1] or ""
+        metadata = row[2] if len(row) > 2 else None
         tokens = estimate_tokens(content)
         if picked and used + tokens > token_budget:
             break
+        images = None
+        if role == "user" and refeed_recent > 0 and image_turns_used < refeed_recent:
+            images = _images_from_metadata(metadata)
+            if images:
+                image_turns_used += 1
         picked.append(
             Message(
                 role=MessageRole.USER if role == "user" else MessageRole.ASSISTANT,
                 content=content,
+                images=images,
             )
         )
         used += tokens
     picked.reverse()  # chronological
     return picked
+
+
+def _vision_refeed_recent_turns() -> int:
+    """How many recent image-bearing user turns to re-feed on rehydration (config)."""
+    try:
+        from ..config import get_config_manager
+
+        return int(get_config_manager().get("vision.refeed_recent_turns", 2))
+    except Exception:  # pragma: no cover - config unavailable
+        return 2
+
+
+def _images_from_metadata(metadata: Any) -> list | None:
+    """Reconstruct ImageRef objects from a turn's persisted ``metadata['images']``.
+
+    Tolerates metadata stored as a JSON string or a dict; returns ``None`` when there
+    are no valid image refs. Never raises — a malformed entry is skipped."""
+    if not metadata:
+        return None
+    try:
+        from ..providers.base import ImageRef
+
+        if isinstance(metadata, str):
+            import json
+
+            metadata = json.loads(metadata)
+        raw = (metadata or {}).get("images") or []
+        refs = [
+            ImageRef(workspace_id=r["workspace_id"], doc_id=r["doc_id"], media_type=r["media_type"])
+            for r in raw
+            if isinstance(r, dict) and r.get("workspace_id") and r.get("doc_id") and r.get("media_type")
+        ]
+        return refs or None
+    except Exception:  # pragma: no cover - defensive
+        return None
 
 
 def hydrate_session_from_history(

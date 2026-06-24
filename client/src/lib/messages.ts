@@ -3,6 +3,7 @@
  */
 
 import type { Exhibit } from './exhibits';
+import type { ChatImageRef } from './api/types';
 
 export type MessageType =
   | 'user'
@@ -47,6 +48,8 @@ export interface UserMessage extends BaseMessage {
   targetAgentIds?: string[];
   /** Sent mid-turn to steer a running agent (vs. starting a new turn). */
   steered?: boolean;
+  /** Images attached for vision input — rendered on the bubble (live + reload). */
+  images?: ChatImageRef[];
 }
 
 export interface AssistantMessage extends BaseMessage {

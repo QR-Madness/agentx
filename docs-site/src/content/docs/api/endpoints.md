@@ -396,7 +396,7 @@ Conversational interaction with session management.
 POST /api/agent/chat/stream
 ```
 
-Same request body as `/agent/chat`. Two optional extras: `workflow_id` (run an Agent Alloy workflow) and `target_agent_id` (route this turn to a specific agent by its Docker-style `agent_id`). Routing priority: `workflow_id` > `target_agent_id` > `agent_profile_id` > default; an unknown `target_agent_id` yields an `error` event. Returns Server-Sent Events (SSE).
+Same request body as `/agent/chat`. Optional extras: `workflow_id` (run an Agent Alloy workflow), `target_agent_id` (route this turn to a specific agent by its Docker-style `agent_id`), `workspace_id` (attach a document workspace), and `images` (**vision input** — an array of `{workspace_id, doc_id, media_type}` refs to images already uploaded via `POST /agent/chat/images`). A vision-capable model receives the images as image blocks; a non-vision model gets the text only, with a `status` notice. An image-only turn may send an empty `message`. Routing priority: `workflow_id` > `target_agent_id` > `agent_profile_id` > default; an unknown `target_agent_id` yields an `error` event. Returns Server-Sent Events (SSE).
 
 **Response:** `Content-Type: text/event-stream`
 
@@ -469,6 +469,7 @@ POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
 POST /api/agent/avatar/generate                  # generate an agent avatar (OpenRouter) → Home workspace
+POST /api/agent/chat/images                       # upload an image for vision input (multipart `file`) → Home workspace; returns a ChatImageRef
 POST /api/agent/ambassador/relay
 GET  /api/agent/ambassador/threads
 POST /api/agent/ambassador/threads

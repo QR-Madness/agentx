@@ -686,6 +686,69 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
     return {**doc, "success": True}
 
 
+@register_tool(
+    name="view_image",
+    description=(
+        "Look at an image — load it into your vision so you can actually see and describe it. "
+        "Use this for image files in the attached workspace (e.g. a `.png`/`.jpg` from "
+        "`workspace_search`/`list_files`) or an image generated earlier in this conversation. "
+        "`read_document` only returns text, so use THIS to view a picture. After viewing, the "
+        "image appears in the conversation and you can describe or reason about what it shows."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {
+                "type": "string",
+                "description": "The image's document id (from a search/list result or an image catalog entry).",
+            },
+        },
+        "required": ["document_id"],
+    },
+)
+def view_image(document_id: str) -> dict[str, Any]:
+    """Resolve a workspace image doc for vision. The actual image block is injected
+    into the next model round by the streaming tool loop (which knows whether the model
+    can see). Here we only validate access + that it's an image; resolution is scoped to
+    the attached workspace or the user's Home (where generated images land)."""
+    from ..kit.workspaces import repository
+    from ..kit.workspaces.service import MEDIA_CONTENT_TYPES
+    from .internal_context import current_context
+
+    document_id = (document_id or "").strip()
+    if not document_id:
+        return {"error": "document_id is required", "success": False}
+
+    ctx = current_context()
+    attached = ctx.workspace_id if ctx else None
+    user_id = ctx.user_id if ctx else "default"
+    home_id = repository.ensure_home_workspace(user_id)["id"]
+
+    doc = repository.get_document(document_id)
+    if doc is None:
+        return {"error": f"Image {document_id} not found.", "success": False}
+    if doc.get("workspace_id") not in {attached, home_id}:
+        return {
+            "error": "That image isn't in the attached workspace or your Home workspace.",
+            "success": False,
+        }
+    media_type = doc.get("content_type")
+    if media_type not in MEDIA_CONTENT_TYPES:
+        return {
+            "error": f"{doc.get('filename')} isn't a viewable image (type {media_type}). "
+                     "Use read_document for text files.",
+            "success": False,
+        }
+    # The loop reads these fields to build the image block + gate on vision capability.
+    return {
+        "success": True,
+        "document_id": document_id,
+        "workspace_id": doc["workspace_id"],
+        "media_type": media_type,
+        "filename": doc.get("filename"),
+    }
+
+
 # --- Image generation (multi-modal; the result renders as an image exhibit) --
 
 

@@ -2,6 +2,7 @@ import { request as apiRequest } from './core';
 import type {
   AgentRunRequest,
   AgentRunResponse,
+  ChatImageRef,
   ChatRequest,
   ChatResponse,
   PlanStatusResponse,
@@ -15,6 +16,20 @@ export const agentApi = {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  },
+
+  /**
+   * Upload an image for vision input. Stored in the user's Home workspace (no
+   * ingestion) and returned as a ref the chat stream carries in `images[]`.
+   */
+  async uploadChatImage(file: File): Promise<ChatImageRef & { url: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await apiRequest<{ doc_id: string; workspace_id: string; media_type: string; url: string }>(
+      '/api/agent/chat/images',
+      { method: 'POST', body: form },
+    );
+    return { workspace_id: res.workspace_id, doc_id: res.doc_id, media_type: res.media_type, url: res.url };
   },
 
   async chat(request: ChatRequest): Promise<ChatResponse> {

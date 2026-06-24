@@ -85,6 +85,98 @@ async def _model_outputs_image(provider, model_id, caps) -> bool:
         return False
 
 
+async def _model_accepts_vision(provider, model_id, caps) -> bool:
+    """True when the model accepts image *input* (vision): ``supports_vision`` or
+    ``input_modalities`` includes ``image``.
+
+    Mirrors ``_model_outputs_image``: an uncached model reports defaults, so warm the
+    provider catalog once when caps look cold and re-check. Never raises — returns
+    ``False`` on any probe error (degrade to text-only rather than wrongly sending
+    image blocks to a model that would 400 on them).
+    """
+    def _vision(c) -> bool:
+        if getattr(c, "supports_vision", False):
+            return True
+        mods = [str(m).lower() for m in (getattr(c, "input_modalities", None) or [])]
+        return "image" in mods
+
+    try:
+        if _vision(caps):
+            return True
+        warm = getattr(provider, "fetch_models", None)
+        if warm is not None:
+            await warm()
+            caps = provider.get_capabilities(model_id)
+        return _vision(caps)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[vision-detect] capability probe failed, treating as non-vision: {e}")
+        return False
+
+
+def _parse_image_refs(raw_images):
+    """Validate wire vision-input refs into ImageRefs. Malformed / unsupported-type
+    entries are dropped (a bad attachment must never 500 the turn). Kept out of the
+    chat-stream generator so its loop+conditionals don't inflate pyright's path budget."""
+    from .providers.base import ImageRef
+    from .kit.workspaces.service import MEDIA_CONTENT_TYPES
+
+    refs = []
+    for item in raw_images or []:
+        if not isinstance(item, dict):
+            continue
+        ws, doc, mt = item.get("workspace_id"), item.get("doc_id"), item.get("media_type")
+        if ws and doc and mt in MEDIA_CONTENT_TYPES:
+            refs.append(ImageRef(workspace_id=ws, doc_id=doc, media_type=mt))
+    return refs
+
+
+def _gate_vision_images(user_images, accepts_vision, emit):
+    """Return the images to send the model: the full set when it can see them, else
+    empty (with a status notice). The user's images still persist + render regardless."""
+    if user_images and not accepts_vision:
+        emit("vision_unsupported", "the selected model can't see images — sent as text only")
+        return []
+    return user_images
+
+
+def _strip_message_images(messages, accepts_vision):
+    """Drop image blocks from every message when the model can't see them (a
+    mid-conversation switch to a non-vision model can leave images on history turns).
+    Non-mutating — copies so the warm session keeps its images for a later vision turn."""
+    if accepts_vision:
+        return messages
+    return [m.model_copy(update={"images": None}) if m.images else m for m in messages]
+
+
+def _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail):
+    """Append the STABLE corpus-awareness ledger blocks: the attached-workspace file
+    manifest and a catalog of images generated earlier in this conversation (so the agent
+    can `view_image` them). Awareness only — no pixels. Best-effort + branchy by nature, so
+    it lives here to keep the chat-stream generator within pyright's path budget."""
+    from .agent.context_ledger import LedgerBlock
+
+    if workspace_id:
+        try:
+            from .kit.workspaces.retrieval import render_manifest_block
+            manifest_block = render_manifest_block(workspace_id)
+            if manifest_block:
+                blocks.append(LedgerBlock(
+                    key="workspace_manifest", priority=85, content=manifest_block, shrink_fn=shrink_tail,
+                ))
+        except Exception as ws_err:  # noqa: BLE001 — awareness is best-effort
+            logger.debug(f"Workspace manifest injection skipped: {ws_err}")
+
+    try:
+        from .agent.conversation_history import render_conversation_images_block
+        content = render_conversation_images_block(conv_id)
+        if content:
+            blocks.append(LedgerBlock(
+                key="conversation_images", priority=60, content=content, shrink_fn=shrink_tail,
+            ))
+    except Exception as ci_err:  # noqa: BLE001 — awareness is best-effort
+        logger.debug(f"Conversation image awareness skipped: {ci_err}")
+
+
 async def _compose_plan_if_complex(message, messages, *, provider, model_id, agent, use_memory, emit):
     """Compose a structured plan with the main agent model when the turn looks complex
     enough to warrant it; otherwise return None.
@@ -930,8 +1022,12 @@ async def agent_chat_stream(request):
     try:
         data = json.loads(request.body.decode('utf-8'))
         message = data.get("message")
-        if not message:
+        # Vision input: refs to already-uploaded images (workspace_id/doc_id/media_type).
+        # Parsed into ImageRef objects below; an image-only turn may carry an empty message.
+        raw_images = data.get("images") or []
+        if not message and not raw_images:
             return JsonResponse({'error': 'Missing required field: message'}, status=400)
+        message = message or ""
 
         session_id = data.get("session_id")
         model = data.get("model")
@@ -958,7 +1054,11 @@ async def agent_chat_stream(request):
         from .agent.output_parser import parse_output
         from .agent.profiles import get_profile_manager
         from .prompts import get_prompt_manager
-        from .providers.base import Message, MessageRole
+        from .providers.base import ImageRef, Message, MessageRole
+
+        # Build validated vision-input ImageRefs from the wire payload (helper keeps
+        # the loop + conditionals out of this already-huge generator's path budget).
+        user_images: list[ImageRef] = _parse_image_refs(raw_images)
 
         task_id = str(uuid.uuid4())[:8]  # Short ID for UI display
         full_conversation_id = str(uuid.uuid4())  # Full UUID for database storage
@@ -1179,8 +1279,10 @@ async def agent_chat_stream(request):
         except Exception as _hy_err:  # pragma: no cover - DB offline
             logger.debug(f"Session rehydration skipped: {_hy_err}")
 
-        # Store full message in session for memory/history purposes
-        session.add_message(Message(role=MessageRole.USER, content=message))
+        # Store full message in session for memory/history purposes. Carries the
+        # attached images so a later turn (same warm process) can re-feed them to a
+        # vision model; the outgoing message list is gated/stripped per-turn below.
+        session.add_message(Message(role=MessageRole.USER, content=message, images=user_images or None))
         context = session.get_messages()[:-1]
 
         # Resolve conversation ID — must match session.id exactly so the
@@ -1243,6 +1345,18 @@ async def agent_chat_stream(request):
             context_window = overrides.get("context_window") or caps.context_window
             max_output_override = overrides.get("max_output_tokens")
             max_output_tokens = max_output_override or caps.max_output_tokens or 4096
+
+            # Vision gating: only feed attached images to a model that can see them.
+            # A non-vision model gets the text only (the images still persist + render
+            # on the user bubble); surface the substitution as a status notice rather
+            # than silently dropping or swapping models. `accepts_vision` also drives a
+            # defensive strip of any image blocks carried by *history* (a prior vision
+            # turn) before they reach a model switched to a non-vision one.
+            accepts_vision = (
+                get_config_manager().get("vision.enabled", True)
+                and await _model_accepts_vision(provider, model_id, caps)
+            )
+            model_images = _gate_vision_images(user_images, accepts_vision, emit_status)
 
             # Direct mode (bare turn): the model receives ONLY the user message — no
             # system prompt, no memory, no tools. Manual via the agent profile, and
@@ -1352,23 +1466,13 @@ async def agent_chat_stream(request):
             except Exception as sp_err:
                 logger.debug(f"Scratchpad injection skipped: {sp_err}")
 
-            # Workspace manifest (Document RAG): when a workspace is attached, inject
-            # its file list (names + tags + summary) as a STABLE block so the agent
-            # knows *what corpus it has* before retrieving — this awareness is what
-            # makes it a workspace, not just a vector store. High priority, bounded.
-            if workspace_id:
-                try:
-                    from .kit.workspaces.retrieval import render_manifest_block
-                    manifest_block = render_manifest_block(workspace_id)
-                    if manifest_block:
-                        blocks.append(LedgerBlock(
-                            key="workspace_manifest",
-                            priority=85,
-                            content=manifest_block,
-                            shrink_fn=shrink_tail,
-                        ))
-                except Exception as ws_err:
-                    logger.debug(f"Workspace manifest injection skipped: {ws_err}")
+            # Corpus awareness (STABLE blocks): the attached-workspace file manifest
+            # (so the agent knows what corpus it has before retrieving) + a list of
+            # images generated earlier in this conversation (so it can `view_image` them
+            # on demand — awareness only, never auto-injecting pixels). Both try/except +
+            # conditional appends live in the helper to keep this generator within
+            # pyright's path budget.
+            _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail)
 
             # Memory (Foundation #3): a STABLE high-salience core injected every
             # turn (maintained, not searched) + a lower-priority, query-specific
@@ -1456,13 +1560,17 @@ async def agent_chat_stream(request):
             # the whole harness — ledger preamble + history, MCP/delegation tools, and
             # the token-budget header — is replaced by a bare user turn with no tools.
             if direct_mode:
-                messages = [Message(role=MessageRole.USER, content=message_for_context)]
+                messages = [Message(
+                    role=MessageRole.USER, content=message_for_context, images=model_images or None
+                )]
                 tools = None
             else:
                 ledger_result = assemble_ledger(
                     blocks=blocks,
                     history=[m for m in context if m.role != MessageRole.SYSTEM],
-                    new_message=Message(role=MessageRole.USER, content=message_for_context),
+                    new_message=Message(
+                        role=MessageRole.USER, content=message_for_context, images=model_images or None
+                    ),
                     context_window=context_window,
                     reserved_tokens=max_output_tokens + 2000,
                     verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
@@ -1507,6 +1615,12 @@ async def agent_chat_stream(request):
                     ))
                 except Exception as bh_err:
                     logger.debug(f"Token budget header skipped: {bh_err}")
+
+            # Defensive: never send image blocks to a model that can't see them — a
+            # mid-conversation switch to a non-vision model can leave images on history
+            # messages. Non-mutating + helper-wrapped (keeps the comprehension out of
+            # this generator's pyright path budget); the warm session keeps its images.
+            messages = _strip_message_images(messages, accepts_vision)
 
             # Resolve prompt profile name for metadata
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
@@ -1660,7 +1774,14 @@ async def agent_chat_stream(request):
                             pass
 
                         idx = next_index
-                        turns = [build_user_turn(conv_id, message, idx)]
+                        # Persist the attached vision images (refs) on the user turn so
+                        # they re-render on the bubble after reload and can be re-fed to a
+                        # vision model on later turns. Full set regardless of whether the
+                        # current model could see them (gating only strips the model-bound copy).
+                        _user_turn_meta = (
+                            {"images": [r.model_dump() for r in user_images]} if user_images else None
+                        )
+                        turns = [build_user_turn(conv_id, message, idx, metadata=_user_turn_meta)]
                         idx += 1
                         tool_turns, idx = build_tool_turns(conv_id, tool_turns_data, idx)
                         turns += tool_turns
@@ -1899,6 +2020,7 @@ async def agent_chat_stream(request):
                     task_context=message,
                     capture_tool_turns=True,
                     result=loop_result,
+                    vision_capable=accepts_vision,
                 ):
                     yield event_str
 
@@ -2415,6 +2537,59 @@ async def avatar_generate(request):
 
     url = f"/api/workspaces/{ws['id']}/documents/{doc['id']}/raw"
     return JsonResponse({"ok": True, "doc_id": doc["id"], "workspace_id": ws["id"], "url": url})
+
+
+@csrf_exempt
+def chat_image_upload(request):
+    """
+    POST /api/agent/chat/images  (multipart: ``file``)
+
+    Store a user-attached image for **vision input** in the user's reserved **Home**
+    workspace (under ``uploads/``, no text ingestion) and return a ref the chat stream
+    can carry in ``images[]``. Reuses the same content-addressed blob store + quota as
+    document upload; types are limited to png/jpeg/webp/gif by ``store_media``. Degrades
+    to a structured 422 on a policy failure (unsupported type / too large / over quota).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    upload = request.FILES.get("file") or next(iter(request.FILES.values()), None)
+    if upload is None:
+        return JsonResponse({"error": "No file provided", "code": "no_file"}, status=400)
+
+    from .config import get_config_manager
+
+    if not get_config_manager().get("vision.enabled", True):
+        return JsonResponse({"error": "Vision input is disabled in settings.", "code": "disabled"}, status=422)
+
+    from .kit.workspaces import repository
+    from .kit.workspaces.service import WorkspaceError, store_media
+
+    raw = upload.read()
+    content_type = (getattr(upload, "content_type", None) or "").split(";")[0].strip().lower()
+    ext = _IMAGE_EXT.get(content_type, "png")
+    from datetime import datetime
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    ws = repository.ensure_home_workspace(_bg_user_id(request))
+    try:
+        doc = store_media(
+            workspace_id=ws["id"],
+            filename=f"uploads/image-{stamp}.{ext}",
+            content_type=content_type,
+            raw=raw,
+        )
+    except WorkspaceError as e:
+        return JsonResponse({"error": e.message, "code": e.code}, status=422)
+
+    url = f"/api/workspaces/{ws['id']}/documents/{doc['id']}/raw"
+    return JsonResponse({
+        "ok": True,
+        "doc_id": doc["id"],
+        "workspace_id": ws["id"],
+        "media_type": doc.get("content_type", content_type),
+        "url": url,
+    })
 
 
 @csrf_exempt

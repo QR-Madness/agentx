@@ -231,6 +231,42 @@ def _emit_image_exhibit(tm) -> list[str]:
     return [_sse("exhibit", exhibit.model_dump())]
 
 
+def _view_image_messages(tm, *, vision_capable: bool) -> list[Message]:
+    """Turn a successful `view_image` tool result into the message(s) to feed the model.
+
+    On a vision model: a user-role message carrying the image block (the agent now
+    actually sees it next round). On a non-vision model: a short note instead — the
+    request can't be honored. Returns [] for a failed/unparseable result (its error
+    text already went back as the tool result)."""
+    try:
+        data = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict) or not data.get("success"):
+        return []
+
+    doc_id = data.get("document_id") or data.get("doc_id")
+    ws_id = data.get("workspace_id")
+    media_type = data.get("media_type")
+    filename = data.get("filename") or doc_id
+    if not (doc_id and ws_id and media_type):
+        return []
+
+    if not vision_capable:
+        return [Message(
+            role=MessageRole.USER,
+            content=f"[Couldn't show '{filename}': this model has no vision capability.]",
+        )]
+
+    from ..providers.base import ImageRef
+
+    return [Message(
+        role=MessageRole.USER,
+        content=f"[Image '{filename}', shown for you to view:]",
+        images=[ImageRef(workspace_id=ws_id, doc_id=doc_id, media_type=media_type)],
+    )]
+
+
 async def _run_delegations(
     delegation_calls: list,
     alloy_executor,
@@ -380,6 +416,7 @@ async def _execute_and_emit_tools(
     result: ToolLoopResult,
     delegation_raw: dict[str, dict[str, Any]],
     suppress_result_ids: set | None = None,
+    vision_capable: bool = False,
 ) -> AsyncGenerator[str]:
     """Execute the regular (sync) tool calls, emit `tool_result` events, and
     extend `messages` with the round's tool results.
@@ -459,6 +496,16 @@ async def _execute_and_emit_tools(
 
     messages.extend(tool_messages)
 
+    # `view_image` injection (on-demand vision): a successful call resolves an image
+    # ref but returns no pixels — the model only "sees" it when we add a user-role image
+    # block for the next round. Never auto-shoved; only when the agent asked. Skipped
+    # (with a clarifying note) for a model that can't see images.
+    for tm in tool_messages:
+        if tm.name != "view_image":
+            continue
+        for msg in _view_image_messages(tm, vision_capable=vision_capable):
+            messages.append(msg)
+
 
 async def streaming_tool_loop(
     provider,
@@ -479,6 +526,7 @@ async def streaming_tool_loop(
     capture_tool_turns: bool = False,
     result: ToolLoopResult | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    vision_capable: bool = False,
 ) -> AsyncGenerator[str]:
     """
     Async generator running the streaming tool-use loop.
@@ -538,7 +586,7 @@ async def streaming_tool_loop(
             context_window=context_window, context_warning_threshold=context_warning_threshold,
             task_context=task_context, emit_trajectory_info=emit_trajectory_info,
             truncate_on_overflow=truncate_on_overflow, capture_tool_turns=capture_tool_turns,
-            result=result, check_cancel=check_cancel,
+            result=result, check_cancel=check_cancel, vision_capable=vision_capable,
         ):
             yield _event
 
@@ -562,6 +610,7 @@ async def _run_tool_loop(
     capture_tool_turns: bool,
     result: ToolLoopResult,
     check_cancel: Callable[[], bool],
+    vision_capable: bool = False,
 ) -> AsyncGenerator[str]:
     """Inner loop body — runs inside the per-turn search-budget window."""
     for tool_round in range(max_tool_rounds + 1):
@@ -710,6 +759,7 @@ async def _run_tool_loop(
             result=result,
             delegation_raw=delegation_raw,
             suppress_result_ids=exhibit_tool_call_ids,
+            vision_capable=vision_capable,
         ):
             yield event_str
 

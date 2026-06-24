@@ -179,12 +179,37 @@ class AnthropicProvider(ModelProvider):
                             "input": args,
                         })
                     converted.append({"role": "assistant", "content": content_blocks})
+                elif role == "user" and msg.images:
+                    # Vision input: user message carries images → content becomes a
+                    # block list (text + base64 image sources). Text-only stays a string.
+                    from .base import resolve_image_data
+
+                    user_blocks: list[dict[str, Any]] = []
+                    if msg.content:
+                        user_blocks.append({"type": "text", "text": msg.content})
+                    for ref in msg.images:
+                        resolved = resolve_image_data(ref)
+                        if resolved is None:
+                            continue
+                        media_type, b64 = resolved
+                        user_blocks.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64,
+                            },
+                        })
+                    converted.append({
+                        "role": "user",
+                        "content": user_blocks if user_blocks else msg.content,
+                    })
                 else:
                     converted.append({
                         "role": role,
                         "content": msg.content,
                     })
-        
+
         return system_prompt, converted
     
     def _convert_tools(

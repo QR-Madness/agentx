@@ -9377,3 +9377,240 @@ class LogArchiveCryptoTest(TestCase):
         self.assertEqual(self.ac.prune_old(30), 1)
         self.assertFalse(old.exists())
         self.assertTrue(recent.exists())
+
+
+class VisionInputTest(TestCase):
+    """Vision input (image *input*): provider message-building, capability gating,
+    and bounded multi-turn re-feed. Pure-logic — no DB / no model calls."""
+
+    def test_openai_format_text_only_is_plain_string(self):
+        """A text-only message keeps the plain `content: str` form (no regression)."""
+        from agentx_ai.providers.base import convert_messages_to_openai_format
+
+        out = convert_messages_to_openai_format([Message(role=MessageRole.USER, content="hello")])
+        self.assertEqual(out[0]["content"], "hello")
+
+    def test_openai_format_builds_image_blocks(self):
+        """With images, content becomes a text + image_url data-URI block list."""
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef, convert_messages_to_openai_format
+
+        ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
+        with patch.object(base, "resolve_image_data", return_value=("image/png", "QUJD")):
+            out = convert_messages_to_openai_format([
+                Message(role=MessageRole.USER, content="look", images=[ref])
+            ])
+        blocks = out[0]["content"]
+        self.assertIsInstance(blocks, list)
+        self.assertEqual(blocks[0], {"type": "text", "text": "look"})
+        self.assertEqual(blocks[1]["type"], "image_url")
+        self.assertTrue(blocks[1]["image_url"]["url"].startswith("data:image/png;base64,QUJD"))
+
+    def test_openai_format_drops_unresolved_image(self):
+        """An unresolvable ref is skipped — never crashes the converter."""
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef, convert_messages_to_openai_format
+
+        ref = ImageRef(workspace_id="ws_home", doc_id="missing", media_type="image/png")
+        with patch.object(base, "resolve_image_data", return_value=None):
+            out = convert_messages_to_openai_format([
+                Message(role=MessageRole.USER, content="look", images=[ref])
+            ])
+        # Only the text block survives (no image block).
+        self.assertEqual(out[0]["content"], [{"type": "text", "text": "look"}])
+
+    def test_resolve_image_data_missing_blob_returns_none(self):
+        """A doc whose blob is gone resolves to None (logged, not raised)."""
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef
+
+        ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
+        with patch("agentx_ai.kit.workspaces.repository.get_document",
+                   return_value={"workspace_id": "ws_home", "storage_key": "k", "content_type": "image/png"}), \
+             patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=None):
+            self.assertIsNone(base.resolve_image_data(ref))
+
+    def test_resolve_image_data_happy_path(self):
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef
+
+        ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
+        with patch("agentx_ai.kit.workspaces.repository.get_document",
+                   return_value={"workspace_id": "ws_home", "storage_key": "k", "content_type": "image/jpeg"}), \
+             patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=b"ABC"):
+            mt, b64 = base.resolve_image_data(ref)
+        self.assertEqual(mt, "image/jpeg")  # doc content_type wins over the ref
+        self.assertEqual(b64, "QUJD")
+
+    def test_resolve_image_data_workspace_mismatch(self):
+        """A ref claiming a workspace the doc doesn't belong to is rejected."""
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef
+
+        ref = ImageRef(workspace_id="ws_other", doc_id="d1", media_type="image/png")
+        with patch("agentx_ai.kit.workspaces.repository.get_document",
+                   return_value={"workspace_id": "ws_home", "storage_key": "k"}):
+            self.assertIsNone(base.resolve_image_data(ref))
+
+    def test_anthropic_converter_builds_image_source(self):
+        from agentx_ai.providers import base
+        from agentx_ai.providers.base import ImageRef, ProviderConfig
+        from agentx_ai.providers.anthropic_provider import AnthropicProvider
+
+        ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
+        prov = AnthropicProvider(ProviderConfig(api_key="x"))
+        with patch.object(base, "resolve_image_data", return_value=("image/png", "QUJD")):
+            _system, msgs = prov._convert_messages([
+                Message(role=MessageRole.USER, content="look", images=[ref])
+            ])
+        blocks = msgs[0]["content"]
+        self.assertEqual(blocks[0], {"type": "text", "text": "look"})
+        self.assertEqual(blocks[1]["type"], "image")
+        self.assertEqual(blocks[1]["source"],
+                         {"type": "base64", "media_type": "image/png", "data": "QUJD"})
+
+    def test_reader_refeeds_only_recent_image_turns(self):
+        """Only the most-recent K image-bearing user turns get images back."""
+        from agentx_ai.agent.conversation_history import load_recent_turns
+
+        img = {"images": [{"workspace_id": "ws_home", "doc_id": "d", "media_type": "image/png"}]}
+        # newest-first: two image turns (newest 'c', older 'a'); K defaults to 2 → both.
+        rows = [
+            ("user", "c", img),
+            ("assistant", "b", None),
+            ("user", "a", img),
+        ]
+        msgs = load_recent_turns("conv", token_budget=10_000, reader=lambda c, n: rows)
+        # chronological: a (image), b, c (image)
+        self.assertIsNotNone(msgs[0].images)
+        self.assertIsNotNone(msgs[2].images)
+
+    def test_reader_two_tuple_back_compat(self):
+        """A legacy 2-tuple reader still works (no metadata, no images)."""
+        from agentx_ai.agent.conversation_history import load_recent_turns
+
+        rows = [("assistant", "b"), ("user", "a")]
+        msgs = load_recent_turns("conv", token_budget=10_000, reader=lambda c, n: rows)
+        self.assertEqual([m.content for m in msgs], ["a", "b"])
+        self.assertIsNone(msgs[0].images)
+
+
+class ViewImageTest(TestCase):
+    """On-demand image viewing: the `view_image` tool resolves a workspace/Home image,
+    and the tool loop injects it as a user-role image block (only on a vision model)."""
+
+    def _doc(self, **kw):
+        base = {
+            "workspace_id": "ws_home", "content_type": "image/png",
+            "filename": "generated/x.png", "storage_key": "ws_home/abc",
+        }
+        base.update(kw)
+        return base
+
+    def test_view_image_resolves_home_doc(self):
+        from agentx_ai.mcp.internal_tools import view_image
+        from agentx_ai.mcp.internal_context import InternalToolContext, set_context, reset_context
+
+        tok = set_context(InternalToolContext(user_id="default", workspace_id=None))
+        try:
+            with patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                       return_value={"id": "ws_home"}), \
+                 patch("agentx_ai.kit.workspaces.repository.get_document", return_value=self._doc()):
+                out = view_image("doc_1")
+        finally:
+            reset_context(tok)
+        self.assertTrue(out["success"])
+        self.assertEqual(out["media_type"], "image/png")
+        self.assertEqual(out["workspace_id"], "ws_home")
+
+    def test_view_image_rejects_foreign_workspace(self):
+        """A doc outside the attached workspace + Home is denied (no cross-workspace peeking)."""
+        from agentx_ai.mcp.internal_tools import view_image
+        from agentx_ai.mcp.internal_context import InternalToolContext, set_context, reset_context
+
+        tok = set_context(InternalToolContext(user_id="default", workspace_id="ws_attached"))
+        try:
+            with patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                       return_value={"id": "ws_home"}), \
+                 patch("agentx_ai.kit.workspaces.repository.get_document",
+                       return_value=self._doc(workspace_id="ws_someone_else")):
+                out = view_image("doc_1")
+        finally:
+            reset_context(tok)
+        self.assertFalse(out["success"])
+
+    def test_view_image_rejects_non_image(self):
+        from agentx_ai.mcp.internal_tools import view_image
+        from agentx_ai.mcp.internal_context import InternalToolContext, set_context, reset_context
+
+        tok = set_context(InternalToolContext(user_id="default", workspace_id=None))
+        try:
+            with patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                       return_value={"id": "ws_home"}), \
+                 patch("agentx_ai.kit.workspaces.repository.get_document",
+                       return_value=self._doc(content_type="text/plain", filename="notes.txt")):
+                out = view_image("doc_1")
+        finally:
+            reset_context(tok)
+        self.assertFalse(out["success"])
+
+    def test_loop_injects_image_on_vision_model(self):
+        from agentx_ai.streaming import tool_loop
+
+        class TM:
+            name = "view_image"
+            content = ('{"success": true, "document_id": "doc_1", "workspace_id": "ws_home", '
+                       '"media_type": "image/png", "filename": "generated/x.png"}')
+
+        msgs = tool_loop._view_image_messages(TM(), vision_capable=True)
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0].role.value, "user")
+        self.assertEqual(msgs[0].images[0].doc_id, "doc_1")
+
+    def test_loop_no_image_on_non_vision_model(self):
+        from agentx_ai.streaming import tool_loop
+
+        class TM:
+            name = "view_image"
+            content = ('{"success": true, "document_id": "doc_1", "workspace_id": "ws_home", '
+                       '"media_type": "image/png", "filename": "generated/x.png"}')
+
+        msgs = tool_loop._view_image_messages(TM(), vision_capable=False)
+        self.assertEqual(len(msgs), 1)
+        self.assertIsNone(msgs[0].images)
+        self.assertIn("no vision capability", msgs[0].content)
+
+    def test_loop_ignores_failed_view(self):
+        from agentx_ai.streaming import tool_loop
+
+        class TM:
+            name = "view_image"
+            content = '{"success": false, "error": "not found"}'
+
+        self.assertEqual(tool_loop._view_image_messages(TM(), vision_capable=True), [])
+
+    def test_conversation_images_catalog(self):
+        """The catalog lists generated images (newest-first, deduped) from tool turns."""
+        from agentx_ai.agent import conversation_history as ch
+
+        rows = [
+            ('{"success": true, "doc_id": "doc_b", "workspace_id": "ws_home", "prompt": "a blue cat"}',),
+            ('{"success": true, "doc_id": "doc_b", "workspace_id": "ws_home", "prompt": "a blue cat"}',),
+            ('{"success": true, "doc_id": "doc_a", "workspace_id": "ws_home", "prompt": "a red dog"}',),
+        ]
+
+        class _Cur:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, *a): pass
+            def fetchall(self): return rows
+
+        class _Conn:
+            def cursor(self): return _Cur()
+            def close(self): pass
+
+        with patch.object(ch, "PostgresConnection", create=True), \
+             patch("agentx_ai.kit.agent_memory.connections.PostgresConnection.get_engine") as ge:
+            ge.return_value.raw_connection.return_value = _Conn()
+            imgs = ch.list_conversation_images("conv")
+        self.assertEqual([i["doc_id"] for i in imgs], ["doc_b", "doc_a"])  # deduped, order kept

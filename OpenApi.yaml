@@ -1262,6 +1262,44 @@ paths:
           description: subject_prompt is required
         '422':
           description: Disabled, unconfigured, or generation failed (carries an error code)
+  /agent/chat/images:
+    post:
+      tags: [Agent]
+      operationId: chatImageUpload
+      summary: Upload an image for vision input
+      description: >-
+        Stores a user-attached image (multipart `file`) in the reserved "Home" workspace
+        under `uploads/` (no text ingestion) and returns a ref to carry in the chat stream's
+        `images[]`. Reuses the workspace blob store + per-file/quota policy; types limited to
+        png/jpeg/webp/gif. Degrades to 422 when vision is disabled or on a policy failure.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  doc_id: { type: string }
+                  workspace_id: { type: string }
+                  media_type: { type: string }
+                  url: { type: string, description: Relative served-blob path for the image. }
+        '400':
+          description: No file provided
+        '422':
+          description: Disabled, unsupported type, too large, or over quota (carries an error code)
   /agent/ambassador/relay:
     post:
       tags: [Agent]
@@ -4543,6 +4581,30 @@ components:
         use_memory:
           type: boolean
           default: true
+        workspace_id:
+          type: string
+          description: Optional attached document workspace (Document RAG).
+        images:
+          type: array
+          description: >-
+            Vision input — refs to images already uploaded via `/agent/chat/images`. A
+            vision-capable model receives them as image blocks; a non-vision model gets the
+            text only (a `status` notice is emitted). An image-only turn may send an empty
+            `message`.
+          items:
+            $ref: '#/components/schemas/ChatImageRef'
+
+    ChatImageRef:
+      type: object
+      required: [workspace_id, doc_id, media_type]
+      properties:
+        workspace_id:
+          type: string
+        doc_id:
+          type: string
+        media_type:
+          type: string
+          enum: [image/png, image/jpeg, image/webp, image/gif]
 
     ChatResponse:
       type: object

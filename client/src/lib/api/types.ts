@@ -188,6 +188,13 @@ export interface ChatMessage {
   content: string;
 }
 
+/** A reference to an already-uploaded image attached to a chat message (vision input). */
+export interface ChatImageRef {
+  workspace_id: string;
+  doc_id: string;
+  media_type: string;  // image/png | image/jpeg | image/webp | image/gif
+}
+
 export interface ChatRequest {
   message: string;
   session_id?: string;
@@ -199,6 +206,7 @@ export interface ChatRequest {
   use_memory?: boolean;  // Enable memory retrieval (default true)
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
+  images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see
 }
 
 export interface ChatResponse {
@@ -708,6 +716,10 @@ export interface ConfigUpdate {
     enabled?: boolean;
     default_model?: string;
     avatar_style_prompt?: string;
+  };
+  vision?: {
+    enabled?: boolean;
+    refeed_recent_turns?: number;
   };
 }
 

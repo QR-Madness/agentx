@@ -2,6 +2,7 @@
 Abstract base classes for model providers.
 """
 
+import base64
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -51,6 +52,20 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
+class ImageRef(BaseModel):
+    """A reference to an image attached to a user message (vision input).
+
+    Points at an already-uploaded blob in the workspace store (typically the
+    personal ``ws_home`` workspace) rather than carrying bytes — the actual
+    base64 is materialized lazily at provider-conversion time
+    (:func:`resolve_image_data`). The same shape rides the chat wire request and
+    the persisted user-turn ``metadata.images``.
+    """
+    workspace_id: str
+    doc_id: str
+    media_type: str  # "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+
+
 class Message(BaseModel):
     """A message in a conversation."""
     role: MessageRole
@@ -58,6 +73,10 @@ class Message(BaseModel):
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+    # Vision input: images attached to a user message. Default None → every
+    # existing Message(...) construction is unaffected. Materialized to base64
+    # blocks only by the provider converters when the model accepts vision.
+    images: list[ImageRef] | None = None
 
 
 class ToolCall(BaseModel):
@@ -120,6 +139,33 @@ def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCa
     return completed
 
 
+def resolve_image_data(ref: ImageRef) -> tuple[str, str] | None:
+    """Materialize an :class:`ImageRef` into ``(media_type, base64_str)``.
+
+    Reads the auth-gated workspace blob (which an external provider can't fetch)
+    and base64-encodes it so it can be inlined as a data-URI / base64 source.
+    **Never raises** — a missing/deleted/mismatched ref is logged and returns
+    ``None`` so a stale attachment can't kill a live turn. Imports are lazy to
+    avoid a providers→workspaces import cycle.
+    """
+    try:
+        from ..kit.workspaces import repository, storage
+
+        doc = repository.get_document(ref.doc_id)
+        if not doc or doc.get("workspace_id") != ref.workspace_id:
+            logger.warning("Vision image ref unresolved (doc %s missing/mismatched)", ref.doc_id)
+            return None
+        raw = storage.read_blob(doc["storage_key"])
+        if not raw:
+            logger.warning("Vision image blob missing for doc %s", ref.doc_id)
+            return None
+        media_type = doc.get("content_type") or ref.media_type
+        return media_type, base64.b64encode(raw).decode("ascii")
+    except Exception:  # noqa: BLE001 — best-effort; a bad image must not break the turn
+        logger.warning("Vision image resolution failed for doc %s", ref.doc_id, exc_info=True)
+        return None
+
+
 def convert_messages_to_openai_format(messages: list[Message]) -> list[dict[str, Any]]:
     """Convert internal Message objects to the OpenAI chat format.
 
@@ -131,6 +177,24 @@ def convert_messages_to_openai_format(messages: list[Message]) -> list[dict[str,
             "role": msg.role.value,
             "content": msg.content,
         }
+        # Vision input: when a user message carries images, content becomes a
+        # block list (text + image_url data-URIs). Text-only messages keep the
+        # plain string form, so the 99% path is byte-identical.
+        if msg.images:
+            blocks: list[dict[str, Any]] = []
+            if msg.content:
+                blocks.append({"type": "text", "text": msg.content})
+            for ref in msg.images:
+                resolved = resolve_image_data(ref)
+                if resolved is None:
+                    continue
+                media_type, b64 = resolved
+                blocks.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{b64}"},
+                })
+            if blocks:
+                m["content"] = blocks
         if msg.name:
             m["name"] = msg.name
         if msg.tool_call_id:

@@ -17,6 +17,8 @@ interface ImageSettings {
   enabled: boolean;
   default_model: string;
   avatar_style_prompt: string;
+  // Vision input (image *input* — the user attaches a picture a model can see).
+  visionEnabled: boolean;
 }
 
 const FALLBACK: ImageSettings = {
@@ -24,6 +26,7 @@ const FALLBACK: ImageSettings = {
   default_model: 'openrouter:black-forest-labs/flux.2-klein-4b',
   avatar_style_prompt:
     'A photorealistic headshot portrait, centered, clean studio lighting, subtle depth of field, with a softly rounded border.',
+  visionEnabled: true,
 };
 
 export default function ImagesSection() {
@@ -41,10 +44,12 @@ export default function ImagesSection() {
     try {
       const config = await api.getConfig();
       const im = (config.images || {}) as Partial<ImageSettings>;
+      const vi = (config.vision || {}) as { enabled?: boolean };
       setSettings({
         enabled: im.enabled ?? FALLBACK.enabled,
         default_model: im.default_model || FALLBACK.default_model,
         avatar_style_prompt: im.avatar_style_prompt || FALLBACK.avatar_style_prompt,
+        visionEnabled: vi.enabled ?? FALLBACK.visionEnabled,
       });
     } catch (error) {
       notifyError(error, 'Failed to load image settings');
@@ -61,6 +66,9 @@ export default function ImagesSection() {
           enabled: settings.enabled,
           default_model: settings.default_model,
           avatar_style_prompt: settings.avatar_style_prompt,
+        },
+        vision: {
+          enabled: settings.visionEnabled,
         },
       });
       notifySuccess('Image settings saved', 'Images');
@@ -109,6 +117,24 @@ export default function ImagesSection() {
                 type="checkbox"
                 checked={settings.enabled}
                 onChange={(e) => setSettings((prev) => ({ ...prev, enabled: e.target.checked }))}
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div className="setting-row">
+            <label className="setting-label">
+              <span>Enable vision input</span>
+              <span className="setting-hint">
+                Let you attach images to a message so a vision-capable model can see them. When
+                off, the composer's attach button is hidden.
+              </span>
+            </label>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.visionEnabled}
+                onChange={(e) => setSettings((prev) => ({ ...prev, visionEnabled: e.target.checked }))}
               />
               <span className="toggle-slider"></span>
             </label>

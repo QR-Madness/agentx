@@ -21,8 +21,12 @@ import {
   X,
   ArrowRightLeft,
   PanelLeftOpen,
+  Image as ImageIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { MessageImages } from './MessageImages';
+import type { ChatImageRef } from '../../lib/api/types';
 import { RelayMenu } from './relay/RelayMenu';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
@@ -71,6 +75,11 @@ import { WorkspaceBadge } from './WorkspaceBadge';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
+
+// Vision input: accepted image types (mirrors the server's MEDIA_CONTENT_TYPES) and a
+// client-side size cap (the server enforces the workspace per-file limit too).
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const MAX_IMAGE_BYTES = 8_000_000;
 
 export function ChatPanel() {
   const {
@@ -193,6 +202,11 @@ export function ChatPanel() {
   const [checkpointSignal, setCheckpointSignal] = useState(0);
   // When armed (via Relay), the next send routes to the background queue.
   const [bgArmed, setBgArmed] = useState(false);
+  // Vision input: images attached to the next message (uploaded to Home as refs),
+  // plus the count of uploads still in flight (so Send waits for them).
+  const [pendingImages, setPendingImages] = useState<ChatImageRef[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(0);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   // Inline composer chips: effective model + whether the memory toggle is
   // still changeable (locks once the conversation has started).
   const effectiveModel = activeTab?.modelOverride || tabProfile?.defaultModel || '';
@@ -209,6 +223,36 @@ export function ChatPanel() {
     [activeTab, updateTab],
   );
   const agentName = supervisorProfile?.name ?? getAgentName();
+
+  // Vision pre-warning: when images are attached, check whether the effective model
+  // can see them (shared model-catalog cache; server-side gating is authoritative
+  // regardless). An unknown model → no warning (don't second-guess).
+  const hasPendingImages = pendingImages.length > 0;
+  // Vision input opt-out (Settings → Images). Defaults to shown; hides the attach
+  // button only when explicitly disabled. Read once per mount.
+  const [visionEnabled, setVisionEnabled] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    api.getConfig()
+      .then(cfg => { if (alive) setVisionEnabled((cfg.vision as { enabled?: boolean })?.enabled ?? true); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const [modelSupportsVision, setModelSupportsVision] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!hasPendingImages || !effectiveModel) {
+      setModelSupportsVision(null);
+      return;
+    }
+    let alive = true;
+    fetchModelsOnce().then(models => {
+      if (!alive) return;
+      const m = models.find(x => x.id === effectiveModel);
+      setModelSupportsVision(m ? !!m.supports_vision : null);
+    });
+    return () => { alive = false; };
+  }, [hasPendingImages, effectiveModel]);
+  const visionUnsupported = hasPendingImages && modelSupportsVision === false;
 
   const resolveAgentName = useCallback(
     (agentId: string) => profiles.find(p => p.agentId === agentId)?.name,
@@ -400,20 +444,50 @@ export function ChatPanel() {
     });
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || !activeTab) return;
+  // Upload picked images for vision input. Each goes to the Home workspace and
+  // becomes a ref the next message carries. Click-to-browse only — Tauri's webview
+  // doesn't deliver HTML5 file drops. Oversized / wrong-type files are rejected
+  // (the server enforces the same, but we warn early).
+  const handlePickImages = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      if (!IMAGE_TYPES.includes(file.type)) {
+        notifyError(`${file.name}: only PNG, JPEG, WebP, or GIF images are supported.`);
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        notifyError(`${file.name} is too large (max ${Math.round(MAX_IMAGE_BYTES / 1_000_000)} MB).`);
+        continue;
+      }
+      setUploadingImages(n => n + 1);
+      try {
+        const ref = await api.uploadChatImage(file);
+        setPendingImages(prev => [...prev, { workspace_id: ref.workspace_id, doc_id: ref.doc_id, media_type: ref.media_type }]);
+      } catch (err) {
+        notifyError(err, `Failed to upload ${file.name}`);
+      } finally {
+        setUploadingImages(n => n - 1);
+      }
+    }
+  };
 
+  const handleSend = async () => {
+    if ((!input.trim() && pendingImages.length === 0) || !activeTab) return;
+
+    const imgs = pendingImages;
     const userMessage: UserMessage = {
       id: createMessageId(),
       type: 'user',
       content: input,
       timestamp: new Date().toISOString(),
       targetAgentIds: extractMentionedAgentIds(input, profiles),
+      ...(imgs.length ? { images: imgs } : {}),
     };
 
     appendMessage(userMessage);
     const messageText = input;
     setInput('');
+    setPendingImages([]);
     closeMention();
 
     stream.send({
@@ -424,6 +498,7 @@ export function ChatPanel() {
       use_memory: useMemory,
       workflow_id: activeTab.workflowId || undefined,
       workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
+      ...(imgs.length ? { images: imgs } : {}),
     });
   };
 
@@ -594,7 +669,9 @@ export function ChatPanel() {
   // Unified submit: steer while a turn streams, else background-queue when
   // armed, else start a new streaming turn.
   const submit = () => {
-    if (!input.trim()) return;
+    // Allow an image-only turn (no text) when not steering; steering stays text-only.
+    if (!input.trim() && (isTyping || pendingImages.length === 0)) return;
+    if (uploadingImages > 0) return;
     if (isTyping) {
       handleSteer();
     } else if (bgArmed) {
@@ -994,7 +1071,45 @@ export function ChatPanel() {
             <span>{activeTab?.noMemorization ? 'No memory' : 'Memory'}</span>
           </button>
         </div>
+        {(pendingImages.length > 0 || uploadingImages > 0) && (
+          <div className="composer-images">
+            <MessageImages
+              images={pendingImages}
+              onRemove={(i) => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
+            />
+            {uploadingImages > 0 && (
+              <span className="composer-images-uploading">Uploading {uploadingImages}…</span>
+            )}
+            {visionUnsupported && (
+              <span className="composer-images-warning" title="The selected model can't see images">
+                <AlertTriangle size={13} /> This model can't see images — they'll be sent as text only.
+              </span>
+            )}
+          </div>
+        )}
         <div className="input-container">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept={IMAGE_TYPES.join(',')}
+            multiple
+            hidden
+            onChange={(e) => {
+              handlePickImages(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          {visionEnabled && (
+            <button
+              className="attach-trigger"
+              onClick={() => imageInputRef.current?.click()}
+              title="Attach image"
+              aria-label="Attach image"
+              disabled={isTyping}
+            >
+              <ImageIcon size={18} />
+            </button>
+          )}
           <button
             ref={relayButtonRef}
             className={`relay-trigger ${showRelay ? 'active' : ''}`}
@@ -1070,7 +1185,7 @@ export function ChatPanel() {
             <button
               className={`send-button ${bgArmed ? 'armed' : ''}`}
               onClick={submit}
-              disabled={!input.trim()}
+              disabled={(!input.trim() && pendingImages.length === 0) || uploadingImages > 0}
               title={bgArmed ? 'Send to background' : 'Send'}
             >
               {bgArmed ? <Box size={18} /> : <Send size={18} />}

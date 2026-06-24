@@ -118,6 +118,50 @@ inline-image capture in the streaming path is out of scope. Planning is extracte
 `_compose_plan_if_complex` (skipped for an image turn) to keep the generator within pyright's
 path-analysis budget — same discipline as `_resolve_direct_mode`/`_resolve_delegation_tool`.
 
+**Vision input — image *input* (v0.21.134).** The reverse of image-output: a user attaches an image a
+vision-capable model *sees*. Client uploads the file via `POST /api/agent/chat/images`
+(`views.chat_image_upload` → `store_media` into **Home** under `uploads/`, no ingestion), gets back a
+**ref** `{workspace_id, doc_id, media_type}`, and sends refs in the chat body's `images[]` (not bytes — the
+endpoint stays pure-JSON). One canonical ref shape rides the wire → `providers.base.Message.images:
+list[ImageRef]` → the persisted user-turn `metadata.images`. The two provider chokepoints build image blocks
+**only when `msg.images`** (text-only stays byte-identical): `convert_messages_to_openai_format` emits
+`{type:"image_url", image_url:{url: data-URI}}` (OpenAI/OpenRouter/Vercel), Anthropic `_convert_messages`
+emits `{type:"image", source:{base64}}`. The data is inlined as **base64** via the shared
+`base.resolve_image_data(ref)` (`read_blob` + b64; never raises — a missing/mismatched/stale ref is logged +
+dropped) because the blob URL is auth-gated and an external provider can't fetch it. **Gating:**
+`_model_accepts_vision(provider, model_id, caps)` (`caps.supports_vision` or `input_modalities` has `image`;
+warms a cold catalog, mirroring `_model_outputs_image`) — a non-vision model (or `config.vision.enabled` off)
+has its images **stripped** from the outgoing list (incl. a defensive non-mutating strip over history, so a
+mid-conversation model switch can't leak blocks) with a `status` notice, while the refs still **persist +
+render** on the bubble. **Persistence/reload:** `build_user_turn(..., metadata={"images":[...]})` →
+`conversation_logs.metadata`; `conversations_messages` already returns metadata → `mapServerMessages` maps it
+to `UserMessage.images`. **Multi-turn re-feed (bounded):** `conversation_history._default_reader` now returns
+`(role, content, metadata)` and `load_recent_turns` repopulates `Message.images` for only the most-recent
+**K** image-bearing user turns (`config.vision.refeed_recent_turns`, default 2) — re-feeding base64 every
+turn is expensive, and a ref-only Message under-estimates the ledger budget, so the K-cap is the real guard.
+Back-compat: the reader tolerates 2-tuple custom readers (ambassador, tests). Client: `MessageImages`
+(thumbnails via `resolveMediaImage`), composer attach button (click-to-browse — Tauri drag-drop is broken),
+a pre-warning when the active model lacks `supports_vision` (shared `fetchModelsOnce`), and a Settings →
+Images "vision input" opt-out. Out of scope: Alloy/ambassador vision (no composer entry), backend downscale.
+
+**On-demand image viewing — `view_image` (v0.21.135).** Vision input above only covers *composer*
+attachments; this lets an agent *see* an image already in the conversation/workspace (a generated image,
+or a `.png`/`.jpg` a user uploaded) — `read_document` returns text only, so without this the agent could
+list `generated/*.jpg` but never view it. The `view_image(document_id)` internal tool
+(`mcp/internal_tools.py`) validates the doc is an image and is in the **attached workspace or the user's
+Home** (where generated images land — no cross-workspace peeking), and returns the ref; it deliberately
+returns *no pixels*. The streaming tool loop (`streaming/tool_loop.py::_view_image_messages`, invoked from
+`_execute_and_emit_tools` with `vision_capable` threaded from the view's `accepts_vision`) turns a successful
+result into a **user-role `Message` carrying the image block** for the *next* round (reusing the vision-input
+converters) — or, on a non-vision model, a short "can't show it" note instead. **Awareness (so the agent
+knows to look, never auto-shoved):** `retrieval.render_manifest_block` marks image files 🖼 with their
+`document_id` + a `view_image` hint; `conversation_history.render_conversation_images_block` (backed by
+`list_conversation_images`, which scans the conversation's persisted `generate_image` tool-results) injects a
+prio-60 droppable ledger block cataloguing images made earlier in the conversation. Both are folded into
+`views._append_corpus_awareness_blocks` (with the workspace manifest) to keep the chat-stream generator within
+pyright's path budget. Key principle (per product direction): images are surfaced as a **text catalog** the
+agent reads and chooses from — pixels enter context only on an explicit `view_image` call, never every turn.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code

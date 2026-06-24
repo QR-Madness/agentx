@@ -3,6 +3,7 @@ import type { BubbleProps } from './types';
 import { useAgentProfileOptional } from '../../../contexts/AgentProfileContext';
 import { resolveMentionToken } from '../../../lib/mentions';
 import type { AgentProfile } from '../../../lib/api/types';
+import { MessageImages } from '../MessageImages';
 
 const MENTION_RE = /(^|[^\w/@])@([\w-]+)/g;
 
@@ -47,7 +48,12 @@ export function UserBubble({ message, onEdit }: BubbleProps<'user'>) {
             </span>
           )}
         </div>
-        <div className="message-text">{renderWithMentions(message.content, profiles)}</div>
+        {message.content.trim() && (
+          <div className="message-text">{renderWithMentions(message.content, profiles)}</div>
+        )}
+        {message.images && message.images.length > 0 && (
+          <MessageImages images={message.images} />
+        )}
         <div className="message-meta">
           <span className="message-time">
             {new Date(message.timestamp).toLocaleTimeString([], {

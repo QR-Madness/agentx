@@ -164,6 +164,15 @@ DEFAULT_CONFIG = {
         # generation time (e.g. "mobius should be a gray-haired strategist").
         "avatar_style_prompt": DEFAULT_AVATAR_STYLE_PROMPT,
     },
+    "vision": {
+        # Image INPUT (the user attaches a picture; a vision-capable model sees it).
+        # On by default with this opt-out — a non-vision model degrades to text-only.
+        "enabled": True,
+        # How many recent image-bearing user turns to re-feed to the model when a
+        # cold session rehydrates from history (re-feeding base64 every turn is
+        # expensive). 0 disables multi-turn re-feed (single-turn vision still works).
+        "refeed_recent_turns": 2,
+    },
     "session": {
         "rolling_summary": {
             "enabled": True,

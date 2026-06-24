@@ -137,16 +137,26 @@ def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
     docs = [d for d in repository.list_documents(workspace_id) if d.get("status") == "ready"]
     if not docs:
         return ""
-    lines = [
+    has_images = any(str(d.get("content_type") or "").startswith("image/") for d in docs)
+    header = (
         "Attached workspace — files you can search with `workspace_search` "
-        "(by name/tag) and `document_query` (by meaning), then `read_document`:"
-    ]
+        "(by name/tag) and `document_query` (by meaning), then `read_document`"
+    )
+    header += (
+        ". Image files are marked 🖼 — to actually see one, call "
+        "`view_image(document_id=…)` (read_document only returns text):"
+        if has_images else ":"
+    )
+    lines = [header]
     for d in docs[:max_files]:
+        is_image = str(d.get("content_type") or "").startswith("image/")
         tags = ", ".join(d.get("tags") or [])
         summary = (d.get("summary") or "").strip()
         meta = f" [{tags}]" if tags else ""
         tail = f" — {summary}" if summary else ""
-        lines.append(f"- {d['filename']}{meta}{tail}")
+        # Images: surface the id inline so the agent can view_image without a lookup.
+        marker = f"🖼 {d['filename']} (document_id={d['id']})" if is_image else d["filename"]
+        lines.append(f"- {marker}{meta}{tail}")
     if len(docs) > max_files:
         lines.append(f"…and {len(docs) - max_files} more files.")
     return "\n".join(lines)
