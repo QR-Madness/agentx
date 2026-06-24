@@ -17,7 +17,8 @@ import {
   Library,
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
-import { AVATAR_OPTIONS, getAvatarIcon } from '../../lib/avatars';
+import { AVATAR_OPTIONS } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { api, apiErrorMessage, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
 import { PromptLibraryModal } from './PromptLibraryModal';
 import { ModelPickerField } from '../common/ModelPickerField';
@@ -191,7 +192,6 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
     }
   };
 
-  const AvatarIcon = getAvatarIcon(avatar);
 
   // Insert text at cursor position in the system prompt textarea
   const insertAtCursor = (text: string) => {
@@ -266,7 +266,7 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
       <div className="modal-header">
         <div className="modal-title-group">
           <div className="avatar-preview">
-            <AvatarIcon size={24} />
+            <AgentAvatar avatar={avatar} size={24} />
           </div>
           <h2>{isEditing ? 'Edit Profile' : 'Create Profile'}</h2>
         </div>

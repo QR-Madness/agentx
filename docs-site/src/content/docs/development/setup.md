@@ -22,6 +22,14 @@ Optional for Tauri desktop builds:
 | **Rust** (stable) | Tauri native compilation |
 | **System libs** | `libwebkit2gtk-4.1-dev`, `libssl-dev`, etc. — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) |
 
+:::caution[On Windows, develop inside WSL2]
+WSL2 (Ubuntu) is the recommended **primary dev environment** on Windows. Native Windows is
+bumpy around process lifecycle — the dev supervisor can leave orphaned processes holding the
+app ports, and `Ctrl-C` teardown is flaky — whereas under WSL2 the Unix process tooling
+(`task dev:kill`, signal handling) behaves correctly. See the [Windows Setup](../getting-started/windows.md)
+guide for the WSL2 walkthrough.
+:::
+
 ### Linux: voice (Ambassador TTS/STT) codecs
 
 On Linux the desktop client renders in **webkit2gtk**, which routes all in-app

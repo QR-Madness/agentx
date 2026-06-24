@@ -28,7 +28,7 @@ import {
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { groupRunsFromMessages, type AlloyRun } from '../../lib/alloyTrace';
 import type { AgentProfile } from '../../lib/api';
 import type { DelegationMessage, DelegationToolEvent } from '../../lib/messages';
@@ -206,7 +206,6 @@ function DelegationTraceCard({
   const [showResult, setShowResult] = useState(false);
   const [showTools, setShowTools] = useState(false);
 
-  const Avatar = getAvatarIcon(profile?.avatar);
   const name = profile?.name ?? d.targetAgentName ?? d.targetAgentId;
   const cost = formatCost(d.costEstimate, d.costCurrency);
   const tools = d.toolEvents ?? [];
@@ -216,7 +215,7 @@ function DelegationTraceCard({
       <div className="trace-delegation-head">
         <div className="trace-specialist">
           <span className="trace-specialist-avatar">
-            <Avatar size={15} />
+            <AgentAvatar avatar={profile?.avatar} size={15} />
           </span>
           <div>
             <div className="trace-specialist-name">{name}</div>

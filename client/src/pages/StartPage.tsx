@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useAgentProfile } from '../contexts/AgentProfileContext';
 import { useConversation } from '../contexts/ConversationContext';
-import { getAvatarIcon } from '../lib/avatars';
+import { AgentAvatar } from '../components/common/AgentAvatar';
 import { getDisplayTitle } from '../lib/conversationTitles';
 import type { PageId } from '../layouts/TopBar';
 import './StartPage.css';
@@ -52,7 +52,6 @@ export function StartPage({ onNavigate }: StartPageProps) {
     tabs, switchTab, serverConversations, refreshHistory, restoreConversation,
   } = useConversation();
   const agentName = getAgentName();
-  const AvatarIcon = getAvatarIcon(activeProfile?.avatar);
 
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(COLLAPSE_KEY) === 'true',
@@ -119,7 +118,7 @@ export function StartPage({ onNavigate }: StartPageProps) {
       <div className="start-content">
         <div className="start-hero">
           <div className="start-logo">
-            <AvatarIcon size={48} />
+            <AgentAvatar avatar={activeProfile?.avatar} size={48} />
           </div>
           <h1 className="start-title">Hello, I'm {agentName}</h1>
           <p className="start-subtitle">How can I assist you today?</p>

@@ -35,7 +35,7 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { usePlans } from '../../contexts/PlansContext';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { getActiveMention, applyMention, extractMentionedAgentIds } from '../../lib/mentions';
 import { MentionAutocomplete } from './MentionAutocomplete';
 import {
@@ -861,11 +861,10 @@ export function ChatPanel() {
             spinner while a delegation card is actively streaming — the card
             is the source of activity, the main bubble would just look stalled. */}
         {isTyping && (streamingContent || activeDelegationCount === 0) && (() => {
-          const AvatarIcon = getAvatarIcon(tabProfile?.avatar);
           return (
           <div className="message-bubble assistant">
             <div className="message-avatar assistant-avatar">
-              <AvatarIcon size={16} />
+              <AgentAvatar avatar={tabProfile?.avatar} size={16} fill />
             </div>
             <div className="message-body">
               {streamingContent ? (

@@ -54,7 +54,10 @@ export function AgentAvatar({ avatar, size = 20, className, fill }: AgentAvatarP
       <img
         src={url}
         alt=""
-        className={fill ? className : `rounded-full object-cover ${className ?? ''}`}
+        // In `fill` mode the inline style governs sizing entirely. We deliberately do
+        // NOT apply `className` here: at boxed sites it's the *icon glyph* sizing class
+        // (e.g. `avatar-trigger__icon` → height:40%), which would squash the photo.
+        className={fill ? undefined : `rounded-full object-cover ${className ?? ''}`}
         style={style}
         // A broken blob falls back to the icon: drop the resolution for this avatar so
         // `url` computes to null on the next render.

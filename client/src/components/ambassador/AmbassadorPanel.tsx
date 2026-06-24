@@ -45,7 +45,8 @@ import {
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
-import { getAvatarIcon } from '../../lib/avatars';
+import { getAvatarIcon, isImageAvatar } from '../../lib/avatars';
+import { AgentAvatar } from '../common/AgentAvatar';
 import { toolChipLabel } from '../../lib/ambassadorTools';
 import { planRelay, type RelayOutcome } from '../../lib/ambassadorRelay';
 import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
@@ -169,6 +170,18 @@ function Cursor() {
 /** The ambassador's identity mark — its customizable avatar (from the ambassador
  *  profile) on an accent disc, falling back to the generic radio mark. */
 function AmbassadorMark({ size = 20, avatar }: { size?: number; avatar?: string }) {
+  // A generated (media:) avatar fills the disc; an icon id / no avatar keeps the
+  // glyph at 55% on the accent disc (Radio is the generic fallback).
+  if (isImageAvatar(avatar)) {
+    return (
+      <span
+        className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent/15"
+        style={{ width: size, height: size }}
+      >
+        <AgentAvatar avatar={avatar} size={size} fill />
+      </span>
+    );
+  }
   const Icon = avatar ? getAvatarIcon(avatar) : Radio;
   return (
     <span

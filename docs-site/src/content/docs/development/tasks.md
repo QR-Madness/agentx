@@ -31,6 +31,20 @@ Starts all services:
 - Django API on port 12319
 - Tauri development window
 
+`task dev` runs a `dev:kill` preflight first, so a leftover server from a previous run
+won't collide with the new one.
+
+### Reap Straggler Dev Processes
+```bash
+task dev:kill   # alias: task dev:reap
+```
+
+`uvicorn --reload` (and the `uv run` wrapper) can swallow `SIGTERM`, so a crashed or
+orphaned dev supervisor sometimes leaves the API bound to port 12319 — plus the portless
+memory worker — still running. This reaps the uvicorn reload tree and the consolidation
+worker by command signature, then frees ports 12319/1420/1421 as a backstop. It runs
+automatically before `task dev`; run it by hand if you ever hit "address already in use".
+
 ### Start Services Only
 ```bash
 task runners

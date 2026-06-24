@@ -3,10 +3,15 @@
 This guide walks through running AgentX on Windows — both the Django API + databases and the Tauri
 desktop client. Windows is a first-class target platform alongside Linux.
 
-:::note
-For the smoothest experience (especially for GPU acceleration and Docker), run the backend inside
-**WSL2** (Ubuntu) and treat it as a Linux host — see [Development Setup](../development/setup.md).
-This guide covers **native Windows**; WSL2-specific notes are called out where they matter.
+:::caution[Use WSL2 for day-to-day development]
+For anyone doing **day-to-day development** (not just GPU/Docker users), run the full dev loop
+inside **WSL2** (Ubuntu) and treat it as a Linux host — see [Development Setup](../development/setup.md).
+Native Windows works, but it is bumpy around **process lifecycle**: the dev supervisor can leave
+orphaned processes holding ports 12319/1420/1421, and `Ctrl-C` teardown is flaky. Under WSL2 the
+Unix process tooling (`task dev:kill`/`dev:reap`, signal handling) behaves correctly.
+
+This guide still covers **native Windows** below for users who must; WSL2-specific notes are
+called out where they matter.
 :::
 
 ## Prerequisites
