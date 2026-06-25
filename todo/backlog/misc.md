@@ -20,10 +20,15 @@
       stored in the attached workspace else Home under `generated/`), and renders inline as a new **`image`
       exhibit** (`streaming/exhibits.py` + `tool_loop._emit_image_exhibit`; client `ImageElement`). Cost
       tracked (source `image`). The model gets a text confirmation, not the bytes.
-- [ ] **Image-in-context (vision input)** — send images to vision-capable models (multimodal message content
-      blocks); the model capabilities (`supports_vision`, `input_modalities`) are already surfaced via `list_agents`.
-- [ ] **Conversation default workspace** — auto-attach the personal **"Home"** workspace to a conversation that
-      lacks one when it needs to store media, with a `temp/` scratch namespace + UI to view/clean it.
+- [x] **Image-in-context (vision input)** — shipped (`0.21.135`). Vision-capable models read attached images
+      inline (multimodal content blocks); `view_image` tool for workspace/generated images; capabilities
+      (`supports_vision`, `input_modalities`) surfaced via `list_agents`.
+- [x] **Conversation default workspace** — shipped (`0.21.136`). A conversation that lacks a workspace and
+      stores media (generated/uploaded image) durably attaches the personal **"Home"** store: backend emits a
+      `workspace_attached` SSE after the `image` exhibit; client `attachWorkspaceOnce` (`conversationMeta.ts`)
+      attaches once + notifies. Workspaces panel grew a grouped (Generated/Uploaded/Files) cleanup UI with
+      per-group **Clear**, plus a theme/ergonomics pass. **Deferred:** a dedicated `temp/` scratch namespace
+      + TTL/auto-GC of scratch media (today scratch lives under `generated/`/`uploads/`, cleared manually).
 - [ ] **"Shared" agent-store workspace** — a reserved cross-agent shared workspace (distinct from per-user "Home").
 - [ ] **Audio analysis** — agent-side audio understanding (beyond the ambassador's TTS/STT).
 - [ ] Fibonacci complexity planning scales (augment planning behaviour based on complexity)
