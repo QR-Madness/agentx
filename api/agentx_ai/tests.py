@@ -8316,6 +8316,71 @@ class AmbassadorRelayEndpointTest(TestCase):
         self.assertEqual(enq.call_args.kwargs["agent_profile_id"], "prof-default")
 
 
+class AmbassadorDispatchEndpointTest(TestCase):
+    """POST /api/agent/ambassador/dispatch — the write-side: hand a task to a chosen worker
+    by minting a NEW conversation and running it headless (the user is the author; INV-2)."""
+
+    def _post(self, body: dict):
+        return self.client.post(
+            "/api/agent/ambassador/dispatch", data=json.dumps(body), content_type="application/json"
+        )
+
+    def test_requires_agent_id_and_text(self):
+        self.assertEqual(self._post({"text": "do it"}).status_code, 400)
+        self.assertEqual(self._post({"agent_id": "a1"}).status_code, 400)
+
+    def test_unknown_worker_is_rejected(self):
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = None  # ambassador id / unknown → None
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            res = self._post({"agent_id": "ghost", "text": "task"})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.json()["ok"])
+
+    def test_disabled_returns_422(self):
+        from agentx_ai.config import get_config_manager
+        cfg = get_config_manager()
+        cfg.set("ambassador.dispatch.enabled", False)
+        try:
+            res = self._post({"agent_id": "a1", "text": "task"})
+        finally:
+            cfg.set("ambassador.dispatch.enabled", True)
+        self.assertEqual(res.status_code, 422)
+
+    def test_mints_new_conversation_and_enqueues_worker(self):
+        from types import SimpleNamespace
+
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = SimpleNamespace(id="prof-atlas", agent_id="bold-atlas")
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.background.enqueue_background_chat", return_value="job-9") as enq:
+            res = self._post({"agent_id": "bold-atlas", "text": "research metric adoption"})
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["job_id"], "job-9")
+        # A brand-new conversation id was minted (a uuid, not echoed from the request).
+        new_cid = body["conversation_id"]
+        self.assertTrue(new_cid and new_cid != "bold-atlas")
+        # Headless run: the task is the first USER turn of the new conversation, on the worker.
+        enq.assert_called_once()
+        kw = enq.call_args.kwargs
+        self.assertEqual(kw["session_id"], new_cid)
+        self.assertEqual(kw["message"], "research metric adoption")
+        self.assertEqual(kw["agent_profile_id"], "prof-atlas")
+
+    def test_draft_fresh_frames_a_self_contained_task(self):
+        # The dispatch draft persona differs from a relay: a cold-start task for the worker.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        svc = AmbassadorService()
+        fresh = svc._build_draft_prompt(intent="look into X", context="", agent_name="Atlas", fresh=True)
+        self.assertIn("self-contained task for Atlas", fresh)
+        self.assertIn("start fresh", fresh)
+        relay = svc._build_draft_prompt(intent="look into X", context="", agent_name="Atlas", fresh=False)
+        self.assertIn("message to Atlas", relay)
+
+
 class PromptLayerStoreTest(TestCase):
     """Layered prompt stack — precedence (override vs default), durable deltas,
     default-change diff, custom CRUD, and compose ordering."""

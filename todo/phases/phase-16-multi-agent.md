@@ -611,11 +611,19 @@
         (the doc's `consolidation.feature_default_model` never existed). Metered under usage source
         `aide`. Config `ambassador.aide.*` (default-on, Settings → Ambassador opt-out).
         **Deferred:** aide-condensing `read_conversation`; promoting the thread to a durable store.
-- [ ] **Dispatch seam (write-side, later).** The orchestration write-side — the
-      ambassador handing a task to a worker — reuses the relay/`target` (16.6) and grows
-      into real cross-agent delegation. v1 stays read + relay (you confirm); the seam is
-      target-extensible so a future ambassador can start/steer a worker run directly.
-      The survey above is the read-side of that same world.
+- [x] **Dispatch seam (write-side) v1** — shipped (`0.21.138`). The orchestration write-side —
+      the ambassador handing a task to a worker. `POST /api/agent/ambassador/dispatch` `{agent_id,
+      text}` mints a **brand-new conversation** and runs the chosen worker **headless** on the task
+      as its first **user** turn (`enqueue_background_chat`) — you authored it, so INV-2 holds
+      (`AmbassadorService` never writes a transcript as itself). Confirm-first per the roadmap: the
+      user picks any agent in a new **Dispatch** composer mode (`AmbassadorPanel`), the ambassador
+      drafts a self-contained task (`draft_relay_message(fresh=True)`), then sends; the client opens
+      the new conversation on-ready (polls past the async-worker 404 window). Gated by
+      `ambassador.dispatch.enabled` (default on, Settings opt-out). The `{agent_id}` seam is
+      target-extensible. **Deferred:** **autonomous** dispatch — the ambassador choosing the worker +
+      starting/steering a run itself via `AlloyExecutor.delegate` (`delegation_*` events, depth/
+      parallel guards); ambassador-*proposed* targeting; dispatch into an **existing** conversation;
+      instant task echo. The survey/aide-swarm is the read-side of that same world.
 
 **Stability & invariants (apply across all slices)**
 - [ ] No-pollution regression tests extended to the thread + tool loop (nothing reaches

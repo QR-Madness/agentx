@@ -440,6 +440,7 @@ class AmbassadorService:
         context: str,
         agent_name: str = "",
         artifacts: dict | None = None,
+        fresh: bool = False,
     ) -> str:
         agent_label = agent_name.strip() or "the agent"
         sections = []
@@ -448,12 +449,23 @@ class AmbassadorService:
         artifacts_block = self._render_artifacts(artifacts, agent_label)
         if artifacts_block:
             sections.append(artifacts_block)
-        sections.append(
-            "What the person wants to say (their rough intent):\n" f"{intent.strip()}"
-        )
-        sections.append(
-            f"Write their message to {agent_label} now — first person, ready to send."
-        )
+        if fresh:
+            # Dispatch: a brand-new conversation with a worker — no shared history.
+            sections.append(
+                "The task the person wants done (their rough intent):\n" f"{intent.strip()}"
+            )
+            sections.append(
+                f"Write a clear, self-contained task for {agent_label} to start fresh — first "
+                "person, in your own words, including everything they need (they have no prior "
+                "context). Ready to send."
+            )
+        else:
+            sections.append(
+                "What the person wants to say (their rough intent):\n" f"{intent.strip()}"
+            )
+            sections.append(
+                f"Write their message to {agent_label} now — first person, ready to send."
+            )
         return "\n\n".join(sections)
 
     def _build_persona(self, profile, agent_name: str = "") -> str:
@@ -1013,11 +1025,14 @@ class AmbassadorService:
         *,
         agent_name: str = "",
         artifacts: dict | None = None,
+        fresh: bool = False,
     ) -> str:
-        """Draft a message FROM the user TO the agent (the outbound relay): turn a
-        rough intent into a clear, first-person message the user reviews/edits before
-        sending. Returns the draft text. Never raises — falls back to the raw intent
-        so the relay still works when no provider is configured."""
+        """Draft a message FROM the user TO the agent: turn a rough intent into a clear,
+        first-person message the user reviews/edits before sending. For a relay it's a
+        message into the existing conversation; with ``fresh`` (dispatch) it's a
+        self-contained task for ``agent_name`` (a worker) to start cold — no conversation
+        grounding. Returns the draft text. Never raises — falls back to the raw intent so
+        the relay/dispatch still works when no provider is configured."""
         intent = (intent or "").strip()
         if not intent:
             return ""
@@ -1033,7 +1048,8 @@ class AmbassadorService:
             logger.warning(f"Ambassador draft provider unavailable: {e}")
             return intent
 
-        context = self._grounding_context(
+        # A fresh dispatch task has no conversation to ground on.
+        context = "" if fresh else self._grounding_context(
             conversation_id, cfg["max_context_turns"], agent_name
         )
         messages = [
@@ -1041,7 +1057,8 @@ class AmbassadorService:
             Message(
                 role=MessageRole.USER,
                 content=self._build_draft_prompt(
-                    intent=intent, context=context, agent_name=agent_name, artifacts=artifacts
+                    intent=intent, context=context, agent_name=agent_name,
+                    artifacts=artifacts, fresh=fresh,
                 ),
             ),
         ]

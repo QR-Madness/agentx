@@ -722,6 +722,9 @@ export interface ConfigUpdate {
       max_per_survey?: number;
       cache_ttl_seconds?: number;
     };
+    dispatch?: {
+      enabled?: boolean;
+    };
   };
   images?: {
     enabled?: boolean;

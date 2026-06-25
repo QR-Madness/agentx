@@ -136,6 +136,22 @@ export interface DraftRelayRequest {
   intent: string;
   agent_name?: string;
   artifacts?: AmbassadorTurnArtifacts;
+  /** Dispatch: shape a self-contained task for a worker to start cold (no conversation). */
+  fresh?: boolean;
+}
+
+export interface DispatchRequest {
+  /** The worker agent's durable id (agent_id) to hand the task to. */
+  agent_id: string;
+  /** The (drafted) task — becomes the first user turn of a new conversation. */
+  text: string;
+}
+
+export interface DispatchResult {
+  ok: boolean;
+  /** The brand-new conversation minted for the dispatched task. */
+  conversation_id?: string;
+  job_id?: string;
 }
 
 export interface BriefTurnRequest {
@@ -355,6 +371,16 @@ export const ambassadorApi = {
    *  server (for a conversation that isn't the open tab). The person is the author. */
   async relayAmbassador(req: { conversation_id: string; text: string }): Promise<{ ok: boolean; job_id?: string }> {
     return apiRequest('/api/agent/ambassador/relay', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  /** Dispatch a task to a chosen worker: mint a brand-new conversation and run that
+   *  worker headless on the task as its first user turn (you authored it). Returns the
+   *  new conversation_id so the client can open + watch it. The ambassador write-side. */
+  async dispatchAmbassador(req: DispatchRequest): Promise<DispatchResult> {
+    return apiRequest('/api/agent/ambassador/dispatch', {
       method: 'POST',
       body: JSON.stringify(req),
     });

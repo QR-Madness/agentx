@@ -22,6 +22,7 @@ interface AmbassadorSettings {
   model: string; // '' = use the profile's model / floor
   max_context_turns: number;
   aideEnabled: boolean; // aide swarm: condense conversations via cheap parallel aides
+  dispatchEnabled: boolean; // hand a task to a chosen worker (mints a new conversation)
 }
 
 const DEFAULT_SETTINGS: AmbassadorSettings = {
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: AmbassadorSettings = {
   model: '',
   max_context_turns: 8,
   aideEnabled: true,
+  dispatchEnabled: true,
 };
 
 export default function AmbassadorSection() {
@@ -57,12 +59,14 @@ export default function AmbassadorSection() {
       const a = (config.ambassador || {}) as Partial<AmbassadorSettings> & {
         model?: string | null;
         aide?: { enabled?: boolean };
+        dispatch?: { enabled?: boolean };
       };
       setSettings({
         enabled: a.enabled ?? true,
         model: a.model || '',
         max_context_turns: a.max_context_turns ?? 8,
         aideEnabled: a.aide?.enabled ?? true,
+        dispatchEnabled: a.dispatch?.enabled ?? true,
       });
     } catch (error) {
       notifyError(error, 'Failed to load ambassador settings');
@@ -86,6 +90,7 @@ export default function AmbassadorSection() {
           model: settings.model.trim() ? settings.model : null,
           max_context_turns: settings.max_context_turns,
           aide: { enabled: settings.aideEnabled },
+          dispatch: { enabled: settings.dispatchEnabled },
         },
       });
       notifySuccess('Ambassador settings saved', 'Ambassador');
@@ -231,6 +236,24 @@ export default function AmbassadorSection() {
                 type="checkbox"
                 checked={settings.aideEnabled}
                 onChange={(e) => setSettings((prev) => ({ ...prev, aideEnabled: e.target.checked }))}
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div className="setting-row">
+            <label className="setting-label">
+              <span>Dispatch to workers</span>
+              <span className="setting-hint">
+                Let the ambassador hand a task to a worker you pick — it opens a new conversation
+                with that agent and runs it. Off ⇒ the Dispatch option is hidden.
+              </span>
+            </label>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.dispatchEnabled}
+                onChange={(e) => setSettings((prev) => ({ ...prev, dispatchEnabled: e.target.checked }))}
               />
               <span className="toggle-slider"></span>
             </label>

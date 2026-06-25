@@ -263,6 +263,12 @@ DEFAULT_CONFIG = {
             "max_per_survey": 8,        # cap aides spawned by one survey
             "cache_ttl_seconds": 1800,  # digest cache TTL (auto-refresh on growth)
         },
+        # Dispatch (Phase 16.7, write-side) — hand a task to a chosen worker by minting
+        # a new conversation and running it headless (you pick + confirm). Off ⇒ the
+        # Dispatch affordance hides and the endpoint 422s.
+        "dispatch": {
+            "enabled": True,
+        },
     },
 }
 

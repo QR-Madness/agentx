@@ -1345,6 +1345,50 @@ paths:
           description: conversation_id and text are required
         '404':
           description: No such conversation
+  /agent/ambassador/dispatch:
+    post:
+      tags: [Agent]
+      operationId: ambassadorDispatch
+      summary: Dispatch a task to a chosen worker (a new conversation)
+      description: >-
+        The Ambassador write-side: hand a task to a worker by minting a **brand-new
+        conversation** and running that worker (resolved by ``agent_id``; agents only)
+        **headless** on the task as its first **user** turn. You authored the task — the
+        ambassador never speaks into the transcript as itself (INV-2). Returns the new
+        ``conversation_id`` so the client can open + watch it. Gated by
+        ``config.ambassador.dispatch.enabled`` (default on). v1 is confirm-first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, text]
+              properties:
+                agent_id:
+                  type: string
+                  description: The worker agent's durable agent_id (agents only).
+                text:
+                  type: string
+                  description: The task — becomes the first user turn of the new conversation.
+      responses:
+        '200':
+          description: Dispatch enqueued; a new conversation was minted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  conversation_id:
+                    type: string
+                  job_id:
+                    type: string
+        '400':
+          description: agent_id and text are required, or no such worker agent
+        '422':
+          description: Dispatch is disabled in settings
   /agent/ambassador/threads:
     get:
       tags: [Agent]

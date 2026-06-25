@@ -42,6 +42,7 @@ import {
   Trash2,
   Copy,
   ArrowDown,
+  Zap,
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
@@ -69,7 +70,7 @@ import { useConfirm } from '../ui/ConfirmDialog';
 import { api } from '../../lib/api';
 import type { AmbassadorBriefing, AmbassadorQA, AmbassadorToolCall } from '../../lib/api';
 
-type PanelMode = 'ask' | 'relay';
+type PanelMode = 'ask' | 'relay' | 'dispatch';
 
 /** Creative, conversation-scoped openers for a fresh Inquiry (fire as an ask). */
 const STARTERS = ['Catch me up', "What's been decided?", "What's unresolved?"] as const;
@@ -382,7 +383,7 @@ export function AmbassadorPanel({
   deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry,
 }: AmbassadorPanelProps = {}) {
   const isDeck = !!deckThreadId;
-  const { activeTab, tabs, relayToConversation } = useConversation();
+  const { activeTab, tabs, relayToConversation, restoreConversation } = useConversation();
   const {
     briefingsFor, refresh, cancel, qaFor,
     threadFor, titleFor, renameThread, clearThread, ask, cancelQa, listInquiries,
@@ -420,6 +421,12 @@ export function AmbassadorPanel({
   const [mode, setMode] = useState<PanelMode>('ask');
   const [refining, setRefining] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // Dispatch (write-side): hand a task to a chosen worker → a brand-new conversation.
+  const [dispatchTarget, setDispatchTarget] = useState<{ agentId: string; name: string } | null>(null);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchEnabled, setDispatchEnabled] = useState(true);
+  // Workers eligible for dispatch — any agent profile (not ambassadors).
+  const workerProfiles = useMemo(() => profiles.filter((p) => p.kind === 'agent'), [profiles]);
   // Deck relay (no focused conversation → pick a target). Lazily-loaded conversation list.
   const [deckRelayTarget, setDeckRelayTarget] = useState<{ id: string; title: string } | null>(null);
   const [deckConvs, setDeckConvs] = useState<{ id: string; title: string }[]>([]);
@@ -651,28 +658,77 @@ export function AmbassadorPanel({
     }
   }, [isDeck, mode, deckConvs.length]);
 
-  // Optional: let the ambassador shape a rough intent into a ready-to-send message.
+  // Dispatch is a global opt-out (Settings → Ambassador). Hide the affordance when off.
+  useEffect(() => {
+    void api
+      .getConfig()
+      .then((cfg) => setDispatchEnabled((cfg.ambassador as { dispatch?: { enabled?: boolean } } | undefined)?.dispatch?.enabled ?? true))
+      .catch(() => {});
+  }, []);
+
+  // Optional: let the ambassador shape a rough intent into a ready-to-send message
+  // (a relay into this conversation) or a self-contained task for a dispatched worker.
   const refine = async () => {
-    if (!conversationId) return;
     const intent = input.trim();
     if (!intent) return;
+    const dispatchMode = mode === 'dispatch';
+    if (!dispatchMode && !conversationId) return;
     setRefining(true);
     try {
       const { draft } = await api.draftRelay({
-        conversation_id: conversationId,
+        conversation_id: dispatchMode ? '' : (conversationId as string),
         intent,
-        agent_name: convAgentName,
+        agent_name: dispatchMode ? (dispatchTarget?.name ?? '') : convAgentName,
+        fresh: dispatchMode || undefined,
       });
       if (draft) setInput(draft);
     } catch {
-      /* keep the raw intent — the relay still works */
+      /* keep the raw intent — the relay/dispatch still works */
     } finally {
       setRefining(false);
     }
   };
 
+  // Open the dispatched worker's NEW conversation once it exists. The worker runs in
+  // the background, so the conversation has no turns (and 404s) until it replies —
+  // poll-then-open, tolerating the empty window; give up gracefully after ~15s.
+  const openWhenReady = async (cid: string, worker: string) => {
+    for (let i = 0; i < 15; i++) {
+      try {
+        await restoreConversation(cid);  // throws (404) until the first turn lands
+        showFlash(`Opened ${worker}'s conversation.`);
+        return;
+      } catch {
+        await new Promise((r) => window.setTimeout(r, 1000));
+      }
+    }
+    showFlash(`Dispatched to ${worker} — it'll appear in your conversations once it replies.`);
+  };
+
+  const submitDispatch = async () => {
+    const text = input.trim();
+    if (!text || !dispatchTarget || dispatching) return;
+    setDispatching(true);
+    showFlash(`Dispatching to ${dispatchTarget.name}…`);
+    try {
+      const res = await api.dispatchAmbassador({ agent_id: dispatchTarget.agentId, text });
+      if (res.ok && res.conversation_id) {
+        setInput('');
+        showFlash(`Dispatched to ${dispatchTarget.name} — opening when ready…`);
+        void openWhenReady(res.conversation_id, dispatchTarget.name);
+      } else {
+        showFlash('Could not dispatch — try again.');
+      }
+    } catch {
+      showFlash('Dispatch failed — try again.');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   const submit = () => {
     if (mode === 'ask') submitAsk();
+    else if (mode === 'dispatch') void submitDispatch();
     else void submitRelay();
   };
 
@@ -713,11 +769,13 @@ export function AmbassadorPanel({
 
   const footerHelp =
     flash ??
-    (isDeck
-      ? 'Answered from your conversations via read-only tools — nothing is added to any transcript.'
-      : mode === 'relay'
-        ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
-        : 'Answered from the conversation only — never added to the transcript.');
+    (mode === 'dispatch'
+      ? 'Opens a new conversation with the worker — you are the author; the ambassador never speaks as itself.'
+      : isDeck
+        ? 'Answered from your conversations via read-only tools — nothing is added to any transcript.'
+        : mode === 'relay'
+          ? 'Sent as your own message — the ambassador never speaks into the conversation itself.'
+          : 'Answered from the conversation only — never added to the transcript.');
 
   // --- Header sub-elements (shared by the compact bar + the voice hero) --------
 
@@ -966,9 +1024,9 @@ export function AmbassadorPanel({
         />
       ) : (
         <div className="flex flex-col gap-2 border-t border-line p-3">
-          {/* Mode toggle — segmented control (Ask / Relay). In the deck, relay routes
-              through the server to a picked conversation; elsewhere to the focused one. */}
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-sunken p-1 text-xs">
+          {/* Mode toggle — segmented control (Ask / Relay / Dispatch). Relay sends into an
+              existing conversation; Dispatch hands a task to a chosen worker (a new conversation). */}
+          <div className={`grid ${dispatchEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-1 rounded-lg bg-surface-sunken p-1 text-xs`}>
             <button
               type="button"
               onClick={() => setMode('ask')}
@@ -985,6 +1043,16 @@ export function AmbassadorPanel({
             >
               <CornerUpRight size={12} /> Relay
             </button>
+            {dispatchEnabled && (
+              <button
+                type="button"
+                onClick={() => setMode('dispatch')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+                data-on={mode === 'dispatch' || undefined}
+              >
+                <Zap size={12} /> Dispatch
+              </button>
+            )}
           </div>
 
           {/* Deck relay needs a target conversation — pick one (no focused conversation here). */}
@@ -1023,32 +1091,72 @@ export function AmbassadorPanel({
             </DropdownMenu>
           )}
 
+          {/* Dispatch needs a worker — pick any agent; the task opens a new conversation. */}
+          {mode === 'dispatch' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center justify-between gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                >
+                  <span className="truncate">
+                    {dispatchTarget ? `Dispatch to: ${dispatchTarget.name}` : 'Dispatch to: pick a worker…'}
+                  </span>
+                  <ChevronDown size={13} className="shrink-0 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-72 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto">
+                <DropdownMenuLabel>Hand a task to…</DropdownMenuLabel>
+                {workerProfiles.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-fg-muted">No worker agents found.</p>
+                ) : (
+                  workerProfiles.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onSelect={() => setDispatchTarget({ agentId: p.agentId, name: p.name })}
+                      data-on={p.agentId === dispatchTarget?.agentId || undefined}
+                      className="data-[on=true]:text-accent"
+                    >
+                      <Radio size={14} className="shrink-0 opacity-70" />
+                      <span className="flex-1 truncate">{p.name}</span>
+                      {p.agentId === dispatchTarget?.agentId && <Check size={14} className="shrink-0 text-accent" />}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onInputKeyDown}
-              rows={mode === 'relay' ? 2 : 1}
+              rows={mode === 'ask' ? 1 : 2}
               placeholder={
                 mode === 'ask'
                   ? isDeck
                     ? 'Ask about your agents and their work…'
                     : `Ask ${convAgentName ? `about ${convAgentName}` : 'about this conversation'}…`
-                  : isDeck
-                    ? (deckRelayTarget ? `Message ${deckRelayTarget.title} as you…` : 'Pick a conversation to relay into…')
-                    : runActive
-                      ? `Tell ${convAgentName} something — folds into the running turn…`
-                      : `Tell ${convAgentName} something — sent as your message…`
+                  : mode === 'dispatch'
+                    ? (dispatchTarget ? `Describe the task for ${dispatchTarget.name}…` : 'Pick a worker to hand a task to…')
+                    : isDeck
+                      ? (deckRelayTarget ? `Message ${deckRelayTarget.title} as you…` : 'Pick a conversation to relay into…')
+                      : runActive
+                        ? `Tell ${convAgentName} something — folds into the running turn…`
+                        : `Tell ${convAgentName} something — sent as your message…`
               }
               className="max-h-32 flex-1 resize-none bg-transparent p-0 text-sm text-fg outline-none placeholder:text-fg-muted max-[600px]:text-base"
             />
-            {mode === 'relay' && !isDeck && (
+            {((mode === 'relay' && !isDeck) || mode === 'dispatch') && (
               <button
                 type="button"
                 onClick={refine}
-                disabled={!input.trim() || refining}
+                disabled={!input.trim() || refining || (mode === 'dispatch' && !dispatchTarget)}
                 className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-xs text-fg-muted transition-colors hover:border-line-strong hover:text-accent disabled:opacity-40"
-                title="Let the ambassador shape this into a ready-to-send message"
+                title={mode === 'dispatch'
+                  ? 'Let the ambassador shape this into a self-contained task'
+                  : 'Let the ambassador shape this into a ready-to-send message'}
               >
                 {refining ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
                 Refine
@@ -1057,11 +1165,13 @@ export function AmbassadorPanel({
             <button
               type="button"
               onClick={submit}
-              disabled={!input.trim()}
+              disabled={!input.trim() || (mode === 'dispatch' && (!dispatchTarget || dispatching))}
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
-              title={mode === 'ask' ? 'Ask the ambassador' : 'Send to the conversation'}
+              title={mode === 'ask' ? 'Ask the ambassador' : mode === 'dispatch' ? 'Dispatch the task' : 'Send to the conversation'}
             >
-              {mode === 'ask' ? <Send size={14} /> : <CornerUpRight size={14} />}
+              {mode === 'ask' ? <Send size={14} /> : mode === 'dispatch'
+                ? (dispatching ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />)
+                : <CornerUpRight size={14} />}
             </button>
           </div>
 

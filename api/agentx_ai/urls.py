@@ -52,6 +52,7 @@ urlpatterns = [
     path("agent/avatar/generate", views.avatar_generate, name="avatar-generate"),
     path("agent/chat/images", views.chat_image_upload, name="chat-image-upload"),
     path("agent/ambassador/relay", views.ambassador_relay, name="ambassador-relay"),
+    path("agent/ambassador/dispatch", views.ambassador_dispatch, name="ambassador-dispatch"),
     path("agent/ambassador/threads", views.ambassador_threads, name="ambassador-threads"),
     path("agent/ambassador/thread/<str:thread_id>", views.ambassador_thread, name="ambassador-thread"),
     path("agent/ambassador/<str:conversation_id>", views.ambassador_briefings, name="ambassador-briefings"),

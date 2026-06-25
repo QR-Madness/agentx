@@ -30,8 +30,11 @@ It is a parallel operator on a Redis **sidecar** only; its tool belt is **SELECT
 (`execute_tool` never mutates). This is the feature's whole reason to exist — breaking it pollutes
 the main transcript. The **aide swarm** (16.7) upholds this: aides only *read* + call a model and
 return a string, and their digest cache lives under `amb_aide:` (the sidecar family), never
-`conv_summary:`/`conversation_logs`.
-**Guard:** `AmbassadorStorageTest` (pollution regression, recovery-isolation; incl. aide-cache isolation).
+`conv_summary:`/`conversation_logs`. The **dispatch** write-side (16.7) upholds it too: it enqueues a
+real **user** turn (you authored it) into the *worker's* brand-new conversation via
+`enqueue_background_chat` — the ambassador never writes a transcript as itself.
+**Guard:** `AmbassadorStorageTest` (pollution regression, recovery-isolation; incl. aide-cache
+isolation); `AmbassadorDispatchEndpointTest` (dispatch routes only through the background-chat worker).
 
 ### INV-3 — `agent_id` is the durable identity key; names are aliases
 Rename-safe: a profile rename propagates to the Agent entity's `aliases`; `dedupe_entities` **never

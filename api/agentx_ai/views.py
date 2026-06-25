@@ -2455,6 +2455,55 @@ def ambassador_relay(request):
     return JsonResponse({"ok": True, "job_id": job_id})
 
 
+@csrf_exempt
+def ambassador_dispatch(request):
+    """
+    POST /api/agent/ambassador/dispatch  {agent_id, text}
+
+    The Ambassador write-side (Phase 16.7): hand a task to a chosen **worker** agent by
+    minting a **brand-new conversation** and running that worker headless on the task as
+    its first **user** turn (you authored it — the ambassador never speaks into the
+    transcript as itself, so INV-2 holds). Returns the new ``conversation_id`` so the
+    client can open + watch it. v1 is confirm-first: the user picks the worker and sends.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (ValueError, TypeError) as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+
+    from .config import get_config_manager
+
+    if not get_config_manager().get("ambassador.dispatch.enabled", True):
+        return JsonResponse({"error": "Dispatch is disabled in settings.", "code": "disabled"}, status=422)
+
+    agent_id = (data.get("agent_id") or "").strip()
+    text = (data.get("text") or "").strip()
+    if not agent_id or not text:
+        return JsonResponse({"error": "agent_id and text are required"}, status=400)
+
+    from .agent.profiles import get_profile_manager
+    from .background import enqueue_background_chat
+
+    # get_profile_by_agent_id already filters kind=='agent', so an ambassador id (or any
+    # unknown id) resolves to None — never dispatch to a non-worker.
+    profile = get_profile_manager().get_profile_by_agent_id(agent_id)
+    if profile is None:
+        return JsonResponse({"ok": False, "error": "no such worker agent"}, status=400)
+
+    import uuid
+
+    conversation_id = str(uuid.uuid4())
+    job_id = enqueue_background_chat(
+        user_id=_bg_user_id(request),
+        message=text,
+        session_id=conversation_id,
+        agent_profile_id=getattr(profile, "id", None),
+    )
+    return JsonResponse({"ok": True, "conversation_id": conversation_id, "job_id": job_id})
+
+
 _IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
 
@@ -2597,10 +2646,11 @@ async def ambassador_draft(request):
     """
     POST /api/agent/ambassador/draft
 
-    Body: {conversation_id, intent, agent_name?, artifacts?}. The ambassador drafts
-    a clear, first-person message FROM the user TO the agent (the outbound relay),
-    based on the rough intent + the conversation. Returns {draft} for the user to
-    review/edit before sending — it never sends anything itself (no transcript write).
+    Body: {conversation_id, intent, agent_name?, artifacts?, fresh?}. The ambassador
+    drafts a clear, first-person message FROM the user TO the agent. For a relay that's a
+    message into the existing conversation; with ``fresh: true`` (dispatch) it's a
+    self-contained task for a worker (``agent_name``) to start cold — no conversation
+    needed. Returns {draft} for the user to review/edit; it never sends (no transcript write).
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -2610,11 +2660,13 @@ async def ambassador_draft(request):
     except json.JSONDecodeError as e:
         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
+    fresh = bool(data.get("fresh"))
     conversation_id = data.get("conversation_id")
     intent = (data.get("intent") or "").strip()
     agent_name = data.get("agent_name") or ""
     artifacts = data.get("artifacts") if isinstance(data.get("artifacts"), dict) else None
-    if not conversation_id:
+    # A fresh dispatch task has no conversation to ground on; a relay requires one.
+    if not fresh and not conversation_id:
         return JsonResponse({"error": "conversation_id is required"}, status=400)
     if not intent:
         return JsonResponse({"error": "intent is required"}, status=400)
@@ -2622,7 +2674,7 @@ async def ambassador_draft(request):
     from .agent.ambassador import get_ambassador
 
     draft = await get_ambassador().draft_relay_message(
-        conversation_id, intent, agent_name=agent_name, artifacts=artifacts
+        conversation_id or "", intent, agent_name=agent_name, artifacts=artifacts, fresh=fresh
     )
     return JsonResponse({"draft": draft})
 
@@ -6282,7 +6334,8 @@ def config_update(request):
 
     # Update Ambassador settings (16.6). profile_id/model accept explicit None
     # (means "fall back to the default profile / model floor").
-    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens", "aide")
+    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens",
+                        "aide", "dispatch")
     _AIDE_KEYS = ("enabled", "model", "temperature", "max_tokens", "max_input_chars",
                   "max_parallel", "timeout_seconds", "max_per_survey", "cache_ttl_seconds")
     ambassador_settings = data.get("ambassador", {})
@@ -6297,6 +6350,14 @@ def config_update(request):
                     if sub in _AIDE_KEYS and sub_val is not None:
                         config.set(f"ambassador.aide.{sub}", sub_val)
                         updated_keys.append(f"ambassador.aide.{sub}")
+            continue
+        if key == "dispatch":
+            # Merge nested dispatch.* sub-keys so editing one never wipes the others.
+            if isinstance(value, dict):
+                for sub, sub_val in value.items():
+                    if sub == "enabled" and sub_val is not None:
+                        config.set("ambassador.dispatch.enabled", bool(sub_val))
+                        updated_keys.append("ambassador.dispatch.enabled")
             continue
         if value is None and key not in ("profile_id", "model"):
             continue
