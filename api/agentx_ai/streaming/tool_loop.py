@@ -213,7 +213,11 @@ def _emit_document_citation(tm) -> list[str]:
 
 def _emit_image_exhibit(tm) -> list[str]:
     """Auto-render a `generate_image` result as an `image` exhibit (the user-facing
-    artifact). Reads the tool result for the served-blob url + prompt."""
+    artifact). Reads the tool result for the served-blob url + prompt.
+
+    Also emits a lightweight ``workspace_attached`` signal carrying the workspace the
+    image landed in — so a conversation that had no workspace (and thus fell back to
+    the personal Home store) can durably attach to it client-side."""
     try:
         data = json.loads(tm.content)
     except (ValueError, TypeError):
@@ -228,7 +232,10 @@ def _emit_image_exhibit(tm) -> list[str]:
     )
     if exhibit is None:
         return []
-    return [_sse("exhibit", exhibit.model_dump())]
+    events = [_sse("exhibit", exhibit.model_dump())]
+    if data.get("workspace_id"):
+        events.append(_sse("workspace_attached", {"workspace_id": data["workspace_id"]}))
+    return events
 
 
 def _view_image_messages(tm, *, vision_capable: bool) -> list[Message]:

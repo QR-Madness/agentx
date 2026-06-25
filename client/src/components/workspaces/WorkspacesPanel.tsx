@@ -7,7 +7,7 @@
  * any document is still ingesting (pending).
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check, FileText, FolderPlus, Link2, Link2Off, Loader2, Pencil, Plus, Terminal, Trash2, Upload, X,
 } from 'lucide-react';
@@ -30,6 +30,41 @@ const STATUS_STYLE: Record<WorkspaceDocument['status'], string> = {
   pending: 'text-warning',
   failed: 'text-error',
 };
+
+// Documents are keyed by a flat filename; a leading `folder/` prefix (e.g.
+// `generated/`, `uploads/`) is a convention used to group scratch media so it
+// can be viewed and bulk-cleared apart from curated documents.
+const FOLDER_LABELS: Record<string, string> = { generated: 'Generated', uploads: 'Uploaded' };
+const ROOT_FOLDER = '';
+// Folders whose contents are agent/scratch media — safe to offer a bulk "Clear".
+const CLEARABLE_FOLDERS = new Set(['generated', 'uploads']);
+
+function folderOf(filename: string): string {
+  const slash = filename.indexOf('/');
+  return slash === -1 ? ROOT_FOLDER : filename.slice(0, slash);
+}
+
+function leafName(filename: string, folder: string): string {
+  return folder === ROOT_FOLDER ? filename : filename.slice(folder.length + 1);
+}
+
+interface DocGroup { folder: string; label: string; docs: WorkspaceDocument[]; }
+
+function groupDocuments(documents: WorkspaceDocument[]): DocGroup[] {
+  const byFolder = new Map<string, WorkspaceDocument[]>();
+  for (const doc of documents) {
+    const folder = folderOf(doc.filename);
+    (byFolder.get(folder) ?? byFolder.set(folder, []).get(folder)!).push(doc);
+  }
+  // Root ("Files") first, then named folders alphabetically.
+  return Array.from(byFolder.entries())
+    .sort(([a], [b]) => (a === ROOT_FOLDER ? -1 : b === ROOT_FOLDER ? 1 : a.localeCompare(b)))
+    .map(([folder, docs]) => ({
+      folder,
+      label: folder === ROOT_FOLDER ? 'Files' : (FOLDER_LABELS[folder] ?? folder),
+      docs,
+    }));
+}
 
 export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
   const notify = useNotify();
@@ -179,10 +214,30 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
     }
   }, [confirm, notify, refreshDocuments, refreshWorkspaces, selectedId]);
 
+  const clearGroup = useCallback(async (group: DocGroup) => {
+    if (!selectedId) return;
+    const noun = group.docs.length === 1 ? 'file' : 'files';
+    const ok = await confirm({
+      title: `Clear ${group.docs.length} ${group.label.toLowerCase()} ${noun}?`,
+      body: 'This permanently removes these files from the workspace. This cannot be undone.',
+      confirmLabel: 'Clear', danger: true,
+    });
+    if (!ok) return;
+    try {
+      for (const doc of group.docs) await api.deleteDocument(selectedId, doc.id);
+      await refreshDocuments(selectedId);
+      await refreshWorkspaces();
+    } catch (err) {
+      notify.notifyError(err, 'Could not clear files');
+    }
+  }, [confirm, notify, refreshDocuments, refreshWorkspaces, selectedId]);
+
+  const docGroups = useMemo(() => groupDocuments(documents), [documents]);
+
   const selected = workspaces.find(w => w.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col bg-surface-base text-fg">
       <header className="flex items-center justify-between border-b border-line px-4 py-3">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <FolderPlus size={18} /> Workspaces
@@ -237,7 +292,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
               <div
                 key={ws.id}
                 className={`group flex items-center justify-between rounded-md px-2.5 py-2 text-sm ${
-                  ws.id === selectedId ? 'bg-accent-secondary text-fg' : 'hover:bg-surface-hover'
+                  ws.id === selectedId ? 'bg-accent/15 text-fg' : 'hover:bg-surface-hover'
                 }`}
               >
                 <button onClick={() => setSelectedId(ws.id)} className="min-w-0 flex-1 text-left">
@@ -251,7 +306,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                 </button>
                 <button
                   aria-label={`Delete ${ws.name}`}
-                  className="ml-1 shrink-0 rounded p-1 text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
+                  className="ml-1 shrink-0 rounded p-2 text-fg-muted opacity-0 hover:bg-surface-hover hover:text-error group-hover:opacity-100"
                   onClick={() => void deleteWorkspace(ws)}
                 >
                   <Trash2 size={14} />
@@ -291,7 +346,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                     <span className="min-w-0 truncate text-sm font-medium">{selected.name}</span>
                     <button
                       aria-label="Rename workspace"
-                      className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg"
+                      className="rounded p-2 text-fg-muted hover:bg-surface-hover hover:text-fg"
                       onClick={() => { setRenaming(true); setDraftName(selected.name); }}
                     >
                       <Pencil size={13} />
@@ -326,7 +381,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                       title="Attach this workspace to the active conversation so the agent can use it"
                     >
                       {attachedId === selected.id ? <Link2Off size={13} /> : <Link2 size={13} />}
-                      {attachedId === selected.id ? 'Attached — detach' : 'Attach to conversation'}
+                      {attachedId === selected.id ? 'Detach' : 'Attach to conversation'}
                     </button>
                   ) : (
                     <span className="text-xs text-fg-muted">Open a chat to attach</span>
@@ -342,7 +397,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                       <button
                         key={b}
                         onClick={() => setBackend(selected, b)}
-                        className={`rounded px-2 py-0.5 ${
+                        className={`rounded px-2.5 py-1 ${
                           selected.shell_backend === b
                             ? 'bg-accent text-fg-inverse'
                             : 'border border-line text-fg-secondary hover:bg-surface-hover'
@@ -374,7 +429,7 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                 }}
                 disabled={uploading}
                 className={`m-3 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${
-                  dragOver ? 'border-accent bg-accent-secondary' : 'border-line text-fg-muted hover:border-accent hover:text-fg'
+                  dragOver ? 'border-accent bg-accent/10 text-fg' : 'border-line text-fg-muted hover:border-accent hover:text-fg'
                 }`}
               >
                 {uploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
@@ -386,48 +441,68 @@ export function WorkspacesPanel({ onClose }: { onClose?: () => void }) {
                 />
               </button>
 
-              <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
                 {documents.length === 0 ? (
-                  <li className="p-3 text-sm text-fg-muted">No documents yet.</li>
+                  <p className="p-3 text-sm text-fg-muted">No documents yet.</p>
                 ) : (
-                  documents.map(doc => (
-                    <li
-                      key={doc.id}
-                      className="group flex items-start gap-2 rounded-md border border-line bg-surface-raised p-2.5"
-                    >
-                      <FileText size={16} className="mt-0.5 shrink-0 text-fg-muted" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium">{doc.filename}</span>
-                          <span className={`flex shrink-0 items-center gap-1 text-xs ${STATUS_STYLE[doc.status]}`}>
-                            {doc.status === 'pending' && <Loader2 size={11} className="animate-spin" />}
-                            {doc.status === 'pending' ? 'ingesting…' : doc.status}
-                          </span>
-                        </div>
-                        {doc.summary && <p className="mt-0.5 text-xs text-fg-muted">{doc.summary}</p>}
-                        {doc.tags.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {doc.tags.map(tag => (
-                              <span key={tag} className="rounded bg-surface-sunken px-1.5 py-0.5 text-[11px] text-fg-secondary">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
+                  docGroups.map(group => (
+                    <section key={group.folder || 'root'}>
+                      <div className="mb-1.5 flex items-center justify-between px-0.5">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+                          {group.label}
+                          <span className="ml-1.5 font-normal text-fg-muted">{group.docs.length}</span>
+                        </span>
+                        {CLEARABLE_FOLDERS.has(group.folder) && (
+                          <button
+                            className="rounded px-2 py-1 text-xs text-fg-muted hover:bg-surface-hover hover:text-error"
+                            onClick={() => void clearGroup(group)}
+                          >
+                            Clear
+                          </button>
                         )}
-                        {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
-                        <span className="mt-0.5 block text-[11px] text-fg-muted">{formatBytes(doc.size_bytes)}</span>
                       </div>
-                      <button
-                        aria-label={`Remove ${doc.filename}`}
-                        className="shrink-0 rounded p-1 text-fg-muted opacity-0 hover:text-error group-hover:opacity-100"
-                        onClick={() => void deleteDocument(doc)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </li>
+                      <ul className="space-y-1.5">
+                        {group.docs.map(doc => (
+                          <li
+                            key={doc.id}
+                            className="group flex items-start gap-2 rounded-md border border-line bg-surface-raised p-2.5"
+                          >
+                            <FileText size={16} className="mt-0.5 shrink-0 text-fg-muted" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium">{leafName(doc.filename, group.folder)}</span>
+                                <span className={`flex shrink-0 items-center gap-1 text-xs ${STATUS_STYLE[doc.status]}`}>
+                                  {doc.status === 'pending' && <Loader2 size={11} className="animate-spin" />}
+                                  {doc.status === 'pending' ? 'ingesting…' : doc.status}
+                                </span>
+                              </div>
+                              {doc.summary && <p className="mt-0.5 text-xs text-fg-muted">{doc.summary}</p>}
+                              {doc.tags.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {doc.tags.map(tag => (
+                                    <span key={tag} className="rounded bg-surface-sunken px-1.5 py-0.5 text-[11px] text-fg-secondary">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
+                              <span className="mt-0.5 block text-[11px] text-fg-muted">{formatBytes(doc.size_bytes)}</span>
+                            </div>
+                            <button
+                              aria-label={`Remove ${doc.filename}`}
+                              className="shrink-0 rounded p-2 text-fg-muted opacity-0 hover:bg-surface-hover hover:text-error group-hover:opacity-100"
+                              onClick={() => void deleteDocument(doc)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
                   ))
                 )}
-              </ul>
+              </div>
             </>
           )}
         </section>

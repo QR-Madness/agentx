@@ -136,6 +136,11 @@ export interface StreamCallbacks {
   }) => void;
   /** A user steered the running turn mid-stream — echoed so every client shows it. */
   onSteer?: (data: { id: string; message: string }) => void;
+  /**
+   * Media (a generated image) landed in a workspace — when the conversation had none,
+   * the backend fell back to the personal Home store. The client durably attaches it.
+   */
+  onWorkspaceAttached?: (data: { workspace_id: string }) => void;
   onError?: (error: string) => void;
 }
 
@@ -212,6 +217,9 @@ function dispatchSseEvent(
       break;
     case 'steer':
       callbacks.onSteer?.(data as Parameters<NonNullable<StreamCallbacks['onSteer']>>[0]);
+      break;
+    case 'workspace_attached':
+      callbacks.onWorkspaceAttached?.(data as { workspace_id: string });
       break;
     case 'done':
       callbacks.onDone?.(data as Parameters<NonNullable<StreamCallbacks['onDone']>>[0]);

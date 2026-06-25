@@ -10,7 +10,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.135** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.136** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 

@@ -112,6 +112,19 @@ export function patchMeta(id: string, partial: Partial<ConversationMeta>): void 
   persist(serverId, map);
 }
 
+/**
+ * Attach a workspace to a conversation only if it has none yet — used when stored
+ * media (a generated/uploaded image) falls back to the Home workspace. Returns true
+ * when this call newly attached (so the caller can fire a one-time "saved to Home"
+ * notice); false if the conversation already had a workspace.
+ */
+export function attachWorkspaceOnce(id: string | null | undefined, workspaceId: string): boolean {
+  if (!id || !workspaceId) return false;
+  if (getMeta(id).workspaceId) return false;
+  patchMeta(id, { workspaceId });
+  return true;
+}
+
 export function clearMeta(id: string): void {
   const serverId = getActiveServerId();
   if (!id || !serverId) return;

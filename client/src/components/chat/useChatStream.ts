@@ -60,6 +60,8 @@ interface UseChatStreamOpts {
   onRunMissing?: () => void;
   /** Fired when the agent autonomously saves a `checkpoint` mid-stream. */
   onCheckpointSaved?: () => void;
+  /** Stored media fell back to a workspace (Home) — the conversation can durably attach. */
+  onWorkspaceAttached?: (workspaceId: string) => void;
 }
 
 interface UseChatStreamApi {
@@ -203,6 +205,10 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           type: 'status_changed',
           activity: { label: data.label, group: data.group, progress: data.progress },
         });
+      },
+
+      onWorkspaceAttached: (data) => {
+        optsRef.current.onWorkspaceAttached?.(data.workspace_id);
       },
 
       onSteer: (data) => {

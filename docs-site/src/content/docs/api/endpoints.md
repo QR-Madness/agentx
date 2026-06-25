@@ -411,6 +411,7 @@ SSE events in order:
 | `steer` | `{"id": "...", "message": "..."}` | A user steered the running turn (folded in as a fresh user turn at the next safe boundary); echoed so every client shows the steer bubble inline |
 | `tool_call` | `{"tool": "name", "arguments": {...}}` | Tool invocation starts |
 | `tool_result` | `{"tool": "name", "content": "..."}` | Tool result (truncated to 500 chars) |
+| `workspace_attached` | `{"workspace_id": "..."}` | A generated image landed in a workspace; emitted after the `image` exhibit so a conversation with no workspace can durably attach the personal Home store client-side |
 | `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "..."}` | Generation complete |
 | `error` | `{"error": "message"}` | On failure |
 | `close` | `{}` | Run settled; tail ends |

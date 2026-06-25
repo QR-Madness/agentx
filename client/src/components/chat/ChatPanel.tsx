@@ -70,7 +70,7 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
-import { getMeta, useConversationMeta } from '../../lib/conversationMeta';
+import { attachWorkspaceOnce, getMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { WorkspaceBadge } from './WorkspaceBadge';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
@@ -101,11 +101,20 @@ export function ChatPanel() {
   const { briefingForMessage, ask: askAmbassador } = useAmbassador();
   const openAmbassador = useOpenAmbassador();
   const { upsertPlan, patchPlan } = usePlans();
-  const { notifyError } = useNotify();
+  const { notifyError, notifySuccess } = useNotify();
   useConversationMeta();  // re-render when the conversation↔workspace tag changes
   const attachedWorkspaceId = activeTab
     ? getMeta(activeTab.sessionId ?? activeTab.id).workspaceId
     : undefined;
+
+  // Stored media (a generated/uploaded image) falls back to the personal Home
+  // workspace when the conversation has none — durably attach it, notifying once.
+  const attachStoredMediaWorkspace = useCallback((workspaceId: string) => {
+    const convKey = activeTab ? (activeTab.sessionId ?? activeTab.id) : null;
+    if (attachWorkspaceOnce(convKey, workspaceId)) {
+      notifySuccess('Saved to your Home workspace and attached to this conversation.', 'Workspace attached');
+    }
+  }, [activeTab, notifySuccess]);
 
   // When a workflow is selected, the supervisor profile takes over.
   // Otherwise, the tab's per-tab profile (or the global active profile) is used.
@@ -280,6 +289,7 @@ export function ChatPanel() {
       if (activeTab?.sessionId) restoreConversation(activeTab.sessionId).catch(() => {});
     },
     onCheckpointSaved: () => setCheckpointSignal(n => n + 1),
+    onWorkspaceAttached: attachStoredMediaWorkspace,
   });
 
   const isTyping = stream.state.phase === 'streaming';
@@ -463,6 +473,7 @@ export function ChatPanel() {
       try {
         const ref = await api.uploadChatImage(file);
         setPendingImages(prev => [...prev, { workspace_id: ref.workspace_id, doc_id: ref.doc_id, media_type: ref.media_type }]);
+        attachStoredMediaWorkspace(ref.workspace_id);
       } catch (err) {
         notifyError(err, `Failed to upload ${file.name}`);
       } finally {

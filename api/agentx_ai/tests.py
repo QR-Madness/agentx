@@ -1170,6 +1170,44 @@ class ImageConversationTest(TestCase):
         self.assertEqual(info["workspace_id"], "ws_attached")
         home.assert_not_called()
 
+    def test_emit_image_exhibit_signals_workspace_attached(self) -> None:
+        # A generated image emits the `image` exhibit AND a `workspace_attached`
+        # signal carrying the workspace the media landed in (so a workspace-less
+        # conversation can durably attach the Home store it fell back to).
+        import json
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_image_exhibit
+
+        tm = SimpleNamespace(
+            tool_call_id="tc_1",
+            content=json.dumps({
+                "success": True,
+                "url": "/api/workspaces/ws_home/documents/doc_1/raw",
+                "workspace_id": "ws_home",
+                "prompt": "a mountain",
+            }),
+        )
+        events = _emit_image_exhibit(tm)
+        kinds = [e.split("\n", 1)[0] for e in events]
+        self.assertIn("event: exhibit", kinds)
+        self.assertIn("event: workspace_attached", kinds)
+        attach = next(e for e in events if e.startswith("event: workspace_attached"))
+        payload = json.loads(attach.split("data: ", 1)[1].strip())
+        self.assertEqual(payload, {"workspace_id": "ws_home"})
+
+    def test_emit_image_exhibit_skips_signal_without_workspace(self) -> None:
+        # No workspace_id in the result → only the exhibit, no attach signal.
+        import json
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_image_exhibit
+
+        tm = SimpleNamespace(
+            tool_call_id="tc_2",
+            content=json.dumps({"success": True, "url": "/x/raw", "prompt": "p"}),
+        )
+        kinds = [e.split("\n", 1)[0] for e in _emit_image_exhibit(tm)]
+        self.assertEqual(kinds, ["event: exhibit"])
+
 
 class ExceptionHierarchyTest(TestCase):
     """The AgentX exception hierarchy (roadmap item 9)."""
