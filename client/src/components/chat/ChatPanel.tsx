@@ -70,7 +70,7 @@ import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
 import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
-import { attachWorkspaceOnce, getMeta, useConversationMeta } from '../../lib/conversationMeta';
+import { attachWorkspaceOnce, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { WorkspaceBadge } from './WorkspaceBadge';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
@@ -216,6 +216,10 @@ export function ChatPanel() {
   const [pendingImages, setPendingImages] = useState<ChatImageRef[]>([]);
   const [uploadingImages, setUploadingImages] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // Document attachment (Relay → Attach file): uploads into the conversation's
+  // workspace (Document RAG), creating + attaching one if none exists.
+  const [attachingFile, setAttachingFile] = useState(false);
+  const docInputRef = useRef<HTMLInputElement>(null);
   // Inline composer chips: effective model + whether the memory toggle is
   // still changeable (locks once the conversation has started).
   const effectiveModel = activeTab?.modelOverride || tabProfile?.defaultModel || '';
@@ -479,6 +483,43 @@ export function ChatPanel() {
       } finally {
         setUploadingImages(n => n - 1);
       }
+    }
+  };
+
+  // Attach a document to this conversation's workspace (Document RAG). If no workspace
+  // is attached, create one for the conversation and attach it, so one click "just works".
+  const handlePickDocs = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !activeTab) return;
+    const convKey = activeTab.sessionId ?? activeTab.id;
+    setAttachingFile(true);
+    try {
+      let workspaceId = getMeta(convKey).workspaceId;
+      if (!workspaceId) {
+        const name = (activeTab.title?.trim() || 'Conversation files').slice(0, 40);
+        const { workspace } = await api.createWorkspace(name);
+        workspaceId = workspace.id;
+        patchMeta(convKey, { workspaceId });
+        notifySuccess(`Created workspace “${name}” and attached it to this conversation.`, 'Workspace');
+      }
+      let ok = 0;
+      for (const file of Array.from(files)) {
+        try {
+          await api.uploadDocument(workspaceId, file);
+          ok += 1;
+        } catch (err) {
+          notifyError(err, `Failed to attach ${file.name}`);
+        }
+      }
+      if (ok) {
+        notifySuccess(
+          `Attached ${ok} file${ok > 1 ? 's' : ''} — the agent can search ${ok > 1 ? 'them' : 'it'} once ingested.`,
+          'Files attached',
+        );
+      }
+    } catch (err) {
+      notifyError(err, 'Could not attach file');
+    } finally {
+      setAttachingFile(false);
     }
   };
 
@@ -1110,6 +1151,17 @@ export function ChatPanel() {
               e.target.value = '';
             }}
           />
+          <input
+            ref={docInputRef}
+            type="file"
+            accept=".pdf,.txt,.md,.markdown,.csv,.json,.log,.yaml,.yml,.toml,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.c,.cc,.cpp,.h,.hpp,.sh,.rb,.php,.sql,text/*,application/pdf"
+            multiple
+            hidden
+            onChange={(e) => {
+              handlePickDocs(e.target.files);
+              e.target.value = '';
+            }}
+          />
           {visionEnabled && (
             <button
               className="attach-trigger"
@@ -1145,6 +1197,8 @@ export function ChatPanel() {
             backgroundArmed={bgArmed}
             onToggleBackground={() => setBgArmed(v => !v)}
             onJobsChanged={() => setHasUnreadBgJobs(false)}
+            onAttachFile={() => docInputRef.current?.click()}
+            attachingFile={attachingFile}
           />
           <textarea
             ref={textareaRef}

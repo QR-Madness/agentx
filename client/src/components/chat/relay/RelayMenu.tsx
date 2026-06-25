@@ -28,6 +28,9 @@ interface RelayMenuProps {
   backgroundArmed: boolean;
   onToggleBackground: () => void;
   onJobsChanged?: (jobs: BackgroundChatJob[]) => void;
+  /** Open the document picker — attaches files to the conversation's workspace (RAG). */
+  onAttachFile?: () => void;
+  attachingFile?: boolean;
 }
 
 export function RelayMenu({
@@ -41,6 +44,8 @@ export function RelayMenu({
   backgroundArmed,
   onToggleBackground,
   onJobsChanged,
+  onAttachFile,
+  attachingFile,
 }: RelayMenuProps) {
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
   const [runs, setRuns] = useState<ActiveChatRun[]>([]);
@@ -182,11 +187,21 @@ export function RelayMenu({
             <span className="relay-item-hint">Coming soon.</span>
           </div>
         </button>
-        <button className="relay-item" disabled title="Coming soon">
+        <button
+          className={`relay-item ${attachingFile ? 'active' : ''}`}
+          onClick={() => {
+            onAttachFile?.();
+            onClose();
+          }}
+          disabled={!onAttachFile || attachingFile}
+          title="Attach a document to this conversation's workspace — the agent can search it (Document RAG)"
+        >
           <Paperclip size={14} />
           <div className="relay-item-body">
-            <span className="relay-item-label">Attach file</span>
-            <span className="relay-item-hint">Coming soon.</span>
+            <span className="relay-item-label">{attachingFile ? 'Attaching…' : 'Attach file'}</span>
+            <span className="relay-item-hint">
+              Add a PDF / text / code file to this conversation's workspace.
+            </span>
           </div>
         </button>
       </div>
