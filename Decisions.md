@@ -28,8 +28,10 @@ fallback via `resolve_with_fallback`. *Partial — the explicit L-level contract
 ### INV-2 — The Ambassador never writes to `conversation_logs` / `conv_summary:`
 It is a parallel operator on a Redis **sidecar** only; its tool belt is **SELECT-only**
 (`execute_tool` never mutates). This is the feature's whole reason to exist — breaking it pollutes
-the main transcript.
-**Guard:** `AmbassadorStorageTest` (pollution regression, recovery-isolation).
+the main transcript. The **aide swarm** (16.7) upholds this: aides only *read* + call a model and
+return a string, and their digest cache lives under `amb_aide:` (the sidecar family), never
+`conv_summary:`/`conversation_logs`.
+**Guard:** `AmbassadorStorageTest` (pollution regression, recovery-isolation; incl. aide-cache isolation).
 
 ### INV-3 — `agent_id` is the durable identity key; names are aliases
 Rename-safe: a profile rename propagates to the Agent entity's `aliases`; `dedupe_entities` **never

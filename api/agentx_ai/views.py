@@ -6282,10 +6282,21 @@ def config_update(request):
 
     # Update Ambassador settings (16.6). profile_id/model accept explicit None
     # (means "fall back to the default profile / model floor").
-    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens")
+    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens", "aide")
+    _AIDE_KEYS = ("enabled", "model", "temperature", "max_tokens", "max_input_chars",
+                  "max_parallel", "timeout_seconds", "max_per_survey", "cache_ttl_seconds")
     ambassador_settings = data.get("ambassador", {})
     for key, value in ambassador_settings.items():
         if key not in _AMBASSADOR_KEYS:
+            continue
+        if key == "aide":
+            # Merge nested aide.* sub-keys so editing one (e.g. `enabled`) never wipes
+            # the others (absent sub-keys fall back to defaults at read time).
+            if isinstance(value, dict):
+                for sub, sub_val in value.items():
+                    if sub in _AIDE_KEYS and sub_val is not None:
+                        config.set(f"ambassador.aide.{sub}", sub_val)
+                        updated_keys.append(f"ambassador.aide.{sub}")
             continue
         if value is None and key not in ("profile_id", "model"):
             continue

@@ -7356,6 +7356,154 @@ class AmbassadorStorageTest(TestCase):
         self.assertEqual({b["message_id"] for b in briefs}, {"m0", "m1"})
         self.assertEqual({x["qa_id"] for x in qa}, {"q0"})
 
+    def test_aide_digest_cache_roundtrip_and_fingerprint(self):
+        # The aide swarm caches a per-conversation digest, validated by a fingerprint
+        # (message_count+last_at). A changed conversation → fingerprint miss → re-digest.
+        from agentx_ai.agent import ambassador_storage as a
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake):
+            self.assertIsNone(a.get_aide_digest("c", "fp1"))
+            a.set_aide_digest("c", "fp1", "a digest")
+            self.assertEqual(a.get_aide_digest("c", "fp1"), "a digest")
+            self.assertIsNone(a.get_aide_digest("c", "fp2"))  # grew → miss
+            # Focus-scoped digests are independent of the plain one.
+            a.set_aide_digest("c", "fp1", "focused", focus="topic x")
+            self.assertEqual(a.get_aide_digest("c", "fp1", focus="topic x"), "focused")
+            self.assertEqual(a.get_aide_digest("c", "fp1"), "a digest")
+
+    def test_aide_cache_isolated_from_rolling_summary(self):
+        # INV-2: the aide cache lives in the ambassador sidecar (amb_aide:), never the
+        # conv_summary: key the main agent restores — so it can't pollute the transcript.
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.agent import conversation_summary_storage as cs
+        fake = _FakeKVRedis()
+        with patch.object(a, "_redis", return_value=fake), \
+                patch.object(cs, "_redis", return_value=fake):
+            a.set_aide_digest("convZ", "fp", "aide-only digest")
+            leaked = cs.get_summary("convZ")
+            keys = list(fake.kv.keys())
+        self.assertIsNone(leaked)
+        self.assertTrue(all(k.startswith(a.AIDE_PREFIX) for k in keys))
+        self.assertTrue(a.AIDE_PREFIX.startswith("amb_"))
+        self.assertFalse(a.AIDE_PREFIX.startswith(cs.SUMMARY_PREFIX))
+
+
+class AideSwarmTest(TestCase):
+    """Aide swarm (16.7) — the cheap, parallel, read-only conversation digesters.
+    Map-reduce: aides condense one conversation each; the ambassador reduces. All
+    paths are never-raise and degrade to today's behavior when off/unavailable."""
+
+    _CFG = {
+        "enabled": True, "model": "m", "temperature": 0.2, "max_tokens": 10,
+        "max_input_chars": 100, "max_parallel": 2, "timeout_seconds": 5,
+        "max_per_survey": 3, "cache_ttl_seconds": 10,
+    }
+
+    def test_digest_many_caps_and_never_raises(self):
+        # Over-cap input is truncated to max_per_survey; a raising/None aide is simply
+        # absent from the result (one bad read never sinks the survey).
+        from asgiref.sync import async_to_sync
+        from agentx_ai.agent.aide_swarm import AideService
+        svc = AideService()
+
+        async def fake_digest(cid, *, focus="", label="", fingerprint=None, cfg=None):
+            if cid == "bad":
+                raise RuntimeError("boom")
+            if cid == "empty":
+                return None
+            return f"digest:{cid}"
+
+        with patch.object(svc, "_get_config", return_value=self._CFG), \
+                patch.object(svc, "digest_conversation", new=fake_digest):
+            items = [("a", "f"), ("bad", "f"), ("empty", "f"), ("d", "f"), ("e", "f")]
+            out = async_to_sync(svc.digest_many)(items)
+        # Capped to first 3 (a, bad, empty) → only "a" yields a digest.
+        self.assertEqual(out, {"a": "digest:a"})
+
+    def test_digest_many_disabled_returns_empty(self):
+        from asgiref.sync import async_to_sync
+        from agentx_ai.agent.aide_swarm import AideService
+        svc = AideService()
+        with patch.object(svc, "_get_config", return_value={**self._CFG, "enabled": False}):
+            out = async_to_sync(svc.digest_many)([("a", "f")])
+        self.assertEqual(out, {})
+
+    def _convs(self):
+        return [
+            {"conversation_id": "conv1", "message_count": 5, "last_at": "t1",
+             "first_user": "hi", "last_message": "bye", "agents": ""},
+            {"conversation_id": "conv2", "message_count": 3, "last_at": "t2",
+             "first_user": "yo", "last_message": "end", "agents": ""},
+        ]
+
+    def test_survey_fans_out_only_unsummarized(self):
+        # Zero-extra-calls guarantee: a conversation WITH a rolling summary is never
+        # handed to an aide; only the un-summarized one is.
+        from agentx_ai.agent import ambassador_tools as t
+
+        captured = {}
+
+        class FakeAide:
+            enabled = True
+
+            def digest_many_sync(self, items, focus=""):
+                captured["items"] = items
+                return {"conv2": "AIDE DIGEST"}
+
+        with patch.object(t, "list_recent_conversations", return_value=self._convs()), \
+                patch.object(t, "get_summary", side_effect=lambda cid: "rolling sum" if cid == "conv1" else ""), \
+                patch.object(t, "_conversation_goals_line", return_value=""), \
+                patch("agentx_ai.agent.aide_swarm.get_aide_service", return_value=FakeAide()):
+            out = t._render_deep_survey(12)
+
+        self.assertEqual([cid for cid, _ in captured["items"]], ["conv2"])
+        self.assertIn("summary: rolling sum", out)        # conv1 keeps its rolling summary
+        self.assertIn("digest: AIDE DIGEST", out)         # conv2 gets the aide digest
+        self.assertNotIn("topic: yo", out)                # …not the thin snippet
+
+    def test_survey_disabled_uses_snippet(self):
+        # Aide off ⇒ today's behavior: the un-summarized conversation falls back to a snippet.
+        from agentx_ai.agent import ambassador_tools as t
+
+        class DisabledAide:
+            enabled = False
+
+            def digest_many_sync(self, *a, **k):
+                raise AssertionError("digest_many_sync must not be called when disabled")
+
+        with patch.object(t, "list_recent_conversations", return_value=self._convs()), \
+                patch.object(t, "get_summary", side_effect=lambda cid: "rolling sum" if cid == "conv1" else ""), \
+                patch.object(t, "_conversation_goals_line", return_value=""), \
+                patch("agentx_ai.agent.aide_swarm.get_aide_service", return_value=DisabledAide()):
+            out = t._render_deep_survey(12)
+
+        self.assertIn("topic: yo", out)
+        self.assertNotIn("digest:", out)
+
+    def test_summarize_prefers_aide_then_falls_back_to_raw(self):
+        from agentx_ai.agent import ambassador_tools as t
+
+        class Aide:
+            enabled = True
+
+            def __init__(self, digest):
+                self._d = digest
+
+            def digest_conversation_sync(self, cid, *, focus="", label=""):
+                return self._d
+
+        with patch.object(t, "_render_transcript", return_value="RAW TRANSCRIPT"), \
+                patch("agentx_ai.agent.aide_swarm.get_aide_service", return_value=Aide("AIDE SUMMARY")):
+            got = t.execute_tool("summarize_conversation", {"conversation_id": "c"},
+                                 focused_conversation_id="c")
+        self.assertEqual(got, "AIDE SUMMARY")
+
+        with patch.object(t, "_render_transcript", return_value="RAW TRANSCRIPT"), \
+                patch("agentx_ai.agent.aide_swarm.get_aide_service", return_value=Aide(None)):
+            got2 = t.execute_tool("summarize_conversation", {"conversation_id": "c"},
+                                  focused_conversation_id="c")
+        self.assertEqual(got2, "RAW TRANSCRIPT")
+
 
 class AmbassadorServiceTest(TestCase):
     """Ambassador service (16.6) — bulletproof graceful degradation."""
@@ -7663,16 +7811,19 @@ class AmbassadorServiceTest(TestCase):
 
         # Labeled rows: (role, content, agent_name) — the transcript names each
         # assistant turn by its OWN producing agent (here metadata says "Atlas").
+        # `read_conversation` is the raw drill-in read (summarize/explore now condense
+        # via the aide swarm — that path is covered in AideSwarmTest).
         rows = [
             ("user", "find the registry", None),
             ("assistant", "I searched the county index.", "Atlas"),
         ]
         with patch.object(t, "load_recent_labeled_turns", return_value=rows):
-            summary = t.execute_tool(
-                "summarize_conversation", {}, focused_conversation_id="conv", agent_name="Atlas"
+            transcript = t.execute_tool(
+                "read_conversation", {"conversation_id": "conv"},
+                focused_conversation_id="conv", agent_name="Atlas",
             )
-        self.assertIn("county index", summary)
-        self.assertIn("Atlas:", summary)
+        self.assertIn("county index", transcript)
+        self.assertIn("Atlas:", transcript)
 
         convs = [{
             "conversation_id": "c1", "first_user": "build the registry",

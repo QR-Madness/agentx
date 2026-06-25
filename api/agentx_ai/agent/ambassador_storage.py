@@ -31,6 +31,7 @@ Keys:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, UTC
@@ -581,3 +582,52 @@ def clear(conversation_id: str) -> None:
         client.delete(_thread_meta_key(conversation_id))
     except Exception as e:  # pragma: no cover - Redis offline
         logger.debug(f"ambassador clear failed: {e}")
+
+
+# --- aide-swarm digest cache ------------------------------------------------
+# The aide swarm condenses ONE conversation read-only into a short digest. Caching
+# those digests keeps a repeat survey cheap. The cache lives under its own `amb_aide:`
+# key — part of the ambassador sidecar family, NEVER `conv_summary:`/`conversation_logs`
+# — so the no-pollution invariant (INV-2) holds. A digest is keyed by conversation +
+# focus and validated by a `fingerprint` (the conversation's message_count + last_at);
+# a grown conversation no longer matches → cache miss → re-digest.
+
+AIDE_PREFIX = "amb_aide:"
+
+
+def _aide_key(conversation_id: str, focus_hash: str) -> str:
+    return f"{AIDE_PREFIX}{conversation_id}:{focus_hash}"
+
+
+def _focus_hash(focus: str) -> str:
+    f = (focus or "").strip()
+    # Not security-sensitive — just a stable short key for the focus string.
+    return hashlib.sha1(f.encode(), usedforsecurity=False).hexdigest()[:8] if f else "_"
+
+
+def get_aide_digest(conversation_id: str, fingerprint: str, focus: str = "") -> str | None:
+    """Return a cached aide digest IF its fingerprint still matches (else None — a
+    changed conversation re-digests). Read-only over the sidecar; never raises."""
+    rec = _read(_aide_key(conversation_id, _focus_hash(focus)))
+    if not rec or rec.get("fingerprint") != fingerprint:
+        return None
+    digest = rec.get("digest")
+    return digest if isinstance(digest, str) and digest else None
+
+
+def set_aide_digest(
+    conversation_id: str, fingerprint: str, digest: str, focus: str = "", ttl: int | None = None,
+) -> None:
+    """Write-through cache one aide digest into the ambassador sidecar (`amb_aide:`),
+    keyed by conversation + focus and validated by `fingerprint`. Best-effort, TTL'd."""
+    if not conversation_id or not digest:
+        return
+    try:
+        client = _redis()
+        key = _aide_key(conversation_id, _focus_hash(focus))
+        client.set(key, json.dumps({
+            "digest": digest, "fingerprint": fingerprint, "created_at": _now(),
+        }))
+        client.expire(key, ttl if ttl is not None else AMBASSADOR_TTL_SECONDS)
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.warning(f"aide digest cache write failed: {e}")

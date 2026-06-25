@@ -711,6 +711,17 @@ export interface ConfigUpdate {
     model?: string | null;
     max_context_turns?: number;
     max_tokens?: number;
+    aide?: {
+      enabled?: boolean;
+      model?: string;
+      temperature?: number;
+      max_tokens?: number;
+      max_input_chars?: number;
+      max_parallel?: number;
+      timeout_seconds?: number;
+      max_per_survey?: number;
+      cache_ttl_seconds?: number;
+    };
   };
   images?: {
     enabled?: boolean;

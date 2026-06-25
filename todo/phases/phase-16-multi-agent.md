@@ -598,10 +598,19 @@
         `get_goals_for_conversation` (any channel) feeds a best-effort `goals:` line in
         `survey_conversations` (never-raise — a down/disabled Neo4j degrades to no line). **Backfill
         caveat:** only goals created after this carry `conversation_id`; older goals won't appear.
-  - [ ] **Aide swarm** — fan out cheap per-conversation digests (`registry.complete_with_fallback`
-        + `asyncio.gather`, bridged via `utils/async_bridge.run_coro_sync`) for fresh digests +
-        a lean ambassador context even with no stored summary; metered, so it needs a per-survey
-        budget cap + timeouts. Retrofits across all read tools (`summarize`/`read`/`survey`).
+  - [x] **Aide swarm** — shipped (`0.21.137`). `agent/aide_swarm.py::AideService` (mirrors
+        `ToolOutputCompressor`) fans out cheap **aide** model calls — each condenses ONE conversation
+        read-only into a short digest, so the ambassador ingests digests, never raw transcripts
+        (map-reduce: aides map, the ambassador reduces). Wired into `survey_conversations`
+        (un-summarized convs get a parallel digest instead of a thin snippet — summarized ones stay
+        zero-extra-cost) and `summarize`/`explore` (digest instead of dumping the transcript);
+        `read_conversation` stays raw as the drill-in path. Bounded (`asyncio.Semaphore`
+        `max_parallel` + per-aide `wait_for` timeout + `max_per_survey` cap), **never-raise**, and
+        OFF ⇒ today's behavior. Digests cached in the sidecar (`amb_aide:` via `ambassador_storage`,
+        fingerprinted on message_count+last_at — INV-2 holds). Cheap tier defaults to the haiku floor
+        (the doc's `consolidation.feature_default_model` never existed). Metered under usage source
+        `aide`. Config `ambassador.aide.*` (default-on, Settings → Ambassador opt-out).
+        **Deferred:** aide-condensing `read_conversation`; promoting the thread to a durable store.
 - [ ] **Dispatch seam (write-side, later).** The orchestration write-side — the
       ambassador handing a task to a worker — reuses the relay/`target` (16.6) and grows
       into real cross-agent delegation. v1 stays read + relay (you confirm); the seam is

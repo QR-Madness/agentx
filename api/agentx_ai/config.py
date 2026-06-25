@@ -246,6 +246,23 @@ DEFAULT_CONFIG = {
         # How many recent user/assistant turns to read (read-only) for grounding.
         "max_context_turns": 8,
         "max_tokens": 600,
+        # Aide swarm (Phase 16.7) — instead of reading full transcripts into the
+        # ambassador's own context, fan out cheap "aide" model calls that each
+        # condense ONE conversation read-only and return a short digest (map-reduce:
+        # aides map, the ambassador reduces). Keeps its context lean across a
+        # cross-conversation survey. Read-only + never-raise; OFF ⇒ today's behavior.
+        "aide": {
+            "enabled": True,
+            # Aide model. "" ⇒ the ambassador's cheap floor (haiku) via fallback.
+            "model": "",
+            "temperature": 0.2,
+            "max_tokens": 220,          # a tight digest, not a transcript
+            "max_input_chars": 6000,    # cap transcript fed to an aide
+            "max_parallel": 4,          # concurrent aides (3–5 is the sweet spot)
+            "timeout_seconds": 20,      # per-aide wall-clock
+            "max_per_survey": 8,        # cap aides spawned by one survey
+            "cache_ttl_seconds": 1800,  # digest cache TTL (auto-refresh on growth)
+        },
     },
 }
 

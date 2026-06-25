@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..config import get_config_manager
 from .conversation_history import list_recent_conversations, load_recent_labeled_turns
 from .conversation_summary_storage import get_summary
 
@@ -283,15 +284,49 @@ def _conversation_goals_line(conversation_id: str) -> str:
         return ""
 
 
+def _conv_fingerprint(c: dict) -> str:
+    """A change key for a conversation's aide-digest cache: bumps when it grows."""
+    return f"{c.get('message_count', 0)}:{c.get('last_at', '')}"
+
+
 def _render_deep_survey(limit: int) -> str:
     """A digest-rich cross-conversation view: each recent conversation with its own
-    rolling summary (``get_summary`` — already condensed) when it has one, else the
+    rolling summary (``get_summary`` — already condensed) when it has one, else an
+    **aide digest** (a cheap model condenses that one conversation read-only), else the
     first/last snippet, plus each conversation's goals (best-effort). Lets the ambassador
-    compose an application-wide summary without reading each transcript. Read-only;
-    never raises."""
+    compose an application-wide summary without reading each transcript into its own
+    context (map-reduce: aides map, the ambassador reduces). Read-only; never raises."""
     convs = list_recent_conversations(limit)
     if not convs:
         return "(No conversations found.)"
+
+    # Pass 1: resolve each conversation's rolling summary once; the ones without a
+    # summary (and with content) are aide candidates.
+    summaries = {c.get("conversation_id", ""): (get_summary(c.get("conversation_id", "")) or "").strip()
+                 for c in convs}
+    aide_digests: dict[str, str] = {}
+    candidates = [
+        (c.get("conversation_id", ""), _conv_fingerprint(c))
+        for c in convs
+        if not summaries.get(c.get("conversation_id", "")) and (c.get("message_count", 0) or 0) > 0
+    ]
+    if candidates:
+        try:
+            from .aide_swarm import get_aide_service
+
+            aide = get_aide_service()
+            if aide.enabled:
+                cap = get_config_manager().get("ambassador.aide.max_per_survey", 8)
+                if len(candidates) > cap:
+                    logger.info(
+                        f"survey aide fan-out capped at {cap}/{len(candidates)} "
+                        "un-summarized conversations (rest use snippets)"
+                    )
+                aide_digests = aide.digest_many_sync(candidates)
+        except Exception as e:  # noqa: BLE001 — the swarm never sinks the survey
+            logger.debug(f"aide swarm unavailable for survey: {e}")
+
+    # Pass 2: render. Priority per conversation: rolling summary → aide digest → snippet.
     lines = []
     for c in convs:
         cid = c.get("conversation_id", "")
@@ -302,14 +337,19 @@ def _render_deep_survey(limit: int) -> str:
         if agents:
             piece += f"\n    agent(s): {agents}"
 
-        summary = (get_summary(cid) or "").strip().replace("\n", " ")
+        summary = summaries.get(cid, "").replace("\n", " ")
+        digest = aide_digests.get(cid, "").replace("\n", " ") if not summary else ""
         if summary:
             if len(summary) > _SURVEY_SUMMARY:
                 summary = summary[:_SURVEY_SUMMARY].rstrip() + "…"
             piece += f"\n    summary: {summary}"
+        elif digest:
+            if len(digest) > _SURVEY_SUMMARY:
+                digest = digest[:_SURVEY_SUMMARY].rstrip() + "…"
+            piece += f"\n    digest: {digest}"
         else:
-            # No rolling summary yet (a short / fresh conversation) — fall back to the
-            # opening + latest snippet, like the quick index.
+            # No rolling summary or aide digest — fall back to the opening + latest
+            # snippet, like the quick index.
             title = (c.get("first_user") or "Untitled").strip().replace("\n", " ")
             if len(title) > _SURVEY_SNIPPET:
                 title = title[:_SURVEY_SNIPPET].rstrip() + "…"
@@ -441,8 +481,22 @@ def execute_tool(
             cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
             if not cid:
                 return "(There's no conversation open to read yet.)"
-            body = _render_transcript(cid, _fallback_for(cid))
             topic = (args.get("topic") or "").strip()
+            focus = topic if name == "explore_conversation" else ""
+            # Prefer a cheap aide digest so the raw transcript never enters the
+            # ambassador's context — fall back to the raw read when the swarm is
+            # off/unavailable or returns nothing.
+            try:
+                from .aide_swarm import get_aide_service
+
+                aide = get_aide_service()
+                if aide.enabled:
+                    digest = aide.digest_conversation_sync(cid, focus=focus, label=_fallback_for(cid))
+                    if digest:
+                        return digest
+            except Exception as e:  # noqa: BLE001 — fall back to the raw read
+                logger.debug(f"aide digest fell back to raw read for {cid}: {e}")
+            body = _render_transcript(cid, _fallback_for(cid))
             if name == "explore_conversation" and topic:
                 return f"(Focus the deeper look on: {topic})\n\n{body}"
             return body

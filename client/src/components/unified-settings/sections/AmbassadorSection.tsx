@@ -21,12 +21,14 @@ interface AmbassadorSettings {
   enabled: boolean;
   model: string; // '' = use the profile's model / floor
   max_context_turns: number;
+  aideEnabled: boolean; // aide swarm: condense conversations via cheap parallel aides
 }
 
 const DEFAULT_SETTINGS: AmbassadorSettings = {
   enabled: true,
   model: '',
   max_context_turns: 8,
+  aideEnabled: true,
 };
 
 export default function AmbassadorSection() {
@@ -54,11 +56,13 @@ export default function AmbassadorSection() {
       setDefaultAmbassadorId(ambs.find((p) => p.isDefaultAmbassador)?.id ?? ambs[0]?.id ?? '');
       const a = (config.ambassador || {}) as Partial<AmbassadorSettings> & {
         model?: string | null;
+        aide?: { enabled?: boolean };
       };
       setSettings({
         enabled: a.enabled ?? true,
         model: a.model || '',
         max_context_turns: a.max_context_turns ?? 8,
+        aideEnabled: a.aide?.enabled ?? true,
       });
     } catch (error) {
       notifyError(error, 'Failed to load ambassador settings');
@@ -81,6 +85,7 @@ export default function AmbassadorSection() {
           profile_id: null,
           model: settings.model.trim() ? settings.model : null,
           max_context_turns: settings.max_context_turns,
+          aide: { enabled: settings.aideEnabled },
         },
       });
       notifySuccess('Ambassador settings saved', 'Ambassador');
@@ -210,6 +215,25 @@ export default function AmbassadorSection() {
                 step={1}
               />
             </div>
+          </div>
+
+          <div className="setting-row">
+            <label className="setting-label">
+              <span>Aide swarm</span>
+              <span className="setting-hint">
+                When surveying or summarizing conversations, fan out cheap parallel "aide" models
+                that each condense one conversation, so the ambassador stays high-level instead of
+                reading full transcripts. Off ⇒ it reads transcripts directly.
+              </span>
+            </label>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={settings.aideEnabled}
+                onChange={(e) => setSettings((prev) => ({ ...prev, aideEnabled: e.target.checked }))}
+              />
+              <span className="toggle-slider"></span>
+            </label>
           </div>
 
           <div className="setting-actions">
