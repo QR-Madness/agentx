@@ -47,6 +47,12 @@ COPY api/ ./api/
 COPY queries/ ./queries/
 COPY versions.yaml ./versions.yaml
 
+# Alembic (PostgreSQL schema migrations) — script_location in alembic.ini is
+# relative to the ini file itself, so both must land at /app together. Without
+# these the entrypoint's `alembic upgrade head` fails on every boot (ADR-9).
+COPY alembic.ini ./alembic.ini
+COPY alembic/ ./alembic/
+
 # Operations tooling: self-init entrypoint + the `agentx` ops CLI on PATH.
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/agentx /usr/local/bin/agentx
