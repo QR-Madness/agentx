@@ -169,8 +169,8 @@ extraction:
     re-list aliases that are already attached.
 
     FACT REFINEMENT
-    If a new claim sharpens or replaces a KNOWN FACT (e.g. "User uses Python" →
-    "User uses Python 3.12 for async work"), set refines_fact_id to the existing
+    If a new claim sharpens or replaces a KNOWN FACT (e.g. "User practices piano" →
+    "User practices piano mostly in the evenings"), set refines_fact_id to the existing
     fact's id. Do NOT also emit the un-refined version separately.
 
     CERTAINTY (for facts)
@@ -273,19 +273,19 @@ extraction:
     }}
 
     Example 2 — entity reuse + fact refinement:
-    TEXT: "Specifically, I'm on Python 3.12 mostly for async work."
+    TEXT: "Specifically, I mostly practice in the evenings."
     KNOWN ENTITIES:
-    - id=ent-py-1 name="Python" type=Technology aliases=["py"] desc="Programming language the user works in"
+    - id=ent-piano-1 name="Piano" type=Hobby aliases=["piano practice"] desc="Instrument the user plays"
     KNOWN FACTS:
-    - id=fact-uses-py "User uses Python" (temporal=current confidence=0.95)
+    - id=fact-plays-piano "User plays piano" (temporal=current confidence=0.95)
     OUTPUT:
     {{
       "is_relevant": true,
       "entities": [
-        {{"name": "Python", "type": "Technology", "existing_entity_id": "ent-py-1", "confidence": 0.95}}
+        {{"name": "Piano", "type": "Hobby", "existing_entity_id": "ent-piano-1", "confidence": 0.95}}
       ],
       "facts": [
-        {{"claim": "User uses Python 3.12 for async work", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Python"], "refines_fact_id": "fact-uses-py"}}
+        {{"claim": "User plays piano mostly in the evenings", "subject": "user", "certainty": "explicit", "temporal_context": "current", "entity_names": ["Piano"], "refines_fact_id": "fact-plays-piano"}}
       ],
       "relationships": []
     }}
@@ -403,8 +403,8 @@ extraction:
     This is the AGENT's (your) response. Resolve pronouns: "I"/"me"/"my" = YOU, the
     speaking agent; "you"/"your" = the user. Tag every fact with "subject":
     - "agent":       your own reasoning, conclusions, decisions, plans. The common case.
-    - "user":        a fact about the user you concluded or inferred ("you're clearly on
-                     Python 3.12" → subject="user"). Stored in the user's memory, not yours.
+    - "user":        a fact about the user you concluded or inferred ("you're clearly a
+                     morning person" → subject="user"). Stored in the user's memory, not yours.
     - "third_party": about a named external entity.
 
     AGENT ATTRIBUTION — which agent

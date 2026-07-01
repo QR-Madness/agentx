@@ -132,7 +132,9 @@ DEFAULT_CONFIG = {
         # (dev: host Docker; prod: the dind sidecar via DOCKER_HOST). Off unless enabled.
         "docker": {
             "enabled": False,
-            "image": "python:3.12-slim",
+            # Sandbox default only — independent of the API's own Dockerfile/requires-python;
+            # a future API Python bump shouldn't sweep this value along with it.
+            "image": "python:3.14-slim",
             "memory": "2g",
             "cpus": "2",
             "pids_limit": 512,

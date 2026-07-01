@@ -79,7 +79,8 @@ everywhere else the lightweight Bubblewrap backend stays free.
 
 - `shell.*` — sandbox limits shared by both backends: `timeout_seconds`, `max_output_chars`,
   `deny_patterns`, `allow_network` (bubblewrap), `max_materialize_bytes`, `workdir_cleanup_days`.
-- `shell.docker.*` — container backend: `enabled`, `image` (default `python:3.12-slim`),
+- `shell.docker.*` — container backend: `enabled`, `image` (default `python:3.14-slim`, independent
+  of the API's own Python version),
   `memory`, `cpus`, `pids_limit`, `network`, `idle_ttl_days`.
 
 See the [API reference](/docs/api/endpoints#workspaces) for the workspace + shell-container endpoints.

@@ -23,7 +23,7 @@
 | Layer | Tools |
 |-------|-------|
 | **Client** | Tauri v2 · React 19 · TypeScript · Vite · Tailwind v4 |
-| **API** | Django REST · Python 3.12 · uvicorn (ASGI) |
+| **API** | Django REST · Python · uvicorn (ASGI) |
 | **Data** | Neo4j · PostgreSQL + pgvector · Redis |
 | **AI / ML** | NLLB-200 (translation) · sentence-transformers · MCP · provider SDKs (OpenAI, Anthropic, OpenRouter, Vercel AI Gateway) |
 | **Tooling** | [Task](https://taskfile.dev) · [uv](https://docs.astral.sh/uv/) · [Bun](https://bun.sh) · [Docker](https://docker.com) |

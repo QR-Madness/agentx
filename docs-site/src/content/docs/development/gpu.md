@@ -66,5 +66,5 @@ installed. Reinstall from the CUDA index above.
 
 For containerized deployments, GPU passthrough is handled by the `docker-compose.gpu.yml` overlay
 (applied via `cluster:up CLUSTER=<name> NVIDIA=1`). The default Linux `torch` wheel in the
-`python:3.12-slim` image is CUDA-capable, so the overlay plus the NVIDIA Container Toolkit on the host
+`python:3.14-slim` image is CUDA-capable, so the overlay plus the NVIDIA Container Toolkit on the host
 is all that's needed. See [Clusters & Gateway → GPU Acceleration](../deployment/clusters.md#gpu-acceleration-nvidia-overlay).

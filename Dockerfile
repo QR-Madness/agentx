@@ -3,7 +3,7 @@
 # Build: docker build -t agentx-api .
 # Run: docker run -p 12319:12319 --env-file .env agentx-api
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

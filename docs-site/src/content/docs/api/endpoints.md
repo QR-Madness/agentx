@@ -647,7 +647,7 @@ attached to it. `shell_backend` picks the sandbox:
 
 ```json
 // GET /api/workspaces/{id}/shell/container
-{ "container": { "state": "running", "image": "python:3.12-slim",
+{ "container": { "state": "running", "image": "python:3.14-slim",
   "memory_usage": "48MiB / 2GiB", "cpu_percent": "0.10%", "install_size": "12MB (virtual 160MB)",
   "last_used_at": 1718900000, "idle_gc_at": 1719504800 } }
 ```

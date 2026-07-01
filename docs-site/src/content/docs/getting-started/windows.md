@@ -18,7 +18,7 @@ called out where they matter.
 
 | Tool | Notes |
 |------|-------|
-| **Python 3.10+** | From [python.org](https://www.python.org/downloads/windows/) or `winget install Python.Python.3.12` |
+| **Python 3.14+** | From [python.org](https://www.python.org/downloads/windows/) or `winget install Python.Python.3.14` (matches `requires-python` in `pyproject.toml` — check there if this drifts) |
 | **uv** | `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` |
 | **Node.js 18+** | From [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS.LTS` |
 | **bun** | `powershell -c "irm bun.sh/install.ps1 | iex"` |

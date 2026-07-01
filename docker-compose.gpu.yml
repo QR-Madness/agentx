@@ -24,7 +24,7 @@
 #   docker exec <cluster>-api python -c "import torch; print(torch.cuda.is_available())"
 #   curl -s localhost:<API_PORT>/api/health | jq .compute   # {"device":"cuda","cuda_available":true}
 #
-# The default Linux torch wheel bundles the CUDA runtime, so the python:3.12-slim
+# The default Linux torch wheel bundles the CUDA runtime, so the Dockerfile's base
 # image works as-is once the NVIDIA Container Toolkit passes the driver through.
 
 services:

@@ -26,7 +26,7 @@ starts when you opt in with `--profile production`. You never invoke Compose dir
 
 The base `docker-compose.yml` pulls the published API image
 (`${AGENTX_IMAGE:-qrmadness/agentx-api:latest}`). Local clusters layer
-`docker-compose.build.yml` on top to **build from the repo `Dockerfile`** instead (Python 3.12 +
+`docker-compose.build.yml` on top to **build from the repo `Dockerfile`** instead (Python +
 uv, Node for local MCP tools); the `cluster:*` tasks add this overlay automatically. The API is
 served by uvicorn (ASGI) on port `12319`, restarts `unless-stopped`, and self-initializes its
 schemas on boot via the container entrypoint (so `cluster:migrate` is belt-and-suspenders, not

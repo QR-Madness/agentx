@@ -1,8 +1,8 @@
 [project]
 name = "agentx-source"
-version = "0.21.139"
+version = "0.21.140"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     # Django Framework
     "django>=5.2.8",
