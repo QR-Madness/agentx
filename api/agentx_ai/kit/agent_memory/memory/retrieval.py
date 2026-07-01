@@ -1,5 +1,7 @@
 """Memory retrieval - multi-strategy retrieval engine with weighted scoring and caching."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

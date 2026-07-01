@@ -1,5 +1,7 @@
 """Central registry for consolidation jobs with status tracking."""
 
+from __future__ import annotations
+
 import inspect
 import json
 import time

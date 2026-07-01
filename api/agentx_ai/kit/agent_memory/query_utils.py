@@ -5,6 +5,8 @@ Centralizes filter building, pagination, and type conversions for
 Neo4j Cypher and PostgreSQL queries.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
 import logging

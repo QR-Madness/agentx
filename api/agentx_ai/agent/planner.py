@@ -5,6 +5,8 @@ The planner breaks down complex tasks into manageable subtasks
 and determines the best approach for each.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re

@@ -4,6 +4,8 @@ Handles user authentication with PostgreSQL for user storage
 and Redis for session management.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import secrets
