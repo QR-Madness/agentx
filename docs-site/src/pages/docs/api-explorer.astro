@@ -10,7 +10,7 @@ import { slugToHref } from '../../config/nav';
   backHref={slugToHref('api/endpoints')}
   backLabel="API Endpoints"
 >
-  <redoc spec-url="/openapi.yaml"></redoc>
+  {/* scrollYOffset keeps anchor targets clear of the sticky header above */}
+  <redoc spec-url="/openapi.yaml" options='{"scrollYOffset": 60}'></redoc>
+  <script is:inline src={bundleUrl}></script>
 </ExplorerLayout>
-
-<script is:inline src={bundleUrl}></script>

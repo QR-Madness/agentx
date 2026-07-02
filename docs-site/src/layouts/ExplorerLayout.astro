@@ -32,6 +32,16 @@ const { title, description, backHref, backLabel } = Astro.props;
 </BaseLayout>
 
 <style>
+  /* Redoc's own anchor navigation does scrollIntoView() immediately followed by a
+     corrective scrollBy() (to account for scrollYOffset) — two synchronous scroll
+     commands. The site-wide `html { scroll-behavior: smooth }` (global.css) turns both
+     into competing animations that cancel each other out, so clicking a sidebar entry
+     appears to do nothing. Scoped to this page only — other pages' anchor scrolling
+     doesn't do this two-step correction and stays smooth. */
+  :global(html) {
+    scroll-behavior: auto;
+  }
+
   .ax-explorer-shell {
     display: flex;
     flex-direction: column;
