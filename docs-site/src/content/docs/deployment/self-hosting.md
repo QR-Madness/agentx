@@ -4,50 +4,30 @@
 [![Image Size](https://img.shields.io/docker/image-size/qrmadness/agentx-api/latest?logo=docker)](https://hub.docker.com/r/qrmadness/agentx-api/tags)
 [![Docker Pulls](https://img.shields.io/docker/pulls/qrmadness/agentx-api?logo=docker)](https://hub.docker.com/r/qrmadness/agentx-api)
 
-Run AgentX from the **published Docker image** — no source checkout, no Taskfile.
-This is the simplest way to stand up your own instance.
+Run your own AgentX from the **published Docker image** — no source checkout, no
+build step, nothing on the host but Docker. The deployment package includes a
+**web dashboard** that watches the stack for you, so setup is four short steps
+(most of the wait is a one-time model download).
 
-> **Image:** [`qrmadness/agentx-api`](https://hub.docker.com/r/qrmadness/agentx-api) on Docker Hub.
+## 1 · Get the deployment package
 
-AgentX deployments come in two flavours along an **isolation axis**:
-
-| | **Local cluster** | **Isolated cluster** |
-|---|---|---|
-| For | Development / hacking on AgentX | Self-hosting / production |
-| Source | Built from the repo (`Dockerfile`) | Pulls the published image |
-| Managed by | `task cluster:*` (in-repo) | The in-image `agentx` CLI |
-| Databases | Dedicated stack | Dedicated stack + own network |
-| Init | `task cluster:migrate` | Self-initializes on boot |
-
-This page covers the **isolated** path. For local development clusters see
-[Clusters & Gateway](clusters.md).
-
-## Get the bundle
-
-Each release ships a small deployment bundle (attached to the GitHub release and
-linked from the [Docker Hub repo](https://hub.docker.com/r/qrmadness/agentx-api)):
-
-```
-docker-compose.yml                 # API (pulled image) + Neo4j + PostgreSQL + Redis
-docker-compose.manager.yml         # web deployment manager (dashboard) — on by default
-docker-compose.gateway.yml         # Nginx token gateway (going public)
-docker-compose.gateway.expose.yml  #   … gateway on a host port (BYO reverse proxy)
-docker-compose.tunnel.yml          #   … Cloudflare token tunnel
-docker-compose.tunnel.named.yml    #   … Cloudflare named tunnel
-docker-compose.gpu.yml             # optional NVIDIA GPU overlay
-gateway/                           # gateway config templates
-.env.example                       # configuration template
-README.md
-```
-
-Everything runs through Docker — **no Python, Node, or anything else on the host**.
-
-## Quick start
-
-Unpack, configure, start:
+Download **`agentx-deploy.tar.gz`** from the
+[latest release](https://github.com/QR-Madness/agentx/releases/latest) (it's also
+linked from the [Docker Hub repo](https://hub.docker.com/r/qrmadness/agentx-api))
+and unpack it where the instance should live:
 
 ```bash
 tar xzf agentx-deploy.tar.gz && cd agentx-deploy
+```
+
+!!! note "Docker Desktop (macOS/Windows)"
+    Unpack under a file-shared path (e.g. your home directory, **not** `/tmp`) —
+    the stack stores its data in `./data` via bind mounts, which Docker Desktop
+    only allows from shared locations.
+
+## 2 · Configure and start
+
+```bash
 cp .env.example .env
 # In .env, set three things:
 #   DJANGO_SECRET_KEY     (the file shows the generate command)
@@ -57,70 +37,80 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Then open the **manager dashboard** — it starts alongside the stack:
-
-1. Open **http://127.0.0.1:12320** in a browser on the host.
-2. Paste the access token — it's in `./.manager-token` (also shown by
-   `docker compose logs manager`).
-3. Watch the API card: on a fresh install it shows **initializing** for a few
-   minutes while it downloads the embedding model (~2.3 GB, cached under
-   `./data/hf-cache`) and sets up its database schemas — then it flips to **up**.
-   No commands to babysit; if something looks stuck, the card's **Logs** button
-   shows you exactly where it is.
-
-From the same dashboard you can stop/start/restart the stack, stream logs per
-service, and watch CPU/memory usage — day-2 operation without memorizing any
-`docker compose` incantations.
-
-### Set the root password
-
-Auth is on by default. Set the root password once — easiest from the **desktop
-client's first-run setup screen** (next section), or from a terminal:
-
-```bash
-docker compose exec api agentx setup-auth
-```
+That's the whole install: the API self-initializes its database schemas on first
+boot and seeds its default config — nothing to migrate or initialize by hand.
 
 !!! danger "Don't ship the defaults"
     `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every
     database password must be changed before exposing the stack.
 
-!!! danger "Keep the manager private"
-    The manager drives the Docker socket — treat it like root on the host. It publishes
-    on `127.0.0.1` only and always requires its token; never route it through the
-    tunnel/gateway. From another machine, use SSH port forwarding:
-    `ssh -L 12320:127.0.0.1:12320 <host>`. Prefer to run without it entirely? Remove
-    `manager` from `COMPOSE_PROFILES` in `.env`. Full reference:
-    [Deployment Manager](manager.md).
+## 3 · Open the dashboard
 
-!!! note "Headless / scripted checks"
-    Everything the dashboard shows is also reachable without a browser:
-    `curl "http://localhost:12319/api/health?include_memory=true"` for the API, and
-    the in-image ops CLI (`docker compose exec api agentx status`) for the rest —
-    see [the `agentx` CLI](#the-agentx-cli) below.
+The **deployment manager** starts with the stack:
 
-## Get the desktop client
+1. Open **http://127.0.0.1:12320** in a browser on the host.
+2. Paste the access token — it's in `./.manager-token` (also shown by
+   `docker compose logs manager`).
+3. Watch the API card: a fresh install shows **initializing** for a few minutes
+   while it downloads the embedding model (~2.3 GB, cached under
+   `./data/hf-cache`) — then it flips to **up**. If anything looks stuck, the
+   card's **Logs** button shows exactly where it is.
 
-The Tauri **desktop client** connects to the server you just started — point it at
-your server's URL on first run.
+The same dashboard handles day-2 life: stop/start/restart, per-service logs, and
+live CPU/memory usage. Full reference: [Deployment Manager](manager.md).
 
-- **Download the latest client:** [github.com/QR-Madness/agentx/releases/latest](https://github.com/QR-Madness/agentx/releases/latest)
-- **All releases / a specific version:** [github.com/QR-Madness/agentx/releases](https://github.com/QR-Madness/agentx/releases)
+!!! danger "Keep the dashboard private"
+    The manager drives the Docker socket — treat it like root on the host. It
+    publishes on `127.0.0.1` only and always requires its token; never route it
+    through the tunnel/gateway. From another machine, use SSH port forwarding:
+    `ssh -L 12320:127.0.0.1:12320 <host>`. Prefer to run without it? Remove
+    `manager` from `COMPOSE_PROFILES` in `.env`.
 
-Each client release lists the supported **API protocol version** and ships SHA-256
-checksums for every installer. Platform coverage today is **Windows**
-(`.exe` / `.msi`) and **Linux** (`.deb` / `.AppImage` / `.rpm`); a macOS build is
-not yet in the release matrix.
+## 4 · Connect the desktop client
+
+Download an installer from the
+[latest release](https://github.com/QR-Madness/agentx/releases/latest) — Windows
+(`.exe` / `.msi`) or Linux (`.deb` / `.AppImage` / `.rpm`); macOS is not yet in
+the release matrix. Point it at your server's URL on first run and set the root
+password from its **setup screen** (auth is on by default; the terminal
+alternative is `docker compose exec api agentx setup-auth`).
+
+You're up. 🎉
 
 !!! note "Protocol matching"
-    The client must speak the same API **protocol version** as your server (reported
-    at `/api/health`). If they differ, the client shows a version-mismatch screen —
-    grab the client release that matches your server's protocol.
+    The client must speak the same API **protocol version** as your server
+    (reported at `/api/health`). If they differ, the client shows a
+    version-mismatch screen — grab the client release that matches.
 
-## The `agentx` CLI
+## Operating your instance
 
-All day-2 operations run through the in-image CLI (versioned with the image, so
-nothing external to keep in sync):
+Day-to-day, the [dashboard](manager.md) covers most of it. The rest:
+
+### Updating
+
+```bash
+# pin AGENTX_IMAGE to the new version in .env (recommended), or pull :latest
+docker compose pull
+docker compose up -d
+```
+
+Schema migrations re-apply automatically on boot (idempotent); config and data
+persist under `./data`.
+
+### Backups
+
+`agentx export`/`import` (below) cover the **memory graph** only. For a full
+database backup, dump the volumes directly:
+
+```bash
+docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
+docker compose exec neo4j neo4j-admin database dump neo4j --to-path=/backups
+```
+
+### The `agentx` CLI
+
+Terminal-side day-2 operations run through the in-image CLI (versioned with the
+image, so nothing external to keep in sync):
 
 ```bash
 docker compose exec api agentx help          # list commands
@@ -133,15 +123,7 @@ docker compose exec api agentx export --output /app/data/memory-export.json
 docker compose exec api agentx import --input /app/data/memory-export.json
 ```
 
-!!! note "Backups"
-    `agentx export`/`import` cover the **memory graph** only. For a full database
-    backup, dump the volumes directly:
-    ```bash
-    docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
-    docker compose exec neo4j neo4j-admin database dump neo4j --to-path=/backups
-    ```
-
-## GPU acceleration
+### GPU acceleration
 
 With the [NVIDIA Container Toolkit](clusters.md#gpu-acceleration-nvidia-overlay)
 on the host, layer the GPU overlay:
@@ -150,17 +132,6 @@ on the host, layer the GPU overlay:
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 curl -s localhost:12319/api/health | jq .compute   # {"device":"cuda",...}
 ```
-
-## Updating
-
-```bash
-# pin AGENTX_IMAGE to the new version in .env (recommended), or pull :latest
-docker compose pull
-docker compose up -d
-```
-
-Schema migrations re-apply automatically on boot (idempotent); config and data
-persist under `./data`.
 
 ## Going public
 
@@ -279,3 +250,41 @@ that's app auth, not the gateway.
       survives the full path, run a streaming chat request with `curl -N` through
       the public hostname and confirm chunks keep arriving past the two-minute
       mark without truncation.
+
+## Reference
+
+### What's in the package
+
+```
+docker-compose.yml                 # API (pulled image) + Neo4j + PostgreSQL + Redis
+docker-compose.manager.yml         # web deployment manager (dashboard) — on by default
+docker-compose.gateway.yml         # Nginx token gateway (going public)
+docker-compose.gateway.expose.yml  #   … gateway on a host port (BYO reverse proxy)
+docker-compose.tunnel.yml          #   … Cloudflare token tunnel
+docker-compose.tunnel.named.yml    #   … Cloudflare named tunnel
+docker-compose.gpu.yml             # optional NVIDIA GPU overlay
+gateway/                           # gateway config templates
+.env.example                       # configuration template
+README.md
+```
+
+Overlays are opt-in layers over the base compose; set them once via
+`COMPOSE_FILE=`/`COMPOSE_PROFILES=` in `.env` (as the sections above do) and a
+plain `docker compose up -d` keeps including them.
+
+### Headless / scripted checks
+
+Everything the dashboard shows is also reachable without a browser:
+
+```bash
+curl "http://localhost:12319/api/health?include_memory=true"   # API + databases
+docker compose exec api agentx status                          # via the ops CLI
+```
+
+### Local vs isolated deployments
+
+What this page stands up is an **isolated** deployment (published image, owned by
+its own directory, self-initializing). The repo also supports **local clusters** —
+source-built instances for developing AgentX itself, managed by the same
+[deployment manager](manager.md) — see [Clusters & Gateway](clusters.md). Both are
+the same compose stack underneath; they differ only in where the image comes from.
