@@ -53,7 +53,8 @@ def test_env_change_recreates_everything(repo, fake_runner):
 def test_restart_is_config_aware(repo, fake_runner):
     cluster = _cluster(repo, gateway=True)
     lifecycle.up(cluster, fake_runner)
-    # No changes → plain restart.
+    # No changes + containers running → plain restart.
+    fake_runner.queue(stdout="abc123\n")  # ps -q: containers exist
     result = lifecycle.restart(cluster, fake_runner)
     assert result.ok
     assert _flat(fake_runner.calls)[-1].endswith("restart")
@@ -62,6 +63,17 @@ def test_restart_is_config_aware(repo, fake_runner):
     result = lifecycle.restart(cluster, fake_runner)
     assert "force-recreated nginx" in result.detail
     assert _flat(fake_runner.calls)[-1].endswith("up -d --force-recreate nginx")
+
+
+def test_restart_of_down_cluster_falls_through_to_up(repo, fake_runner):
+    cluster = _cluster(repo)
+    lifecycle.up(cluster, fake_runner)
+    fake_runner.queue(stdout="")  # ps -q: nothing running
+    result = lifecycle.restart(cluster, fake_runner)
+    assert result.ok
+    calls = _flat(fake_runner.calls)
+    assert calls[-2].endswith("ps -q")
+    assert calls[-1].endswith("up -d")  # compose `restart` would be a silent no-op
 
 
 def test_up_waits_out_first_boot(repo, fake_runner, monkeypatch):
@@ -129,3 +141,11 @@ def test_up_persists_state(repo, fake_runner):
     assert state is not None
     assert state.spec == cluster.spec
     assert any(key.startswith("nginx:") for key in state.hashes)
+
+
+def test_up_backfills_missing_cluster_name(repo, fake_runner):
+    cluster = _cluster(repo, "old")
+    env_text = cluster.env_file.read_text().replace("AGENTX_CLUSTER_NAME=old\n", "")
+    cluster.env_file.write_text(env_text)
+    lifecycle.up(cluster, fake_runner)
+    assert "AGENTX_CLUSTER_NAME=old" in cluster.env_file.read_text()

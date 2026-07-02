@@ -56,8 +56,21 @@ def _persist(cluster: Cluster) -> None:
     save_state(cluster.cluster_dir, cluster.spec, _current_hashes(cluster))
 
 
+def _ensure_identity(cluster: Cluster) -> None:
+    """Backfill AGENTX_CLUSTER_NAME into legacy .envs that predate it.
+
+    Without it every service falls back to the `agent-` container_name prefix,
+    which collides across clusters even though compose projects are separate.
+    """
+    if not cluster.env.get("AGENTX_CLUSTER_NAME"):
+        from .envfile import upsert_env
+
+        upsert_env(cluster.env_file, {"AGENTX_CLUSTER_NAME": cluster.name})
+
+
 def up(cluster: Cluster, runner: ComposeRunner | None = None, *, wait_first_boot: bool = True) -> LifecycleResult:
     runner = runner or SubprocessRunner()
+    _ensure_identity(cluster)
     runs: list[RunResult] = []
 
     stale = _stale_services(cluster)
@@ -106,10 +119,15 @@ def down(cluster: Cluster, runner: ComposeRunner | None = None, *, volumes: bool
 
 
 def restart(cluster: Cluster, runner: ComposeRunner | None = None) -> LifecycleResult:
-    """Restart — but config-aware: changed services are recreated, not restarted."""
+    """Restart — config-aware (changed services are recreated, not restarted),
+    and down-aware (a compose `restart` with no containers is a silent no-op,
+    so a stopped cluster falls through to `up`)."""
     runner = runner or SubprocessRunner()
     stale = _stale_services(cluster)
     if stale:
+        return up(cluster, runner)
+    ps = runner.run(_argv(cluster, ["ps", "-q"]), cwd=cluster.root)
+    if ps.ok and not ps.stdout.strip():
         return up(cluster, runner)
     result = runner.run(_argv(cluster, ["restart"]), cwd=cluster.root)
     return LifecycleResult(result.ok, "restart" if result.ok else result.stderr.strip(), [result])
