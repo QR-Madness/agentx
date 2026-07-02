@@ -1,0 +1,14 @@
+# docker-compose.gateway.expose.yml
+#
+# Publishes the Nginx gateway on a host port — the no-tunnel mode for
+# deployments fronting AgentX with their own reverse proxy / TLS terminator.
+# Kept separate from docker-compose.gateway.yml because behind a Cloudflare
+# tunnel the gateway should publish no host port at all.
+#
+# Defaults bind to loopback only; set AGENTX_GATEWAY_BIND=0.0.0.0 explicitly
+# to expose beyond the host (do that only behind your own TLS proxy).
+
+services:
+  nginx:
+    ports:
+      - "${AGENTX_GATEWAY_BIND:-127.0.0.1}:${AGENTX_GATEWAY_PORT:-8080}:80"

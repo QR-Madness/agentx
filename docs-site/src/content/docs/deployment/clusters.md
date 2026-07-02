@@ -44,7 +44,7 @@ settings). `config.json` is **not** seeded — it's synthesized at runtime by `C
 
 | Task | Purpose |
 |------|---------|
-| `cluster:new CLUSTER=<name> [GATEWAY=1]` | Scaffold the directory, copy defaults, write `.env` (sets `AGENTX_CLUSTER_NAME`, `AGENTX_CONFIG_DIR`, `AGENTX_DB_DIR`, detected `DJANGO_ALLOWED_HOSTS`). `GATEWAY=1` also drops `nginx.conf` + `cloudflared/config.yml`. |
+| `cluster:new CLUSTER=<name> [GATEWAY=1]` | Scaffold the directory, copy defaults, write `.env` (sets `AGENTX_CLUSTER_NAME`, `AGENTX_CONFIG_DIR`, `AGENTX_DB_DIR`, `AGENTX_GATEWAY_DIR`, detected `DJANGO_ALLOWED_HOSTS`). `GATEWAY=1` also drops `nginx.conf` + `cloudflared/config.yml` and sets `AGENTX_TRUST_PROXY=true`. |
 | `cluster:seed CLUSTER=<name> [FORCE=1]` | (Re)seed `config/` from `api/defaults/`; skips existing files unless `FORCE=1` |
 | `cluster:gateway:enable CLUSTER=<name>` | Add the gateway files to an existing cluster |
 | `cluster:up CLUSTER=<name> [REBUILD=1] [NVIDIA=1]` | Start the cluster (auto-includes the gateway overlay if `nginx.conf` exists; `--build` if `REBUILD=1`; GPU overlay if `NVIDIA=1`) |
@@ -60,11 +60,17 @@ Compose invocation is assembled automatically — for example `cluster:up` runs 
 ```bash
 docker compose --env-file clusters/<name>/.env \
   -f docker-compose.yml \
-  [-f docker-compose.build.yml]     # local clusters build the API from source
-  [-f docker-compose.gateway.yml]   # when clusters/<name>/nginx.conf exists
-  [-f docker-compose.gpu.yml]       # when NVIDIA=1
+  [-f docker-compose.build.yml]        # local clusters build the API from source
+  [-f docker-compose.gateway.yml]      # when clusters/<name>/nginx.conf exists
+  [-f docker-compose.tunnel.named.yml] # when clusters/<name>/cloudflared/config.yml exists
+  [-f docker-compose.gpu.yml]          # when NVIDIA=1
   --profile production up -d
 ```
+
+The gateway overlays find their files via **`AGENTX_GATEWAY_DIR`** in the cluster `.env`
+(set to `./clusters/<name>` by `cluster:new`; `cluster:up` appends it to older `.env`s
+automatically). The same overlays ship in the isolated deployment bundle, where the
+variable defaults to `./gateway`.
 
 ## Ports
 
@@ -82,18 +88,25 @@ REDIS_PORT=6379
 ## Gateway (Nginx + Cloudflare)
 
 When `clusters/<name>/nginx.conf` is present, `cluster:up` layers in
-`docker-compose.gateway.yml`, which adds two services:
+`docker-compose.gateway.yml` — and, when `clusters/<name>/cloudflared/config.yml` also
+exists, `docker-compose.tunnel.named.yml`:
 
-- **nginx** (`nginx:1.27-alpine`) — renders `nginx.conf` via envsubst (only `AGENTX_*` vars),
-  then for every request:
+- **nginx** (`nginx:1.27-alpine`, from `docker-compose.gateway.yml`) — renders `nginx.conf`
+  via envsubst (only `AGENTX_*` vars), then for every request:
   - validates the **`AgentX-Gateway-Token`** header against `AGENTX_GATEWAY_TOKEN` → `401` if
-    missing/invalid, and strips the header before proxying to Django;
-  - rate-limits ~10 req/s per client IP (from `CF-Connecting-IP`), burst 20 → `429`;
+    missing/invalid, and strips the header before proxying to Django. The overlay **fails
+    closed**: compose refuses to start it while `AGENTX_GATEWAY_TOKEN` is unset/empty;
+  - rate-limits ~10 req/s per client IP (`CF-Connecting-IP`, falling back to the TCP peer
+    address when no tunnel fronts it), burst 20 → `429`;
   - proxies to `api:${API_PORT}` with SSE-friendly settings (`proxy_buffering off`, long
     timeouts) and a tokenless `/__gateway_health` probe.
-- **cloudflared** (`cloudflare/cloudflared:latest`) — runs a named tunnel that terminates TLS
-  at Cloudflare's edge and forwards to `nginx:80`. Only the configured hostname is routable;
-  everything else returns 404.
+- **cloudflared** (`cloudflare/cloudflared:latest`, from `docker-compose.tunnel.named.yml`) —
+  runs a named tunnel that terminates TLS at Cloudflare's edge and forwards to `nginx:80`.
+  Only the configured hostname is routable; everything else returns 404.
+
+No tunnel at all? Layer `docker-compose.gateway.expose.yml` instead to publish nginx on
+`${AGENTX_GATEWAY_BIND:-127.0.0.1}:${AGENTX_GATEWAY_PORT:-8080}` for your own reverse
+proxy / TLS terminator.
 
 ### One-time tunnel setup
 
@@ -112,6 +125,7 @@ Set in the cluster `.env`:
 ```bash
 AGENTX_PUBLIC_HOST=agentx.example.com
 AGENTX_GATEWAY_TOKEN=$(openssl rand -hex 32)
+AGENTX_TRUST_PROXY=true   # nginx overwrites X-Forwarded-For with the real client IP
 ```
 
 Smoke-test once it's up:

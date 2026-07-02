@@ -1,47 +1,54 @@
 # docker-compose.gateway.yml
 #
-# Public gateway overlay: adds an Nginx gateway and a Cloudflare Tunnel in
-# front of the API service from docker-compose.yml. The tunnel terminates
-# HTTPS at Cloudflare's edge and forwards requests to nginx, which enforces
-# the shared AgentX-Gateway-Token header before anything reaches Django.
+# Gateway overlay: adds an Nginx token gateway in front of the API service
+# from docker-compose.yml. Nginx enforces the shared AgentX-Gateway-Token
+# header and per-IP rate limiting before anything reaches Django.
 #
-# This overlay is opt-in per cluster. `task cluster:up CLUSTER=<name>`
-# automatically includes it when clusters/<name>/nginx.conf exists; you can
-# scaffold those files with `task cluster:new CLUSTER=<name> GATEWAY=1` or
-# `task cluster:gateway:enable CLUSTER=<name>`.
+# This overlay is location-independent: the nginx template is read from
+# ${AGENTX_GATEWAY_DIR} (default ./gateway, relative to the compose project
+# directory). Local clusters set AGENTX_GATEWAY_DIR=./clusters/<name> in
+# their .env; isolated deployments copy gateway/nginx.conf.example to
+# gateway/nginx.conf next to the compose files.
 #
-# All bind mounts resolve under clusters/${AGENTX_CLUSTER_NAME}/, which is
-# set by the cluster's .env.
+# Exposure is a separate choice — layer exactly one of:
+#   docker-compose.tunnel.yml        Cloudflare token tunnel (dashboard-managed;
+#                                    set the Public Hostname Service to
+#                                    http://nginx:80)
+#   docker-compose.tunnel.named.yml  Cloudflare named tunnel (credentials file)
+#   docker-compose.gateway.expose.yml  Publish nginx on a host port (BYO
+#                                    reverse proxy / TLS)
+#
+# Local clusters: `task cluster:up CLUSTER=<name>` includes this overlay
+# automatically when clusters/<name>/nginx.conf exists; scaffold with
+# `task cluster:new CLUSTER=<name> GATEWAY=1` or `task cluster:gateway:enable`.
 
 services:
   nginx:
     image: nginx:1.27-alpine
     container_name: ${AGENTX_CLUSTER_NAME:-agent}-nginx
     environment:
-      - AGENTX_GATEWAY_TOKEN=${AGENTX_GATEWAY_TOKEN}
+      # Fail closed: an empty token would otherwise make the nginx map match
+      # the *absent* header and wave every request through. `:?` makes compose
+      # refuse to start the gateway without a real secret.
+      - AGENTX_GATEWAY_TOKEN=${AGENTX_GATEWAY_TOKEN:?AGENTX_GATEWAY_TOKEN is required for the gateway overlay — generate with `openssl rand -hex 32`}
       - AGENTX_API_HOST=api
-      - AGENTX_API_PORT=${API_PORT:-12319}
+      # Container-internal port — always 12319 regardless of the host-published
+      # API_PORT (the base compose maps "${API_PORT}:12319").
+      - AGENTX_API_PORT=12319
       # Limit envsubst to AGENTX_* env vars so nginx variables like
       # $host and $http_* in the template are left untouched.
       - NGINX_ENVSUBST_FILTER=^AGENTX_
     volumes:
-      - ./clusters/${AGENTX_CLUSTER_NAME}/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - ${AGENTX_GATEWAY_DIR:-./gateway}/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/__gateway_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       api:
         condition: service_healthy
-    restart: unless-stopped
-    profiles:
-      - production
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: ${AGENTX_CLUSTER_NAME:-agent}-cloudflared
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./clusters/${AGENTX_CLUSTER_NAME}/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
-      - ./clusters/${AGENTX_CLUSTER_NAME}/cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
-    depends_on:
-      - nginx
     restart: unless-stopped
     profiles:
       - production

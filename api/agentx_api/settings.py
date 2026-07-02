@@ -45,7 +45,10 @@ except ImportError:
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-dev-only-replace-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() in ('true', '1', 'yes')
+# Safe-by-default: an instance started with no env at all must not expose
+# DEBUG. Dev environments opt in via DJANGO_DEBUG=true in .env (the root
+# .env.example sets it).
+DEBUG = os.environ.get('DJANGO_DEBUG', 'false').lower() in ('true', '1', 'yes')
 
 # localhost/127.0.0.1 are always included; DJANGO_ALLOWED_HOSTS appends extra hosts (e.g. LAN IPs)
 _allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
@@ -260,8 +263,20 @@ AGENTX_RATE_LIMIT_DEFAULT = os.environ.get('AGENTX_RATE_LIMIT_DEFAULT', '100/m')
 # =============================================================================
 # Session-Based Authentication (Phase 17)
 # =============================================================================
-# Master switch for authentication - when True, all /api/* routes require auth
-AGENTX_AUTH_ENABLED = os.environ.get('AGENTX_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
+# Master switch for authentication - when True, all /api/* routes require auth.
+# Safe-by-default: an instance started with no env at all requires auth. Dev
+# environments opt out via AGENTX_AUTH_ENABLED=false in .env (the root
+# .env.example sets it).
+AGENTX_AUTH_ENABLED = os.environ.get('AGENTX_AUTH_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+# In DEBUG, requests from localhost skip auth (mirrored by /api/auth/status).
+AGENTX_AUTH_BYPASS_LOCALHOST = os.environ.get('AGENTX_AUTH_BYPASS_LOCALHOST', 'true').lower() in ('true', '1', 'yes')
+
+# Trust X-Forwarded-For for client-IP attribution (auditing, the localhost
+# bypass above). Enable ONLY behind a trusted proxy that overwrites the
+# header — the Nginx gateway does. When the API is reachable directly, a
+# spoofed XFF header could otherwise fake any client IP, including 127.0.0.1.
+AGENTX_TRUST_PROXY = os.environ.get('AGENTX_TRUST_PROXY', 'false').lower() in ('true', '1', 'yes')
 
 # Session TTL in seconds (default 24 hours)
 AGENTX_SESSION_TTL = int(os.environ.get('AGENTX_SESSION_TTL', 86400))

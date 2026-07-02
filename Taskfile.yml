@@ -1288,6 +1288,7 @@ tasks:
         sed -i "s|^AGENTX_CLUSTER_NAME=$|AGENTX_CLUSTER_NAME={{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
         sed -i "s|^AGENTX_CONFIG_DIR=.*|AGENTX_CONFIG_DIR=./clusters/{{.CLUSTER}}/config|" "clusters/{{.CLUSTER}}/.env"
         sed -i "s|^AGENTX_DB_DIR=.*|AGENTX_DB_DIR=./clusters/{{.CLUSTER}}/db|" "clusters/{{.CLUSTER}}/.env"
+        sed -i "s|^AGENTX_GATEWAY_DIR=.*|AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
         HOST_IP=$(hostname -I | awk '{print $1}')
         if [ -n "$HOST_IP" ]; then
           sed -i "s|^DJANGO_ALLOWED_HOSTS=$|DJANGO_ALLOWED_HOSTS=${HOST_IP}|" "clusters/{{.CLUSTER}}/.env"
@@ -1298,6 +1299,9 @@ tasks:
           mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
           cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
           cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
+          # Behind the gateway, nginx overwrites X-Forwarded-For with the real
+          # client IP, so the API can trust it.
+          sed -i "s|^AGENTX_TRUST_PROXY=.*|AGENTX_TRUST_PROXY=true|" "clusters/{{.CLUSTER}}/.env"
           echo "  ✓ Gateway scaffolded: nginx.conf + cloudflared/config.yml"
         fi
         echo ""
@@ -1396,6 +1400,20 @@ tasks:
         mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
         cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
         cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
+        # The gateway overlay reads its files from AGENTX_GATEWAY_DIR; point it
+        # at this cluster's dir (older cluster .envs won't have the var yet).
+        if grep -q '^AGENTX_GATEWAY_DIR=' "clusters/{{.CLUSTER}}/.env"; then
+          sed -i "s|^AGENTX_GATEWAY_DIR=.*|AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
+        else
+          echo "AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}" >> "clusters/{{.CLUSTER}}/.env"
+        fi
+        # Behind the gateway, nginx overwrites X-Forwarded-For with the real
+        # client IP, so the API can trust it.
+        if grep -q '^AGENTX_TRUST_PROXY=' "clusters/{{.CLUSTER}}/.env"; then
+          sed -i "s|^AGENTX_TRUST_PROXY=.*|AGENTX_TRUST_PROXY=true|" "clusters/{{.CLUSTER}}/.env"
+        else
+          echo "AGENTX_TRUST_PROXY=true" >> "clusters/{{.CLUSTER}}/.env"
+        fi
         echo "Gateway scaffolded for clusters/{{.CLUSTER}}/."
         echo "Edit clusters/{{.CLUSTER}}/.env (AGENTX_PUBLIC_HOST, AGENTX_GATEWAY_TOKEN)"
         echo "and clusters/{{.CLUSTER}}/cloudflared/config.yml, then drop credentials.json."
@@ -1412,7 +1430,18 @@ tasks:
         # published image, so the build overlay re-adds the build: section).
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
-          echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
+          # The gateway overlay resolves its mounts via AGENTX_GATEWAY_DIR;
+          # migrate older cluster .envs that predate the variable.
+          if ! grep -q '^AGENTX_GATEWAY_DIR=' "clusters/{{.CLUSTER}}/.env"; then
+            echo "AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}" >> "clusters/{{.CLUSTER}}/.env"
+            echo "  ✓ Added AGENTX_GATEWAY_DIR to clusters/{{.CLUSTER}}/.env"
+          fi
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+            echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
+          else
+            echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx, no tunnel)..."
+          fi
         else
           OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
           echo "🚀 Starting cluster {{.CLUSTER}} (no public gateway)..."
@@ -1446,6 +1475,9 @@ tasks:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+          fi
         else
           OVERLAY=""
         fi
@@ -1461,6 +1493,9 @@ tasks:
         # (the base compose only declares image:).
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+          fi
         else
           OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
         fi
@@ -1476,6 +1511,9 @@ tasks:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+          fi
         else
           OVERLAY=""
         fi
@@ -1489,6 +1527,9 @@ tasks:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+          fi
         else
           OVERLAY=""
         fi
@@ -1506,7 +1547,7 @@ tasks:
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml --profile production logs -f cloudflared
+      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.tunnel.named.yml --profile production logs -f cloudflared
 
   cluster:status:
     desc: "Show cluster status (CLUSTER=name)"
@@ -1516,6 +1557,9 @@ tasks:
       - |
         if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
           OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
+          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
+            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
+          fi
         else
           OVERLAY=""
         fi
@@ -1585,16 +1629,21 @@ tasks:
         OUT="{{.OUT}}"
         echo "📦 Generating deployment bundle → $OUT"
         rm -rf "$OUT"
-        mkdir -p "$OUT"
+        mkdir -p "$OUT/gateway/cloudflared"
         # The base compose is already image-based + portable, so it ships as-is.
-        # The GPU and Cloudflare-Tunnel overlays ship too (both are image-based and
-        # portable). The build overlay (source-only) and the repo-relative cluster
-        # gateway overlay are intentionally excluded.
-        cp docker-compose.yml        "$OUT/docker-compose.yml"
-        cp docker-compose.gpu.yml    "$OUT/docker-compose.gpu.yml"
-        cp docker-compose.tunnel.yml "$OUT/docker-compose.tunnel.yml"
-        cp deploy/.env.example       "$OUT/.env.example"
-        cp deploy/README.md          "$OUT/README.md"
+        # The gateway/tunnel/GPU overlays are all location-independent (they
+        # resolve their files via AGENTX_GATEWAY_DIR, default ./gateway). Only
+        # the build overlay (source-only) is excluded.
+        cp docker-compose.yml                "$OUT/docker-compose.yml"
+        cp docker-compose.gpu.yml            "$OUT/docker-compose.gpu.yml"
+        cp docker-compose.gateway.yml        "$OUT/docker-compose.gateway.yml"
+        cp docker-compose.gateway.expose.yml "$OUT/docker-compose.gateway.expose.yml"
+        cp docker-compose.tunnel.yml         "$OUT/docker-compose.tunnel.yml"
+        cp docker-compose.tunnel.named.yml   "$OUT/docker-compose.tunnel.named.yml"
+        cp clusters/template/nginx.conf.example "$OUT/gateway/nginx.conf.example"
+        cp clusters/template/cloudflared/config.yml.example "$OUT/gateway/cloudflared/config.yml.example"
+        cp deploy/.env.example               "$OUT/.env.example"
+        cp deploy/README.md                  "$OUT/README.md"
         tar -czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
         echo "  ✓ $OUT/"
         echo "  ✓ $OUT.tar.gz"
@@ -1605,17 +1654,32 @@ tasks:
     cmds:
       - |
         set -e
-        # The bundle copies docker-compose.yml + the gpu/tunnel overlays verbatim;
-        # this guards that the authored deploy/ env+readme still reference real
-        # files and that the canonical compose is image-based (not build-only).
+        # The bundle copies docker-compose.yml + the gateway/tunnel/gpu overlays
+        # verbatim; this guards that the authored deploy/ env+readme still
+        # reference real files, that the canonical compose is image-based (not
+        # build-only), and that shipped overlays stay location-independent.
         if grep -qE '^\s+build:' docker-compose.yml; then
           echo "✗ docker-compose.yml has a top-level api build: — base compose must be image-based" >&2
           exit 1
         fi
-        for f in docker-compose.yml docker-compose.gpu.yml docker-compose.tunnel.yml deploy/.env.example deploy/README.md; do
+        for f in docker-compose.yml docker-compose.gpu.yml docker-compose.gateway.yml \
+                 docker-compose.gateway.expose.yml docker-compose.tunnel.yml \
+                 docker-compose.tunnel.named.yml clusters/template/nginx.conf.example \
+                 clusters/template/cloudflared/config.yml.example \
+                 deploy/.env.example deploy/README.md; do
           [ -f "$f" ] || { echo "✗ missing $f" >&2; exit 1; }
         done
-        echo "✓ deploy bundle sources present and base compose is image-based"
+        # Shipped overlays must never hardcode repo-relative cluster paths —
+        # they resolve via AGENTX_GATEWAY_DIR so they work from any directory.
+        # (Comments are exempt; only live config lines count.)
+        for f in docker-compose.gateway.yml docker-compose.gateway.expose.yml \
+                 docker-compose.tunnel.yml docker-compose.tunnel.named.yml; do
+          if grep -v '^\s*#' "$f" | grep -q '\./clusters/'; then
+            echo "✗ $f references ./clusters/ — shipped overlays must stay location-independent (AGENTX_GATEWAY_DIR)" >&2
+            exit 1
+          fi
+        done
+        echo "✓ deploy bundle sources present, image-based, and location-independent"
 
   docker:publish:
     desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev). CI uses .github/workflows/release.yml"

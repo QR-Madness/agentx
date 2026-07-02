@@ -19,6 +19,27 @@ logger = logging.getLogger(__name__)
 LOCALHOST_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
+def get_client_ip(request) -> str:
+    """
+    Extract the client IP for auditing, rate limiting, and the localhost
+    auth bypass. The single source of truth — auth/views.py imports this so
+    the middleware and /api/auth/status can never disagree on the client IP.
+
+    X-Forwarded-For is only honored when AGENTX_TRUST_PROXY is enabled,
+    i.e. a trusted proxy that overwrites the header (the Nginx gateway)
+    fronts the API. Otherwise anyone reaching the API directly could spoof
+    an arbitrary client IP — including 127.0.0.1 to trigger the DEBUG
+    localhost bypass.
+    """
+    if getattr(settings, 'AGENTX_TRUST_PROXY', False):
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            # First IP in the chain is the original client.
+            return forwarded_for.split(",")[0].strip()
+
+    return request.META.get("REMOTE_ADDR", "unknown")
+
+
 def is_auth_bypass_active(client_ip: str) -> bool:
     """
     Whether auth should be bypassed for this client.
@@ -27,7 +48,7 @@ def is_auth_bypass_active(client_ip: str) -> bool:
     middleware agree on whether a token is required. If they disagree, the
     client renders the app while every protected endpoint 401s.
     """
-    auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', False)
+    auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', True)
     if not auth_enabled:
         return True
 
@@ -122,23 +143,11 @@ class AgentXAuthMiddleware:
 
     def _is_auth_enabled(self) -> bool:
         """Check if authentication is enabled."""
-        return getattr(settings, 'AGENTX_AUTH_ENABLED', False)
+        return getattr(settings, 'AGENTX_AUTH_ENABLED', True)
 
     def _get_client_ip(self, request) -> str:
-        """
-        Extract client IP address from request.
-
-        Handles X-Forwarded-For header for proxied requests (e.g., Cloudflare).
-        Used for rate-limiting and request auditing.
-        """
-        # Check X-Forwarded-For for proxied requests
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for:
-            # Take the first IP in the chain (original client)
-            return forwarded_for.split(",")[0].strip()
-
-        # Fall back to REMOTE_ADDR
-        return request.META.get("REMOTE_ADDR", "unknown")
+        """Extract client IP address from request (see get_client_ip)."""
+        return get_client_ip(request)
 
     def _is_public_route(self, path: str) -> bool:
         """Check if the path is a public route."""

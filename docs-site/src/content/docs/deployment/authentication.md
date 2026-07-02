@@ -18,9 +18,13 @@ machine.
 ## Enabling auth
 
 ```bash
-AGENTX_AUTH_ENABLED=true     # gate all /api/* routes
+AGENTX_AUTH_ENABLED=true     # gate all /api/* routes (the built-in default)
 AGENTX_SESSION_TTL=86400     # session lifetime in seconds (default 24h)
 ```
+
+Auth is **on by default**: an instance started with no env at all requires it. The dev
+`.env.example` in the repo opts out explicitly (`AGENTX_AUTH_ENABLED=false`) for local
+hacking; deployment templates keep it on.
 
 Then set the root password:
 
@@ -46,6 +50,11 @@ A few routes stay public so a client can bootstrap: `/api/health`, `/api/version
     When `DEBUG` is on and `AGENTX_AUTH_BYPASS_LOCALHOST` is `true` (the default), requests
     from `127.0.0.1` / `::1` skip auth — convenient for local development. Disable it (or run
     with `DJANGO_DEBUG=false`) for any real deployment.
+
+    The client IP that feeds this check comes from `X-Forwarded-For` **only when
+    `AGENTX_TRUST_PROXY=true`** — set it exclusively behind a proxy that overwrites the header
+    (the Nginx gateway does). Otherwise the TCP peer address is used, so a spoofed
+    `X-Forwarded-For: 127.0.0.1` from a direct connection can't trigger the bypass.
 
 On the client, the token is stored per-server in localStorage (`agentx:server:{id}:authToken`)
 and attached to every request by the API layer (`client/src/lib/api/core.ts`). `AuthContext`

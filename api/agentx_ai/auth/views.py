@@ -6,18 +6,10 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 
 from ..utils.responses import json_error, json_success, parse_json_body, require_methods
-from .middleware import is_auth_bypass_active
+from .middleware import get_client_ip as _get_client_ip, is_auth_bypass_active
 from .service import get_auth_service
 
 logger = logging.getLogger(__name__)
-
-
-def _get_client_ip(request) -> str:
-    """Extract client IP from request."""
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "unknown")
 
 
 @csrf_exempt
@@ -35,7 +27,7 @@ def auth_status(request):
             "auth_bypass_active": bool
         }
     """
-    auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', False)
+    auth_enabled = getattr(settings, 'AGENTX_AUTH_ENABLED', True)
     client_ip = _get_client_ip(request)
     bypass_active = is_auth_bypass_active(client_ip)
 

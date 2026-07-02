@@ -1,11 +1,12 @@
-# clusters/<name>/nginx.conf
+# AgentX gateway nginx template
 #
-# Cluster gateway between Cloudflare Tunnel and the AgentX API. Mounted at
+# Gateway between the public ingress (Cloudflare Tunnel or a host-published
+# port) and the AgentX API. Mounted from ${AGENTX_GATEWAY_DIR}/nginx.conf at
 # /etc/nginx/templates/default.conf.template inside the nginx:alpine
 # container, which runs envsubst over it at startup and emits the final
 # config to /etc/nginx/conf.d/default.conf.
 #
-# Substituted variables (set in docker-compose.cluster.yml):
+# Substituted variables (set in docker-compose.gateway.yml):
 #   ${AGENTX_GATEWAY_TOKEN} - shared secret required on every request
 #   ${AGENTX_API_HOST}      - upstream Django host (typically: api)
 #   ${AGENTX_API_PORT}      - upstream Django port (typically: 12319)
@@ -15,15 +16,25 @@
 # variables in the bare $name form (no braces) so the template processor
 # leaves them alone.
 
-# Rate limit zone: 10 req/s per client IP, 10MB memory (~160k IPs).
-# Cloudflare Tunnel forwards the original client IP via CF-Connecting-IP;
-# we trust it because the only reachable ingress is the tunnel itself.
-limit_req_zone $http_cf_connecting_ip zone=agentx_gateway:10m rate=10r/s;
-
 # The gateway token (openssl rand -hex 32 → 64 chars) is longer than nginx's
 # default map_hash_bucket_size (64), which otherwise fails to start with
-# "could not build map_hash". Bump it so long token keys fit.
+# "could not build map_hash". Bump it so long token keys fit. Must appear
+# BEFORE the first `map` block — nginx treats it as a duplicate once a map
+# has already applied the default.
 map_hash_bucket_size 128;
+
+# Client IP: behind a Cloudflare Tunnel the original client arrives in
+# CF-Connecting-IP (trusted — the tunnel is the only ingress). In expose mode
+# (docker-compose.gateway.expose.yml, no Cloudflare) that header is empty, so
+# fall back to the TCP peer address. Without the fallback an empty key would
+# skip rate limiting entirely.
+map $http_cf_connecting_ip $gw_client_ip {
+    default                          $http_cf_connecting_ip;
+    ''                               $remote_addr;
+}
+
+# Rate limit zone: 10 req/s per client IP, 10MB memory (~160k IPs).
+limit_req_zone $gw_client_ip zone=agentx_gateway:10m rate=10r/s;
 
 # Constant-string comparison for the gateway token. Using `map` rather
 # than `if` inside the server block keeps us out of nginx's "if is evil"
@@ -82,8 +93,8 @@ server {
         proxy_set_header AgentX-Gateway-Token "";
 
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $http_cf_connecting_ip;
-        proxy_set_header X-Forwarded-For $http_cf_connecting_ip;
+        proxy_set_header X-Real-IP $gw_client_ip;
+        proxy_set_header X-Forwarded-For $gw_client_ip;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host $host;
 

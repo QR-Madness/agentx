@@ -8,6 +8,16 @@
 
 > Architectural concerns that may need addressing at scale
 
+**First-boot init hang after model download (hf-xet)** — observed `[v0.21.141 dev]` on a fresh
+cluster with an empty HF cache: `init_memory_schema` downloads BAAI/bge-m3 mid-init (embedding-dim
+detection), prints "✅ All schemas initialized!", but the process never exits — leftover `hf-xet-*`
+download threads keep the interpreter alive, so the entrypoint never reaches uvicorn and the API
+healthcheck fails (`cluster:up` → "dependency failed to start"; nginx never starts). Warm-cache
+restarts boot fine. Candidate fixes: set `HF_HUB_DISABLE_XET=1` in the image env, wrap the
+entrypoint's init step in a timeout + retry, and/or move the model download out of schema init
+(explicit `warmup` step). Slice 2 manager should also treat "initializing" as a distinct health
+state so slow first boots don't read as failures.
+
 **Distributed Transaction Support**
 - Dual-write to Neo4j + PostgreSQL has no transaction coordination
 - Impact: LOW for single-user; HIGH for multi-user deployment
