@@ -1,0 +1,38 @@
+# docker-compose.manager.yml
+#
+# Optional deployment-manager overlay: a web GUI + CLI that manages THIS
+# deployment (and, in a source checkout, all clusters/) over the Docker
+# socket. Opt in with the `manager` profile:
+#
+#   COMPOSE_PROFILES=production,manager docker compose up -d
+#   # or: docker compose --profile manager up -d manager
+#
+# Then open http://127.0.0.1:12320 — the access token is printed in
+# `docker compose logs manager` and stored at <root>/.manager-token.
+#
+# SECURITY: the manager drives the Docker socket (root-equivalent on the
+# host). It binds to 127.0.0.1 on the host by default and requires a bearer
+# token. NEVER route it through the gateway/tunnel; reach it over SSH port
+# forwarding (ssh -L 12320:127.0.0.1:12320 host) if remote.
+#
+# PATH FIDELITY: compose resolves bind-mount paths on the client side, so the
+# manager must see the deployment root at the SAME absolute path as the
+# host — hence the ${PWD}:${PWD} mount. Run compose commands for this overlay
+# from the deployment root.
+
+services:
+  manager:
+    image: ${AGENTX_MANAGER_IMAGE:-qrmadness/agentx-manager:latest}
+    container_name: ${AGENTX_CLUSTER_NAME:-agent}-manager
+    environment:
+      - AGENTX_MANAGER_ROOT=${PWD}
+      - AGENTX_MANAGER_BIND=0.0.0.0   # container-internal; host publish below stays loopback
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}:${PWD}
+    working_dir: ${PWD}
+    ports:
+      - "${AGENTX_MANAGER_HOST_BIND:-127.0.0.1}:${AGENTX_MANAGER_PORT:-12320}:12320"
+    restart: unless-stopped
+    profiles:
+      - manager

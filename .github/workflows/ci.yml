@@ -58,3 +58,32 @@ jobs:
 
       - name: Backend tests (quick — no models, no Docker)
         run: task test:quick
+
+  manager:
+    name: deployment manager · tests + types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install manager deps (asserts manager/uv.lock is current)
+        working-directory: manager
+        run: uv sync --frozen
+
+      - name: Types — pyright (manager venv)
+        working-directory: manager
+        run: uv run --with pyright pyright agentx_manager tests
+
+      - name: Unit tests (fake compose runner — no docker)
+        working-directory: manager
+        run: uv run pytest tests/unit -q
+
+      - name: Integration tests (real nginx gateway, fake API upstream)
+        working-directory: manager
+        run: uv run pytest tests/integration -m docker -q

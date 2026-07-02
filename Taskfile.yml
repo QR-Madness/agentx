@@ -709,15 +709,15 @@ tasks:
       - task: lint:client
 
   lint:python:
-    desc: "Lint Python code with ruff"
+    desc: "Lint Python code with ruff (api + manager)"
     silent: true
     cmds:
-      - uv run ruff check api/
+      - uv run ruff check api/ manager/
 
   lint:python:fix:
     desc: "Auto-fix Python lint issues"
     cmds:
-      - uv run ruff check --fix api/
+      - uv run ruff check --fix api/ manager/
 
   audit:
     desc: "Scan installed dependencies for known CVEs (pip-audit)"
@@ -1252,77 +1252,28 @@ tasks:
 # CLUSTER DEPLOYMENT
 # ============================================================================
 # Clusters are the production deployment unit. Each lives in clusters/<name>/
-# with its own .env and data/. Public-facing clusters opt in to the Nginx +
-# Cloudflare Tunnel gateway by additionally having nginx.conf and a populated
-# cloudflared/ directory; cluster:up auto-detects the overlay by file
-# presence.
+# with its own .env, config/, and db/. Lifecycle is owned by the DEPLOYMENT
+# MANAGER (manager/ — `agentx-manager`); these tasks are thin wrappers kept
+# for muscle memory. The manager persists each cluster's overlay spec in
+# clusters/<name>/.manager-state.json (gateway/tunnel/gpu/shell toggles),
+# force-recreates services whose bind-mounted config changed, and runs every
+# cluster under its own compose project (agentx-<name>).
 #
 # Usage: task cluster:<command> CLUSTER=<name>
 #        task cluster:new CLUSTER=<name> [GATEWAY=1]
+#        task manager:serve   # web GUI on http://127.0.0.1:12320
 
   cluster:new:
-    desc: "Create a new cluster (CLUSTER=name [GATEWAY=1])"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
-      GATEWAY: '{{.GATEWAY}}'
+    desc: "Create a new cluster (CLUSTER=name [GATEWAY=1] → gateway + named tunnel)"
     cmds:
       - |
         if [ -z "{{.CLUSTER}}" ]; then
-          echo "Usage: task cluster:new CLUSTER=<name> [GATEWAY=1]"
-          echo ""
-          echo "Creates clusters/<name>/ from clusters/template/:"
-          echo "  - .env       (copy of clusters/template/.env.example)"
-          echo "  - config/    (seeded from api/defaults/)"
-          echo "  - db/        (empty neo4j/postgres/redis subdirs)"
-          echo "  - With GATEWAY=1: nginx.conf + cloudflared/config.yml"
-          exit 1
+          echo "Usage: task cluster:new CLUSTER=<name> [GATEWAY=1]"; exit 1
         fi
-        if [ -e "clusters/{{.CLUSTER}}" ]; then
-          echo "Cluster already exists: clusters/{{.CLUSTER}}/"
-          exit 1
-        fi
-        mkdir -p "clusters/{{.CLUSTER}}/db"/{neo4j/{data,logs,plugins},postgres,redis}
-        mkdir -p "clusters/{{.CLUSTER}}/config"
-        cp api/defaults/*.yaml api/defaults/*.json "clusters/{{.CLUSTER}}/config/"
-        cp clusters/template/.env.example "clusters/{{.CLUSTER}}/.env"
-        sed -i "s|^AGENTX_CLUSTER_NAME=$|AGENTX_CLUSTER_NAME={{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
-        sed -i "s|^AGENTX_CONFIG_DIR=.*|AGENTX_CONFIG_DIR=./clusters/{{.CLUSTER}}/config|" "clusters/{{.CLUSTER}}/.env"
-        sed -i "s|^AGENTX_DB_DIR=.*|AGENTX_DB_DIR=./clusters/{{.CLUSTER}}/db|" "clusters/{{.CLUSTER}}/.env"
-        sed -i "s|^AGENTX_GATEWAY_DIR=.*|AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
-        HOST_IP=$(hostname -I | awk '{print $1}')
-        if [ -n "$HOST_IP" ]; then
-          sed -i "s|^DJANGO_ALLOWED_HOSTS=$|DJANGO_ALLOWED_HOSTS=${HOST_IP}|" "clusters/{{.CLUSTER}}/.env"
-        fi
-        echo "Cluster created: clusters/{{.CLUSTER}}/"
-        echo "  ✓ config/ seeded from api/defaults/"
         if [ "{{.GATEWAY}}" = "1" ]; then
-          mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
-          cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
-          cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
-          # Behind the gateway, nginx overwrites X-Forwarded-For with the real
-          # client IP, so the API can trust it.
-          sed -i "s|^AGENTX_TRUST_PROXY=.*|AGENTX_TRUST_PROXY=true|" "clusters/{{.CLUSTER}}/.env"
-          echo "  ✓ Gateway scaffolded: nginx.conf + cloudflared/config.yml"
-        fi
-        echo ""
-        echo "Next steps:"
-        echo "  1. Edit clusters/{{.CLUSTER}}/.env"
-        echo "     - Set unique ports if running alongside other clusters"
-        echo "     - Generate DJANGO_SECRET_KEY"
-        echo "     - Set database passwords + provider API keys"
-        if [ "{{.GATEWAY}}" = "1" ]; then
-          echo "     - Set AGENTX_PUBLIC_HOST and AGENTX_GATEWAY_TOKEN"
-          echo "  2. Edit clusters/{{.CLUSTER}}/cloudflared/config.yml — paste tunnel id + hostname"
-          echo "  3. Drop credentials.json into clusters/{{.CLUSTER}}/cloudflared/"
-          echo "  4. Start:        task cluster:up CLUSTER={{.CLUSTER}}"
-          echo "  5. Init DBs:     task cluster:migrate CLUSTER={{.CLUSTER}}   # Django + memory schema"
-          echo "  6. Set password: task cluster:auth:setup CLUSTER={{.CLUSTER}}"
-          echo "  7. Warm models:  task cluster:warmup CLUSTER={{.CLUSTER}}"
+          uv run --project manager agentx-manager --root . new "{{.CLUSTER}}" --gateway --tunnel named
         else
-          echo "  2. Start:        task cluster:up CLUSTER={{.CLUSTER}}"
-          echo "  3. Init DBs:     task cluster:migrate CLUSTER={{.CLUSTER}}   # Django + memory schema"
-          echo "  4. Set password: task cluster:auth:setup CLUSTER={{.CLUSTER}}"
-          echo "  5. Warm models:  task cluster:warmup CLUSTER={{.CLUSTER}}"
+          uv run --project manager agentx-manager --root . new "{{.CLUSTER}}"
         fi
 
   cluster:seed:
@@ -1383,236 +1334,139 @@ tasks:
         done
         echo "Seeded clusters/{{.CLUSTER}}/config/"
 
+
   cluster:gateway:enable:
-    desc: "Add the Nginx + Cloudflare gateway to an existing cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
+    desc: "Add the Nginx gateway (+ named tunnel scaffolding) to an existing cluster (CLUSTER=name)"
     cmds:
-      - |
-        if [ -z "{{.CLUSTER}}" ] || [ ! -d "clusters/{{.CLUSTER}}" ]; then
-          echo "Usage: task cluster:gateway:enable CLUSTER=<name> (must already exist)"
-          exit 1
-        fi
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          echo "Gateway already enabled for clusters/{{.CLUSTER}}/"
-          exit 0
-        fi
-        mkdir -p "clusters/{{.CLUSTER}}/cloudflared"
-        cp clusters/template/nginx.conf.example "clusters/{{.CLUSTER}}/nginx.conf"
-        cp clusters/template/cloudflared/config.yml.example "clusters/{{.CLUSTER}}/cloudflared/config.yml"
-        # The gateway overlay reads its files from AGENTX_GATEWAY_DIR; point it
-        # at this cluster's dir (older cluster .envs won't have the var yet).
-        if grep -q '^AGENTX_GATEWAY_DIR=' "clusters/{{.CLUSTER}}/.env"; then
-          sed -i "s|^AGENTX_GATEWAY_DIR=.*|AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}|" "clusters/{{.CLUSTER}}/.env"
-        else
-          echo "AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}" >> "clusters/{{.CLUSTER}}/.env"
-        fi
-        # Behind the gateway, nginx overwrites X-Forwarded-For with the real
-        # client IP, so the API can trust it.
-        if grep -q '^AGENTX_TRUST_PROXY=' "clusters/{{.CLUSTER}}/.env"; then
-          sed -i "s|^AGENTX_TRUST_PROXY=.*|AGENTX_TRUST_PROXY=true|" "clusters/{{.CLUSTER}}/.env"
-        else
-          echo "AGENTX_TRUST_PROXY=true" >> "clusters/{{.CLUSTER}}/.env"
-        fi
-        echo "Gateway scaffolded for clusters/{{.CLUSTER}}/."
-        echo "Edit clusters/{{.CLUSTER}}/.env (AGENTX_PUBLIC_HOST, AGENTX_GATEWAY_TOKEN)"
-        echo "and clusters/{{.CLUSTER}}/cloudflared/config.yml, then drop credentials.json."
+      - 'uv run --project manager agentx-manager --root . gateway-enable "{{.CLUSTER}}" --tunnel named'
 
   cluster:up:
-    desc: "Start a cluster (CLUSTER=name [REBUILD=1] [NVIDIA=1]); auto-includes gateway overlay if nginx.conf present"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
-      REBUILD: '{{.REBUILD}}'
-      NVIDIA:  '{{.NVIDIA}}'
+    desc: "Start a cluster (CLUSTER=name [REBUILD=1] [NVIDIA=1]); overlays come from the manager spec"
     cmds:
       - |
-        # Local clusters build the API from source (the base compose pulls the
-        # published image, so the build overlay re-adds the build: section).
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
-          # The gateway overlay resolves its mounts via AGENTX_GATEWAY_DIR;
-          # migrate older cluster .envs that predate the variable.
-          if ! grep -q '^AGENTX_GATEWAY_DIR=' "clusters/{{.CLUSTER}}/.env"; then
-            echo "AGENTX_GATEWAY_DIR=./clusters/{{.CLUSTER}}" >> "clusters/{{.CLUSTER}}/.env"
-            echo "  ✓ Added AGENTX_GATEWAY_DIR to clusters/{{.CLUSTER}}/.env"
-          fi
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-            echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx + Cloudflared)..."
-          else
-            echo "🚀 Starting cluster {{.CLUSTER}} with gateway (Nginx, no tunnel)..."
-          fi
-        else
-          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
-          echo "🚀 Starting cluster {{.CLUSTER}} (no public gateway)..."
-        fi
-        BUILD_FLAG=""
-        if [ "{{.REBUILD}}" = "1" ]; then
-          echo "🔨 Rebuilding images..."
-          BUILD_FLAG="--build"
-        fi
         if [ "{{.NVIDIA}}" = "1" ]; then
-          echo "Enabling Nvidia Drivers for GPU Support (Using Nvidia Container Toolkit via Host)"
-          NVIDIA_OVERLAY="-f docker-compose.gpu.yml"
-        else
-          NVIDIA_OVERLAY=""
+          uv run --project manager agentx-manager --root . set "{{.CLUSTER}}" --gpu
         fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY $NVIDIA_OVERLAY --profile production up -d $BUILD_FLAG
-        echo ""
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          echo "Smoke test:"
-          echo "  curl -I https://\$AGENTX_PUBLIC_HOST/api/health  → expect 401"
-          echo "  curl -I -H 'AgentX-Gateway-Token: \$AGENTX_GATEWAY_TOKEN' https://\$AGENTX_PUBLIC_HOST/api/health  → expect 200"
+        if [ "{{.REBUILD}}" = "1" ]; then
+          uv run --project manager agentx-manager --root . rebuild "{{.CLUSTER}}"
         else
-          echo "API: http://localhost:\$API_PORT/api/health"
+          uv run --project manager agentx-manager --root . up "{{.CLUSTER}}"
         fi
 
   cluster:down:
     desc: "Stop a cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - |
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-          fi
-        else
-          OVERLAY=""
-        fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production down
+      - 'uv run --project manager agentx-manager --root . down "{{.CLUSTER}}"'
 
   cluster:rebuild:
     desc: "Rebuild images and restart a cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - |
-        # Includes the build overlay so `build` actually rebuilds from source
-        # (the base compose only declares image:).
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml -f docker-compose.gateway.yml"
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-          fi
-        else
-          OVERLAY="-f docker-compose.yml -f docker-compose.build.yml"
-        fi
-        echo "🔨 Rebuilding images for cluster {{.CLUSTER}}..."
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production build
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production up -d
+      - 'uv run --project manager agentx-manager --root . rebuild "{{.CLUSTER}}"'
 
   cluster:restart:
-    desc: "Restart a cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
+    desc: "Restart a cluster (CLUSTER=name); recreates services whose config changed"
     cmds:
-      - |
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-          fi
-        else
-          OVERLAY=""
-        fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production restart
+      - 'uv run --project manager agentx-manager --root . restart "{{.CLUSTER}}"'
+
+  cluster:destroy:
+    desc: "Destroy a cluster: down --volumes + delete clusters/<name>/ (CLUSTER=name, asks to confirm)"
+    cmds:
+      - 'uv run --project manager agentx-manager --root . destroy "{{.CLUSTER}}" --confirm "{{.CLUSTER}}"'
+
+  cluster:adopt:
+    desc: "Migrate a pre-manager cluster onto its own compose project (CLUSTER=name; brief downtime)"
+    cmds:
+      - 'uv run --project manager agentx-manager --root . adopt "{{.CLUSTER}}"'
 
   cluster:logs:
     desc: "View cluster logs (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - |
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-          fi
-        else
-          OVERLAY=""
-        fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production logs -f
+      - 'uv run --project manager agentx-manager --root . logs "{{.CLUSTER}}"'
 
   cluster:logs:gateway:
     desc: "Tail nginx gateway logs (CLUSTER=name; token rejections appear as 401)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml --profile production logs -f nginx
+      - 'uv run --project manager agentx-manager --root . logs "{{.CLUSTER}}" nginx'
 
   cluster:logs:tunnel:
     desc: "Tail cloudflared tunnel logs (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml -f docker-compose.gateway.yml -f docker-compose.tunnel.named.yml --profile production logs -f cloudflared
+      - 'uv run --project manager agentx-manager --root . logs "{{.CLUSTER}}" cloudflared'
 
   cluster:status:
-    desc: "Show cluster status (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
+    desc: "Show cluster status (CLUSTER=name; add usage via `task manager:usage`)"
     cmds:
-      - |
-        if [ -f "clusters/{{.CLUSTER}}/nginx.conf" ]; then
-          OVERLAY="-f docker-compose.yml -f docker-compose.gateway.yml"
-          if [ -f "clusters/{{.CLUSTER}}/cloudflared/config.yml" ]; then
-            OVERLAY="$OVERLAY -f docker-compose.tunnel.named.yml"
-          fi
-        else
-          OVERLAY=""
-        fi
-        docker compose --env-file clusters/{{.CLUSTER}}/.env $OVERLAY --profile production ps
+      - 'uv run --project manager agentx-manager --root . status "{{.CLUSTER}}"'
 
   cluster:migrate:
     desc: "Apply Django + memory-schema migrations in a cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      # Django/PostgreSQL ORM tables
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py migrate
-      # Neo4j/PG/Redis memory schema (baseline vector indexes + incremental
-      # migrate_schema). Required for recall + the semantic-duplicate check —
-      # without it, consolidation logs "fact_embeddings index missing".
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py init_memory_schema --verbose
+      - 'uv run --project manager agentx-manager --root . agentx "{{.CLUSTER}}" -- migrate'
 
   cluster:makemigrations:
     desc: "Generate new Django migrations in a cluster (CLUSTER=name)"
     vars:
       CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py makemigrations
+      - docker compose -p agentx-{{.CLUSTER}} --env-file clusters/{{.CLUSTER}}/.env -f docker-compose.yml --profile production exec api uv run python api/manage.py makemigrations
+
 
   cluster:auth:setup:
     desc: "Set up root password for cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py setup_auth
+      - 'uv run --project manager agentx-manager --root . agentx "{{.CLUSTER}}" -- setup-auth'
 
   cluster:warmup:
     desc: "Warm up embedding model for cluster (CLUSTER=name)"
-    vars:
-      CLUSTER: '{{.CLUSTER}}'
     cmds:
-      - docker compose --env-file clusters/{{.CLUSTER}}/.env --profile production exec api uv run python api/manage.py warmup_embeddings --validate
+      - 'uv run --project manager agentx-manager --root . agentx "{{.CLUSTER}}" -- warmup'
 
   cluster:list:
-    desc: "List all clusters"
+    desc: "List all clusters (kind + overlay tags)"
     cmds:
-      - |
-        echo "Clusters:"
-        for dir in clusters/*/; do
-          name=$(basename "$dir")
-          [ "$name" = "template" ] && continue
-          if [ -d "$dir" ]; then
-            tags=""
-            [ -f "$dir/.env" ] || tags="$tags missing-env"
-            [ -f "$dir/nginx.conf" ] && tags="$tags gateway"
-            echo "  $name${tags:+ —$tags}"
-          fi
-        done 2>/dev/null || echo "  (none)"
+      - 'uv run --project manager agentx-manager --root . list'
+
+# ============================================================================
+# DEPLOYMENT MANAGER
+# ============================================================================
+
+  manager:serve:
+    desc: "Run the deployment-manager web GUI (http://127.0.0.1:12320)"
+    cmds:
+      - 'uv run --project manager agentx-manager --root . serve'
+
+  manager:usage:
+    desc: "Per-cluster CPU/memory usage (CLUSTER=name optional)"
+    cmds:
+      - 'uv run --project manager agentx-manager --root . usage {{.CLUSTER}}'
+
+  manager:test:
+    desc: "Manager unit tests (no docker needed)"
+    dir: manager
+    cmds:
+      - uv run pytest tests/unit -q
+
+  manager:test:integration:
+    desc: "Manager integration tests (needs docker; real nginx gateway w/ fake API upstream)"
+    dir: manager
+    cmds:
+      - uv run pytest tests/integration -m docker -q
+
+  manager:ui:build:
+    desc: "Build the manager web GUI (manager/ui/dist)"
+    dir: manager/ui
+    cmds:
+      - bun install
+      - bun run build
+
+  docker:publish:manager:
+    desc: "Build + push the manager image (IMAGE=qrmadness/agentx-manager TAG=dev)"
+    vars:
+      IMAGE: '{{.IMAGE | default "qrmadness/agentx-manager"}}'
+      TAG: '{{.TAG | default "dev"}}'
+    cmds:
+      - docker build -t "{{.IMAGE}}:{{.TAG}}" manager/
+      - docker push "{{.IMAGE}}:{{.TAG}}"
 
 # ============================================================================
 # DEPLOYMENT / PUBLISHING (isolated clusters)
@@ -1640,6 +1494,7 @@ tasks:
         cp docker-compose.gateway.expose.yml "$OUT/docker-compose.gateway.expose.yml"
         cp docker-compose.tunnel.yml         "$OUT/docker-compose.tunnel.yml"
         cp docker-compose.tunnel.named.yml   "$OUT/docker-compose.tunnel.named.yml"
+        cp docker-compose.manager.yml        "$OUT/docker-compose.manager.yml"
         cp clusters/template/nginx.conf.example "$OUT/gateway/nginx.conf.example"
         cp clusters/template/cloudflared/config.yml.example "$OUT/gateway/cloudflared/config.yml.example"
         cp deploy/.env.example               "$OUT/.env.example"
@@ -1664,7 +1519,8 @@ tasks:
         fi
         for f in docker-compose.yml docker-compose.gpu.yml docker-compose.gateway.yml \
                  docker-compose.gateway.expose.yml docker-compose.tunnel.yml \
-                 docker-compose.tunnel.named.yml clusters/template/nginx.conf.example \
+                 docker-compose.tunnel.named.yml docker-compose.manager.yml \
+                 clusters/template/nginx.conf.example \
                  clusters/template/cloudflared/config.yml.example \
                  deploy/.env.example deploy/README.md; do
           [ -f "$f" ] || { echo "✗ missing $f" >&2; exit 1; }

@@ -1,0 +1,226 @@
+/* AgentX Manager dashboard: token gate → cluster grid, polling every 5s. */
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  api,
+  ApiError,
+  clearToken,
+  getToken,
+  setToken,
+  waitForJob,
+  type Cluster,
+  type LifecycleAction,
+  type Meta,
+} from "./api";
+import { ClusterCard } from "./components/ClusterCard";
+import { LogsPanel } from "./components/LogsPanel";
+import { DestroyModal, NewClusterModal } from "./components/modals";
+import { ToastProvider, useToast } from "./components/ui";
+
+function TokenGate({ onUnlocked }: { onUnlocked: () => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setToken(value.trim());
+    try {
+      await api.meta();
+      onUnlocked();
+    } catch (err) {
+      clearToken();
+      setError(err instanceof ApiError && err.status === 401
+        ? "That token was rejected."
+        : `Can't reach the manager: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="w-full max-w-sm rounded-xl border border-line bg-raised p-6 shadow-xl">
+        <h1 className="mb-1 text-lg font-semibold">AgentX Manager</h1>
+        <p className="mb-4 text-sm text-fg-secondary">
+          Paste the access token — it's printed by{" "}
+          <span className="font-mono text-xs">agentx-manager serve</span> (or{" "}
+          <span className="font-mono text-xs">docker compose logs manager</span>)
+          and stored in <span className="font-mono text-xs">.manager-token</span>{" "}
+          next to your compose files.
+        </p>
+        <input
+          autoFocus
+          type="password"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+          }}
+          placeholder="manager token"
+          className="mb-3 w-full rounded-lg border border-line bg-sunken px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
+        />
+        {error && <p className="mb-3 text-sm text-red-300">{error}</p>}
+        <button
+          disabled={!value.trim()}
+          onClick={() => void submit()}
+          className="min-h-10 w-full rounded-lg border border-accent/60 bg-accent/15 text-sm font-medium disabled:opacity-40"
+        >
+          Unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ onLocked }: { onLocked: () => void }) {
+  const { toast } = useToast();
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [busy, setBusy] = useState<Record<string, string | null>>({});
+  const [logsFor, setLogsFor] = useState<Cluster | null>(null);
+  const [destroyFor, setDestroyFor] = useState<Cluster | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const bail = useCallback(
+    (err: unknown) => {
+      if (err instanceof ApiError && err.status === 401) {
+        clearToken();
+        onLocked();
+        return true;
+      }
+      return false;
+    },
+    [onLocked],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      setClusters(await api.clusters());
+    } catch (err) {
+      if (!bail(err)) {
+        /* transient poll failure — keep the last snapshot */
+      }
+    }
+  }, [bail]);
+
+  useEffect(() => {
+    void api.meta().then(setMeta).catch(bail);
+    void refresh();
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [refresh, bail]);
+
+  const runAction = async (
+    cluster: Cluster,
+    action: LifecycleAction | "destroy",
+    start: () => Promise<{ job: string }>,
+  ) => {
+    setBusy((current) => ({ ...current, [cluster.name]: action }));
+    try {
+      const { job } = await start();
+      const finished = await waitForJob(job);
+      if (finished.status === "done") {
+        toast("ok", `${cluster.name}: ${finished.detail || action}`);
+      } else {
+        toast("error", `${cluster.name} ${action} failed: ${finished.detail}`);
+      }
+    } catch (err) {
+      if (!bail(err)) {
+        toast("error", `${cluster.name} ${action}: ${err instanceof Error ? err.message : err}`);
+      }
+    } finally {
+      setBusy((current) => ({ ...current, [cluster.name]: null }));
+      void refresh();
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-6">
+      <header className="mb-6 flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">AgentX Manager</h1>
+        {meta && (
+          <span className="rounded-md border border-line bg-sunken px-2 py-0.5 font-mono text-[11px] text-fg-muted">
+            {meta.mode} · {meta.root} · v{meta.version}
+          </span>
+        )}
+        <span className="text-[11px] text-fg-muted">refreshes every 5s</span>
+        <div className="ml-auto flex gap-2">
+          {meta?.mode === "repo" && (
+            <button
+              onClick={() => setCreating(true)}
+              className="min-h-9 rounded-lg border border-accent/60 bg-accent/15 px-3 text-sm font-medium"
+            >
+              + New cluster
+            </button>
+          )}
+          <button
+            onClick={() => {
+              clearToken();
+              onLocked();
+            }}
+            className="min-h-9 rounded-lg border border-line px-3 text-sm text-fg-muted hover:text-fg-secondary"
+          >
+            Lock
+          </button>
+        </div>
+      </header>
+
+      {clusters.length === 0 ? (
+        <p className="text-sm text-fg-muted">
+          No deployments found under this root.
+          {meta?.mode === "repo" ? " Create one with “New cluster”." : ""}
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
+          {clusters.map((cluster) => (
+            <ClusterCard
+              key={cluster.name}
+              cluster={cluster}
+              busy={busy[cluster.name] ?? null}
+              onAction={(action) =>
+                void runAction(cluster, action, () => api.action(cluster.name, action))
+              }
+              onDestroy={() => setDestroyFor(cluster)}
+              onLogs={() => setLogsFor(cluster)}
+            />
+          ))}
+        </div>
+      )}
+
+      {logsFor && <LogsPanel cluster={logsFor} onClose={() => setLogsFor(null)} />}
+      {destroyFor && (
+        <DestroyModal
+          name={destroyFor.name}
+          onClose={() => setDestroyFor(null)}
+          onConfirm={(keepData) => {
+            const target = destroyFor;
+            setDestroyFor(null);
+            void runAction(target, "destroy", () =>
+              api.destroy(target.name, target.name, keepData),
+            );
+          }}
+        />
+      )}
+      {creating && (
+        <NewClusterModal
+          onClose={() => setCreating(false)}
+          onCreate={async (payload) => {
+            const result = await api.createCluster(payload);
+            void refresh();
+            return result;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [unlocked, setUnlocked] = useState(() => getToken() !== null);
+  return (
+    <ToastProvider>
+      {unlocked ? (
+        <Dashboard onLocked={() => setUnlocked(false)} />
+      ) : (
+        <TokenGate onUnlocked={() => setUnlocked(true)} />
+      )}
+    </ToastProvider>
+  );
+}
