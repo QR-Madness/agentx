@@ -26,8 +26,9 @@ docker compose up -d
 ```
 
 The API **self-initializes** its database schemas on first boot (idempotent) and
-seeds default config. First start also downloads the embedding + translation
-models (~5 GB) into a persistent cache, so later starts are fast.
+seeds default config. First start also downloads the embedding model (~2.3 GB;
+translation models download lazily on first use) into a persistent cache, so
+later starts are fast.
 
 ```bash
 curl "http://localhost:12319/api/health?include_memory=true"

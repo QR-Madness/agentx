@@ -1,0 +1,27 @@
+# docker-compose.tunnel.named.yml
+#
+# Cloudflare *named* tunnel overlay — the credentials-file flavor, layered on
+# top of docker-compose.gateway.yml so all public traffic passes the Nginx
+# token gateway first. (For the dashboard-managed token-connector flavor, use
+# docker-compose.tunnel.yml instead and point its Public Hostname Service at
+# http://nginx:80.)
+#
+# Reads its config from ${AGENTX_GATEWAY_DIR} (default ./gateway):
+#   ${AGENTX_GATEWAY_DIR}/cloudflared/config.yml         ingress rules
+#   ${AGENTX_GATEWAY_DIR}/cloudflared/credentials.json   tunnel credentials
+# Local clusters set AGENTX_GATEWAY_DIR=./clusters/<name>; see
+# gateway/cloudflared/config.yml.example for the one-time tunnel setup.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${AGENTX_CLUSTER_NAME:-agent}-cloudflared
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ${AGENTX_GATEWAY_DIR:-./gateway}/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${AGENTX_GATEWAY_DIR:-./gateway}/cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    profiles:
+      - production

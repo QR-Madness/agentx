@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.140 -->
+<!-- release-version: 0.21.141 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -23,12 +23,28 @@ the client at your own API server and bring your own model providers.
 
 ### Highlights
 
-- 
+- **The token gateway now ships in the deploy bundle.** The Nginx shared-secret + rate-limit
+  gateway works from the bundle — going public no longer means exposing the API bare.
+- **Pick your exposure overlay.** Dashboard token tunnel (Service `http://nginx:80`), named
+  tunnel (`tunnel.named.yml`), or a host port for your own proxy (`gateway.expose.yml`).
+- **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
+  dev `.env` templates opt out explicitly.
 
 ### Fixes
 
-- **API image now runs Python 3.14.** Moved up from 3.12; self-hosters building the `Dockerfile`
-  outside Docker need Python 3.14 tooling.
+- **Gateway fails closed.** Compose refuses to start the gateway with an empty
+  `AGENTX_GATEWAY_TOKEN` (previously that silently authorized every request).
+- **X-Forwarded-For is no longer trusted blindly.** Honored only with `AGENTX_TRUST_PROXY=true`
+  (set behind the gateway) — closes a spoofable localhost auth bypass on exposed APIs.
+- **Rate limiting works without Cloudflare** (TCP-peer fallback when `CF-Connecting-IP` is
+  absent); misleading cloudflared `noHappyEyeballs` SSE comment corrected.
+
+### Migration notes (self-hosters)
+
+- `.env` omits `DJANGO_DEBUG` / `AGENTX_AUTH_ENABLED`? The new safe defaults apply (debug off,
+  auth on) — set them explicitly to keep old behavior.
+- Gateway clusters: `cluster:up` auto-adds `AGENTX_GATEWAY_DIR` to older `.env`s; also set
+  `AGENTX_TRUST_PROXY=true` behind the gateway.
 
 ### Getting started
 

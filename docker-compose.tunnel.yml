@@ -17,10 +17,12 @@
 #      (or set COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml in .env
 #       so a bare `docker compose up -d` always includes it).
 #
-# This publishes the API directly (no shared-secret gateway); keep
-# AGENTX_AUTH_ENABLED=true. To additionally front it with the Nginx token
-# gateway, use the cluster gateway overlay instead and point the tunnel's
-# Service at http://nginx:80.
+# Service = http://api:12319 publishes the API directly (no shared-secret
+# gateway); keep AGENTX_AUTH_ENABLED=true. Recommended: layer
+# docker-compose.gateway.yml as well and set the dashboard Public Hostname
+# Service to http://nginx:80 instead — the tunnel then hits the Nginx token
+# gateway (shared secret + rate limiting) before Django. The routing choice
+# lives entirely in the Cloudflare dashboard; no compose change needed.
 
 services:
   cloudflared:

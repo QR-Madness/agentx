@@ -1,17 +1,18 @@
-# clusters/<name>/cloudflared/config.yml
+# Cloudflare *named* tunnel ingress for an AgentX gateway deployment.
+# Lives at ${AGENTX_GATEWAY_DIR}/cloudflared/config.yml (local clusters:
+# clusters/<name>/cloudflared/config.yml).
 #
-# Cloudflare Tunnel ingress for an AgentX cluster.
-#
-# One-time setup on the host before bringing the cluster up:
+# One-time setup on the host before bringing the stack up:
 #   1. cloudflared tunnel login
-#   2. cloudflared tunnel create agentx-<cluster>
+#   2. cloudflared tunnel create agentx-<name>
 #      → writes credentials to ~/.cloudflared/<tunnel-id>.json
-#   3. Copy that file to clusters/<name>/cloudflared/credentials.json
-#   4. cloudflared tunnel route dns agentx-<cluster> <public-host>
+#   3. Copy that file to <gateway-dir>/cloudflared/credentials.json
+#   4. cloudflared tunnel route dns agentx-<name> <public-host>
 #   5. Replace <tunnel-id> and <public-host> below to match
-#      AGENTX_PUBLIC_HOST in clusters/<name>/.env.
+#      AGENTX_PUBLIC_HOST in your .env.
 #
-# Then: task cluster:up CLUSTER=<name>
+# Then: task cluster:up CLUSTER=<name> (local clusters), or layer
+# docker-compose.gateway.yml + docker-compose.tunnel.named.yml (isolated).
 
 tunnel: <tunnel-id>
 credentials-file: /etc/cloudflared/credentials.json
@@ -26,8 +27,12 @@ ingress:
     originRequest:
       httpHostHeader: <public-host>
       connectTimeout: 10s
-      # Long-running streaming responses (chat SSE) need the tunnel to
-      # hold the connection open well beyond the default 100s.
+      # Disable Happy Eyeballs (IPv4/IPv6 connection racing) — the origin is
+      # a single compose-network hostname, so racing address families only
+      # adds noise. Note this is NOT a streaming/idle timeout: long SSE
+      # responses are kept alive by nginx's proxy_buffering off +
+      # proxy_read_timeout 600s (see nginx.conf), and cloudflared does not
+      # cut chunked responses that are still transferring.
       noHappyEyeballs: true
 
   # Catch-all: anything not matching the hostname above gets a flat 404

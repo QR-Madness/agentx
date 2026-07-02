@@ -10,7 +10,12 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 |------|---------|
 | `docker-compose.yml` | The stack: API (pulled image) + Neo4j + PostgreSQL + Redis |
 | `docker-compose.gpu.yml` | Optional NVIDIA GPU overlay for the API |
-| `docker-compose.tunnel.yml` | Optional Cloudflare Tunnel overlay (go public, no host `cloudflared`) |
+| `docker-compose.gateway.yml` | Nginx token gateway (shared secret + rate limiting) in front of the API |
+| `docker-compose.gateway.expose.yml` | Publish the gateway on a host port (BYO reverse proxy / TLS) |
+| `docker-compose.tunnel.yml` | Cloudflare Tunnel overlay, dashboard/token flavor (no host `cloudflared`) |
+| `docker-compose.tunnel.named.yml` | Cloudflare Tunnel overlay, named/credentials-file flavor |
+| `gateway/nginx.conf.example` | Gateway config template — copy to `gateway/nginx.conf` |
+| `gateway/cloudflared/config.yml.example` | Named-tunnel ingress template |
 | `.env.example` | Configuration template — copy to `.env` and fill in |
 
 ## Quick start
@@ -24,9 +29,14 @@ docker compose up -d
 ```
 
 On first start the API **self-initializes** its database schemas (idempotent) and
-seeds default config. First boot also downloads the embedding + translation
-models (~5 GB) into a persistent cache under `./data/hf-cache`, so subsequent
-starts are fast.
+seeds default config. First boot also downloads the embedding model (~2.3 GB;
+translation models download lazily on first use) into a persistent cache under
+`./data/hf-cache`, so subsequent starts are fast.
+
+> **Docker Desktop (macOS/Windows):** unpack this bundle somewhere under a
+> file-shared path (e.g. your home directory, not `/tmp`) — the stack uses
+> bind mounts under `./data`, which Docker Desktop only allows from shared
+> locations.
 
 Check health:
 
@@ -72,21 +82,60 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 Verify: `curl -s localhost:12319/api/health | jq .compute` → `{"device":"cuda",...}`.
 
-## Going public (Cloudflare Tunnel)
+## Going public (gateway + tunnel — recommended)
 
-Expose this instance over the internet with the bundled `docker-compose.tunnel.yml`
-overlay — a dashboard-managed Cloudflare Tunnel container, so there's **no
-`cloudflared` on the host and no inbound ports**:
+Front the API with the bundled **Nginx token gateway** — every request must
+carry a shared-secret `AgentX-Gateway-Token` header and is rate-limited
+(~10 req/s per client IP) before it reaches the API — then expose the gateway
+via a Cloudflare Tunnel:
 
 ```bash
-# 1. In the Cloudflare Zero Trust dashboard: create a Tunnel, add a Public
-#    Hostname with Service = http://api:12319, and copy the connector token.
-# 2. In .env:
-#      TUNNEL_TOKEN=<token>            # secret
+# 1. Gateway config + shared secret:
+mkdir -p gateway
+cp gateway/nginx.conf.example gateway/nginx.conf
+openssl rand -hex 32     # → AGENTX_GATEWAY_TOKEN in .env
+
+# 2. In the Cloudflare Zero Trust dashboard: create a Tunnel, add a Public
+#    Hostname with Service = http://nginx:80 (the gateway, NOT the API),
+#    and copy the connector token.
+
+# 3. In .env:
+#      TUNNEL_TOKEN=<token>                  # secret
 #      AGENTX_PUBLIC_HOST=agentx.example.com
-# 3. Bring up with the overlay (keep AGENTX_AUTH_ENABLED=true!):
-docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#      AGENTX_GATEWAY_TOKEN=<64-char hex>    # secret
+#      AGENTX_TRUST_PROXY=true               # gateway overwrites X-Forwarded-For
+#      COMPOSE_FILE=docker-compose.yml:docker-compose.gateway.yml:docker-compose.tunnel.yml
+
+# 4. Up (COMPOSE_FILE makes plain `docker compose` include the overlays):
+docker compose up -d
+
+# 5. Smoke test:
+curl -I https://agentx.example.com/api/health                    # → 401
+curl -I -H "AgentX-Gateway-Token: <token>" \
+     https://agentx.example.com/api/health                       # → 200
 ```
+
+Point your AgentX client at the public URL and put the same token in the
+server's **Gateway token** field — it sends the header automatically.
+
+Variants:
+
+- **Named tunnel** (credentials file instead of dashboard token): also
+  `cp gateway/cloudflared/config.yml.example gateway/cloudflared/config.yml`,
+  follow its embedded setup steps, and use
+  `docker-compose.tunnel.named.yml` in `COMPOSE_FILE` instead of
+  `docker-compose.tunnel.yml`.
+- **Your own reverse proxy / TLS** (no Cloudflare): use
+  `docker-compose.gateway.expose.yml` instead of a tunnel overlay; the gateway
+  listens on `${AGENTX_GATEWAY_BIND:-127.0.0.1}:${AGENTX_GATEWAY_PORT:-8080}`.
+- **Bare tunnel (not recommended):** `docker-compose.tunnel.yml` alone with
+  Service = `http://api:12319` publishes the API with only app-auth in front —
+  no shared secret, no rate limiting. If you do this, keep
+  `AGENTX_AUTH_ENABLED=true` and leave `AGENTX_TRUST_PROXY` unset.
+
+> **Edited `gateway/nginx.conf`?** It's bind-mounted as a single file, whose
+> inode the container pins at create time — recreate (don't just restart) the
+> gateway to pick up changes: `docker compose up -d --force-recreate nginx`.
 
 Full walkthrough + troubleshooting:
 https://agentx.thejpnet.net/docs/deployment/self-hosting/#going-public
@@ -99,9 +148,8 @@ docker compose pull
 docker compose up -d
 ```
 
-> If you use the Cloudflare Tunnel overlay, include it on every command
-> (`-f docker-compose.yml -f docker-compose.tunnel.yml …`) or set
-> `COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml` in `.env`.
+> If you use overlays (gateway/tunnel/GPU), include them on every command or
+> set them once via `COMPOSE_FILE=docker-compose.yml:…` in `.env` as above.
 
 Schema migrations re-apply automatically on boot (idempotent). Your config and
 data persist under `./data`.

@@ -9868,3 +9868,77 @@ class ViewImageTest(TestCase):
             ge.return_value.raw_connection.return_value = _Conn()
             imgs = ch.list_conversation_images("conv")
         self.assertEqual([i["doc_id"] for i in imgs], ["doc_b", "doc_a"])  # deduped, order kept
+
+
+@override_settings(AGENTX_AUTH_ENABLED=True, AGENTX_AUTH_BYPASS_LOCALHOST=True)
+class AuthClientIpTrustTest(TestCase):
+    """get_client_ip + is_auth_bypass_active under the hardened defaults.
+
+    The load-bearing property: without AGENTX_TRUST_PROXY, a spoofed
+    X-Forwarded-For header must not influence the client IP — otherwise a
+    direct (tunnel-exposed) API can be tricked into the DEBUG localhost
+    auth bypass by sending XFF: 127.0.0.1.
+    """
+
+    def _request(self, remote_addr="203.0.113.7", xff=None):
+        from django.test import RequestFactory
+
+        headers = {"HTTP_X_FORWARDED_FOR": xff} if xff else {}
+        return RequestFactory().get("/api/health", REMOTE_ADDR=remote_addr, **headers)
+
+    @override_settings(AGENTX_TRUST_PROXY=False)
+    def test_untrusted_proxy_ignores_spoofed_xff(self):
+        from agentx_ai.auth.middleware import get_client_ip
+
+        request = self._request(remote_addr="203.0.113.7", xff="127.0.0.1")
+        self.assertEqual(get_client_ip(request), "203.0.113.7")
+
+    @override_settings(AGENTX_TRUST_PROXY=False)
+    def test_untrusted_proxy_uses_remote_addr(self):
+        from agentx_ai.auth.middleware import get_client_ip
+
+        self.assertEqual(get_client_ip(self._request()), "203.0.113.7")
+
+    @override_settings(AGENTX_TRUST_PROXY=True)
+    def test_trusted_proxy_honors_first_xff_entry(self):
+        from agentx_ai.auth.middleware import get_client_ip
+
+        request = self._request(remote_addr="172.18.0.5", xff="198.51.100.3, 172.18.0.5")
+        self.assertEqual(get_client_ip(request), "198.51.100.3")
+
+    @override_settings(AGENTX_TRUST_PROXY=True)
+    def test_trusted_proxy_without_xff_falls_back_to_remote_addr(self):
+        from agentx_ai.auth.middleware import get_client_ip
+
+        self.assertEqual(get_client_ip(self._request(remote_addr="172.18.0.5")), "172.18.0.5")
+
+    @override_settings(AGENTX_TRUST_PROXY=False, DEBUG=True)
+    def test_spoofed_xff_cannot_trigger_localhost_bypass(self):
+        from agentx_ai.auth.middleware import get_client_ip, is_auth_bypass_active
+
+        request = self._request(remote_addr="203.0.113.7", xff="127.0.0.1")
+        self.assertFalse(is_auth_bypass_active(get_client_ip(request)))
+
+    @override_settings(DEBUG=True)
+    def test_localhost_bypass_active_in_debug(self):
+        from agentx_ai.auth.middleware import is_auth_bypass_active
+
+        self.assertTrue(is_auth_bypass_active("127.0.0.1"))
+
+    @override_settings(DEBUG=False)
+    def test_no_localhost_bypass_outside_debug(self):
+        from agentx_ai.auth.middleware import is_auth_bypass_active
+
+        self.assertFalse(is_auth_bypass_active("127.0.0.1"))
+
+    @override_settings(DEBUG=True, AGENTX_AUTH_BYPASS_LOCALHOST=False)
+    def test_bypass_localhost_flag_disables_bypass(self):
+        from agentx_ai.auth.middleware import is_auth_bypass_active
+
+        self.assertFalse(is_auth_bypass_active("127.0.0.1"))
+
+    @override_settings(AGENTX_AUTH_ENABLED=False)
+    def test_auth_disabled_bypasses_everything(self):
+        from agentx_ai.auth.middleware import is_auth_bypass_active
+
+        self.assertTrue(is_auth_bypass_active("203.0.113.7"))
