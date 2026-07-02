@@ -1,4 +1,6 @@
 // @ts-check
+import { copyFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import mermaid from 'astro-mermaid';
@@ -8,6 +10,28 @@ import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 
 import { remarkAdmonitions } from './src/plugins/remark-admonitions.mjs';
 import { remarkRewriteMdLinks } from './src/plugins/remark-rewrite-md-links.mjs';
+
+// Mirrors the repo-root OpenApi.yaml into public/ so the API Explorer (Redoc) page can
+// fetch it as a static asset. Runs once per command (dev/build/preview/sync) before Vite
+// starts, so it covers every entry point without a second server-only hook.
+/** @returns {import('astro').AstroIntegration} */
+function copyOpenApiSpec() {
+  return {
+    name: 'copy-openapi-spec',
+    hooks: {
+      'astro:config:setup': ({ logger }) => {
+        const src = fileURLToPath(new URL('../OpenApi.yaml', import.meta.url));
+        const dest = fileURLToPath(new URL('./public/openapi.yaml', import.meta.url));
+        if (existsSync(src)) {
+          copyFileSync(src, dest);
+          logger.info('Copied OpenApi.yaml → public/openapi.yaml');
+        } else {
+          logger.warn(`OpenApi.yaml not found at ${src}; /openapi.yaml will 404`);
+        }
+      },
+    },
+  };
+}
 
 // Cosmic-dark mermaid theme — ported from the design handoff (docs.html). Pinned
 // via theme 'base' + explicit themeVariables; `autoTheme: false` because the site
@@ -60,6 +84,7 @@ export default defineConfig({
       },
     }),
     mdx(),
+    copyOpenApiSpec(),
   ],
 
   vite: {

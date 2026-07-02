@@ -1,0 +1,16 @@
+---
+import bundleUrl from 'redoc/bundles/redoc.standalone.js?url';
+import ExplorerLayout from '../../layouts/ExplorerLayout.astro';
+import { slugToHref } from '../../config/nav';
+---
+
+<ExplorerLayout
+  title="Interactive Explorer"
+  description="Interactive OpenAPI explorer for the AgentX REST API."
+  backHref={slugToHref('api/endpoints')}
+  backLabel="API Endpoints"
+>
+  <redoc spec-url="/openapi.yaml"></redoc>
+</ExplorerLayout>
+
+<script is:inline src={bundleUrl}></script>

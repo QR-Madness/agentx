@@ -172,17 +172,14 @@ VITE_API_URL=http://localhost:12319/api   # API URL for Tauri client
 
 Runtime config takes priority over environment variables. The `ConfigManager.get_provider_value()` method checks: config file value → env var → default.
 
-### API
+### API Endpoints
 
-```bash
-# Read current config
-curl http://localhost:12319/api/config
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/config` | GET | Read current config (secrets redacted) |
+| `/api/config/update` | POST | Update a value (dot-notation keys) |
 
-# Update a value (dot-notation keys)
-curl -X POST http://localhost:12319/api/config/update \
-  -H "Content-Type: application/json" \
-  -d '{"key": "providers.lmstudio.base_url", "value": "http://localhost:1234/v1"}'
-```
+See [API Endpoints: Config](../api/endpoints.md#config) for full details.
 
 ---
 

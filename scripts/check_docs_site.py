@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "docs-site"
 DOCS = SITE / "src" / "content" / "docs"
+PAGES_DOCS = SITE / "src" / "pages" / "docs"
 STRICT = "--strict" in sys.argv
 
 errors: list[str] = []
@@ -44,7 +45,9 @@ def route_exists(route: str) -> bool:
     if not sub:
         return any((DOCS / f"index.{e}").exists() for e in ("md", "mdx"))
     cands = [DOCS / f"{sub}.md", DOCS / f"{sub}.mdx",
-             DOCS / sub / "index.md", DOCS / sub / "index.mdx"]
+             DOCS / sub / "index.md", DOCS / sub / "index.mdx",
+             # static (non-content-collection) pages, e.g. src/pages/docs/api-explorer.astro
+             PAGES_DOCS / f"{sub}.astro", PAGES_DOCS / sub / "index.astro"]
     return any(c.exists() for c in cands)
 
 

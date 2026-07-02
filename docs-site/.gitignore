@@ -10,3 +10,5 @@ node_modules/
 npm-debug.log*
 # macOS
 .DS_Store
+# generated: mirrored from repo-root OpenApi.yaml by astro.config.mjs
+public/openapi.yaml

@@ -11,6 +11,8 @@ never lost on disconnect.
 POST /api/agent/chat/stream
 ```
 
+See [API Endpoints: Chat (Streaming)](../api/endpoints.md#chat-streaming) for the full request/response reference.
+
 The body is the same as `POST /api/agent/chat` (`message` required; optional `session_id`,
 `model`, `profile_id`, `temperature`, `use_memory`). Two extras route the turn:
 
@@ -85,6 +87,8 @@ and persists the turn on completion — independent of the HTTP connection. Clos
 GET /api/agent/chat/stream/attach?run_id=<id>
 ```
 
+See [API Endpoints: Re-attach to a Run](../api/endpoints.md#re-attach-to-a-run) for the full reference.
+
 Replays the buffered events from the start, then follows live until completion. Emits a
 `run_missing` event (instead of replaying) once the buffer has expired — at which point you
 restore from conversation history instead.
@@ -95,6 +99,9 @@ restore from conversation history instead.
 GET  /api/agent/chat/runs                       # the caller's detached runs (newest first)
 POST /api/agent/chat/runs/{run_id}/cancel       # cooperatively cancel a run
 ```
+
+See [API Endpoints: List Detached Runs](../api/endpoints.md#list-detached-runs) and
+[Cancel a Run](../api/endpoints.md#cancel-a-run) for the full reference.
 
 `runs` powers recovery surfaces (an inbox, a conversation picker) that offer to re-attach runs
 whose owning tab was closed. Cancellation is checked at event boundaries.
@@ -107,3 +114,5 @@ For long jobs where you don't need live tokens, queue the turn instead and poll:
 POST /api/chat/background            → { "job_id": "…", "status": "queued" }
 GET  /api/chat/background/{job_id}    → status + result once complete
 ```
+
+See [API Endpoints: Background Chat](../api/endpoints.md#background-chat) for the full reference.

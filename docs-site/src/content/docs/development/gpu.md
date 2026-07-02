@@ -57,10 +57,9 @@ To install the CUDA build with uv (adjust the CUDA version to your driver):
 uv pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 
-:::note
-If `cuda_available` is `false` despite having a GPU, you almost always have a CPU-only `torch` wheel
-installed. Reinstall from the CUDA index above.
-:::
+!!! note
+    If `cuda_available` is `false` despite having a GPU, you almost always have a CPU-only `torch`
+    wheel installed. Reinstall from the CUDA index above.
 
 ## Docker / production
 

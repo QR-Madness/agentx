@@ -55,55 +55,18 @@ Flow: task decomposition → reasoning strategy selection → execution → memo
 
 ## Streaming
 
-`POST /api/agent/chat/stream` returns Server-Sent Events for real-time token streaming.
+`POST /api/agent/chat/stream` returns the same response as `POST /api/agent/chat`, but as
+Server-Sent Events, using the same tool-use loop as the non-streaming endpoint. The run is
+detached from the HTTP connection — it keeps generating server-side and persists its turns even
+if the client disconnects.
 
-**SSE events:**
+Two client surfaces let a user recover a detached run after closing its tab: a **"Live runs"**
+section in the Relay inbox, and a **"Resume Running"** section atop the conversation selector.
+Both list only runs still `running` and not owned by an open tab; clicking **Resume** restores
+the conversation and re-attaches.
 
-| Event | Data | When |
-|-------|------|------|
-| `run_started` | `{run_id}` | First event — identifies the detached run |
-| `start` | `{task_id, model}` | Generation begins |
-| `chunk` | `{content}` | Each token |
-| `tool_call` | `{tool, arguments}` | Tool invocation |
-| `tool_result` | `{tool, content}` | Tool result |
-| `done` | `{task_id, thinking, has_thinking, total_time_ms, session_id}` | Complete |
-| `error` | `{error}` | On failure |
-| `close` | `{}` | Run settled; tail ends |
-
-The streaming endpoint supports the same tool-use loop as the non-streaming endpoint.
-
-```bash
-curl -N -X POST http://localhost:12319/api/agent/chat/stream \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello!", "model": "llama3.2"}'
-```
-
-### Detached runs (survive disconnect)
-
-A chat run is **decoupled from the HTTP connection**. When you POST to
-`/api/agent/chat/stream`, the server spawns a detached daemon thread that drives the
-generation to completion — fanning every SSE event into a Redis stream and persisting
-turns at the end — regardless of whether a client is still listening. The HTTP response
-merely *tails* that Redis stream.
-
-This means closing or switching the browser/conversation tab **does not** kill the run:
-generation plays out server-side and the turns are saved. The first event, `run_started`,
-carries a `run_id` the client persists so it can re-attach.
-
-- **Re-attach:** `GET /api/agent/chat/stream/attach?run_id=<id>` replays the buffered
-  events from the start, then follows live until completion. If the run's buffer has
-  expired (2h TTL), it emits `run_missing` and the client restores from conversation
-  history instead.
-- **Cancel:** `POST /api/agent/chat/runs/{run_id}/cancel` cooperatively stops a run (the
-  runner checks the flag at SSE-event boundaries). This is what the chat **Stop** button
-  calls; merely closing a tab does not cancel — it only detaches.
-- **Recover:** closing a *conversation tab* drops the `run_id` it held, so the run can't
-  be re-attached from that tab. `GET /api/agent/chat/runs` lists the caller's detached
-  runs (newest first); two surfaces consume it — a **"Live runs"** section in the Relay
-  inbox and a **"Resume Running"** section atop the conversation selector. Both show only
-  runs that are still `running` and **not** owned by an open tab, and clicking **Resume**
-  restores the conversation (or seeds a fresh tab when the run hasn't emitted its
-  `session_id` yet) and re-attaches. Runs are indexed per user.
+See [Streaming & Detached Runs](../integrate/streaming.md) for the full SSE event reference and
+the re-attach / cancel mechanics.
 
 ## Session Management
 
@@ -165,9 +128,21 @@ The `OutputParser` extracts `<think>` tags from model output:
 | `temperature` | float | `0.7` | Sampling temperature |
 | `use_memory` | bool | `true` | Enable memory |
 
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/agent/chat` | POST | One-shot chat (JSON response) |
+| `/api/agent/chat/stream` | POST | Streaming chat (SSE) |
+| `/api/agent/run` | POST | Full agent pipeline (planning + reasoning) |
+| `/api/agent/chat/stream/attach` | GET | Re-attach to a detached run |
+| `/api/agent/chat/runs` | GET | List the caller's detached runs |
+| `/api/agent/chat/runs/{run_id}/cancel` | POST | Cancel a running turn |
+
+See [API Endpoints: Agent](../api/endpoints.md#agent) for full request/response details.
+
 ## Related
 
-- [API Endpoints: Agent](../api/endpoints.md#agent) — Full endpoint documentation
 - [Prompts](prompts.md) — Prompt composition system
 - [MCP](mcp.md) — Tool integration
 - [Memory](memory.md) — Memory system

@@ -70,41 +70,14 @@ Translation uses NLLB-200 codes in `{iso639-3}_{script}` format:
 
 The full list of 200+ supported codes is in `kit/translation.py` (`nlb200_list`).
 
-## API Usage
+## API Endpoints
 
-### Detect Language
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tools/language-detect-20` | GET / POST | Detect language (Level I, ~20 languages) |
+| `/api/tools/translate` | POST | Translate text (Level II, 200+ languages via NLLB-200) |
 
-```bash
-curl -X POST http://localhost:12319/api/tools/language-detect-20 \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Bonjour, comment allez-vous?"}'
-```
-
-**Response:**
-```json
-{
-  "original": "Bonjour, comment allez-vous?",
-  "detected_language": "fr",
-  "confidence": 98.5
-}
-```
-
-### Translate Text
-
-```bash
-curl -X POST http://localhost:12319/api/tools/translate \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello, world!", "targetLanguage": "fra_Latn"}'
-```
-
-**Response:**
-```json
-{
-  "original": "Hello, world!",
-  "translatedText": "Bonjour, monde!",
-  "targetLanguage": "fra_Latn"
-}
-```
+See [API Endpoints](../api/endpoints.md#translation) for full details.
 
 ## Models
 
@@ -117,5 +90,4 @@ Models are downloaded from HuggingFace on first use. Pre-download with `task mod
 
 ## Related
 
-- [API Endpoints: Translation](../api/endpoints.md#translation) — Full endpoint reference
 - Source: `api/agentx_ai/kit/translation.py`

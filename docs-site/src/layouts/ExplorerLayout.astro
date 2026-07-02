@@ -1,0 +1,83 @@
+---
+// A minimal, full-width layout for pages that render their own internal navigation
+// (e.g. Redoc's schema tree / content / try-it panes) and shouldn't be squeezed into the
+// standard docs Sidebar+TOC container. Just brand + a single backlink; no docs chrome.
+import BaseLayout from './BaseLayout.astro';
+import { site } from '../config/site';
+
+interface Props {
+  title?: string;
+  description?: string;
+  backHref: string;
+  backLabel: string;
+}
+
+const { title, description, backHref, backLabel } = Astro.props;
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="ax-explorer-shell">
+    <header class="ax-explorer-header">
+      <a href={site.docsBasePath} class="ax-explorer-brand">
+        <img src="/AgentX-Logo-v3-badge.png" alt="" width="22" height="22" />
+        <span class="ax-wordmark">{site.name}</span>
+        <span class="ax-mono">docs</span>
+      </a>
+      <a href={backHref} class="ax-explorer-back">← {backLabel}</a>
+    </header>
+    <main class="ax-explorer-main">
+      <slot />
+    </main>
+  </div>
+</BaseLayout>
+
+<style>
+  .ax-explorer-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .ax-explorer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-2);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .ax-explorer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ax-explorer-brand img {
+    border-radius: 5px;
+  }
+
+  .ax-explorer-back {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    padding: 6px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+  }
+  .ax-explorer-back:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-2);
+  }
+
+  .ax-explorer-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+</style>

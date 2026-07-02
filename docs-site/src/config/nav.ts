@@ -50,6 +50,7 @@ export const nav: NavEntry[] = [
     label: 'API Reference',
     items: [
       { label: 'Endpoints', slug: 'api/endpoints' },
+      { label: 'Interactive Explorer', slug: 'api-explorer' },
       { label: 'Models', slug: 'api/models' },
     ],
   },

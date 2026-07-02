@@ -4,7 +4,7 @@ Base URL: `http://localhost:12319/api/`
 
 All endpoints return JSON. POST endpoints accept `application/json` bodies. All endpoints handle CORS preflight (`OPTIONS`) automatically.
 
-A machine-readable OpenAPI 3.0 spec mirroring this reference lives at `OpenApi.yaml` in the repo root (lint it with `task api:spec:lint`).
+A machine-readable OpenAPI 3.0 spec mirroring this reference lives at `OpenApi.yaml` in the repo root (lint it with `task api:spec:lint`) — browse it interactively in the [API Explorer](/docs/api-explorer).
 
 ---
 
