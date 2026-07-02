@@ -14,6 +14,7 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 | `docker-compose.gateway.expose.yml` | Publish the gateway on a host port (BYO reverse proxy / TLS) |
 | `docker-compose.tunnel.yml` | Cloudflare Tunnel overlay, dashboard/token flavor (no host `cloudflared`) |
 | `docker-compose.tunnel.named.yml` | Cloudflare Tunnel overlay, named/credentials-file flavor |
+| `docker-compose.manager.yml` | Web deployment manager (dashboard, health, resources, logs) — profile `manager` |
 | `gateway/nginx.conf.example` | Gateway config template — copy to `gateway/nginx.conf` |
 | `gateway/cloudflared/config.yml.example` | Named-tunnel ingress template |
 | `.env.example` | Configuration template — copy to `.env` and fill in |
@@ -49,6 +50,24 @@ If `AGENTX_AUTH_ENABLED=true` (the default), set the root password once:
 ```bash
 docker compose exec api agentx setup-auth
 ```
+
+## The manager GUI (recommended)
+
+A web dashboard for this deployment — live health (first boot shows **initializing**
+while models download), per-cluster CPU/memory gauges, lifecycle buttons, log
+streaming, and safe destroy:
+
+```bash
+# In .env (once):  COMPOSE_PROFILES=production,manager
+docker compose up -d
+docker compose logs manager | grep -A1 token   # access token (also ./.manager-token)
+# Open http://127.0.0.1:12320 and paste the token
+```
+
+> **Private by design:** the manager drives the Docker socket. It binds to
+> 127.0.0.1 only, always requires its token, and must never be routed through the
+> tunnel/gateway. Remote access: `ssh -L 12320:127.0.0.1:12320 <host>`.
+> Run its compose commands from this directory (it mounts `${PWD}` at the same path).
 
 ## Day-2 operations — the `agentx` CLI
 

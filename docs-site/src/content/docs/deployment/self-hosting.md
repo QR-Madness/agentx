@@ -45,8 +45,10 @@ docker compose up -d
 ```
 
 On first start the API **self-initializes** its database schemas (idempotent) and
-seeds default config. It also downloads the embedding + translation models
-(~5 GB) into a persistent cache under `./data/hf-cache`, so later starts are fast.
+seeds default config. It also downloads the embedding model (~2.3 GB; translation
+models download lazily on first use) into a persistent cache under
+`./data/hf-cache`, so later starts are fast. Expect the first boot to spend a few
+minutes *initializing* — the manager GUI below shows that state explicitly.
 
 ```bash
 curl "http://localhost:12319/api/health?include_memory=true"
@@ -64,6 +66,41 @@ With `AGENTX_AUTH_ENABLED=true` (the default), set the password once on first ru
 ```bash
 docker compose exec api agentx setup-auth
 ```
+
+## Guided setup: the manager GUI
+
+The bundle ships a **web deployment manager** — cluster dashboard, live health (including
+the first-boot *initializing* state), per-cluster CPU/memory gauges, lifecycle buttons,
+log streaming, and safe destroy — so day-2 operation doesn't require memorizing compose
+commands. Three steps from an untarred bundle:
+
+```bash
+# 1. Enable the manager profile alongside production (once, in .env):
+#      COMPOSE_PROFILES=production,manager
+docker compose up -d
+
+# 2. Grab the access token (also stored at ./.manager-token):
+docker compose logs manager | grep -A1 token
+
+# 3. Open the GUI and paste the token:
+#      http://127.0.0.1:12320
+```
+
+From there you can watch the first boot progress (the API card shows **initializing**
+while models download, then flips to **up**), tail logs per service, and see CPU/memory
+per cluster at a glance.
+
+!!! danger "Keep the manager private"
+    The manager drives the Docker socket — treat it like root on the host. It publishes
+    on `127.0.0.1` only and always requires its token; never route it through the
+    tunnel/gateway. From another machine, use SSH port forwarding:
+    `ssh -L 12320:127.0.0.1:12320 <host>`.
+
+!!! note "Run its compose commands from the deployment root"
+    The manager container mounts the deployment directory at the same absolute path as
+    the host (`${PWD}:${PWD}`) so compose bind mounts resolve identically — run
+    `docker compose` for this overlay from the bundle directory. Full reference:
+    [Deployment Manager](manager.md).
 
 ## Get the desktop client
 

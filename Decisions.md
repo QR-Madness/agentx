@@ -165,6 +165,24 @@ the frozen baseline + single-head gate make that class of bug impossible.
 re-run intermediate `ALTER`s; continuous auto-init means deployed instances already are.
 **Source:** this session; `alembic/README`.
 
+### ADR-10 — Docker Compose is the deployment engine; the manager owns overlay assembly
+**Decision:** deployments stay on **Docker Compose**; the **deployment manager** (`manager/` —
+`agentx-manager` CLI + web GUI container, one testable core) is the single owner of overlay assembly.
+A cluster's shape is an **explicit persisted spec** (`.manager-state.json`: kind `source|image`,
+gateway / tunnel `none|token|named` / expose / gpu / shell), not file-presence sniffing; every cluster
+runs under its own compose project (`-p agentx-<name>`, fixing the shared-default-project collision);
+tracked single-file bind mounts are **hashed**, so `restart` force-recreates services whose config
+changed (the nginx.conf inode gotcha, fixed by construction). The isolation axis collapses to
+`kind=source|image` in one codepath — `task cluster:*` are thin wrappers.
+**Why:** compose already carried the product end-to-end (self-init entrypoint, in-image CLI,
+profiles); the gaps were assembly UX, lifecycle safety, and observability — a manager problem, not an
+orchestrator problem.
+**Security invariant:** the manager drives the Docker socket (root-equivalent) → loopback bind +
+bearer token by default; non-loopback requires explicit `AGENTX_MANAGER_BIND`; it is **never** routed
+through the gateway/tunnel.
+**Source:** deployment overhaul plan (this session); `manager/README` posture in
+`docs-site/.../deployment/manager.md`.
+
 ---
 
 ## Rejected — do not relitigate
@@ -179,6 +197,11 @@ Options weighed and declined (with the reason, so they don't return as "good ide
   (`eval_consolidation`, planned `eval_recall`) are this repo's real quality instruments.
 - **pre-commit framework / husky / commitlint** — each imports a config ecosystem to do what a
   3-line git hook + the existing gates already do (see the planned `task hooks:install`).
+- **k3s / Kubernetes / Helm as the deployment story** — a real orchestrator buys self-healing and
+  declarative state at the cost of forcing k3s onto every self-hoster and rewriting the entire deploy
+  path (ingress, PVCs for bind-mounted data, the dind shell backend). Compose + the manager covers the
+  actual gaps (assembly, lifecycle, GUI). Revisit only if multi-node scheduling becomes a real
+  requirement; a community Helm chart could then wrap the same images. See ADR-10.
 - **Monorepo orchestrators (nx / turbo / moon)** — Taskfile is already the orchestration layer;
   a second task runner is drift by construction.
 - **CODEOWNERS / PR-template machinery** — human-team review-routing ceremony; in an agent-first

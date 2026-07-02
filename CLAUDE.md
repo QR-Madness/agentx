@@ -134,6 +134,12 @@ task db:shell:postgres  # psql / db:shell:redis (redis-cli) / db:shell:neo4j (cy
 # Django
 task api:run            # Dev server (alias: api:runserver)
 task api:migrate / api:makemigrations / api:shell
+
+# Deployment manager (manager/ — owns cluster lifecycle; ADR-10)
+task manager:serve      # Web GUI on http://127.0.0.1:12320 (bearer token in .manager-token)
+task cluster:new CLUSTER=x [GATEWAY=1]   # thin wrappers over `agentx-manager`
+task cluster:up/down/restart/destroy/adopt/status/list CLUSTER=x
+task manager:test       # Manager unit tests; manager:test:integration needs docker
 ```
 
 > **Schema migrations:** the memory **PostgreSQL** schema is managed by **Alembic**

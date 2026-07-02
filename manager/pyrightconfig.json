@@ -1,0 +1,6 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["agentx_manager", "tests"],
+  "reportMissingImports": true
+}

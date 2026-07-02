@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* Design tokens — cosmic dark, mirroring the AgentX client's mood without its
+   runtime theming machinery. Semantic names so components never hardcode hex. */
+@theme {
+  --color-base: #0b0d14;
+  --color-raised: #121522;
+  --color-overlay: #181c2e;
+  --color-sunken: #07080d;
+  --color-hover: #1d2236;
+
+  --color-line: #232a44;
+  --color-line-strong: #34406b;
+
+  --color-fg: #e7eaf6;
+  --color-fg-secondary: #aab1c9;
+  --color-fg-muted: #6b7290;
+
+  --color-accent: #8b7cf7; /* violet */
+  --color-accent-2: #53d3e6; /* cyan */
+
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas,
+    monospace;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1100px 600px at 85% -10%, rgba(139, 124, 247, 0.09), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(83, 211, 230, 0.06), transparent 60%),
+    var(--color-base);
+  color: var(--color-fg);
+  font-family:
+    "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(139, 124, 247, 0.35);
+}
+
+/* Thin, dark scrollbars for the log stream + tables */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}

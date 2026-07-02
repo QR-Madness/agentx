@@ -42,35 +42,43 @@ settings). `config.json` is **not** seeded — it's synthesized at runtime by `C
 
 ## Lifecycle
 
+Cluster lifecycle is owned by the **[deployment manager](manager.md)** (`agentx-manager`);
+the `task cluster:*` targets are thin wrappers kept for muscle memory. The manager persists
+each cluster's overlay spec in `clusters/<name>/.manager-state.json`, runs every cluster
+under its own compose project (`agentx-<name>`), and force-recreates services whose
+bind-mounted config changed. `task manager:serve` opens the web GUI.
+
 | Task | Purpose |
 |------|---------|
-| `cluster:new CLUSTER=<name> [GATEWAY=1]` | Scaffold the directory, copy defaults, write `.env` (sets `AGENTX_CLUSTER_NAME`, `AGENTX_CONFIG_DIR`, `AGENTX_DB_DIR`, `AGENTX_GATEWAY_DIR`, detected `DJANGO_ALLOWED_HOSTS`). `GATEWAY=1` also drops `nginx.conf` + `cloudflared/config.yml` and sets `AGENTX_TRUST_PROXY=true`. |
+| `cluster:new CLUSTER=<name> [GATEWAY=1]` | Scaffold the directory, copy defaults, write `.env` (identity + path vars, generated `DJANGO_SECRET_KEY`, detected `DJANGO_ALLOWED_HOSTS`). `GATEWAY=1` = gateway + named tunnel + generated `AGENTX_GATEWAY_TOKEN` + `AGENTX_TRUST_PROXY=true`. |
 | `cluster:seed CLUSTER=<name> [FORCE=1]` | (Re)seed `config/` from `api/defaults/`; skips existing files unless `FORCE=1` |
-| `cluster:gateway:enable CLUSTER=<name>` | Add the gateway files to an existing cluster |
-| `cluster:up CLUSTER=<name> [REBUILD=1] [NVIDIA=1]` | Start the cluster (auto-includes the gateway overlay if `nginx.conf` exists; `--build` if `REBUILD=1`; GPU overlay if `NVIDIA=1`) |
-| `cluster:down` / `cluster:restart` / `cluster:rebuild` | Stop / restart / rebuild |
+| `cluster:gateway:enable CLUSTER=<name>` | Add the gateway (+ named-tunnel scaffolding) to an existing cluster |
+| `cluster:up CLUSTER=<name> [REBUILD=1] [NVIDIA=1]` | Start — overlays come from the manager spec; waits out first-boot initialization instead of failing |
+| `cluster:down` / `cluster:restart` / `cluster:rebuild` | Stop / config-aware restart / rebuild from source |
+| `cluster:destroy CLUSTER=<name>` | `down --volumes` + delete `clusters/<name>/` (typed confirmation) |
+| `cluster:adopt CLUSTER=<name>` | One-time migration of a pre-manager cluster onto its own compose project (brief downtime) |
 | `cluster:status` / `cluster:logs` / `cluster:logs:gateway` / `cluster:logs:tunnel` | Status & logs |
-| `cluster:migrate` | Apply **Django + memory-schema** migrations inside the container (PostgreSQL ORM tables **and** `init_memory_schema` — the Neo4j/PG/Redis memory schema incl. vector indexes) |
+| `manager:usage [CLUSTER=<name>]` | CPU% / memory per cluster (docker stats) |
+| `cluster:migrate` | Apply **Django + memory-schema** migrations via the in-image `agentx` CLI |
 | `cluster:makemigrations` | Generate new Django migrations inside the container |
 | `cluster:auth:setup` / `cluster:warmup` | Set the root password / pre-load the embedding model |
-| `cluster:list` | List clusters with tags (e.g. `gateway`, `missing-env`) |
+| `cluster:list` | List clusters with kind + overlay tags |
 
-Compose invocation is assembled automatically — for example `cluster:up` runs roughly:
+Compose invocation is assembled by the manager — for example `up` on a gateway cluster runs roughly:
 
 ```bash
-docker compose --env-file clusters/<name>/.env \
+docker compose -p agentx-<name> --env-file clusters/<name>/.env \
   -f docker-compose.yml \
-  [-f docker-compose.build.yml]        # local clusters build the API from source
-  [-f docker-compose.gateway.yml]      # when clusters/<name>/nginx.conf exists
-  [-f docker-compose.tunnel.named.yml] # when clusters/<name>/cloudflared/config.yml exists
-  [-f docker-compose.gpu.yml]          # when NVIDIA=1
+  [-f docker-compose.build.yml]        # spec kind=source: build the API from the repo
+  [-f docker-compose.gateway.yml]      # spec gateway=true
+  [-f docker-compose.tunnel.named.yml] # spec tunnel=named
+  [-f docker-compose.gpu.yml]          # spec gpu=true
   --profile production up -d
 ```
 
 The gateway overlays find their files via **`AGENTX_GATEWAY_DIR`** in the cluster `.env`
-(set to `./clusters/<name>` by `cluster:new`; `cluster:up` appends it to older `.env`s
-automatically). The same overlays ship in the isolated deployment bundle, where the
-variable defaults to `./gateway`.
+(set to `./clusters/<name>` by `cluster:new`). The same overlays ship in the isolated
+deployment bundle, where the variable defaults to `./gateway`.
 
 ## Ports
 
