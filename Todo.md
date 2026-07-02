@@ -56,6 +56,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.143** (pro
 | [retrieval-extraction.md](todo/backlog/retrieval-extraction.md) | Retrieval Quality · MCP Tools · Extraction Improvements · pairs with `Memory-Roadmap.md` |
 | [conversation-context.md](todo/backlog/conversation-context.md) | Conversation Context & Checkpoints · Memory Area UX |
 | [chat-ux.md](todo/backlog/chat-ux.md) | Chat UX & Tool-Call Rendering · Backend Observability · Live Steering |
+| [deployment-manager.md](todo/backlog/deployment-manager.md) | ⭐ Deployment Manager v2 — self-contained gap-closure plan (spec editing, gateway-enable GUI, resumable jobs, Windows mount) |
 | [engineering-hardening.md](todo/backlog/engineering-hardening.md) | Grounded tech-debt / consistency items |
 | [misc.md](todo/backlog/misc.md) | Uncategorized backlog (defaults, scheduler, sharing, themes, packaging…) |
 | [genome-advisor.md](todo/backlog/genome-advisor.md) | Agent Genome & Settings Advisor — the meta-layer |
