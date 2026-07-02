@@ -66,6 +66,12 @@ ENV DJANGO_SETTINGS_MODULE=agentx_api.settings
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app/api
+# Disable huggingface_hub's hf-xet download backend: its Rust download threads
+# have been observed outliving a finished model download, keeping the process
+# alive after init_memory_schema prints success — which blocks the entrypoint
+# from ever reaching uvicorn on a fresh first boot (empty HF cache). Plain
+# HTTP downloads are marginally slower and entirely boring.
+ENV HF_HUB_DISABLE_XET=1
 
 # Expose API port
 EXPOSE 12319

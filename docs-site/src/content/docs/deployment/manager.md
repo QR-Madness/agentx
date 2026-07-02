@@ -86,8 +86,9 @@ task manager:serve            # GUI at http://127.0.0.1:12320
 task cluster:new CLUSTER=prod GATEWAY=1   # thin wrapper over agentx-manager new
 ```
 
-**Bundle (isolated):** the bundle ships `docker-compose.manager.yml`; see the
-[guided setup](self-hosting.md#guided-setup-the-manager-gui) in the self-hosting guide.
+**Bundle (isolated):** the manager is part of the bundle's default
+`COMPOSE_PROFILES` — a plain `docker compose up -d` starts it with the stack; see the
+[quick start](self-hosting.md#quick-start) in the self-hosting guide.
 
 !!! note "Containerized manager: the same-path mount"
     Compose resolves bind-mount paths on the **client** side, so the manager container must see

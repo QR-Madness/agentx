@@ -168,10 +168,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "new":
-        result = scaffold.new_cluster(
-            root, args.name, kind=args.kind, gateway=args.gateway,
-            tunnel=args.tunnel, gpu=args.gpu,
-        )
+        try:
+            result = scaffold.new_cluster(
+                root, args.name, kind=args.kind, gateway=args.gateway,
+                tunnel=args.tunnel, gpu=args.gpu,
+            )
+        except (FileExistsError, FileNotFoundError) as exc:
+            sys.exit(f"error: {exc}")
         print(f"✓ created {result.cluster_dir}")
         for key, value in result.generated.items():
             print(f"  {key}={value}  (generated — shown once, already written to .env)")

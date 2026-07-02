@@ -39,6 +39,47 @@ seed_config() {
   [ "$seeded" = "0" ] && log "config dir already populated — no seeding needed"
 }
 
+# init_memory_schema warms the embedding model on a fresh first boot, and the
+# model download/load leaves non-exiting threads that keep the process alive
+# AFTER it prints its success marker — observed with the hf-xet backend AND
+# with it disabled (HF_HUB_DISABLE_XET=1 stays set regardless; plain HTTP is
+# boring and one suspect fewer). An un-reaped straggler would block uvicorn
+# forever, so run init under a post-success watchdog: once the marker appears,
+# give the process a grace period to exit on its own, then reap it and treat
+# the init as succeeded.
+INIT_SUCCESS_MARKER="All schemas initialized"
+INIT_EXIT_GRACE="${AGENTX_INIT_EXIT_GRACE:-60}"
+
+init_memory_schema_watchdog() {
+  local out pid rc marker_grace=0
+  out="$(mktemp)"
+  uv run python "$APP_DIR/api/manage.py" init_memory_schema >"$out" 2>&1 &
+  pid=$!
+  # Relay output live so first-boot progress (model download) stays visible.
+  tail -n +1 -f "$out" &
+  local tail_pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 5
+    if grep -q "$INIT_SUCCESS_MARKER" "$out"; then
+      marker_grace=$((marker_grace + 5))
+      if [ "$marker_grace" -ge "$INIT_EXIT_GRACE" ]; then
+        log "init_memory_schema succeeded but did not exit within ${INIT_EXIT_GRACE}s — reaping lingering process (non-exiting model-download threads)"
+        kill -9 "$pid" 2>/dev/null || true
+        break
+      fi
+    fi
+  done
+  # A reaped-after-success process reads as rc!=0; the marker is the truth.
+  wait "$pid" 2>/dev/null && rc=0 || rc=$?
+  kill "$tail_pid" 2>/dev/null || true
+  wait "$tail_pid" 2>/dev/null || true
+  if grep -q "$INIT_SUCCESS_MARKER" "$out"; then
+    rc=0
+  fi
+  rm -f "$out"
+  return "$rc"
+}
+
 # 2) Auto-init DB schemas. depends_on: service_healthy gates DB readiness under
 #    compose, but retry a few times so a transient connection blip isn't fatal.
 auto_init() {
@@ -52,7 +93,7 @@ auto_init() {
     # Django ORM (SQLite) → memory Postgres (Alembic) → Neo4j + Redis (home-grown).
     if uv run python "$APP_DIR/api/manage.py" migrate --noinput \
        && (cd "$APP_DIR" && uv run alembic upgrade head) \
-       && uv run python "$APP_DIR/api/manage.py" init_memory_schema; then
+       && init_memory_schema_watchdog; then
       log "schema init complete"
       return 0
     fi

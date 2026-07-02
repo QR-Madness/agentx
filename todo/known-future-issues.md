@@ -8,15 +8,15 @@
 
 > Architectural concerns that may need addressing at scale
 
-**First-boot init hang after model download (hf-xet)** — observed `[v0.21.141 dev]` on a fresh
-cluster with an empty HF cache: `init_memory_schema` downloads BAAI/bge-m3 mid-init (embedding-dim
-detection), prints "✅ All schemas initialized!", but the process never exits — leftover `hf-xet-*`
-download threads keep the interpreter alive, so the entrypoint never reaches uvicorn and the API
-healthcheck fails (`cluster:up` → "dependency failed to start"; nginx never starts). Warm-cache
-restarts boot fine. Candidate fixes: set `HF_HUB_DISABLE_XET=1` in the image env, wrap the
-entrypoint's init step in a timeout + retry, and/or move the model download out of schema init
-(explicit `warmup` step). Slice 2 manager should also treat "initializing" as a distinct health
-state so slow first boots don't read as failures.
+**~~First-boot init hang after model download~~** — RESOLVED `[v0.21.143]`. On a fresh cluster
+(empty HF cache), `init_memory_schema` downloads BAAI/bge-m3 mid-init, prints success, but the
+process never exits (non-exiting download threads keep the interpreter alive — observed with the
+hf-xet backend AND with `HF_HUB_DISABLE_XET=1`), so the entrypoint never reached uvicorn. Fixed by
+a **post-success watchdog** in `docker/entrypoint.sh` (marker seen + no exit within
+`AGENTX_INIT_EXIT_GRACE`, default 60s → reap, continue boot); `HF_HUB_DISABLE_XET=1` also stays
+baked in the image. Verified on a real empty-cache first boot: watchdog fired, API healthy ~6 min
+after create. Root-causing which library leaks the thread (and moving the model download out of
+schema init into an explicit warmup step) remains open groundskeeping.
 
 **Distributed Transaction Support**
 - Dual-write to Neo4j + PostgreSQL has no transaction coordination

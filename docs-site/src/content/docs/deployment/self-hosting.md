@@ -28,79 +28,76 @@ Each release ships a small deployment bundle (attached to the GitHub release and
 linked from the [Docker Hub repo](https://hub.docker.com/r/qrmadness/agentx-api)):
 
 ```
-docker-compose.yml        # API (pulled image) + Neo4j + PostgreSQL + Redis
-docker-compose.gpu.yml    # optional NVIDIA GPU overlay
-.env.example              # configuration template
+docker-compose.yml                 # API (pulled image) + Neo4j + PostgreSQL + Redis
+docker-compose.manager.yml         # web deployment manager (dashboard) — on by default
+docker-compose.gateway.yml         # Nginx token gateway (going public)
+docker-compose.gateway.expose.yml  #   … gateway on a host port (BYO reverse proxy)
+docker-compose.tunnel.yml          #   … Cloudflare token tunnel
+docker-compose.tunnel.named.yml    #   … Cloudflare named tunnel
+docker-compose.gpu.yml             # optional NVIDIA GPU overlay
+gateway/                           # gateway config templates
+.env.example                       # configuration template
 README.md
 ```
 
+Everything runs through Docker — **no Python, Node, or anything else on the host**.
+
 ## Quick start
 
+Unpack, configure, start:
+
 ```bash
+tar xzf agentx-deploy.tar.gz && cd agentx-deploy
 cp .env.example .env
-# Edit .env: DJANGO_SECRET_KEY, database passwords, DJANGO_ALLOWED_HOSTS,
-# and at least one LLM provider API key.
+# In .env, set three things:
+#   DJANGO_SECRET_KEY     (the file shows the generate command)
+#   database passwords    (NEO4J_PASSWORD, POSTGRES_PASSWORD)
+#   one LLM provider key  (e.g. ANTHROPIC_API_KEY)
 
 docker compose up -d
 ```
 
-On first start the API **self-initializes** its database schemas (idempotent) and
-seeds default config. It also downloads the embedding model (~2.3 GB; translation
-models download lazily on first use) into a persistent cache under
-`./data/hf-cache`, so later starts are fast. Expect the first boot to spend a few
-minutes *initializing* — the manager GUI below shows that state explicitly.
+Then open the **manager dashboard** — it starts alongside the stack:
 
-```bash
-curl "http://localhost:12319/api/health?include_memory=true"
-```
+1. Open **http://127.0.0.1:12320** in a browser on the host.
+2. Paste the access token — it's in `./.manager-token` (also shown by
+   `docker compose logs manager`).
+3. Watch the API card: on a fresh install it shows **initializing** for a few
+   minutes while it downloads the embedding model (~2.3 GB, cached under
+   `./data/hf-cache`) and sets up its database schemas — then it flips to **up**.
+   No commands to babysit; if something looks stuck, the card's **Logs** button
+   shows you exactly where it is.
 
-!!! danger "Don't ship the defaults"
-    `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every
-    database password must be changed from `changeme` before exposing the stack.
+From the same dashboard you can stop/start/restart the stack, stream logs per
+service, and watch CPU/memory usage — day-2 operation without memorizing any
+`docker compose` incantations.
 
 ### Set the root password
 
-With `AGENTX_AUTH_ENABLED=true` (the default), set the password once on first run
-— either from the client's first-run setup screen, or:
+Auth is on by default. Set the root password once — easiest from the **desktop
+client's first-run setup screen** (next section), or from a terminal:
 
 ```bash
 docker compose exec api agentx setup-auth
 ```
 
-## Guided setup: the manager GUI
-
-The bundle ships a **web deployment manager** — cluster dashboard, live health (including
-the first-boot *initializing* state), per-cluster CPU/memory gauges, lifecycle buttons,
-log streaming, and safe destroy — so day-2 operation doesn't require memorizing compose
-commands. Three steps from an untarred bundle:
-
-```bash
-# 1. Enable the manager profile alongside production (once, in .env):
-#      COMPOSE_PROFILES=production,manager
-docker compose up -d
-
-# 2. Grab the access token (also stored at ./.manager-token):
-docker compose logs manager | grep -A1 token
-
-# 3. Open the GUI and paste the token:
-#      http://127.0.0.1:12320
-```
-
-From there you can watch the first boot progress (the API card shows **initializing**
-while models download, then flips to **up**), tail logs per service, and see CPU/memory
-per cluster at a glance.
+!!! danger "Don't ship the defaults"
+    `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every
+    database password must be changed before exposing the stack.
 
 !!! danger "Keep the manager private"
     The manager drives the Docker socket — treat it like root on the host. It publishes
     on `127.0.0.1` only and always requires its token; never route it through the
     tunnel/gateway. From another machine, use SSH port forwarding:
-    `ssh -L 12320:127.0.0.1:12320 <host>`.
-
-!!! note "Run its compose commands from the deployment root"
-    The manager container mounts the deployment directory at the same absolute path as
-    the host (`${PWD}:${PWD}`) so compose bind mounts resolve identically — run
-    `docker compose` for this overlay from the bundle directory. Full reference:
+    `ssh -L 12320:127.0.0.1:12320 <host>`. Prefer to run without it entirely? Remove
+    `manager` from `COMPOSE_PROFILES` in `.env`. Full reference:
     [Deployment Manager](manager.md).
+
+!!! note "Headless / scripted checks"
+    Everything the dashboard shows is also reachable without a browser:
+    `curl "http://localhost:12319/api/health?include_memory=true"` for the API, and
+    the in-image ops CLI (`docker compose exec api agentx status`) for the rest —
+    see [the `agentx` CLI](#the-agentx-cli) below.
 
 ## Get the desktop client
 

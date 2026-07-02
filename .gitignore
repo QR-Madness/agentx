@@ -84,3 +84,5 @@ client/src-tauri/gen/android/.gradle/
 client/src-tauri/gen/android/local.properties
 client/src-tauri/gen/android/build/
 client/src-tauri/gen/android/.cxx/
+# Deployment-manager local access token (secret; generated per machine)
+.manager-token

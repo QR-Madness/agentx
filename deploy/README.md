@@ -23,50 +23,41 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 
 ```bash
 cp .env.example .env
-# Edit .env: set DJANGO_SECRET_KEY, the database passwords, DJANGO_ALLOWED_HOSTS,
-# and at least one LLM provider API key.
+# In .env, set three things:
+#   DJANGO_SECRET_KEY     (the file shows the generate command)
+#   database passwords    (NEO4J_PASSWORD, POSTGRES_PASSWORD)
+#   one LLM provider key  (e.g. ANTHROPIC_API_KEY)
 
 docker compose up -d
 ```
 
-On first start the API **self-initializes** its database schemas (idempotent) and
-seeds default config. First boot also downloads the embedding model (~2.3 GB;
-translation models download lazily on first use) into a persistent cache under
-`./data/hf-cache`, so subsequent starts are fast.
+Then open the **manager dashboard** (it starts alongside the stack):
+
+1. Open **http://127.0.0.1:12320** on the host.
+2. Paste the access token from `./.manager-token`
+   (also shown by `docker compose logs manager`).
+3. Watch the API card: a fresh install shows **initializing** for a few minutes
+   (downloads the ~2.3 GB embedding model into `./data/hf-cache`, sets up its
+   database schemas), then flips to **up**. The card's **Logs** button shows
+   live progress; from the same dashboard you can stop/start/restart, stream
+   logs per service, and watch CPU/memory usage.
+
+Finally, set the root password (auth is on by default) — from the desktop
+client's first-run setup screen, or:
+
+```bash
+docker compose exec api agentx setup-auth
+```
 
 > **Docker Desktop (macOS/Windows):** unpack this bundle somewhere under a
 > file-shared path (e.g. your home directory, not `/tmp`) — the stack uses
 > bind mounts under `./data`, which Docker Desktop only allows from shared
 > locations.
 
-Check health:
-
-```bash
-curl "http://localhost:12319/api/health?include_memory=true"
-```
-
-If `AGENTX_AUTH_ENABLED=true` (the default), set the root password once:
-
-```bash
-docker compose exec api agentx setup-auth
-```
-
-## The manager GUI (recommended)
-
-A web dashboard for this deployment — live health (first boot shows **initializing**
-while models download), per-cluster CPU/memory gauges, lifecycle buttons, log
-streaming, and safe destroy:
-
-```bash
-# In .env (once):  COMPOSE_PROFILES=production,manager
-docker compose up -d
-docker compose logs manager | grep -A1 token   # access token (also ./.manager-token)
-# Open http://127.0.0.1:12320 and paste the token
-```
-
-> **Private by design:** the manager drives the Docker socket. It binds to
+> **The manager is private by design:** it drives the Docker socket. It binds to
 > 127.0.0.1 only, always requires its token, and must never be routed through the
-> tunnel/gateway. Remote access: `ssh -L 12320:127.0.0.1:12320 <host>`.
+> tunnel/gateway. Remote access: `ssh -L 12320:127.0.0.1:12320 <host>`. Don't want
+> it? Remove `manager` from `COMPOSE_PROFILES` in `.env`.
 > Run its compose commands from this directory (it mounts `${PWD}` at the same path).
 
 ## Day-2 operations — the `agentx` CLI
