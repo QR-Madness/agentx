@@ -1,251 +1,50 @@
 # Quick Start
 
-Get AgentX running and make your first API calls.
+AgentX is two pieces: a **server** you run (agents, memory, tools) and a
+**desktop client** you point at it. Getting up and running is three moves:
 
-## Start the Stack
+1. **Run a server** — pick your path below.
+2. **Connect the client** — installer + your server's URL.
+3. **Go further** — expose it, tune it, or build on it.
 
-```bash
-# Full stack: Docker services + Django API + Tauri client
-task dev
-```
+## 1 · Run a server — pick your path
 
-This starts Neo4j, PostgreSQL, Redis, the Django API on port 12319, and the Tauri desktop app. All support hot reload.
+| Path | Best for | Guide |
+|---|---|---|
+| 🚀 **Self-host** — Docker image + web dashboard, nothing else on the host | Running AgentX to *use* it | **[Self-Hosting](../deployment/self-hosting.md)** |
+| 🛠️ **From source** — hot-reloading full stack (`task dev`) | Hacking on AgentX itself | **[Installation](installation.md)** |
+| 🧩 **Local clusters** — several isolated prod-like instances, one dashboard | Power users & staging | **[Clusters & Gateway](../deployment/clusters.md)** |
 
-For API-only development:
-
-```bash
-task db:up        # Start database services
-task dev:api      # Start Django API (port 12319)
-```
-
-## Health Check
-
-Verify the API is running:
+The self-host path is three commands, and the bundled
+**[deployment manager](../deployment/manager.md)** takes it from there — watch the
+first boot progress live, stream logs, start/stop, and see resource usage from a
+dashboard instead of a terminal:
 
 ```bash
-curl http://localhost:12319/api/health
+tar xzf agentx-deploy.tar.gz && cd agentx-deploy
+cp .env.example .env      # fill 3 values — the file tells you which
+docker compose up -d      # then open http://127.0.0.1:12320 🎛️
 ```
 
-```json
-{"status": "ok", "version": "0.1.0"}
-```
+## 2 · Connect the client
 
-Include database status:
+Grab an installer from the
+**[latest release](https://github.com/QR-Madness/agentx/releases/latest)**
+(Windows / Linux), enter your server's URL on first run, and set the root password
+from the built-in setup screen. Done — you're chatting.
 
-```bash
-curl http://localhost:12319/api/health?include_memory=true
-```
+## 3 · Go further
 
----
+| You want to… | Go to |
+|---|---|
+| Reach your server from the internet (token gateway + tunnel) | [Going public](../deployment/self-hosting.md#going-public) |
+| Understand logins, sessions, and the gateway token | [Authentication](../deployment/authentication.md) |
+| Tweak environment variables & config files | [Configuration](configuration.md) |
+| Drive everything from the ops dashboard / CLI | [Deployment Manager](../deployment/manager.md) |
+| Script against the HTTP API | [API Endpoints](../api/endpoints.md) |
+| See how it all fits together | [Architecture Overview](../architecture/overview.md) |
+| Explore features (chat, memory, MCP tools, translation, prompts) | [Chat](../features/chat.md) · [Memory](../features/memory.md) · [MCP](../features/mcp.md) · [Translation](../features/translation.md) · [Prompts](../features/prompts.md) |
 
-## Chat (Simple Completion)
-
-Send a message and get a response:
-
-```bash
-curl -X POST http://localhost:12319/api/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is the capital of France?",
-    "model": "llama3.2"
-  }'
-```
-
-```json
-{
-  "status": "success",
-  "response": "The capital of France is Paris.",
-  "session_id": "abc123",
-  "model": "llama3.2"
-}
-```
-
-### Streaming Chat
-
-Stream responses via Server-Sent Events:
-
-```bash
-curl -N -X POST http://localhost:12319/api/agent/chat/stream \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Explain quantum computing briefly",
-    "model": "llama3.2"
-  }'
-```
-
-Events arrive as SSE:
-
-```
-event: start
-data: {"task_id": "t_abc123", "model": "llama3.2"}
-
-event: chunk
-data: {"content": "Quantum computing uses "}
-
-event: chunk
-data: {"content": "quantum mechanical phenomena..."}
-
-event: done
-data: {"task_id": "t_abc123", "total_time_ms": 1423.5, "session_id": "s_def456"}
-```
-
-### Session Continuity
-
-Pass `session_id` to maintain conversation context:
-
-```bash
-curl -X POST http://localhost:12319/api/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What about its population?",
-    "session_id": "abc123"
-  }'
-```
-
----
-
-## Translation
-
-### Detect Language
-
-```bash
-curl -X POST http://localhost:12319/api/tools/language-detect-20 \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Bonjour le monde"}'
-```
-
-```json
-{
-  "status": "success",
-  "language": "fr",
-  "confidence": 0.99,
-  "language_name": "French"
-}
-```
-
-### Translate Text
-
-```bash
-curl -X POST http://localhost:12319/api/tools/translate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Hello, world!",
-    "targetLanguage": "fra_Latn"
-  }'
-```
-
-```json
-{
-  "status": "success",
-  "translated_text": "Bonjour le monde!",
-  "source_language": "eng_Latn",
-  "target_language": "fra_Latn"
-}
-```
-
-Target languages use NLLB-200 codes (e.g., `fra_Latn`, `deu_Latn`, `spa_Latn`). See [Translation](../features/translation.md) for the full language code reference.
-
----
-
-## MCP Tools
-
-### Connect a Server
-
-```bash
-curl -X POST http://localhost:12319/api/mcp/connect \
-  -H "Content-Type: application/json" \
-  -d '{"server": "filesystem"}'
-```
-
-Connect all configured servers:
-
-```bash
-curl -X POST http://localhost:12319/api/mcp/connect \
-  -H "Content-Type: application/json" \
-  -d '{"all": true}'
-```
-
-### List Available Tools
-
-```bash
-curl http://localhost:12319/api/mcp/tools
-```
-
-```json
-{
-  "status": "success",
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Read the contents of a file",
-      "server": "filesystem"
-    }
-  ]
-}
-```
-
-Once tools are connected, the agent can use them automatically during chat. See [MCP](../features/mcp.md) for server configuration.
-
----
-
-## Prompt Profiles
-
-### List Profiles
-
-```bash
-curl http://localhost:12319/api/prompts/profiles
-```
-
-### Use a Profile in Chat
-
-```bash
-curl -X POST http://localhost:12319/api/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Help me write a poem",
-    "profile_id": "creative"
-  }'
-```
-
-See [Prompts](../features/prompts.md) for profile management.
-
----
-
-## Memory
-
-### Recall Memories
-
-```bash
-curl -X POST http://localhost:12319/api/memory/recall \
-  -H "Content-Type: application/json" \
-  -d '{"query": "user preferences", "top_k": 5}'
-```
-
-### View Memory Stats
-
-```bash
-curl http://localhost:12319/api/memory/stats
-```
-
-Memory is automatically populated during chat when `enable_memory` is true (default). See [Memory](../features/memory.md) for the full memory system reference.
-
----
-
-## Database Access
-
-```bash
-task db:shell:postgres    # psql shell
-task db:shell:redis       # redis-cli
-task db:shell:neo4j       # cypher-shell
-```
-
-Neo4j web browser: [http://localhost:7474](http://localhost:7474)
-
----
-
-## Next Steps
-
-- [Configuration](configuration.md) — Environment variables and config files
-- [API Endpoints](../api/endpoints.md) — Full API reference
-- [Architecture Overview](../architecture/overview.md) — System design
-- [Chat](../features/chat.md) — Chat modes, streaming, and tool-use loops
+!!! tip "Windows?"
+    Developing on Windows has a few platform notes — see
+    [Windows Setup](windows.md).
