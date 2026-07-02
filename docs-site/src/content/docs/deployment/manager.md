@@ -87,8 +87,8 @@ task cluster:new CLUSTER=prod GATEWAY=1   # thin wrapper over agentx-manager new
 ```
 
 **Bundle (isolated):** the manager is part of the bundle's default
-`COMPOSE_PROFILES` — a plain `docker compose up -d` starts it with the stack; see the
-[quick start](self-hosting.md#quick-start) in the self-hosting guide.
+`COMPOSE_PROFILES` — a plain `docker compose up -d` starts it with the stack; see
+[Self-Hosting, step 3](self-hosting.md#3--open-the-dashboard).
 
 !!! note "Containerized manager: the same-path mount"
     Compose resolves bind-mount paths on the **client** side, so the manager container must see
