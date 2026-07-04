@@ -52,6 +52,20 @@ def test_destroy_requires_typed_confirmation(client):
     assert "confirm" in response.json()["detail"]
 
 
+def test_clusters_include_url_and_ports(client):
+    http, token = client
+    headers = {"Authorization": f"Bearer {token}"}
+    body = http.get("/api/clusters", headers=headers).json()
+    assert body[0]["url"] == "http://localhost:12319"
+    assert body[0]["ports"] == {
+        "api": 12319,
+        "neo4j_http": 7474,
+        "neo4j_bolt": 7687,
+        "postgres": 5432,
+        "redis": 6379,
+    }
+
+
 def test_unknown_cluster_404(client):
     http, token = client
     headers = {"Authorization": f"Bearer {token}"}

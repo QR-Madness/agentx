@@ -61,12 +61,22 @@ export interface ServiceStatus {
   health: string;
 }
 
+export interface ClusterPorts {
+  api: number;
+  neo4j_http: number;
+  neo4j_bolt: number;
+  postgres: number;
+  redis: number;
+}
+
 export interface Cluster {
   name: string;
   spec: ClusterSpec;
   phase: Phase;
   services: ServiceStatus[];
   dir: string;
+  url: string;
+  ports: ClusterPorts;
 }
 
 export interface ServiceUsage {
@@ -75,6 +85,8 @@ export interface ServiceUsage {
   mem_used_bytes: number;
   mem_limit_bytes: number;
   mem_percent: number;
+  net_rx_bytes: number; // cumulative since container start
+  net_tx_bytes: number;
 }
 
 export interface ClusterUsage {
@@ -83,6 +95,10 @@ export interface ClusterUsage {
   mem_used_bytes: number;
   mem_limit_bytes: number;
   mem_percent: number;
+  net_rx_bytes: number; // cumulative, summed over services
+  net_tx_bytes: number;
+  net_rx_rate: number; // loose bytes/sec between polls
+  net_tx_rate: number;
   services: ServiceUsage[];
 }
 

@@ -48,6 +48,30 @@ def _load_or_create_token(root: Path) -> str:
     return token
 
 
+def _cluster_url(env: dict[str, str]) -> str:
+    """Best-effort reachable URL: public gateway host if set, else local direct port."""
+    host = env.get("AGENTX_PUBLIC_HOST", "").strip()
+    if host:
+        return f"https://{host}"
+    return f"http://localhost:{env.get('API_PORT', '12319').strip() or '12319'}"
+
+
+def _cluster_ports(env: dict[str, str]) -> dict[str, int]:
+    def _port(key: str, default: str) -> int:
+        try:
+            return int(env.get(key, default).strip() or default)
+        except ValueError:
+            return int(default)
+
+    return {
+        "api": _port("API_PORT", "12319"),
+        "neo4j_http": _port("NEO4J_HTTP_PORT", "7474"),
+        "neo4j_bolt": _port("NEO4J_BOLT_PORT", "7687"),
+        "postgres": _port("POSTGRES_PORT", "5432"),
+        "redis": _port("REDIS_PORT", "6379"),
+    }
+
+
 @dataclass
 class Job:
     id: str
@@ -90,6 +114,7 @@ def create_app(root: Path) -> FastAPI:
     token = _load_or_create_token(root)
     runner = SubprocessRunner()
     jobs = Jobs()
+    net_rates = health.NetRateTracker()  # rates need successive samples → per-process state
 
     app = FastAPI(title="AgentX Manager", version=__version__)
 
@@ -122,18 +147,21 @@ def create_app(root: Path) -> FastAPI:
         out = []
         for cluster in registry.discover(root):
             cluster_status = health.status(cluster, runner)
+            env = cluster.env
             out.append({
                 "name": cluster.name,
                 "spec": cluster.spec.to_dict(),
                 "phase": cluster_status.phase,
                 "services": [asdict(s) for s in cluster_status.services],
                 "dir": str(cluster.cluster_dir),
+                "url": _cluster_url(env),
+                "ports": _cluster_ports(env),
             })
         return out
 
     @app.get("/api/clusters/{name}/usage", dependencies=[guarded])
     def usage(name: str) -> dict[str, Any]:
-        return asdict(health.usage(get_cluster(name), runner))
+        return asdict(health.usage(get_cluster(name), runner, rates=net_rates))
 
     @app.post("/api/clusters", dependencies=[guarded])
     def create(payload: dict[str, Any]) -> dict[str, Any]:

@@ -162,9 +162,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(asdict(result), indent=2))
         else:
             print(f"{result.name}: cpu {result.cpu_percent}%  mem {result.mem_used_bytes // 1024**2} MiB"
-                  f" ({result.mem_percent}%)")
+                  f" ({result.mem_percent}%)"
+                  f"  net rx {result.net_rx_bytes // 1024**2} MiB / tx {result.net_tx_bytes // 1024**2} MiB")
             for svc in result.services:
-                print(f"  {svc.service:<24} cpu {svc.cpu_percent:>5}%  mem {svc.mem_used_bytes // 1024**2} MiB")
+                print(f"  {svc.service:<24} cpu {svc.cpu_percent:>5}%  mem {svc.mem_used_bytes // 1024**2} MiB"
+                      f"  net rx {svc.net_rx_bytes // 1024**2} MiB / tx {svc.net_tx_bytes // 1024**2} MiB")
         return 0
 
     if args.command == "new":

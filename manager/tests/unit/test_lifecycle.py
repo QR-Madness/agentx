@@ -54,7 +54,8 @@ def test_restart_is_config_aware(repo, fake_runner):
     cluster = _cluster(repo, gateway=True)
     lifecycle.up(cluster, fake_runner)
     # No changes + containers running → plain restart.
-    fake_runner.queue(stdout="abc123\n")  # ps -q: containers exist
+    fake_runner.queue(stdout='{"Service":"api","State":"running","Health":"healthy"}')  # ps: stack running
+    fake_runner.queue(stdout="api\nnginx\n")  # config --services
     result = lifecycle.restart(cluster, fake_runner)
     assert result.ok
     assert _flat(fake_runner.calls)[-1].endswith("restart")
@@ -68,12 +69,23 @@ def test_restart_is_config_aware(repo, fake_runner):
 def test_restart_of_down_cluster_falls_through_to_up(repo, fake_runner):
     cluster = _cluster(repo)
     lifecycle.up(cluster, fake_runner)
-    fake_runner.queue(stdout="")  # ps -q: nothing running
+    fake_runner.queue(stdout="")  # ps: nothing running (empty → no config call)
     result = lifecycle.restart(cluster, fake_runner)
     assert result.ok
     calls = _flat(fake_runner.calls)
-    assert calls[-2].endswith("ps -q")
+    assert calls[-2].endswith("ps --format json")
     assert calls[-1].endswith("up -d")  # compose `restart` would be a silent no-op
+
+
+def test_restart_bundle_with_manager_orphan_falls_through_to_up(bundle, fake_runner):
+    # Bundle mode: only the manager's own container (a same-project orphan) is
+    # up — restart must treat the stack as down and fall through to `up`.
+    [cluster] = registry.discover(bundle)
+    fake_runner.queue(stdout='{"Service":"manager","State":"running","Health":""}')
+    fake_runner.queue(stdout="postgres\nredis\nneo4j\napi\n")  # config --services
+    result = lifecycle.restart(cluster, fake_runner)
+    assert result.ok
+    assert _flat(fake_runner.calls)[-1].endswith("up -d")
 
 
 def test_up_waits_out_first_boot(repo, fake_runner, monkeypatch):

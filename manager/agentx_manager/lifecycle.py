@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 
 from .compose import ComposeRunner, RunResult, SubprocessRunner
-from .health import api_container_phase
+from .health import api_container_phase, stack_ps
 from .overlays import compose_argv
 from .registry import Cluster, gateway_dir
 from .state import compute_hashes, load_state, save_state, changed_services, tracked_files
@@ -126,8 +126,10 @@ def restart(cluster: Cluster, runner: ComposeRunner | None = None) -> LifecycleR
     stale = _stale_services(cluster)
     if stale:
         return up(cluster, runner)
-    ps = runner.run(_argv(cluster, ["ps", "-q"]), cwd=cluster.root)
-    if ps.ok and not ps.stdout.strip():
+    # stack_ps filters same-project orphans (the bundle's manager container),
+    # so a down stack still falls through to `up` in bundle mode.
+    rows = stack_ps(cluster, runner)
+    if rows is not None and not rows:
         return up(cluster, runner)
     result = runner.run(_argv(cluster, ["restart"]), cwd=cluster.root)
     return LifecycleResult(result.ok, "restart" if result.ok else result.stderr.strip(), [result])
