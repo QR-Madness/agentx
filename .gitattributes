@@ -1,0 +1,3 @@
+# Windows batch files must keep CRLF endings (cmd.exe misparses LF-only
+# labels/parens) — protect them from any checkout/normalization settings.
+*.bat text eol=crlf

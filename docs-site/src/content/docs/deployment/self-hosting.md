@@ -37,7 +37,10 @@ cp .env.example .env
 docker compose up -d
 ```
 
-That starts **only the deployment manager** — nothing else yet.
+That starts **only the deployment manager** — nothing else yet. On Windows,
+double-click the bundle's **`start-manager.bat`** instead — it runs the same
+command through Docker Desktop's WSL 2 integration, then opens the dashboard
+and the access token for you.
 
 !!! danger "Don't ship the defaults"
     `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every

@@ -18,6 +18,7 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 | `gateway/nginx.conf.example` | Gateway config template — copy to `gateway/nginx.conf` |
 | `gateway/cloudflared/config.yml.example` | Named-tunnel ingress template |
 | `.env.example` | Configuration template — copy to `.env` and fill in |
+| `start-manager.bat` | Windows one-click starter (needs Docker Desktop's WSL 2 integration) |
 
 ## Quick start
 
@@ -30,6 +31,11 @@ cp .env.example .env
 
 docker compose up -d
 ```
+
+> **Windows:** after editing `.env`, just double-click **`start-manager.bat`**
+> instead of running the compose command — it starts the manager (via Docker
+> Desktop's WSL 2 integration, the default install mode), opens the dashboard
+> in your browser, and opens the access token in Notepad.
 
 That starts **only the manager** — nothing else yet. Open it and use it to
 bring up the actual stack:
