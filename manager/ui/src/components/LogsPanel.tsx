@@ -5,9 +5,11 @@ import { streamLogs, type Cluster } from "../api";
 
 export function LogsPanel({
   cluster,
+  title,
   onClose,
 }: {
   cluster: Cluster;
+  title?: string;
   onClose: () => void;
 }) {
   const [service, setService] = useState("");
@@ -47,7 +49,11 @@ export function LogsPanel({
     <div className="fixed inset-y-0 right-0 z-30 flex w-full max-w-2xl flex-col border-l border-line bg-overlay shadow-2xl">
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold">
-          Logs — <span className="font-mono">{cluster.name}</span>
+          {title ?? (
+            <>
+              Logs — <span className="font-mono">{cluster.name}</span>
+            </>
+          )}
         </h2>
         <select
           value={service}

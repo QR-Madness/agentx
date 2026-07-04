@@ -8,7 +8,7 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | The stack: API (pulled image) + Neo4j + PostgreSQL + Redis |
+| `docker-compose.yml` | The stack: API (pulled image) + Neo4j + PostgreSQL + Redis — profile `production`, started via the manager |
 | `docker-compose.gpu.yml` | Optional NVIDIA GPU overlay for the API |
 | `docker-compose.gateway.yml` | Nginx token gateway (shared secret + rate limiting) in front of the API |
 | `docker-compose.gateway.expose.yml` | Publish the gateway on a host port (BYO reverse proxy / TLS) |
@@ -31,16 +31,18 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Then open the **manager dashboard** (it starts alongside the stack):
+That starts **only the manager** — nothing else yet. Open it and use it to
+bring up the actual stack:
 
 1. Open **http://127.0.0.1:12320** on the host.
 2. Paste the access token from `./.manager-token`
    (also shown by `docker compose logs manager`).
-3. Watch the API card: a fresh install shows **initializing** for a few minutes
-   (downloads the ~2.3 GB embedding model into `./data/hf-cache`, sets up its
-   database schemas), then flips to **up**. The card's **Logs** button shows
-   live progress; from the same dashboard you can stop/start/restart, stream
-   logs per service, and watch CPU/memory usage.
+3. The dashboard shows **Stopped** — click **Start AgentX**. It goes to
+   **Starting up…** for a few minutes (downloads the ~2.3 GB embedding model
+   into `./data/hf-cache` with a live download rate on screen, sets up its
+   database schemas), then flips to **Running**. The **Activity Log** shows
+   live progress; from the same dashboard you can stop/restart, check each
+   component's health, and watch processor/memory/network usage.
 
 Finally, set the root password (auth is on by default) — from the desktop
 client's first-run setup screen, or:
@@ -57,7 +59,18 @@ docker compose exec api agentx setup-auth
 > **The manager is private by design:** it drives the Docker socket. It binds to
 > 127.0.0.1 only, always requires its token, and must never be routed through the
 > tunnel/gateway. Remote access: `ssh -L 12320:127.0.0.1:12320 <host>`. Don't want
-> it? Remove `manager` from `COMPOSE_PROFILES` in `.env`.
+> it? Set `COMPOSE_PROFILES=production` in `.env` instead and manage the stack
+> with plain `docker compose` commands.
+
+> **Once the stack is up, manage it through the manager** (dashboard or
+> `docker compose exec manager agentx-manager <down|restart|...>`), not bare
+> `docker compose` commands — a plain `docker compose down` only touches
+> whatever's in `COMPOSE_PROFILES` (the manager itself by default) and will
+> leave the API/databases running. The dashboard's **Stop** stops the app
+> stack and leaves the manager itself running so you can start it again.
+> The dashboard's status and gauges cover only the app stack — the manager
+> itself is excluded, so before the first **Start** (or after **Stop**) it
+> correctly reads *Stopped*.
 > Run its compose commands from this directory (it mounts `${PWD}` at the same path).
 
 ## Day-2 operations — the `agentx` CLI
@@ -84,11 +97,15 @@ docker compose exec api agentx import --input /app/data/memory-export.json
 
 ## GPU acceleration (optional)
 
-With the NVIDIA Container Toolkit installed on the host:
+With the NVIDIA Container Toolkit installed on the host, add the overlay to
+`COMPOSE_FILE` in `.env` (keep `docker-compose.manager.yml` in the list):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gpu.yml
 ```
+
+Then bring the stack up through the manager (dashboard **Up**, or
+`docker compose exec manager agentx-manager up`) — same as the main flow.
 
 Verify: `curl -s localhost:12319/api/health | jq .compute` → `{"device":"cuda",...}`.
 
@@ -114,10 +131,12 @@ openssl rand -hex 32     # → AGENTX_GATEWAY_TOKEN in .env
 #      AGENTX_PUBLIC_HOST=agentx.example.com
 #      AGENTX_GATEWAY_TOKEN=<64-char hex>    # secret
 #      AGENTX_TRUST_PROXY=true               # gateway overwrites X-Forwarded-For
-#      COMPOSE_FILE=docker-compose.yml:docker-compose.gateway.yml:docker-compose.tunnel.yml
+#      COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gateway.yml:docker-compose.tunnel.yml
 
-# 4. Up (COMPOSE_FILE makes plain `docker compose` include the overlays):
+# 4. Up: starts (or restarts, to pick up the new COMPOSE_FILE) the manager,
+#    then bring up the stack — dashboard Up button, or:
 docker compose up -d
+docker compose exec manager agentx-manager up
 
 # 5. Smoke test:
 curl -I https://agentx.example.com/api/health                    # → 401
@@ -155,11 +174,15 @@ https://agentx.thejpnet.net/docs/deployment/self-hosting/#going-public
 ```bash
 # pin AGENTX_IMAGE to the new version in .env (recommended), or pull :latest
 docker compose pull
-docker compose up -d
+docker compose exec manager agentx-manager up
 ```
 
-> If you use overlays (gateway/tunnel/GPU), include them on every command or
-> set them once via `COMPOSE_FILE=docker-compose.yml:…` in `.env` as above.
+`agentx-manager up` (not a bare `docker compose up -d`, and not `restart` —
+that only restarts existing containers, it won't swap in a freshly pulled
+image) recreates whichever services actually changed. Dashboard **Up**/
+**Restart** does the same. If you use overlays (gateway/tunnel/GPU), keep them
+(and `docker-compose.manager.yml`) in `COMPOSE_FILE=docker-compose.yml:…` in
+`.env` as above.
 
 Schema migrations re-apply automatically on boot (idempotent). Your config and
 data persist under `./data`.

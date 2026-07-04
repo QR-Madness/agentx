@@ -88,7 +88,7 @@ export function Modal({
     >
       <div className="w-full max-w-md rounded-xl border border-line bg-overlay p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="text-sm font-semibold text-fg">{title}</h2>
           <button
             onClick={onClose}
             className="rounded-md px-2 py-1 text-fg-muted hover:bg-hover hover:text-fg"

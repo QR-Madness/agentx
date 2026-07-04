@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.143 -->
+<!-- release-version: 0.21.144 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -25,8 +25,9 @@ the client at your own API server and bring your own model providers.
 
 - **New: the deployment manager — on by default in the bundle.** Web dashboard + CLI
   (`qrmadness/agentx-manager`, port 12320, loopback + token): live health incl. a first-boot
-  *initializing* state, CPU/memory gauges, log streaming, config-aware restarts,
-  typed-confirmation destroy. Quick start is now: fill 3 `.env` values → `up -d` → open the GUI.
+  *initializing* state, CPU/memory/network gauges (live ↓ MB/s while the model downloads),
+  log streaming, config-aware restarts, typed-confirmation destroy. Quick start is now: fill 3 `.env` values → `up -d` (starts the
+  manager) → open the GUI → click **Up**.
 - **The token gateway ships in the deploy bundle.** Shared-secret + rate limiting from the
   bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
 - **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
@@ -43,6 +44,11 @@ the client at your own API server and bring your own model providers.
   (set behind the gateway) — closes a spoofable localhost auth bypass on exposed APIs.
 - **Rate limiting works without Cloudflare** (TCP-peer fallback when `CF-Connecting-IP` is
   absent); misleading cloudflared `noHappyEyeballs` SSE comment corrected.
+- **Bundle dashboard reads a stopped stack as *down*** (was *degraded*), and gauges no longer
+  count the manager itself — its container shares the bundle's compose project by design and
+  is now filtered out of status/usage/restart. Bundle mode is now a plain-language dashboard
+  (Start/Stop, component health, resource + live-download tiles); polling pauses in
+  background tabs. Repo mode keeps the multi-cluster grid.
 
 ### Migration notes (self-hosters)
 

@@ -6,10 +6,12 @@ import { Modal } from "./ui";
 
 export function DestroyModal({
   name,
+  flavor = "cluster",
   onConfirm,
   onClose,
 }: {
   name: string;
+  flavor?: "cluster" | "bundle";
   onConfirm: (keepData: boolean) => void;
   onClose: () => void;
 }) {
@@ -18,12 +20,28 @@ export function DestroyModal({
   const armed = typed === name;
 
   return (
-    <Modal title={`Destroy ${name}`} onClose={onClose}>
+    <Modal
+      title={flavor === "bundle" ? "Reset AgentX" : `Destroy ${name}`}
+      onClose={onClose}
+    >
       <p className="mb-3 text-sm text-fg-secondary">
-        This stops every container, removes volumes
-        {keepData ? "" : ", and deletes the cluster's data directories"}. It
-        cannot be undone. Type <span className="font-mono text-fg">{name}</span>{" "}
-        to confirm.
+        {flavor === "bundle" ? (
+          <>
+            This stops AgentX
+            {keepData
+              ? ""
+              : " and permanently deletes everything it has stored — databases, agent memory, and downloaded AI models"}
+            . It cannot be undone. Type{" "}
+            <span className="font-mono text-fg">{name}</span> to confirm.
+          </>
+        ) : (
+          <>
+            This stops every container, removes volumes
+            {keepData ? "" : ", and deletes the cluster's data directories"}. It
+            cannot be undone. Type <span className="font-mono text-fg">{name}</span>{" "}
+            to confirm.
+          </>
+        )}
       </p>
       <input
         autoFocus
@@ -38,7 +56,9 @@ export function DestroyModal({
           checked={keepData}
           onChange={(event) => setKeepData(event.target.checked)}
         />
-        Keep data directories (containers + volumes only)
+        {flavor === "bundle"
+          ? "Keep stored data (just stop and remove the runtime)"
+          : "Keep data directories (containers + volumes only)"}
       </label>
       <div className="flex justify-end gap-2">
         <button
@@ -52,7 +72,7 @@ export function DestroyModal({
           onClick={() => onConfirm(keepData)}
           className="min-h-9 rounded-lg border border-red-700 bg-red-900/60 px-4 text-sm font-medium text-red-100 disabled:opacity-40"
         >
-          Destroy
+          {flavor === "bundle" ? "Reset" : "Destroy"}
         </button>
       </div>
     </Modal>

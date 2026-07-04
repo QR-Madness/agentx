@@ -37,34 +37,43 @@ cp .env.example .env
 docker compose up -d
 ```
 
-That's the whole install: the API self-initializes its database schemas on first
-boot and seeds its default config — nothing to migrate or initialize by hand.
+That starts **only the deployment manager** — nothing else yet.
 
 !!! danger "Don't ship the defaults"
     `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every
     database password must be changed before exposing the stack.
 
-## 3 · Open the dashboard
-
-The **deployment manager** starts with the stack:
+## 3 · Open the dashboard and bring up the stack
 
 1. Open **http://127.0.0.1:12320** in a browser on the host.
 2. Paste the access token — it's in `./.manager-token` (also shown by
    `docker compose logs manager`).
-3. Watch the API card: a fresh install shows **initializing** for a few minutes
-   while it downloads the embedding model (~2.3 GB, cached under
-   `./data/hf-cache`) — then it flips to **up**. If anything looks stuck, the
-   card's **Logs** button shows exactly where it is.
+3. The dashboard shows **Stopped** (expected — at this point only the manager
+   itself is running). Click **Start AgentX**. A fresh install shows
+   **Starting up…** for a few minutes while it downloads the embedding model
+   (~2.3 GB, cached under `./data/hf-cache` — the dashboard shows the live
+   download rate) and self-initializes its database schemas — nothing to
+   migrate by hand — then it flips to **Running**. If anything looks stuck,
+   the **Activity Log** shows exactly where it is.
 
-The same dashboard handles day-2 life: stop/start/restart, per-service logs, and
-live CPU/memory usage. Full reference: [Deployment Manager](manager.md).
+The same dashboard handles day-2 life from here: stop/restart, per-service
+logs, and live CPU/memory usage. Full reference: [Deployment Manager](manager.md).
 
 !!! danger "Keep the dashboard private"
     The manager drives the Docker socket — treat it like root on the host. It
     publishes on `127.0.0.1` only and always requires its token; never route it
     through the tunnel/gateway. From another machine, use SSH port forwarding:
-    `ssh -L 12320:127.0.0.1:12320 <host>`. Prefer to run without it? Remove
-    `manager` from `COMPOSE_PROFILES` in `.env`.
+    `ssh -L 12320:127.0.0.1:12320 <host>`. Prefer to run without it? Set
+    `COMPOSE_PROFILES=production` in `.env` instead and manage the stack with
+    plain `docker compose` commands.
+
+!!! note "Manage the stack through the manager, not bare compose"
+    Once it's up, use the dashboard (or
+    `docker compose exec manager agentx-manager <up|down|restart>`) for
+    lifecycle actions. A plain `docker compose down` only touches whatever's
+    active in `COMPOSE_PROFILES` (the manager itself, by default) and leaves
+    the API/databases running — the manager's own **Down** stops the app stack
+    and leaves the manager running so you can bring it back up later.
 
 ## 4 · Connect the desktop client
 
@@ -91,11 +100,14 @@ Day-to-day, the [dashboard](manager.md) covers most of it. The rest:
 ```bash
 # pin AGENTX_IMAGE to the new version in .env (recommended), or pull :latest
 docker compose pull
-docker compose up -d
+docker compose exec manager agentx-manager up
 ```
 
-Schema migrations re-apply automatically on boot (idempotent); config and data
-persist under `./data`.
+`agentx-manager up` (not a bare `docker compose up -d`, and not `restart` —
+that only restarts existing containers, it won't swap in a freshly pulled
+image) recreates whichever services actually changed. Dashboard **Up**/
+**Restart** does the same. Schema migrations re-apply automatically on boot
+(idempotent); config and data persist under `./data`.
 
 ### Backups
 
@@ -126,10 +138,13 @@ docker compose exec api agentx import --input /app/data/memory-export.json
 ### GPU acceleration
 
 With the [NVIDIA Container Toolkit](clusters.md#gpu-acceleration-nvidia-overlay)
-on the host, layer the GPU overlay:
+on the host, add the overlay to `COMPOSE_FILE` in `.env` (keep
+`docker-compose.manager.yml` in the list), then bring the stack up through the
+manager:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# .env: COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gpu.yml
+docker compose exec manager agentx-manager up
 curl -s localhost:12319/api/health | jq .compute   # {"device":"cuda",...}
 ```
 
@@ -175,7 +190,7 @@ AGENTX_GATEWAY_TOKEN=<64-char hex>        # from step 1; keep it secret
 AGENTX_TRUST_PROXY=true                   # the gateway overwrites X-Forwarded-For
 
 # Make the overlays sticky so a bare `docker compose up -d` always layers them:
-COMPOSE_FILE=docker-compose.yml:docker-compose.gateway.yml:docker-compose.tunnel.yml
+COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gateway.yml:docker-compose.tunnel.yml
 ```
 
 `AGENTX_PUBLIC_HOST` extends `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, and
@@ -187,7 +202,8 @@ real client IP (nginx sets `X-Forwarded-For` from Cloudflare's
 ### 4. Bring it up and verify
 
 ```bash
-docker compose up -d
+docker compose up -d                          # (re)starts the manager, now with these files loaded
+docker compose exec manager agentx-manager up # brings up the stack — api, dbs, gateway, tunnel
 
 # The connector registered with Cloudflare's edge:
 docker compose logs cloudflared | grep -i "Registered tunnel connection"
@@ -241,7 +257,8 @@ that's app auth, not the gateway.
       shares the network.
     - **`400 Bad Request` / "Invalid HTTP_HOST"** — the public hostname isn't in
       Django's allowed hosts. Set `AGENTX_PUBLIC_HOST` to the exact hostname and
-      recreate the API container (`docker compose up -d` — env is read at boot).
+      recreate the API container (`docker compose exec manager agentx-manager up`
+      — env is read at boot).
     - **Desktop client connects but the browser/web client is blocked by CORS** —
       the API allows the desktop (Tauri) origins by default. For a web client served
       from another origin, add it to `CORS_ALLOWED_ORIGINS` (comma-separated).
@@ -256,8 +273,8 @@ that's app auth, not the gateway.
 ### What's in the package
 
 ```
-docker-compose.yml                 # API (pulled image) + Neo4j + PostgreSQL + Redis
-docker-compose.manager.yml         # web deployment manager (dashboard) — on by default
+docker-compose.yml                 # API (pulled image) + Neo4j + PostgreSQL + Redis — profile `production`
+docker-compose.manager.yml         # web deployment manager (dashboard) — on by default, starts the stack for you
 docker-compose.gateway.yml         # Nginx token gateway (going public)
 docker-compose.gateway.expose.yml  #   … gateway on a host port (BYO reverse proxy)
 docker-compose.tunnel.yml          #   … Cloudflare token tunnel
@@ -269,8 +286,11 @@ README.md
 ```
 
 Overlays are opt-in layers over the base compose; set them once via
-`COMPOSE_FILE=`/`COMPOSE_PROFILES=` in `.env` (as the sections above do) and a
-plain `docker compose up -d` keeps including them.
+`COMPOSE_FILE=` in `.env` (as the sections above do) and they're loaded on
+every `docker compose` command from then on. Loaded isn't the same as
+started, though — the API/databases (and any overlay services) sit behind the
+`production` profile and only come up through the manager (dashboard **Up**,
+or `agentx-manager up`), not a bare `docker compose up -d`.
 
 ### Headless / scripted checks
 

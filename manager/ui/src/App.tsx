@@ -12,10 +12,12 @@ import {
   type LifecycleAction,
   type Meta,
 } from "./api";
+import { BundleDashboard } from "./components/BundleDashboard";
 import { ClusterCard } from "./components/ClusterCard";
 import { LogsPanel } from "./components/LogsPanel";
 import { DestroyModal, NewClusterModal } from "./components/modals";
 import { ToastProvider, useToast } from "./components/ui";
+import { usePolling } from "./hooks";
 
 function TokenGate({ onUnlocked }: { onUnlocked: () => void }) {
   const [value, setValue] = useState("");
@@ -37,7 +39,7 @@ function TokenGate({ onUnlocked }: { onUnlocked: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm rounded-xl border border-line bg-raised p-6 shadow-xl">
-        <h1 className="mb-1 text-lg font-semibold">AgentX Manager</h1>
+        <h1 className="mb-1 text-lg font-semibold text-fg">AgentX Manager</h1>
         <p className="mb-4 text-sm text-fg-secondary">
           Paste the access token — it's printed by{" "}
           <span className="font-mono text-xs">agentx-manager serve</span> (or{" "}
@@ -102,10 +104,10 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
 
   useEffect(() => {
     void api.meta().then(setMeta).catch(bail);
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [refresh, bail]);
+  }, [bail]);
+  // Poll only while the tab is visible — this page is often left open in a
+  // background tab for hours.
+  usePolling(refresh, 5000);
 
   const runAction = async (
     cluster: Cluster,
@@ -134,13 +136,13 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <header className="mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">AgentX Manager</h1>
+        <h1 className="text-xl font-semibold text-fg">AgentX Manager</h1>
         {meta && (
           <span className="rounded-md border border-line bg-sunken px-2 py-0.5 font-mono text-[11px] text-fg-muted">
-            {meta.mode} · {meta.root} · v{meta.version}
+            {meta.mode === "repo" ? `repo · ${meta.root} · ` : ""}v{meta.version}
           </span>
         )}
-        <span className="text-[11px] text-fg-muted">refreshes every 5s</span>
+        <span className="text-[11px] text-fg-muted">live · pauses in background tabs</span>
         <div className="ml-auto flex gap-2">
           {meta?.mode === "repo" && (
             <button
@@ -167,6 +169,16 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
           No deployments found under this root.
           {meta?.mode === "repo" ? " Create one with “New cluster”." : ""}
         </p>
+      ) : meta?.mode === "bundle" && clusters.length === 1 ? (
+        <BundleDashboard
+          cluster={clusters[0]}
+          busy={busy[clusters[0].name] ?? null}
+          onAction={(action) =>
+            void runAction(clusters[0], action, () => api.action(clusters[0].name, action))
+          }
+          onDestroy={() => setDestroyFor(clusters[0])}
+          onLogs={() => setLogsFor(clusters[0])}
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
           {clusters.map((cluster) => (
@@ -184,10 +196,17 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
         </div>
       )}
 
-      {logsFor && <LogsPanel cluster={logsFor} onClose={() => setLogsFor(null)} />}
+      {logsFor && (
+        <LogsPanel
+          cluster={logsFor}
+          title={meta?.mode === "bundle" ? "Activity Log" : undefined}
+          onClose={() => setLogsFor(null)}
+        />
+      )}
       {destroyFor && (
         <DestroyModal
           name={destroyFor.name}
+          flavor={meta?.mode === "bundle" ? "bundle" : "cluster"}
           onClose={() => setDestroyFor(null)}
           onConfirm={(keepData) => {
             const target = destroyFor;
