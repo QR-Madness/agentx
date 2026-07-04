@@ -57,7 +57,7 @@ instead — prefix it with `docker compose exec manager`:
 # repo mode                                  # bundle mode: docker compose exec manager …
 agentx-manager list                          # deployments + spec tags
 agentx-manager status [name]                 # phase (down|initializing|degraded|up) + services
-agentx-manager usage  [name]                 # CPU% / memory per cluster (docker stats)
+agentx-manager usage  [name]                 # CPU% / memory / network ↓↑ per cluster (docker stats)
 agentx-manager new <name> [--gateway] [--tunnel token|named] [--gpu] [--kind source|image]
 agentx-manager gateway-enable [name] [--tunnel …]
 agentx-manager up|down|restart|rebuild [name]

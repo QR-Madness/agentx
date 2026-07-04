@@ -92,9 +92,10 @@ task cluster:status CLUSTER=prod         # confirm everything is healthy
 ```
 
 !!! warning "Don't skip `cluster:migrate`"
-    `cluster:migrate` applies **both** the Django/PostgreSQL ORM tables **and** the Neo4j/PG/Redis
-    memory schema (`init_memory_schema`). The memory schema creates the vector indexes recall and
-    the semantic-duplicate check rely on — without it, consolidation logs
+    `cluster:migrate` runs the in-image bootstrap: the Django/PostgreSQL ORM tables, the memory
+    PostgreSQL (Alembic), **and** the Neo4j/Redis memory schema in one pass (already-current
+    schemas are verified by version stamps in seconds). The memory schema creates the vector
+    indexes recall and the semantic-duplicate check rely on — without it, consolidation logs
     `fact_embeddings index missing` and silently stops de-duplicating.
 
 Verify the API:

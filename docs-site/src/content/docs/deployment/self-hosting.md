@@ -110,7 +110,8 @@ docker compose exec manager agentx-manager up
 that only restarts existing containers, it won't swap in a freshly pulled
 image) recreates whichever services actually changed. Dashboard **Up**/
 **Restart** does the same. Schema migrations re-apply automatically on boot
-(idempotent); config and data persist under `./data`.
+(idempotent — a warm boot just verifies version stamps and reaches the API in
+seconds); config and data persist under `./data`.
 
 ### Backups
 
@@ -131,7 +132,7 @@ image, so nothing external to keep in sync):
 docker compose exec api agentx help          # list commands
 docker compose exec api agentx status        # health + memory status
 docker compose exec api agentx version       # running API version
-docker compose exec api agentx migrate       # re-apply migrations + memory schema
+docker compose exec api agentx migrate       # apply all migrations (fast; --full re-inits)
 docker compose exec api agentx setup-auth --force   # reset the root password
 docker compose exec api agentx warmup        # pre-load the embedding model
 docker compose exec api agentx export --output /app/data/memory-export.json

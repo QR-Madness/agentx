@@ -87,7 +87,7 @@ All management runs through the in-image CLI (versioned with the image):
 docker compose exec api agentx help          # list commands
 docker compose exec api agentx status        # health + memory status
 docker compose exec api agentx version       # running API version
-docker compose exec api agentx migrate       # re-apply migrations + memory schema
+docker compose exec api agentx migrate       # apply all migrations (fast; --full re-inits)
 docker compose exec api agentx setup-auth --force   # reset the root password
 docker compose exec api agentx warmup        # pre-load the embedding model
 docker compose exec api agentx export --output /app/data/memory-export.json
