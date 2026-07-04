@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.145 -->
+<!-- release-version: 0.21.146 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -26,8 +26,10 @@ the client at your own API server and bring your own model providers.
 - **New: the deployment manager — on by default in the bundle.** Web dashboard + CLI
   (`qrmadness/agentx-manager`, port 12320, loopback + token): live health incl. a first-boot
   *initializing* state, CPU/memory/network gauges (live ↓ MB/s while the model downloads),
-  log streaming, config-aware restarts, typed-confirmation destroy. Quick start is now: fill 3 `.env` values → `up -d` (starts the
-  manager) → open the GUI → click **Up**.
+  log streaming, config-aware restarts, typed-confirmation destroy. Quick start is now
+  zero-config: `cp .env.example .env` → `up -d` → open the GUI → click **Start** — the secret
+  key + database passwords auto-generate on first Start (existing databases are never
+  re-keyed), and LLM provider keys are added in the app afterwards, not in `.env`.
 - **The token gateway ships in the deploy bundle.** Shared-secret + rate limiting from the
   bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
 - **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;

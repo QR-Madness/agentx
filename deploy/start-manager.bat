@@ -6,6 +6,10 @@ rem Requires Docker Desktop with WSL 2 integration (the default install).
 setlocal
 cd /d "%~dp0"
 
+rem First run: create .env from the template (secrets are generated
+rem automatically on the dashboard's first Start - no editing required).
+if not exist ".env" copy /y ".env.example" ".env" >nul
+
 where wsl >nul 2>nul || (
   echo This starter needs WSL 2 ^(installed with Docker Desktop by default^).
   echo Alternatively run from a WSL shell:  docker compose up -d

@@ -23,19 +23,19 @@ the API image plus its own Neo4j, PostgreSQL, and Redis.
 ## Quick start
 
 ```bash
-cp .env.example .env
-# In .env, set three things:
-#   DJANGO_SECRET_KEY     (the file shows the generate command)
-#   database passwords    (NEO4J_PASSWORD, POSTGRES_PASSWORD)
-#   one LLM provider key  (e.g. ANTHROPIC_API_KEY)
-
+cp .env.example .env   # defaults are fine — secrets are generated on first Start
 docker compose up -d
 ```
 
-> **Windows:** after editing `.env`, just double-click **`start-manager.bat`**
-> instead of running the compose command — it starts the manager (via Docker
-> Desktop's WSL 2 integration, the default install mode), opens the dashboard
-> in your browser, and opens the access token in Notepad.
+Nothing to edit: the Django secret key and database passwords are generated
+into `.env` on the dashboard's first **Start**, and LLM provider API keys are
+added later in the app (Settings → Providers — saved server-side), not in
+`.env`. Edit `.env` only to change ports or advanced knobs.
+
+> **Windows:** just double-click **`start-manager.bat`** — it creates `.env`
+> from the template if missing, starts the manager (via Docker Desktop's
+> WSL 2 integration, the default install mode), opens the dashboard in your
+> browser, and opens the access token in Notepad.
 
 That starts **only the manager** — nothing else yet. Open it and use it to
 bring up the actual stack:

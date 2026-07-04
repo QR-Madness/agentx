@@ -68,9 +68,39 @@ def _ensure_identity(cluster: Cluster) -> None:
         upsert_env(cluster.env_file, {"AGENTX_CLUSTER_NAME": cluster.name})
 
 
+def _ensure_secrets(cluster: Cluster) -> list[str]:
+    """Generate missing secrets into .env so a fresh deployment is zero-config.
+
+    DJANGO_SECRET_KEY is generated whenever empty (stable once written —
+    Django refuses an empty key). Database passwords are generated only while
+    the databases have never been initialized (data dirs absent); after that
+    an empty value keeps compose's legacy default rather than locking the
+    user out of their existing data. Returns the generated key names.
+    """
+    import secrets
+
+    from .envfile import upsert_env
+
+    updates: dict[str, str] = {}
+    if not cluster.env.get("DJANGO_SECRET_KEY"):
+        updates["DJANGO_SECRET_KEY"] = secrets.token_urlsafe(48)
+
+    db_dir = cluster.root / cluster.env.get("AGENTX_DB_DIR", "./data")
+    if not any((db_dir / d).is_dir() for d in ("postgres", "neo4j")):
+        for key in ("NEO4J_PASSWORD", "POSTGRES_PASSWORD"):
+            if not cluster.env.get(key):
+                updates[key] = secrets.token_urlsafe(24)
+
+    if updates:
+        upsert_env(cluster.env_file, updates)
+        cluster.env.update(updates)
+    return sorted(updates)
+
+
 def up(cluster: Cluster, runner: ComposeRunner | None = None, *, wait_first_boot: bool = True) -> LifecycleResult:
     runner = runner or SubprocessRunner()
     _ensure_identity(cluster)
+    generated = _ensure_secrets(cluster)
     runs: list[RunResult] = []
 
     stale = _stale_services(cluster)
@@ -107,6 +137,8 @@ def up(cluster: Cluster, runner: ComposeRunner | None = None, *, wait_first_boot
         if recreate:
             which = "all services" if "*" in stale else ", ".join(sorted(stale))
             detail = f"up (config changed → force-recreated {which})"
+        if generated:
+            detail += f" (generated {', '.join(generated)})"
         return LifecycleResult(True, detail, runs)
     return LifecycleResult(False, result.stderr.strip() or result.stdout.strip(), runs)
 

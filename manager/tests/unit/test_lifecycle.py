@@ -161,3 +161,41 @@ def test_up_backfills_missing_cluster_name(repo, fake_runner):
     cluster.env_file.write_text(env_text)
     lifecycle.up(cluster, fake_runner)
     assert "AGENTX_CLUSTER_NAME=old" in cluster.env_file.read_text()
+
+
+def test_up_generates_missing_secrets_on_fresh_bundle(bundle, fake_runner):
+    # Zero-config: a fresh bundle .env (no secrets) gets them generated on Up.
+    [cluster] = registry.discover(bundle)
+    result = lifecycle.up(cluster, fake_runner)
+    assert result.ok
+    env_text = (bundle / ".env").read_text()
+    for key in ("DJANGO_SECRET_KEY", "NEO4J_PASSWORD", "POSTGRES_PASSWORD"):
+        line = next(ln for ln in env_text.splitlines() if ln.startswith(f"{key}="))
+        assert len(line.split("=", 1)[1]) >= 24
+    assert "generated DJANGO_SECRET_KEY, NEO4J_PASSWORD, POSTGRES_PASSWORD" in result.detail
+
+
+def test_up_preserves_existing_secrets(bundle, fake_runner):
+    (bundle / ".env").write_text(
+        "AGENTX_CLUSTER_NAME=myhost\nDJANGO_SECRET_KEY=keepme\n"
+        "NEO4J_PASSWORD=n1\nPOSTGRES_PASSWORD=p1\n"
+    )
+    [cluster] = registry.discover(bundle)
+    result = lifecycle.up(cluster, fake_runner)
+    assert result.ok and "generated" not in result.detail
+    env_text = (bundle / ".env").read_text()
+    assert "DJANGO_SECRET_KEY=keepme" in env_text
+    assert "NEO4J_PASSWORD=n1" in env_text and "POSTGRES_PASSWORD=p1" in env_text
+
+
+def test_up_never_generates_db_passwords_after_init(bundle, fake_runner):
+    # Once the databases exist, a missing password must NOT be regenerated —
+    # that would lock the user out of their own data. The secret key is safe.
+    (bundle / "data" / "postgres").mkdir(parents=True)
+    [cluster] = registry.discover(bundle)
+    result = lifecycle.up(cluster, fake_runner)
+    assert result.ok
+    env_text = (bundle / ".env").read_text()
+    assert "NEO4J_PASSWORD" not in env_text and "POSTGRES_PASSWORD" not in env_text
+    assert "DJANGO_SECRET_KEY=" in env_text
+    assert "generated DJANGO_SECRET_KEY" in result.detail

@@ -1,7 +1,7 @@
 {
   "name": "agentx-client",
   "private": true,
-  "version": "0.21.145",
+  "version": "0.21.146",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -28,23 +28,23 @@ tar xzf agentx-deploy.tar.gz && cd agentx-deploy
 ## 2 · Configure and start
 
 ```bash
-cp .env.example .env
-# In .env, set three things:
-#   DJANGO_SECRET_KEY     (the file shows the generate command)
-#   database passwords    (NEO4J_PASSWORD, POSTGRES_PASSWORD)
-#   one LLM provider key  (e.g. ANTHROPIC_API_KEY)
-
+cp .env.example .env   # defaults are fine — secrets are generated on first Start
 docker compose up -d
 ```
 
-That starts **only the deployment manager** — nothing else yet. On Windows,
-double-click the bundle's **`start-manager.bat`** instead — it runs the same
-command through Docker Desktop's WSL 2 integration, then opens the dashboard
-and the access token for you.
+Nothing to edit: the Django secret key and database passwords are generated
+into `.env` on the dashboard's first **Start**, and LLM provider API keys are
+added later **in the app** (Settings → Providers — saved server-side), not in
+`.env`. That starts **only the deployment manager** — nothing else yet. On
+Windows, double-click the bundle's **`start-manager.bat`** instead — it
+creates `.env` if missing, runs the same command through Docker Desktop's
+WSL 2 integration, then opens the dashboard and the access token for you.
 
 !!! danger "Don't ship the defaults"
-    `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every
-    database password must be changed before exposing the stack.
+    `DJANGO_DEBUG` must stay `false` and auth stays on before exposing the
+    stack. Secrets left empty in `.env` are auto-generated on first Start —
+    never expose a stack that was started around the manager with empty
+    passwords still in place.
 
 ## 3 · Open the dashboard and bring up the stack
 
