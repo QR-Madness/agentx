@@ -305,13 +305,20 @@ tasks:
       # --wait blocks until every service passes its compose healthcheck, so any
       # dependent (db:migrate, db:init:schemas, dev) gets a DB that's actually
       # accepting connections — no more racing Neo4j's Bolt port on a cold start.
-      - docker-compose up -d --wait
+      # Named explicitly (not `up -d --wait` alone): neo4j/postgres/redis/api
+      # all sit behind the `production` profile now (so a bundle's bare
+      # `docker compose up -d` starts only the manager) — naming services
+      # here starts them regardless of profile, without also starting `api`
+      # (dev runs the API from source, not this containerized image).
+      - docker-compose up -d --wait neo4j postgres redis
 
   db:down:
     desc: "Stop database services"
     aliases: [teardown]
     cmds:
-      - docker-compose down
+      # --profile production (not a bare `down`, which only tears down whatever
+      # profile is currently active — none, by default) — see db:up.
+      - docker-compose --profile production down
 
   db:restart:
     desc: "Restart database services"
@@ -588,6 +595,7 @@ tasks:
     aliases: [docs:dev]
     dir: docs-site
     cmds:
+      - task: docs:build
       - bun run dev
 
   docs:build:
@@ -1535,6 +1543,13 @@ tasks:
             exit 1
           fi
         done
+        # COMPOSE_PROFILES alone doesn't load a service that lives in a file
+        # docker compose never merged in — deploy/.env.example's COMPOSE_FILE
+        # must actually include every overlay it turns on by default (manager).
+        services=$(docker compose --env-file deploy/.env.example config --services 2>&1) \
+          || { echo "✗ docker compose config failed: $services" >&2; exit 1; }
+        echo "$services" | grep -qx manager \
+          || { echo "✗ 'manager' service doesn't resolve from deploy/.env.example's defaults — check COMPOSE_FILE" >&2; exit 1; }
         echo "✓ deploy bundle sources present, image-based, and location-independent"
 
   docker:publish:

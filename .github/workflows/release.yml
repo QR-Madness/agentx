@@ -456,7 +456,7 @@ jobs:
             echo ""
             echo "Published to Docker Hub as \`${IMAGE}:latest\` (linux/amd64) — this release is v${VERSION} (see the image's \`org.opencontainers.image.version\` label). The repo is kept to a single \`latest\` tag to stay storage-lean."
             echo ""
-            echo "For a self-contained isolated deployment (API + Neo4j + PostgreSQL + Redis), download **\`agentx-deploy.tar.gz\`** below: \`tar xzf agentx-deploy.tar.gz && cd agentx-deploy && cp .env.example .env\` then \`docker compose up -d\`."
+            echo "For a self-contained isolated deployment (API + Neo4j + PostgreSQL + Redis), download **\`agentx-deploy.tar.gz\`** below: \`tar xzf agentx-deploy.tar.gz && cd agentx-deploy && cp .env.example .env\` then \`docker compose up -d\` (starts the manager), open http://127.0.0.1:12320, and click **Up**."
             echo ""
             echo "### SHA-256 checksums"
             echo ""

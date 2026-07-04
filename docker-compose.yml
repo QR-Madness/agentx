@@ -47,6 +47,8 @@ services:
         reservations:
           memory: 2G
           cpus: "0.5"
+    profiles:
+      - production
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -75,6 +77,8 @@ services:
         reservations:
           memory: 512M
           cpus: "0.5"
+    profiles:
+      - production
 
   redis:
     image: redis:7-alpine
@@ -97,6 +101,8 @@ services:
         reservations:
           memory: 256M
           cpus: "0.25"
+    profiles:
+      - production
 
   # AgentX API Server (Phase 17)
   #
