@@ -61,6 +61,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Drop and recreate all vector indexes (use after changing embedding model/dimensions)",
         )
+        parser.add_argument(
+            "--validate-embedder",
+            action="store_true",
+            help="Also load the embedding model to check its output dimensions match "
+                 "EMBEDDING_DIMENSIONS (slow: pulls the model into RAM)",
+        )
 
     def handle(self, *args, **options):
         neo4j_only = options["neo4j_only"]
@@ -75,11 +81,13 @@ class Command(BaseCommand):
 
         results: dict[str, dict | None] = {"neo4j": None, "postgres": None, "redis": None}
 
+        validate_embedder = options["validate_embedder"]
+
         if do_all or neo4j_only:
             if force_recreate:
-                results["neo4j"] = self._force_recreate_neo4j_indexes(verbose)
+                results["neo4j"] = self._force_recreate_neo4j_indexes(verbose, validate_embedder)
             else:
-                results["neo4j"] = self._handle_neo4j(verify_only, verbose)
+                results["neo4j"] = self._handle_neo4j(verify_only, verbose, validate_embedder)
 
         # PostgreSQL is owned by Alembic now (`alembic upgrade head` /
         # `task db:migrate:pg`). This command only handles Neo4j + Redis; surface a
@@ -177,7 +185,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  ⚠ Could not validate embedder dimensions: {e}")
             return True  # Don't block schema init if model can't be loaded
 
-    def _handle_neo4j(self, verify_only: bool, verbose: bool) -> dict:
+    def _handle_neo4j(self, verify_only: bool, verbose: bool, validate_embedder: bool = False) -> dict:
         """Initialize or verify Neo4j schemas."""
         self.stdout.write("\n📊 Neo4j Schema Initialization")
         self.stdout.write("-" * 40)
@@ -203,8 +211,12 @@ class Command(BaseCommand):
         schema_content = self._substitute_neo4j_dims(schema_content, dims)
         self.stdout.write(f"  Vector dimensions: {dims}")
 
-        # Validate embedder dimensions match config
-        self._validate_embedder_dimensions(verbose)
+        # Opt-in only: loading the model just to cross-check dimension ints is
+        # what made every container boot pull BGE-M3 into RAM (and leave the
+        # non-exiting download threads the entrypoint watchdog existed for).
+        # Index creation uses the configured dims either way.
+        if validate_embedder:
+            self._validate_embedder_dimensions(verbose)
 
         # Parse individual statements (comment-aware: strips // comments before
         # splitting on ';' so a semicolon inside a comment can't break a statement).
@@ -311,7 +323,7 @@ class Command(BaseCommand):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    def _force_recreate_neo4j_indexes(self, verbose: bool) -> dict:
+    def _force_recreate_neo4j_indexes(self, verbose: bool, validate_embedder: bool = False) -> dict:
         """Drop and recreate all Neo4j vector indexes with correct dimensions."""
         self.stdout.write("\n📊 Neo4j Vector Index Recreation")
         self.stdout.write("-" * 40)
@@ -323,7 +335,8 @@ class Command(BaseCommand):
 
         dims = self._get_configured_dims()
         self.stdout.write(f"  Target dimensions: {dims}")
-        self._validate_embedder_dimensions(verbose)
+        if validate_embedder:
+            self._validate_embedder_dimensions(verbose)
 
         # Load schema to extract CREATE VECTOR INDEX statements
         project_root = Path(__file__).parent.parent.parent.parent.parent

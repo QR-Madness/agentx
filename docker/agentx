@@ -22,7 +22,8 @@ agentx — AgentX deployment operations
 Usage: agentx <command> [args...]
 
 Commands:
-  migrate              Apply DB migrations + initialize the memory schema
+  migrate [--full]     Apply all DB migrations (Django + Alembic) + memory schema
+                         (fast-path stamps skip work already done; --full forces it)
   setup-auth [args]    Set/verify the root password
                          --password <pw>  non-interactive set
                          --check          report if setup is required
@@ -45,8 +46,9 @@ cmd="${1:-help}"
 
 case "$cmd" in
   migrate)
-    "${MANAGE[@]}" migrate --noinput
-    "${MANAGE[@]}" init_memory_schema "$@"
+    # One-process bootstrap: Django migrate + Alembic upgrade + memory schema
+    # (stamp fast path; pass --full to force a complete re-init).
+    "${MANAGE[@]}" bootstrap "$@"
     ;;
   setup-auth)
     "${MANAGE[@]}" setup_auth "$@"

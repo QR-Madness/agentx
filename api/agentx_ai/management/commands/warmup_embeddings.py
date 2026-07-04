@@ -55,16 +55,20 @@ class Command(BaseCommand):
         start_time = time.time()
         embedder = get_embedder()
 
-        # Force model initialization by running a test embedding
-        test_text = "Warming up embedding model for production deployment."
-        embedding = embedder.embed_single(test_text)
+        # Load the model directly — the queued embed path is bounded by the
+        # dispatcher's future timeout, which a cold multi-GB download exceeds
+        # (fut.result(timeout=…) fires while the download is still running).
+        dims = embedder.output_dimensions
 
         load_time = time.time() - start_time
 
         self.stdout.write(
             self.style.SUCCESS(f"✓ Model loaded in {load_time:.2f}s")
         )
-        self.stdout.write(f"  Output dimensions: {len(embedding)}")
+        self.stdout.write(f"  Output dimensions: {dims}")
+
+        # Exercise the full embed path now that the model is resident (fast).
+        embedder.embed_single("Warming up embedding model for production deployment.")
 
         if options["validate"]:
             actual, configured, match = embedder.validate_dimensions()

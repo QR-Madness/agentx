@@ -4,9 +4,13 @@
 # Makes an isolated (Docker Hub) deployment self-sufficient — no repo, no
 # Taskfile required:
 #   1. Seed the runtime config dir (/app/data) from the baked defaults if empty.
-#   2. Auto-initialize database schemas on boot (idempotent), unless disabled.
-#   3. Print a one-line hint if auth setup is still pending.
-#   4. exec the container command (uvicorn).
+#   2. `manage.py bootstrap` — ONE process for Django + Alembic migrations,
+#      memory-schema init (stamp fast path on warm boots), warmup signal, and
+#      the auth hint. Idempotent; disabled via AGENTX_AUTO_INIT=false.
+#   3. If bootstrap reports warmup=needed (first boot, local provider): run
+#      warmup_embeddings under a post-success watchdog.
+#   4. Print a one-line hint if auth setup is still pending.
+#   5. exec the container command (uvicorn).
 #
 # Everything here is idempotent and safe to run on every start.
 set -euo pipefail
@@ -39,31 +43,62 @@ seed_config() {
   [ "$seeded" = "0" ] && log "config dir already populated — no seeding needed"
 }
 
-# init_memory_schema warms the embedding model on a fresh first boot, and the
-# model download/load leaves non-exiting threads that keep the process alive
-# AFTER it prints its success marker — observed with the hf-xet backend AND
-# with it disabled (HF_HUB_DISABLE_XET=1 stays set regardless; plain HTTP is
-# boring and one suspect fewer). An un-reaped straggler would block uvicorn
-# forever, so run init under a post-success watchdog: once the marker appears,
-# give the process a grace period to exit on its own, then reap it and treat
-# the init as succeeded.
-INIT_SUCCESS_MARKER="All schemas initialized"
-INIT_EXIT_GRACE="${AGENTX_INIT_EXIT_GRACE:-60}"
+# 2) One-process bootstrap: Django + Alembic migrations, memory-schema stamp
+#    fast path, embedding-warmup signal, auth hint — all inside a single
+#    `manage.py bootstrap` (stdout contract: BOOTSTRAP <phase>=<state> lines).
+#    Warm boots take seconds; the model is never loaded here.
+BOOT_OUT="$(mktemp)"
 
-init_memory_schema_watchdog() {
+run_bootstrap() {
+  if [ "${AGENTX_AUTO_INIT:-true}" != "true" ]; then
+    log "AGENTX_AUTO_INIT=${AGENTX_AUTO_INIT:-} — skipping schema auto-init"
+    return 0
+  fi
+  log "running bootstrap (migrations + schema init)..."
+  local attempt=1 max=5 rc
+  while [ "$attempt" -le "$max" ]; do
+    uv run python "$APP_DIR/api/manage.py" bootstrap >"$BOOT_OUT" 2>&1 && rc=0 || rc=$?
+    cat "$BOOT_OUT"
+    if [ "$rc" -eq 0 ]; then
+      log "bootstrap complete"
+      return 0
+    fi
+    if [ "$rc" -eq 2 ]; then
+      log "ERROR: bootstrap configuration error (see above) — not retrying"
+      return 1
+    fi
+    log "bootstrap attempt $attempt/$max failed — retrying in 5s..."
+    attempt=$((attempt + 1))
+    sleep 5
+  done
+  log "ERROR: bootstrap failed after $max attempts"
+  return 1
+}
+
+# 3) Explicit embedding warmup, only when bootstrap says the local model isn't
+#    cached yet (true first boot). The model load/download leaves non-exiting
+#    threads that keep the process alive AFTER the success marker — observed
+#    with the hf-xet backend AND with it disabled (HF_HUB_DISABLE_XET=1 stays
+#    set; plain HTTP is boring and one suspect fewer) — so warmup runs under a
+#    post-success watchdog: once the marker appears, give the process a short
+#    grace to exit, then reap it and treat the warmup as succeeded.
+WARMUP_SUCCESS_MARKER="Model loaded in"
+INIT_EXIT_GRACE="${AGENTX_INIT_EXIT_GRACE:-15}"
+
+warmup_watchdog() {
   local out pid rc marker_grace=0
   out="$(mktemp)"
-  uv run python "$APP_DIR/api/manage.py" init_memory_schema >"$out" 2>&1 &
+  uv run python "$APP_DIR/api/manage.py" warmup_embeddings >"$out" 2>&1 &
   pid=$!
   # Relay output live so first-boot progress (model download) stays visible.
   tail -n +1 -f "$out" &
   local tail_pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     sleep 5
-    if grep -q "$INIT_SUCCESS_MARKER" "$out"; then
+    if grep -q "$WARMUP_SUCCESS_MARKER" "$out"; then
       marker_grace=$((marker_grace + 5))
       if [ "$marker_grace" -ge "$INIT_EXIT_GRACE" ]; then
-        log "init_memory_schema succeeded but did not exit within ${INIT_EXIT_GRACE}s — reaping lingering process (non-exiting model-download threads)"
+        log "warmup succeeded but did not exit within ${INIT_EXIT_GRACE}s — reaping lingering process (non-exiting model-download threads)"
         kill -9 "$pid" 2>/dev/null || true
         break
       fi
@@ -73,44 +108,28 @@ init_memory_schema_watchdog() {
   wait "$pid" 2>/dev/null && rc=0 || rc=$?
   kill "$tail_pid" 2>/dev/null || true
   wait "$tail_pid" 2>/dev/null || true
-  if grep -q "$INIT_SUCCESS_MARKER" "$out"; then
+  if grep -q "$WARMUP_SUCCESS_MARKER" "$out"; then
     rc=0
   fi
   rm -f "$out"
   return "$rc"
 }
 
-# 2) Auto-init DB schemas. depends_on: service_healthy gates DB readiness under
-#    compose, but retry a few times so a transient connection blip isn't fatal.
-auto_init() {
-  if [ "${AGENTX_AUTO_INIT:-true}" != "true" ]; then
-    log "AGENTX_AUTO_INIT=${AGENTX_AUTO_INIT:-} — skipping schema auto-init"
-    return 0
-  fi
-  log "running database migrations + memory schema init..."
-  local attempt=1 max=5
-  while [ "$attempt" -le "$max" ]; do
-    # Django ORM (SQLite) → memory Postgres (Alembic) → Neo4j + Redis (home-grown).
-    if uv run python "$APP_DIR/api/manage.py" migrate --noinput \
-       && (cd "$APP_DIR" && uv run alembic upgrade head) \
-       && init_memory_schema_watchdog; then
-      log "schema init complete"
-      return 0
+maybe_warmup() {
+  if grep -q '^BOOTSTRAP warmup=needed' "$BOOT_OUT"; then
+    log "downloading + warming embedding model (first boot)..."
+    if ! warmup_watchdog; then
+      log "WARN: embedding warmup failed — the API will lazy-load the model on first use"
     fi
-    log "schema init attempt $attempt/$max failed — retrying in 5s..."
-    attempt=$((attempt + 1))
-    sleep 5
-  done
-  log "ERROR: schema init failed after $max attempts"
-  return 1
+  fi
 }
 
-# 3) Auth setup hint (non-fatal).
+# 4) Auth setup hint (non-fatal), from the bootstrap contract line.
 auth_hint() {
   if [ "${AGENTX_AUTH_ENABLED:-true}" != "true" ]; then
     return 0
   fi
-  if uv run python "$APP_DIR/api/manage.py" setup_auth --check 2>/dev/null | grep -qi "setup required"; then
+  if grep -q '^BOOTSTRAP auth=setup_required' "$BOOT_OUT"; then
     log "AUTH: no root password set. Run:  docker compose exec api agentx setup-auth"
     log "      (or use the client's first-run setup screen)."
   fi
@@ -118,8 +137,10 @@ auth_hint() {
 
 cd "$APP_DIR"
 seed_config
-auto_init
+run_bootstrap
+maybe_warmup
 auth_hint
+rm -f "$BOOT_OUT"
 
 log "starting API: $*"
 exec "$@"

@@ -279,7 +279,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest agentx_ai.tests.LogArchiveCryptoTest -v2
+      - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest agentx_ai.tests.LogArchiveCryptoTest agentx_ai.tests.BootstrapStampTest agentx_ai.tests.BootstrapWarmupSignalTest agentx_ai.tests.BootstrapContractTest agentx_ai.tests.InitMemorySchemaEmbedderTest -v2
 
   test:client:
     desc: "Run client tests (Vitest)"
@@ -1507,6 +1507,7 @@ tasks:
         cp clusters/template/cloudflared/config.yml.example "$OUT/gateway/cloudflared/config.yml.example"
         cp deploy/.env.example               "$OUT/.env.example"
         cp deploy/README.md                  "$OUT/README.md"
+        cp deploy/start-manager.bat          "$OUT/start-manager.bat"
         tar -czf "$OUT.tar.gz" -C "$(dirname "$OUT")" "$(basename "$OUT")"
         echo "  ✓ $OUT/"
         echo "  ✓ $OUT.tar.gz"
@@ -1530,9 +1531,13 @@ tasks:
                  docker-compose.tunnel.named.yml docker-compose.manager.yml \
                  clusters/template/nginx.conf.example \
                  clusters/template/cloudflared/config.yml.example \
-                 deploy/.env.example deploy/README.md; do
+                 deploy/.env.example deploy/README.md deploy/start-manager.bat; do
           [ -f "$f" ] || { echo "✗ missing $f" >&2; exit 1; }
         done
+        # cmd.exe misparses LF-only batch files — the Windows starter must stay CRLF.
+        if ! file deploy/start-manager.bat | grep -q CRLF; then
+          echo "✗ deploy/start-manager.bat lost its CRLF line endings" >&2; exit 1
+        fi
         # Shipped overlays must never hardcode repo-relative cluster paths —
         # they resolve via AGENTX_GATEWAY_DIR so they work from any directory.
         # (Comments are exempt; only live config lines count.)

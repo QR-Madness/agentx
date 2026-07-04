@@ -9942,3 +9942,237 @@ class AuthClientIpTrustTest(TestCase):
         from agentx_ai.auth.middleware import is_auth_bypass_active
 
         self.assertTrue(is_auth_bypass_active("203.0.113.7"))
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap command (single-process container boot)
+# ---------------------------------------------------------------------------
+
+class _FakeNeo4jResult:
+    def __init__(self, rows=None, single=None):
+        self._rows = rows or []
+        self._single = single
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def single(self):
+        return self._single
+
+
+class _FakeNeo4jSession:
+    """Answers SHOW INDEXES with configurable states; absorbs everything else."""
+
+    def __init__(self, index_states=None):
+        vector_names = ["turn_embeddings", "entity_embeddings", "fact_embeddings", "strategy_embeddings"]
+        self.index_states = index_states if index_states is not None else dict.fromkeys(vector_names, "ONLINE")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def run(self, query, *args, **kwargs):
+        if "SHOW INDEXES" in query:
+            return _FakeNeo4jResult(rows=[
+                {"name": name, "state": state} for name, state in self.index_states.items()
+            ])
+        if "SHOW CONSTRAINTS" in query:
+            return _FakeNeo4jResult(rows=[])
+        if "apoc.version" in query:
+            return _FakeNeo4jResult(single={"version": "test"})
+        return _FakeNeo4jResult(single=None)
+
+
+class _FakeNeo4jDriver:
+    def __init__(self, session):
+        self._session = session
+
+    def session(self):
+        return self._session
+
+
+class _BootstrapTestBase(TestCase):
+    """Shared patches: no real DBs, no real migrate/init, no alembic run."""
+
+    def run_bootstrap(self, *, index_states=None, neo4j_version=999, redis_ping=True,
+                      provider="local", cache_hit=True, full=False):
+        from io import StringIO
+        from unittest.mock import MagicMock, patch
+
+        session = _FakeNeo4jSession(index_states=index_states)
+        driver = _FakeNeo4jDriver(session)
+        settings = MagicMock(embedding_provider=provider, local_embedding_model="BAAI/bge-m3")
+        nested = MagicMock()  # records nested call_command("migrate"/"init_memory_schema")
+        out = StringIO()
+
+        with patch("agentx_ai.management.commands.bootstrap.call_command", nested), \
+             patch("agentx_ai.management.commands.bootstrap.Command._alembic_upgrade",
+                   return_value="testhead"), \
+             patch("agentx_ai.management.commands.bootstrap.get_neo4j_version",
+                   return_value=neo4j_version), \
+             patch("agentx_ai.kit.agent_memory.connections.Neo4jConnection.get_driver",
+                   return_value=driver), \
+             patch("agentx_ai.kit.agent_memory.connections.RedisConnection.get_client",
+                   return_value=MagicMock(ping=MagicMock(return_value=redis_ping))), \
+             patch("agentx_ai.kit.agent_memory.config.get_settings", return_value=settings), \
+             patch("huggingface_hub.try_to_load_from_cache",
+                   return_value="/cache/x" if cache_hit else None), \
+             patch("agentx_ai.auth.service.get_auth_service",
+                   return_value=MagicMock(is_setup_required=MagicMock(return_value=False))):
+            from django.core.management import call_command as real_call_command
+            args = ["--full"] if full else []
+            real_call_command("bootstrap", *args, stdout=out)
+        return out.getvalue(), nested
+
+
+class BootstrapStampTest(_BootstrapTestBase):
+    """Warm-boot stamp fast path vs full init fallback."""
+
+    def _init_calls(self, nested):
+        return [c for c in nested.call_args_list if c.args and c.args[0] == "init_memory_schema"]
+
+    def test_fast_path_skips_init_when_all_stamps_pass(self):
+        out, nested = self.run_bootstrap()
+        self.assertIn("BOOTSTRAP memory_schema=verified", out)
+        self.assertEqual(self._init_calls(nested), [])
+
+    def test_full_init_on_neo4j_version_behind_disk(self):
+        out, nested = self.run_bootstrap(neo4j_version=0)
+        self.assertIn("BOOTSTRAP memory_schema=initialized", out)
+        self.assertEqual(len(self._init_calls(nested)), 1)
+
+    def test_full_init_on_vector_index_missing_or_not_online(self):
+        out, _ = self.run_bootstrap(index_states={"turn_embeddings": "ONLINE"})
+        self.assertIn("BOOTSTRAP memory_schema=initialized", out)
+        out, _ = self.run_bootstrap(index_states={
+            "turn_embeddings": "ONLINE", "entity_embeddings": "ONLINE",
+            "fact_embeddings": "POPULATING", "strategy_embeddings": "ONLINE",
+        })
+        self.assertIn("BOOTSTRAP memory_schema=initialized", out)
+
+    def test_full_init_on_redis_ping_failure(self):
+        out, _ = self.run_bootstrap(redis_ping=False)
+        self.assertIn("BOOTSTRAP memory_schema=initialized", out)
+
+    def test_full_flag_forces_init(self):
+        out, nested = self.run_bootstrap(full=True)
+        self.assertIn("BOOTSTRAP memory_schema=initialized", out)
+        self.assertEqual(len(self._init_calls(nested)), 1)
+
+
+class BootstrapWarmupSignalTest(_BootstrapTestBase):
+    """The entrypoint only runs warmup_embeddings when warmup=needed."""
+
+    def test_warmup_remote_when_provider_not_local(self):
+        out, _ = self.run_bootstrap(provider="openai")
+        self.assertIn("BOOTSTRAP warmup=remote", out)
+
+    def test_warmup_cached_when_hub_cache_hit(self):
+        out, _ = self.run_bootstrap(cache_hit=True)
+        self.assertIn("BOOTSTRAP warmup=cached", out)
+
+    def test_warmup_needed_on_cache_miss(self):
+        out, _ = self.run_bootstrap(cache_hit=False)
+        self.assertIn("BOOTSTRAP warmup=needed", out)
+
+    def test_warmup_needed_on_hub_exception(self):
+        from unittest.mock import patch
+        with patch("huggingface_hub.try_to_load_from_cache", side_effect=OSError("no cache")):
+            from agentx_ai.management.commands.bootstrap import Command
+            from unittest.mock import MagicMock
+            with patch("agentx_ai.kit.agent_memory.config.get_settings",
+                       return_value=MagicMock(embedding_provider="local",
+                                              local_embedding_model="BAAI/bge-m3")):
+                self.assertEqual(Command()._warmup_signal(), "needed")
+
+
+class BootstrapContractTest(_BootstrapTestBase):
+    """Stdout contract + alembic.ini resolution."""
+
+    def test_stdout_contract_lines_and_result_ok(self):
+        out, _ = self.run_bootstrap()
+        for line in (
+            "BOOTSTRAP django_migrate=ok",
+            "BOOTSTRAP alembic=ok head=testhead",
+            "BOOTSTRAP memory_schema=verified",
+            "BOOTSTRAP warmup=cached",
+            "BOOTSTRAP auth=configured",
+            "BOOTSTRAP_RESULT ok",
+        ):
+            self.assertIn(line, out)
+
+    def test_alembic_ini_walk_up_finds_repo_ini(self):
+        from agentx_ai.management.commands.bootstrap import _find_alembic_ini
+        found = _find_alembic_ini()
+        self.assertIsNotNone(found)
+        self.assertEqual(found.name, "alembic.ini")
+
+    def test_alembic_ini_env_override(self):
+        import os
+        import tempfile
+        from unittest.mock import patch as env_patch
+        from agentx_ai.management.commands.bootstrap import _find_alembic_ini
+        with tempfile.NamedTemporaryFile(suffix=".ini") as tmp:
+            with env_patch.dict(os.environ, {"AGENTX_ALEMBIC_INI": tmp.name}):
+                self.assertEqual(str(_find_alembic_ini()), tmp.name)
+        with env_patch.dict(os.environ, {"AGENTX_ALEMBIC_INI": "/nonexistent/alembic.ini"}):
+            self.assertIsNone(_find_alembic_ini())
+
+    def test_missing_alembic_ini_exits_2(self):
+        from io import StringIO
+        from unittest.mock import MagicMock, patch
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        with patch("agentx_ai.management.commands.bootstrap.call_command", MagicMock()), \
+             patch("agentx_ai.management.commands.bootstrap._find_alembic_ini",
+                   return_value=None):
+            with self.assertRaises(CommandError) as ctx:
+                call_command("bootstrap", stdout=StringIO())
+        self.assertEqual(getattr(ctx.exception, "returncode", None), 2)
+
+
+class InitMemorySchemaEmbedderTest(TestCase):
+    """Schema init must be model-free unless --validate-embedder is passed."""
+
+    def _patches(self, index_states=None):
+        from unittest.mock import MagicMock, patch
+        session = _FakeNeo4jSession(index_states=index_states)
+        return (
+            patch("agentx_ai.kit.agent_memory.connections.Neo4jConnection.get_driver",
+                  return_value=_FakeNeo4jDriver(session)),
+            patch("agentx_ai.kit.agent_memory.connections.RedisConnection.get_client",
+                  return_value=MagicMock(
+                      ping=MagicMock(return_value=True),
+                      info=MagicMock(return_value={}),
+                      dbsize=MagicMock(return_value=0),
+                  )),
+            patch("agentx_ai.kit.agent_memory.embeddings.get_embedder",
+                  side_effect=AssertionError("embedder must not load during schema init")),
+        )
+
+    def test_default_init_does_not_load_embedder(self):
+        from io import StringIO
+        from django.core.management import call_command
+        p1, p2, p3 = self._patches()
+        with p1, p2, p3:
+            call_command("init_memory_schema", stdout=StringIO())  # must not raise
+
+    def test_verify_does_not_load_embedder(self):
+        from io import StringIO
+        from django.core.management import call_command
+        p1, p2, p3 = self._patches()
+        with p1, p2, p3:
+            call_command("init_memory_schema", "--verify", stdout=StringIO())
+
+    def test_validate_embedder_flag_invokes_validation(self):
+        from io import StringIO
+        from unittest.mock import MagicMock, patch
+        from django.core.management import call_command
+        embedder = MagicMock(validate_dimensions=MagicMock(return_value=(1024, 1024, True)))
+        p1, p2, _ = self._patches()
+        with p1, p2, patch("agentx_ai.kit.agent_memory.embeddings.get_embedder",
+                           return_value=embedder):
+            call_command("init_memory_schema", "--validate-embedder", stdout=StringIO())
+        embedder.validate_dimensions.assert_called_once()

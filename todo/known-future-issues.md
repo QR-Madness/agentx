@@ -8,15 +8,16 @@
 
 > Architectural concerns that may need addressing at scale
 
-**~~First-boot init hang after model download~~** — RESOLVED `[v0.21.143]`. On a fresh cluster
-(empty HF cache), `init_memory_schema` downloads BAAI/bge-m3 mid-init, prints success, but the
-process never exits (non-exiting download threads keep the interpreter alive — observed with the
-hf-xet backend AND with `HF_HUB_DISABLE_XET=1`), so the entrypoint never reached uvicorn. Fixed by
-a **post-success watchdog** in `docker/entrypoint.sh` (marker seen + no exit within
-`AGENTX_INIT_EXIT_GRACE`, default 60s → reap, continue boot); `HF_HUB_DISABLE_XET=1` also stays
-baked in the image. Verified on a real empty-cache first boot: watchdog fired, API healthy ~6 min
-after create. Root-causing which library leaks the thread (and moving the model download out of
-schema init into an explicit warmup step) remains open groundskeeping.
+**~~First-boot init hang after model download~~** — RESOLVED `[v0.21.143]`, root cause removed
+`[v0.21.145]`. On a fresh cluster (empty HF cache), `init_memory_schema` downloaded BAAI/bge-m3
+mid-init, printed success, but the process never exited (non-exiting download threads keep the
+interpreter alive — observed with the hf-xet backend AND with `HF_HUB_DISABLE_XET=1`), so the
+entrypoint never reached uvicorn. v0.21.143 added a **post-success watchdog**; v0.21.145 removed
+the cause: schema init no longer loads the embedder at all (`--validate-embedder` is opt-in), the
+model download moved to the explicit `warmup_embeddings` step run only when the boot's
+`manage.py bootstrap` reports the model uncached, and the watchdog now wraps only that warmup
+(`AGENTX_INIT_EXIT_GRACE`, default 15s). Root-causing which library leaks the thread remains
+open groundskeeping.
 
 **Distributed Transaction Support**
 - Dual-write to Neo4j + PostgreSQL has no transaction coordination

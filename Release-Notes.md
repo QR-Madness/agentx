@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.144 -->
+<!-- release-version: 0.21.145 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,6 +44,11 @@ the client at your own API server and bring your own model providers.
   (set behind the gateway) — closes a spoofable localhost auth bypass on exposed APIs.
 - **Rate limiting works without Cloudflare** (TCP-peer fallback when `CF-Connecting-IP` is
   absent); misleading cloudflared `noHappyEyeballs` SSE comment corrected.
+- **Container boots are fast now.** Warm starts collapsed from 2+ minutes to seconds — one
+  bootstrap process replaces four, schema init no longer loads the embedding model, and the
+  first-boot download runs as an explicit warmup step. `agentx migrate` now also applies
+  Alembic migrations. Windows users get a one-click `start-manager.bat` in the bundle
+  (needs Docker Desktop's WSL 2 integration; community testing welcome).
 - **Bundle dashboard reads a stopped stack as *down*** (was *degraded*), and gauges no longer
   count the manager itself — its container shares the bundle's compose project by design and
   is now filtered out of status/usage/restart. Bundle mode is now a plain-language dashboard

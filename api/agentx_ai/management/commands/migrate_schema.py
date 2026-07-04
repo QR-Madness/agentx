@@ -34,6 +34,19 @@ def _description_from_filename(filename: str) -> str:
     return parts[1].replace("_", " ") if len(parts) > 1 else stem
 
 
+def get_neo4j_version(session) -> int:
+    """Current version from the _SchemaMeta singleton node, or 0 if not found.
+    Module-level so the bootstrap command's stamp fast path can reuse it."""
+    try:
+        result = session.run(
+            "MATCH (m:_SchemaMeta {id: 'schema'}) RETURN m.version AS v"
+        )
+        record = result.single()
+        return int(record["v"]) if record and record["v"] is not None else 0
+    except Exception:
+        return 0
+
+
 class Command(BaseCommand):
     help = "Apply pending Neo4j schema migrations (PostgreSQL is managed by Alembic)"
 
@@ -77,14 +90,7 @@ class Command(BaseCommand):
 
     def _get_neo4j_version(self, session) -> int:
         """Return the current version from _SchemaMeta, or 0 if not found."""
-        try:
-            result = session.run(
-                "MATCH (m:_SchemaMeta {id: 'schema'}) RETURN m.version AS v"
-            )
-            record = result.single()
-            return int(record["v"]) if record and record["v"] is not None else 0
-        except Exception:
-            return 0
+        return get_neo4j_version(session)
 
     def _substitute_neo4j_dims(self, cypher: str, dims: int) -> str:
         return _VECTOR_INDEX_RE.sub(f"`vector.dimensions`: {dims}", cypher)

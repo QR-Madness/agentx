@@ -209,6 +209,22 @@ A dedicated agent running *parallel* to a conversation that briefs the user on a
 
 Centralized logging. `configure_logging()` (called from `settings.py` with `LOGGING_CONFIG=None`) installs a root `QueueHandler` → `QueueListener` feeding console (rich color + category badge + run tag via `handler.py`/`highlighters.py`/`categories.py`), an in-memory `RingBufferHandler` (backs `/api/logs`), and a **daily-rotating** gzip `archive.py` file (`DailyArchiveHandler`, midnight/UTC → `agentx-YYYY-MM-DD.log.gz`). When auth is set up, completed days are **sealed** with envelope AES-256-GCM by `archive_crypto.py`: a random DEK (encrypts archives) wrapped by a Scrypt KEK from the login password, stored in `data/logs/keyring.json`. The DEK is unwrapped + cached in process memory on login (sealing is lazy — the hot path never needs the key; days that roll while locked stay redacted-plaintext `.gz` until the next `seal_pending`). Password change re-wraps the DEK (`rewrap_dek`, O(1)); `reencrypt_all` is the deep-rotation path. Retention (`prune_old`, default 30 days) is ours, not `backupCount`. Auth-disabled → plaintext-gzip fallback. Ops: `task logs:keys:status|seal|rotate-keys|rotate-keys:deep` (cmd `rotate_log_keys`). `context.py` stamps a per-turn `run_id` (reuses `streaming/status.py::current_run_id`); `redaction.py` scrubs secrets at capture; `llm_cards.py` renders compact/full LLM request logs; `banner.py` is the startup banner. All behavior is governed by `AGENTX_LOG_*` flags (`flags.py`; decorations on by default, off → historical plain output). The client mirrors categories in `lib/logCategories.ts`.
 
+### Container boot (`docker/entrypoint.sh` + `manage.py bootstrap`)
+
+The api image self-initializes through **one** Python process: `manage.py bootstrap` runs Django
+migrations, the memory-PG Alembic upgrade **in-process** (`alembic.command.upgrade`; ini via
+`AGENTX_ALEMBIC_INI` or walk-up discovery), a **memory-schema stamp fast path** (Neo4j
+`_SchemaMeta.version` vs latest `queries/neo4j_migrations/NNNN_*`, vector indexes ONLINE, Redis
+PING — full `init_memory_schema` only on a miss or `--full`), an embedding-**warmup signal**
+(HF-cache probe via `huggingface_hub.try_to_load_from_cache` — never imports torch), and the auth
+hint. Stdout contract (greppable, `BOOTSTRAP <phase>=<state>` … `BOOTSTRAP_RESULT ok|failed`; exit
+2 = config error, no retry). Schema init itself is **model-free** (`--validate-embedder` opt-in);
+the model download happens only when bootstrap reports `warmup=needed` — the entrypoint then runs
+`warmup_embeddings` under a post-success watchdog (`AGENTX_INIT_EXIT_GRACE`, default 15s) that
+reaps the known non-exiting download threads. Warm boots skip warmup entirely, so the container
+reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `bootstrap`
+(previously it silently skipped Alembic). Disable everything with `AGENTX_AUTO_INIT=false`.
+
 ---
 
 ## API Endpoints (full reference)

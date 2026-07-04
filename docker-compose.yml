@@ -146,6 +146,10 @@ services:
       - AI_GATEWAY_API_KEY=${AI_GATEWAY_API_KEY:-}
       # Embedding configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      # Container boot (entrypoint) — must be passed through or the .env knobs
+      # are silent no-ops inside the container.
+      - AGENTX_AUTO_INIT=${AGENTX_AUTO_INIT:-true}
+      - AGENTX_INIT_EXIT_GRACE=${AGENTX_INIT_EXIT_GRACE:-15}
     volumes:
       - ${AGENTX_CONFIG_DIR:-./data}:/app/data
       # Persist HuggingFace model cache (BGE-M3 + NLLB-200 + detection, ~5G) so
@@ -160,12 +164,15 @@ services:
         condition: service_healthy
     healthcheck:
       # Runs inside the container — use the fixed internal port (12319), not the
-      # host-mapped ${API_PORT}.
+      # host-mapped ${API_PORT}. Keep in sync with the Dockerfile HEALTHCHECK.
+      # start_period covers a first-boot model download (~6 min observed); a
+      # *passing* probe flips healthy immediately regardless, so warm boots
+      # read healthy ~10s after uvicorn binds.
       test: ["CMD", "curl", "-f", "http://localhost:12319/api/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+      retries: 10
     restart: unless-stopped
     deploy:
       resources:

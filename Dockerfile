@@ -76,14 +76,17 @@ ENV HF_HUB_DISABLE_XET=1
 # Expose API port
 EXPOSE 12319
 
-# Health check. First boot eagerly loads the embedding + translation models
-# (several GB), so give startup a long grace period before marking the container
-# unhealthy — compose `depends_on: condition: service_healthy` waits on this.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=5 \
+# Health check. First boot downloads the embedding model (several GB), so give
+# startup a long grace period before marking the container unhealthy — compose
+# `depends_on: condition: service_healthy` waits on this. Compose overrides
+# these values with its own healthcheck — keep them in sync with
+# docker-compose.yml (this one only serves plain `docker run` users).
+HEALTHCHECK --interval=10s --timeout=5s --start-period=600s --retries=10 \
     CMD curl -f http://localhost:12319/api/health || exit 1
 
-# Self-init entrypoint runs first (seed config + migrate + schema init), then
-# exec's the CMD below. Set AGENTX_AUTO_INIT=false to skip auto-init.
+# Self-init entrypoint runs first (seed config + one-process bootstrap +
+# optional first-boot warmup), then exec's the CMD below. Set
+# AGENTX_AUTO_INIT=false to skip auto-init.
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Run with uvicorn for production (ASGI)
