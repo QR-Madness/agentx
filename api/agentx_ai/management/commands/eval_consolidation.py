@@ -251,71 +251,24 @@ class Command(BaseCommand):
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-    # -- sterility / wipe ----------------------------------------------------
+    # -- sterility / wipe / snapshot (shared impl: portability.cluster) -------
     def _count_conversations(self):
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            rec = s.run("MATCH (c:Conversation) RETURN count(c) AS n").single()
-        return rec["n"] if rec else 0
+        from agentx_ai.kit.agent_memory.portability import cluster
+        return cluster.count_conversations()
 
     def _wipe(self):
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
-        from sqlalchemy import text
-        with Neo4jConnection.session() as s:
-            rec = s.run("MATCH (n) DETACH DELETE n RETURN count(n) AS n").single()
-            neo = rec["n"] if rec else 0
-        pg = 0
-        try:
-            with get_postgres_session() as ses:
-                for tbl in ("conversation_logs", "memory_audit_log"):
-                    pg += ses.execute(text(f"DELETE FROM {tbl}")).rowcount
-        except Exception as e:
-            self.stderr.write(f"  postgres wipe note: {e}")
-        self.stdout.write(f"  wiped Neo4j nodes={neo}, postgres rows={pg}")
-
-    # -- snapshot / restore (non-destructive eval on a live cluster) ----------
-    def _list_user_ids(self):
-        """Every User id in the graph. Snapshots are cluster-wide because the wipe is."""
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            return [r["uid"] for r in s.run("MATCH (u:User) RETURN u.id AS uid") if r["uid"]]
+        from agentx_ai.kit.agent_memory.portability import cluster
+        cluster.wipe_cluster(self.stdout.write, self.stderr.write)
 
     def _make_snapshot(self, path):
-        """Export every user's full memory into one bundle file (text-only;
-        embeddings are regenerated on restore)."""
-        import json
-        from agentx_ai.kit.agent_memory.portability import MemoryExporter
-
-        users = []
-        for uid in self._list_user_ids():
-            export = MemoryExporter(uid, channel="_all").export()
-            users.append(export.model_dump(mode="json"))
-        bundle = {
-            "snapshot_version": 1,
-            "created_at": datetime.now(UTC).isoformat(),
-            "users": users,
-        }
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(bundle), encoding="utf-8")
-        self.stdout.write(f"  snapshot: {len(users)} user(s) → {path}")
-        return path
+        from agentx_ai.kit.agent_memory.portability import cluster
+        return cluster.make_snapshot(path, self.stdout.write)
 
     def _restore_snapshot(self, path):
-        """Wipe the cluster (removes eval residue) and re-import a snapshot bundle."""
-        import json
-        from agentx_ai.kit.agent_memory.portability import MemoryImporter
-
-        bundle = json.loads(Path(path).read_text(encoding="utf-8"))
-        users = bundle.get("users", [])
-        self._wipe()
-        restored = 0
-        for env in users:
-            summary = MemoryImporter(env["user_id"]).import_export(env, mode="merge")
-            restored += sum(c["total"] for c in summary["imported"].values())
-        self.stdout.write(self.style.SUCCESS(
-            f"  restored {len(users)} user(s), {restored} node(s) from {path}"
-        ))
+        from agentx_ai.kit.agent_memory.portability import cluster
+        cluster.restore_snapshot(
+            path, lambda m: self.stdout.write(self.style.SUCCESS(m)), self.stderr.write
+        )
 
     # -- model override ------------------------------------------------------
     def _pin_model(self, model, full):

@@ -10,8 +10,10 @@ Public surface:
     - ``SCHEMA_VERSION`` / ``MemoryExport`` (envelope)
     - ``MemoryExporter`` / ``MemoryImporter``
     - ``current_embedder_info`` (provider/model + dims for the envelope)
+    - ``cluster`` — cluster-wide snapshot/wipe/restore shared by the eval harnesses
 """
 
+from . import cluster
 from .schema import SCHEMA_VERSION, MemoryExport, EmbedderInfo, current_embedder_info
 from .exporter import MemoryExporter
 from .importer import MemoryImporter, ImportMode
@@ -24,4 +26,5 @@ __all__ = [
     "MemoryExporter",
     "MemoryImporter",
     "ImportMode",
+    "cluster",
 ]

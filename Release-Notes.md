@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.152 -->
+<!-- release-version: 0.21.153 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -42,6 +42,9 @@ the client at your own API server and bring your own model providers.
   bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
 - **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
   dev `.env` templates opt out explicitly.
+- **Memory recall is now measurable.** New `eval_recall` dev harness scores retrieval quality
+  (recall@k/MRR per technique, 52-query golden set) so recall changes ship measured, not guessed —
+  the baseline gate for the upcoming reranking and extraction upgrades.
 - **Reasoning models think out loud now.** OpenRouter/Vercel/OpenAI-compatible reasoning
   tokens stream into the live thinking bubble (like LM Studio) instead of silently burning the
   output budget, and reasoning-capable models get a larger token budget automatically.

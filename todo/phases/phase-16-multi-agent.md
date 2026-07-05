@@ -61,8 +61,9 @@
       with an identity fact/entity ("I am Mobius, id …") for stronger self-recall.
 - [ ] **Debug-harness extensions** — record/replay real conversations into scenarios;
       assertion-based regression suite (golden attribution outcomes) runnable in CI when a
-      provider is configured; extract the shared cluster snapshot/wipe/restore util used by
-      `eval_consolidation` into a module both commands import.
+      provider is configured. ~~Extract the shared cluster snapshot/wipe/restore util~~ —
+      **done** as `portability/cluster.py` (with the `eval_recall` harness, Memory-Roadmap
+      §2.7); `eval_consolidation` delegates to it.
 - [ ] **Memory capability registry** — a code-side `@capability(...)`/registry that
       `architecture/memory-capabilities.md` is generated from or validated against, so the
       manifest can't silently drift from code (the deferred half of the drift decision).

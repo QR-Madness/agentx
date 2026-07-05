@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.152"
+version = "0.21.153"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -87,3 +87,5 @@ ignore = [
 "api/agentx_ai/views.py" = ["S608"]
 "api/agentx_ai/kit/agent_memory/memory/semantic.py" = ["S608"]
 "api/agentx_ai/management/commands/eval_consolidation.py" = ["S608"]
+"api/agentx_ai/management/commands/eval_recall.py" = ["S608"]
+"api/agentx_ai/kit/agent_memory/portability/cluster.py" = ["S608"]

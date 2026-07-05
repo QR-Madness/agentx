@@ -4696,3 +4696,236 @@ class ProcedureDistillJobTest(TestCase):
         # Scope passed to distill + write should be the agent's self-channel.
         scope_arg = proc.learn_procedure.call_args.kwargs["scope"]
         self.assertEqual(scope_arg, "_self_bold-cosmic-falcon")
+
+
+class RecallScoringTest(TestCase):
+    """Pure ranking metrics for eval_recall (no docker, no Django models)."""
+
+    def test_recall_at_k_known_answers(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_scoring import recall_at_k
+        ranked = ["a", "b", "c", "d"]
+        self.assertEqual(recall_at_k(ranked, ["a", "c"], 1), 0.5)
+        self.assertEqual(recall_at_k(ranked, ["a", "c"], 3), 1.0)
+        self.assertEqual(recall_at_k(ranked, ["z"], 4), 0.0)
+        self.assertEqual(recall_at_k([], ["a"], 5), 0.0)
+        self.assertEqual(recall_at_k(ranked, [], 5), 0.0)
+
+    def test_mrr_and_rank(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_scoring import mrr, rank_of
+        ranked = ["x", "y", "z"]
+        self.assertEqual(mrr(ranked, "x"), 1.0)
+        self.assertAlmostEqual(mrr(ranked, "z"), 1 / 3)
+        self.assertEqual(mrr(ranked, "missing"), 0.0)
+        self.assertEqual(mrr(ranked, None), 0.0)
+        self.assertEqual(rank_of(ranked, "y"), 2)
+        self.assertIsNone(rank_of(ranked, "missing"))
+
+    def test_score_negative(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_scoring import score_negative
+        self.assertTrue(score_negative(["a", "b", "c"], ["z"], 3))
+        self.assertFalse(score_negative(["a", "b", "c"], ["b"], 3))
+        self.assertTrue(score_negative(["a", "b", "c"], ["c"], 2))  # outside top-k
+
+    def test_aggregate_categories_and_abstention(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_scoring import aggregate
+        rows = [
+            {"name": "q1", "category": "single_hop", "negative": False,
+             "mrr": 1.0, "recall@1": 1.0, "recall@5": 1.0, "latency_ms": 10.0},
+            {"name": "q2", "category": "single_hop", "negative": False,
+             "mrr": 0.5, "recall@1": 0.0, "recall@5": 1.0, "latency_ms": 30.0},
+            {"name": "q3", "category": "negative", "negative": True,
+             "abstention_pass": True, "latency_ms": 20.0},
+            {"name": "q4", "category": "negative", "negative": True,
+             "abstention_pass": False, "latency_ms": 40.0},
+        ]
+        agg = aggregate(rows, ks=[1, 5])
+        self.assertEqual(agg["queries"], 4)
+        self.assertAlmostEqual(agg["mrr"], 0.75)
+        self.assertAlmostEqual(agg["recall@1"], 0.5)
+        self.assertAlmostEqual(agg["recall@5"], 1.0)
+        self.assertEqual(agg["abstention_pass_rate"], 0.5)
+        self.assertEqual(agg["by_category"]["single_hop"]["queries"], 2)
+        # Negative-only bucket has no positive rows → recall/MRR are None.
+        self.assertIsNone(agg["by_category"]["negative"]["mrr"])
+        self.assertEqual(agg["by_category"]["negative"]["abstention_pass_rate"], 0.5)
+        self.assertEqual(agg["latency_ms"]["mean"], 25.0)
+
+    def test_aggregate_empty_latency_and_percentiles(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_scoring import aggregate
+        rows = [{"name": "q", "category": "single_hop", "negative": False,
+                 "mrr": 0.0, "recall@1": 0.0, "latency_ms": None}]
+        agg = aggregate(rows, ks=[1])
+        self.assertEqual(agg["latency_ms"]["mean"], 0.0)
+        self.assertEqual(agg["latency_ms"]["p95"], 0.0)
+
+
+class RecallCorpusIntegrityTest(TestCase):
+    """Builtin golden corpus invariants (no docker)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        from agentx_ai.kit.agent_memory.evals.recall_corpus import load_corpus
+        cls.corpus = load_corpus("builtin")
+
+    def test_query_count_and_categories(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_corpus import CATEGORIES
+        self.assertGreaterEqual(len(self.corpus.queries), 50)
+        seen = {q.category for q in self.corpus.queries}
+        self.assertEqual(seen, set(CATEGORIES))
+        for q in self.corpus.queries:
+            self.assertIn(q.category, CATEGORIES)
+
+    def test_all_keys_resolve(self) -> None:
+        fact_keys = self.corpus.fact_keys()
+        entity_keys = self.corpus.entity_keys()
+        turn_keys = self.corpus.turn_keys()
+        for q in self.corpus.queries:
+            for k in q.expected_fact_keys + q.forbid_fact_keys:
+                self.assertIn(k, fact_keys, f"{q.name}: unknown fact key {k!r}")
+            for k in q.expected_turn_keys:
+                self.assertIn(k, turn_keys, f"{q.name}: unknown turn key {k!r}")
+        for f in self.corpus.facts:
+            for ek in f.entity_keys:
+                self.assertIn(ek, entity_keys, f"{f.key}: unknown entity key {ek!r}")
+
+    def test_claims_and_keys_unique(self) -> None:
+        # claim_hash dedup at store time would silently retire duplicate claims.
+        claims = [f.claim for f in self.corpus.facts]
+        self.assertEqual(len(claims), len(set(claims)))
+        for pool in (
+            [f.key for f in self.corpus.facts],
+            [e.key for e in self.corpus.entities],
+            [t.key for t in self.corpus.turns],
+            [q.name for q in self.corpus.queries],
+        ):
+            self.assertEqual(len(pool), len(set(pool)))
+
+    def test_expectations_match_category_shape(self) -> None:
+        for q in self.corpus.queries:
+            if q.category == "callback":
+                self.assertTrue(q.expected_turn_keys, f"{q.name}: callback needs turn keys")
+                self.assertFalse(q.expected_fact_keys)
+            elif q.category == "negative":
+                self.assertTrue(q.forbid_fact_keys, f"{q.name}: negative needs forbid keys")
+                self.assertFalse(q.expected_fact_keys)
+            else:
+                self.assertTrue(q.expected_fact_keys, f"{q.name}: needs expected fact keys")
+
+    def test_unknown_corpus_raises(self) -> None:
+        from agentx_ai.kit.agent_memory.evals.recall_corpus import load_corpus
+        with self.assertRaises(ValueError):
+            load_corpus("does-not-exist")
+
+
+@skipUnless(docker_services_running(), "Docker services not running")
+class EvalRecallSeedAndArmTest(MemoryTestBase):
+    """eval_recall internals: seed → arm loop → score → cleanup, per-test user.
+
+    Never touches the global wipe; all data lives under a unique test user and
+    channel (cf. EvalSnapshotRestoreTest rationale).
+    """
+
+    def _mini_corpus(self):
+        from agentx_ai.kit.agent_memory.evals.recall_corpus import (
+            CorpusSpec, GoldenQuery, SeedEntity, SeedFact, SeedTurn,
+        )
+        return CorpusSpec(
+            name="mini",
+            facts=(
+                SeedFact("tea", "User drinks jasmine tea in the afternoon."),
+                SeedFact("city", "User lives in Valparaíso."),
+                SeedFact("hobby", "User sketches harbor cranes on Sundays."),
+                SeedFact("book", "User's favorite novel is Invisible Cities."),
+                SeedFact("d_other", "Rui collects antique barometers.", ("rui",)),
+            ),
+            entities=(SeedEntity("rui", "Rui", "person", "a friend"),),
+            turns=(SeedTurn("t_walk", "This morning I walked the coastal path before sunrise."),),
+            queries=(
+                GoldenQuery("q_tea", "single_hop", "What tea do I drink?", ("tea",)),
+                GoldenQuery("q_walk", "callback", "What did I do this morning?",
+                            expected_turn_keys=("t_walk",)),
+                GoldenQuery("q_neg", "negative", "Do I collect barometers?",
+                            forbid_fact_keys=("d_other",)),
+            ),
+        )
+
+    def _patched(self):
+        from unittest.mock import patch as _patch
+        from uuid import uuid4 as _uuid4
+        from agentx_ai.management.commands import eval_recall as er
+        uid = f"_evalr_test_{_uuid4().hex[:6]}"
+        return er, _patch.multiple(er, EVAL_USER=uid, CHANNEL=f"{uid}_main",
+                                   CHANNEL_PREFIX=uid), uid
+
+    def test_seed_arms_score_and_cleanup(self) -> None:
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        er, patcher, uid = self._patched()
+        corpus = self._mini_corpus()
+        cmd = er.Command()
+        with patcher:
+            try:
+                seeded = cmd._seed(corpus)
+                self.assertEqual(set(seeded["facts"]), corpus.fact_keys())
+                for arm_name in ("base_only", "fused_default"):
+                    arm = next(a for a in er.ARMS if a.name == arm_name)
+                    result = cmd._run_arm(arm, seeded, list(corpus.queries), (1, 5), 5)
+                    self.assertEqual(result["status"], "OK")
+                    q_tea = next(r for r in result["queries"] if r["name"] == "q_tea")
+                    self.assertEqual(q_tea["recall@5"], 1.0,
+                                     f"{arm_name}: golden fact not in top-5")
+                    self.assertIn("abstention_pass_rate", result["metrics"])
+            finally:
+                cmd._cleanup()
+        with Neo4jConnection.session() as s:
+            rec = s.run("MATCH (n) WHERE n.user_id = $uid RETURN count(n) AS c",
+                        uid=uid).single()
+        self.assertEqual(rec["c"], 0, "cleanup left eval nodes behind")
+
+    def test_settings_restored_after_arm_exception(self) -> None:
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        from agentx_ai.kit.agent_memory.evals.recall_corpus import GoldenQuery
+        from agentx_ai.kit.agent_memory.memory import retrieval as retrieval_mod
+        from agentx_ai.kit.agent_memory.memory import semantic as semantic_mod
+        er, patcher, uid = self._patched()
+        corpus = self._mini_corpus()
+        # A query whose expected key was never seeded → KeyError inside the arm loop.
+        bad = GoldenQuery("q_bad", "single_hop", "What is unresolvable?", ("no_such_key",))
+        saved_retrieval, saved_semantic = retrieval_mod.settings, semantic_mod.settings
+        cmd = er.Command()
+        with patcher:
+            try:
+                seeded = cmd._seed(corpus)
+                arm = next(a for a in er.ARMS if a.name == "fused_default")
+                with self.assertRaises(KeyError):
+                    cmd._run_arm(arm, seeded, [bad], (1,), 1)
+            finally:
+                cmd._cleanup()
+        self.assertIs(retrieval_mod.settings, saved_retrieval,
+                      "retrieval module settings not restored after exception")
+        self.assertIs(semantic_mod.settings, saved_semantic,
+                      "semantic module settings not restored after exception")
+
+
+@skipUnless(docker_services_running(), "Docker services not running")
+class ClusterUtilDelegationTest(MemoryTestBase):
+    """portability.cluster extraction is behavior-preserving through the
+    eval_consolidation delegators (snapshot bundle shape unchanged)."""
+
+    def test_delegated_snapshot_bundle_shape(self) -> None:
+        import json as _json
+        import tempfile
+        from pathlib import Path as _Path
+
+        from agentx_ai.management.commands.eval_consolidation import Command
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        with tempfile.TemporaryDirectory() as td:
+            path = Command()._make_snapshot(_Path(td) / "snap.json")
+            bundle = _json.loads(_Path(path).read_text())
+        self.assertEqual(bundle["snapshot_version"], 1)
+        self.assertIn("users", bundle)
+        self.assertIn("created_at", bundle)

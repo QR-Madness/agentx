@@ -286,7 +286,28 @@ stores ⊇ cap.stores`; degradation is the `degrades_to` pointer, not a second n
 `flags` by path. **When built, the checker must also assert every `degrades_to` resolves to a
 registered capability** (cheap integrity check).
 
-### 2.7 `eval_recall` golden-set suite `[NEW — prerequisite for 3.5; sibling of Todo "Debug-harness extensions"]`
+### 2.7 `eval_recall` golden-set suite `[PARTIAL v0.21.153 — harness + builtin golden set + arm ablations shipped; LoCoMo/LongMemEval-S corpora, judge hygiene, Active-Recall rewrite stage pending]`
+
+**Shipped (v0.21.153):** `manage.py eval_recall` — seeds a 46-fact/10-entity/10-turn persona
+corpus (52 golden queries across single-hop/paraphrase/multi-hop/temporal/callback/negative)
+under an isolated eval user, scores recall@k + MRR + abstention per technique **arm**
+(base-only, each technique solo, fused, optional HyDE/self-query/cross-encoder — the §2.11
+gate arm), and persists runs to `data/eval_runs/` (`harness:"recall"` in the shared
+`index.jsonl`). Settings are pinned process-locally per arm (never written to disk); no
+sterility gate needed (user/channel-scoped; `--snapshot` for a clean room). The shared
+snapshot/wipe/restore util now lives in `portability/cluster.py` (eval_consolidation
+delegates). Corpus is a seam: external corpora plug in as `CorpusSpec` adapters.
+
+**W1 baseline (2026-07-05, bge-m3, fused_default arm, dev cluster):** overall MRR 0.59 ·
+r@1 0.39 · r@5 0.90 · r@10 0.99 · p95 269ms. Per category: single-hop MRR 0.65, paraphrase
+0.59, callback 0.92 (verbatim turns retrieve well), **multi-hop 0.29** (weakest — §3.6 PPR's
+case), **temporal r@5 0.63** (§1.7 bitemporal's case), **negative abstention 0.0** (distractor
+facts about *other* people always surface in top-3 for user-scoped asks — the
+attribution/precision gap §2.10's salience + §2.11's rerank target). All technique arms score
+within noise of each other at today's `top_k*2`(=20) pool; `fused_cross_encoder` gains only
++1.2pp MRR pre-pool-widening — the §2.11 ±5pp gate is judged *after* the pool fix, this is the
+"before" number. Full run JSON: `data/eval_runs/20260705-125758-904a_recall_builtin.json`
+(untracked).
 `RecallMetrics` exists but there's no retrieval analog of `eval_consolidation` — with 5
 techniques (+ cross-encoder reranking and the Active-Recall tiers coming), regressions are
 invisible. Seeded corpus + (query → expected-fact-ids) golden set; recall@k/MRR per technique
