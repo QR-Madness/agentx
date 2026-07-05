@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.150 -->
+<!-- release-version: 0.21.151 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -45,6 +45,9 @@ the client at your own API server and bring your own model providers.
 
 ### Fixes
 
+- **Inputs and pickers in newer panels no longer look washed out.** Form controls now share
+  one field style (sunken background, visible border, focus glow) across the Projects hub,
+  Ambassador switchers/composer, and avatar generator.
 - **Anthropic models now receive their full system prompt.** A provider bug dropped every
   system block except the last (agent persona, memory, and project instructions were all
   silently lost on Anthropic models); everything now reaches the model.

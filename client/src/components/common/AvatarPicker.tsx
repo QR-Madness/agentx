@@ -243,7 +243,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
                     onChange={(e) => setSubject(e.target.value)}
                     rows={2}
                     placeholder="e.g. a gray-haired strategist with glasses"
-                    className="w-full resize-none rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg outline-none focus:border-line-strong"
+                    className="ax-field ax-field--sm w-full resize-none"
                   />
                   {genError && <div className="text-xs text-error">{genError}</div>}
                   <div className="flex items-center gap-2">

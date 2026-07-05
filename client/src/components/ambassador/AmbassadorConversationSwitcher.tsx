@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  FieldTrigger,
 } from '../ui';
 
 export interface SwitcherItem {
@@ -45,16 +46,15 @@ export function AmbassadorConversationSwitcher({
   const label = title?.trim() || focused?.title || 'this conversation';
   const onActive = !!focusedId && focusedId === activeId;
 
+  // Both variants get real field chrome (`ax-trigger`) so the picker reads as a
+  // control at rest — the old ghost/washed-out triggers only appeared on hover.
   const triggerClass =
-    variant === 'inline'
-      ? 'group flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover data-[state=open]:bg-surface-hover'
-      : 'group flex min-w-0 max-w-[200px] items-center gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:text-fg data-[state=open]:border-line-strong';
+    variant === 'inline' ? 'group text-sm font-medium' : 'group max-w-[200px] text-xs';
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
+        <FieldTrigger
           className={triggerClass}
           title="Switch which conversation the ambassador is on"
         >
@@ -66,7 +66,7 @@ export function AmbassadorConversationSwitcher({
             size={13}
             className="shrink-0 opacity-70 transition-transform duration-200 group-data-[state=open]:rotate-180"
           />
-        </button>
+        </FieldTrigger>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
         <DropdownMenuLabel>Focus on a conversation</DropdownMenuLabel>

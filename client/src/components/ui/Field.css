@@ -1,8 +1,61 @@
-/* Field — error state for Input/Textarea. Base styling comes from the global
-   input/textarea rules in styles/base.css; this only adds the invalid state. */
+/* Field — states/variants for Input/Textarea + the select-like trigger and
+   composer-wrapper chrome. Base styling comes from the global input/textarea
+   rules in styles/base.css; everything here composes on those tokens so form
+   controls read as *controls* (sunken bg + visible border + focus glow) instead
+   of washed-out text — the recurring drift in new-feature UIs. */
 
 .ax-field--error,
 .ax-field--error:focus {
   border-color: var(--feedback-error);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--feedback-error) 18%, transparent);
+}
+
+/* Compact fields for dense panels (drawer headers, cards). */
+.ax-field--sm {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+textarea.ax-field--sm {
+  min-height: 0;
+}
+
+/* Select-like dropdown trigger (DropdownMenu buttons that act as pickers).
+   Same chrome as a field so it reads as an input, not floating text. */
+.ax-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.ax-trigger:hover {
+  border-color: var(--border-emphasis);
+  background: var(--surface-hover);
+}
+.ax-trigger:focus-visible,
+.ax-trigger[data-state='open'] {
+  border-color: var(--border-interactive);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
+  outline: none;
+}
+
+/* Field chrome for wrappers that host a transparent inner textarea (composers):
+   the wrapper carries the control look; focus-within lights it up. Layout
+   (flex/padding/radius) stays with the caller. */
+.ax-fieldwrap {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ax-fieldwrap:focus-within {
+  border-color: var(--border-interactive);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft);
 }

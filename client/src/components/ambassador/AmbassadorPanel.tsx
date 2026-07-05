@@ -65,6 +65,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  FieldTrigger,
 } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { api } from '../../lib/api';
@@ -1095,15 +1096,12 @@ export function AmbassadorPanel({
           {mode === 'dispatch' && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center justify-between gap-1 rounded-md border border-line bg-surface-raised px-2 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
-                >
+                <FieldTrigger className="justify-between text-xs">
                   <span className="truncate">
                     {dispatchTarget ? `Dispatch to: ${dispatchTarget.name}` : 'Dispatch to: pick a worker…'}
                   </span>
                   <ChevronDown size={13} className="shrink-0 opacity-70" />
-                </button>
+                </FieldTrigger>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="max-h-72 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto">
                 <DropdownMenuLabel>Hand a task to…</DropdownMenuLabel>
@@ -1127,7 +1125,7 @@ export function AmbassadorPanel({
             </DropdownMenu>
           )}
 
-          <div className="flex items-end gap-2 rounded-lg border border-line bg-surface-raised px-2 py-1.5 transition-colors focus-within:border-line-strong">
+          <div className="ax-fieldwrap flex items-end gap-2 rounded-lg px-2 py-1.5">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}

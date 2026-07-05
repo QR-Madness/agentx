@@ -19,7 +19,7 @@ import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { getDisplayTitle, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
-import { Input } from '../ui';
+import { Input, Textarea } from '../ui';
 import { WorkspaceContainerCard } from './WorkspaceContainerCard';
 
 /** Reserved personal media space — files only, never a project. */
@@ -438,7 +438,7 @@ export function WorkspacesPanel({
                 onChange={e => setDraftName(e.target.value)}
                 onBlur={() => { if (!draftName.trim()) setCreating(false); }}
                 onKeyDown={e => { if (e.key === 'Escape') { setCreating(false); setDraftName(''); } }}
-                className="h-8 text-sm"
+                className="ax-field--sm"
               />
               <button type="submit" aria-label="Create" className="rounded p-1.5 text-accent hover:bg-surface-hover">
                 <Check size={15} />
@@ -523,7 +523,7 @@ export function WorkspacesPanel({
                         onChange={e => setDraftName(e.target.value)}
                         onBlur={() => setRenaming(false)}
                         onKeyDown={e => { if (e.key === 'Escape') setRenaming(false); }}
-                        className="h-8 text-sm"
+                        className="ax-field--sm"
                       />
                       <button type="submit" aria-label="Save name" className="rounded p-1.5 text-accent hover:bg-surface-hover">
                         <Check size={15} />
@@ -552,16 +552,17 @@ export function WorkspacesPanel({
                         onChange={e => setDescDraft(e.target.value)}
                         onBlur={() => void saveDescription()}
                         onKeyDown={e => { if (e.key === 'Escape') setEditingDesc(false); }}
-                        className="h-7 text-xs"
+                        className="ax-field--sm text-xs"
                       />
                     </form>
                   ) : (
                     <button
-                      className="mt-0.5 block max-w-full truncate text-left text-xs text-fg-muted hover:text-fg"
+                      className="group/desc mt-0.5 flex max-w-full items-center gap-1 text-left text-xs text-fg-secondary hover:text-fg"
                       title="Edit description"
                       onClick={() => { setEditingDesc(true); setDescDraft(selected.description ?? ''); }}
                     >
-                      {selected.description || 'Add a description…'}
+                      <span className="truncate">{selected.description || 'Add a description…'}</span>
+                      <Pencil size={11} className="shrink-0 opacity-0 transition-opacity group-hover/desc:opacity-60" />
                     </button>
                   ))}
                 </div>
@@ -650,13 +651,13 @@ export function WorkspacesPanel({
                         {instrStatus === 'idle' && `${instrDraft.length.toLocaleString()} / ${INSTRUCTIONS_MAX.toLocaleString()}`}
                       </span>
                     </div>
-                    <textarea
+                    <Textarea
                       value={instrDraft}
                       maxLength={INSTRUCTIONS_MAX}
                       rows={instrDraft ? 5 : 2}
                       placeholder="Standing guidance the agent follows in every conversation of this project — tone, goals, constraints, what the files are for…"
                       onChange={e => onInstructionsChange(selected.id, e.target.value)}
-                      className="w-full resize-y rounded-md border border-line bg-surface-raised p-2 text-sm text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+                      className="ax-field--sm resize-y"
                     />
                   </div>
                 )}

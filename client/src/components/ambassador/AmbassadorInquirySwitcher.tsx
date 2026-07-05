@@ -13,6 +13,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  FieldTrigger,
 } from '../ui';
 import { type DeckInquiry, orderInquiries, inquiryLabel } from '../../lib/ambassadorDeck';
 
@@ -40,9 +41,8 @@ export function AmbassadorInquirySwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="group flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover data-[state=open]:bg-surface-hover"
+        <FieldTrigger
+          className="group text-sm font-medium"
           title="Switch or create an Inquiry"
         >
           <span className="truncate">{label}</span>
@@ -50,7 +50,7 @@ export function AmbassadorInquirySwitcher({
             size={13}
             className="shrink-0 opacity-70 transition-transform duration-200 group-data-[state=open]:rotate-180"
           />
-        </button>
+        </FieldTrigger>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
         <DropdownMenuLabel>Your Inquiries</DropdownMenuLabel>

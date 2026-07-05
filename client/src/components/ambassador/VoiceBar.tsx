@@ -261,7 +261,7 @@ export function VoiceBar({
             value={relayDraft}
             onChange={(e) => setRelayDraft(e.target.value)}
             rows={2}
-            className="w-full resize-none rounded-lg border border-line bg-surface-raised px-3 py-2 text-sm text-fg outline-none focus:border-line-strong max-[600px]:text-base"
+            className="ax-field ax-field--sm w-full resize-none rounded-lg max-[600px]:text-base"
           />
           <div className="flex flex-wrap items-center gap-2">
             <button
