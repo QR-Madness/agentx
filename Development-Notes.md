@@ -54,6 +54,34 @@ tags + summaries, bounded) so the agent knows its corpus before retrieving. Self
 `scripts/rag_e2e.py` (create → upload seed PDF → poll ready → assert blob+chunks+embeddings → retrieve +
 exercise tools, asserting the right passage). Slice 3 = client UX.
 
+**UI foundation hardening (v0.21.152).** Driven by the AgentX Design System kit (a verified
+strict superset of the repo's tokens). **Root cause of the washed-out new-feature UI**: Tailwind
+Preflight is off and `base.css`'s `button` rule set `border:none` but never `background` — every
+Tailwind-styled button without a `bg-*` utility rendered the UA default gray (18/19 buttons in the
+Projects hub). Fixes/foundation: (1) `base.css` button reset gains `background:none; color:inherit`
++ minimal fieldset/legend/summary/hr resets. (2) **Focus-ring bug**: `--glow-*: 'none'` inside
+`box-shadow: 0 0 0 3px tint, var(--glow)` invalidates the whole declaration — focus rings silently
+vanished in flat themes; all glow tokens now use a transparent shadow (`NO_GLOW`), enforced by a
+vitest. (3) **Fonts actually load now**: Inter + JetBrains Mono self-hosted via `@fontsource`
+(imports in `main.tsx`); `--font-sans`/`--font-mono` defined in App.css `@theme static` alongside
+the kit type scale (`--text-2xs…4xl` with line-height companions), `--tracking-caps`, radii
+(`--radius-sm..2xl/pill`), and the `--color-line-subtle` bridge. (4) New primitives
+`ui/IconButton` (kit spec: transparent, hover bg+glow, active accent-tint; md/sm/xs +
+danger/accent tones) and `ui/StatusDot`; `Input` gains an `icon` slot (`.ax-inputwrap` wrapper
+pattern); form controls retokened to semantic names (`--surface-sunken`/`--border-default`/
+`--accent-primary` focus). (5) **Three new themes** — Ugentx (phosphor terminal), Tango (graphite +
+Tango palette), Blackhawk (tactical amber) — verbatim kit tokens; `THEMES` is now the single
+registration point (`as const satisfies`, `ThemeName = keyof`), pickers (command palette +
+Settings→Appearance) iterate it with `ThemeDefinition.description/icon` metadata
+(`common/themeIcons.tsx`); `applyTheme` stamps `data-theme` on the root; cross-theme key parity
+locked by `lib/theme.test.ts` (applyTheme never clears vars, so key drift = stale-token bugs).
+(6) `styles/expression.css` (unlayered, `[data-theme]`-scoped) gives themes surface voice:
+Ugentx scanlines, Blackhawk dot-grid + bezel, Cosmic explicit glass blur; chat-voice depth
+(gradient titles, prompt prefixes) deliberately parked. (7) Projects hub rebuilt on the
+primitives (IconButton/Button/Badge/SegmentedControl, eyebrow labels, accent-tint selected rail
+rows, kit dropzone); remaining bare-background buttons swept in ambassador/AvatarPicker/
+CitationElement (`AvatarPicker`'s local `IconButton` render-fn renamed `AvatarCell`).
+
 **Projects v1 (v0.21.149).** Workspaces surface to the user as **Projects** (Claude-Projects-style;
 internal naming stays `workspace`). Alembic `0005_workspace_projects` adds `workspaces.description`
 (cap 500) + `workspaces.instructions` (cap 8000; both enforced with a 400 at PATCH) and the

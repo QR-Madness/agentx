@@ -8,6 +8,7 @@ import {
   forwardRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
+  type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react';
 import { cn } from '../../lib/utils';
@@ -16,17 +17,37 @@ import './Field.css';
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Render the error (invalid) visual state. */
   error?: boolean;
+  /** Optional leading icon — switches to the field-wrapper layout (the wrapper
+   *  carries the chrome; kit `forms/Input`). Iconless markup is unchanged. */
+  icon?: ReactNode;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, ...props }, ref) => (
-    <input
-      ref={ref}
-      className={cn('ax-field', error && 'ax-field--error', className)}
-      aria-invalid={error || undefined}
-      {...props}
-    />
-  )
+  ({ className, error, icon, ...props }, ref) => {
+    if (icon) {
+      return (
+        <span
+          className={cn('ax-fieldwrap ax-inputwrap', error && 'ax-field--error', className)}
+        >
+          <span className="ax-inputwrap__icon">{icon}</span>
+          <input
+            ref={ref}
+            className="ax-inputwrap__input"
+            aria-invalid={error || undefined}
+            {...props}
+          />
+        </span>
+      );
+    }
+    return (
+      <input
+        ref={ref}
+        className={cn('ax-field', error && 'ax-field--error', className)}
+        aria-invalid={error || undefined}
+        {...props}
+      />
+    );
+  }
 );
 
 Input.displayName = 'Input';

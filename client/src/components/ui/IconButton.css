@@ -1,0 +1,62 @@
+/* IconButton — the 36px square icon control from the AgentX chrome
+   (design-kit core/IconButton). Explicit transparent background + semantic
+   color so it can never fall back to UA button chrome. */
+
+.ax-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ax-iconbtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: var(--glow-primary);
+}
+
+.ax-iconbtn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.ax-iconbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ax-iconbtn--active,
+.ax-iconbtn--active:hover:not(:disabled) {
+  background: var(--accent-tint-soft);
+  color: var(--accent-primary);
+}
+
+.ax-iconbtn--sm {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+}
+
+/* Compact — for dense list rows (doc actions, hover-reveal deletes). */
+.ax-iconbtn--xs {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+}
+
+.ax-iconbtn--danger:hover:not(:disabled) {
+  color: var(--feedback-error);
+  background: var(--feedback-error-tint);
+  box-shadow: none;
+}
+
+.ax-iconbtn--accent:hover:not(:disabled) {
+  color: var(--accent-primary);
+}

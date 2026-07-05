@@ -267,7 +267,7 @@ export function VoiceBar({
             <button
               type="button"
               onClick={() => setRelayDraft(null)}
-              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
+              className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-overlay px-2 py-1.5 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
               title="Discard"
             >
               <X size={13} /> discard
@@ -275,7 +275,7 @@ export function VoiceBar({
             <button
               type="button"
               onClick={retake}
-              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
+              className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-overlay px-2 py-1.5 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
               title="Re-record"
             >
               <RotateCcw size={13} /> retake
@@ -327,7 +327,7 @@ export function VoiceBar({
               <button
                 type="button"
                 onClick={() => setRelayDraft(lastTranscript.current)}
-                className="ml-1 text-fg-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+                className="ml-1 bg-transparent text-fg-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
                 title="Send what you said to the agent instead"
               >
                 ↦ relay instead

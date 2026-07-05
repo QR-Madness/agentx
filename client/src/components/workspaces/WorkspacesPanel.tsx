@@ -19,7 +19,7 @@ import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { getDisplayTitle, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
-import { Input, Textarea } from '../ui';
+import { Badge, Button, IconButton, Input, SegmentedControl, Textarea } from '../ui';
 import { WorkspaceContainerCard } from './WorkspaceContainerCard';
 
 /** Reserved personal media space — files only, never a project. */
@@ -43,12 +43,6 @@ function formatDate(dateStr: string | null): string {
   if (days < 7) return `${days} days ago`;
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
-
-const STATUS_STYLE: Record<WorkspaceDocument['status'], string> = {
-  ready: 'text-success',
-  pending: 'text-warning',
-  failed: 'text-error',
-};
 
 // Documents are keyed by a flat filename; a leading `folder/` prefix (e.g.
 // `generated/`, `uploads/`) is a convention used to group scratch media so it
@@ -403,31 +397,24 @@ export function WorkspacesPanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface-base text-fg">
       <header className="flex items-center justify-between border-b border-line px-4 py-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <FolderKanban size={18} /> Projects
+        <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+          <FolderKanban size={18} className="text-accent" /> Projects
         </h2>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => { setCreating(true); setDraftName(''); }}
-            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-sm text-fg-inverse hover:opacity-90"
-          >
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" onClick={() => { setCreating(true); setDraftName(''); }}>
             <Plus size={15} /> New
-          </button>
+          </Button>
           {onClose && (
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="ml-1 rounded-md p-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg"
-            >
+            <IconButton aria-label="Close" onClick={onClose}>
               <X size={18} />
-            </button>
+            </IconButton>
           )}
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Project list */}
-        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-line p-2">
+        {/* Project rail — sunken so the detail column reads as the raised page */}
+        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-line-subtle bg-surface-sunken/50 p-2">
           {creating && (
             <form
               onSubmit={e => { e.preventDefault(); void createWorkspace(); }}
@@ -440,9 +427,9 @@ export function WorkspacesPanel({
                 onKeyDown={e => { if (e.key === 'Escape') { setCreating(false); setDraftName(''); } }}
                 className="ax-field--sm"
               />
-              <button type="submit" aria-label="Create" className="rounded p-1.5 text-accent hover:bg-surface-hover">
+              <IconButton type="submit" aria-label="Create project" size="sm" tone="accent">
                 <Check size={15} />
-              </button>
+              </IconButton>
             </form>
           )}
           <div className="min-h-0 flex-1">
@@ -458,43 +445,51 @@ export function WorkspacesPanel({
               projects.map(ws => (
                 <div
                   key={ws.id}
-                  className={`group flex items-center justify-between rounded-md px-2.5 py-2 text-sm ${
-                    ws.id === selectedId ? 'bg-accent/15 text-fg' : 'hover:bg-surface-hover'
+                  className={`group flex items-center justify-between rounded-md px-2.5 py-2 text-sm transition-colors ${
+                    ws.id === selectedId
+                      ? 'bg-[var(--accent-tint-soft)]'
+                      : 'hover:bg-surface-hover'
                   }`}
                 >
-                  <button onClick={() => setSelectedId(ws.id)} className="min-w-0 flex-1 text-left">
+                  <button onClick={() => setSelectedId(ws.id)} className="min-w-0 flex-1 bg-transparent text-left">
                     <span className="flex items-center gap-1.5">
-                      <span className="truncate font-medium">{ws.name}</span>
+                      <span className={`truncate font-medium ${ws.id === selectedId ? 'text-accent' : 'text-fg'}`}>
+                        {ws.name}
+                      </span>
                       {ws.id === attachedId && <Link2 size={12} className="shrink-0 text-accent" />}
                     </span>
-                    <span className="block text-xs text-fg-muted">
+                    <span className="block text-2xs text-fg-muted">
                       {ws.document_count} files · {formatBytes(ws.used_bytes)}
                     </span>
                   </button>
-                  <button
+                  <IconButton
                     aria-label={`Delete ${ws.name}`}
-                    className="ml-1 shrink-0 rounded p-2 text-fg-muted opacity-0 hover:bg-surface-hover hover:text-error group-hover:opacity-100"
+                    size="xs"
+                    tone="danger"
+                    className="ml-1 opacity-0 group-hover:opacity-100"
                     onClick={() => void deleteWorkspace(ws)}
                   >
                     <Trash2 size={14} />
-                  </button>
+                  </IconButton>
                 </div>
               ))
             )}
           </div>
           {/* Home — personal media space, kept apart from projects */}
           {homeWs && (
-            <div className="mt-2 border-t border-line pt-2">
+            <div className="mt-2 border-t border-line-subtle pt-2">
               <button
                 onClick={() => setSelectedId(HOME_ID)}
-                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm ${
-                  selectedId === HOME_ID ? 'bg-accent/15 text-fg' : 'hover:bg-surface-hover'
+                className={`flex w-full items-center gap-2 rounded-md bg-transparent px-2.5 py-2 text-left text-sm transition-colors ${
+                  selectedId === HOME_ID ? 'bg-[var(--accent-tint-soft)]' : 'hover:bg-surface-hover'
                 }`}
               >
-                <Home size={14} className="shrink-0 text-fg-muted" />
+                <Home size={14} className={selectedId === HOME_ID ? 'shrink-0 text-accent' : 'shrink-0 text-fg-muted'} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{homeWs.name}</span>
-                  <span className="block text-xs text-fg-muted">
+                  <span className={`block truncate font-medium ${selectedId === HOME_ID ? 'text-accent' : 'text-fg'}`}>
+                    {homeWs.name}
+                  </span>
+                  <span className="block text-2xs text-fg-muted">
                     Personal media · {homeWs.document_count} files
                   </span>
                 </span>
@@ -525,20 +520,20 @@ export function WorkspacesPanel({
                         onKeyDown={e => { if (e.key === 'Escape') setRenaming(false); }}
                         className="ax-field--sm"
                       />
-                      <button type="submit" aria-label="Save name" className="rounded p-1.5 text-accent hover:bg-surface-hover">
+                      <IconButton type="submit" aria-label="Save name" size="sm" tone="accent">
                         <Check size={15} />
-                      </button>
+                      </IconButton>
                     </form>
                   ) : (
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="min-w-0 truncate text-sm font-medium">{selected.name}</span>
-                      <button
+                      <span className="min-w-0 truncate text-lg font-semibold tracking-tight">{selected.name}</span>
+                      <IconButton
                         aria-label="Rename project"
-                        className="rounded p-2 text-fg-muted hover:bg-surface-hover hover:text-fg"
+                        size="xs"
                         onClick={() => { setRenaming(true); setDraftName(selected.name); }}
                       >
                         <Pencil size={13} />
-                      </button>
+                      </IconButton>
                     </div>
                   )}
                   {!isHome && (editingDesc ? (
@@ -557,7 +552,7 @@ export function WorkspacesPanel({
                     </form>
                   ) : (
                     <button
-                      className="group/desc mt-0.5 flex max-w-full items-center gap-1 text-left text-xs text-fg-secondary hover:text-fg"
+                      className="group/desc mt-0.5 flex max-w-full items-center gap-1 bg-transparent text-left text-xs text-fg-secondary hover:text-fg"
                       title="Edit description"
                       onClick={() => { setEditingDesc(true); setDescDraft(selected.description ?? ''); }}
                     >
@@ -567,13 +562,11 @@ export function WorkspacesPanel({
                   ))}
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => toggleShell(selected)}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                      selected.allow_shell
-                        ? 'bg-warning/15 text-warning'
-                        : 'border border-line text-fg-secondary hover:bg-surface-hover'
-                    }`}
+                    className={selected.allow_shell ? 'border-warning/40 bg-warning/15 text-warning' : undefined}
                     title={
                       selected.allow_shell
                         ? 'Agents in this project can run sandboxed shell commands. Click to disable.'
@@ -582,15 +575,12 @@ export function WorkspacesPanel({
                   >
                     <Terminal size={13} />
                     {selected.allow_shell ? 'Shell on' : 'Allow shell'}
-                  </button>
+                  </Button>
                   {convKey ? (
-                    <button
+                    <Button
+                      variant={attachedId === selected.id ? 'primary' : 'secondary'}
+                      size="sm"
                       onClick={() => void toggleAttach(selected.id)}
-                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                        attachedId === selected.id
-                          ? 'bg-accent text-fg-inverse'
-                          : 'border border-line text-fg-secondary hover:bg-surface-hover'
-                      }`}
                       title={isHome
                         ? 'Attach Home to the active conversation so the agent can use its files'
                         : 'Add the active conversation to this project (its files and instructions apply)'}
@@ -599,7 +589,7 @@ export function WorkspacesPanel({
                       {attachedId === selected.id
                         ? (isHome ? 'Detach' : 'Remove from project')
                         : (isHome ? 'Attach to conversation' : 'Add to project')}
-                    </button>
+                    </Button>
                   ) : (
                     <span className="text-xs text-fg-muted">Open a chat to add it</span>
                   )}
@@ -609,23 +599,17 @@ export function WorkspacesPanel({
               {selected.allow_shell && (
                 <div className="border-b border-line px-3 py-2">
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="text-fg-muted">Shell backend:</span>
-                    {(['bubblewrap', 'container'] as const).map(b => (
-                      <button
-                        key={b}
-                        onClick={() => setBackend(selected, b)}
-                        className={`rounded px-2.5 py-1 ${
-                          selected.shell_backend === b
-                            ? 'bg-accent text-fg-inverse'
-                            : 'border border-line text-fg-secondary hover:bg-surface-hover'
-                        }`}
-                        title={b === 'container'
-                          ? 'Persistent Docker container — installs + network'
-                          : 'Lightweight jail — no install, no network'}
-                      >
-                        {b === 'container' ? 'Container' : 'Bubblewrap'}
-                      </button>
-                    ))}
+                    <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">Shell backend</span>
+                    <SegmentedControl
+                      size="sm"
+                      ariaLabel="Shell backend"
+                      value={selected.shell_backend}
+                      onChange={b => void setBackend(selected, b)}
+                      options={[
+                        { value: 'bubblewrap', label: 'Bubblewrap', title: 'Lightweight jail — no install, no network' },
+                        { value: 'container', label: 'Container', title: 'Persistent Docker container — installs + network' },
+                      ]}
+                    />
                   </div>
                 </div>
               )}
@@ -636,12 +620,12 @@ export function WorkspacesPanel({
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {/* Instructions — injected into every turn in this project */}
                 {!isHome && (
-                  <div className="border-b border-line px-3 py-2.5">
+                  <div className="border-b border-line-subtle px-3 py-2.5">
                     <div className="mb-1.5 flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+                      <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">
                         Instructions
                       </span>
-                      <span className="text-[11px] text-fg-muted">
+                      <span className="font-mono text-2xs text-fg-muted">
                         {instrStatus === 'saving' && (
                           <span className="flex items-center gap-1">
                             <Loader2 size={10} className="animate-spin" /> Saving…
@@ -674,13 +658,17 @@ export function WorkspacesPanel({
                     if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
                   }}
                   disabled={uploading}
-                  className={`m-3 flex w-[calc(100%-1.5rem)] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${
-                    dragOver ? 'border-accent bg-accent/10 text-fg' : 'border-line text-fg-muted hover:border-accent hover:text-fg'
+                  className={`m-3 flex w-[calc(100%-1.5rem)] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed bg-transparent p-6 text-center text-sm transition-colors ${
+                    dragOver
+                      ? 'border-accent bg-accent/10 text-fg'
+                      : 'border-line-subtle text-fg-muted hover:border-accent hover:bg-accent/5 hover:text-fg'
                   }`}
                 >
-                  {uploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                  <span><span className="text-accent">Click to upload</span> a file, or drop it here</span>
-                  <span className="text-xs">PDF, text, markdown, or code</span>
+                  {uploading
+                    ? <Loader2 size={20} className="animate-spin text-accent" />
+                    : <Upload size={20} className="text-accent" />}
+                  <span><span className="font-medium text-accent">Click to upload</span> a file, or drop it here</span>
+                  <span className="text-2xs uppercase tracking-caps">PDF · text · markdown · code</span>
                   <input
                     ref={fileInputRef} type="file" multiple className="hidden"
                     onChange={e => { if (e.target.files?.length) void uploadFiles(e.target.files); e.target.value = ''; }}
@@ -694,64 +682,67 @@ export function WorkspacesPanel({
                     docGroups.map(group => (
                       <section key={group.folder || 'root'}>
                         <div className="mb-1.5 flex items-center justify-between px-0.5">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+                          <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">
                             {group.label}
-                            <span className="ml-1.5 font-normal text-fg-muted">{group.docs.length}</span>
+                            <span className="ml-1.5 font-mono font-normal">{group.docs.length}</span>
                           </span>
                           {CLEARABLE_FOLDERS.has(group.folder) && (
-                            <button
-                              className="rounded px-2 py-1 text-xs text-fg-muted hover:bg-surface-hover hover:text-error"
-                              onClick={() => void clearGroup(group)}
-                            >
+                            <Button variant="ghost" size="sm" onClick={() => void clearGroup(group)}>
                               Clear
-                            </button>
+                            </Button>
                           )}
                         </div>
                         <ul className="space-y-1.5">
                           {group.docs.map(doc => (
                             <li
                               key={doc.id}
-                              className="group flex items-start gap-2 rounded-md border border-line bg-surface-raised p-2.5"
+                              className="group flex items-start gap-2 rounded-lg border border-line-subtle bg-surface-raised p-2.5 transition-colors hover:border-line"
                             >
                               <FileText size={16} className="mt-0.5 shrink-0 text-fg-muted" />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <span className="truncate text-sm font-medium">{leafName(doc.filename, group.folder)}</span>
-                                  <span className={`flex shrink-0 items-center gap-1 text-xs ${STATUS_STYLE[doc.status]}`}>
-                                    {doc.status === 'pending' && <Loader2 size={11} className="animate-spin" />}
-                                    {doc.status === 'pending' ? 'ingesting…' : doc.status}
-                                  </span>
+                                  <Badge
+                                    size="sm"
+                                    variant={doc.status === 'ready' ? 'success' : doc.status === 'pending' ? 'warning' : 'danger'}
+                                  >
+                                    {doc.status === 'pending' && <Loader2 size={10} className="animate-spin" />}
+                                    {doc.status === 'pending' ? 'ingesting' : doc.status}
+                                  </Badge>
                                 </div>
                                 {doc.summary && <p className="mt-0.5 text-xs text-fg-muted">{doc.summary}</p>}
                                 {doc.tags.length > 0 && (
                                   <div className="mt-1 flex flex-wrap gap-1">
                                     {doc.tags.map(tag => (
-                                      <span key={tag} className="rounded bg-surface-sunken px-1.5 py-0.5 text-[11px] text-fg-secondary">
+                                      <span key={tag} className="rounded-md bg-surface-sunken px-1.5 py-0.5 text-2xs text-fg-secondary">
                                         {tag}
                                       </span>
                                     ))}
                                   </div>
                                 )}
                                 {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
-                                <span className="mt-0.5 block text-[11px] text-fg-muted">{formatBytes(doc.size_bytes)}</span>
+                                <span className="mt-0.5 block font-mono text-2xs text-fg-muted">{formatBytes(doc.size_bytes)}</span>
                               </div>
                               {doc.status === 'failed' && (
-                                <button
+                                <IconButton
                                   aria-label={`Retry ingesting ${doc.filename}`}
                                   title="Retry ingestion"
-                                  className="shrink-0 rounded p-2 text-fg-muted hover:bg-surface-hover hover:text-accent"
+                                  size="xs"
+                                  tone="accent"
                                   onClick={() => void retryIngest(doc)}
                                 >
                                   <RotateCcw size={14} />
-                                </button>
+                                </IconButton>
                               )}
-                              <button
+                              <IconButton
                                 aria-label={`Remove ${doc.filename}`}
-                                className="shrink-0 rounded p-2 text-fg-muted opacity-0 hover:bg-surface-hover hover:text-error group-hover:opacity-100"
+                                size="xs"
+                                tone="danger"
+                                className="opacity-0 group-hover:opacity-100"
                                 onClick={() => void deleteDocument(doc)}
                               >
                                 <Trash2 size={14} />
-                              </button>
+                              </IconButton>
                             </li>
                           ))}
                         </ul>
@@ -762,18 +753,15 @@ export function WorkspacesPanel({
 
                 {/* Conversations in this project (durable server membership) */}
                 {!isHome && (
-                  <div className="border-t border-line px-3 py-2.5 pb-4">
+                  <div className="border-t border-line-subtle px-3 py-2.5 pb-4">
                     <div className="mb-1.5 flex items-center justify-between px-0.5">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+                      <span className="text-2xs font-semibold uppercase tracking-caps text-fg-muted">
                         Conversations
-                        <span className="ml-1.5 font-normal text-fg-muted">{conversations.length}</span>
+                        <span className="ml-1.5 font-mono font-normal">{conversations.length}</span>
                       </span>
-                      <button
-                        onClick={newChatInProject}
-                        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-accent hover:bg-surface-hover"
-                      >
+                      <Button variant="ghost" size="sm" className="text-accent" onClick={newChatInProject}>
                         <MessageSquarePlus size={13} /> New chat in this project
-                      </button>
+                      </Button>
                     </div>
                     {conversations.length === 0 ? (
                       <p className="p-2 text-sm text-fg-muted">
@@ -784,28 +772,30 @@ export function WorkspacesPanel({
                         {conversations.map(conv => (
                           <li
                             key={conv.conversation_id}
-                            className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-hover"
+                            className="group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
                           >
                             <MessageSquare size={14} className="shrink-0 text-fg-muted" />
                             <button
                               onClick={() => void openConversation(conv)}
-                              className="min-w-0 flex-1 text-left"
+                              className="min-w-0 flex-1 bg-transparent text-left"
                             >
                               <span className="block truncate text-sm">
                                 {getDisplayTitle(conv.conversation_id, conv.title)}
                               </span>
-                              <span className="block text-[11px] text-fg-muted">
+                              <span className="block font-mono text-2xs text-fg-muted">
                                 {formatDate(conv.last_message_at)} · {conv.message_count} messages
                               </span>
                             </button>
-                            <button
+                            <IconButton
                               aria-label="Remove from project"
                               title="Remove from project (keeps the conversation)"
-                              className="shrink-0 rounded p-1.5 text-fg-muted opacity-0 hover:bg-surface-hover hover:text-error group-hover:opacity-100"
+                              size="xs"
+                              tone="danger"
+                              className="opacity-0 group-hover:opacity-100"
                               onClick={() => void removeConversation(conv)}
                             >
                               <X size={13} />
-                            </button>
+                            </IconButton>
                           </li>
                         ))}
                       </ul>

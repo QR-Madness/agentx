@@ -749,6 +749,19 @@
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+/* Registry-driven cards: a small accent-gradient chip in the icon's corner,
+   fed inline from the theme's own --accent-gradient token value. */
+.theme-option-icon { position: relative; overflow: hidden; }
+.theme-option-swatch {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
 /* Icon swatches preview each theme's own palette (intentionally fixed colors). */
 .theme-option-icon.cosmic {
   background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);

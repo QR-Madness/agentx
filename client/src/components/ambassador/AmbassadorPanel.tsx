@@ -104,7 +104,7 @@ function SpeakButton({
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent data-[on=true]:text-accent ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent data-[on=true]:text-accent ${className}`}
       data-on={playing || undefined}
       onClick={() => (playing ? speech.stop() : speech.speak(id, text))}
     >
@@ -140,7 +140,7 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
       aria-label={copied ? 'Copied' : 'Copy'}
       title={copied ? 'Copied' : 'Copy'}
       onClick={copy}
-      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent text-fg-muted transition-colors hover:bg-accent/15 hover:text-accent ${className}`}
     >
       {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
     </button>
@@ -290,7 +290,7 @@ function QaItem({
           {streaming && (
             <button
               type="button"
-              className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-fg-muted transition-colors hover:text-error"
+              className="ml-2 inline-flex items-center gap-1 bg-transparent align-middle text-xs text-fg-muted transition-colors hover:text-error"
               onClick={onCancel}
               title="Cancel"
             >
@@ -337,7 +337,7 @@ function BriefingItem({
         {streaming ? (
           <button
             type="button"
-            className="inline-flex w-fit items-center gap-1 text-xs text-fg-muted transition-colors hover:text-error"
+            className="inline-flex w-fit items-center gap-1 bg-transparent text-xs text-fg-muted transition-colors hover:text-error"
             onClick={onCancel}
             title="Cancel briefing"
           >
@@ -823,7 +823,7 @@ export function AmbassadorPanel({
         type="button"
         onClick={openVoiceTab}
         data-on={tab === 'voice' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-transparent text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
         title="Immersive voice"
         aria-label="Voice"
       >
@@ -833,7 +833,7 @@ export function AmbassadorPanel({
         type="button"
         onClick={openTextTab}
         data-on={tab === 'text' || undefined}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-transparent text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-accent data-[on=true]:shadow-sm"
         title="Text"
         aria-label="Text"
       >
@@ -849,7 +849,7 @@ export function AmbassadorPanel({
           type="button"
           title="Inquiry actions"
           aria-label="Inquiry actions"
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
         >
           <MoreHorizontal size={16} />
         </button>
@@ -1031,7 +1031,7 @@ export function AmbassadorPanel({
             <button
               type="button"
               onClick={() => setMode('ask')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-transparent px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
               data-on={mode === 'ask' || undefined}
             >
               <Radio size={12} /> Ask
@@ -1039,7 +1039,7 @@ export function AmbassadorPanel({
             <button
               type="button"
               onClick={() => setMode('relay')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-transparent px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
               data-on={mode === 'relay' || undefined}
             >
               <CornerUpRight size={12} /> Relay
@@ -1048,7 +1048,7 @@ export function AmbassadorPanel({
               <button
                 type="button"
                 onClick={() => setMode('dispatch')}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
+                className="inline-flex items-center justify-center gap-1.5 rounded-md bg-transparent px-2 py-1.5 font-medium text-fg-secondary transition-colors hover:text-fg data-[on=true]:bg-surface-raised data-[on=true]:text-fg data-[on=true]:shadow-sm"
                 data-on={mode === 'dispatch' || undefined}
               >
                 <Zap size={12} /> Dispatch
@@ -1151,7 +1151,7 @@ export function AmbassadorPanel({
                 type="button"
                 onClick={refine}
                 disabled={!input.trim() || refining || (mode === 'dispatch' && !dispatchTarget)}
-                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2 text-xs text-fg-muted transition-colors hover:border-line-strong hover:text-accent disabled:opacity-40"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line bg-surface-overlay px-2 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-accent disabled:opacity-40"
                 title={mode === 'dispatch'
                   ? 'Let the ambassador shape this into a self-contained task'
                   : 'Let the ambassador shape this into a ready-to-send message'}

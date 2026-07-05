@@ -113,7 +113,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
     ? ({ '--agent-accent': accent.accent, '--agent-soft': accent.soft } as React.CSSProperties)
     : undefined;
 
-  const IconButton = ({ opt }: { opt: AvatarOption }) => {
+  const AvatarCell = ({ opt }: { opt: AvatarOption }) => {
     const Icon = opt.icon;
     return (
       <button
@@ -192,7 +192,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
                         <div className="avatar-pick__grid">
                           {recents.map(id => {
                             const opt = getAvatarOption(id);
-                            return opt ? <IconButton key={`r-${id}`} opt={opt} /> : null;
+                            return opt ? <AvatarCell key={`r-${id}`} opt={opt} /> : null;
                           })}
                         </div>
                       </div>
@@ -216,7 +216,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
                               key={opt.id}
                               variants={reduce ? {} : { hidden: { opacity: 0, scale: 0.8 }, show: { opacity: 1, scale: 1 } }}
                             >
-                              <IconButton opt={opt} />
+                              <AvatarCell opt={opt} />
                             </motion.div>
                           ))}
                         </motion.div>
@@ -260,7 +260,7 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
                       <button
                         type="button"
                         onClick={useGenerated}
-                        className="inline-flex h-8 items-center rounded-md border border-line px-3 text-sm text-fg transition-colors hover:border-line-strong"
+                        className="inline-flex h-8 items-center rounded-md border border-line bg-surface-overlay px-3 text-sm text-fg transition-colors hover:border-line-strong"
                       >
                         Use this avatar
                       </button>

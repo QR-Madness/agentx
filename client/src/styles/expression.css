@@ -1,0 +1,56 @@
+/* === AgentX Theme Expression Layer (surface effects) ===========================
+ * Each theme's VOICE on the shared container surfaces — beyond what color
+ * tokens alone can express (AgentX Design System `tokens/expression.css`,
+ * generalizable subset; the chat-voice depth — gradient titles, prompt
+ * prefixes — is a deliberate later pass).
+ *
+ * Every rule is scoped under [data-theme] (stamped by lib/theme.ts applyTheme),
+ * so no theme is a de-facto default — each opts in, including Cosmic. Imported
+ * UNLAYERED from App.css: it out-ranks the theme/base/utilities layers by
+ * design, exactly like per-component CSS.
+ *
+ * Effects use background-image layers, never ::before/::after overlays — a
+ * pseudo-element skin over a container would stack above its content.
+ * ============================================================================ */
+
+/* ---- COSMIC — glassbox: explicit blur + saturation on glass chrome ---- */
+[data-theme='cosmic'] .glass,
+[data-theme='cosmic'] .modal-dialog,
+[data-theme='cosmic'] .drawer-content {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+}
+
+/* ---- UGENTX — terminal/CRT: phosphor scanlines + soft inset glow ---- */
+[data-theme='ugentx'] :is(.card, .glass, .modal-dialog, .drawer-content) {
+  background-image: repeating-linear-gradient(
+    rgba(43, 220, 107, 0.045) 0 1px,
+    transparent 1px 3px
+  );
+  box-shadow: var(--shadow-sm), inset 0 0 30px rgba(43, 220, 107, 0.04);
+}
+
+/* The page itself hums faintly — one global scanline field. */
+[data-theme='ugentx'] body {
+  background-image: repeating-linear-gradient(
+    rgba(43, 220, 107, 0.02) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+/* ---- TANGO — clean graphite: flat surfaces, no decoration (color does the
+ *       talking). Explicit opt-out so shadows stay quiet. ---- */
+[data-theme='tango'] :is(.card, .glass) {
+  box-shadow: none;
+}
+
+/* ---- BLACKHAWK — tactical HUD: fine dot-grid on major surfaces ---- */
+[data-theme='blackhawk'] :is(.card, .glass, .modal-dialog, .drawer-content) {
+  background-image: radial-gradient(var(--accent-tint-faint) 1px, transparent 1.4px);
+  background-size: 12px 12px;
+}
+
+/* Amber edge on floating chrome — the "instrument bezel". */
+[data-theme='blackhawk'] :is(.modal-dialog, .drawer-content) {
+  box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255, 138, 26, 0.12);
+}

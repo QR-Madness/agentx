@@ -14,7 +14,7 @@
 import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
-  ScrollText, Moon, Sun, Contrast, Monitor, MessagesSquare, FileStack, FolderOpen,
+  ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -24,7 +24,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useOpenAmbassador } from './useOpenAmbassador';
 import { SURFACES, type SurfaceKey } from '../lib/surfaces';
-import type { ThemePreference } from '../lib/theme';
+import { THEMES, type ThemePreference } from '../lib/theme';
+import { THEME_ICONS } from '../components/common/themeIcons';
 import type { PageId } from '../layouts/TopBar';
 
 export type CommandGroup = 'Navigation' | 'Conversation' | 'Workspace' | 'Theme' | 'Account';
@@ -88,10 +89,19 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-profile', group: 'Workspace', label: 'Agent profiles', icon: <BrainCircuit size={16} />, keywords: ['profile', 'profiles', 'agent', 'agents', 'persona', 'model', 'temperature', 'prompt', 'edit'], run: open('profileEditor') },
       { id: 'focus', group: 'Workspace', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen', icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: ['zen', 'immersive', 'hide', 'chrome'], run: () => { toggleFocusMode(); onClose(); } },
 
-      // Theme
-      { id: 'theme-cosmic', group: 'Theme', label: 'Theme: Cosmic', icon: <Moon size={16} />, keywords: ['dark', 'appearance'], isActive: preference === 'cosmic', run: theme('cosmic') },
-      { id: 'theme-light', group: 'Theme', label: 'Theme: Light', icon: <Sun size={16} />, keywords: ['appearance', 'bright'], isActive: preference === 'light', run: theme('light') },
-      { id: 'theme-professional', group: 'Theme', label: 'Theme: Professional', icon: <Contrast size={16} />, keywords: ['monochrome', 'graphite', 'appearance'], isActive: preference === 'professional', run: theme('professional') },
+      // Theme — registry-driven: adding a theme to THEMES surfaces it here automatically.
+      ...Object.values(THEMES).map((t): Command => {
+        const Icon = THEME_ICONS[t.icon];
+        return {
+          id: `theme-${t.name}`,
+          group: 'Theme',
+          label: `Theme: ${t.displayName}`,
+          icon: <Icon size={16} />,
+          keywords: ['appearance', ...t.description.toLowerCase().split(/[^a-z]+/).filter(Boolean)],
+          isActive: preference === t.name,
+          run: theme(t.name as ThemePreference),
+        };
+      }),
       { id: 'theme-system', group: 'Theme', label: 'Theme: System', icon: <Monitor size={16} />, keywords: ['auto', 'appearance'], isActive: preference === 'system', run: theme('system') },
     ];
 

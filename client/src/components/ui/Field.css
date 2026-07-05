@@ -7,14 +7,14 @@
 .ax-field--error,
 .ax-field--error:focus {
   border-color: var(--feedback-error);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--feedback-error) 18%, transparent);
+  box-shadow: 0 0 0 3px var(--feedback-error-tint);
 }
 
 /* Compact fields for dense panels (drawer headers, cards). */
 .ax-field--sm {
   padding: 6px 10px;
-  font-size: 13px;
-  border-radius: 8px;
+  font-size: var(--text-sm, 13px);
+  border-radius: var(--radius-md, 8px);
 }
 textarea.ax-field--sm {
   min-height: 0;
@@ -57,5 +57,31 @@ textarea.ax-field--sm {
 }
 .ax-fieldwrap:focus-within {
   border-color: var(--border-interactive);
-  box-shadow: 0 0 0 3px var(--accent-tint-soft);
+  box-shadow: 0 0 0 3px var(--accent-tint-soft), var(--glow-primary);
+}
+
+/* Icon-slot input (design-kit forms/Input): the wrapper carries the field
+   chrome + a leading icon; the inner input is bare. Only rendered when the
+   Input primitive gets an `icon` prop — iconless inputs keep their markup. */
+.ax-inputwrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 14px;
+  border-radius: var(--radius-lg, 10px);
+}
+.ax-inputwrap__icon {
+  color: var(--text-muted);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.ax-inputwrap__input,
+.ax-inputwrap__input:focus {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 11px 0;
 }

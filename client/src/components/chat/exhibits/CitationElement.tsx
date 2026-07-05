@@ -120,7 +120,7 @@ function PassiveSources({ sources }: { sources: CitationSource[] }) {
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="rounded-full border border-dashed border-line px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
+          className="rounded-full border border-dashed border-line bg-transparent px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
         >
           +{hidden} more
         </button>

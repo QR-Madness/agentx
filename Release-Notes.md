@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.151 -->
+<!-- release-version: 0.21.152 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -23,6 +23,9 @@ the client at your own API server and bring your own model providers.
 
 ### Highlights
 
+- **Three new themes: Ugentx, Tango, and Blackhawk.** A phosphor-green terminal, a colorful
+  graphite, and a tactical amber HUD join Cosmic/Light/Professional — each with its own surface
+  character (CRT scanlines, dot-grid bezels), picked from Settings or the command palette.
 - **Workspaces grew into Projects.** The hub bundles files, custom **instructions** (followed
   in every chat of the project), and the project's conversations — with sidebar project
   sections, "move to project", and "new chat in this project". Conversations remember their
@@ -45,6 +48,10 @@ the client at your own API server and bring your own model providers.
 
 ### Fixes
 
+- **The UI got its foundation back.** Buttons in newer panels no longer render as gray
+  UA-default blobs (a missing global reset), keyboard focus rings work again in Light and
+  Professional, and the app finally ships its real fonts (Inter + JetBrains Mono) instead of
+  silently falling back to system type.
 - **Inputs and pickers in newer panels no longer look washed out.** Form controls now share
   one field style (sunken background, visible border, focus glow) across the Projects hub,
   Ambassador switchers/composer, and avatar generator.
