@@ -2222,6 +2222,28 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /workspaces/{workspace_id}/documents/{document_id}/reingest:
+    post:
+      tags: [Workspaces]
+      operationId: workspaceDocumentReingest
+      summary: Re-run ingestion for a document (e.g. after a failed embedding under load)
+      description: Resets the document to `pending` and re-fires the background pipeline; the stored blob is reused, no re-upload needed. Already-pending documents return 200 unchanged.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '202':
+          description: Ingestion re-queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /workspaces/{workspace_id}/conversations:
     get:
       tags: [Workspaces]

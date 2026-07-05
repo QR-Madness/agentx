@@ -140,13 +140,17 @@ class AnthropicProvider(ModelProvider):
         Anthropic separates system prompt from messages.
         Returns (system_prompt, messages).
         """
-        system_prompt = None
+        system_parts: list[str] = []
         converted = []
-        
+
         for msg in messages:
             if msg.role == MessageRole.SYSTEM:
-                # Anthropic handles system prompt separately
-                system_prompt = msg.content
+                # Anthropic takes ONE system param — collect and join every
+                # system message. A turn carries several (base prompt, project
+                # instructions, memory blocks, token-budget header); assigning
+                # instead of appending silently dropped all but the last.
+                if msg.content:
+                    system_parts.append(msg.content)
             elif msg.role == MessageRole.TOOL:
                 # Tool results in Anthropic format
                 converted.append({
@@ -210,7 +214,7 @@ class AnthropicProvider(ModelProvider):
                         "content": msg.content,
                     })
 
-        return system_prompt, converted
+        return ("\n\n".join(system_parts) if system_parts else None), converted
     
     def _convert_tools(
         self, tools: list[dict[str, Any]] | None

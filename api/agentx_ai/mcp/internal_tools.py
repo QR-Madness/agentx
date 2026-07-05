@@ -606,7 +606,7 @@ def _active_workspace_id() -> str | None:
 @register_tool(
     name="workspace_search",
     description=(
-        "Search the attached workspace's documents by filename, tag, or topic "
+        "Search the attached project's documents by filename, tag, or topic "
         "(catalog search). Use this FIRST to find which file is relevant, then "
         "`document_query` for the exact passage. Returns documents with their "
         "id, filename, tags, and summary."
@@ -625,7 +625,7 @@ def workspace_search(query: str, limit: int = 10) -> dict[str, Any]:
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "No workspace is attached to this conversation.", "success": False}
+        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
     results = retrieval.search_manifest(workspace_id, query, limit=limit)
     return {"results": results, "count": len(results), "success": True}
 
@@ -633,7 +633,7 @@ def workspace_search(query: str, limit: int = 10) -> dict[str, Any]:
 @register_tool(
     name="document_query",
     description=(
-        "Semantic search across the attached workspace's document contents — finds "
+        "Semantic search across the attached project's document contents — finds "
         "the passages most relevant to a natural-language question. Returns chunks "
         "with their document_id, filename, text, and similarity score. Use "
         "`read_document` to read more around a hit."
@@ -652,7 +652,7 @@ def document_query(query: str, top_k: int = 5) -> dict[str, Any]:
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "No workspace is attached to this conversation.", "success": False}
+        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
     results = retrieval.query_chunks(workspace_id, query, top_k=top_k)
     return {"results": results, "count": len(results), "success": True}
 
@@ -660,7 +660,7 @@ def document_query(query: str, top_k: int = 5) -> dict[str, Any]:
 @register_tool(
     name="read_document",
     description=(
-        "Read a document's full text (paginated), scoped to the attached workspace. "
+        "Read a document's full text (paginated), scoped to the attached project. "
         "Use after `workspace_search`/`document_query` to read more context around a "
         "hit. Returns a slice with has_more/total_chars for further pagination."
     ),
@@ -679,7 +679,7 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "No workspace is attached to this conversation.", "success": False}
+        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
     doc = retrieval.read_document(document_id, offset=offset, limit=limit, workspace_id=workspace_id)
     if doc is None:
         return {"error": f"Document {document_id} not found in this workspace.", "success": False}
@@ -690,7 +690,7 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
     name="view_image",
     description=(
         "Look at an image — load it into your vision so you can actually see and describe it. "
-        "Use this for image files in the attached workspace (e.g. a `.png`/`.jpg` from "
+        "Use this for image files in the attached project (e.g. a `.png`/`.jpg` from "
         "`workspace_search`/`list_files`) or an image generated earlier in this conversation. "
         "`read_document` only returns text, so use THIS to view a picture. After viewing, the "
         "image appears in the conversation and you can describe or reason about what it shows."
@@ -729,7 +729,7 @@ def view_image(document_id: str) -> dict[str, Any]:
         return {"error": f"Image {document_id} not found.", "success": False}
     if doc.get("workspace_id") not in {attached, home_id}:
         return {
-            "error": "That image isn't in the attached workspace or your Home workspace.",
+            "error": "That image isn't in this project's files or your Home space.",
             "success": False,
         }
     media_type = doc.get("content_type")
@@ -838,8 +838,8 @@ def _shell_guard() -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Gate a shell tool: returns (workspace_id, conversation_id, error_dict|None)."""
     if not _shell_allowed():
         return None, None, {
-            "error": "Shell is not enabled for this workspace. Turn on 'Allow shell' for the "
-                     "workspace attached to this conversation.",
+            "error": "Shell is not enabled for this project. Turn on 'Allow shell' in the "
+                     "project attached to this conversation.",
             "success": False,
         }
     ws, conv = _shell_context()
@@ -851,7 +851,7 @@ def _shell_guard() -> tuple[str | None, str | None, dict[str, Any] | None]:
 @register_tool(
     name="run_command",
     description=(
-        "Run a shell command in the attached workspace (a sandboxed working copy of its "
+        "Run a shell command in the attached project (a sandboxed working copy of its "
         "files). It runs in this workspace's shell backend — a locked-down bubblewrap jail "
         "(no network) or a persistent container (installs + network), per the workspace's "
         "setting. Use for inspecting/transforming files (ls, grep, sed, python3, etc.). "
@@ -905,7 +905,7 @@ def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
 @register_tool(
     name="write_file",
     description=(
-        "Create or overwrite a text file in the attached workspace working copy (path is "
+        "Create or overwrite a text file in the attached project's working copy (path is "
         "relative to the workspace root; no escaping it). Safer/more reliable than echo/heredoc."
     ),
     input_schema={
@@ -929,7 +929,7 @@ def write_file(path: str, content: str) -> dict[str, Any]:
 
 @register_tool(
     name="read_file",
-    description="Read a text file from the attached workspace working copy (relative path).",
+    description="Read a text file from the attached project's working copy (relative path).",
     input_schema={
         "type": "object",
         "properties": {
@@ -952,7 +952,7 @@ def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
 
 @register_tool(
     name="list_files",
-    description="List files in the attached workspace working copy (relative paths).",
+    description="List files in the attached project's working copy (relative paths).",
     input_schema={"type": "object", "properties": {}},
 )
 def list_files() -> dict[str, Any]:

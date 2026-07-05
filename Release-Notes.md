@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.149 -->
+<!-- release-version: 0.21.150 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -25,8 +25,9 @@ the client at your own API server and bring your own model providers.
 
 - **Workspaces grew into Projects.** The hub bundles files, custom **instructions** (followed
   in every chat of the project), and the project's conversations — with sidebar project
-  sections, "move to project", and "new chat in this project". Conversations now remember
-  their project on the server, so it survives devices and reinstalls.
+  sections, "move to project", and "new chat in this project". Conversations remember their
+  project on the server, and **each project keeps its own memory**: knowledge learned inside
+  a project stays scoped to it (durable facts still graduate to global memory over time).
 - **New: the deployment manager — on by default in the bundle.** Web dashboard + CLI
   (`qrmadness/agentx-manager`, port 12320, loopback + token): live health incl. a first-boot
   *initializing* state, CPU/memory/network gauges (live ↓ MB/s while the model downloads),
@@ -44,6 +45,9 @@ the client at your own API server and bring your own model providers.
 
 ### Fixes
 
+- **Anthropic models now receive their full system prompt.** A provider bug dropped every
+  system block except the last (agent persona, memory, and project instructions were all
+  silently lost on Anthropic models); everything now reaches the model.
 - **Big documents ingest reliably.** Embedding large uploads no longer times out under the
   chat-recall budget (sliced, background-priority embedding), failed documents show a real
   reason, and a Retry button re-runs ingestion without re-uploading.

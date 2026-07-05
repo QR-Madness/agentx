@@ -28,9 +28,13 @@ _ENRICH_INPUT_CHARS = 6000  # cap text sent to the summarizer
 # slices: one giant submit would monopolize the worker (starving chat recall) and
 # blow the default 30s request timeout (sized for a recall query, not an
 # 1800-chunk PDF). Each slice gets a generous background-work timeout instead —
-# it must also absorb *queue wait* behind other ingests and chat traffic.
-_EMBED_SLICE_SIZE = 32
-_EMBED_SLICE_TIMEOUT_S = 300.0
+# it must also absorb *queue wait* behind chat traffic. Documents themselves
+# embed one at a time (_EMBED_LOCK): a CPU embedder is serial anyway, and
+# concurrent uploads round-robining slices just multiplied every slice's queue
+# wait past any sane timeout (observed with 4 simultaneous PDFs).
+_EMBED_SLICE_SIZE = 16
+_EMBED_SLICE_TIMEOUT_S = 600.0
+_EMBED_LOCK = threading.Lock()
 
 
 def ingest_document(document_id: str) -> dict[str, Any]:
@@ -58,10 +62,11 @@ def ingest_document(document_id: str) -> dict[str, Any]:
         embedder = get_embedder()
         texts = [c["text"] for c in chunks]
         vectors: list[list[float]] = []
-        for start in range(0, len(texts), _EMBED_SLICE_SIZE):
-            vectors.extend(embedder.embed(
-                texts[start:start + _EMBED_SLICE_SIZE], timeout=_EMBED_SLICE_TIMEOUT_S,
-            ))
+        with _EMBED_LOCK:  # one document at a time; chat embeds interleave between slices
+            for start in range(0, len(texts), _EMBED_SLICE_SIZE):
+                vectors.extend(embedder.embed(
+                    texts[start:start + _EMBED_SLICE_SIZE], timeout=_EMBED_SLICE_TIMEOUT_S,
+                ))
         rows = [(c["index"], c["text"], vec) for c, vec in zip(chunks, vectors, strict=True)]
         repository.replace_chunks(document_id, doc["workspace_id"], rows)
 

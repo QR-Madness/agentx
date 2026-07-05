@@ -129,7 +129,11 @@ class ChannelRef:
   workflow-lifetime retention; `recall_set` derives `[active, _self_, _global]` instead of
   convention at call sites.
 - Workspaces (Todo §⭐ Workspaces) will need the same scoping for `document_chunks` — design
-  `ChannelRef` so a workspace id slots in as a kind later.
+  `ChannelRef` so a workspace id slots in as a kind later. **Update (v0.21.150):** the project
+  channel is now live *conventionally* — a conversation in a project stores/recalls on
+  `_project_{workspace_id}` (`views._resolve_project_channel_workspace`; precedence
+  workflow > project > profile). `ChannelRef.kind="project"` should parse/emit this wire
+  format when 1.4 lands; `document_chunks` scoping (retrieval side) is still open.
 
 ### 1.5 Repository layer — ban raw Cypher/SQL outside `kit/agent_memory/` `[NEW]`
 

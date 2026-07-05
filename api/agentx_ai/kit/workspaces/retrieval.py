@@ -157,8 +157,9 @@ def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
         return ""
     has_images = any(str(d.get("content_type") or "").startswith("image/") for d in docs)
     header = (
-        "Attached workspace — files you can search with `workspace_search` "
-        "(by name/tag) and `document_query` (by meaning), then `read_document`"
+        "Project files — this conversation belongs to a project; these are its "
+        "documents. Search them with `workspace_search` (by name/tag) and "
+        "`document_query` (by meaning), then `read_document`"
     )
     header += (
         ". Image files are marked 🖼 — to actually see one, call "

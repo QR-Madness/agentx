@@ -82,6 +82,37 @@ project"; Home renders as a fixed personal-media entry with files only); sidebar
 server membership with meta fallback) + a "Move to project" row menu; one-time localStorage→server
 membership sync (`lib/projectSync.ts`, per-server done-flag, runs before the history fetch).
 
+**Project memory channels + agent-facing terminology (v0.21.150).** A conversation in a project
+now stores/recalls on **`_project_{workspace_id}`** — the "project" tier of the INV-7 scope
+hierarchy, realized ahead of the Roadmap §1.4 `ChannelRef` sweep (which will type it; the wire
+format here is what `kind="project"` will parse). Resolution
+(`views._resolve_project_channel_workspace`): explicit request `workspace_id`, else durable
+membership via the request's `session_id` (== conversation id); applied where the workflow
+override lives, with precedence **workflow shared channel > project channel > profile channel**;
+`ws_home` never scopes; opt-out `memory.project_channels` (default on); best-effort — scoping
+can never fail a turn. Recall keeps the INV-7 set `[_project_X, _self_{agent}, _global]`
+automatically (project = active channel), and `promote_to_global` lifts durable facts out as
+usual. The ad-hoc Alloy executor inherits the project channel, so delegated specialists record
+into the project too. **Agents now speak "project"**: the manifest ledger block header
+("Project files — this conversation belongs to a project…"), the
+`workspace_search`/`document_query`/`read_document`/`view_image` + shell tool descriptions and
+their no-workspace errors all use project terminology (tool *names* unchanged — the wire API is
+stable). **Ingestion robustness follow-through**: `apps.py ready()` now launches a delayed
+`workspace-ingest-sweep` daemon that runs `ingest_pending_documents()` on startup — a restart
+(deploys, the dev autoreloader) kills in-flight ingestion threads, and stranded `pending`
+uploads previously stayed stuck forever. Documents also embed **one at a time**
+(`ingestion._EMBED_LOCK`, slices of 16, 600s background timeout): a CPU embedder is serial
+anyway, and concurrent uploads round-robining slices multiplied every slice's queue wait past
+any sane timeout (observed with 4 simultaneous PDFs).
+
+**Anthropic system-prompt drop (fixed, v0.21.150).** `anthropic_provider._convert_messages`
+assigned `system_prompt = msg.content` per SYSTEM message — each one *overwrote* the last. A
+ledger-assembled turn carries several (base prompt → project instructions → memory blocks →
+token-budget header appended last), so **Anthropic models received only the budget header** as
+their system prompt; everything else was silently dropped. Now all SYSTEM messages join with
+`\n\n` into the single `system` param (`AnthropicSystemPromptJoinTest`). Verified live: project
+instructions are followed by claude-haiku only after this fix.
+
 **Binary media + serving (v0.21.123).** The blob store also holds non-text media (images): `service.store_media`
 mirrors `upload_document` but validates an image content-type (png/jpeg/webp/gif), **skips ingestion**
 (no parse/chunk/embed), and writes the doc `status="ready"`. **`GET /api/workspaces/{id}/documents/{doc}/raw`**

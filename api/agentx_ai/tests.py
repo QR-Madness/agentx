@@ -10659,3 +10659,91 @@ class WorkspaceProjectsTest(APITestBase):
                    return_value=False):
             response = self.client.delete(f"/api/workspaces/ws_abc/conversations/{self.CONV_ID}")
         self.assertEqual(response.status_code, 404)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ProjectMemoryChannelTest(APITestBase):
+    """Projects v1 memory scoping — a conversation in a project stores/recalls on
+    `_project_{workspace_id}` (INV-7 'project' tier), mirroring the workflow
+    shared-channel override. Repository/config are patched; no DB needed."""
+
+    CONV_ID = "6f1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
+
+    def _cfg(self, enabled: bool):
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda key, default=None: (
+            enabled if key == "memory.project_channels" else default
+        )
+        return patch("agentx_ai.config.get_config_manager", return_value=cfg)
+
+    def test_explicit_workspace_wins(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(True), \
+             patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace") as lookup:
+            ws = _resolve_project_channel_workspace("ws_abc", self.CONV_ID)
+        self.assertEqual(ws, "ws_abc")
+        lookup.assert_not_called()
+
+    def test_membership_fallback_by_session_id(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(True), \
+             patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace",
+                   return_value="ws_abc"):
+            self.assertEqual(
+                _resolve_project_channel_workspace(None, self.CONV_ID), "ws_abc")
+
+    def test_new_conversation_without_session_has_no_project_channel(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(True):
+            self.assertIsNone(_resolve_project_channel_workspace(None, None))
+
+    def test_home_workspace_never_scopes_memory(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(True):
+            self.assertIsNone(_resolve_project_channel_workspace("ws_home", self.CONV_ID))
+        with self._cfg(True), \
+             patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace",
+                   return_value="ws_home"):
+            self.assertIsNone(_resolve_project_channel_workspace(None, self.CONV_ID))
+
+    def test_config_opt_out_disables_project_channels(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(False):
+            self.assertIsNone(_resolve_project_channel_workspace("ws_abc", self.CONV_ID))
+
+    def test_resolution_errors_never_fail_the_turn(self):
+        from agentx_ai.views import _resolve_project_channel_workspace
+        with self._cfg(True), \
+             patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace",
+                   side_effect=RuntimeError("db down")):
+            self.assertIsNone(_resolve_project_channel_workspace(None, self.CONV_ID))
+
+
+class AnthropicSystemPromptJoinTest(TestCase):
+    """Anthropic takes a single `system` param; a turn carries several SYSTEM
+    messages (base prompt, project instructions, memory blocks, budget header).
+    Regression: assignment-instead-of-append silently dropped all but the last."""
+
+    def _convert(self, messages):
+        from agentx_ai.providers.anthropic_provider import AnthropicProvider
+        provider = AnthropicProvider.__new__(AnthropicProvider)  # no client needed
+        return provider._convert_messages(messages)
+
+    def test_multiple_system_messages_are_joined_in_order(self):
+        system, converted = self._convert([
+            Message(role=MessageRole.SYSTEM, content="Base prompt."),
+            Message(role=MessageRole.SYSTEM, content="Project instructions: follow them."),
+            Message(role=MessageRole.USER, content="hello"),
+            Message(role=MessageRole.SYSTEM, content="Context budget: 3% used."),
+        ])
+        assert system is not None
+        self.assertIn("Base prompt.", system)
+        self.assertIn("Project instructions: follow them.", system)
+        self.assertIn("Context budget", system)
+        self.assertLess(system.index("Base prompt."), system.index("Project instructions"))
+        self.assertEqual(len(converted), 1)  # only the user turn remains inline
+
+    def test_no_system_messages_yields_none(self):
+        system, converted = self._convert([Message(role=MessageRole.USER, content="hi")])
+        self.assertIsNone(system)
+        self.assertEqual(len(converted), 1)

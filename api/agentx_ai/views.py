@@ -145,6 +145,28 @@ def _strip_message_images(messages, accepts_vision):
     return [m.model_copy(update={"images": None}) if m.images else m for m in messages]
 
 
+def _resolve_project_channel_workspace(workspace_id, session_id):
+    """The workspace whose project memory channel this turn should use, or None.
+
+    Explicit request binding wins; else the conversation's durable membership
+    (the request's ``session_id`` IS the conversation id). Home is a media
+    space, never a project. Best-effort — memory scoping must never fail the
+    turn — and opt-out via config ``memory.project_channels``.
+    """
+    try:
+        from .config import get_config_manager
+        if not get_config_manager().get("memory.project_channels", True):
+            return None
+        from .kit.workspaces import repository as ws_repo
+        ws = workspace_id or (
+            ws_repo.get_conversation_workspace(session_id) if session_id else None
+        )
+        return None if not ws or ws == ws_repo.HOME_WORKSPACE_ID else ws
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Project channel resolution skipped: {e}")
+        return None
+
+
 def _resolve_turn_workspace(workspace_id, conv_id):
     """Resolve the turn's active workspace (Projects v1). Precedence: the request's
     explicit ``workspace_id`` (back-compat; recorded so membership self-heals) >
@@ -1242,6 +1264,17 @@ async def agent_chat_stream(request):
         if active_workflow is not None and agent_profile is not None:
             config_kwargs["memory_channel"] = active_workflow.shared_channel
             config_kwargs["agent_id"] = agent_profile.agent_id
+        else:
+            # Projects v1: a conversation that belongs to a project stores and
+            # recalls on the project's memory channel (`_project_{ws_id}` — the
+            # "project" tier of the INV-7 scope hierarchy), so knowledge learned
+            # inside a project stays with it; recall still layers `_self_` +
+            # `_global`, and consolidation promotion lifts durable facts out.
+            # Mirrors the workflow override above (workflow wins); Home is a
+            # media space, never a project; opt-out: memory.project_channels.
+            project_ws = _resolve_project_channel_workspace(workspace_id, session_id)
+            if project_ws:
+                config_kwargs["memory_channel"] = f"_project_{project_ws}"
 
         logger.debug(f"Agent config_kwargs: {config_kwargs}")
         agent = Agent(AgentConfig(**config_kwargs))

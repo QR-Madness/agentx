@@ -57,6 +57,31 @@ class AgentxAiConfig(AppConfig):
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not launch MCP auto-connect thread: {exc}")
 
+        # Sweep workspace documents stuck in `pending` — a restart (deploys, the
+        # dev autoreloader) kills in-flight ingestion daemon threads, stranding
+        # uploads mid-pipeline. Best-effort on a delayed daemon thread: Postgres
+        # may be absent (translation-only deployments), and ingestion re-runs are
+        # idempotent (replace_chunks clears before writing).
+        try:
+            import threading
+
+            def _sweep_stuck_ingestion() -> None:
+                try:
+                    import time as _time
+                    _time.sleep(10)  # let DB pools + the embedder settle first
+                    from .kit.workspaces.ingestion import ingest_pending_documents
+                    result = ingest_pending_documents()
+                    if result.get("processed"):
+                        logger.info(f"Workspace ingestion sweep: {result}")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(f"Workspace ingestion sweep skipped: {exc}")
+
+            threading.Thread(
+                target=_sweep_stuck_ingestion, name="workspace-ingest-sweep", daemon=True
+            ).start()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"Could not launch ingestion sweep thread: {exc}")
+
         # Startup banner (best-effort; gated by AGENTX_LOG_BANNER). Printed last so
         # the status table reflects the worker/MCP kick-off above.
         try:

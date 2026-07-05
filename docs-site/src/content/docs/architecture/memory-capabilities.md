@@ -29,6 +29,7 @@ each one and how it feeds the others.
 | Recall (5 techniques) | recall | shipped | `RecallLayer.recall` (hybrid, entity-centric, query-expansion, HyDE, self-query) | `[active, _self_, _global]` |
 | Stable salient core | recall | shipped | `AgentMemory.get_salient_core` → `get_salient_facts`/`get_salient_entities` (`memory/semantic.py`); injected as the prio-70 ledger block (`agent/context_ledger.py`) | `[active, _self_, _global]` |
 | Context gating | context | shipped | `ToolOutputCompressor`, `tool_output_chunker`, trajectory compression | active |
+| Project memory scoping | channels | shipped | `_resolve_project_channel_workspace` (`views.py`) → `AgentConfig.memory_channel = _project_{ws_id}` | `_project_{workspace_id}` (opt-out: `memory.project_channels`) |
 | Cross-channel promotion | lifecycle | shipped | `promote_to_global` | → `_global` |
 | Salience decay | lifecycle | shipped | decay job (`consolidation/`) | all |
 | Entity dedupe | lifecycle | shipped | `dedupe_entities` (mgmt cmd) | per/cross channel |
@@ -42,6 +43,7 @@ each one and how it feeds the others.
 
 ```mermaid
 graph TD
+    WS[Project<br/>workspace membership] -->|"_project_&lt;ws_id&gt; = active channel"| T
     T[Conversation turn<br/>store_turn] --> EP[(Episodic<br/>Neo4j + pgvector)]
     EP -->|15-min sweep| CON[Consolidation]
     CON --> EX[Extraction<br/>relevance + facts + subject_agent]
@@ -97,6 +99,16 @@ graph TD
   agent's `_self_{agent_id}`. Agents are registered as first-class `Entity(type="Agent")`
   in `_global` (`_ensure_agent_entities`), so facts link to them by name and survive renames
   (aliases). See [Multi-Agent](../features/multi-agent.md).
+
+### Project scoping (interconnect: workspaces ↔ channels)
+- **Project memory channels** — a conversation that belongs to a project (workspace) stores
+  and recalls on `_project_{workspace_id}`, the "project" tier of the channel scope hierarchy
+  (`_global → user → project → _self_ → conversation`). Knowledge learned inside a project
+  stays with it; recall still layers `_self_` + `_global`, and **cross-channel promotion**
+  lifts durable facts to `_global` over time. Precedence: workflow shared channel > project
+  channel > profile channel; the reserved Home media space never scopes memory. Opt-out:
+  config `memory.project_channels`. Resolution is best-effort
+  (`_resolve_project_channel_workspace`) — memory scoping can never fail a turn.
 
 ### Verification (interconnect: extraction → semantic)
 - **3-layer fact verification** gates every new fact: claim-hash → semantic-duplicate →

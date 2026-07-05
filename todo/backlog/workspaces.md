@@ -27,9 +27,13 @@
 > the client **Projects hub** (description/instructions editors, conversations list, "new chat in this
 > project", Home pinned as personal media), sidebar **project sections** + "Move to project", and a
 > one-time localStorage→server membership sync. Also fixed the pre-session meta orphan
-> (`setSessionId` now migrates `tab.id`-keyed meta to the session id). **Projects follow-ups:**
-> default agent profile per project; project-scoped memory channel; multi-workspace projects;
-> project archives/templates.
+> (`setSessionId` now migrates `tab.id`-keyed meta to the session id). **v0.21.150:**
+> project **memory channels** (`_project_{ws_id}` = the turn's channel; workflow > project >
+> profile; opt-out `memory.project_channels`), agent-facing **project terminology** (manifest
+> block + tool descriptions), and a startup **ingestion sweep** for `pending` docs stranded by
+> restarts (plus sliced background-timeout embedding + `/reingest`, v0.21.149). **Projects
+> follow-ups:** default agent profile per project; client Memory drawer renders `_project_*`
+> channels with the project's name; multi-workspace projects; project archives/templates.
 >
 > ⭐ **Agent shells spawn *inside* the workspace — shipped v0.21.108** (`kit/shell/`): opt-in
 > (`shell.enabled`), bubblewrap-jailed `run_command` + path-jailed `write_file`/`read_file`/`list_files`,
