@@ -178,6 +178,48 @@ def main() -> int:
         finally:
             reset_context(tok)
 
+        # --- 6. Projects v1: instructions + durable conversation membership ---
+        import uuid as _uuid
+
+        resp = client.patch(
+            f"/api/workspaces/{workspace_id}",
+            data='{"description": "e2e project", "instructions": "Always answer in haiku."}',
+            content_type="application/json",
+        )
+        check(resp.status_code == 200, f"PATCH description/instructions → 200 (got {resp.status_code})")
+        ws = resp.json().get("workspace", {})
+        check(ws.get("instructions") == "Always answer in haiku.", "instructions round-trip")
+
+        from agentx_ai.kit.workspaces.retrieval import render_instructions_block
+        block = render_instructions_block(workspace_id)
+        check("Always answer in haiku." in block, "render_instructions_block includes the text")
+
+        conv_id = str(_uuid.uuid4())
+        resp = client.put(f"/api/workspaces/{workspace_id}/conversations/{conv_id}")
+        check(resp.status_code == 200, f"PUT membership → 200 (got {resp.status_code})")
+
+        from agentx_ai.kit.workspaces import repository as ws_repo
+        check(ws_repo.get_conversation_workspace(conv_id) == workspace_id,
+              "membership lookup resolves the conversation's project")
+
+        from agentx_ai.views import _resolve_turn_workspace
+        resolved, from_membership = _resolve_turn_workspace(None, conv_id)
+        check(resolved == workspace_id and from_membership,
+              "turn resolution falls back to membership when the request has no workspace_id")
+
+        listing = get(f"/api/workspaces/{workspace_id}/conversations").json()
+        # The conversation has no logged turns yet, so it won't appear in the
+        # summary listing (which joins conversation_logs) — assert the endpoint
+        # shape rather than presence.
+        check("conversations" in listing, "GET project conversations returns the listing shape")
+
+        resp = client.delete(f"/api/workspaces/{workspace_id}/conversations/{conv_id}")
+        check(resp.status_code == 200, f"DELETE membership → 200 (got {resp.status_code})")
+        check(ws_repo.get_conversation_workspace(conv_id) is None, "membership removed after unlink")
+
+        resp = client.put(f"/api/workspaces/ws_home/conversations/{conv_id}")
+        check(resp.status_code in (400, 404), f"PUT membership on ws_home rejected (got {resp.status_code})")
+
     finally:
         if workspace_id and not args.keep:
             client.delete(f"/api/workspaces/{workspace_id}")

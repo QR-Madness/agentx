@@ -128,6 +128,24 @@ def read_document(
     }
 
 
+def render_instructions_block(workspace_id: str, max_chars: int = 8000) -> str:
+    """User-authored project instructions for the turn preamble (stable block).
+
+    Writes are capped at ``repository.INSTRUCTIONS_MAX_CHARS``; the truncation here
+    is a defensive second line. Returns "" when the workspace has none.
+    """
+    ws = repository.get_workspace(workspace_id)
+    instructions = ((ws or {}).get("instructions") or "").strip()
+    if not instructions:
+        return ""
+    if len(instructions) > max_chars:
+        instructions = instructions[:max_chars].rstrip() + "\n… [instructions truncated]"
+    return (
+        "Project instructions (set by the user for this project — follow them):\n"
+        + instructions
+    )
+
+
 def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
     """Render the workspace's file list for the turn preamble (stable awareness).
 

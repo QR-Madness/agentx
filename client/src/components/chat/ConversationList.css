@@ -233,6 +233,19 @@
   opacity: 0.8;
 }
 
+/* Project section header: collapsible label + a hover "open hub" action */
+.history-section-row {
+  display: flex;
+  align-items: center;
+}
+.history-section-row .history-section-toggle { flex: 1; min-width: 0; }
+.history-section-action {
+  opacity: 0;
+  margin-right: 0.5rem;
+  flex: none;
+}
+.history-section-row:hover .history-section-action { opacity: 1; }
+
 /* Bulk-action bar (selection mode) */
 .conv-bulk-bar {
   display: flex;

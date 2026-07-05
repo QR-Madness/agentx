@@ -9,12 +9,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, X, Loader2, Radio, ChevronDown, ChevronRight,
-  Pin, Archive, Trash2, CheckSquare, Star,
+  Pin, Archive, Trash2, CheckSquare, Star, FolderKanban, PanelRight,
 } from 'lucide-react';
 import { useConversationList, type ConversationItem } from '../../hooks/useConversationList';
 import { ConversationRow } from './ConversationRow';
 import { AvatarPicker } from '../common/AvatarPicker';
 import { getMeta } from '../../lib/conversationMeta';
+import { useModal } from '../../contexts/ModalContext';
+import { SURFACES } from '../../lib/surfaces';
 import './ConversationList.css';
 
 interface ConversationListProps {
@@ -24,6 +26,7 @@ interface ConversationListProps {
 
 export function ConversationList({ onActivated, autoFocusSearch = true }: ConversationListProps) {
   const c = useConversationList({ onActivated, autoFocusSearch });
+  const { openModal } = useModal();
   const [iconPickerKey, setIconPickerKey] = useState<string | null>(null);
   const [newGroupKey, setNewGroupKey] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
@@ -114,6 +117,30 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
             {c.pinned.map(it => renderRow(it, true))}
           </>
         )}
+
+        {/* Projects (durable server membership) — above plain groups */}
+        {c.projects.map(project => {
+          const collapseKey = `ws:${project.id}`;
+          const collapsed = c.groupsCollapsed.has(collapseKey);
+          return (
+            <div key={collapseKey}>
+              <div className="history-section-row">
+                <button className="history-section-label history-section-toggle" onClick={() => c.toggleGroupCollapse(collapseKey)}>
+                  {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />} <FolderKanban size={11} /> {project.name} <span className="history-section-count">{project.items.length}</span>
+                </button>
+                <button
+                  className="history-item-action history-section-action"
+                  title={`Open the ${project.name} project`}
+                  aria-label={`Open the ${project.name} project`}
+                  onClick={() => openModal({ ...SURFACES.workspaces, props: { initialWorkspaceId: project.id } })}
+                >
+                  <PanelRight size={12} />
+                </button>
+              </div>
+              {!collapsed && project.items.map(it => renderRow(it, true))}
+            </div>
+          );
+        })}
 
         {/* Custom groups */}
         {c.groups.map(([group, convs]) => {

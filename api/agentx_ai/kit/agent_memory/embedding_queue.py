@@ -122,13 +122,18 @@ class _EmbeddingQueue:
         self._worker: threading.Thread | None = None
         self._start_lock = threading.Lock()
 
-    def submit(self, texts: list[str]) -> list[list[float]]:
-        """Enqueue a request and block until its embeddings are ready."""
+    def submit(self, texts: list[str], timeout: float | None = None) -> list[list[float]]:
+        """Enqueue a request and block until its embeddings are ready.
+
+        ``timeout`` overrides the default request timeout — background callers
+        (document ingestion) wait far longer than a chat-recall query should.
+        """
         self._ensure_worker()
+        wait = timeout if timeout is not None else self._timeout
         fut: Future[list[list[float]]] = Future()
         # Bounded put provides backpressure; raises queue.Full on timeout.
-        self._q.put(_Request(texts=texts, future=fut), timeout=self._timeout)
-        return fut.result(timeout=self._timeout)
+        self._q.put(_Request(texts=texts, future=fut), timeout=wait)
+        return fut.result(timeout=wait)
 
     def _ensure_worker(self) -> None:
         if self._worker is not None and self._worker.is_alive():
@@ -225,26 +230,26 @@ class EmbeddingDispatcher:
             else None
         )
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed(self, texts: list[str], timeout: float | None = None) -> list[list[float]]:
         if not texts:
             return []
         if self._cache is None:
-            return self._compute_or_queue(texts)
+            return self._compute_or_queue(texts, timeout)
 
         results: list[list[float] | None] = [self._cache.get(self.namespace, t) for t in texts]
         miss_slots = [i for i, r in enumerate(results) if r is None]
         if miss_slots:
-            computed = self._compute_or_queue([texts[i] for i in miss_slots])
+            computed = self._compute_or_queue([texts[i] for i in miss_slots], timeout)
             for slot, vec in zip(miss_slots, computed, strict=False):
                 results[slot] = vec
                 self._cache.put(self.namespace, texts[slot], vec)
         return [r for r in results if r is not None]
 
-    def _compute_or_queue(self, texts: list[str]) -> list[list[float]]:
+    def _compute_or_queue(self, texts: list[str], timeout: float | None = None) -> list[list[float]]:
         if not texts:
             return []
         if self._queue is not None:
-            return self._queue.submit(texts)
+            return self._queue.submit(texts, timeout=timeout)
         return self._compute(texts)
 
     def clear_cache(self) -> None:

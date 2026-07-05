@@ -7,6 +7,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import type { ConversationTab } from '../../lib/storage';
 import type { ConversationMessage } from '../../lib/messages';
+import { migrateMeta } from '../../lib/conversationMeta';
 
 interface UseTabMessagesArgs {
   activeTabId: string | null;
@@ -62,6 +63,9 @@ export function useTabMessages({ activeTabId, setTabs, updateTab }: UseTabMessag
 
   const setSessionId = useCallback((sessionId: string) => {
     if (!activeTabId) return;
+    // Meta written pre-session lives under tab.id; re-key it to the session id
+    // (the conversation's durable key) so project attach / rename / pin survive.
+    migrateMeta(activeTabId, sessionId);
     updateTab(activeTabId, { sessionId });
   }, [activeTabId, updateTab]);
 

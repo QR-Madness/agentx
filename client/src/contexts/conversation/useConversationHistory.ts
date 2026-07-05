@@ -46,6 +46,12 @@ export function useConversationHistory({
   const refreshHistory = useCallback(async () => {
     setIsLoadingHistory(true);
     try {
+      // Push any pre-Projects local workspace attaches up to the server first
+      // (no-op after the first clean pass) so the rows fetched below already
+      // carry their workspace_id.
+      await import('../../lib/projectSync')
+        .then((m) => m.syncLocalProjectLinksOnce())
+        .catch(() => undefined);
       const response = await api.listConversations({ limit: 50 });
       setServerConversations(response.conversations);
     } catch {

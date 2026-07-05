@@ -18,6 +18,19 @@
 > (`conversationMeta.workspaceId`); `lib/api/workspaces.ts` (+ FormData support in `core.ts`); the chat
 > stream sends `workspace_id`. v1 complete. See `kit/workspaces/` + Development-Notes.
 >
+> ⭐ **Projects v1 — shipped v0.21.149.** Workspaces surface to users as **Projects**
+> (Claude-Projects-style, one entity — the workspace was extended, not wrapped): `description` +
+> `instructions` columns (Alembic `0005`; instructions injected every turn as a stable ledger block at
+> priority 88, above the manifest), **durable conversation membership** (`workspace_conversations`,
+> one project per conversation, `PUT/DELETE /workspaces/{id}/conversations/{conv}`; turn precedence =
+> request `workspace_id` > stored membership, self-healing on explicit sends; `ws_home` guarded out),
+> the client **Projects hub** (description/instructions editors, conversations list, "new chat in this
+> project", Home pinned as personal media), sidebar **project sections** + "Move to project", and a
+> one-time localStorage→server membership sync. Also fixed the pre-session meta orphan
+> (`setSessionId` now migrates `tab.id`-keyed meta to the session id). **Projects follow-ups:**
+> default agent profile per project; project-scoped memory channel; multi-workspace projects;
+> project archives/templates.
+>
 > ⭐ **Agent shells spawn *inside* the workspace — shipped v0.21.108** (`kit/shell/`): opt-in
 > (`shell.enabled`), bubblewrap-jailed `run_command` + path-jailed `write_file`/`read_file`/`list_files`,
 > with the workspace materialized into a per-conversation work dir as the CWD (network off, FS jailed, env

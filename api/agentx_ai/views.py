@@ -13,13 +13,10 @@ from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
 from .streaming import (
-    CHAR_TO_TOKEN_RATIO,
-    CONTEXT_BUFFER_TOKENS,
     CONTEXT_WARNING_THRESHOLD,
     DEFAULT_MAX_TOOL_ROUNDS,
     MAX_INPUT_TOKENS,
-    MAX_OUTPUT_TOKENS_CEILING,
-    MIN_OUTPUT_TOKENS,
+    REASONING_DEFAULT_OUTPUT_TOKENS,
     STREAM_CLOSE_DELAY,
     estimate_tokens,
     resolve_with_priority,
@@ -148,14 +145,47 @@ def _strip_message_images(messages, accepts_vision):
     return [m.model_copy(update={"images": None}) if m.images else m for m in messages]
 
 
+def _resolve_turn_workspace(workspace_id, conv_id):
+    """Resolve the turn's active workspace (Projects v1). Precedence: the request's
+    explicit ``workspace_id`` (back-compat; recorded so membership self-heals) >
+    the conversation's durable project membership > none. Returns
+    ``(workspace_id, from_membership)`` — the caller emits ``workspace_attached``
+    when the server resolved it, so the client re-learns the badge. Best-effort:
+    membership must never fail the turn."""
+    try:
+        from .kit.workspaces import repository as ws_repo
+        if workspace_id:
+            ws_repo.link_conversation(workspace_id, conv_id)  # idempotent; ws_home no-ops
+            return workspace_id, False
+        resolved = ws_repo.get_conversation_workspace(conv_id)
+        return resolved, bool(resolved)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Turn workspace resolution skipped: {e}")
+        return workspace_id, False
+
+
 def _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail):
-    """Append the STABLE corpus-awareness ledger blocks: the attached-workspace file
-    manifest and a catalog of images generated earlier in this conversation (so the agent
-    can `view_image` them). Awareness only — no pixels. Best-effort + branchy by nature, so
-    it lives here to keep the chat-stream generator within pyright's path budget."""
+    """Append the STABLE corpus-awareness ledger blocks: the project instructions,
+    the attached-workspace file manifest, and a catalog of images generated earlier in
+    this conversation (so the agent can `view_image` them). Awareness only — no pixels.
+    Best-effort + branchy by nature, so it lives here to keep the chat-stream generator
+    within pyright's path budget."""
     from .agent.context_ledger import LedgerBlock
 
     if workspace_id:
+        # Instructions outrank the manifest (88 > 85): under budget pressure the
+        # user's standing guidance survives longer than the file catalog.
+        try:
+            from .kit.workspaces.retrieval import render_instructions_block
+            instructions_block = render_instructions_block(workspace_id)
+            if instructions_block:
+                blocks.append(LedgerBlock(
+                    key="workspace_instructions", priority=88, content=instructions_block,
+                    shrink_fn=shrink_tail,
+                ))
+        except Exception as wi_err:  # noqa: BLE001 — awareness is best-effort
+            logger.debug(f"Workspace instructions injection skipped: {wi_err}")
+
         try:
             from .kit.workspaces.retrieval import render_manifest_block
             manifest_block = render_manifest_block(workspace_id)
@@ -1004,6 +1034,27 @@ def agent_chat(request):
     })
 
 
+def _resolve_model_budget(provider, model_id: str):
+    """Resolve a model's capabilities + output-budget inputs for a chat turn.
+
+    Returns ``(caps, context_window, max_output_override, max_output_tokens)``.
+    Reasoning models get a larger default budget: thinking tokens count against
+    max_tokens, so the bare-4096 fallback starves the visible answer.
+    """
+    from .config import get_context_limit_overrides
+    caps = provider.get_capabilities(model_id)
+    overrides = get_context_limit_overrides(model_id, provider.name)
+    context_window = overrides.get("context_window") or caps.context_window
+    max_output_override = overrides.get("max_output_tokens")
+    default_output_tokens = (
+        REASONING_DEFAULT_OUTPUT_TOKENS if caps.supports_reasoning else 4096
+    )
+    max_output_tokens = (
+        max_output_override or caps.max_output_tokens or default_output_tokens
+    )
+    return caps, context_window, max_output_override, max_output_tokens
+
+
 @csrf_exempt
 async def agent_chat_stream(request):
     """
@@ -1045,8 +1096,9 @@ async def agent_chat_stream(request):
     async def generate_sse():
         """Async generator that yields SSE events."""
         # @-mention routing (16.5) may override the request's target_agent_id;
-        # the profile's enable_memory may force use_memory off below.
-        nonlocal target_agent_id, use_memory
+        # the profile's enable_memory may force use_memory off below; the turn's
+        # workspace may resolve from durable project membership (Projects v1).
+        nonlocal target_agent_id, use_memory, workspace_id
         import time
         import uuid
         from .agent import Agent, AgentConfig
@@ -1292,6 +1344,13 @@ async def agent_chat_stream(request):
         if use_memory and agent.memory:
             agent.memory.conversation_id = conv_id
 
+        # Projects v1: explicit request binding wins (and self-heals membership);
+        # otherwise fall back to the conversation's durable project. Same wire
+        # shape as tool_loop's workspace_attached so the client badge re-syncs.
+        workspace_id, ws_from_membership = _resolve_turn_workspace(workspace_id, conv_id)
+        if ws_from_membership:
+            yield f"event: workspace_attached\ndata: {json.dumps({'workspace_id': workspace_id})}\n\n"
+
         # Hydrate the conversation's agent roster (Phase 16.2). Seed from the
         # durable per-turn attribution (16.1) so it reflects agents that spoke
         # before this process/session existed, then add the active agent.
@@ -1339,12 +1398,10 @@ async def agent_chat_stream(request):
 
             # Resolve the model's real context window + capabilities up front: they
             # drive both the token-budget assembly and the direct-mode decision below.
-            from .config import get_context_limit_overrides, get_config_manager
-            caps = provider.get_capabilities(model_id)
-            overrides = get_context_limit_overrides(model_id, provider.name)
-            context_window = overrides.get("context_window") or caps.context_window
-            max_output_override = overrides.get("max_output_tokens")
-            max_output_tokens = max_output_override or caps.max_output_tokens or 4096
+            from .config import get_config_manager
+            caps, context_window, max_output_override, max_output_tokens = (
+                _resolve_model_budget(provider, model_id)
+            )
 
             # Vision gating: only feed attached images to a model that can see them.
             # A non-vision model gets the text only (the images still persist + render
@@ -1686,40 +1743,15 @@ async def agent_chat_stream(request):
             else:
                 logger.debug(f"No memory context to emit (bundle: {memory_bundle is not None})")
 
-            # Calculate adaptive max_tokens based on context usage.
-            # Account for tool-schema tokens too: estimate_tokens() only sees
-            # message content, but the provider also counts the serialized tool
-            # definitions toward the prompt (this was the uncounted overhead
-            # that pushed requests over the window). Reserve them explicitly.
-            estimated_input = estimate_tokens(messages)
-            estimated_tool_tokens = (
-                len(json.dumps(tools)) // CHAR_TO_TOKEN_RATIO if tools else 0
-            )
-            available_for_output = (
-                context_window - estimated_input - estimated_tool_tokens - CONTEXT_BUFFER_TOKENS
-            )
-
-            # Clamp the capability-reported output cap to a sane ceiling so a
-            # model advertising max_output == context_window can't make us
-            # request ~the whole window as output (no slack → provider 400).
-            # An explicit override is trusted as-is.
-            output_cap = (
-                max_output_tokens
-                if max_output_override
-                else min(max_output_tokens, MAX_OUTPUT_TOKENS_CEILING)
-            )
-
-            # Use the smaller of: capped max_output or available space (but at least minimum)
-            adaptive_max_tokens = max(
-                min(output_cap, available_for_output),
-                MIN_OUTPUT_TOKENS
-            )
-
-            logger.debug(
-                f"Adaptive max_tokens: {adaptive_max_tokens} "
-                f"(context_window={context_window}, estimated_input={estimated_input}, "
-                f"tool_tokens={estimated_tool_tokens}, output_cap={output_cap}, "
-                f"max_output={max_output_tokens}, available={available_for_output})"
+            # Adaptive per-call output budget (tool-schema tokens accounted,
+            # capability cap clamped, reasoning-aware floor) — see helper.
+            from .streaming.helpers import compute_adaptive_max_tokens
+            adaptive_max_tokens = compute_adaptive_max_tokens(
+                messages, tools,
+                context_window=context_window,
+                max_output_tokens=max_output_tokens,
+                max_output_override=max_output_override,
+                supports_reasoning=caps.supports_reasoning,
             )
 
             # Stream tokens with tool-use loop
@@ -2075,6 +2107,12 @@ async def agent_chat_stream(request):
             from .providers.pricing import estimate_cost
             cost = estimate_cost(caps, estimated_input, estimated_output)
 
+            # Truncation surfacing: "length" means the answer was cut off by
+            # max_tokens (even after any auto-continue round). None on the
+            # plan/image paths, which don't run the standard tool loop.
+            final_finish_reason = loop_result.finish_reason if loop_result else None
+            was_truncated = final_finish_reason == 'length'
+
             # Send completion event with enhanced metadata
             done_data = {
                 'task_id': task_id,
@@ -2097,6 +2135,8 @@ async def agent_chat_stream(request):
                 'cost_estimate': cost['cost_total'] if cost else None,
                 'cost_currency': cost['currency'] if cost else None,
                 'pricing_snapshot': cost['pricing_snapshot'] if cost else None,
+                'finish_reason': final_finish_reason,
+                'truncated': was_truncated,
             }
             done_json = json.dumps(done_data)
             logger.debug(f"Done event JSON length: {len(done_json)} chars")
@@ -2126,6 +2166,8 @@ async def agent_chat_stream(request):
                     asst_metadata["cost_estimate"] = cost["cost_total"]
                     asst_metadata["cost_currency"] = cost["currency"]
                     asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
+                if was_truncated:
+                    asst_metadata["truncated"] = True
                 # Thinking/CoT is process, not result — streamed live but never
                 # persisted (thoughts are free to regenerate; only results are kept,
                 # like a plan's summary card vs. its ephemeral step scratchpad).
@@ -4325,6 +4367,83 @@ def memory_channels(request):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
+def _conversation_summaries(
+    cursor, *, channel: str | None = None, workspace_id: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Shared conversation-summary query: /api/conversations and the project-scoped
+    listing (workspace_views). Rows carry ``workspace_id`` from the durable
+    conversation→project membership (null when unlinked)."""
+    filters, params = [], []
+    if channel:
+        filters.append("cl.channel = %s")
+        params.append(channel)
+    if workspace_id:
+        filters.append("wc.workspace_id = %s")
+        params.append(workspace_id)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+    cursor.execute(f"""
+        SELECT
+            cl.conversation_id::text,
+            MIN(cl.timestamp) AS created_at,
+            MAX(cl.timestamp) AS last_message_at,
+            COUNT(*) AS message_count,
+            MAX(cl.channel) AS channel,
+            MAX(wc.workspace_id::text) AS workspace_id,
+            (SELECT content FROM conversation_logs sub
+             WHERE sub.conversation_id = cl.conversation_id
+               AND sub.role = 'user'
+             ORDER BY sub.turn_index ASC LIMIT 1) AS first_user_message,
+            (SELECT content FROM conversation_logs sub
+             WHERE sub.conversation_id = cl.conversation_id
+             ORDER BY sub.turn_index DESC LIMIT 1) AS last_message
+        FROM conversation_logs cl
+        LEFT JOIN workspace_conversations wc ON wc.conversation_id = cl.conversation_id
+        {where}
+        GROUP BY cl.conversation_id
+        ORDER BY MAX(cl.timestamp) DESC
+        LIMIT %s OFFSET %s
+    """, params + [limit, offset])
+    rows = cursor.fetchall()
+
+    cursor.execute(f"""
+        SELECT COUNT(DISTINCT cl.conversation_id)
+        FROM conversation_logs cl
+        LEFT JOIN workspace_conversations wc ON wc.conversation_id = cl.conversation_id
+        {where}
+    """, params)
+    total = cursor.fetchone()[0]
+
+    conversations = []
+    for row in rows:
+        conv_id, created_at, last_message_at, count, ch, ws_id, first_msg, last_msg = row
+        # Title from first user message (truncated)
+        title = "New Conversation"
+        if first_msg:
+            title = first_msg[:80].strip()
+            if len(first_msg) > 80:
+                title += "…"
+        # Preview from last message
+        preview = ""
+        if last_msg:
+            preview = last_msg[:120].strip()
+            if len(last_msg) > 120:
+                preview += "…"
+
+        conversations.append({
+            "conversation_id": conv_id,
+            "title": title,
+            "preview": preview,
+            "message_count": count,
+            "channel": ch or "_global",
+            "workspace_id": ws_id,
+            "created_at": created_at.isoformat() if created_at else None,
+            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+        })
+    return conversations, total
+
+
 @csrf_exempt
 @require_methods("GET")
 def conversations_list(request):
@@ -4352,70 +4471,9 @@ def conversations_list(request):
         pg_conn: Any = PostgresConnection.get_engine().raw_connection()
         try:
             with pg_conn.cursor() as cursor:
-                # Build query: group by conversation_id, get summary fields
-                channel_filter = ""
-                params: list = []
-                if channel:
-                    channel_filter = "WHERE cl.channel = %s"
-                    params.append(channel)
-
-                cursor.execute(f"""
-                    SELECT
-                        cl.conversation_id::text,
-                        MIN(cl.timestamp) AS created_at,
-                        MAX(cl.timestamp) AS last_message_at,
-                        COUNT(*) AS message_count,
-                        MAX(cl.channel) AS channel,
-                        (SELECT content FROM conversation_logs sub
-                         WHERE sub.conversation_id = cl.conversation_id
-                           AND sub.role = 'user'
-                         ORDER BY sub.turn_index ASC LIMIT 1) AS first_user_message,
-                        (SELECT content FROM conversation_logs sub
-                         WHERE sub.conversation_id = cl.conversation_id
-                         ORDER BY sub.turn_index DESC LIMIT 1) AS last_message
-                    FROM conversation_logs cl
-                    {channel_filter}
-                    GROUP BY cl.conversation_id
-                    ORDER BY MAX(cl.timestamp) DESC
-                    LIMIT %s OFFSET %s
-                """, params + [limit, offset])
-
-                rows = cursor.fetchall()
-
-                # Get total count
-                cursor.execute(f"""
-                    SELECT COUNT(DISTINCT conversation_id)
-                    FROM conversation_logs
-                    {"WHERE channel = %s" if channel else ""}
-                """, [channel] if channel else [])
-                total = cursor.fetchone()[0]
-
-                conversations = []
-                for row in rows:
-                    conv_id, created_at, last_message_at, count, ch, first_msg, last_msg = row
-                    # Title from first user message (truncated)
-                    title = "New Conversation"
-                    if first_msg:
-                        title = first_msg[:80].strip()
-                        if len(first_msg) > 80:
-                            title += "…"
-                    # Preview from last message
-                    preview = ""
-                    if last_msg:
-                        preview = last_msg[:120].strip()
-                        if len(last_msg) > 120:
-                            preview += "…"
-
-                    conversations.append({
-                        "conversation_id": conv_id,
-                        "title": title,
-                        "preview": preview,
-                        "message_count": count,
-                        "channel": ch or "_global",
-                        "created_at": created_at.isoformat() if created_at else None,
-                        "last_message_at": last_message_at.isoformat() if last_message_at else None,
-                    })
-
+                conversations, total = _conversation_summaries(
+                    cursor, channel=channel, limit=limit, offset=offset
+                )
                 return JsonResponse({
                     "conversations": conversations,
                     "total": total,
@@ -4575,6 +4633,13 @@ def memory_conversation_delete(request, conversation_id):
                 redis_client.delete(*keys)
         except Exception as e:
             logger.warning(f"Error deleting conversation from Redis: {e}")
+
+        # Drop any project membership (best-effort; workspace itself is untouched)
+        try:
+            from .kit.workspaces import repository as ws_repository
+            ws_repository.delete_conversation_links(conversation_id)
+        except Exception as e:
+            logger.debug(f"Project membership cleanup skipped: {e}")
 
         return JsonResponse({
             "message": f"Conversation '{conversation_id}' deleted successfully",

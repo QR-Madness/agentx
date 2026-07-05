@@ -13,6 +13,10 @@
  * Reactivity: a module pub/sub consumed via `useConversationMeta()`
  * (useSyncExternalStore). Components read `getMeta(id)` in render; the hook just
  * forces a re-render on any write.
+ *
+ * `workspaceId` (a project attach) is now server-backed for established
+ * conversations (`workspace_conversations`) — here it remains the carrier for
+ * pre-session tabs and the fast path for the chat request's `workspace_id`.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -25,8 +29,8 @@ export interface ConversationMeta {
   icon?: string;   // avatar id from lib/avatars
   color?: string;  // a CONVERSATION_COLORS key
   group?: string;  // custom group label
-  // --- reserved for future workspace/file linking (no behavior yet) ---
-  workspaceId?: string;
+  workspaceId?: string; // attached project (workspace); server-backed once a session exists
+  // --- reserved for future file linking (no behavior yet) ---
   fileRefs?: string[];
 }
 
@@ -125,6 +129,20 @@ export function attachWorkspaceOnce(id: string | null | undefined, workspaceId: 
   return true;
 }
 
+/**
+ * Move a conversation's meta to a new key — used when a pre-session tab (keyed by
+ * `tab.id`) gets its server `sessionId`, so a pre-session project attach / rename /
+ * pin survives the transition instead of being orphaned under the dead tab id.
+ * Existing meta under `toId` wins field-by-field (it's the more established key).
+ */
+export function migrateMeta(fromId: string, toId: string): void {
+  if (!fromId || !toId || fromId === toId) return;
+  const from = getMeta(fromId);
+  if (Object.keys(from).length === 0) return;
+  patchMeta(toId, { ...from, ...getMeta(toId) });
+  clearMeta(fromId);
+}
+
 export function clearMeta(id: string): void {
   const serverId = getActiveServerId();
   if (!id || !serverId) return;
@@ -133,6 +151,14 @@ export function clearMeta(id: string): void {
     delete map[id];
     persist(serverId, map);
   }
+}
+
+/** Snapshot of all meta entries for the active server (used by the one-time
+ *  project-membership sync; not reactive). */
+export function listMetaEntries(): [string, ConversationMeta][] {
+  const serverId = getActiveServerId();
+  if (!serverId) return [];
+  return Object.entries(load(serverId));
 }
 
 /** All distinct custom group labels currently in use (for the "Move to group" menu). */

@@ -34,6 +34,7 @@ export interface ConversationItem {
   isStreaming?: boolean;
   tabId?: string;              // kind==='tab'
   conversationId?: string;     // server id (tab.sessionId for tabs)
+  workspaceId?: string;        // the project it belongs to (server membership, meta fallback)
 }
 
 /** Stable, row-facing handler bundle passed to a memoized `ConversationRow`. */
@@ -48,15 +49,20 @@ export interface RowHandlers {
   togglePin: (it: ConversationItem) => void;
   toggleArchive: (it: ConversationItem) => void;
   setGroup: (it: ConversationItem, group: string | undefined) => void;
+  setProject: (it: ConversationItem, workspaceId: string | undefined) => void;
   setColor: (key: string, color: string | undefined) => void;
   toggleSelect: (key: string) => void;
   enterSelection: (key?: string) => void;
   existingGroups: string[];
+  existingProjects: { id: string; name: string }[];
   formatDate: (dateStr: string | null) => string;
 }
 
 const GROUPS_COLLAPSED_KEY = 'agentx:conv-groups-collapsed';
 const ARCHIVED_COLLAPSED_KEY = 'agentx:conv-archived-collapsed';
+
+/** Home is a personal media space, never rendered as a project section. */
+const HOME_WORKSPACE_ID = 'ws_home';
 
 function recencyBucket(dateStr: string | null): RecencyBucket {
   if (!dateStr) return 'Older';
@@ -110,9 +116,16 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     try { return localStorage.getItem(ARCHIVED_COLLAPSED_KEY) !== '0'; } catch { return true; }
   });
 
+  // Project (workspace) names for the sidebar's project sections + move menu.
+  const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
+
   useEffect(() => {
     refreshHistory();
     api.listChatRuns().then(r => setRuns(r.runs)).catch(() => setRuns([]));
+    api.listWorkspaces()
+      .then(r => setProjectNames(new Map(
+        r.workspaces.filter(w => w.id !== HOME_WORKSPACE_ID).map(w => [w.id, w.name]))))
+      .catch(() => setProjectNames(new Map()));
     if (autoFocusSearch) searchRef.current?.focus();
   }, [refreshHistory, autoFocusSearch]);
 
@@ -141,6 +154,12 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
       ...tabs.map(t => t.sessionId).filter((s): s is string => Boolean(s)),
       ...liveRuns.map(r => r.session_id).filter((s): s is string => Boolean(s)),
     ]);
+    // Server membership by conversation id (covers open tabs too — the raw
+    // fetch includes them even though they're skipped as list items below).
+    const wsByConv = new Map<string, string>();
+    for (const conv of serverConversations) {
+      if (conv.workspace_id) wsByConv.set(conv.conversation_id, conv.workspace_id);
+    }
     const out: ConversationItem[] = [];
     for (const tab of tabs) {
       const key = tab.sessionId ?? tab.id;
@@ -149,6 +168,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
         key, kind: 'tab', title: meta.title ?? tab.title, meta,
         lastMessageAt: tab.lastMessageAt, messageCount: tab.messages.length,
         isStreaming: tab.isStreaming, tabId: tab.id, conversationId: tab.sessionId ?? undefined,
+        workspaceId: (tab.sessionId ? wsByConv.get(tab.sessionId) : undefined) ?? meta.workspaceId,
       });
     }
     for (const conv of serverConversations) {
@@ -158,6 +178,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
         key: conv.conversation_id, kind: 'server', title: meta.title ?? conv.title, meta,
         lastMessageAt: conv.last_message_at, messageCount: conv.message_count,
         preview: conv.preview, conversationId: conv.conversation_id,
+        workspaceId: conv.workspace_id ?? meta.workspaceId,
       });
     }
     return out;
@@ -167,9 +188,11 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   }, [tabSig, serverConversations, liveRuns, metaVersion]);
 
   // --- Partition by meta (memoized so identity is stable across re-renders) ---
-  // Precedence (each item has exactly one home): archived > group > pinned >
-  // open/past. So "move to group" always visibly relocates an item even if it's
-  // pinned (the pin flag still renders on the row), and archiving always hides it.
+  // Precedence (each item has exactly one home): archived > project > group >
+  // pinned > open/past. So moving an item always visibly relocates it even if
+  // it's pinned (the pin flag still renders on the row), and archiving always
+  // hides it. Projects only claim items whose workspace still exists (a deleted
+  // project's conversations fall back to the plain sections).
   const visible = useMemo(
     () => items.filter(it =>
       it.title.toLowerCase().includes(query) || (it.preview ?? '').toLowerCase().includes(query)),
@@ -177,8 +200,12 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   );
   const archived = useMemo(() => visible.filter(it => it.meta.archived), [visible]);
   const live = useMemo(() => visible.filter(it => !it.meta.archived), [visible]);
-  const grouped = useMemo(() => live.filter(it => it.meta.group), [live]);
-  const ungrouped = useMemo(() => live.filter(it => !it.meta.group), [live]);
+  const isProjectItem = useCallback((it: ConversationItem) =>
+    Boolean(it.workspaceId && it.workspaceId !== HOME_WORKSPACE_ID && projectNames.has(it.workspaceId)),
+    [projectNames]);
+  const projected = useMemo(() => live.filter(isProjectItem), [live, isProjectItem]);
+  const grouped = useMemo(() => live.filter(it => !isProjectItem(it) && it.meta.group), [live, isProjectItem]);
+  const ungrouped = useMemo(() => live.filter(it => !isProjectItem(it) && !it.meta.group), [live, isProjectItem]);
 
   const pinned = useMemo(() => ungrouped
     .filter(it => it.meta.pinned)
@@ -200,6 +227,24 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     return [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [grouped]);
 
+  // Project sections: [workspaceId, name, items], sorted by name; items sort
+  // like groups (pinned first, then most-recent).
+  const projects = useMemo(() => {
+    const byWs = new Map<string, ConversationItem[]>();
+    for (const it of projected) {
+      (byWs.get(it.workspaceId!) ?? byWs.set(it.workspaceId!, []).get(it.workspaceId!)!).push(it);
+    }
+    for (const list of byWs.values()) {
+      list.sort((a, b) =>
+        (Number(!!b.meta.pinned) - Number(!!a.meta.pinned)) ||
+        (new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime()),
+      );
+    }
+    return [...byWs.entries()]
+      .map(([id, list]) => ({ id, name: projectNames.get(id) ?? id, items: list }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projected, projectNames]);
+
   const openItems = useMemo(() => ungrouped
     .filter(it => it.kind === 'tab' && !it.meta.pinned)
     .sort((a, b) => new Date(b.lastMessageAt ?? 0).getTime() - new Date(a.lastMessageAt ?? 0).getTime()),
@@ -220,6 +265,11 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
 
   const totalCount = visible.length + filteredLiveRuns.length;
   const existingGroups = useMemo(() => listGroups(), [metaVersion]);
+  const existingProjects = useMemo(
+    () => [...projectNames.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [projectNames]);
 
   // Inline rename reads the live draft through a ref so the commit callbacks stay
   // identity-stable across keystrokes (only the editing row re-renders, not the
@@ -304,6 +354,25 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const togglePin = useCallback((it: ConversationItem) => patchMeta(it.key, { pinned: !it.meta.pinned }), []);
   const toggleArchive = useCallback((it: ConversationItem) => patchMeta(it.key, { archived: !it.meta.archived }), []);
   const setGroup = useCallback((it: ConversationItem, group: string | undefined) => patchMeta(it.key, { group }), []);
+
+  // Move a conversation into/out of a project. Meta updates immediately (drives
+  // the badge + next turn's workspace_id); the server link makes it durable for
+  // real conversations (pre-session tabs persist membership on first message —
+  // link upserts, so moving between projects needs no explicit unlink).
+  const setProject = useCallback((it: ConversationItem, workspaceId: string | undefined) => {
+    const previous = it.workspaceId;
+    patchMeta(it.key, { workspaceId });
+    void (async () => {
+      try {
+        if (!it.conversationId) return;
+        if (workspaceId) await api.linkConversation(workspaceId, it.conversationId);
+        else if (previous) await api.unlinkConversation(previous, it.conversationId);
+        await refreshHistory();
+      } catch (err) {
+        notifyError(err, 'Could not move conversation');
+      }
+    })();
+  }, [refreshHistory, notifyError]);
   const setGroupByKey = useCallback((key: string, group: string | undefined) => patchMeta(key, { group }), []);
   const setIcon = useCallback((key: string, icon: string | undefined) => patchMeta(key, { icon }), []);
   const setColor = useCallback((key: string, color: string | undefined) => patchMeta(key, { color }), []);
@@ -361,13 +430,13 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const rowHandlers = useMemo<RowHandlers>(() => ({
     openItem, closeOpenTab, deleteItem,
     startRename, commitRename, renameKeyDown, setDraftTitle: setDraft,
-    togglePin, toggleArchive, setGroup, setColor,
+    togglePin, toggleArchive, setGroup, setProject, setColor,
     toggleSelect, enterSelection,
-    existingGroups, formatDate,
+    existingGroups, existingProjects, formatDate,
   }), [
     openItem, closeOpenTab, deleteItem, startRename, commitRename, renameKeyDown,
-    setDraft, togglePin, toggleArchive, setGroup, setColor, toggleSelect,
-    enterSelection, existingGroups, formatDate,
+    setDraft, togglePin, toggleArchive, setGroup, setProject, setColor, toggleSelect,
+    enterSelection, existingGroups, existingProjects, formatDate,
   ]);
 
   return {
@@ -376,17 +445,17 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     activeTabId, isLoadingHistory, restoringId, deletingId,
     editingKey, draftTitle, setDraftTitle: setDraft,
     // data
-    pinned, groups, openItems, pastByBucket, archived, filteredLiveRuns,
+    pinned, projects, groups, openItems, pastByBucket, archived, filteredLiveRuns,
     totalCount, openCount: tabs.length,
     groupsCollapsed, archivedCollapsed,
-    existingGroups,
+    existingGroups, existingProjects,
     // selection
     selectionMode, selected, toggleSelect, enterSelection, clearSelection,
     bulkPin, bulkArchive, bulkDelete,
     // handlers
     openItem, handleResume, closeOpenTab, deleteItem,
     startRename, commitRename, renameKeyDown,
-    togglePin, toggleArchive, setGroup, setGroupByKey, setIcon, setColor,
+    togglePin, toggleArchive, setGroup, setGroupByKey, setProject, setIcon, setColor,
     toggleGroupCollapse, toggleArchivedCollapse,
     formatDate,
     // stable bundle for ConversationRow

@@ -112,7 +112,7 @@ export function ChatPanel() {
   const attachStoredMediaWorkspace = useCallback((workspaceId: string) => {
     const convKey = activeTab ? (activeTab.sessionId ?? activeTab.id) : null;
     if (attachWorkspaceOnce(convKey, workspaceId)) {
-      notifySuccess('Saved to your Home workspace and attached to this conversation.', 'Workspace attached');
+      notifySuccess('Saved to your Home space and attached to this conversation.', 'Saved to Home');
     }
   }, [activeTab, notifySuccess]);
 
@@ -486,8 +486,8 @@ export function ChatPanel() {
     }
   };
 
-  // Attach a document to this conversation's workspace (Document RAG). If no workspace
-  // is attached, create one for the conversation and attach it, so one click "just works".
+  // Attach a document to this conversation's project (Document RAG). If the
+  // conversation isn't in a project, create one and add it, so one click "just works".
   const handlePickDocs = async (files: FileList | null) => {
     if (!files || files.length === 0 || !activeTab) return;
     const convKey = activeTab.sessionId ?? activeTab.id;
@@ -499,7 +499,12 @@ export function ChatPanel() {
         const { workspace } = await api.createWorkspace(name);
         workspaceId = workspace.id;
         patchMeta(convKey, { workspaceId });
-        notifySuccess(`Created workspace “${name}” and attached it to this conversation.`, 'Workspace');
+        // Durable membership when a session already exists; pre-session tabs
+        // persist it on their first message (the stream records the link).
+        if (activeTab.sessionId) {
+          api.linkConversation(workspaceId, activeTab.sessionId).catch(() => undefined);
+        }
+        notifySuccess(`Created project “${name}” and added this conversation to it.`, 'Project');
       }
       let ok = 0;
       for (const file of Array.from(files)) {

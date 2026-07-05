@@ -2,9 +2,14 @@
 
 Endpoints (base ``/api``):
   GET/POST   /workspaces                         list / create
-  GET/PATCH/DELETE /workspaces/{id}              detail / rename / delete
+  GET/PATCH/DELETE /workspaces/{id}              detail / rename+fields / delete
   GET/POST   /workspaces/{id}/documents          manifest list / multipart upload
   GET/DELETE /workspaces/{id}/documents/{doc_id} detail / delete
+  GET        /workspaces/{id}/conversations      the project's conversations
+  PUT/DELETE /workspaces/{id}/conversations/{conv_id}  link (move) / unlink
+
+Workspaces surface to the user as **Projects** (Projects v1): PATCH also accepts
+``description`` and ``instructions`` (instructions ride every turn's preamble).
 
 Bytes live in a content-addressed blob store; manifest in Postgres; vectors in
 pgvector. Upload validates type/size/quota then ingests in the background.
@@ -41,6 +46,8 @@ def _serialize_workspace(ws: dict[str, Any]) -> dict[str, Any]:
         "id": ws["id"],
         "name": ws["name"],
         "user_id": ws.get("user_id", "default"),
+        "description": ws.get("description") or "",
+        "instructions": ws.get("instructions") or "",
         "allow_shell": bool(ws.get("allow_shell", False)),
         "shell_backend": ws.get("shell_backend", "bubblewrap"),
         "document_count": int(ws.get("document_count", 0) or 0),
@@ -107,6 +114,22 @@ def workspace_detail(request, workspace_id: str):
             if not name:
                 return json_error("name cannot be empty", status=400)
             ws = repository.rename_workspace(workspace_id, name)
+        if "description" in data:
+            description = str(data.get("description") or "")
+            if len(description) > repository.DESCRIPTION_MAX_CHARS:
+                return json_error(
+                    f"description exceeds {repository.DESCRIPTION_MAX_CHARS} characters",
+                    status=400,
+                )
+            ws = repository.set_description(workspace_id, description)
+        if "instructions" in data:
+            instructions = str(data.get("instructions") or "")
+            if len(instructions) > repository.INSTRUCTIONS_MAX_CHARS:
+                return json_error(
+                    f"instructions exceed {repository.INSTRUCTIONS_MAX_CHARS} characters",
+                    status=400,
+                )
+            ws = repository.set_instructions(workspace_id, instructions)
         if "allow_shell" in data:
             ws = repository.set_allow_shell(workspace_id, bool(data.get("allow_shell")))
         if "shell_backend" in data:
@@ -189,6 +212,24 @@ def workspace_document_detail(request, workspace_id: str, document_id: str):
 
 
 @csrf_exempt
+@require_methods("POST")
+def workspace_document_reingest(request, workspace_id: str, document_id: str):
+    """Re-run ingestion for a document (typically after a `failed` — e.g. an
+    embedding timeout under load). Resets status to pending and re-fires the
+    background pipeline; the blob is already stored so no re-upload is needed."""
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        return json_error("Document not found", status=404)
+    if doc.get("status") == "pending":
+        return json_success({"document": _serialize_document(doc)})  # already queued
+    from .kit.workspaces.ingestion import ingest_document_async
+    repository.set_document_status(document_id, "pending", None)
+    ingest_document_async(document_id)
+    refreshed = repository.get_document(document_id) or doc
+    return json_success({"document": _serialize_document(refreshed)}, status=202)
+
+
+@csrf_exempt
 @require_methods("GET")
 def workspace_document_raw(request, workspace_id: str, document_id: str):
     """Serve a document's raw bytes (the blob) with its content-type. The stable URL for
@@ -205,6 +246,61 @@ def workspace_document_raw(request, workspace_id: str, document_id: str):
     resp = HttpResponse(raw, content_type=doc.get("content_type") or "application/octet-stream")
     resp["Cache-Control"] = "private, max-age=86400"
     return resp
+
+
+@csrf_exempt
+@require_methods("GET")
+def workspace_conversations(request, workspace_id: str):
+    """GET /api/workspaces/{id}/conversations — the project's conversation summaries
+    (same row shape as /api/conversations, scoped by durable membership)."""
+    if repository.get_workspace(workspace_id) is None:
+        return json_error("Workspace not found", status=404)
+    from typing import cast
+
+    from .kit.agent_memory.connections import PostgresConnection
+    from .views import _conversation_summaries
+
+    try:
+        pg_conn = cast(Any, PostgresConnection.get_engine().raw_connection())
+        try:
+            with pg_conn.cursor() as cursor:
+                conversations, total = _conversation_summaries(
+                    cursor, workspace_id=workspace_id, limit=100
+                )
+        finally:
+            pg_conn.close()
+    except Exception as e:
+        logger.error("Error listing project conversations: %s", e)
+        return json_error(str(e), status=500)
+    return json_success({"conversations": conversations, "total": total})
+
+
+@csrf_exempt
+@require_methods("PUT", "DELETE")
+def workspace_conversation_detail(request, workspace_id: str, conversation_id: str):
+    """PUT = durably link a conversation to this project (upsert; moves an existing
+    link), DELETE = unlink. ws_home is not a project and never holds membership."""
+    if repository.get_workspace(workspace_id) is None:
+        return json_error("Workspace not found", status=404)
+    if workspace_id == repository.HOME_WORKSPACE_ID:
+        return json_error("The Home workspace is not a project", status=400)
+
+    if request.method == "PUT":
+        if not repository.link_conversation(workspace_id, conversation_id):
+            return json_error("Invalid conversation id", status=400)
+        return json_success({
+            "status": "linked",
+            "workspace_id": workspace_id,
+            "conversation_id": conversation_id,
+        })
+
+    if not repository.unlink_conversation(workspace_id, conversation_id):
+        return json_error("Conversation is not linked to this workspace", status=404)
+    return json_success({
+        "status": "unlinked",
+        "workspace_id": workspace_id,
+        "conversation_id": conversation_id,
+    })
 
 
 def _prepull_shell_image() -> None:

@@ -71,7 +71,8 @@ def list_workspaces(user_id: str = "default") -> list[dict[str, Any]]:
         rows = s.execute(
             text(
                 """
-                SELECT w.id, w.user_id, w.name, w.allow_shell, w.shell_backend,
+                SELECT w.id, w.user_id, w.name, w.description, w.instructions,
+                       w.allow_shell, w.shell_backend,
                        w.created_at, w.updated_at,
                        COUNT(d.id)                       AS document_count,
                        COALESCE(SUM(d.size_bytes), 0)    AS used_bytes
@@ -92,7 +93,8 @@ def get_workspace(workspace_id: str) -> dict[str, Any] | None:
         row = s.execute(
             text(
                 """
-                SELECT w.id, w.user_id, w.name, w.allow_shell, w.shell_backend,
+                SELECT w.id, w.user_id, w.name, w.description, w.instructions,
+                       w.allow_shell, w.shell_backend,
                        w.created_at, w.updated_at,
                        COUNT(d.id)                       AS document_count,
                        COALESCE(SUM(d.size_bytes), 0)    AS used_bytes
@@ -127,6 +129,38 @@ def set_allow_shell(workspace_id: str, allow_shell: bool) -> dict[str, Any] | No
         res = s.execute(
             text("UPDATE workspaces SET allow_shell = :v, updated_at = NOW() WHERE id = :id"),
             {"id": workspace_id, "v": bool(allow_shell)},
+        )
+        s.commit()
+        if getattr(res, "rowcount", 0) == 0:
+            return None
+    return get_workspace(workspace_id)
+
+
+# Projects v1: user-authored fields, capped at write time (views enforce with a 400;
+# render_instructions_block truncates defensively as a second line of defense).
+DESCRIPTION_MAX_CHARS = 500
+INSTRUCTIONS_MAX_CHARS = 8000
+
+
+def set_description(workspace_id: str, description: str) -> dict[str, Any] | None:
+    """Set the project description (shown in the hub; empty string clears)."""
+    with get_postgres_session() as s:
+        res = s.execute(
+            text("UPDATE workspaces SET description = :v, updated_at = NOW() WHERE id = :id"),
+            {"id": workspace_id, "v": description},
+        )
+        s.commit()
+        if getattr(res, "rowcount", 0) == 0:
+            return None
+    return get_workspace(workspace_id)
+
+
+def set_instructions(workspace_id: str, instructions: str) -> dict[str, Any] | None:
+    """Set the project instructions (injected each turn; empty string clears)."""
+    with get_postgres_session() as s:
+        res = s.execute(
+            text("UPDATE workspaces SET instructions = :v, updated_at = NOW() WHERE id = :id"),
+            {"id": workspace_id, "v": instructions},
         )
         s.commit()
         if getattr(res, "rowcount", 0) == 0:
@@ -172,6 +206,91 @@ def workspace_usage_bytes(workspace_id: str) -> int:
             {"id": workspace_id},
         ).scalar()
     return int(val or 0)
+
+
+# --- Conversation membership (Projects v1) -----------------------------------
+#
+# One project per conversation (PK on conversation_id); linking to a different
+# project moves the conversation. ws_home never holds membership — it's the
+# personal media dump, and the client auto-attaches it for generated media, so
+# an unguarded upsert would steal conversations out of their real project.
+
+def link_conversation(
+    workspace_id: str, conversation_id: str, user_id: str = "default"
+) -> bool:
+    """Durably attach a conversation to a project (upsert; moves an existing link)."""
+    if workspace_id == HOME_WORKSPACE_ID:
+        return False
+    try:
+        with get_postgres_session() as s:
+            s.execute(
+                text(
+                    """
+                    INSERT INTO workspace_conversations (conversation_id, workspace_id, user_id)
+                    VALUES (CAST(:cid AS uuid), :wid, :uid)
+                    ON CONFLICT (conversation_id) DO UPDATE
+                        SET workspace_id = EXCLUDED.workspace_id
+                        WHERE workspace_conversations.workspace_id
+                              IS DISTINCT FROM EXCLUDED.workspace_id
+                    """
+                ),
+                {"cid": conversation_id, "wid": workspace_id, "uid": user_id},
+            )
+            s.commit()
+        return True
+    except Exception:  # noqa: BLE001 — invalid UUID / missing workspace FK
+        return False
+
+
+def unlink_conversation(workspace_id: str, conversation_id: str) -> bool:
+    """Detach a conversation from a project. True only if it was linked to *this* one."""
+    try:
+        with get_postgres_session() as s:
+            res = s.execute(
+                text(
+                    """
+                    DELETE FROM workspace_conversations
+                    WHERE conversation_id = CAST(:cid AS uuid) AND workspace_id = :wid
+                    """
+                ),
+                {"cid": conversation_id, "wid": workspace_id},
+            )
+            s.commit()
+            return getattr(res, "rowcount", 0) > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def get_conversation_workspace(conversation_id: str) -> str | None:
+    """The project a conversation belongs to, if any (the chat-stream fallback)."""
+    try:
+        with get_postgres_session() as s:
+            val = s.execute(
+                text(
+                    "SELECT workspace_id FROM workspace_conversations "
+                    "WHERE conversation_id = CAST(:cid AS uuid)"
+                ),
+                {"cid": conversation_id},
+            ).scalar()
+        return str(val) if val else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def delete_conversation_links(conversation_id: str) -> None:
+    """Cleanup hook for conversation deletion (best-effort)."""
+    try:
+        with get_postgres_session() as s:
+            s.execute(
+                text(
+                    "DELETE FROM workspace_conversations "
+                    "WHERE conversation_id = CAST(:cid AS uuid)"
+                ),
+                {"cid": conversation_id},
+            )
+            s.commit()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # --- Documents --------------------------------------------------------------

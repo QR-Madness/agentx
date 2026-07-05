@@ -2204,12 +2204,22 @@ class ToolOutputCompressorTest(TestCase):
         self.assertEqual(result.error, "compression_disabled")
         self.assertEqual(result.original_chars, 5000)
 
-    def test_compress_no_provider(self) -> None:
-        """Compression should return success=False when provider unavailable."""
-        compressor = ToolOutputCompressor()
+    @staticmethod
+    def _mock_registry(complete_with_fallback: AsyncMock) -> MagicMock:
+        registry = MagicMock()
+        registry.complete_with_fallback = complete_with_fallback
+        return registry
 
-        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
-             patch.object(compressor, '_get_provider', side_effect=ValueError("No provider")):
+    def test_compress_no_provider(self) -> None:
+        """Compression should return success=False when nothing in the
+        fallback chain is resolvable."""
+        from agentx_ai.exceptions import ModelNotFoundError
+        compressor = ToolOutputCompressor()
+        compressor._registry = self._mock_registry(
+            AsyncMock(side_effect=ModelNotFoundError("No usable model", model=""))
+        )
+
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG):
             result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
 
         self.assertFalse(result.success)
@@ -2219,20 +2229,20 @@ class ToolOutputCompressorTest(TestCase):
         """Compression should produce structured output with a mocked provider."""
         compressor = ToolOutputCompressor()
 
-        mock_provider = MagicMock()
-        mock_provider.complete = AsyncMock(return_value=CompletionResult(
+        complete = AsyncMock(return_value=CompletionResult(
             content="## Summary\nKey info here\n\n## Structure Index\n- 3 sections",
             finish_reason="stop",
             model="test-model",
             usage={"total_tokens": 150},
         ))
+        compressor._registry = self._mock_registry(complete)
 
-        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
-             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG):
             result = asyncio.run(compressor.compress(
                 "read_file",
                 "x" * 10000,
                 task_context="Find the database config",
+                preferred_fallback="openrouter:active-model",
             ))
 
         self.assertTrue(result.success)
@@ -2240,13 +2250,17 @@ class ToolOutputCompressorTest(TestCase):
         self.assertIn("Structure Index", result.compressed_text)
         self.assertEqual(result.tokens_used, 150)
         self.assertEqual(result.original_chars, 10000)
+        # The active turn's model is threaded through as the runtime fallback
+        self.assertEqual(
+            complete.await_args.kwargs.get("preferred_fallback"), "openrouter:active-model"
+        )
 
     def test_compress_truncates_large_input(self) -> None:
         """Input exceeding max_input_chars should be truncated before LLM call."""
         compressor = ToolOutputCompressor()
 
         captured_messages: list[Message] = []
-        async def capture_complete(messages: list[Message], model: str, **kwargs: object) -> CompletionResult:
+        async def capture_complete(model: str, messages: list[Message], **kwargs: object) -> CompletionResult:
             captured_messages.extend(messages)
             return CompletionResult(
                 content="Compressed",
@@ -2255,11 +2269,9 @@ class ToolOutputCompressorTest(TestCase):
                 usage={"total_tokens": 50},
             )
 
-        mock_provider = MagicMock()
-        mock_provider.complete = capture_complete
+        compressor._registry = self._mock_registry(AsyncMock(side_effect=capture_complete))
 
-        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
-             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG):
             asyncio.run(compressor.compress(
                 "big_tool",
                 "x" * 20000,
@@ -2272,14 +2284,15 @@ class ToolOutputCompressorTest(TestCase):
         self.assertIn("15,000 more chars", prompt_content)
 
     def test_compress_error_fallback(self) -> None:
-        """Provider error should return success=False with error detail."""
+        """A runtime error after the whole chain failed should return
+        success=False with error detail (complete_with_fallback re-raises the
+        last candidate's exception)."""
         compressor = ToolOutputCompressor()
+        compressor._registry = self._mock_registry(
+            AsyncMock(side_effect=RuntimeError("API timeout"))
+        )
 
-        mock_provider = MagicMock()
-        mock_provider.complete = AsyncMock(side_effect=RuntimeError("API timeout"))
-
-        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
-             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG):
             result = asyncio.run(compressor.compress("test_tool", "x" * 5000))
 
         self.assertFalse(result.success)
@@ -2288,21 +2301,28 @@ class ToolOutputCompressorTest(TestCase):
     def test_compress_sync_wrapper(self) -> None:
         """compress_sync should delegate to compress and return result."""
         compressor = ToolOutputCompressor()
-
-        mock_provider = MagicMock()
-        mock_provider.complete = AsyncMock(return_value=CompletionResult(
+        compressor._registry = self._mock_registry(AsyncMock(return_value=CompletionResult(
             content="Compressed output",
             finish_reason="stop",
             model="test-model",
             usage={"total_tokens": 100},
-        ))
+        )))
 
-        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG), \
-             patch.object(compressor, '_get_provider', return_value=(mock_provider, "test-model")):
+        with patch.object(compressor, '_get_config', return_value=COMPRESSOR_CONFIG):
             result = compressor.compress_sync("test_tool", "x" * 5000, task_context="test query")
 
         self.assertTrue(result.success)
         self.assertEqual(result.compressed_text, "Compressed output")
+
+    def test_default_config_model_unset(self) -> None:
+        """The default compression model is unset — resolution flows down the
+        fallback chain (active model → global default) instead of a hardcoded,
+        possibly-unusable provider."""
+        compressor = ToolOutputCompressor()
+        with patch("agentx_ai.agent.tool_output_compressor.get_config_manager") as gcm:
+            gcm.return_value.get.side_effect = lambda key, default=None: default
+            cfg = compressor._get_config()
+        self.assertIsNone(cfg["model"])
 
 
 class ToolOutputChunkerTest(TestCase):
@@ -2860,6 +2880,67 @@ class TrajectoryCompressionTest(TestCase):
         self.assertFalse(result)
         self.assertEqual(len(messages), original_count)
 
+    def test_knowledge_block_uses_runtime_fallback(self):
+        """The compression call goes through complete_with_fallback with the
+        active turn's model as preferred fallback; an unset compression model
+        resolves down the chain (empty head)."""
+        from agentx_ai.streaming.trajectory_compression import _generate_knowledge_block
+
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(
+            return_value=MagicMock(content="Knowledge.")
+        )
+        config = {"model": None, "temperature": 0.2, "max_tokens": 1500,
+                  "max_knowledge_chars": 3000}
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            out = _generate_knowledge_block(
+                "Round 1: ...", "task", config, active_model="openrouter:active-model"
+            )
+
+        self.assertEqual(out, "Knowledge.")
+        call = registry.complete_with_fallback.await_args
+        self.assertEqual(call.args[0], "")  # unset model → empty chain head
+        self.assertEqual(call.kwargs["preferred_fallback"], "openrouter:active-model")
+
+    def test_knowledge_block_swallows_runtime_failure(self):
+        """A chain-exhausting runtime failure degrades to None (compression
+        skipped) instead of raising into the tool loop."""
+        from agentx_ai.streaming.trajectory_compression import _generate_knowledge_block
+
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(side_effect=RuntimeError("no credits"))
+        config = {"model": "anthropic:claude-haiku-4-5", "temperature": 0.2,
+                  "max_tokens": 1500, "max_knowledge_chars": 3000}
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            out = _generate_knowledge_block("Round 1: ...", "task", config)
+
+        self.assertIsNone(out)
+
+    def test_compress_trajectory_threads_active_model(self):
+        """compress_trajectory passes the caller's active model through to the
+        knowledge-block generation."""
+        messages = self._make_messages(4, content_size=2000)
+
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = lambda key, default=None: {
+            "trajectory_compression.enabled": True,
+            "trajectory_compression.threshold_ratio": 0.1,
+            "trajectory_compression.preserve_recent_rounds": 2,
+        }.get(key, default)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=mock_cfg), \
+             patch("agentx_ai.streaming.trajectory_compression._generate_knowledge_block",
+                   return_value="Knowledge.") as gen:
+            result = compress_trajectory(
+                messages, context_limit_tokens=100,
+                active_model="openrouter:active-model",
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(gen.call_args.args[3], "openrouter:active-model")
+        # Default compression model is unset — resolution is fallback-chain driven
+        self.assertIsNone(gen.call_args.args[2]["model"])
+
     def test_knowledge_block_placement(self):
         """Knowledge block should be placed after system messages."""
         messages = self._make_messages(4, content_size=2000)
@@ -3123,6 +3204,82 @@ class StreamingToolLoopTest(TestCase):
         self.assertEqual(result.steers[0]["phase"], "tool_boundary")
         self.assertEqual(result.steers[0]["after_tools"], ["search"])
         self.assertEqual(result.steers[0]["round"], 0)
+
+    @staticmethod
+    def _fake_config(overrides: dict | None = None):
+        """A ConfigManager stand-in whose .get returns the caller's default
+        unless overridden — keeps tests independent of data/config.json."""
+        overrides = overrides or {}
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda key, default=None: overrides.get(key, default)
+        return cfg
+
+    def test_final_round_length_sets_finish_reason(self) -> None:
+        """finish_reason=length on the final round is surfaced on the result
+        (auto-continue disabled → the loop ends after the truncated round)."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([[StreamChunk(content="stub", finish_reason="length")]])
+        agent = self._FakeAgent()
+        with patch(
+            "agentx_ai.config.get_config_manager",
+            return_value=self._fake_config({"chat.auto_continue_on_length": False}),
+        ):
+            _events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.finish_reason, "length")
+        self.assertEqual(provider._call, 1)
+        self.assertEqual(result.final_content, "stub")
+
+    def test_auto_continue_on_length(self) -> None:
+        """A length-truncated final round triggers exactly one continuation
+        round; thinking is stripped from the folded partial answer."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="<think>burn</think>part one", finish_reason="length")],
+            [StreamChunk(content=" part two", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        with patch(
+            "agentx_ai.config.get_config_manager",
+            return_value=self._fake_config(),  # default: auto-continue on
+        ):
+            _events, result = self._run(provider, agent, messages, None)
+
+        self.assertEqual(provider._call, 2)
+        # Partial answer folded in with thinking stripped
+        self.assertTrue(
+            any(m.role == MessageRole.ASSISTANT and m.content == "part one" for m in messages)
+        )
+        # Continuation instruction appended as a user message
+        self.assertTrue(
+            any(m.role == MessageRole.USER and "Continue your previous response" in m.content
+                for m in messages)
+        )
+        # Final round finished cleanly → not flagged truncated
+        self.assertEqual(result.finish_reason, "stop")
+        self.assertIn("part one", result.content)
+        self.assertIn("part two", result.content)
+
+    def test_auto_continue_capped_at_one(self) -> None:
+        """A second length truncation ends the loop flagged as truncated."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="part one", finish_reason="length")],
+            [StreamChunk(content=" part two", finish_reason="length")],
+        ])
+        agent = self._FakeAgent()
+        with patch(
+            "agentx_ai.config.get_config_manager",
+            return_value=self._fake_config(),
+        ):
+            _events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(provider._call, 2)
+        self.assertEqual(result.finish_reason, "length")
 
 
 class SteerPersistenceTest(TestCase):
@@ -6269,6 +6426,66 @@ class ModelFallbackTest(TestCase):
         # lmstudio is now cached-unhealthy from the observed failure
         self.assertTrue(reg._is_cached_unhealthy("lmstudio"))
 
+    def test_complete_with_fallback_skips_cached_unhealthy_head(self):
+        """A cached-unhealthy head isn't re-paid inside the health TTL: the
+        healthy fallback runs first (e.g. a keyed-but-broke provider)."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        reg = self._registry(configured=["anthropic", "openai"])
+        reg.mark_provider_health("anthropic", False)
+
+        broke = AsyncMock(side_effect=RuntimeError("no credits"))
+        good = AsyncMock(return_value="OK")
+        providers = {
+            "anthropic": type("P", (), {"complete": broke})(),
+            "openai": type("P", (), {"complete": good})(),
+        }
+        reg.get_provider = lambda n: providers[n]  # type: ignore[assignment]
+
+        result = asyncio.run(reg.complete_with_fallback(
+            "anthropic:claude-haiku-4-5", ["m"], preferred_fallback="openai:gpt-4o"
+        ))
+        self.assertEqual(result, "OK")
+        broke.assert_not_awaited()  # unhealthy head deferred, healthy candidate won
+        good.assert_awaited_once()
+
+    def test_complete_with_fallback_retries_unhealthy_as_last_resort(self):
+        """A chain that is entirely cached-unhealthy still gets one real
+        attempt instead of raising with nothing tried."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        reg = self._registry(configured=["anthropic"])
+        reg.mark_provider_health("anthropic", False)
+
+        recovered = AsyncMock(return_value="OK")
+        reg.get_provider = lambda n: type("P", (), {"complete": recovered})()  # type: ignore[assignment]
+
+        result = asyncio.run(reg.complete_with_fallback("anthropic:claude-haiku-4-5", ["m"]))
+        self.assertEqual(result, "OK")
+        recovered.assert_awaited_once()
+
+    def test_complete_with_fallback_empty_model_uses_preferred(self):
+        """An unset feature model (compression convention: empty head) resolves
+        straight to the preferred fallback — the active turn's model."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        reg = self._registry(configured=["openai", "anthropic"])
+
+        good = AsyncMock(return_value="OK")
+        calls: list[str] = []
+
+        def _get(n):
+            calls.append(n)
+            return type("P", (), {"complete": good})()
+
+        reg.get_provider = _get  # type: ignore[assignment]
+
+        result = asyncio.run(reg.complete_with_fallback(
+            "", ["m"], preferred_fallback="openai:gpt-4o"
+        ))
+        self.assertEqual(result, "OK")
+        self.assertEqual(calls, ["openai"])
+
     def test_reasoning_site_routes_through_fallback(self):
         """A reasoning strategy (representative feature site) resolves via
         resolve_with_fallback, so an unavailable sub-model degrades to the
@@ -9122,6 +9339,99 @@ class AvatarGenerateEndpointTest(TestCase):
         self.assertEqual(res.json()["code"], "disabled")
 
 
+class ReasoningDeltaTest(TestCase):
+    """Reasoning-token surfacing: the shared <think>-wrapping helper + the
+    OpenRouter stream path that feeds it. Without this, reasoning models burn
+    the output budget invisibly (observed: minutes of silent 'thinking' ending
+    in a truncated stub answer)."""
+
+    def test_helper_wraps_and_closes(self):
+        from agentx_ai.providers.base import process_reasoning_delta
+
+        out, state = process_reasoning_delta("step one", "", False)
+        self.assertEqual(out, "<think>step one")
+        self.assertTrue(state)
+
+        out, state = process_reasoning_delta(" step two", "", state)
+        self.assertEqual(out, " step two")
+        self.assertTrue(state)
+
+        out, state = process_reasoning_delta("", "answer", state)
+        self.assertEqual(out, "</think>answer")
+        self.assertFalse(state)
+
+    def test_helper_passthrough_without_reasoning(self):
+        from agentx_ai.providers.base import process_reasoning_delta
+
+        out, state = process_reasoning_delta("", "plain", False)
+        self.assertEqual(out, "plain")
+        self.assertFalse(state)
+
+    def _stream(self, sdk_chunks):
+        """Run OpenRouterProvider.stream against a fake SDK client yielding
+        *sdk_chunks*; returns the emitted StreamChunks."""
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, MessageRole, ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        provider = OpenRouterProvider(
+            ProviderConfig(api_key="k", base_url="https://openrouter.ai/api/v1")
+        )
+
+        async def fake_create(**kwargs):
+            async def gen():
+                for c in sdk_chunks:
+                    yield c
+            return gen()
+
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)),
+            close=AsyncMock(),
+        )
+
+        async def collect():
+            out = []
+            async for chunk in provider.stream(
+                [Message(role=MessageRole.USER, content="hi")], "test/model"
+            ):
+                out.append(chunk)
+            return out
+
+        with patch.object(provider, "_get_client", return_value=fake_client):
+            return asyncio.run(collect())
+
+    @staticmethod
+    def _sdk_chunk(content=None, reasoning=None, finish_reason=None):
+        from types import SimpleNamespace
+        delta = SimpleNamespace(content=content, tool_calls=None)
+        if reasoning is not None:
+            delta.reasoning = reasoning
+        return SimpleNamespace(
+            choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)]
+        )
+
+    def test_openrouter_stream_surfaces_reasoning(self):
+        chunks = self._stream([
+            self._sdk_chunk(reasoning="thinking hard"),
+            self._sdk_chunk(content="the answer"),
+            self._sdk_chunk(finish_reason="stop"),
+        ])
+        text = "".join(c.content for c in chunks)
+        self.assertEqual(text, "<think>thinking hard</think>the answer")
+        self.assertEqual(chunks[-1].finish_reason, "stop")
+
+    def test_openrouter_stream_closes_think_on_truncation(self):
+        """Reasoning that burns the whole budget (finish_reason=length before
+        any content) still closes its <think> block and reports the finish."""
+        chunks = self._stream([
+            self._sdk_chunk(reasoning="endless thinking"),
+            self._sdk_chunk(finish_reason="length"),
+        ])
+        text = "".join(c.content for c in chunks)
+        self.assertEqual(text, "<think>endless thinking</think>")
+        self.assertEqual(chunks[-1].finish_reason, "length")
+
+
 class OpenRouterSpeechTest(TestCase):
     """OpenRouter's /audio/speech synthesis + the supports_speech capability."""
 
@@ -10176,3 +10486,176 @@ class InitMemorySchemaEmbedderTest(TestCase):
                            return_value=embedder):
             call_command("init_memory_schema", "--validate-embedder", stdout=StringIO())
         embedder.validate_dimensions.assert_called_once()
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class WorkspaceProjectsTest(APITestBase):
+    """Projects v1 — description/instructions fields, durable conversation
+    membership, and the chat turn's workspace resolution. Repository calls are
+    patched so these run without Postgres."""
+
+    CONV_ID = "6f1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
+
+    def _ws(self, **over):
+        base = {
+            "id": "ws_abc", "name": "Research", "user_id": "default",
+            "description": "", "instructions": "", "allow_shell": False,
+            "shell_backend": "bubblewrap", "document_count": 0, "used_bytes": 0,
+            "created_at": None, "updated_at": None,
+        }
+        base.update(over)
+        return base
+
+    # --- Instructions block (turn preamble) ---
+
+    def test_instructions_block_renders(self):
+        from agentx_ai.kit.workspaces.retrieval import render_instructions_block
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws(instructions="Reason in abstractions.")):
+            block = render_instructions_block("ws_abc")
+        self.assertIn("Project instructions", block)
+        self.assertIn("Reason in abstractions.", block)
+
+    def test_instructions_block_empty_when_unset(self):
+        from agentx_ai.kit.workspaces.retrieval import render_instructions_block
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()):
+            self.assertEqual(render_instructions_block("ws_abc"), "")
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace", return_value=None):
+            self.assertEqual(render_instructions_block("ws_missing"), "")
+
+    def test_instructions_block_truncates_defensively(self):
+        from agentx_ai.kit.workspaces.retrieval import render_instructions_block
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws(instructions="x" * 9000)):
+            block = render_instructions_block("ws_abc")
+        self.assertIn("[instructions truncated]", block)
+        self.assertLess(len(block), 8200)
+
+    # --- Membership guard ---
+
+    def test_link_conversation_refuses_home(self):
+        # Guard fires before any DB session is opened, so no patching needed.
+        from agentx_ai.kit.workspaces import repository
+        self.assertFalse(repository.link_conversation("ws_home", self.CONV_ID))
+
+    # --- Turn resolution (precedence: explicit > membership > none) ---
+
+    def test_resolve_turn_workspace_explicit_wins(self):
+        from agentx_ai.views import _resolve_turn_workspace
+        with patch("agentx_ai.kit.workspaces.repository.link_conversation",
+                   return_value=True) as link, \
+             patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace") as lookup:
+            ws, from_membership = _resolve_turn_workspace("ws_abc", self.CONV_ID)
+        self.assertEqual(ws, "ws_abc")
+        self.assertFalse(from_membership)
+        link.assert_called_once_with("ws_abc", self.CONV_ID)  # self-heals membership
+        lookup.assert_not_called()
+
+    def test_resolve_turn_workspace_falls_back_to_membership(self):
+        from agentx_ai.views import _resolve_turn_workspace
+        with patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace",
+                   return_value="ws_abc"):
+            ws, from_membership = _resolve_turn_workspace(None, self.CONV_ID)
+        self.assertEqual(ws, "ws_abc")
+        self.assertTrue(from_membership)
+
+    def test_resolve_turn_workspace_none_when_unlinked(self):
+        from agentx_ai.views import _resolve_turn_workspace
+        with patch("agentx_ai.kit.workspaces.repository.get_conversation_workspace",
+                   return_value=None):
+            ws, from_membership = _resolve_turn_workspace(None, self.CONV_ID)
+        self.assertIsNone(ws)
+        self.assertFalse(from_membership)
+
+    def test_resolve_turn_workspace_swallows_errors(self):
+        from agentx_ai.views import _resolve_turn_workspace
+        with patch("agentx_ai.kit.workspaces.repository.link_conversation",
+                   side_effect=RuntimeError("db down")):
+            ws, from_membership = _resolve_turn_workspace("ws_abc", self.CONV_ID)
+        self.assertEqual(ws, "ws_abc")  # membership is best-effort, never fails the turn
+        self.assertFalse(from_membership)
+
+    # --- PATCH description/instructions ---
+
+    def test_patch_description_and_instructions(self):
+        updated = self._ws(description="About memory.", instructions="Be terse.")
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()), \
+             patch("agentx_ai.kit.workspaces.repository.set_description",
+                   return_value=updated) as set_desc, \
+             patch("agentx_ai.kit.workspaces.repository.set_instructions",
+                   return_value=updated) as set_instr:
+            response = self.client.patch(
+                "/api/workspaces/ws_abc",
+                data={"description": "About memory.", "instructions": "Be terse."},
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200)
+        ws = response.json()["workspace"]
+        self.assertEqual(ws["description"], "About memory.")
+        self.assertEqual(ws["instructions"], "Be terse.")
+        set_desc.assert_called_once_with("ws_abc", "About memory.")
+        set_instr.assert_called_once_with("ws_abc", "Be terse.")
+
+    def test_patch_rejects_oversized_fields(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()):
+            too_long_desc = self.client.patch(
+                "/api/workspaces/ws_abc",
+                data={"description": "x" * 501}, content_type="application/json",
+            )
+            too_long_instr = self.client.patch(
+                "/api/workspaces/ws_abc",
+                data={"instructions": "x" * 8001}, content_type="application/json",
+            )
+        self.assertEqual(too_long_desc.status_code, 400)
+        self.assertEqual(too_long_instr.status_code, 400)
+
+    # --- Membership endpoints ---
+
+    def test_put_membership_links(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()), \
+             patch("agentx_ai.kit.workspaces.repository.link_conversation",
+                   return_value=True) as link:
+            response = self.client.put(f"/api/workspaces/ws_abc/conversations/{self.CONV_ID}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "linked")
+        link.assert_called_once_with("ws_abc", self.CONV_ID)
+
+    def test_put_membership_rejects_home(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws(id="ws_home", name="Home")):
+            response = self.client.put(f"/api/workspaces/ws_home/conversations/{self.CONV_ID}")
+        self.assertEqual(response.status_code, 400)
+
+    def test_put_membership_unknown_workspace_404(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace", return_value=None):
+            response = self.client.put(f"/api/workspaces/ws_nope/conversations/{self.CONV_ID}")
+        self.assertEqual(response.status_code, 404)
+
+    def test_put_membership_invalid_conversation_400(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()), \
+             patch("agentx_ai.kit.workspaces.repository.link_conversation",
+                   return_value=False):
+            response = self.client.put("/api/workspaces/ws_abc/conversations/not-a-uuid")
+        self.assertEqual(response.status_code, 400)
+
+    def test_delete_membership_unlinks(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()), \
+             patch("agentx_ai.kit.workspaces.repository.unlink_conversation",
+                   return_value=True):
+            response = self.client.delete(f"/api/workspaces/ws_abc/conversations/{self.CONV_ID}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "unlinked")
+
+    def test_delete_membership_not_linked_404(self):
+        with patch("agentx_ai.kit.workspaces.repository.get_workspace",
+                   return_value=self._ws()), \
+             patch("agentx_ai.kit.workspaces.repository.unlink_conversation",
+                   return_value=False):
+            response = self.client.delete(f"/api/workspaces/ws_abc/conversations/{self.CONV_ID}")
+        self.assertEqual(response.status_code, 404)

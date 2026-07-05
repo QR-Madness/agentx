@@ -104,13 +104,17 @@ export function LogsDrawerContent({ onClose: _onClose }: ModalContentProps) {
   );
 }
 
-export function WorkspacesDrawerContent({ onClose }: ModalContentProps) {
+export function WorkspacesDrawerContent({
+  onClose,
+  initialWorkspaceId,
+}: ModalContentProps & { initialWorkspaceId?: string }) {
   // Definite-height host so the panel fills the drawer and scrolls internally.
   // The panel renders its own inline close button (floating ones fail cross-plat),
-  // so it's in SELF_CLOSING and gets `onClose`.
+  // so it's in SELF_CLOSING and gets `onClose`. `initialWorkspaceId` (via
+  // modal props) opens the hub focused on a specific project.
   return (
     <div className="memory-modal-content">
-      <WorkspacesPanel onClose={onClose} />
+      <WorkspacesPanel onClose={onClose} initialWorkspaceId={initialWorkspaceId} />
     </div>
   );
 }

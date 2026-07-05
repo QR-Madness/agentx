@@ -13,8 +13,8 @@
 
 import { memo } from 'react';
 import {
-  MessageSquare, Download, Radio, Loader2, X, MoreHorizontal,
-  Pin, PinOff, Archive, ArchiveRestore, Pencil, Trash2, Palette, Image, FolderInput, CheckSquare, Check,
+  MessageSquare, Download, Radio, Loader2, X, MoreHorizontal, Pin, PinOff, Archive,
+  ArchiveRestore, Pencil, Trash2, Palette, Image, FolderInput, FolderKanban, CheckSquare, Check,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -157,6 +157,24 @@ function ConversationRowImpl({
                     <DropdownMenuItem onSelect={() => h.setColor(item.key, undefined)}>Default</DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
+                {h.existingProjects.length > 0 && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger><FolderKanban size={14} /> Move to project</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {h.existingProjects.map(p => (
+                        <DropdownMenuItem key={p.id} onSelect={() => h.setProject(item, p.id)}>
+                          {item.workspaceId === p.id && <Check size={13} />} {p.name}
+                        </DropdownMenuItem>
+                      ))}
+                      {item.workspaceId && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => h.setProject(item, undefined)}>None</DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger><FolderInput size={14} /> Move to group</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>

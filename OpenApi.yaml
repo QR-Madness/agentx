@@ -2054,7 +2054,7 @@ paths:
     patch:
       tags: [Workspaces]
       operationId: workspaceUpdate
-      summary: Update a workspace (rename and/or toggle shell access)
+      summary: Update a workspace (rename, description/instructions, shell access)
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -2066,6 +2066,14 @@ paths:
               properties:
                 name:
                   type: string
+                description:
+                  type: string
+                  maxLength: 500
+                  description: Project description (empty string clears).
+                instructions:
+                  type: string
+                  maxLength: 8000
+                  description: Project instructions injected into every turn (empty string clears).
                 allow_shell:
                   type: boolean
                 shell_backend:
@@ -2213,6 +2221,82 @@ paths:
                 format: binary
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /workspaces/{workspace_id}/conversations:
+    get:
+      tags: [Workspaces]
+      operationId: workspaceConversationsList
+      summary: List the project's conversations (durable membership)
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Conversations belonging to this workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  total:
+                    type: integer
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workspaces/{workspace_id}/conversations/{conversation_id}:
+    put:
+      tags: [Workspaces]
+      operationId: workspaceConversationLink
+      summary: Add a conversation to the project (upsert — moves it from any other project)
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [linked]
+                  workspace_id:
+                    type: string
+                  conversation_id:
+                    type: string
+        '400':
+          description: Invalid conversation id, or the workspace is the reserved Home space (not a project)
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Workspaces]
+      operationId: workspaceConversationUnlink
+      summary: Remove a conversation from the project
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Unlinked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unlinked]
+                  workspace_id:
+                    type: string
+                  conversation_id:
+                    type: string
+        '404':
+          description: The conversation is not linked to this workspace
 
   /workspaces/{workspace_id}/shell/container:
     get:
@@ -4711,6 +4795,7 @@ components:
 
     Workspace:
       type: object
+      description: A file workspace — surfaces to the user as a **Project** (files + instructions + conversations).
       properties:
         id:
           type: string
@@ -4718,6 +4803,12 @@ components:
           type: string
         user_id:
           type: string
+        description:
+          type: string
+          description: Project description shown in the hub (max 500 chars).
+        instructions:
+          type: string
+          description: Project instructions injected into every chat turn (max 8000 chars).
         allow_shell:
           type: boolean
           description: Per-workspace opt-in for sandboxed agent shell tools (default false).
@@ -5043,6 +5134,10 @@ components:
           type: integer
         channel:
           type: string
+        workspace_id:
+          type: string
+          nullable: true
+          description: The project (workspace) this conversation belongs to, if any.
         first_user_message:
           type: string
         last_message:

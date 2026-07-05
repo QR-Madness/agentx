@@ -303,6 +303,8 @@ export interface ConversationSummary {
   preview: string;
   message_count: number;
   channel: string;
+  /** The project (workspace) this conversation belongs to, if any. */
+  workspace_id?: string | null;
   created_at: string | null;
   last_message_at: string | null;
 }

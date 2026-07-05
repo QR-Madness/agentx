@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_SUMMARY_MODEL = "anthropic:claude-haiku-4-5-20251001"
 _ENRICH_INPUT_CHARS = 6000  # cap text sent to the summarizer
 
+# Embedding a large document goes through the shared embedding queue in bounded
+# slices: one giant submit would monopolize the worker (starving chat recall) and
+# blow the default 30s request timeout (sized for a recall query, not an
+# 1800-chunk PDF). Each slice gets a generous background-work timeout instead —
+# it must also absorb *queue wait* behind other ingests and chat traffic.
+_EMBED_SLICE_SIZE = 32
+_EMBED_SLICE_TIMEOUT_S = 300.0
+
 
 def ingest_document(document_id: str) -> dict[str, Any]:
     """Run the full ingestion pipeline for one document (synchronous)."""
@@ -47,7 +55,13 @@ def ingest_document(document_id: str) -> dict[str, Any]:
             repository.set_document_status(document_id, "failed", "no extractable text")
             return {"status": "failed", "error": "no extractable text"}
 
-        vectors = get_embedder().embed([c["text"] for c in chunks])
+        embedder = get_embedder()
+        texts = [c["text"] for c in chunks]
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), _EMBED_SLICE_SIZE):
+            vectors.extend(embedder.embed(
+                texts[start:start + _EMBED_SLICE_SIZE], timeout=_EMBED_SLICE_TIMEOUT_S,
+            ))
         rows = [(c["index"], c["text"], vec) for c, vec in zip(chunks, vectors, strict=True)]
         repository.replace_chunks(document_id, doc["workspace_id"], rows)
 
@@ -65,8 +79,13 @@ def ingest_document(document_id: str) -> dict[str, Any]:
         return {"status": "failed", "error": str(e)}
     except Exception as e:  # pragma: no cover - defensive
         logger.exception("workspace ingestion failed for %s", document_id)
-        repository.set_document_status(document_id, "failed", str(e))
-        return {"status": "failed", "error": str(e)}
+        # A bare TimeoutError stringifies to "" — always leave a readable reason
+        # on the manifest row (it surfaces in the Projects hub).
+        reason = str(e) or type(e).__name__
+        if isinstance(e, TimeoutError):
+            reason = "embedding timed out — the server may be busy; retry ingestion"
+        repository.set_document_status(document_id, "failed", reason)
+        return {"status": "failed", "error": reason}
 
 
 def ingest_document_async(document_id: str) -> None:

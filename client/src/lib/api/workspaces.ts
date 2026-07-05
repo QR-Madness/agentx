@@ -18,11 +18,16 @@ export interface ContainerStatus {
   install_size?: string | null;
 }
 
-/** A file workspace (named container of documents). */
+/** A file workspace — surfaces to the user as a **Project** (files + instructions
+ * + conversations). Internal naming stays `workspace`. */
 export interface Workspace {
   id: string;
   name: string;
   user_id: string;
+  /** Project description, shown in the hub (max 500 chars). */
+  description: string;
+  /** Project instructions, injected into every turn (max 8000 chars). */
+  instructions: string;
   /** Per-workspace opt-in for sandboxed agent shell tools (default false). */
   allow_shell: boolean;
   /** Which shell sandbox this workspace uses. */
@@ -31,6 +36,13 @@ export interface Workspace {
   used_bytes: number;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** Editable project fields (PATCH /api/workspaces/{id}). */
+export interface WorkspacePatch {
+  name?: string;
+  description?: string;
+  instructions?: string;
 }
 
 /** Ingestion status of an uploaded document. */
@@ -75,6 +87,40 @@ export const workspacesApi = {
     });
   },
 
+  async updateWorkspace(id: string, patch: WorkspacePatch): Promise<{ workspace: Workspace }> {
+    return apiRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  /** The project's conversations (durable server-side membership). */
+  async listWorkspaceConversations(
+    id: string,
+  ): Promise<{ conversations: import('./types').ConversationSummary[]; total: number }> {
+    return apiRequest(`/api/workspaces/${encodeURIComponent(id)}/conversations`);
+  },
+
+  /** Durably add a conversation to a project (moves it if already in another). */
+  async linkConversation(
+    id: string, conversationId: string,
+  ): Promise<{ status: string; workspace_id: string; conversation_id: string }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(id)}/conversations/${encodeURIComponent(conversationId)}`,
+      { method: 'PUT' },
+    );
+  },
+
+  /** Remove a conversation from a project. */
+  async unlinkConversation(
+    id: string, conversationId: string,
+  ): Promise<{ status: string; workspace_id: string; conversation_id: string }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(id)}/conversations/${encodeURIComponent(conversationId)}`,
+      { method: 'DELETE' },
+    );
+  },
+
   async setWorkspaceShell(id: string, allowShell: boolean): Promise<{ workspace: Workspace }> {
     return apiRequest(`/api/workspaces/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -116,6 +162,17 @@ export const workspacesApi = {
       method: 'POST',
       body: form,
     });
+  },
+
+  /** Re-run ingestion for a document (e.g. after a failed embedding under load). */
+  async reingestDocument(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<{ document: WorkspaceDocument }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/reingest`,
+      { method: 'POST' },
+    );
   },
 
   async deleteDocument(

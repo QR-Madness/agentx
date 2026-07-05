@@ -75,12 +75,15 @@ class EmbeddingProvider:
                 f"Update EMBEDDING_DIMENSIONS={actual} or re-initialize schemas."
             )
 
-    def embed(self, texts: str | list[str]) -> list[list[float]]:
+    def embed(self, texts: str | list[str], timeout: float | None = None) -> list[list[float]]:
         """
         Generate embeddings for one or more texts.
 
         Args:
             texts: Single text string or list of texts
+            timeout: Optional wait override (seconds) for the queued request —
+                background callers (document ingestion) pass a generous value;
+                None uses ``embedding_request_timeout`` (sized for chat recall).
 
         Returns:
             List of embedding vectors
@@ -88,7 +91,7 @@ class EmbeddingProvider:
         if isinstance(texts, str):
             texts = [texts]
 
-        return self._get_dispatcher().embed(texts)
+        return self._get_dispatcher().embed(texts, timeout=timeout)
 
     def _get_dispatcher(self):
         """Lazily build the process-wide cache+queue dispatcher for this provider."""
