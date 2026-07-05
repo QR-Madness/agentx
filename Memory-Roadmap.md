@@ -18,6 +18,13 @@
 > **Status tags:** `[NEW]` not tracked anywhere else · `[REFINES: …]` extends a TODO item
 > (link to it, don't duplicate it) · `[TRACKED: …]` already in the TODO — listed only for
 > sequencing context, do the work under the TODO item · `[PARTIAL]` some half shipped.
+>
+> **Research pass (2026-07-05):** two external SOTA surveys — [extraction / write
+> path](todo/research/2026-07-extraction-research.md) and [recall + stable growth / read
+> path](todo/research/2026-07-memory-recall-research.md) — were code-verified (corrections live in
+> their headers) and folded in here: new §2.10/§2.11 plus enrichments to §1.6, §2.3, §2.4, §2.7,
+> §3.5, §3.7, §3.12 and the §4 waves. They largely *validate* this roadmap; cite them for the
+> literature instead of re-deriving it.
 
 ---
 
@@ -158,6 +165,9 @@ any of it — a resumable plan or a checkpoint silently vanishing.
   embedding cache, recap, prefetch) vs. `noeviction` state (run buffers, steer queues,
   ambassador sidecars). Resolve the 16.7 open question ("thread persistence depth") with
   this tier decision, not ad hoc.
+- Durable-execution practice (recall survey B.3): any tool call that can be **replayed on
+  resume** needs an idempotency key — resumed plans/checkpoints re-executing a node must not
+  re-fire external side effects.
 
 ### 1.7 Bitemporal facts `[REFINES: Todo "Fact Transience", "Fact Staleness Detection", "Negative/Correction Tracking"]`
 
@@ -235,14 +245,20 @@ Access → salience → rank → access entrenches early facts. Pick ≥2:
 persisted runs exist — fit per-extraction-model calibration (isotonic over adjudicated
 outcomes), stored in `memory_settings.json` keyed by `extraction_model`. Subsumes the
 Phase-11 deferred "Calibration factors: source, recency, corroboration, contradiction"
-(those become features of the fitted model, not more hand constants).
+(those become features of the fitted model, not more hand constants). **Invalidation key is
+§2.1's `pipeline_version`** (an extraction-*prompt* change invalidates the fit without touching
+model or embedder) — shared with §3.12's conformal bands; the extraction survey independently
+lands on the same rule.
 
 ### 2.4 Spaced-repetition decay `[REFINES: shipped Procedure `strength`]`
 Procedures already do reinforcement counts; facts still get flat `×0.95^days`. Port the
 pattern: `stability` + `last_reinforced` on Fact; successful *use* (2.2's signal) extends
 half-life multiplicatively. `expected_stability` (1.7) sets the initial half-life. The
 Phase-11 deferred "Negative reinforcement for corrected facts" is the symmetric case:
-a supersession event *shortens* the superseded family's stability.
+a supersession event *shortens* the superseded family's stability. Model it as **Bjork's split**
+(recall survey B.2): `storage_strength` (never decays, grows on reinforcement) vs
+`retrieval_strength` (decays adaptively) — two fields, not one salience scalar; §2.10's
+write-time importance seeds storage strength.
 
 ### 2.5 Unified tombstones `[NEW]`
 `forget_fact` soft-retires; the `cleanup` job hard-deletes low-salience entities — hard
@@ -276,6 +292,12 @@ techniques (+ cross-encoder reranking and the Active-Recall tiers coming), regre
 invisible. Seeded corpus + (query → expected-fact-ids) golden set; recall@k/MRR per technique
 and fused; runs on the shared snapshot/restore util Todo already wants extracted into a
 module. Add the Active-Recall query-rewrite step as a scored stage once Tier 2 ships.
+Research additions: wire **LoCoMo + LongMemEval-S** as external corpora next to the seeded set
+(single/multi-hop, temporal, knowledge-update, abstention categories); **judge hygiene** — a
+non-self judge family, order-swapping, per-claim atomic judging; §2.10's propositions and
+§2.11's rerank run as scored ablations here before default-flipping. Published vendor numbers
+are context, never targets — the Zep↔Mem0 LoCoMo dispute (84% → corrected 58.44% →
+counter-claimed 75.14%) is exactly why this harness exists.
 
 ### 2.8 Token estimation `[TRACKED: Todo Foundation #6 — "Consolidate the 4 token estimators (→ tiktoken)"]`
 Already tracked; sequencing note only: do it **before** the Context Ledger (1.8), since the
@@ -286,6 +308,66 @@ usage back into a per-model ratio as the cheap fallback where tiktoken lacks the
 Statement timeouts, retry-with-backoff, per-user rate limits on memory ops — all listed in
 Known Future Issues. Bundle them into the repository layer pass (1.5): one module boundary
 means one place to wrap timeout/retry/limit decorators instead of forty call sites.
+
+### 2.10 Extraction v2 — structured, verified, salience-scored `[REFINES: retrieval-extraction.md "Claude Sonnet for Extraction" + "Improved Extraction Prompts"]`
+
+From the [extraction survey](todo/research/2026-07-extraction-research.md). Extraction today is
+prompt-only JSON over LM Studio with heuristic repair (`_parse_combined_response` /
+`_repair_truncated_json`) and a **constant fact salience of 0.5** (`learn_fact` takes no salience) —
+the two pain points (usefulness, format consistency) are both write-time gaps. One umbrella,
+shipped in sub-slices (shared files: `extraction/service.py`, `consolidation/jobs.py`, provider
+layer). Each sub-slice is eval-gated by §2.7.
+
+- **Canonical schema + structured outputs.** One Fact/Entity/Edge JSON schema (subject, predicate,
+  object, proposition_text, confidence, §1.7 temporal fields, source_turn_id, entities[]). Enforce
+  via **LM Studio structured outputs** — `response_format: json_schema` plumbed through
+  `ModelProvider.complete` (the provider layer already carries `tools`/`tool_choice`; this is the
+  missing sibling). Pydantic semantic validation + one retry (valid JSON ≠ correct JSON); then
+  retire the regex/truncated-JSON repair paths. Keep schemas shallow, reasoning fields before
+  answer fields. *Build-time check:* confirm the deployed LM Studio version supports
+  `response_format` json_schema on `/v1/chat/completions`.
+- **Sonnet routing becomes conditional.** If constrained local extraction still <90%
+  schema+semantic validity (or misses entities on the golden set), route **high-surprise/hard turns
+  only** (§3.3 score) to Sonnet via `resolve_with_fallback`. This subsumes the backlog "Claude
+  Sonnet for Extraction" — a measured escape hatch, not a wholesale switch.
+- **Write-time salience score.** Generative-Agents-style 1–10 importance rated during consolidation
+  (same combined call, one extra field), replacing the constant 0.5 → `learn_fact(salience=…)`.
+  Makes `get_salient_core`'s `ORDER BY salience` meaningfully ranked and sets §2.4's initial
+  half-life.
+- **Atomic propositions (Dense X).** Propositionalize facts (atomic, self-contained, coreference
+  resolved) before pgvector embedding — the biggest documented recall win on this stack (17–25%
+  relative Recall@5 with unsupervised retrievers). Text-only stored, embeddings derived (INV-4).
+- **NLI entailment gate.** Local DeBERTa-v3/MNLI: P(entailment | premise=source turn,
+  hypothesis=claim) per candidate fact; drop/downgrade non-entailed (constrained decoding fixes
+  *format*, not hallucination). Auto-demote to a sampled audit if it rejects <2% of candidates.
+- **Merge-op vocabulary.** Mem0-style ADD/UPDATE/DELETE/NOOP as the consolidation update-phase
+  decision over the top-k similar existing facts — the LLM router runs only above the §3.3
+  surprise/novelty band (below it: cheap NOOP/ADD). DELETE = tombstone (§2.5), never hard delete.
+- **Gleaning pass.** Optional second "did you miss anything?" extraction round (GraphRAG-style,
+  raises recall without hurting precision) on high-surprise turns only.
+- **Date fidelity.** Preserve surface date strings in extracted facts. The recall survey's
+  verbatim-vs-extracted preprint is contested, but its robust core stands: facts **augment** the
+  verbatim turn store (already a recall target), never replace it.
+
+### 2.11 Two-stage recall: candidate pool + cross-encoder stage `[REFINES: shipped MemoryRetriever cross-encoder (off by default) + misc.md "Cross-encoder reranking" (absorbed)]`
+
+The single largest documented accuracy lever in the [recall
+survey](todo/research/2026-07-memory-recall-research.md) (+12–17pp Recall/MRR over unreranked
+hybrid) — and the code is half-there: `_cross_encoder_rerank` exists in the base retriever
+(`cross-encoder/ms-marco-MiniLM-L-6-v2`, `cross_encoder_enabled=False`) but sits **pre-fusion**,
+and the hybrid pool is only `top_k*2` (=20/arm) — the regime where reranking is documented
+ineffective (Recall@5 0.458 at 20 candidates → 0.826 at 50 → 0.888 at 100).
+
+- Widen the hybrid BM25/vector over-fetch to a configurable candidate pool (default ~50) ahead of
+  any rerank.
+- Relocate/enable the cross-encoder as a RecallLayer **post-RRF** stage over the fused pool →
+  top-k; model configurable (upgrade candidate: `bge-reranker` family — runs locally via
+  `sentence-transformers`, already a dependency).
+- **Eval-gated:** keep only if ≥ +5pp MRR on the §2.7 golden set inside the recall latency budget;
+  otherwise the spend goes to §3.6 PPR instead.
+- Same pass: review **verbatim-turn fusion** — episodic turns from base retrieval currently bypass
+  RRF and the technique merge entirely (parallel path), and cross-conversation turns are limited to
+  `role=='user'`; decide fuse-vs-parallel deliberately rather than by accident of layering.
 
 ---
 
@@ -338,11 +420,13 @@ cache tier.
 
 ### 3.5 Contextual bandit over recall techniques `[NEW]`
 Five techniques run on static toggles; HyDE/self-query (and Tier 2's rewrite, and the
-backlog cross-encoder reranker) are LLM/compute-priced. Thompson-sampling selector:
+§2.11 cross-encoder stage) are LLM/compute-priced. Thompson-sampling selector:
 features = query shape + channel kind + intent class (the backlog "Query Intent
 Classification" item becomes the bandit's feature extractor rather than a separate
 rule-table); reward = 2.2's usage signal; `eval_recall` (2.7) is the offline guardrail.
-Learns to spend expensive techniques only on query shapes where they pay.
+Learns to spend expensive techniques only on query shapes where they pay. **Stage it:** ship a
+rule-based router first (query shape + intent + channel kind → technique set, Adaptive-RAG
+style); the bandit replaces the rules once 2.2's reward signal has volume.
 
 ### 3.6 Personalized PageRank over the entity graph `[REFINES: Todo "Multi-hop Entity Traversal"]`
 The backlog wants lightweight path-finding; PPR (HippoRAG-style) is the stronger form:
@@ -359,7 +443,9 @@ altitudes: fact → community → recap. The Ledger's `shrink_fn` gets a princip
 (facts → community summary under budget pressure), and the Tier-1 watchdog digest gets a
 cheap, pre-computed source. Also the natural unit for the **Ambassador's
 `survey_conversations`** (16.7 Slice 4) — an application-wide summary is a read over
-community summaries, not N full-transcript reads.
+community summaries, not N full-transcript reads. RAPTOR-style recursive summary trees are the
+document/workspace-side analogue of the same altitude gap — if Workspaces RAG grows one, share
+the ledger `shrink_fn` degradation shape.
 
 ### 3.8 Reflexion loop: score the reflex core `[REFINES: shipped Procedural Loop 3 reflex core]`
 The reflex core injects top-strength procedures; nothing measures whether they *work*.
@@ -410,8 +496,10 @@ try/excepts into a designed, testable contract — and 1.1 makes L3 lossless.
 ### 3.12 Conformal duplicate/contradiction thresholds `[NEW]`
 0.92 (facts) and `procedural_dedupe_threshold` are point estimates. Fit conformal bands per
 embedder from the eval corpora: above upper band auto-merge, below lower auto-pass, the
-uncertain middle → LLM adjudication. The verification funnel keeps its shape with
-statistically guaranteed boundaries that re-fit automatically on embedder change (1.3).
+uncertain middle → LLM adjudication (which becomes §2.10's merge-op router when both land).
+The verification funnel keeps its shape with statistically guaranteed boundaries that re-fit
+automatically on embedder change (1.3). Invalidation key: §2.1's `pipeline_version`, shared
+with §2.3.
 
 ---
 
@@ -422,10 +510,10 @@ extension, cost/gaps, tech-debt sweep) takes precedence. This roadmap interleave
 
 | Wave | Items | Notes |
 |---|---|---|
-| **W1 observe** | 1.2 invariant checker · 2.2 score logging · Context Inspector (Todo) | Cheap; everything after becomes measurable. Inspector + ledger bookkeeping co-design. |
+| **W1 observe** | 1.2 invariant checker · 2.2 score logging · **2.7 eval_recall baseline** · Context Inspector (Todo) | Cheap; everything after becomes measurable. 2.7 moved up from W4 (both research surveys: instrument before optimizing — every W4–W6 accuracy change is otherwise a guess). Inspector + ledger bookkeeping co-design. |
 | **W2 foundations** | 1.4 ChannelRef · 1.6 Redis tiers · 2.5 tombstones · 2.6 graph migrations · 2.8/2.9 (tracked) | Highest bug-prevention per line. 2.8 before W4's ledger. |
 | **W3 invert** | 1.1 event-log write path + rebuild · 1.3 embedder provenance | The structural payoff; W1 verifies it. Unblocks "No Memorization" durability + Memory-as-VCS hashing. |
-| **W4 quality + Foundation #3** | 1.8 Context Ledger **with the stable-core block (Tier 1 watchdog)** · 1.7 bitemporal · 2.1 watermark · 2.7 eval_recall · 2.3/2.4 | The ledger and the Todo stable-core item are one deliverable — don't build them separately. |
+| **W4 quality + Foundation #3** | 1.8 Context Ledger **with the stable-core block (Tier 1 watchdog)** · 1.7 bitemporal · 2.1 watermark · 2.3/2.4 · **2.11 two-stage rerank** · **2.10 extraction v2 (first slices: schema/structured outputs + write-time salience)** | The ledger and the Todo stable-core item are one deliverable — don't build them separately. 2.11 first among the accuracy items (largest documented lever, gated on the W1 baseline); 2.10's remaining slices (propositions, NLI, merge vocab, gleaning) trail into W5 as evals confirm. |
 | **W5 reactive** | 3.1 idle trigger · 3.2 flash facts · 3.3 surprise gating · 3.11 ladder · **Active Recall Tier 2** (Todo) | Tier 2 is the 80/20 per Todo; 3.4 prefetch immediately after to hide its latency. |
 | **W6 frontier** | 3.4 prefetch · 3.5 bandit · 3.6 PPR · 3.7 communities · 3.8 reflexion scoring · 3.9 replay · 3.12 conformal · **Active Recall Tier 3** (Todo) | Each flag-gated + eval-guarded (2.7). Tier 3 as Alloy specialist per Todo's lean. |
 | **Gate before Phase 16 scale-up (Factory / 16.7 Slice 4)** | 3.10 write discipline | Multi-agent fact traffic multiplies supersession contention; land discipline first. |
@@ -447,6 +535,8 @@ extension, cost/gaps, tech-debt sweep) takes precedence. This roadmap interleave
 | 1.7 / 3.10 | `models.py` (Fact) · `extraction/service.py` · contradiction pipeline (`check_contradictions`, `check_correction`) |
 | 1.8 / 3.4 / 3.11 | `agent/context.py` (assembler → Ledger) · `views.py` stream assembly · the Tier-1 watchdog block |
 | 2.x lifecycle | `consolidation/jobs.py` · `memory/semantic.py` · new `graph_migrations/` |
+| 2.10 | `extraction/service.py` (schema, parse-path retirement, salience field, gleaning) · `consolidation/jobs.py` (merge vocabulary, NLI gate) · `providers/base.py` + `lmstudio_provider.py` (`response_format` plumbing) · `memory/interface.py::learn_fact` (salience param) |
+| 2.11 | `memory/recall.py` (pool widening + post-RRF stage) · `memory/retrieval.py` (cross-encoder relocation, verbatim-turn fusion review) · `config.py` (pool/model knobs) |
 | 2.7 / 3.5 | `recall/layer.py` · new `management/commands/eval_recall.py` · shared snapshot/restore module (Todo wants it extracted anyway) |
 | 3.1–3.3 | `consolidation/worker.py` · new `memory/flash.py` · relevance pre-filter |
 | 3.6–3.7 | `memory/semantic.py` + Neo4j GDS · new `CommunitySummary` job · 16.7 `survey_conversations` consumer |
@@ -481,7 +571,7 @@ there in the same PR.
 |---|---|
 | Active-Recall tiers (3.0, 1.8, 3.4–3.6) | [`todo/backlog/memory-recall.md`](todo/backlog/memory-recall.md) |
 | Procedural loops + reflexion (3.0, 2.4, 3.8, 3.9) | [`todo/backlog/procedural.md`](todo/backlog/procedural.md) |
-| Retrieval techniques, extraction, calibration (2.3, 2.7, 3.5, 3.12) | [`todo/backlog/retrieval-extraction.md`](todo/backlog/retrieval-extraction.md) |
+| Retrieval techniques, extraction, calibration (2.3, 2.7, **2.10, 2.11**, 3.5, 3.12) | [`todo/backlog/retrieval-extraction.md`](todo/backlog/retrieval-extraction.md) |
 | Context ledger, summary/checkpoint durability (1.6, 1.8) | [`todo/backlog/conversation-context.md`](todo/backlog/conversation-context.md) |
 | Janitor, capability registry, attribution (1.2, 2.6, 3.10) | [`todo/backlog/conversation-context.md`](todo/backlog/conversation-context.md) (Memory Area UX) + [`todo/phases/phase-16-multi-agent.md`](todo/phases/phase-16-multi-agent.md) (16.x) |
 | Event-log, repository layer, connection hardening (1.1, 1.5, 2.9) | [`todo/backlog/engineering-hardening.md`](todo/backlog/engineering-hardening.md) + [`todo/known-future-issues.md`](todo/known-future-issues.md) |
@@ -500,11 +590,8 @@ sections above. Each names the section to edit and the cross-referenced backlog 
       already ship the pattern to reuse — `logging_kit/archive_crypto.py` (Scrypt KEK wrapping an
       AES-256-GCM DEK). **Fold into §1.5 / §2.9** as a repository-layer-transparent field encryption
       sub-point.
-- [ ] **One fitted-artifact key, not three.** §2.3 keys calibration by `extraction_model`; §3.12
-      keys conformal bands by `embedder`; §2.1 stamps `pipeline_version`. But an extraction-*prompt*
-      change ([`retrieval-extraction.md`](todo/backlog/retrieval-extraction.md): few-shot sets,
-      improved prompts, Sonnet-for-extraction) invalidates §2.3 without touching model or embedder.
-      **Make §2.1's `pipeline_version` the shared invalidation key** for §2.3 + §3.12.
+- [x] ~~**One fitted-artifact key, not three.**~~ Folded into §2.3 + §3.12 (2026-07-05 research
+      pass): `pipeline_version` is the shared invalidation key for calibration + conformal bands.
 - [ ] **§1.5 is the universal access seam — say so.** Reframe it to carry not just tenancy + the
       raw-query ban but also at-rest encryption (above), the §2.9 timeout/retry/limit decorators, and
       §3.11's per-call minimum L-level. *Build the boundary once, decorate it five times* — cleans up

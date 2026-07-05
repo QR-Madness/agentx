@@ -22,6 +22,11 @@
       constraints/risks"); (2) **anchor retrieval on `get_active_goals()` + `session.summary`**, not
       the raw message (both already exist, recall ignores them); (3) fan the sub-queries out
       concurrently. Synchronous but cheap; fixes the completion gap on every turn.
+      *Research levers to fold into the rewrite step* ([recall survey](../research/2026-07-memory-recall-research.md)):
+      **time-aware query expansion** for temporal asks (parse a time range, restrict scope — +7–11%
+      on temporal reasoning in LongMemEval), **session/round-level decomposition** granularity for
+      episodic indexing, and **chain-of-note reading** (extract per-retrieved-memory supporting
+      evidence before answering).
 - [ ] **Fast recall model knob** — add `recall.expansion_model` (rewrite/step-back/expansion) defaulting
       to a fast tier (local `nemotron-nano` like `combined_extraction_model`, or a Haiku/Flash-class
       cloud model). The expensive chat model never touches recall; sub-queries parallelize.

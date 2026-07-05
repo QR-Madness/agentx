@@ -50,7 +50,6 @@
 - [ ] Plugin system for additional tools
 - [ ] Voice input/output
 - [ ] Offline mode with cached models
-- [ ] Cross-encoder reranking model for retrieval quality
 - [ ] Streaming memory retrieval during chat
 - [ ] Conversation sharing (read-only shareable links)
 - [ ] Blocking tool call approval (pause stream, user approves/rejects before execution) — the same
