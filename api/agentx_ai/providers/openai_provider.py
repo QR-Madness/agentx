@@ -22,6 +22,7 @@ from .base import (
     finalize_tool_calls,
     log_llm_request,
     parse_openai_tool_calls,
+    process_reasoning_delta,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,7 @@ class OpenAIProvider(ModelProvider):
 
         stream = await self.client.chat.completions.create(**request_params)
         pending_tool_calls: dict[int, dict[str, Any]] = {}
+        in_reasoning = False
 
         async for chunk in stream:
             if not chunk.choices:
@@ -190,20 +192,30 @@ class OpenAIProvider(ModelProvider):
                     }
                     accumulate_tool_call_delta(pending_tool_calls, tc_dict)
 
-            content = delta.content or ""
+            # OpenAI-compatible servers configured via base_url (e.g. DeepSeek)
+            # stream thinking in `reasoning_content`; surface it as <think>.
+            reasoning = getattr(delta, "reasoning_content", None) or ""
+            content, in_reasoning = process_reasoning_delta(
+                reasoning, delta.content or "", in_reasoning
+            )
             if content:
                 yield StreamChunk(content=content, finish_reason=finish_reason)
 
             # Handle stream end
-            if finish_reason == "tool_calls" and pending_tool_calls:
-                yield StreamChunk(
-                    content="",
-                    finish_reason="tool_calls",
-                    tool_calls=finalize_tool_calls(pending_tool_calls),
-                )
-                pending_tool_calls.clear()
-            elif finish_reason and finish_reason != "tool_calls":
-                yield StreamChunk(content="", finish_reason=finish_reason)
+            if finish_reason:
+                if in_reasoning:
+                    # Close a reasoning block left open at stream end
+                    yield StreamChunk(content="</think>", finish_reason=None)
+                    in_reasoning = False
+                if finish_reason == "tool_calls" and pending_tool_calls:
+                    yield StreamChunk(
+                        content="",
+                        finish_reason="tool_calls",
+                        tool_calls=finalize_tool_calls(pending_tool_calls),
+                    )
+                    pending_tool_calls.clear()
+                elif finish_reason != "tool_calls":
+                    yield StreamChunk(content="", finish_reason=finish_reason)
     
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for an OpenAI model.

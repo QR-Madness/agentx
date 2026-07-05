@@ -100,6 +100,7 @@ def _generate_knowledge_block(
     rounds_text: str,
     task_context: str,
     config: dict[str, Any],
+    active_model: str | None = None,
 ) -> str | None:
     """
     Call the LLM to produce a knowledge summary from serialised rounds.
@@ -119,17 +120,16 @@ def _generate_knowledge_block(
         )
 
         registry = get_registry()
-        # Fallback-aware: a missing/unreachable compression model degrades to the
-        # default chat model instead of breaking the in-flight turn.
-        provider, model_id, _ = registry.resolve_with_fallback(config["model"])
-
         messages = [Message(role=MessageRole.USER, content=prompt)]
 
-        # Async provider call — bridge to sync context
+        # Fallback-aware at runtime, not just resolution: a configured-but-failing
+        # compression model (e.g. an API key with no credits) degrades to the
+        # active chat model, then the global default, instead of silently dying.
         async def _call():
-            return await provider.complete(
+            return await registry.complete_with_fallback(
+                config["model"] or "",
                 messages,
-                model_id,
+                preferred_fallback=active_model,
                 temperature=config.get("temperature", 0.2),
                 max_tokens=config.get("max_tokens", 1500),
             )
@@ -151,6 +151,7 @@ def compress_trajectory(
     messages: list[Message],
     context_limit_tokens: int,
     task_context: str = "",
+    active_model: str | None = None,
 ) -> bool:
     """
     Compress older tool-call rounds in *messages* if context is too large.
@@ -162,6 +163,8 @@ def compress_trajectory(
         messages: The full message list (modified in place).
         context_limit_tokens: Token budget for context.
         task_context: The user's current task/query for relevance.
+        active_model: The in-flight turn's `provider:model`, used as the
+            preferred fallback when the compression model is unset or failing.
 
     Returns:
         ``True`` if compression was performed, ``False`` otherwise.
@@ -174,7 +177,9 @@ def compress_trajectory(
         "enabled": cfg_mgr.get("trajectory_compression.enabled", True),
         "threshold_ratio": cfg_mgr.get("trajectory_compression.threshold_ratio", 0.75),
         "preserve_recent_rounds": cfg_mgr.get("trajectory_compression.preserve_recent_rounds", 2),
-        "model": cfg_mgr.get("trajectory_compression.model", "anthropic:claude-haiku-4-5-20251001"),
+        # No hardcoded model default: an unset value resolves down the fallback
+        # chain (active turn model → global default) in complete_with_fallback.
+        "model": cfg_mgr.get("trajectory_compression.model", None),
         "temperature": cfg_mgr.get("trajectory_compression.temperature", 0.2),
         "max_tokens": cfg_mgr.get("trajectory_compression.max_tokens", 1500),
         "max_knowledge_chars": cfg_mgr.get("trajectory_compression.max_knowledge_chars", 3000),
@@ -199,7 +204,7 @@ def compress_trajectory(
     rounds_text = rounds_to_text(rounds_to_compress)
 
     # Generate knowledge block via LLM
-    knowledge_text = _generate_knowledge_block(rounds_text, task_context, config)
+    knowledge_text = _generate_knowledge_block(rounds_text, task_context, config, active_model)
     if not knowledge_text:
         logger.warning("Trajectory compression: LLM call failed, skipping")
         return False

@@ -47,6 +47,7 @@ STATUS_PHASES: dict[str, str] = {
     "running_tool": "Running tool…",
     "reading": "Reading results…",
     "model_fallback": "Switching model…",
+    "truncated": "Response truncated (token limit)",
     # --- reserved for deep sub-phases (not emitted yet) ---
     "embedding": "Embedding…",
     "reranking": "Reranking…",

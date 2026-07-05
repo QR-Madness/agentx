@@ -31,6 +31,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.143** (pro
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
 | Phase 16: Multi-Agent Conversations | **In Progress** | ~72% (16.0–16.5 + 16.6 ambassador foundation & TTS voice shipped; 16.7 Ambassador v2 rework planned; Factory UI deferred) |
 | Phase 18: UX + Memory Tuning | **In Progress** | ~98% (18.9 done; eval procedural cases + run persistence done; memory import/export shipped `[v0.21.22]` → eval snapshot/restore now unblocked) |
+| Phase 19: Cloud Operation | **Planned** | Scaling assessment done (2026-07-04); slices 19.1–19.5 queued — see [phase-19-cloud-operation.md](todo/phases/phase-19-cloud-operation.md) |
 
 ---
 
@@ -44,6 +45,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.143** (pro
 | [phase-15-plan-execution.md](todo/phases/phase-15-plan-execution.md) | Plan Execution — core complete; deferred follow-ups (parallel subtasks, Alloy resume, mid-tool cancel) |
 | [phase-16-multi-agent.md](todo/phases/phase-16-multi-agent.md) | Multi-Agent + Ambassador — 16.x deferred, 16.6 foundation, **16.7 Ambassador v2** (the live planning) |
 | [phase-18-ux-memory.md](todo/phases/phase-18-ux-memory.md) | UX Improvements & Memory Tuning — prompt stack, ambassador-as-kind, profile control-center |
+| [phase-19-cloud-operation.md](todo/phases/phase-19-cloud-operation.md) | Cloud Operation ("cloud mainframe") — deployment shapes, memory-bundle ingest, Neo4j strategy, cost model |
 
 ### Backlog — [`todo/backlog/`](todo/backlog/)
 

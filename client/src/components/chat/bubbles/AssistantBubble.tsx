@@ -21,6 +21,11 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate, on
               stopped
             </span>
           )}
+          {message.truncated && (
+            <span className="assistant-stopped-tag" title="The response hit the model's token limit; this response may be incomplete">
+              truncated
+            </span>
+          )}
         </div>
 
         {/* CoT is shown expanded *while streaming* (ChatPanel's live preview); once

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.147 -->
+<!-- release-version: 0.21.148 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -34,6 +34,9 @@ the client at your own API server and bring your own model providers.
   bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
 - **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
   dev `.env` templates opt out explicitly.
+- **Reasoning models think out loud now.** OpenRouter/Vercel/OpenAI-compatible reasoning
+  tokens stream into the live thinking bubble (like LM Studio) instead of silently burning the
+  output budget, and reasoning-capable models get a larger token budget automatically.
 
 ### Fixes
 
@@ -51,6 +54,12 @@ the client at your own API server and bring your own model providers.
   first-boot download runs as an explicit warmup step. `agentx migrate` now also applies
   Alembic migrations. Windows users get a one-click `start-manager.bat` in the bundle
   (needs Docker Desktop's WSL 2 integration; community testing welcome).
+- **Answers cut off by the token limit no longer end silently.** The agent auto-continues
+  once where it stopped (`chat.auto_continue_on_length`, on by default), and a still-truncated
+  answer is flagged in the chat (tag + toast) instead of looking finished.
+- **Trajectory/tool-output compression no longer dies silently without Anthropic credits.**
+  The compression models now default to your active/global model and retry down the fallback
+  chain on runtime failures (a broke provider is also skipped for 30s instead of re-paid).
 - **Bundle dashboard reads a stopped stack as *down*** (was *degraded*), and gauges no longer
   count the manager itself — its container shares the bundle's compose project by design and
   is now filtered out of status/usage/restart. Bundle mode is now a plain-language dashboard

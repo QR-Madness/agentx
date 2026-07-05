@@ -330,13 +330,20 @@ class ProviderRegistry:
             provider, model_id = self.get_provider_for_model(model)
             return await provider.complete(messages, model_id, **kwargs)
 
-        chain = self._fallback_chain(model, preferred_fallback)
+        chain = [
+            cand for cand in self._fallback_chain(model, preferred_fallback)
+            if cand.split(":", 1)[0] in self._provider_configs
+        ]
+        # Try healthy candidates first; cached-unhealthy ones stay as a last
+        # resort so a fully-unhealthy chain still gets one real attempt.
+        healthy = [c for c in chain if not self._is_cached_unhealthy(c.split(":", 1)[0])]
+        skipped = [c for c in chain if c not in healthy]
+        if skipped and healthy:
+            logger.debug(f"model fallback: deferring cached-unhealthy candidate(s) {skipped}")
         last_exc: Exception | None = None
         tried: list[str] = []
-        for cand in chain:
+        for cand in healthy + skipped:
             provider_name, model_id = cand.split(":", 1)
-            if provider_name not in self._provider_configs:
-                continue
             try:
                 provider = self.get_provider(provider_name)
                 result = await provider.complete(messages, model_id, **kwargs)

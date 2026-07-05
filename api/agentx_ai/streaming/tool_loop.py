@@ -61,6 +61,9 @@ class ToolLoopResult:
     # Mid-turn steers folded in (for persistence). Each: {content, round,
     # after_tools, phase} where phase is "tool_boundary" or "would_end".
     steers: list[dict] = field(default_factory=list)
+    # The final round's finish reason ("stop", "length", …). "length" means the
+    # answer was truncated by max_tokens — surfaced in the done event.
+    finish_reason: str | None = None
 
 
 def _prepare_round_context(
@@ -72,6 +75,7 @@ def _prepare_round_context(
     truncate_on_overflow: bool,
     context_window: int | None,
     context_warning_threshold: float,
+    active_model: str | None = None,
 ) -> bool:
     """Pre-stream context management for one round.
 
@@ -80,7 +84,9 @@ def _prepare_round_context(
     trajectory compression fired so the caller can emit the `info` event
     (kept in the coordinator to preserve the yield there).
     """
-    compressed = compress_trajectory(messages, max_context_tokens, task_context=task_context)
+    compressed = compress_trajectory(
+        messages, max_context_tokens, task_context=task_context, active_model=active_model
+    )
     if compressed:
         estimated = estimate_tokens(messages)
         logger.info(f"Trajectory compressed, new estimate: ~{estimated:,} tokens")
@@ -620,9 +626,20 @@ async def _run_tool_loop(
     vision_capable: bool = False,
 ) -> AsyncGenerator[str]:
     """Inner loop body — runs inside the per-turn search-budget window."""
+    from ..agent.output_parser import parse_output
+    from ..config import get_config_manager as _get_cfg
+
+    # One-shot recovery when the final answer is cut off by max_tokens
+    # (finish_reason == "length"): fold the partial answer in and ask the model
+    # to continue. Reasoning models are the usual victims — thinking burns the
+    # output budget before the visible answer completes.
+    auto_continue = bool(_get_cfg().get("chat.auto_continue_on_length", True))
+    continues_used = 0
+
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
         round_content = ""
+        round_finish: str | None = None
 
         # Stop promptly between rounds (before spending another model call) when
         # the run/plan was cancelled. `return` — not `break` — so callers skip the
@@ -641,6 +658,7 @@ async def _run_tool_loop(
             truncate_on_overflow=truncate_on_overflow,
             context_window=context_window,
             context_warning_threshold=context_warning_threshold,
+            active_model=f"{getattr(provider, 'name', '')}:{model_id}",
         ) and emit_trajectory_info:
             yield _sse("info", {"type": "trajectory_compressed"})
 
@@ -659,10 +677,20 @@ async def _run_tool_loop(
             if chunk.usage:
                 result.tokens_in += chunk.usage.get("prompt_tokens", 0)
                 result.tokens_out += chunk.usage.get("completion_tokens", 0)
+            if chunk.finish_reason:
+                round_finish = chunk.finish_reason
             if chunk.content:
                 result.content += chunk.content
                 round_content += chunk.content
                 yield _sse("chunk", {"content": chunk.content})
+
+        result.finish_reason = round_finish
+        if round_finish == "length":
+            logger.warning(
+                "Tool round %d hit max_tokens (%d) for model=%s — output truncated%s",
+                tool_round + 1, max_tokens, model_id,
+                " mid-tool-call" if round_tool_calls else "",
+            )
 
         # No tool calls means the model is ready to finish — unless the user
         # steered mid-turn, in which case fold the steer in and keep going so
@@ -673,9 +701,11 @@ async def _run_tool_loop(
                 # Keep the transcript coherent: the answer-so-far becomes an
                 # assistant turn, then the steer is a fresh user turn, then we
                 # loop for the agent's response. The chunks already streamed; the
-                # client flushes its live bubble on the `steer` event.
-                if round_content:
-                    messages.append(Message(role=MessageRole.ASSISTANT, content=round_content))
+                # client flushes its live bubble on the `steer` event. Thinking
+                # is stripped so reasoning never feeds back as context.
+                folded = parse_output(round_content).content.strip() if round_content else ""
+                if folded:
+                    messages.append(Message(role=MessageRole.ASSISTANT, content=folded))
                 for sm in steer_msgs:
                     messages.append(Message(role=MessageRole.USER, content=sm))
                     result.steers.append({
@@ -684,6 +714,27 @@ async def _run_tool_loop(
                     })
                 emit_status("thinking")
                 continue
+
+            if round_finish == "length":
+                if auto_continue and continues_used < 1:
+                    # One-shot recovery: fold the partial answer in (thinking
+                    # stripped) and ask the model to pick up where it stopped.
+                    continues_used += 1
+                    logger.info("Auto-continuing after max_tokens truncation (1/1)")
+                    folded = parse_output(round_content).content.strip() if round_content else ""
+                    if folded:
+                        messages.append(Message(role=MessageRole.ASSISTANT, content=folded))
+                    messages.append(Message(
+                        role=MessageRole.USER,
+                        content=(
+                            "Continue your previous response exactly where it "
+                            "stopped. Do not repeat anything."
+                        ),
+                    ))
+                    emit_status("thinking")
+                    continue
+                # Still truncated (or auto-continue disabled) — surface it.
+                emit_status("truncated")
 
             result.final_content = round_content
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")

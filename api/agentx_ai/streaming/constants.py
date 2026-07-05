@@ -22,6 +22,14 @@ MAX_INPUT_TOKENS = 32000  # Safety cap for input context
 MAX_OUTPUT_TOKENS_CEILING = 32768
 CONTEXT_WARNING_THRESHOLD = 0.8  # Warn when usage exceeds 80% of window
 
+# Reasoning models burn output tokens on thinking before the visible answer,
+# so the bare-4096 fallback starves them (observed: a 4-minute reasoning burn
+# followed by a 39-token truncated answer). When a model reports
+# supports_reasoning and its catalog gives no max_output_tokens, default and
+# floor its output budget higher instead.
+REASONING_DEFAULT_OUTPUT_TOKENS = 16384
+REASONING_MIN_OUTPUT_TOKENS = 8192
+
 # Tool result truncation
 MIN_TOOL_CONTENT_SIZE = 500  # Don't truncate tool results below this length
 TRUNCATION_MARKER = "\n[TRUNCATED]"  # Appended to truncated tool results

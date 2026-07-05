@@ -97,7 +97,7 @@ function extractThinking(content: string): string | null {
 
 export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
-  const { notifyError } = useNotify();
+  const { notify, notifyError } = useNotify();
   const abortRef = useRef<{ abort: () => void } | null>(null);
 
   // Caller passes a fresh opts literal every render, so capture it in a ref
@@ -621,8 +621,17 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             costEstimate: data.cost_estimate ?? undefined,
             costCurrency: data.cost_currency ?? undefined,
             model: data.model ?? undefined,
+            truncated: data.truncated === true || undefined,
           };
           optsRef.current.appendMessage(msg);
+        }
+
+        if (data.truncated) {
+          notify({
+            kind: 'warning',
+            title: 'Response truncated',
+            message: 'The answer hit the model’s token limit and may be incomplete.',
+          });
         }
 
         if (data.session_id) optsRef.current.onSessionId?.(data.session_id);
@@ -656,7 +665,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         // scrolled away or the user has switched tabs.
         notifyError(error);
       },
-  }), [flushLiveContent, notifyError, finalizeDanglingDelegations]);
+  }), [flushLiveContent, notify, notifyError, finalizeDanglingDelegations]);
 
   const send = useCallback((req: ChatRequest) => {
     abortRef.current?.abort();

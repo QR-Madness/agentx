@@ -56,6 +56,10 @@ export interface StreamCallbacks {
     cost_estimate?: number | null;
     cost_currency?: string | null;
     pricing_snapshot?: { cost_per_1k_input: number; cost_per_1k_output: number } | null;
+    /** Final finish reason; "length" means the answer hit the token limit. */
+    finish_reason?: string | null;
+    /** True when the answer was cut off by max_tokens (finish_reason "length"). */
+    truncated?: boolean;
   }) => void;
   /** First event of a detached run — carries the run_id to persist + re-attach to. */
   onRunStarted?: (data: { run_id: string }) => void;

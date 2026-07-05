@@ -28,6 +28,7 @@ from .base import (
     finalize_tool_calls,
     log_llm_request,
     parse_openai_tool_calls,
+    process_reasoning_delta,
 )
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,7 @@ class OpenRouterProvider(ModelProvider):
         try:
             stream = await client.chat.completions.create(**request_params)
             pending_tool_calls: dict[int, dict[str, Any]] = {}
+            in_reasoning = False
 
             async for chunk in stream:
                 if not chunk.choices:
@@ -243,20 +245,36 @@ class OpenRouterProvider(ModelProvider):
                         }
                         accumulate_tool_call_delta(pending_tool_calls, tc_dict)
 
-                content = delta.content or ""
+                # Reasoning models stream thinking in a non-standard delta field
+                # (`reasoning` on OpenRouter, `reasoning_content` on OpenAI-style
+                # upstreams). Surface it as <think> content so it's visible
+                # instead of silently burning the output-token budget.
+                reasoning = (
+                    getattr(delta, "reasoning", None)
+                    or getattr(delta, "reasoning_content", None)
+                    or ""
+                )
+                content, in_reasoning = process_reasoning_delta(
+                    reasoning, delta.content or "", in_reasoning
+                )
                 if content:
                     yield StreamChunk(content=content, finish_reason=finish_reason)
 
                 # Handle stream end
-                if finish_reason == "tool_calls" and pending_tool_calls:
-                    yield StreamChunk(
-                        content="",
-                        finish_reason="tool_calls",
-                        tool_calls=finalize_tool_calls(pending_tool_calls),
-                    )
-                    pending_tool_calls.clear()
-                elif finish_reason and finish_reason != "tool_calls":
-                    yield StreamChunk(content="", finish_reason=finish_reason)
+                if finish_reason:
+                    if in_reasoning:
+                        # Close a reasoning block left open at stream end
+                        yield StreamChunk(content="</think>", finish_reason=None)
+                        in_reasoning = False
+                    if finish_reason == "tool_calls" and pending_tool_calls:
+                        yield StreamChunk(
+                            content="",
+                            finish_reason="tool_calls",
+                            tool_calls=finalize_tool_calls(pending_tool_calls),
+                        )
+                        pending_tool_calls.clear()
+                    elif finish_reason != "tool_calls":
+                        yield StreamChunk(content="", finish_reason=finish_reason)
         finally:
             await client.close()
 
@@ -468,12 +486,17 @@ class OpenRouterProvider(ModelProvider):
                 or "json_mode" in supported_params
                 or "json_object" in supported_params
             )
+            supports_reasoning = (
+                "reasoning" in supported_params
+                or "include_reasoning" in supported_params
+            )
 
             return ModelCapabilities(
                 supports_tools=supports_tools,
                 supports_vision="image" in input_modalities or "vision" in supported_params,
                 supports_streaming=True,
                 supports_json_mode=supports_json_mode,
+                supports_reasoning=supports_reasoning,
                 supports_speech="audio" in output_modalities or "speech" in output_modalities,
                 supports_transcription="transcription" in output_modalities,
                 context_window=context_window,

@@ -148,6 +148,8 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         agentName: m.metadata?.agent_name as string | undefined,
         // Turn was cut short by a hard-stop; persisted partial text.
         interrupted: m.metadata?.interrupted === true,
+        // Answer hit the model's token limit; persisted partial text.
+        truncated: m.metadata?.truncated === true,
       });
       continue;
     }

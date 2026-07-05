@@ -24,6 +24,7 @@ from .base import (
     convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
+    process_reasoning_delta,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,26 +142,7 @@ class LMStudioProvider(ModelProvider):
         Returns:
             (output_string, new_in_reasoning_state)
         """
-        output = ""
-
-        if reasoning:
-            if not in_reasoning:
-                # Start reasoning block
-                output = f"<think>{reasoning}"
-                in_reasoning = True
-            else:
-                # Continue reasoning block
-                output = reasoning
-
-        if content:
-            if in_reasoning:
-                # End reasoning block, then emit content
-                output += f"</think>{content}"
-                in_reasoning = False
-            else:
-                output += content
-
-        return output, in_reasoning
+        return process_reasoning_delta(reasoning, content, in_reasoning)
     
     async def complete(
         self,

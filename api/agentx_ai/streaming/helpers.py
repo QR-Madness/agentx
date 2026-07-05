@@ -4,13 +4,18 @@ Helper functions for streaming chat.
 Extracted from views.py to reduce complexity and enable reuse.
 """
 
+import json
 import logging
 from typing import Any, TypeVar
 
 from ..tokens import estimate_messages
 from .constants import (
     CHAR_TO_TOKEN_RATIO,
+    CONTEXT_BUFFER_TOKENS,
+    MAX_OUTPUT_TOKENS_CEILING,
+    MIN_OUTPUT_TOKENS,
     MIN_TOOL_CONTENT_SIZE,
+    REASONING_MIN_OUTPUT_TOKENS,
     TRUNCATION_MARKER,
 )
 
@@ -33,6 +38,49 @@ def estimate_tokens(messages: list[Any]) -> int:
         Estimated token count
     """
     return estimate_messages(messages)
+
+
+def compute_adaptive_max_tokens(
+    messages: list[Any],
+    tools: list[dict[str, Any]] | None,
+    *,
+    context_window: int,
+    max_output_tokens: int,
+    max_output_override: int | None,
+    supports_reasoning: bool = False,
+) -> int:
+    """Adaptive per-call output budget from context usage.
+
+    Accounts for tool-schema tokens too: estimate_tokens() only sees message
+    content, but the provider also counts the serialized tool definitions
+    toward the prompt. Clamps the capability-reported output cap to a sane
+    ceiling (a model advertising max_output == context_window would otherwise
+    make us request ~the whole window as output → provider 400); an explicit
+    override is trusted as-is. The floor is raised for reasoning models, whose
+    thinking spends output budget before the visible answer.
+    """
+    estimated_input = estimate_tokens(messages)
+    estimated_tool_tokens = (
+        len(json.dumps(tools)) // CHAR_TO_TOKEN_RATIO if tools else 0
+    )
+    available_for_output = (
+        context_window - estimated_input - estimated_tool_tokens - CONTEXT_BUFFER_TOKENS
+    )
+    output_cap = (
+        max_output_tokens
+        if max_output_override
+        else min(max_output_tokens, MAX_OUTPUT_TOKENS_CEILING)
+    )
+    min_output = REASONING_MIN_OUTPUT_TOKENS if supports_reasoning else MIN_OUTPUT_TOKENS
+    adaptive = max(min(output_cap, available_for_output), min_output)
+
+    logger.debug(
+        f"Adaptive max_tokens: {adaptive} "
+        f"(context_window={context_window}, estimated_input={estimated_input}, "
+        f"tool_tokens={estimated_tool_tokens}, output_cap={output_cap}, "
+        f"max_output={max_output_tokens}, available={available_for_output})"
+    )
+    return adaptive
 
 
 def truncate_tool_messages(

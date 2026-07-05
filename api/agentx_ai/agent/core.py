@@ -472,6 +472,7 @@ class Agent:
                             tool_name=tool_name,
                             tool_output=content,
                             task_context=task_context,
+                            preferred_fallback=self.config.default_model,
                         )
                         if cr.success and cr.compressed_text:
                             compressed_preview = cr.compressed_text
@@ -586,7 +587,10 @@ class Agent:
 
             # Trajectory compression: consolidate older rounds if context is growing large
             from ..streaming.trajectory_compression import compress_trajectory
-            if compress_trajectory(messages, self.config.max_context_tokens, task_context):
+            if compress_trajectory(
+                messages, self.config.max_context_tokens, task_context,
+                active_model=self.config.default_model,
+            ):
                 logger.info("Trajectory compressed, continuing with reduced context")
 
         # Exhausted rounds — do one final call without tools

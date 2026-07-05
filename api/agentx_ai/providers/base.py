@@ -115,6 +115,47 @@ def accumulate_tool_call_delta(
         entry["arguments"] += func["arguments"]
 
 
+def process_reasoning_delta(
+    reasoning: str,
+    content: str,
+    in_reasoning: bool,
+) -> tuple[str, bool]:
+    """
+    Merge a streaming delta's reasoning and content fields into one output string.
+
+    Reasoning models emit thinking in a separate delta field (`reasoning` on
+    OpenRouter, `reasoning_content` on OpenAI-compatible servers). This wraps it
+    in <think> tags — the shared convention the client renders as a live
+    ThinkingBubble and the output parser strips before persistence. Without
+    this, reasoning tokens burn the output budget invisibly.
+
+    Args:
+        reasoning: reasoning text from the delta ("" when absent)
+        content: visible content from the delta ("" when absent)
+        in_reasoning: whether we're currently inside a <think> block
+
+    Returns:
+        (output_string, new_in_reasoning_state)
+    """
+    output = ""
+
+    if reasoning:
+        if not in_reasoning:
+            output = f"<think>{reasoning}"
+            in_reasoning = True
+        else:
+            output = reasoning
+
+    if content:
+        if in_reasoning:
+            output += f"</think>{content}"
+            in_reasoning = False
+        else:
+            output += content
+
+    return output, in_reasoning
+
+
 def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCall]:
     """
     Convert accumulated tool call fragments to ToolCall objects.
@@ -290,6 +331,10 @@ class ModelCapabilities:
     supports_json_mode: bool = False
     supports_speech: bool = False
     supports_transcription: bool = False
+    # Model emits thinking/reasoning tokens that count against the output
+    # budget — grants a larger default max_tokens so the visible answer isn't
+    # starved by the reasoning burn.
+    supports_reasoning: bool = False
     context_window: int = 4096
     max_output_tokens: int | None = None
     cost_per_1k_input: float | None = None

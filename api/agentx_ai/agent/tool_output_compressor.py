@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import get_config_manager
+from ..exceptions import ModelNotFoundError
 from ..prompts.loader import get_prompt_loader
 from ..providers.base import Message, MessageRole
 from ..providers.registry import ProviderRegistry, get_registry
@@ -54,20 +55,13 @@ class ToolOutputCompressor:
         config = get_config_manager()
         return {
             "enabled": config.get("compression.enabled", True),
-            "model": config.get("compression.model", "claude-3-5-haiku-latest"),
+            # No hardcoded model default: an unset value resolves down the fallback
+            # chain (active turn model → global default) in complete_with_fallback.
+            "model": config.get("compression.model", None),
             "temperature": config.get("compression.temperature", 0.2),
             "max_tokens": config.get("compression.max_tokens", 1000),
             "max_summary_chars": config.get("compression.max_summary_chars", 2000),
         }
-
-    def _get_provider(self, model: str) -> tuple[Any, str]:
-        """Get provider and resolved model_id for compression.
-
-        Fallback-aware: a missing/unreachable (or provider-prefix-less) compression
-        model degrades to the default chat model rather than failing the turn.
-        """
-        provider, model_id, _ = self.registry.resolve_with_fallback(model)
-        return provider, model_id
 
     async def compress(
         self,
@@ -75,6 +69,7 @@ class ToolOutputCompressor:
         tool_output: str,
         task_context: str = "",
         max_input_chars: int = 8000,
+        preferred_fallback: str | None = None,
     ) -> CompressionResult:
         """
         Compress a large tool output into a task-aware summary.
@@ -84,6 +79,8 @@ class ToolOutputCompressor:
             tool_output: The full tool output content
             task_context: The user's current query/task (for relevance)
             max_input_chars: Max chars of tool_output to send to LLM
+            preferred_fallback: The active turn's `provider:model`, used as the
+                fallback when the compression model is unset or failing
 
         Returns:
             CompressionResult with compressed text, or success=False on failure
@@ -95,16 +92,6 @@ class ToolOutputCompressor:
             return CompressionResult(
                 success=False,
                 error="compression_disabled",
-                original_chars=original_chars,
-            )
-
-        try:
-            provider, model_id = self._get_provider(cfg["model"])
-        except ValueError as e:
-            logger.warning(f"Compression provider unavailable: {e}")
-            return CompressionResult(
-                success=False,
-                error=f"provider_unavailable: {e}",
                 original_chars=original_chars,
             )
 
@@ -128,9 +115,13 @@ class ToolOutputCompressor:
         ]
 
         try:
-            result = await provider.complete(
+            # Fallback-aware at runtime, not just resolution: a configured-but-
+            # failing compression model degrades to the active chat model, then
+            # the global default, instead of failing the compression outright.
+            result = await self.registry.complete_with_fallback(
+                cfg["model"] or "",
                 messages,
-                model_id,
+                preferred_fallback=preferred_fallback,
                 temperature=cfg["temperature"],
                 max_tokens=cfg["max_tokens"],
             )
@@ -148,6 +139,14 @@ class ToolOutputCompressor:
                 compressed_chars=len(compressed),
             )
 
+        except ModelNotFoundError as e:
+            # Nothing resolvable anywhere in the fallback chain
+            logger.warning(f"Compression provider unavailable: {e}")
+            return CompressionResult(
+                success=False,
+                error=f"provider_unavailable: {e}",
+                original_chars=original_chars,
+            )
         except Exception as e:
             logger.warning(f"Compression failed for '{tool_name}': {e}")
             return CompressionResult(
@@ -162,9 +161,12 @@ class ToolOutputCompressor:
         tool_output: str,
         task_context: str = "",
         max_input_chars: int = 8000,
+        preferred_fallback: str | None = None,
     ) -> CompressionResult:
         """Synchronous wrapper for compress()."""
-        coro = self.compress(tool_name, tool_output, task_context, max_input_chars)
+        coro = self.compress(
+            tool_name, tool_output, task_context, max_input_chars, preferred_fallback
+        )
 
         try:
             loop = asyncio.get_running_loop()

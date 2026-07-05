@@ -68,6 +68,8 @@ export interface AssistantMessage extends BaseMessage {
   branchId?: string;
   /** Turn was cut short by a hard-stop (Stop button); content is partial. */
   interrupted?: boolean;
+  /** Answer hit the model's token limit (finish_reason "length"); content is partial. */
+  truncated?: boolean;
 }
 
 export interface ToolCallMessage extends BaseMessage {
