@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.158"
+version = "0.21.159"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [

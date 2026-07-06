@@ -3162,6 +3162,33 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /prompts/feature-defaults:
+    get:
+      tags: [Prompt Templates]
+      operationId: promptsFeatureDefaults
+      summary: Shipped defaults for the overridable feature prompts
+      description: >-
+        The built-in prompt text behind each overridable feature prompt
+        (extraction, relevance filter, planner decomposition, prompt
+        enhancement) — powers diff-vs-default and reset in the Feature
+        Prompts settings UI.
+      responses:
+        '200':
+          description: Default prompt texts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extraction_system_prompt:
+                    type: string
+                  relevance_filter_prompt:
+                    type: string
+                  planner_prompt:
+                    type: string
+                  prompt_enhancement_prompt:
+                    type: string
+
   /conversations:
     get:
       tags: [Conversations]

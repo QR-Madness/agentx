@@ -10,7 +10,6 @@ import {
   Layers,
   Sparkles,
   Database,
-  Settings,
   Wrench,
   Languages,
   Palette,
@@ -21,6 +20,12 @@ import {
   Radio,
   SquareStack,
   Image as ImageIcon,
+  Boxes,
+  FileText,
+  Library,
+  ScrollText,
+  Search,
+  GitMerge,
 } from 'lucide-react';
 
 export interface Section {
@@ -59,6 +64,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         keywords: ['context', 'tokens', 'window', 'output', 'limits']
       },
       {
+        id: 'model-roles',
+        label: 'Model Roles',
+        icon: <Boxes size={18} />,
+        component: lazy(() => import('./ModelRolesSection')),
+        keywords: ['roles', 'fast utility', 'deep reasoning', 'summarizer', 'cluster', 'utility models', 'effective model']
+      },
+      {
         id: 'search',
         label: 'Web Search',
         icon: <Globe size={18} />,
@@ -78,20 +90,6 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
     label: 'Intelligence',
     icon: <Brain size={16} />,
     sections: [
-      {
-        id: 'prompt-stack',
-        label: 'System Prompt',
-        icon: <SquareStack size={18} />,
-        component: lazy(() => import('./SystemPromptSection')),
-        keywords: ['system prompt', 'layers', 'stack', 'persona', 'global prompt', 'composer', 'behavior']
-      },
-      {
-        id: 'prompts',
-        label: 'Prompt Enhancement',
-        icon: <Sparkles size={18} />,
-        component: lazy(() => import('./PromptsSection')),
-        keywords: ['enhance', 'improve', 'temperature', 'system prompt']
-      },
       {
         id: 'planner',
         label: 'Task Planner',
@@ -113,19 +111,66 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         component: lazy(() => import('./AmbassadorSection')),
         keywords: ['ambassador', 'briefing', 'summarize', 'parallel', 'interpreter', 'cc']
       },
+    ]
+  },
+  prompts: {
+    label: 'Prompts',
+    icon: <ScrollText size={16} />,
+    sections: [
+      {
+        id: 'prompt-stack',
+        label: 'System Prompt',
+        icon: <SquareStack size={18} />,
+        component: lazy(() => import('./SystemPromptSection')),
+        keywords: ['system prompt', 'layers', 'stack', 'persona', 'global prompt', 'composer', 'behavior']
+      },
+      {
+        id: 'prompts',
+        label: 'Prompt Enhancement',
+        icon: <Sparkles size={18} />,
+        component: lazy(() => import('./PromptsSection')),
+        keywords: ['enhance', 'improve', 'temperature', 'rewrite']
+      },
+      {
+        id: 'prompt-templates',
+        label: 'Template Library',
+        icon: <Library size={18} />,
+        component: lazy(() => import('./PromptTemplatesSection')),
+        keywords: ['template', 'templates', 'library', 'snippet', 'reusable', 'prompt library']
+      },
+      {
+        id: 'feature-prompts',
+        label: 'Feature Prompts',
+        icon: <FileText size={18} />,
+        component: lazy(() => import('./FeaturePromptsSection')),
+        keywords: ['extraction prompt', 'relevance prompt', 'planner prompt', 'enhancement prompt', 'override', 'defaults', 'diff']
+      },
+    ]
+  },
+  memory: {
+    label: 'Memory',
+    icon: <Database size={16} />,
+    sections: [
       {
         id: 'memory-overview',
-        label: 'Memory Overview',
+        label: 'Overview',
         icon: <Database size={18} />,
         component: lazy(() => import('./MemoryOverviewSection')),
         keywords: ['storage', 'data', 'retention', 'postgresql', 'neo4j', 'redis']
       },
       {
-        id: 'memory-settings',
-        label: 'Memory Settings',
-        icon: <Settings size={18} />,
-        component: lazy(() => import('./MemorySettingsSection')),
-        keywords: ['consolidation', 'recall', 'extraction', 'hyde', 'self-query']
+        id: 'memory-recall',
+        label: 'Recall',
+        icon: <Search size={18} />,
+        component: lazy(() => import('./MemoryRecallSection')),
+        keywords: ['recall', 'retrieval', 'hybrid', 'hyde', 'self-query', 'cross-encoder', 'rerank', 'candidate pool', 'rrf']
+      },
+      {
+        id: 'memory-consolidation',
+        label: 'Consolidation',
+        icon: <GitMerge size={18} />,
+        component: lazy(() => import('./MemoryConsolidationSection')),
+        keywords: ['consolidation', 'extraction', 'facts', 'entities', 'contradiction', 'correction', 'jobs', 'intervals', 'procedural']
       },
     ]
   },

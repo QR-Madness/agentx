@@ -24,6 +24,46 @@ vi.mock('../../../contexts/NotificationContext', () => {
   return { useNotify: () => value };
 });
 
+const mockGetModelRoles = vi.fn().mockResolvedValue({
+  roles: {
+    fast_utility: {
+      label: 'Fast Utility',
+      description: 'Quick classification & extraction — speed first.',
+      model: '',
+    },
+    deep_reasoning: {
+      label: 'Deep Reasoning',
+      description: 'Consolidation & distillation — quality and cost-efficiency.',
+      model: 'openrouter:nvidia/nemotron-3-ultra-550b-a55b',
+    },
+    summarizer: {
+      label: 'Summarizer',
+      description: 'Cheap, reliable compression & recaps.',
+      model: '',
+    },
+  },
+  members: [
+    {
+      member: 'extraction', label: 'Extraction', role: 'fast_utility',
+      kind: 'memory', source: 'extraction_model',
+      explicit: 'lmstudio:google/gemma-3-4b',
+      role_model: '', effective: 'lmstudio:google/gemma-3-4b', following: 'explicit',
+    },
+    {
+      member: 'combined_extraction', label: 'Combined extraction', role: 'deep_reasoning',
+      kind: 'memory', source: 'combined_extraction_model',
+      explicit: '', role_model: 'openrouter:nvidia/nemotron-3-ultra-550b-a55b',
+      effective: 'openrouter:nvidia/nemotron-3-ultra-550b-a55b', following: 'role',
+    },
+    {
+      member: 'compression', label: 'Tool-output compression', role: 'summarizer',
+      kind: 'config', source: 'compression.model',
+      explicit: '', role_model: '', effective: '', following: 'fallback',
+    },
+  ],
+});
+const mockUpdateModelRoles = vi.fn().mockResolvedValue({ status: 'ok' });
+
 vi.mock('../../../lib/api', () => ({
   api: {
     getConfig: vi.fn().mockResolvedValue({ preferences: { default_model: '' } }),
@@ -33,6 +73,8 @@ vi.mock('../../../lib/api', () => ({
     }),
     updateConfig: vi.fn().mockResolvedValue({}),
     updateContextLimits: vi.fn().mockResolvedValue({}),
+    getModelRoles: (...args: unknown[]) => mockGetModelRoles(...args),
+    updateModelRoles: (...args: unknown[]) => mockUpdateModelRoles(...args),
   },
 }));
 
@@ -50,6 +92,8 @@ vi.mock('../../ui/ConfirmDialog', () => ({
 
 import ProvidersSection from './ProvidersSection';
 import ModelsSection from './ModelsSection';
+import ModelRolesSection from './ModelRolesSection';
+import { SECTION_HIERARCHY, getAllSections, findSectionById } from './index';
 
 describe('ProvidersSection', () => {
   it('renders the provider cards, badges and a save action', () => {
@@ -67,6 +111,61 @@ describe('ProvidersSection', () => {
     expect(save).toBeInTheDocument();
     expect(save).toBeDisabled();
     expect(screen.queryByText('Unsaved changes')).toBeNull();
+  });
+});
+
+describe('SECTION_HIERARCHY (settings overhaul S4)', () => {
+  it('has the reorganized group/section layout', () => {
+    // Snapshot the shape so moving/renaming a section is a visible diff.
+    const shape = Object.fromEntries(
+      Object.entries(SECTION_HIERARCHY).map(([key, group]) => [
+        key,
+        group.sections.map(s => s.id),
+      ])
+    );
+    expect(shape).toEqual({
+      infrastructure: ['providers', 'models', 'model-roles', 'search', 'images'],
+      intelligence: ['planner', 'alloy', 'ambassador'],
+      prompts: ['prompt-stack', 'prompts', 'prompt-templates', 'feature-prompts'],
+      memory: ['memory-overview', 'memory-recall', 'memory-consolidation'],
+      tools: ['translation'],
+      interface: ['appearance'],
+    });
+  });
+
+  it('every section carries search keywords', () => {
+    for (const section of getAllSections()) {
+      expect(section.keywords?.length, `${section.id} has no keywords`).toBeGreaterThan(0);
+    }
+  });
+
+  it('search keywords route to the moved sections', () => {
+    const byKeyword = (kw: string) =>
+      getAllSections().filter(s => s.keywords?.some(k => k.includes(kw))).map(s => s.id);
+    expect(byKeyword('cross-encoder')).toContain('memory-recall');
+    expect(byKeyword('consolidation')).toContain('memory-consolidation');
+    expect(byKeyword('summarizer')).toContain('model-roles');
+    expect(byKeyword('template')).toContain('prompt-templates');
+    expect(byKeyword('extraction prompt')).toContain('feature-prompts');
+    // The retired combined section is gone.
+    expect(findSectionById('memory-settings')).toBeNull();
+  });
+});
+
+describe('ModelRolesSection', () => {
+  it('renders the three roles with member resolution chips', async () => {
+    render(<ModelRolesSection />);
+    expect(await screen.findByText('Fast Utility')).toBeInTheDocument();
+    expect(screen.getByText('Deep Reasoning')).toBeInTheDocument();
+    expect(screen.getByText('Summarizer')).toBeInTheDocument();
+    // Member chips reflect the live resolution chain.
+    expect(screen.getByText('following role')).toBeInTheDocument();
+    expect(screen.getByText('custom')).toBeInTheDocument();
+    expect(screen.getByText('fallback chain')).toBeInTheDocument();
+    // The set role shows its concrete model on the picker trigger.
+    expect(
+      screen.getAllByText(/nemotron-3-ultra-550b-a55b/).length
+    ).toBeGreaterThan(0);
   });
 });
 

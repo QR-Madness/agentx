@@ -5,7 +5,7 @@ import { RecallSettings } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Button } from '../ui';
-import { SettingsSection, SliderField, NumberField, ToggleField } from '../settings/fields';
+import { SettingsSection, SliderField, NumberField, ToggleField, TextField } from '../settings/fields';
 
 const oneDp = (v: number) => v.toFixed(1);
 
@@ -142,6 +142,44 @@ export function RecallSettingsPanel() {
         </div>
       </SettingsSection>
 
+      <SettingsSection title="Two-Stage Rerank">
+        <div className="settings-grid">
+          <ToggleField
+            label="Cross-Encoder Rerank"
+            title="Retrieve a wide candidate pool, then rerank it with a cross-encoder before returning results"
+            badge={{ text: 'Recommended', variant: 'success' }}
+            hint="reranks a wider candidate pool with a cross-encoder — +20pp retrieval accuracy in evals"
+            checked={localSettings.cross_encoder_enabled ?? true}
+            onChange={v => handleChange('cross_encoder_enabled', v)}
+          />
+          {(localSettings.cross_encoder_enabled ?? true) && (
+            <>
+              <TextField
+                label="Cross-Encoder Model"
+                value={localSettings.cross_encoder_model ?? ''}
+                placeholder="cross-encoder/ms-marco-MiniLM-L-6-v2"
+                hint="Hugging Face cross-encoder model id"
+                onChange={v => handleChange('cross_encoder_model', v)}
+              />
+              <NumberField
+                label="Candidate Pool"
+                value={localSettings.recall_candidate_pool ?? 50}
+                min={10} max={200} fallback={50}
+                hint="How many first-stage candidates the reranker scores"
+                onChange={v => handleChange('recall_candidate_pool', v)}
+              />
+              <NumberField
+                label="Max Demotion"
+                value={localSettings.recall_ce_max_demotion ?? 2}
+                min={0} max={20}
+                hint="0 = pure cross-encoder order"
+                onChange={v => handleChange('recall_ce_max_demotion', v)}
+              />
+            </>
+          )}
+        </div>
+      </SettingsSection>
+
       {localSettings.recall_enable_hybrid && (
         <SettingsSection title="Hybrid Search Settings">
           <div className="settings-grid">
@@ -228,6 +266,65 @@ export function RecallSettingsPanel() {
           </div>
         </SettingsSection>
       )}
+
+      <SettingsSection title="Advanced">
+        <div className="settings-grid">
+          <SliderField
+            label="Min Recall Confidence"
+            value={localSettings.recall_min_confidence ?? 0.5}
+            min={0} max={1} step={0.05}
+            onChange={v => handleChange('recall_min_confidence', v)}
+          />
+          <NumberField
+            label="Hybrid RRF k"
+            value={localSettings.recall_hybrid_rrf_k ?? 60}
+            min={1} max={200} fallback={60}
+            hint="Reciprocal Rank Fusion constant (standard: 60)"
+            onChange={v => handleChange('recall_hybrid_rrf_k', v)}
+          />
+          <NumberField
+            label="Entity Graph Depth"
+            value={localSettings.recall_entity_graph_depth ?? 1}
+            min={1} max={5} fallback={1}
+            hint="Relationship hops for entity-centric traversal"
+            onChange={v => handleChange('recall_entity_graph_depth', v)}
+          />
+          <NumberField
+            label="HyDE Max Tokens"
+            value={localSettings.recall_hyde_max_tokens ?? 150}
+            min={50} max={2000} fallback={150}
+            onChange={v => handleChange('recall_hyde_max_tokens', v)}
+          />
+          <SliderField
+            label="Self-Query Temperature"
+            value={localSettings.recall_self_query_temperature ?? 0.2}
+            min={0} max={1} step={0.05}
+            onChange={v => handleChange('recall_self_query_temperature', v)}
+          />
+          <NumberField
+            label="Self-Query Max Tokens"
+            value={localSettings.recall_self_query_max_tokens ?? 200}
+            min={50} max={2000} fallback={200}
+            onChange={v => handleChange('recall_self_query_max_tokens', v)}
+          />
+          <ToggleField
+            label="First-Person Attribution Guard"
+            title="Penalize recall of facts whose first-person attribution doesn't match the querying speaker"
+            badge={{ text: 'Experimental' }}
+            hint="Demotes facts that misattribute first-person statements"
+            checked={localSettings.recall_first_person_guard ?? false}
+            onChange={v => handleChange('recall_first_person_guard', v)}
+          />
+          {localSettings.recall_first_person_guard && (
+            <SliderField
+              label="First-Person Penalty"
+              value={localSettings.recall_first_person_penalty ?? 0.5}
+              min={0} max={1} step={0.05}
+              onChange={v => handleChange('recall_first_person_penalty', v)}
+            />
+          )}
+        </div>
+      </SettingsSection>
 
       <div className="settings-actions">
         <span aria-live="polite" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>

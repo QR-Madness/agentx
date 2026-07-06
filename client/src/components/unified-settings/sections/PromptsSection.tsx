@@ -13,7 +13,6 @@ import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
 import {
   NumberField,
-  PromptField,
   SaveStatusChip,
   SliderField,
   ToggleField,
@@ -24,7 +23,6 @@ interface PromptEnhanceSettings extends Record<string, unknown> {
   model: string;
   temperature: number;
   max_tokens: number;
-  system_prompt: string;
 }
 
 export default function PromptsSection() {
@@ -39,7 +37,6 @@ export default function PromptsSection() {
         model: p.model || 'anthropic:claude-3-5-haiku-latest',
         temperature: p.temperature ?? 0.7,
         max_tokens: p.max_tokens ?? 1000,
-        system_prompt: p.system_prompt || '',
       };
     },
     save: async changed => {
@@ -100,14 +97,9 @@ export default function PromptsSection() {
             title="Maximum output length for enhanced prompt."
           />
 
-          <PromptField
-            label="Custom System Prompt"
-            value={settings.system_prompt}
-            onChange={system_prompt => update({ system_prompt })}
-            onReset={() => update({ system_prompt: '' })}
-            placeholder="Enter custom instructions for the enhancement model..."
-            rows={4}
-          />
+          <p className="setting-hint">
+            The custom enhancement system prompt now lives in Prompts → Feature Prompts.
+          </p>
         </div>
       )}
     </div>

@@ -4154,6 +4154,52 @@ def prompts_templates_tags(request):
     })
 
 
+# Default system prompt for the prompt enhancer — shared by prompts_enhance
+# (used when prompt_enhancement.system_prompt is empty) and
+# prompts_feature_defaults (so the Feature Prompts UI can diff/reset).
+_DEFAULT_ENHANCEMENT_PROMPT = """You are a prompt enhancement assistant. Your task is to improve the user's prompt to be clearer, more specific, and more effective for an AI assistant to understand and respond to.
+
+Guidelines:
+- Preserve the user's original intent
+- Add relevant context or clarification where helpful
+- Make the prompt more specific and actionable
+- Fix any grammatical issues
+- Keep the enhanced prompt concise but complete
+- Do NOT add unnecessary verbosity or filler phrases
+- Output ONLY the enhanced prompt, nothing else (no explanations, no "Here's the enhanced prompt:", etc.)"""
+
+
+@csrf_exempt
+def prompts_feature_defaults(request):
+    """
+    GET /api/prompts/feature-defaults - Shipped defaults for the overridable
+    feature prompts (Feature Prompts settings UI: diff-vs-default + reset).
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .kit.agent_memory.extraction.service import ExtractionService
+        from .prompts.loader import get_prompt_loader
+
+        service = ExtractionService()
+        try:
+            planner_default = get_prompt_loader().get("planner.decompose") or ""
+        except Exception:
+            planner_default = ""
+        return JsonResponse({
+            "extraction_system_prompt": service._get_default_system_prompt(),
+            "relevance_filter_prompt": service._get_default_relevance_prompt(),
+            "planner_prompt": planner_default,
+            "prompt_enhancement_prompt": _DEFAULT_ENHANCEMENT_PROMPT,
+        })
+    except Exception as e:
+        logger.error(f"Error building feature prompt defaults: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
 @csrf_exempt
 async def prompts_enhance(request):
     """
@@ -4201,16 +4247,7 @@ async def prompts_enhance(request):
 
     # Default system prompt if not configured
     if not system_prompt:
-        system_prompt = """You are a prompt enhancement assistant. Your task is to improve the user's prompt to be clearer, more specific, and more effective for an AI assistant to understand and respond to.
-
-Guidelines:
-- Preserve the user's original intent
-- Add relevant context or clarification where helpful
-- Make the prompt more specific and actionable
-- Fix any grammatical issues
-- Keep the enhanced prompt concise but complete
-- Do NOT add unnecessary verbosity or filler phrases
-- Output ONLY the enhanced prompt, nothing else (no explanations, no "Here's the enhanced prompt:", etc.)"""
+        system_prompt = _DEFAULT_ENHANCEMENT_PROMPT
 
     try:
         from .providers.registry import get_registry

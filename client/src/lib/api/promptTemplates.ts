@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate, TemplateTag, TemplateType } from './types';
+import type { FeaturePromptDefaults, PromptTemplate, PromptTemplateCreate, PromptTemplateUpdate, TemplateTag, TemplateType } from './types';
 
 export const promptTemplatesApi = {
   // === Prompt Templates ===
@@ -217,5 +217,10 @@ export const promptTemplatesApi = {
       method: 'POST',
       body: JSON.stringify({ prompt, context }),
     });
+  },
+
+  /** Shipped defaults for the overridable feature prompts (diff/reset UI). */
+  async getFeaturePromptDefaults(): Promise<FeaturePromptDefaults> {
+    return apiRequest('/api/prompts/feature-defaults');
   },
 };

@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { ConfigUpdate } from './types';
+import type { ConfigUpdate, ModelRoleName, ModelRolesResponse } from './types';
 
 export const configApi = {
   // === Config ===
@@ -29,6 +29,24 @@ export const configApi = {
    */
   async searchHealth(): Promise<{ ok: boolean; backend: string | null; count: number; error?: string | null }> {
     return apiRequest('/api/tools/search-health');
+  },
+
+  /**
+   * Model roles + membership + effective-model preview (settings overhaul D1).
+   * Set roles via updateModelRoles below.
+   */
+  async getModelRoles(): Promise<ModelRolesResponse> {
+    return apiRequest('/api/models/roles');
+  },
+
+  /** Set/clear model roles ("" clears; values must be concrete provider:model). */
+  async updateModelRoles(
+    roles: Partial<Record<ModelRoleName, string>>
+  ): Promise<{ status: string; updated?: string[] }> {
+    return apiRequest('/api/config/update', {
+      method: 'POST',
+      body: JSON.stringify({ models: { roles } }),
+    });
   },
 
   async getContextLimits(): Promise<{

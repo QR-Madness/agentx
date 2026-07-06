@@ -1,12 +1,12 @@
 import { useState, useEffect, useId, useRef } from 'react';
 import { RefreshCw, Zap, X, RotateCcw, Save } from 'lucide-react';
-import { useConsolidationSettings } from '../../lib/hooks';
-import { ConsolidationSettings, api } from '../../lib/api';
+import { useApi, useConsolidationSettings } from '../../lib/hooks';
+import { ConsolidationSettings, api, type ModelRoleMember, type ModelRoleName } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
-import { Button, Checkbox, Label } from '../ui';
+import { Badge, Button, Checkbox, Label } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
-import { SettingsSection, SliderField, NumberField, ToggleField, PromptField } from '../settings/fields';
+import { SettingsSection, SliderField, NumberField, ToggleField } from '../settings/fields';
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 
@@ -15,6 +15,45 @@ const CONSOLIDATE_JOBS: { id: string; label: string }[] = [
   { id: 'patterns', label: 'Patterns (procedural memory)' },
   { id: 'promote', label: 'Promote (cross-channel)' },
 ];
+
+const ROLE_LABELS: Record<ModelRoleName, string> = {
+  fast_utility: 'Fast Utility',
+  deep_reasoning: 'Deep Reasoning',
+  summarizer: 'Summarizer',
+};
+
+/** Human-readable tail of a provider:model id. */
+function shortModel(id: string): string {
+  const idx = id.indexOf(':');
+  return idx >= 0 ? id.slice(idx + 1) : id;
+}
+
+/**
+ * Effective-model chip under a stage's model picker (GET /api/models/roles).
+ * Explicit values render nothing — the picker already shows them; stages
+ * following their role get an accent badge, unset stages note the fallback chain.
+ */
+function StageRoleChip({
+  members,
+  member,
+}: {
+  members: ModelRoleMember[] | undefined;
+  member: string;
+}) {
+  const m = members?.find(x => x.member === member);
+  if (!m || m.following === 'explicit') return null;
+  return (
+    <div className="setting-hint">
+      {m.following === 'role' ? (
+        <Badge variant="accent" size="sm" title={m.effective}>
+          Following {ROLE_LABELS[m.role]} · {shortModel(m.effective)}
+        </Badge>
+      ) : (
+        <span>Using fallback chain</span>
+      )}
+    </div>
+  );
+}
 
 export function ConsolidationSettingsPanel({
   onConsolidate,
@@ -33,6 +72,10 @@ export function ConsolidationSettingsPanel({
   const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const baselineRef = useRef<string | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Effective-model/role chips for the stage pickers; re-fetched after each
+  // successful save so the chips track the just-saved stage models.
+  const { data: modelRoles, refresh: refreshModelRoles } = useApi(() => api.getModelRoles(), []);
+  const roleMembers = modelRoles?.members;
 
   useEffect(() => {
     if (settings) {
@@ -61,6 +104,7 @@ export function ConsolidationSettingsPanel({
       if (ok) {
         baselineRef.current = snap;
         setAutosaveState('saved');
+        void refreshModelRoles();
       } else {
         setAutosaveState('idle');
       }
@@ -76,19 +120,10 @@ export function ConsolidationSettingsPanel({
     if (success) {
       baselineRef.current = JSON.stringify(localSettings);
       setAutosaveState('saved');
+      void refreshModelRoles();
       notifySuccess('Settings saved successfully');
     } else {
       notifyError('Failed to save settings');
-    }
-  };
-
-  const handleReset = () => {
-    if (settings) {
-      setLocalSettings({
-        ...settings,
-        extraction_system_prompt: '',
-        relevance_filter_prompt: '',
-      });
     }
   };
 
@@ -284,6 +319,7 @@ export function ConsolidationSettingsPanel({
               onChange={v => handleChange('extraction_model', v)}
               showDefault={false}
             />
+            <StageRoleChip members={roleMembers} member="extraction" />
           </div>
           <SliderField
             label="Temperature"
@@ -303,15 +339,9 @@ export function ConsolidationSettingsPanel({
             onChange={v => handleChange('extraction_condense_facts', v)}
           />
         </div>
-        <PromptField
-          label="System Prompt"
-          value={localSettings.extraction_system_prompt || ''}
-          onChange={v => handleChange('extraction_system_prompt', v)}
-          onReset={() => handleChange('extraction_system_prompt', '')}
-          placeholder={settings?.default_extraction_prompt || 'Default system prompt will be used...'}
-          defaultText={settings?.default_extraction_prompt}
-          rows={8}
-        />
+        <p className="setting-hint">
+          The extraction system prompt now lives in Settings → Prompts → Feature Prompts.
+        </p>
       </SettingsSection>
 
       <SettingsSection title="Relevance Filter">
@@ -328,6 +358,7 @@ export function ConsolidationSettingsPanel({
               onChange={v => handleChange('relevance_filter_model', v)}
               showDefault={false}
             />
+            <StageRoleChip members={roleMembers} member="relevance_filter" />
           </div>
           <SliderField
             label="Temperature"
@@ -343,15 +374,9 @@ export function ConsolidationSettingsPanel({
             onChange={v => handleChange('relevance_filter_max_tokens', v)}
           />
         </div>
-        <PromptField
-          label="Relevance Prompt"
-          value={localSettings.relevance_filter_prompt || ''}
-          onChange={v => handleChange('relevance_filter_prompt', v)}
-          onReset={() => handleChange('relevance_filter_prompt', '')}
-          placeholder={settings?.default_relevance_prompt || 'Default relevance prompt will be used...'}
-          defaultText={settings?.default_relevance_prompt}
-          rows={6}
-        />
+        <p className="setting-hint">
+          The relevance filter prompt now lives in Settings → Prompts → Feature Prompts.
+        </p>
       </SettingsSection>
 
       <SettingsSection
@@ -385,6 +410,7 @@ export function ConsolidationSettingsPanel({
               <RotateCcw size={13} />
               <span>Reset to default</span>
             </Button>
+            <StageRoleChip members={roleMembers} member="combined_extraction" />
           </div>
           <SliderField
             label="Temperature"
@@ -474,6 +500,7 @@ export function ConsolidationSettingsPanel({
                 onChange={v => handleChange('entity_linking_model', v)}
                 showDefault={false}
               />
+              <StageRoleChip members={roleMembers} member="entity_linking" />
             </div>
           )}
         </div>
@@ -538,6 +565,7 @@ export function ConsolidationSettingsPanel({
                   onChange={v => handleChange('contradiction_model', v)}
                   showDefault={false}
                 />
+                <StageRoleChip members={roleMembers} member="contradiction" />
               </div>
               <SliderField
                 label="Temperature"
@@ -567,6 +595,7 @@ export function ConsolidationSettingsPanel({
                   onChange={v => handleChange('correction_model', v)}
                   showDefault={false}
                 />
+                <StageRoleChip members={roleMembers} member="correction" />
               </div>
               <SliderField
                 label="Temperature"
@@ -589,10 +618,6 @@ export function ConsolidationSettingsPanel({
         <span className="autosave-status" aria-live="polite" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
         </span>
-        <Button variant="ghost" onClick={handleReset} disabled={saving}>
-          <RotateCcw size={16} />
-          Reset Prompts
-        </Button>
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <><RefreshCw size={16} className="spin" /> Saving...</>

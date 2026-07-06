@@ -737,6 +737,50 @@ export interface ConfigUpdate {
     enabled?: boolean;
     refeed_recent_turns?: number;
   };
+  models?: {
+    /** Only `roles.{fast_utility,deep_reasoning,summarizer}` is writable —
+     *  "" clears a role; values must be concrete `provider:model`. */
+    roles?: Partial<Record<ModelRoleName, string>>;
+  };
+}
+
+// === Model Roles (settings overhaul D1) ===
+
+export type ModelRoleName = 'fast_utility' | 'deep_reasoning' | 'summarizer';
+
+export interface ModelRoleInfo {
+  label: string;
+  description: string;
+  /** Configured provider:model ("" = unset — the role tier is a no-op). */
+  model: string;
+}
+
+export interface ModelRoleMember {
+  member: string;
+  label: string;
+  role: ModelRoleName;
+  kind: 'memory' | 'config';
+  source: string;
+  /** The member's own configured value ("" when unset). */
+  explicit: string;
+  /** The member's role model ("" when the role is unset). */
+  role_model: string;
+  /** The concrete model this member currently resolves to ("" = provider fallback chain). */
+  effective: string;
+  following: 'explicit' | 'role' | 'fallback';
+}
+
+export interface ModelRolesResponse {
+  roles: Record<ModelRoleName, ModelRoleInfo>;
+  members: ModelRoleMember[];
+}
+
+/** GET /api/prompts/feature-defaults — shipped defaults for overridable feature prompts. */
+export interface FeaturePromptDefaults {
+  extraction_system_prompt: string;
+  relevance_filter_prompt: string;
+  planner_prompt: string;
+  prompt_enhancement_prompt: string;
 }
 
 // === Memory Explorer Types ===

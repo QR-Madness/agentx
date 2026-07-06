@@ -1,7 +1,8 @@
 /**
- * PromptLibraryModal — Responsive two-mode layout
- * variant=modal: opaque bg-primary tokens (standalone)
+ * PromptLibraryBrowser — Responsive two-mode layout
+ * variant=modal: opaque bg-primary tokens (standalone modal)
  * variant=panel: glass tokens (embedded in profile editor)
+ * variant=section: glass tokens + own card border (unified-settings section)
  */
 
 /* ── Root ── */
@@ -35,6 +36,20 @@
   --plm-card-bg:    var(--glass-layer-1);
   --plm-card-hover: var(--glass-layer-2);
   background: var(--plm-bg);
+}
+
+/* Embedded in a settings section: same glass tokens as panel, but the browser
+   draws its own card border since there is no modal/dialog chrome around it. */
+.plm-variant-section {
+  --plm-bg:         transparent;
+  --plm-bg-2:       var(--glass-layer-1);
+  --plm-bg-3:       var(--glass-layer-2);
+  --plm-border:     var(--accent-tint-soft);
+  --plm-border-2:   var(--accent-tint-medium);
+  --plm-card-bg:    var(--glass-layer-1);
+  --plm-card-hover: var(--glass-layer-2);
+  background: var(--plm-bg);
+  border: 1px solid var(--accent-tint-soft);
 }
 
 /* ── Header ── */
@@ -739,6 +754,14 @@
   border-color: var(--feedback-error-border);
 }
 .plm-btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Section host ── */
+/* Wrapper used by PromptTemplatesSection: the browser fills its host (height:
+   100%), so the settings section gives it a bounded, viewport-aware height. */
+.plm-section-host {
+  height: min(720px, calc(100vh - 240px));
+  min-height: 420px;
+}
 
 /* ── Spin ── */
 .spin {

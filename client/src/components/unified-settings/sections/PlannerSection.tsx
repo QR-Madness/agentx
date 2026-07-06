@@ -6,7 +6,6 @@
  * (useSettingsAutosave — the section exemplar for the settings overhaul).
  */
 
-import { useRef } from 'react';
 import { ListTree, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { useSettingsAutosave } from '../../../lib/hooks';
@@ -15,7 +14,6 @@ import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
 import {
   NumberField,
-  PromptField,
   SaveStatusChip,
   SelectField,
   SliderField,
@@ -29,32 +27,23 @@ interface PlannerSettings extends Record<string, unknown> {
   model: string;
   temperature: number;
   max_tokens: number;
-  prompt_override: string;
   complexity_threshold: ComplexityThreshold;
 }
 
 export default function PlannerSection() {
   const { notifyError } = useNotify();
-  // The built-in decomposition prompt (read-only) used to seed the editor so
-  // the user can customize from the real default instead of a blank box.
-  const defaultPromptRef = useRef('');
 
   const { settings, loading, status, update } = useSettingsAutosave<PlannerSettings>({
     load: async () => {
       const config = await api.getConfig();
       const p = (config.planner || {}) as Partial<PlannerSettings> & {
         model?: string | null;
-        decompose_default?: string;
       };
-      const builtinPrompt = p.decompose_default || '';
-      defaultPromptRef.current = builtinPrompt;
       return {
         enabled: p.enabled ?? true,
         model: p.model || '',
         temperature: p.temperature ?? 0.3,
         max_tokens: p.max_tokens ?? 1000,
-        // Seed the editor with the built-in prompt when no override is saved.
-        prompt_override: p.prompt_override || builtinPrompt,
         complexity_threshold: (p.complexity_threshold as ComplexityThreshold) || 'complex',
       };
     },
@@ -63,13 +52,6 @@ export default function PlannerSection() {
       // Empty string → null so backend falls back to agent default model.
       if ('model' in payload) {
         payload.model = String(payload.model ?? '').trim() ? payload.model : null;
-      }
-      // If the editor still matches the built-in prompt, persist empty so the
-      // planner keeps tracking the live default instead of pinning a copy.
-      if ('prompt_override' in payload) {
-        const text = String(payload.prompt_override ?? '');
-        payload.prompt_override =
-          text.trim() === defaultPromptRef.current.trim() ? '' : text;
       }
       await api.updateConfig({ planner: payload });
     },
@@ -140,15 +122,9 @@ export default function PlannerSection() {
             title="Maximum length of the plan response."
           />
 
-          <PromptField
-            label="Custom Planner Prompt"
-            value={settings.prompt_override}
-            onChange={prompt_override => update({ prompt_override })}
-            onReset={() => update({ prompt_override: defaultPromptRef.current })}
-            placeholder="Override the planner's decomposition system prompt..."
-            rows={10}
-            defaultText={defaultPromptRef.current}
-          />
+          <p className="setting-hint">
+            The custom planner prompt now lives in Prompts → Feature Prompts.
+          </p>
         </div>
       )}
     </div>

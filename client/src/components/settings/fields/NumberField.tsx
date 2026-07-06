@@ -3,6 +3,7 @@
  * mirrors the original `parseInt(...) || fallback` behavior for empty input.
  */
 
+import type { ReactNode } from 'react';
 import { Label, Input } from '../../ui';
 
 interface NumberFieldProps {
@@ -14,9 +15,10 @@ interface NumberFieldProps {
   /** Value used when the field parses to NaN/0 (mirrors `parseInt(...) || fallback`). */
   fallback?: number;
   title?: string;
+  hint?: ReactNode;
 }
 
-export function NumberField({ label, value, min, max, onChange, fallback, title }: NumberFieldProps) {
+export function NumberField({ label, value, min, max, onChange, fallback, title, hint }: NumberFieldProps) {
   return (
     <div className="setting-row">
       <Label>{label}</Label>
@@ -31,6 +33,7 @@ export function NumberField({ label, value, min, max, onChange, fallback, title 
           onChange(fallback !== undefined ? (parsed || fallback) : parsed);
         }}
       />
+      {hint && <span className="setting-hint">{hint}</span>}
     </div>
   );
 }

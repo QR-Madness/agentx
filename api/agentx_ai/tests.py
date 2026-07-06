@@ -4388,6 +4388,15 @@ class MemorySettingsEndpointTest(TestCase):
             self.assertIn("extraction_temperature", body.get("errors", {}))
             save.assert_not_called()
 
+    def test_feature_prompt_defaults_shape(self) -> None:
+        resp = self.client.get("/api/prompts/feature-defaults")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        for key in ("extraction_system_prompt", "relevance_filter_prompt",
+                    "planner_prompt", "prompt_enhancement_prompt"):
+            self.assertIsInstance(body.get(key), str)
+            self.assertTrue(body[key].strip(), f"{key} default is empty")
+
     def test_post_recall_settings_validates_too(self) -> None:
         with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
             resp = self.client.post(
