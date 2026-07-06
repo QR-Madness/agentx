@@ -35,6 +35,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Added HTTPS scheme to Tauri app** - which will invalidate all local data on Windows.
 - **UI foundation restored**: reset, real fonts, one field style.
 - **Anthropic models get their full system prompt** (blocks were dropped).
 - **Security**: gateway fails closed on an empty token; proxy trust is opt-in;

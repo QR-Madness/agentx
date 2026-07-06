@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # AgentX API Server Dockerfile
-# Build: docker build -t agentx-api .
-# Run: docker run -p 12319:12319 --env-file .env agentx-api
+# Update AGENTX_IMAGE for customizing the base image (see docker-compose.yml for example usage). The base image is pinned to a specific Python version for reproducibility.
+# Build: docker build -t qrmadness/agentx-api .
+# Run: docker run -p 12319:12319 --env-file .env qrmadness/agentx-api
 
 FROM python:3.14-slim
 

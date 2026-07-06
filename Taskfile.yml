@@ -1460,6 +1460,7 @@ tasks:
   manager:serve:
     desc: "Run the deployment-manager web GUI (http://127.0.0.1:12320)"
     cmds:
+      - echo "📡 Starting deployment manager GUI | Make sure to rebuild the manager after any [repo] changes"
       - 'uv run --project manager agentx-manager --root . serve'
 
   manager:usage:

@@ -198,6 +198,7 @@ CORS_ALLOW_HEADERS = [
     "agentx-gateway-token",  # Nginx gateway shared-secret header (gateway deployments)
 ]
 
+
 # Exempt API endpoints from CSRF since we're using CORS
 _csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 if _csrf_origins_env:
@@ -209,6 +210,10 @@ else:
         "http://127.0.0.1:1420",
         *_TAURI_ORIGINS,
     ]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://tauri\.localhost/?$",  # Matches both with and without trailing slash
+]
 
 # AGENTX_PUBLIC_HOST is a convenience knob for clusters fronted by an HTTPS
 # reverse proxy (e.g. Cloudflare Tunnel + nginx gateway).
