@@ -199,6 +199,18 @@ Connect to one or all configured MCP servers.
 }
 ```
 
+**Response (OAuth server needing consent — HTTP 202):**
+```json
+{
+  "status": "auth_required",
+  "server": "remote-oauth",
+  "authorization_url": "https://provider.example.com/authorize?..."
+}
+```
+
+Open `authorization_url` in a browser; the connect completes in the background once the
+user authorizes (poll `GET /api/mcp/servers` for the transition to `connected`).
+
 **Request (all):**
 ```json
 {"all": true}
@@ -222,6 +234,30 @@ POST /api/mcp/disconnect
 
 **Request (single):** `{"server": "filesystem"}`
 **Request (all):** `{"all": true}`
+
+### OAuth 2.1 (remote servers)
+
+Remote servers (`sse` / `streamable_http`) can require OAuth 2.1. Add an `auth` block to
+the server config:
+
+```json
+{"auth": {"type": "oauth", "scope": "mcp:tools", "client_id": "optional", "client_secret": "${VAR}"}}
+```
+
+With no `client_id`, AgentX registers itself dynamically (RFC 7591) after discovering the
+authorization server via protected-resource metadata (RFC 9728); `client_id`/`client_secret`
+are for providers without dynamic registration. Tokens + the registration persist per server
+under `data/mcp_oauth/` and refresh automatically.
+
+```
+GET  /api/mcp/oauth/callback              # OAuth redirect target (public; state-validated)
+POST /api/mcp/servers/{name}/auth/reset   # forget tokens + registration (fresh sign-in)
+```
+
+The callback is the loopback redirect URI (RFC 8252) registered with the authorization
+server — override the advertised URL with `AGENTX_OAUTH_REDIRECT_URL` when the API is not
+on `http://localhost:12319`. Server payloads from `GET /api/mcp/servers` carry an
+`auth_state` object (`authorized` / `pending` / `error`) for OAuth servers.
 
 ---
 

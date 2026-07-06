@@ -163,6 +163,7 @@ describe('api facade', () => {
         "renameAmbassadorThread",
         "renameWorkspace",
         "reorderPromptLayers",
+        "resetMCPServerAuth",
         "resetMemory",
         "resetPromptLayer",
         "resetPromptTemplate",

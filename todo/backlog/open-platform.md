@@ -52,3 +52,20 @@
 - [ ] **Egress / webhooks** — outbound events so external systems can react to agent activity
       (run lifecycle, new facts, goal completion).
 
+### MCP client — remote OAuth & lifecycle
+
+> ⭐ **Remote OAuth 2.1 shipped v0.21.163** — `mcp.client.auth.OAuthClientProvider` wired into the
+> SSE/streamable-HTTP transports (PKCE, RFC 7591 dynamic registration, RFC 9728 discovery, token
+> refresh); per-server token store `data/mcp_oauth/` (`FileTokenStorage`); interactive connect
+> state machine (`connect_interactive` → 202 `auth_required` + consent URL → PUBLIC state-validated
+> `GET /api/mcp/oauth/callback`); `auth` config block (pre-registered creds for non-DCR providers —
+> what a future Google Drive import will use); Toolkit UI (auth section, waiting-poll, Reset auth).
+> See Development-Notes → "MCP Remote OAuth".
+
+- [ ] **`tools/list_changed` re-discovery** — pass a `message_handler` to `ClientSession` and re-run
+      `discover_tools` on the notification (today discovery happens once at connect; refresh = reconnect).
+- [ ] **Make `auto_reconnect` real** — the flag is persisted but no runtime loop acts on transient
+      failures; expired-token OAuth sessions also want a refresh-then-reconnect pass.
+- [ ] **Tauri deep-link OAuth callback** — for Phase-19 cloud mode where the API isn't on the user's
+      localhost; the loopback callback covers desktop + browser today (`AGENTX_OAUTH_REDIRECT_URL`).
+

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.160 -->
+<!-- release-version: 0.21.163 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -30,6 +30,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Memory brain upgrade**: windowed extraction, an `eval_recall` harness, and
   **two-stage recall** (+20pp MRR).
 - **Reasoning models think out loud** on OpenAI-compatible providers.
+- **Sign in to remote MCP servers** — OAuth 2.1 with automatic client registration;
+  connect opens your browser, tokens are stored and refreshed server-side.
 - **Model roles** — one model each for Fast Utility, Deep Reasoning, Summarizer;
   unset feature models follow their role, explicit choices win.
 

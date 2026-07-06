@@ -40,21 +40,23 @@ class SSETransport:
         name: str,
         url: str,
         headers: dict[str, str] | None = None,
+        auth=None,
     ) -> AsyncGenerator[ClientSession]:
         """
         Connect to an MCP server via SSE.
-        
+
         Args:
             name: Unique name for this connection
             url: SSE endpoint URL
             headers: HTTP headers to include in requests
-            
+            auth: Optional httpx.Auth (e.g. the SDK's OAuthClientProvider)
+
         Yields:
             ClientSession: The connected MCP client session
         """
         logger.info(f"Connecting to MCP server '{name}' via SSE: {url}")
-        
-        async with sse_client(url, headers=headers) as (read, write):
+
+        async with sse_client(url, headers=headers, auth=auth) as (read, write):
             async with ClientSession(read, write) as session:
                 # Initialize the session
                 await session.initialize()

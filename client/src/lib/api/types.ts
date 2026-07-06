@@ -106,6 +106,26 @@ export interface ModelInfo {
   capabilities?: string[];
 }
 
+/** OAuth 2.1 config for remote MCP servers. No client_id → dynamic client
+ *  registration (RFC 7591); client_id/secret are for providers without DCR
+ *  (values support ${VAR} env expansion server-side). */
+export interface MCPServerAuth {
+  type: 'oauth';
+  scope?: string;
+  client_id?: string;
+  client_secret?: string;
+}
+
+/** OAuth lifecycle state (null for non-OAuth servers). */
+export interface MCPServerAuthState {
+  /** Tokens/registration are stored server-side (may still need refresh). */
+  authorized: boolean;
+  /** A consent round-trip is currently pending in the browser. */
+  pending: boolean;
+  /** Last terminal auth error (denied consent, exchange failure). */
+  error: string | null;
+}
+
 export interface MCPServer {
   name: string;
   status: string;
@@ -119,6 +139,8 @@ export interface MCPServer {
   env?: Record<string, string>;
   url?: string | null;
   headers?: Record<string, string>;
+  auth?: MCPServerAuth | null;
+  auth_state?: MCPServerAuthState | null;
   timeout?: number;
   auto_reconnect?: boolean;
   // Persisted desired-connected state; auto-managed by connect/disconnect and
@@ -136,6 +158,7 @@ export interface MCPServerConfigInput {
   env?: Record<string, string>;
   url?: string | null;
   headers?: Record<string, string>;
+  auth?: MCPServerAuth | null;
   timeout?: number;
   auto_reconnect?: boolean;
   // Persisted desired-connected state; auto-managed by connect/disconnect and

@@ -230,6 +230,232 @@ class MCPClientTest(APITestBase):
         self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
 
 
+class MCPOAuthTest(TestCase):
+    """OAuth 2.1 for remote MCP servers: config schema, token storage, the
+    interactive-flow bridge, and the callback/reset endpoints."""
+
+    # --- ServerConfig.auth ---
+
+    def test_auth_config_round_trip_and_validation(self) -> None:
+        cfg = ServerConfig.from_dict("remote", {
+            "transport": "streamable_http",
+            "url": "https://mcp.example.com/mcp",
+            "auth": {"type": "oauth", "scope": "mcp:tools"},
+        })
+        self.assertTrue(cfg.validate())
+        from agentx_ai.mcp.server_registry import ServerRegistry as SR
+        out = SR._server_to_dict(cfg)
+        self.assertEqual(out["auth"], {"type": "oauth", "scope": "mcp:tools"})
+
+        bad_type = ServerConfig.from_dict("x", {
+            "transport": "sse", "url": "https://x", "auth": {"type": "basic"},
+        })
+        with self.assertRaises(ValueError):
+            bad_type.validate()
+        bad_transport = ServerConfig.from_dict("x", {
+            "transport": "stdio", "command": "npx", "auth": {"type": "oauth"},
+        })
+        with self.assertRaises(ValueError):
+            bad_transport.validate()
+
+    def test_auth_env_expansion(self) -> None:
+        import os
+        cfg = ServerConfig.from_dict("remote", {
+            "transport": "sse", "url": "https://x",
+            "auth": {"type": "oauth", "client_id": "cid", "client_secret": "${MCP_TEST_SECRET}"},
+        })
+        os.environ["MCP_TEST_SECRET"] = "s3cr3t"
+        try:
+            resolved = cfg.resolve_auth()
+            assert resolved is not None
+            self.assertEqual(resolved["client_secret"], "s3cr3t")
+            self.assertEqual(resolved["client_id"], "cid")
+        finally:
+            del os.environ["MCP_TEST_SECRET"]
+
+    # --- FileTokenStorage ---
+
+    def test_token_storage_round_trip(self) -> None:
+        import asyncio
+        import tempfile
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+        from agentx_ai.mcp import oauth_storage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                store = oauth_storage.FileTokenStorage("my server!")
+                self.assertIsNone(asyncio.run(store.get_tokens()))
+                tokens = OAuthToken(access_token="at", token_type="Bearer", refresh_token="rt")  # noqa: S106 — test fixture
+                asyncio.run(store.set_tokens(tokens))
+                got = asyncio.run(store.get_tokens())
+                assert got is not None
+                self.assertEqual(got.access_token, "at")
+                self.assertEqual(got.refresh_token, "rt")
+
+                info = OAuthClientInformationFull(
+                    client_id="cid", client_secret="cs", redirect_uris=None,  # noqa: S106 — test fixture
+                )
+                asyncio.run(store.set_client_info(info))
+                got_info = asyncio.run(store.get_client_info())
+                assert got_info is not None
+                self.assertEqual(got_info.client_id, "cid")
+
+                # File is 0600 and sanitized ("my server!" → safe name).
+                files = list(Path(tmp).glob("*.json"))
+                self.assertEqual(len(files), 1)
+                self.assertNotIn("!", files[0].name)
+                self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+
+                self.assertTrue(oauth_storage.has_oauth_state("my server!"))
+                self.assertTrue(oauth_storage.clear_oauth_state("my server!"))
+                self.assertIsNone(asyncio.run(store.get_tokens()))
+
+    def test_token_storage_preregistered_seed(self) -> None:
+        import asyncio
+        import tempfile
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from agentx_ai.mcp import oauth_storage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                store = oauth_storage.FileTokenStorage(
+                    "g", preregistered={"type": "oauth", "client_id": "pre", "client_secret": "psec"},
+                )
+                info = asyncio.run(store.get_client_info())
+                assert info is not None
+                self.assertEqual(info.client_id, "pre")
+                self.assertEqual(info.client_secret, "psec")
+
+    # --- oauth_flow bridge ---
+
+    def test_flow_publish_and_resolve(self) -> None:
+        import asyncio
+        import threading
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow = oauth_flow.begin_flow("srv", loop)
+            url = "https://auth.example.com/authorize?client_id=x&state=st123"
+            # publish runs on the loop in production; call directly (thread-safe fields).
+            oauth_flow.publish_authorization_url(flow, url)
+            self.assertTrue(flow.url_ready.is_set())
+            self.assertEqual(flow.state, "st123")
+
+            resolved = oauth_flow.resolve_callback("st123", "authcode")
+            self.assertIs(resolved, flow)
+            code, state = asyncio.run_coroutine_threadsafe(
+                self._await_future(flow.future), loop
+            ).result(timeout=5)
+            self.assertEqual((code, state), ("authcode", "st123"))
+
+            # Unknown state resolves nothing.
+            self.assertIsNone(oauth_flow.resolve_callback("nope", "c"))
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
+    @staticmethod
+    async def _await_future(fut):
+        return await fut
+
+    def test_flow_failure_records_last_error(self) -> None:
+        import asyncio
+        import threading
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow = oauth_flow.begin_flow("srv2", loop)
+            oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=stX")
+            failed = oauth_flow.fail_by_state("stX", "access_denied")
+            self.assertIs(failed, flow)
+            self.assertEqual(oauth_flow.last_error("srv2"), "access_denied")
+            # A fresh attempt clears the sticky error.
+            oauth_flow.begin_flow("srv2", loop)
+            self.assertIsNone(oauth_flow.last_error("srv2"))
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
+    # --- endpoints ---
+
+    def _client(self):
+        from django.test import Client
+        return Client()
+
+    def test_callback_rejects_missing_and_unknown(self) -> None:
+        c = self._client()
+        self.assertEqual(c.get("/api/mcp/oauth/callback").status_code, 400)
+        resp = c.get("/api/mcp/oauth/callback", {"code": "x", "state": "unknown-state"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_callback_resolves_pending_flow(self) -> None:
+        import asyncio
+        import threading
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow = oauth_flow.begin_flow("cbsrv", loop)
+            oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=cb-state")
+            resp = self._client().get(
+                "/api/mcp/oauth/callback", {"code": "the-code", "state": "cb-state"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn(b"authorized", resp.content)
+            code, _ = asyncio.run_coroutine_threadsafe(
+                self._await_future(flow.future), loop
+            ).result(timeout=5)
+            self.assertEqual(code, "the-code")
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
+    def test_callback_is_public_route(self) -> None:
+        from agentx_ai.auth.middleware import AgentXAuthMiddleware
+        self.assertIn("/api/mcp/oauth/callback", AgentXAuthMiddleware.PUBLIC_ROUTES)
+
+    def test_connect_returns_auth_required(self) -> None:
+        with patch("agentx_ai.views.get_mcp_manager") as gm:
+            manager = MagicMock()
+            manager.connect_interactive.return_value = {
+                "status": "auth_required",
+                "authorization_url": "https://a/authorize?state=s",
+            }
+            gm.return_value = manager
+            resp = self._client().post(
+                "/api/mcp/connect",
+                data=json.dumps({"server": "remote"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 202)
+        body = resp.json()
+        self.assertEqual(body["status"], "auth_required")
+        self.assertEqual(body["authorization_url"], "https://a/authorize?state=s")
+
+    def test_auth_reset_endpoint(self) -> None:
+        with patch("agentx_ai.views.get_mcp_manager") as gm, \
+             patch("agentx_ai.mcp.oauth_storage.clear_oauth_state", return_value=True) as clear:
+            manager = MagicMock()
+            manager.registry.get.return_value = MagicMock()
+            manager.get_connection.return_value = None
+            gm.return_value = manager
+            resp = self._client().post("/api/mcp/servers/remote/auth/reset")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["cleared"])
+        clear.assert_called_once_with("remote")
+
+
 class MCPServerRegistryTest(TestCase):
     def test_server_config_creation(self) -> None:
         """Test creating a server configuration."""

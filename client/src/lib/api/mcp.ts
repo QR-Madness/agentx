@@ -32,10 +32,26 @@ export const mcpApi = {
     return apiRequest('/api/mcp/resources');
   },
 
-  async connectMCPServer(server: string): Promise<{ status: string; server: string; tools_count: number; resources_count: number }> {
+  /** Connect a server. OAuth servers needing consent return
+   *  `status: "auth_required"` (HTTP 202) with an `authorization_url` to open;
+   *  the connect completes in the background once the user authorizes. */
+  async connectMCPServer(server: string): Promise<{
+    status: string;
+    server: string;
+    tools_count?: number;
+    resources_count?: number;
+    authorization_url?: string;
+  }> {
     return apiRequest('/api/mcp/connect', {
       method: 'POST',
       body: JSON.stringify({ server }),
+    });
+  },
+
+  /** Forget a server's OAuth tokens + registration (forces a fresh sign-in). */
+  async resetMCPServerAuth(server: string): Promise<{ status: string; server: string; cleared: boolean }> {
+    return apiRequest(`/api/mcp/servers/${encodeURIComponent(server)}/auth/reset`, {
+      method: 'POST',
     });
   },
 

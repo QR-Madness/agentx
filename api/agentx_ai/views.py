@@ -565,12 +565,29 @@ def _serialize_server(
             if config.allowed_agent_ids is not None
             else None
         ),
+        "auth": (dict(config.auth) if config.auth else None),
         "status": "connected" if connection else "disconnected",
         "tools": [t.name for t in connection.tools] if connection else [],
         "tools_count": len(connection.tools) if connection else 0,
         "resources_count": len(connection.resources) if connection else 0,
         "tool_discovery_error": tool_discovery_error,
         "resource_discovery_error": resource_discovery_error,
+        "auth_state": _serialize_auth_state(config),
+    }
+
+
+def _serialize_auth_state(config) -> dict | None:
+    """OAuth lifecycle state for the Toolkit UI (None for non-OAuth servers)."""
+    if not config.auth or config.auth.get("type") != "oauth":
+        return None
+    from .mcp import oauth_flow
+    from .mcp.oauth_storage import has_oauth_state
+
+    flow = oauth_flow.get_flow(config.name)
+    return {
+        "authorized": has_oauth_state(config.name),
+        "pending": bool(flow and flow.authorization_url and flow.error is None),
+        "error": oauth_flow.last_error(config.name),
     }
 
 
@@ -790,7 +807,17 @@ def mcp_connect(request):
         return json_error("Provide 'server' name or 'all': true", status=400)
 
     try:
-        connection = manager.connect(server_name)
+        result = manager.connect_interactive(server_name)
+        if result["status"] == "auth_required":
+            # OAuth consent needed: the connect continues in the background;
+            # the client opens the URL and polls /api/mcp/servers for the
+            # transition to connected (the callback view resolves the flow).
+            return JsonResponse({
+                "status": "auth_required",
+                "server": server_name,
+                "authorization_url": result["authorization_url"],
+            }, status=202)
+        connection = result["connection"]
         _set_mcp_auto_connect(manager, [server_name], True)
         return JsonResponse({
             "status": "connected",
@@ -807,6 +834,80 @@ def mcp_connect(request):
     except Exception as e:
         logger.error(f"Failed to connect to '{server_name}': {e}")
         return json_error(f"Connection failed: {e}", status=500)
+
+
+_OAUTH_RESULT_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>AgentX — MCP authorization</title>
+<style>body{{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;
+background:#101014;color:#e6e6ea}}main{{text-align:center;max-width:28rem;padding:2rem}}
+h1{{font-size:1.1rem}}p{{color:#9a9aa4;font-size:.9rem}}</style></head>
+<body><main><h1>{title}</h1><p>{detail}</p></main></body></html>"""
+
+
+def _oauth_result_page(title: str, detail: str, status: int = 200):
+    from django.http import HttpResponse
+
+    page = _OAUTH_RESULT_PAGE.format(title=title, detail=detail)
+    return HttpResponse(page.encode("utf-8"), status=status, content_type="text/html")
+
+
+@csrf_exempt
+def mcp_oauth_callback(request):
+    """OAuth 2.1 redirect endpoint for remote MCP servers (RFC 8252 loopback).
+
+    PUBLIC route (the browser redirect carries no auth token) — exempted in
+    AgentXAuthMiddleware and guarded by strict `state` validation instead: an
+    unknown or expired state is a 400 and resolves nothing.
+    """
+    from .mcp import oauth_flow
+
+    if request.method != "GET":
+        return json_error("Method not allowed", status=405)
+
+    state = request.GET.get("state") or ""
+    oauth_error = request.GET.get("error")
+    if oauth_error:
+        detail = request.GET.get("error_description") or oauth_error
+        if state:
+            oauth_flow.fail_by_state(state, detail)
+        return _oauth_result_page(
+            "Authorization failed",
+            f"{detail}. You can close this tab and retry from AgentX.",
+            status=400,
+        )
+
+    code = request.GET.get("code") or ""
+    if not code or not state:
+        return _oauth_result_page(
+            "Invalid callback", "Missing code or state parameter.", status=400,
+        )
+
+    flow = oauth_flow.resolve_callback(state, code)
+    if flow is None:
+        return _oauth_result_page(
+            "Unknown or expired authorization",
+            "This sign-in attempt is no longer pending. Retry from AgentX.",
+            status=400,
+        )
+    return _oauth_result_page(
+        f"'{flow.server_name}' authorized ✓",
+        "You can close this tab — AgentX is completing the connection.",
+    )
+
+
+@csrf_exempt
+def mcp_server_auth_reset(request, name: str):
+    """POST: forget a server's OAuth tokens + registration (forces a fresh sign-in)."""
+    from .mcp.oauth_storage import clear_oauth_state
+
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+    manager = get_mcp_manager()
+    if manager.registry.get(name) is None:
+        return json_error(f"Server '{name}' not found", status=404)
+    _refresh_connection(manager, name)  # drop the live session before forgetting tokens
+    cleared = clear_oauth_state(name)
+    return JsonResponse({"status": "reset", "server": name, "cleared": cleared})
 
 
 @csrf_exempt

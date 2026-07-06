@@ -42,6 +42,7 @@ class StreamableHTTPTransport:
         name: str,
         url: str,
         headers: dict[str, str] | None = None,
+        auth=None,
     ) -> AsyncGenerator[ClientSession]:
         """
         Connect to an MCP server via Streamable HTTP.
@@ -50,13 +51,14 @@ class StreamableHTTPTransport:
             name: Unique name for this connection
             url: HTTP endpoint URL
             headers: HTTP headers to include in requests
+            auth: Optional httpx.Auth (e.g. the SDK's OAuthClientProvider)
 
         Yields:
             ClientSession: The connected MCP client session
         """
         logger.info(f"Connecting to MCP server '{name}' via streamable HTTP: {url}")
 
-        async with streamablehttp_client(url, headers=headers) as (read, write, _get_session_id):
+        async with streamablehttp_client(url, headers=headers, auth=auth) as (read, write, _get_session_id):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
