@@ -27,6 +27,7 @@ each one and how it feeds the others.
 | Fact verification (3-layer) | jobs | shipped | hash → semantic → entity-scoped → `check_contradictions` | per channel |
 | Corrections / supersession | jobs | shipped | `check_correction`, `_handle_user_correction` | per channel |
 | Recall (5 techniques) | recall | shipped | `RecallLayer.recall` (hybrid, entity-centric, query-expansion, HyDE, self-query) | `[active, _self_, _global]` |
+| Two-stage rerank | recall | shipped | `RecallLayer._cross_encoder_stage` — 50-candidate pool → post-fusion cross-encoder, bounded demotion (cap 2); default-ON | `[active, _self_, _global]` |
 | Stable salient core | recall | shipped | `AgentMemory.get_salient_core` → `get_salient_facts`/`get_salient_entities` (`memory/semantic.py`); injected as the prio-70 ledger block (`agent/context_ledger.py`) | `[active, _self_, _global]` |
 | Context gating | context | shipped | `ToolOutputCompressor`, `tool_output_chunker`, trajectory compression | active |
 | Project memory scoping | channels | shipped | `_resolve_project_channel_workspace` (`views.py`) → `AgentConfig.memory_channel = _project_{ws_id}` | `_project_{workspace_id}` (opt-out: `memory.project_channels`) |
@@ -120,6 +121,13 @@ graph TD
 - **RecallLayer** offers five techniques (hybrid BM25+vector, entity-centric, query
   expansion, HyDE, self-query) over the channel list `[active, _self_{agent_id}, _global]`,
   so an agent sees the user's context, its own self-knowledge, and global facts together.
+- **Two-stage rerank** (default-ON): stage 1 over-fetches a ~50-candidate pool
+  (`recall_candidate_pool`); stage 2 reranks the fused pool with a cross-encoder
+  (`cross-encoder/ms-marco-MiniLM-L-6-v2`, lazy-loaded, failure-safe) and cuts back to top-k.
+  The encoder promotes freely but demotes a fused candidate at most `recall_ce_max_demotion`
+  (2) positions — a hedge against encoder blind spots. Eval: +20pp MRR on the `eval_recall`
+  golden set. A first-person attribution guard exists behind `recall_first_person_guard`
+  (default-OFF — failed its abstention gate; see Memory-Roadmap §2.11).
 - **Stable salient core** (`get_salient_core`) injects a high-priority, *maintained-not-searched*
   block of the top-salience facts/entities (cheap non-vector `ORDER BY salience`, excludes
   superseded/retired) every turn, so durable knowledge no longer depends on the current message

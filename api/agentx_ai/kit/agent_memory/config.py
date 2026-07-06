@@ -95,8 +95,11 @@ class Settings(BaseSettings):
     # Multi-channel retrieval
     channel_active_boost: float = 1.2  # Boost factor for active channel results vs _global
 
-    # Cross-encoder reranking (optional, higher accuracy but slower)
-    cross_encoder_enabled: bool = False
+    # Cross-encoder reranking — default ON since the §2.11 post-fusion stage
+    # passed its eval gate (+20pp MRR, p95 ~450ms; see Memory-Roadmap §2.7).
+    # Lazy-loaded on first recall; a load failure never breaks recall.
+    # Upgrade candidate: BAAI/bge-reranker-v2-m3 (heavier, config-only).
+    cross_encoder_enabled: bool = True
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     # Retrieval caching
@@ -122,6 +125,33 @@ class Settings(BaseSettings):
     # separate from fact_confidence_threshold (0.7) so recall can surface
     # lower-confidence facts that ranking will still order appropriately.
     recall_min_confidence: float = 0.5
+
+    # --- Two-Stage Recall (§2.11) ---
+    # Candidate pool width for stage 1: hybrid/self-query over-fetch size, and
+    # the RRF output width when a downstream rerank stage will cut back to
+    # top_k. Reranking is documented ineffective at ~20 candidates; ~50 is the
+    # sweet spot for MiniLM-class cross-encoders on CPU.
+    recall_candidate_pool: int = 50
+    # Bounded demotion in the rerank stage: the cross-encoder may promote a
+    # candidate freely but demote it at most this many positions below its
+    # stage-1 (fused) rank — a hedge against encoder blind spots (negation-
+    # heavy claims with no lexical overlap get buried by MiniLM despite a
+    # strong fused rank). <= 0 disables the cap (pure cross-encoder order).
+    # Eval-tuned: cap 2 restores every category to >= its fused baseline at
+    # the same MRR as pure CE order (cap sweep in Memory-Roadmap §2.7).
+    recall_ce_max_demotion: int = 2
+
+    # --- First-Person Attribution Guard ---
+    # For first-person queries ("what do I…"), penalize facts whose claim is
+    # not about the user (claims start with their subject by extraction
+    # convention). Penalize-only: a third-party fact can still be the right
+    # answer, so nothing is ever dropped.
+    # Default OFF — failed its §2.11 eval gate: under the cross-encoder stage
+    # a rank penalty buys 0.0 abstention (the distractor IS the most relevant
+    # candidate, CE rank 1) at a −3pp MRR cost on multi-hop. Numbers in
+    # Memory-Roadmap §2.7; a CE-score *threshold* is the promising successor.
+    recall_first_person_guard: bool = False
+    recall_first_person_penalty: float = 0.5
 
     # --- Hybrid Search Settings ---
     recall_hybrid_bm25_weight: float = 0.3  # BM25 contribution to RRF
@@ -554,6 +584,16 @@ def get_recall_settings() -> dict[str, Any]:
 
         # General recall settings
         "recall_min_confidence": settings.recall_min_confidence,
+
+        # Two-stage recall (§2.11)
+        "recall_candidate_pool": settings.recall_candidate_pool,
+        "recall_ce_max_demotion": settings.recall_ce_max_demotion,
+        "cross_encoder_enabled": settings.cross_encoder_enabled,
+        "cross_encoder_model": settings.cross_encoder_model,
+
+        # First-person attribution guard
+        "recall_first_person_guard": settings.recall_first_person_guard,
+        "recall_first_person_penalty": settings.recall_first_person_penalty,
 
         # Hybrid search settings
         "recall_hybrid_bm25_weight": settings.recall_hybrid_bm25_weight,

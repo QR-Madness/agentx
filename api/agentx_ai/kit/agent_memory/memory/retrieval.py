@@ -177,13 +177,15 @@ class MemoryRetriever:
         include_episodic: bool,
         include_semantic: bool,
         include_procedural: bool,
+        defer_cross_encoder: bool = False,
     ) -> str:
         """Generate cache key for retrieval."""
         # Use longer hash to reduce collision risk (32 chars = 128 bits)
         query_hash = hashlib.sha256(query.encode()).hexdigest()[:32]
         channels_str = ",".join(sorted(channels))
         params_hash = hashlib.sha256(
-            f"{top_k}:{include_episodic}:{include_semantic}:{include_procedural}".encode()
+            f"{top_k}:{include_episodic}:{include_semantic}:{include_procedural}"
+            f":{defer_cross_encoder}".encode()
         ).hexdigest()[:16]
         return f"{settings.retrieval_cache_key_prefix}:{user_id}:{channels_str}:{query_hash}:{params_hash}"
 
@@ -282,6 +284,7 @@ class MemoryRetriever:
         channels: list[str] | None = None,
         strategy_weights: RetrievalWeights | dict[str, float] | None = None,
         conversation_id: str | None = None,
+        defer_cross_encoder: bool = False,
     ) -> MemoryBundle:
         """
         Main retrieval method combining multiple strategies.
@@ -301,6 +304,9 @@ class MemoryRetriever:
                 episodic, semantic_facts, semantic_entities, procedural, recency
             conversation_id: Current conversation ID. When provided, the last N turns
                 from this conversation are always included regardless of similarity.
+            defer_cross_encoder: Skip the pre-fusion cross-encoder pass. Set by the
+                RecallLayer, which runs its own post-fusion cross-encoder stage over
+                the fused pool (§2.11) — the encoder must never run twice per recall.
 
         Returns:
             MemoryBundle with aggregated results
@@ -335,7 +341,8 @@ class MemoryRetriever:
         # Check cache
         cache_key = self._get_cache_key(
             query, user_id, search_channels, top_k,
-            include_episodic, include_semantic, include_procedural
+            include_episodic, include_semantic, include_procedural,
+            defer_cross_encoder,
         )
         metrics.cache_key = cache_key
 
@@ -437,7 +444,10 @@ class MemoryRetriever:
         # Rerank if enabled
         if settings.reranking_enabled:
             t4 = time.perf_counter()
-            bundle = self._rerank(bundle, query, query_embedding, effective_weights, active_channel)
+            bundle = self._rerank(
+                bundle, query, query_embedding, effective_weights, active_channel,
+                defer_cross_encoder=defer_cross_encoder,
+            )
             metrics.reranking_latency_ms = int((time.perf_counter() - t4) * 1000)
 
         # Calculate channel distribution
@@ -616,6 +626,7 @@ class MemoryRetriever:
         query_embedding: list[float],
         weights: RetrievalWeights,
         active_channel: str,
+        defer_cross_encoder: bool = False,
     ) -> MemoryBundle:
         """
         Rerank retrieved items using weighted combination of scores.
@@ -730,10 +741,12 @@ class MemoryRetriever:
             bundle.entities.sort(key=lambda x: x.get("final_score", 0), reverse=True)
             bundle.entities = bundle.entities[:settings.default_top_k]
 
-        # Optional: Cross-encoder reranking for highest accuracy
-        cross_encoder = self._get_cross_encoder()
-        if cross_encoder and bundle.relevant_turns:
-            bundle = self._cross_encoder_rerank(query, bundle, cross_encoder)
+        # Optional: Cross-encoder reranking for highest accuracy. Deferred when
+        # the RecallLayer will run its post-fusion stage instead (§2.11).
+        if not defer_cross_encoder:
+            cross_encoder = self._get_cross_encoder()
+            if cross_encoder and bundle.relevant_turns:
+                bundle = self._cross_encoder_rerank(query, bundle, cross_encoder)
 
         return bundle
 

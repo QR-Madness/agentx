@@ -9,12 +9,14 @@
 ---
 
 ### Retrieval Quality Enhancements (migrated from docs/future-feature-pool)
-- [ ] **Two-stage recall — candidate pool + cross-encoder stage** (→ [Memory-Roadmap §2.11](../../Memory-Roadmap.md)):
-      widen the hybrid over-fetch from `top_k*2` (=20/arm) to a configurable ~50–100 pool, then
-      relocate/enable the shipped-but-off cross-encoder (`cross_encoder_enabled`) as a RecallLayer
-      **post-RRF** stage; eval-gated (≥+5pp MRR on `eval_recall`). Absorbs the former
-      [misc.md](misc.md) "Cross-encoder reranking model" one-liner. Includes the verbatim-turn
-      fusion review (raw turns currently bypass RRF).
+- [x] **Two-stage recall — candidate pool + cross-encoder stage** `[v0.21.155]` —
+      `recall_candidate_pool=50` over-fetch + the cross-encoder relocated to a RecallLayer
+      **post-fusion** stage with bounded demotion (`recall_ce_max_demotion=2`); gate result
+      **MRR +20.3pp / r@1 +29.3pp / p95 ~450ms** → `cross_encoder_enabled` default-ON. The
+      first-person guard shipped **default-OFF** (0.0 abstention under CE at −3pp MRR). Absorbs
+      the former [misc.md](misc.md) "Cross-encoder reranking model" one-liner. Verbatim-turn
+      fuse-vs-parallel decision still parked in §2.11 (turns stay a documented parallel path;
+      the CE stage reranks them in their own list). Detail: Memory-Roadmap §2.11/§2.7.
 - [ ] Working Memory Scratchpad — always prepend a structured scratchpad (current topic/task, active entities, recent corrections, open questions) to context for coherence/orientation
 - [ ] Conversation Summarization — maintain rolling per-session and per-topic summaries; retrieval becomes `recent_turns + relevant_summaries + relevant_facts`
 - [ ] Query Intent Classification — classify query before retrieval (follow-up → recency, callback → older history, new topic → broad semantic, factual recall → entities/facts); rule-based or lightweight LLM

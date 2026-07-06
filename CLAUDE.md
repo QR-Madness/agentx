@@ -93,7 +93,7 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 [`Development-Notes.md`](Development-Notes.md).**
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 detection↔translation code bridging)
-- `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query). ★
+- `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query) + a post-fusion cross-encoder rerank stage (50-pool, bounded demotion; default-ON). ★
 - `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, per-workspace Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
 - `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Agent tools `workspace_search`/`document_query`/`read_document`. Internals ★. e2e: `scripts/rag_e2e.py`.
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE); configure via `mcp_servers.json`

@@ -291,9 +291,9 @@ registered capability** (cheap integrity check).
 **Shipped (v0.21.153):** `manage.py eval_recall` — seeds a 46-fact/10-entity/10-turn persona
 corpus (52 golden queries across single-hop/paraphrase/multi-hop/temporal/callback/negative)
 under an isolated eval user, scores recall@k + MRR + abstention per technique **arm**
-(base-only, each technique solo, fused, optional HyDE/self-query/cross-encoder — the §2.11
-gate arm), and persists runs to `data/eval_runs/` (`harness:"recall"` in the shared
-`index.jsonl`). Settings are pinned process-locally per arm (never written to disk); no
+(base-only, each technique solo, fused, §2.11 ablations `fused_no_ce`/`fused_ce_pure`/
+`fused_guard`, optional HyDE/self-query — LLM arms pin a model per-run via `--llm-model`),
+and persists runs to `data/eval_runs/` (`harness:"recall"` in the shared `index.jsonl`). Settings are pinned process-locally per arm (never written to disk); no
 sterility gate needed (user/channel-scoped; `--snapshot` for a clean room). The shared
 snapshot/wipe/restore util now lives in `portability/cluster.py` (eval_consolidation
 delegates). Corpus is a seam: external corpora plug in as `CorpusSpec` adapters.
@@ -308,6 +308,19 @@ within noise of each other at today's `top_k*2`(=20) pool; `fused_cross_encoder`
 +1.2pp MRR pre-pool-widening — the §2.11 ±5pp gate is judged *after* the pool fix, this is the
 "before" number. Full run JSON: `data/eval_runs/20260705-125758-904a_recall_builtin.json`
 (untracked).
+
+**§2.11 gate runs (2026-07-06, same-day re-baseline — cluster at 91 conversations scored
+noticeably higher than W1's crowded run, which is exactly why the same-day rule exists):**
+fused baseline MRR 0.7073 / r@1 0.5543 / r@5 0.9457. Post-fusion CE stage over the 50-pool with
+demotion cap 2: **MRR 0.9107 (+20.3pp) / r@1 0.8478 (+29.3pp) / r@5 0.9783 / r@10 1.0 / p95
+~450ms** (quiet-logging run; the old pre-fusion CE arm only ever reranked *turns* — every fact
+category was byte-identical, confirming the relocation was the unlock). Cap ablation: pure CE
+(cap 0) buried a fused-rank-2 negation claim out of top-10 (paraphrase r@5 1.0 → 0.9167); cap 3
+left it 6th; **cap 2 restored r@5=1.0 at MRR parity** — bounded demotion beat both pure CE and
+RRF-blend designs. Guard ablation: abstention 0.83 at −1.5pp MRR without CE, **0.0 at −3pp
+under CE** (distractor is legitimately the most relevant candidate) → shipped default-OFF.
+Run JSONs: `20260706-054804-5327` (baseline), `20260706-060007-da32` (gate),
+`20260706-060904-c45d` (cap/pure), all `_recall_builtin.json` (untracked).
 `RecallMetrics` exists but there's no retrieval analog of `eval_consolidation` — with 5
 techniques (+ cross-encoder reranking and the Active-Recall tiers coming), regressions are
 invisible. Seeded corpus + (query → expected-fact-ids) golden set; recall@k/MRR per technique
@@ -389,25 +402,35 @@ layer). Each sub-slice is eval-gated by §2.7.
   verbatim-vs-extracted preprint is contested, but its robust core stands: facts **augment** the
   verbatim turn store (already a recall target), never replace it.
 
-### 2.11 Two-stage recall: candidate pool + cross-encoder stage `[REFINES: shipped MemoryRetriever cross-encoder (off by default) + misc.md "Cross-encoder reranking" (absorbed)]`
+### 2.11 Two-stage recall: candidate pool + cross-encoder stage `[SHIPPED v0.21.155 — pool + post-fusion CE stage (default-ON, +20pp MRR); first-person guard shipped default-OFF (failed its abstention gate)]`
 
-The single largest documented accuracy lever in the [recall
-survey](todo/research/2026-07-memory-recall-research.md) (+12–17pp Recall/MRR over unreranked
-hybrid) — and the code is half-there: `_cross_encoder_rerank` exists in the base retriever
-(`cross-encoder/ms-marco-MiniLM-L-6-v2`, `cross_encoder_enabled=False`) but sits **pre-fusion**,
-and the hybrid pool is only `top_k*2` (=20/arm) — the regime where reranking is documented
-ineffective (Recall@5 0.458 at 20 candidates → 0.826 at 50 → 0.888 at 100).
+**Shipped (v0.21.155):** stage 1 — `recall_candidate_pool=50` widens the hybrid BM25/vector and
+self-query over-fetch; RRF emits the full pool only when the rerank stage will cut it back
+(`_pool_output_width`). Stage 2 — the cross-encoder now runs as a RecallLayer **post-fusion**
+stage (`_cross_encoder_stage`, between `_merge_bundles` and the final metrics, so audit/metrics
+see the real cut; the base retriever's pre-fusion pass is deferred via `defer_cross_encoder` —
+the encoder never runs twice). Ordering is CE rank with **bounded demotion**
+(`recall_ce_max_demotion=2`): CE promotes freely but can demote a fused candidate at most 2
+positions — the eval caught MiniLM burying a fused-rank-2 negation claim ("does not own a car
+and cycles") below top-10; the cap restored every category at the same MRR as pure CE order.
+Always-include turns stay pinned; encoder load failure degrades to a plain top-k trim.
+**Gate result (2026-07-06, §2.7 golden set): MRR 0.7073 → 0.9107 (+20.3pp), r@1 0.5543 → 0.8478,
+r@5 0.9457 → 0.9783, r@10 1.0, no category below its fused baseline, p95 ~450ms** — default
+flipped ON (`cross_encoder_enabled=True`). Upgrade candidate stays config-only:
+`BAAI/bge-reranker-v2-m3`.
 
-- Widen the hybrid BM25/vector over-fetch to a configurable candidate pool (default ~50) ahead of
-  any rerank.
-- Relocate/enable the cross-encoder as a RecallLayer **post-RRF** stage over the fused pool →
-  top-k; model configurable (upgrade candidate: `bge-reranker` family — runs locally via
-  `sentence-transformers`, already a dependency).
-- **Eval-gated:** keep only if ≥ +5pp MRR on the §2.7 golden set inside the recall latency budget;
-  otherwise the spend goes to §3.6 PPR instead.
-- Same pass: review **verbatim-turn fusion** — episodic turns from base retrieval currently bypass
-  RRF and the technique merge entirely (parallel path), and cross-conversation turns are limited to
-  `role=='user'`; decide fuse-vs-parallel deliberately rather than by accident of layering.
+**First-person attribution guard — shipped default-OFF** (`recall_first_person_guard`,
+rank-penalty `recall_first_person_penalty=0.5`, penalize-never-drop, ties break toward the
+user's own facts): without the CE stage it delivered abstention 0.0 → 0.83 at −1.5pp MRR
+(just over the ≤1pp gate); **under the CE stage it buys 0.0 abstention at −3pp MRR** — the
+cross-person distractor ("Amara drinks espresso") *is* the most relevant candidate, so CE ranks
+it #1 and a mild rank penalty cannot push it out of top-3. Successor idea for the abstention
+problem: a **CE-score threshold** (absolute relevance floor → return nothing) rather than
+re-ranking — parked here.
+
+- Verbatim-turn fusion: still a **parallel path by design** (documented in `_merge_bundles`);
+  the CE stage now reranks turns in their own list. The deliberate fuse-vs-parallel decision
+  remains parked here.
 
 ---
 

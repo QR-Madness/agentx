@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.154 -->
+<!-- release-version: 0.21.155 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,32 +21,32 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
-- **Three new themes** — Ugentx, Tango, and Blackhawk join Cosmic/Light/Professional.
+- **Three new themes** — Ugentx, Tango, Blackhawk join Cosmic/Light/Professional.
 - **Workspaces grew into Projects**: files + per-project **instructions** + conversations,
-  each project with its own scoped memory.
+  each with its own scoped memory.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI; zero-config
   first Start (secrets auto-generate).
-- **Hardened self-hosting**: token gateway in the bundle; no-env boots default safe
-  (debug off, auth ON).
+- **Hardened self-hosting**: token gateway in the bundle; no-env boots default safe.
 - **Memory brain upgrade + measuring stick**: windowed extraction (one entity per topic,
-  cross-turn relationships, provenance, embedding dedup) + an `eval_recall` harness.
-- **Reasoning models think out loud** across all OpenAI-compatible providers.
+  cross-turn links, provenance), an `eval_recall` harness, and **two-stage recall** —
+  cross-encoder reranking over a wider candidate pool (+20pp MRR).
+- **Reasoning models think out loud** on all OpenAI-compatible providers.
 
 ### Fixes
 
-- **UI foundation restored**: global reset, focus rings, real fonts, one field style.
+- **UI foundation restored**: reset, focus rings, real fonts, one field style.
 - **Anthropic models get their full system prompt** (all but one block was dropped).
 - **Security**: gateway fails closed on an empty token; `X-Forwarded-For` needs
-  `AGENTX_TRUST_PROXY=true`; Cloudflare-free rate limiting.
+  `AGENTX_TRUST_PROXY=true`; CDN-free rate limiting.
 - **Boots**: warm starts 2+ min → seconds; first-boot hang fixed; `start-manager.bat`.
 - **Big documents ingest reliably**, with real failure reasons and a Retry button.
-- **Token-limit cutoffs auto-continue**; compression retries down the model-fallback chain.
-- **Bundle dashboard**: stopped = *down*, manager excluded from gauges, background polling pauses.
+- **Token-limit cutoffs auto-continue**; compression retries down the fallback chain.
+- **Bundle dashboard**: stopped = *down*, manager out of gauges, polling pauses in background.
 
 ### Migration notes (self-hosters)
 
-- Missing `DJANGO_DEBUG`/`AGENTX_AUTH_ENABLED` in `.env` → safe defaults apply (set explicitly
-  to keep old behavior); gateway clusters set `AGENTX_TRUST_PROXY=true`; repo clusters migrate
+- Missing `DJANGO_DEBUG`/`AGENTX_AUTH_ENABLED` in `.env` → safe defaults (set explicitly to
+  keep old behavior); gateway clusters set `AGENTX_TRUST_PROXY=true`; repo clusters migrate
   once via `task cluster:adopt CLUSTER=<name>`.
 
 ### Getting started

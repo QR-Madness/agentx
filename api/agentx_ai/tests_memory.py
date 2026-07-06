@@ -3353,6 +3353,291 @@ class RecallLayerMergeBundlesTest(TestCase):
         self.assertEqual(len(merged.relevant_turns), 2)
 
 
+class CandidatePoolTest(TestCase):
+    """§2.11 stage 1: candidate-pool widening (config + technique output width)."""
+
+    def _layer(self, **overrides) -> RecallLayer:
+        recall = RecallLayer(MagicMock(), MagicMock())
+        recall._settings = get_settings().model_copy(update=overrides)
+        return recall
+
+    def test_config_defaults(self) -> None:
+        settings = get_settings()
+        self.assertEqual(settings.recall_candidate_pool, 50)
+        self.assertEqual(settings.recall_ce_max_demotion, 2)
+        # Eval-gated defaults (Memory-Roadmap §2.11): CE stage ON (+20pp MRR),
+        # first-person guard OFF (0.0 abstention under CE at −3pp MRR).
+        self.assertTrue(settings.cross_encoder_enabled)
+        self.assertFalse(settings.recall_first_person_guard)
+        self.assertAlmostEqual(settings.recall_first_person_penalty, 0.5)
+        from agentx_ai.kit.agent_memory.config import get_recall_settings
+        api = get_recall_settings()
+        for key in ("recall_candidate_pool", "recall_ce_max_demotion",
+                    "cross_encoder_enabled", "cross_encoder_model",
+                    "recall_first_person_guard", "recall_first_person_penalty"):
+            self.assertIn(key, api)
+
+    def test_output_width_is_top_k_without_rerank_stage(self) -> None:
+        recall = self._layer(cross_encoder_enabled=False, recall_candidate_pool=50)
+        self.assertEqual(recall._pool_output_width(10), 10)
+
+    def test_output_width_is_pool_with_rerank_stage(self) -> None:
+        recall = self._layer(cross_encoder_enabled=True, recall_candidate_pool=50)
+        self.assertEqual(recall._pool_output_width(10), 50)
+        # A top_k above the pool is never shrunk
+        self.assertEqual(recall._pool_output_width(80), 80)
+
+    def test_hybrid_overfetch_uses_pool(self) -> None:
+        recall = self._layer(cross_encoder_enabled=True, recall_candidate_pool=50)
+        recall.memory.semantic.vector_search_facts.return_value = []
+        with patch.object(recall, "_bm25_search", return_value=[]) as bm25:
+            recall._hybrid_retrieval(
+                query="what tea", embedding=[0.1], user_id="u",
+                channels=["_global"], top_k=10,
+            )
+        self.assertEqual(bm25.call_args.kwargs["limit"], 50)
+        self.assertEqual(
+            recall.memory.semantic.vector_search_facts.call_args.kwargs["top_k"], 50)
+
+    def test_rrf_width_follows_rerank_stage(self) -> None:
+        vector = [{"id": f"f{i}", "claim": f"claim {i}"} for i in range(30)]
+        for ce_on, expected in ((True, 30), (False, 10)):
+            recall = self._layer(cross_encoder_enabled=ce_on, recall_candidate_pool=50)
+            recall.memory.semantic.vector_search_facts.return_value = list(vector)
+            with patch.object(recall, "_bm25_search", return_value=[]):
+                bundle, _ = recall._hybrid_retrieval(
+                    query="what tea", embedding=[0.1], user_id="u",
+                    channels=["_global"], top_k=10,
+                )
+            self.assertEqual(len(bundle.facts), expected,
+                             f"cross_encoder_enabled={ce_on}")
+
+    def test_eval_arms_cover_new_stages(self) -> None:
+        from agentx_ai.management.commands.eval_recall import ARMS
+        by_name = {a.name: a for a in ARMS}
+        self.assertIn("fused_no_ce", by_name)
+        self.assertIn("fused_ce_pure", by_name)
+        self.assertIn("fused_guard", by_name)
+        self.assertFalse(by_name["fused_no_ce"].overrides["cross_encoder_enabled"])
+        self.assertEqual(by_name["fused_ce_pure"].overrides["recall_ce_max_demotion"], 0)
+        self.assertTrue(by_name["fused_guard"].overrides["recall_first_person_guard"])
+
+
+class _FakeCrossEncoder:
+    """Scripted cross-encoder: scores each (query, text) pair via score_fn(text)."""
+
+    def __init__(self, score_fn):
+        self.score_fn = score_fn
+        self.calls = 0
+
+    def predict(self, pairs):
+        self.calls += 1
+        return [self.score_fn(text) for _, text in pairs]
+
+
+class CrossEncoderStageTest(TestCase):
+    """§2.11 stage 2: post-fusion cross-encoder rerank inside the RecallLayer."""
+
+    def _layer(self, encoder, **overrides) -> RecallLayer:
+        retriever = MagicMock()
+        retriever._get_cross_encoder.return_value = encoder
+        recall = RecallLayer(MagicMock(), retriever)
+        recall._settings = get_settings().model_copy(
+            update={"cross_encoder_enabled": True, **overrides})
+        return recall
+
+    def test_scripted_scores_reorder_and_cut(self) -> None:
+        encoder = _FakeCrossEncoder(lambda text: 5.0 if "cranes" in text else -1.0)
+        recall = self._layer(encoder)
+        bundle = MemoryBundle(facts=[
+            {"id": "a", "claim": "User drinks jasmine tea."},
+            {"id": "b", "claim": "User sketches harbor cranes."},
+            {"id": "c", "claim": "Rui collects barometers."},
+        ])
+        out, stats = recall._cross_encoder_stage("who sketches cranes?", bundle, top_k=2)
+        self.assertEqual(out.facts[0]["id"], "b")
+        self.assertEqual(len(out.facts), 2)
+        self.assertEqual(stats["facts"], 3)
+        self.assertEqual(out.facts[0]["cross_encoder_score"], 5.0)
+
+    def test_negative_logits_order_correctly(self) -> None:
+        # Raw CE logits can be all-negative — ordering must still hold.
+        scores = {"first": -0.5, "second": -2.0, "third": -9.0}
+        encoder = _FakeCrossEncoder(lambda text: scores[text.split()[-1]])
+        recall = self._layer(encoder)
+        bundle = MemoryBundle(facts=[
+            {"id": "3", "claim": "claim third"},
+            {"id": "1", "claim": "claim first"},
+            {"id": "2", "claim": "claim second"},
+        ])
+        out, _ = recall._cross_encoder_stage("q", bundle, top_k=3)
+        self.assertEqual([f["id"] for f in out.facts], ["1", "2", "3"])
+
+    def test_unavailable_encoder_trims_without_reranking(self) -> None:
+        recall = self._layer(None)
+        bundle = MemoryBundle(
+            facts=[{"id": str(i), "claim": f"claim {i}"} for i in range(5)])
+        out, stats = recall._cross_encoder_stage("anything", bundle, top_k=3)
+        self.assertEqual([f["id"] for f in out.facts], ["0", "1", "2"])
+        self.assertEqual(stats["facts"], 0)
+
+    def test_predict_exception_never_raises(self) -> None:
+        class _Boom:
+            def predict(self, pairs):
+                raise RuntimeError("boom")
+        recall = self._layer(_Boom())
+        bundle = MemoryBundle(facts=[{"id": "a", "claim": "x"}, {"id": "b", "claim": "y"}])
+        out, _ = recall._cross_encoder_stage("q", bundle, top_k=1)
+        self.assertEqual([f["id"] for f in out.facts], ["a"])
+
+    def test_always_include_turns_stay_pinned(self) -> None:
+        encoder = _FakeCrossEncoder(lambda text: 1.0 if "relevant" in text else 0.0)
+        recall = self._layer(encoder)
+        bundle = MemoryBundle(relevant_turns=[
+            {"id": "t1", "content": "current context", "always_include": True},
+            {"id": "t2", "content": "nothing here"},
+            {"id": "t3", "content": "the relevant one"},
+        ])
+        out, stats = recall._cross_encoder_stage("relevant?", bundle, top_k=2)
+        self.assertEqual(out.relevant_turns[0]["id"], "t1")
+        self.assertEqual(out.relevant_turns[1]["id"], "t3")
+        self.assertEqual(len(out.relevant_turns), 2)
+        self.assertEqual(stats["turns"], 2)
+
+    def test_bounded_demotion_hedges_encoder_blind_spots(self) -> None:
+        # A fused-rank-1 fact the encoder hates falls at most cap positions
+        # (cap 3 → rank ≤ 4-5); under pure CE order (cap 0) it sinks to the
+        # bottom. Mirrors the negation-claim casualty the eval surfaced.
+        def facts():
+            return [{"id": "blind", "claim": "User does not own a car and cycles."}] + [
+                {"id": f"f{i}", "claim": f"User premise {i}"} for i in range(9)]
+        score_fn = lambda text: -5.0 if "cycles" in text else 1.0  # noqa: E731
+        capped = self._layer(_FakeCrossEncoder(score_fn), recall_ce_max_demotion=3)
+        out, _ = capped._cross_encoder_stage(
+            "how do I get around town?", MemoryBundle(facts=facts()), top_k=5)
+        self.assertIn("blind", [f["id"] for f in out.facts])
+        pure = self._layer(_FakeCrossEncoder(score_fn), recall_ce_max_demotion=0)
+        out_pure, _ = pure._cross_encoder_stage(
+            "how do I get around town?", MemoryBundle(facts=facts()), top_k=5)
+        self.assertNotIn("blind", [f["id"] for f in out_pure.facts])
+
+    def test_layer_defers_base_cross_encoder(self) -> None:
+        # recall() must always defer the base pre-fusion pass — the encoder
+        # never runs twice in one recall.
+        retriever = MagicMock()
+        retriever.retrieve.return_value = MemoryBundle()
+        retriever._get_cross_encoder.return_value = None
+        memory = MagicMock()
+        memory.embedder.embed_single.return_value = [0.1]
+        memory.channel = "_global"
+        recall = RecallLayer(memory, retriever)
+        recall._settings = get_settings().model_copy(update={
+            "recall_enable_hybrid": False, "recall_enable_entity_centric": False,
+            "recall_enable_query_expansion": False, "recall_enable_hyde": False,
+            "recall_enable_self_query": False, "cross_encoder_enabled": True,
+            "recall_first_person_guard": False,
+        })
+        recall.recall("a probe", user_id="u", top_k=3)
+        self.assertTrue(retriever.retrieve.call_args.kwargs.get("defer_cross_encoder"))
+
+    def test_base_rerank_skips_cross_encoder_when_deferred(self) -> None:
+        from agentx_ai.kit.agent_memory.memory.retrieval import RetrievalWeights
+        retriever = object.__new__(MemoryRetriever)
+        retriever.memory = MagicMock()
+        loader = MagicMock(return_value=None)
+        retriever._get_cross_encoder = loader  # type: ignore[method-assign]
+        weights = RetrievalWeights.from_config()
+        bundle = MemoryBundle(relevant_turns=[{"id": "t", "content": "x", "score": 0.5}])
+        retriever._rerank(bundle, "q", [0.1], weights, "_global",
+                          defer_cross_encoder=True)
+        loader.assert_not_called()
+        retriever._rerank(bundle, "q", [0.1], weights, "_global",
+                          defer_cross_encoder=False)
+        loader.assert_called_once()
+
+
+class FirstPersonGuardTest(TestCase):
+    """§2.11 stage 3: read-side first-person attribution guard."""
+
+    def _layer(self, **overrides) -> RecallLayer:
+        recall = RecallLayer(MagicMock(), MagicMock())
+        recall._settings = get_settings().model_copy(update=overrides)
+        return recall
+
+    def test_first_person_query_penalizes_third_party_claims(self) -> None:
+        recall = self._layer(recall_first_person_penalty=0.5)
+        bundle = MemoryBundle(facts=[
+            {"id": "amara", "claim": "Amara drinks espresso every morning."},
+            {"id": "user", "claim": "User drinks jasmine tea."},
+        ])
+        out, stats = recall._first_person_guard("Do I drink espresso?", bundle)
+        self.assertTrue(stats["applied"])
+        self.assertEqual(stats["penalized"], 1)
+        self.assertEqual(out.facts[0]["id"], "user")
+        self.assertTrue(out.facts[1].get("first_person_penalized"))
+
+    def test_never_drops_facts(self) -> None:
+        recall = self._layer(recall_first_person_penalty=0.01)
+        bundle = MemoryBundle(
+            facts=[{"id": str(i), "claim": f"Rui premise {i}"} for i in range(4)]
+            + [{"id": "u", "claim": "User holds the conclusion."}])
+        out, _ = recall._first_person_guard("What do I conclude?", bundle)
+        self.assertEqual(len(out.facts), 5)
+        self.assertEqual(out.facts[0]["id"], "u")
+
+    def test_third_person_query_unaffected(self) -> None:
+        recall = self._layer()
+        bundle = MemoryBundle(facts=[
+            {"id": "amara", "claim": "Amara drinks espresso."},
+            {"id": "user", "claim": "User drinks tea."},
+        ])
+        out, stats = recall._first_person_guard("Does Amara drink espresso?", bundle)
+        self.assertFalse(stats["applied"])
+        self.assertEqual([f["id"] for f in out.facts], ["amara", "user"])
+
+    def test_mild_penalty_keeps_strong_leads(self) -> None:
+        # penalty 0.5 doubles effective rank: a rank-1 third-party fact (eff 2)
+        # still outranks a rank-3 user fact (eff 3) — penalize, never bury.
+        recall = self._layer(recall_first_person_penalty=0.5)
+        bundle = MemoryBundle(facts=[
+            {"id": "lead", "claim": "Amara mentored the user through the course."},
+            {"id": "mid", "claim": "Noor restores tide clocks."},
+            {"id": "user", "claim": "User sketches harbor cranes."},
+        ])
+        out, _ = recall._first_person_guard("Who mentored me?", bundle)
+        self.assertEqual([f["id"] for f in out.facts], ["lead", "user", "mid"])
+
+    def test_possessive_user_claims_count_as_user(self) -> None:
+        recall = self._layer(recall_first_person_penalty=0.5)
+        bundle = MemoryBundle(facts=[
+            {"id": "other", "claim": "Rui's argument rests on analogy."},
+            {"id": "poss", "claim": "User's favorite novel is Invisible Cities."},
+        ])
+        out, stats = recall._first_person_guard("What is my favorite novel?", bundle)
+        self.assertEqual(stats["penalized"], 1)
+        self.assertEqual(out.facts[0]["id"], "poss")
+
+    def test_recall_flag_off_skips_guard(self) -> None:
+        retriever = MagicMock()
+        retriever.retrieve.return_value = MemoryBundle(facts=[
+            {"id": "amara", "claim": "Amara drinks espresso."},
+            {"id": "user", "claim": "User drinks tea."},
+        ])
+        retriever._get_cross_encoder.return_value = None
+        memory = MagicMock()
+        memory.embedder.embed_single.return_value = [0.1]
+        memory.channel = "_global"
+        recall = RecallLayer(memory, retriever)
+        recall._settings = get_settings().model_copy(update={
+            "recall_enable_hybrid": False, "recall_enable_entity_centric": False,
+            "recall_enable_query_expansion": False, "recall_enable_hyde": False,
+            "recall_enable_self_query": False, "cross_encoder_enabled": False,
+            "recall_first_person_guard": False,
+        })
+        bundle = recall.recall("Do I drink espresso?", user_id="u")
+        self.assertEqual(bundle.facts[0]["id"], "amara")
+
+
 class RecallLayerInterfaceIntegrationTest(TestCase):
     """Test RecallLayer integration with AgentMemory interface."""
 
@@ -4879,7 +5164,7 @@ class EvalRecallSeedAndArmTest(MemoryTestBase):
             try:
                 seeded = cmd._seed(corpus)
                 self.assertEqual(set(seeded["facts"]), corpus.fact_keys())
-                for arm_name in ("base_only", "fused_default"):
+                for arm_name in ("base_only", "fused_default", "fused_no_ce"):
                     arm = next(a for a in er.ARMS if a.name == arm_name)
                     result = cmd._run_arm(arm, seeded, list(corpus.queries), (1, 5), 5)
                     self.assertEqual(result["status"], "OK")
@@ -4887,6 +5172,8 @@ class EvalRecallSeedAndArmTest(MemoryTestBase):
                     self.assertEqual(q_tea["recall@5"], 1.0,
                                      f"{arm_name}: golden fact not in top-5")
                     self.assertIn("abstention_pass_rate", result["metrics"])
+                    if arm_name == "fused_no_ce":
+                        self.assertNotIn("cross_encoder_loaded", result)
             finally:
                 cmd._cleanup()
         with Neo4jConnection.session() as s:

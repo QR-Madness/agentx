@@ -82,17 +82,26 @@ ARMS: list[Arm] = [
     Arm("expansion_only", overrides={**_ALL_TECHNIQUES_OFF, "recall_enable_query_expansion": True},
         note="rule-based query expansion only"),
     Arm("fused_default", overrides=dict(_FUSED_DEFAULT),
-        note="production default technique set"),
+        note="production default set (incl. the §2.11 cross-encoder stage since v0.21.155)"),
+    Arm("fused_no_ce",
+        overrides={**_FUSED_DEFAULT, "cross_encoder_enabled": False},
+        default=False,
+        note="fused without the cross-encoder stage — isolates the §2.11 stage-2 gain"),
+    Arm("fused_ce_pure",
+        overrides={**_FUSED_DEFAULT, "cross_encoder_enabled": True, "reranking_enabled": True,
+                   "recall_ce_max_demotion": 0},
+        default=False,
+        note="pure cross-encoder order (no demotion cap) — the cap-vs-pure ablation"),
+    Arm("fused_guard",
+        overrides={**_FUSED_DEFAULT, "recall_first_person_guard": True},
+        default=False,
+        note="fused + first-person guard (default-OFF: failed its §2.11 abstention gate)"),
     Arm("hyde", overrides={**_FUSED_DEFAULT, "recall_enable_hyde": True},
         requires_llm=True, default=False,
         note="fused + HyDE (needs recall_hyde_model provider)"),
     Arm("self_query", overrides={**_FUSED_DEFAULT, "recall_enable_self_query": True},
         requires_llm=True, default=False,
         note="fused + self-query filters (needs recall_self_query_model provider)"),
-    Arm("fused_cross_encoder",
-        overrides={**_FUSED_DEFAULT, "cross_encoder_enabled": True, "reranking_enabled": True},
-        default=False,
-        note="fused + cross-encoder rerank — the §2.11 gate arm"),
 ]
 
 
@@ -114,6 +123,9 @@ class Command(BaseCommand):
                             help="Comma-separated k values for recall@k (default: 1,5,10).")
         parser.add_argument("--top-k", type=int, default=10,
                             help="top_k passed to remember() (default: 10; scoring uses max(k, top-k)).")
+        parser.add_argument("--llm-model", default=None, metavar="PROVIDER:MODEL",
+                            help="Pin recall_hyde_model/recall_self_query_model for LLM arms "
+                                 "this run (process-local, never written to disk).")
         parser.add_argument("--keep", action="store_true",
                             help="Leave seeded eval data in place after the run (for inspection).")
         parser.add_argument("--save", action=argparse.BooleanOptionalAction, default=True,
@@ -225,8 +237,9 @@ class Command(BaseCommand):
         for arm in chosen:
             skip = None
             if arm.requires_llm:
-                model = (settings.recall_hyde_model if arm.name == "hyde"
-                         else settings.recall_self_query_model)
+                model = opts.get("llm_model") or (
+                    settings.recall_hyde_model if arm.name == "hyde"
+                    else settings.recall_self_query_model)
                 try:
                     from agentx_ai.providers.registry import get_registry
                     get_registry().get_provider_for_model(model)
@@ -236,7 +249,7 @@ class Command(BaseCommand):
         return resolved
 
     # -- per-arm run ---------------------------------------------------------------
-    def _run_arm(self, arm, seeded, queries, ks, top_k):
+    def _run_arm(self, arm, seeded, queries, ks, top_k, llm_model=None):
         """Score one arm; returns the arm result dict. Settings are pinned
         process-locally (D1) and restored in ``finally`` — never written to disk."""
         from agentx_ai.kit.agent_memory import embeddings as embeddings_mod
@@ -248,8 +261,11 @@ class Command(BaseCommand):
         from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
         max_k = max([*ks, top_k])
-        override = get_settings().model_copy(
-            update={**arm.overrides, "retrieval_cache_enabled": False})
+        updates = {**arm.overrides, "retrieval_cache_enabled": False}
+        if llm_model and arm.requires_llm:
+            updates["recall_hyde_model"] = llm_model
+            updates["recall_self_query_model"] = llm_model
+        override = get_settings().model_copy(update=updates)
 
         self._reset_access_stats()
         mem = AgentMemory(user_id=EVAL_USER, conversation_id=str(uuid4()), channel=CHANNEL)
@@ -266,7 +282,7 @@ class Command(BaseCommand):
             # Un-timed warmup: embed cache, BM25 prep, lazy cross-encoder load.
             mem.remember("warmup probe", top_k=1, channels=[CHANNEL],
                          use_recall_layer=arm.use_recall_layer)
-            if arm.overrides.get("cross_encoder_enabled"):
+            if override.cross_encoder_enabled:
                 cross_encoder_loaded = mem.retriever._get_cross_encoder() is not None
 
             for q in queries:
@@ -398,7 +414,8 @@ class Command(BaseCommand):
                         "overrides": arm.overrides, "metrics": None, "queries": [],
                     })
                     continue
-                result = self._run_arm(arm, seeded, queries, ks, opts["top_k"])
+                result = self._run_arm(arm, seeded, queries, ks, opts["top_k"],
+                                       llm_model=opts.get("llm_model"))
                 arm_results.append(result)
                 self._render_arm(result, ks)
         finally:
@@ -475,6 +492,7 @@ class Command(BaseCommand):
             "flags": {"arms": [r["name"] for r in arm_results], "only": opts["only"],
                       "category": opts["category"], "top_k": opts["top_k"],
                       "ks": list(ks), "negative_k": NEGATIVE_K,
+                      "llm_model": opts.get("llm_model"),
                       "snapshot": bool(opts["snapshot"])},
             "cluster_conversations_at_start": cluster_conversations,
             "base_settings": {

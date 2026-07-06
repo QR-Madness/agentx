@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# First-person query detection for the attribution guard (§2.11). Word-bounded
+# so "in my opinion"-style hits are intended; contractions ("I'm", "I've")
+# match via the bare "i" token since the apostrophe is a word boundary.
+_FIRST_PERSON_RE = re.compile(r"\b(i|me|my|mine|myself)\b", re.IGNORECASE)
+
 
 @dataclass
 class RecallMetrics:
@@ -70,6 +75,15 @@ class RecallMetrics:
     self_query_results: int = 0
     self_query_latency_ms: int = 0
 
+    # Cross-encoder stage (post-fusion, §2.11)
+    rerank_stage_facts: int = 0
+    rerank_stage_turns: int = 0
+    rerank_stage_latency_ms: int = 0
+
+    # First-person attribution guard
+    first_person_guard_applied: bool = False
+    first_person_penalized: int = 0
+
     # Final
     final_results: int = 0
     duplicates_removed: int = 0
@@ -100,6 +114,11 @@ class RecallMetrics:
             "self_query_filters": self.self_query_filters,
             "self_query_results": self.self_query_results,
             "self_query_latency_ms": self.self_query_latency_ms,
+            "rerank_stage_facts": self.rerank_stage_facts,
+            "rerank_stage_turns": self.rerank_stage_turns,
+            "rerank_stage_latency_ms": self.rerank_stage_latency_ms,
+            "first_person_guard_applied": self.first_person_guard_applied,
+            "first_person_penalized": self.first_person_penalized,
             "final_results": self.final_results,
             "duplicates_removed": self.duplicates_removed,
             "total_latency_ms": self.total_latency_ms,
@@ -207,7 +226,9 @@ class RecallLayer:
         # Generate embedding for the query (used by multiple techniques)
         embedding = self.memory.embedder.embed_single(query)
 
-        # Step 1: Base retrieval (always runs)
+        # Step 1: Base retrieval (always runs). The pre-fusion cross-encoder
+        # pass is deferred — this layer runs its own post-fusion stage (§2.11)
+        # and the encoder must never run twice per recall.
         base_start = time.perf_counter()
         base_bundle = self.base_retriever.retrieve(
             query=query,
@@ -215,6 +236,7 @@ class RecallLayer:
             top_k=top_k,
             channels=channels,
             time_window_hours=time_window_hours,
+            defer_cross_encoder=True,
             **kwargs,
         )
         metrics.base_latency_ms = int((time.perf_counter() - base_start) * 1000)
@@ -308,6 +330,24 @@ class RecallLayer:
 
         # Step 7: Merge all bundles
         final_bundle, merge_stats = self._merge_bundles(*all_bundles)
+
+        # Step 8: Cross-encoder rerank stage (post-fusion, §2.11). Scores the
+        # fused candidate pool against the query and cuts back to top_k, so
+        # final metrics + audit reflect what the prompt will actually see.
+        if settings.cross_encoder_enabled:
+            final_bundle, ce_stats = self._cross_encoder_stage(query, final_bundle, top_k)
+            metrics.rerank_stage_facts = ce_stats["facts"]
+            metrics.rerank_stage_turns = ce_stats["turns"]
+            metrics.rerank_stage_latency_ms = ce_stats["latency_ms"]
+
+        # Step 9: First-person attribution guard — a subject filter, not a
+        # relevance signal, so it runs after the cross-encoder. Penalizes
+        # (never drops) facts about other people on first-person queries.
+        if settings.recall_first_person_guard:
+            final_bundle, guard_stats = self._first_person_guard(query, final_bundle)
+            metrics.first_person_guard_applied = guard_stats["applied"]
+            metrics.first_person_penalized = guard_stats["penalized"]
+
         metrics.final_results = (
             len(final_bundle.facts) +
             len(final_bundle.entities) +
@@ -344,6 +384,12 @@ class RecallLayer:
         vector_weight = settings.recall_hybrid_vector_weight
         rrf_k = settings.recall_hybrid_rrf_k
 
+        # Stage-1 candidate pool (§2.11): each arm over-fetches to the pool
+        # width; RRF emits the full pool only when the cross-encoder stage
+        # will cut it back to top_k (otherwise the prompt would blow up).
+        fetch_k = max(top_k * 2, settings.recall_candidate_pool)
+        output_k = self._pool_output_width(top_k)
+
         # Extract keywords for BM25
         keywords = self._extract_keywords(query)
         logger.debug(f"[RecallLayer:Hybrid] BM25 keywords: {keywords}")
@@ -357,7 +403,7 @@ class RecallLayer:
                 keywords=keywords,
                 user_id=user_id,
                 channels=channels,
-                limit=top_k * 2,  # Over-fetch for fusion
+                limit=fetch_k,  # Over-fetch for fusion
             )
             logger.debug(
                 f"[RecallLayer:Hybrid] BM25 found {len(bm25_results)} facts"
@@ -375,7 +421,7 @@ class RecallLayer:
             query_embedding=embedding,
             user_id=user_id,
             channel=channels[0] if channels else "_global",
-            top_k=top_k * 2,
+            top_k=fetch_k,
             min_confidence=0.0,  # Don't filter yet, RRF will handle ranking
         )
         logger.debug(f"[RecallLayer:Hybrid] Vector found {len(vector_results)} facts")
@@ -387,7 +433,7 @@ class RecallLayer:
             bm25_weight=bm25_weight,
             vector_weight=vector_weight,
             rrf_k=rrf_k,
-            top_k=top_k,
+            top_k=output_k,
         )
         logger.debug(f"[RecallLayer:Hybrid] RRF merged to {len(merged)} facts")
 
@@ -914,12 +960,13 @@ class RecallLayer:
         # the LLM but not yet applied here — only keyword filtering is wired up.
         keywords = filters.get("keywords", [])
 
+        fetch_k = max(top_k * 2, self._settings.recall_candidate_pool)
         embedding = self.memory.embedder.embed_single(query)
         results = self.memory.semantic.vector_search_facts(
             query_embedding=embedding,
             user_id=user_id,
             channel=channels[0] if channels else self.memory.channel,
-            top_k=top_k * 2,  # Over-fetch to allow filtering
+            top_k=fetch_k,  # Over-fetch to allow filtering
             min_confidence=self._settings.recall_min_confidence,
         )
 
@@ -938,7 +985,7 @@ class RecallLayer:
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         logger.debug(f"[RecallLayer:SelfQuery] Found {len(results)} results in {latency_ms}ms")
 
-        bundle = MemoryBundle(facts=results[:top_k])
+        bundle = MemoryBundle(facts=results[:self._pool_output_width(top_k)])
 
         return bundle, {
             "filters": filters,
@@ -1006,6 +1053,136 @@ class RecallLayer:
             logger.warning(f"[RecallLayer:SelfQuery] Filter extraction failed: {e}")
             return {}
 
+    def _pool_output_width(self, top_k: int) -> int:
+        """Technique output width: the full candidate pool when the post-fusion
+        cross-encoder stage will cut it back to top_k, else top_k as before."""
+        if self._settings.cross_encoder_enabled:
+            return max(top_k, self._settings.recall_candidate_pool)
+        return top_k
+
+    def _cross_encoder_stage(
+        self,
+        query: str,
+        bundle: MemoryBundle,
+        top_k: int,
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
+        """
+        Post-fusion cross-encoder rerank (§2.11 stage 2).
+
+        Scores (query, claim) pairs over the fused fact pool and (query,
+        content) pairs over the turn list, re-sorts by cross-encoder score,
+        and cuts both back to top_k. Always-include turns (current-conversation
+        context) stay pinned ahead of the reranked rest. A load failure never
+        breaks recall — the bundle is trimmed to top_k and returned as-is.
+        """
+        start_time = time.perf_counter()
+        stats: dict[str, Any] = {"facts": 0, "turns": 0, "latency_ms": 0}
+
+        encoder: Any = self.base_retriever._get_cross_encoder()
+        if encoder is not None:
+            try:
+                if bundle.facts:
+                    pairs = [(query, f.get("claim") or "") for f in bundle.facts]
+                    scores = [float(s) for s in encoder.predict(pairs)]
+                    for fact, score in zip(bundle.facts, scores, strict=True):
+                        fact["cross_encoder_score"] = score
+                    bundle.facts = self._ce_blend_order(bundle.facts, scores)
+                    stats["facts"] = len(bundle.facts)
+
+                pinned = [t for t in bundle.relevant_turns if t.get("always_include")]
+                rest = [t for t in bundle.relevant_turns if not t.get("always_include")]
+                if rest:
+                    pairs = [(query, t.get("content") or "") for t in rest]
+                    scores = [float(s) for s in encoder.predict(pairs)]
+                    for turn, score in zip(rest, scores, strict=True):
+                        turn["cross_encoder_score"] = score
+                    rest = self._ce_blend_order(rest, scores)
+                    stats["turns"] = len(rest)
+                bundle.relevant_turns = pinned + rest
+            except Exception as e:
+                logger.warning(f"[RecallLayer:CrossEncoder] Rerank failed: {e}")
+
+        # Cut back to top_k regardless — the widened pool must never reach the
+        # prompt un-trimmed (encoder unavailable/failed included).
+        bundle.facts = bundle.facts[:top_k]
+        if len(bundle.relevant_turns) > top_k:
+            pinned = [t for t in bundle.relevant_turns if t.get("always_include")]
+            rest = [t for t in bundle.relevant_turns if not t.get("always_include")]
+            bundle.relevant_turns = pinned + rest[: max(0, top_k - len(pinned))]
+
+        stats["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
+        logger.debug(
+            f"[RecallLayer:CrossEncoder] Reranked {stats['facts']} facts, "
+            f"{stats['turns']} turns in {stats['latency_ms']}ms"
+        )
+        return bundle, stats
+
+    def _ce_blend_order(self, items: list[dict[str, Any]], scores: list[float]) -> list[dict[str, Any]]:
+        """
+        Order items by cross-encoder rank with bounded demotion: the encoder
+        may promote a candidate freely, but can demote it at most
+        ``recall_ce_max_demotion`` positions below its incoming (stage-1
+        fused) rank. Hedges encoder blind spots — the eval showed MiniLM
+        burying a fused-rank-2 negation-heavy claim below top-10 — without
+        diluting the promotion wins that carry the stage's MRR gain.
+        ``recall_ce_max_demotion <= 0`` disables the cap (pure CE order).
+        """
+        cap = self._settings.recall_ce_max_demotion
+        ce_order = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)
+        ce_rank = {idx: r + 1 for r, idx in enumerate(ce_order)}
+        keyed = []
+        for i, item in enumerate(items):
+            fused_rank = i + 1
+            effective = ce_rank[i] if cap <= 0 else min(ce_rank[i], fused_rank + cap)
+            item["rerank_effective_rank"] = effective
+            # Ties break toward the better cross-encoder rank, then incoming
+            keyed.append((effective, ce_rank[i], i))
+        keyed.sort()
+        return [items[i] for _, _, i in keyed]
+
+    def _first_person_guard(
+        self,
+        query: str,
+        bundle: MemoryBundle,
+    ) -> tuple[MemoryBundle, dict[str, Any]]:
+        """
+        Read-side attribution guard (§2.11 stage 3).
+
+        On first-person queries ("what do I…"), facts whose claim is not about
+        the user (claims start with their subject by extraction convention:
+        "User …" vs "<Name> …") get a rank penalty. Rank-based, not
+        score-based — fused/cross-encoder scores are heterogeneous (raw CE
+        logits can be negative, where a multiplier would *promote*). A fact at
+        rank r moves to effective rank r/penalty (0.5 → doubled). INV: recall
+        may rerank, never hide — a third-party fact can still be the answer.
+        """
+        if not _FIRST_PERSON_RE.search(query):
+            return bundle, {"applied": False, "penalized": 0}
+
+        penalty = min(max(self._settings.recall_first_person_penalty, 0.01), 1.0)
+        penalized = 0
+        keyed: list[tuple[float, int, int]] = []
+        for i, fact in enumerate(bundle.facts):
+            claim = fact.get("claim") or ""
+            about_user = claim.startswith(("User ", "User's "))
+            rank = float(i + 1)
+            if not about_user:
+                rank /= penalty
+                penalized += 1
+                fact["first_person_penalized"] = True
+            # Effective-rank ties break toward the user's own facts (a rank-1
+            # distractor at penalty 0.5 lands exactly on the rank-2 user fact).
+            keyed.append((rank, 1 if not about_user else 0, i))
+
+        if penalized and penalized < len(bundle.facts):
+            keyed.sort()
+            bundle.facts = [bundle.facts[i] for _, _, i in keyed]
+            logger.debug(
+                f"[RecallLayer:FirstPersonGuard] Penalized {penalized}/"
+                f"{len(bundle.facts)} non-user facts (penalty={penalty})"
+            )
+        return bundle, {"applied": True, "penalized": penalized}
+
     def _merge_bundles(
         self,
         *bundles: MemoryBundle,
@@ -1014,6 +1191,12 @@ class RecallLayer:
         Merge multiple MemoryBundles, deduplicating by ID.
 
         Keeps the version with the higher score when duplicates found.
+
+        NOTE (§2.11): ``relevant_turns`` is a parallel path by design — the
+        bundle contract keeps verbatim episodic turns separate from the fused
+        fact pool (only the base retriever populates turns; techniques fuse
+        facts). The cross-encoder stage reranks turns in their own list. A
+        deliberate fuse-vs-parallel decision is parked in Memory-Roadmap §2.11.
         """
         seen_fact_ids: set[str] = set()
         seen_entity_ids: set[str] = set()
