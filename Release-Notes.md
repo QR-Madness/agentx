@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.159 -->
+<!-- release-version: 0.21.160 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -26,7 +26,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   conversations with scoped memory.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
-- **Hardened self-hosting**: token gateway; no-env boots default safe.
+- **Hardened self-hosting**: token gateway; safe no-env boots.
 - **Memory brain upgrade**: windowed extraction, an `eval_recall` harness, and
   **two-stage recall** (+20pp MRR).
 - **Reasoning models think out loud** on OpenAI-compatible providers.
@@ -35,17 +35,18 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
-- **UI foundation restored**: reset, focus rings, real fonts, one field style.
+- **UI foundation restored**: reset, real fonts, one field style.
 - **Anthropic models get their full system prompt** (blocks were dropped).
 - **Security**: gateway fails closed on an empty token; proxy trust is opt-in;
   CDN-free rate limiting.
-- **Boots**: warm starts 2+ min → seconds; first-boot hang fixed.
+- **Boots**: warm starts 2+ min → seconds.
 - **Big documents ingest reliably**, with failure reasons + Retry.
-- **Token-limit cutoffs auto-continue**; compression retries down the fallback chain.
-- **Memory settings apply live**; corrupt files surfaced, bad values rejected per key.
+- **Token-limit cutoffs auto-continue**.
+- **Memory settings apply live**; corrupt files surfaced, bad values rejected.
+- **Image settings actually save now** (the server silently dropped them before).
 - **Settings overhauled** — autosave as you edit (API keys keep explicit Save); new
   Prompts & Memory groups; every prompt override in one place with diff-vs-default.
-- **Bundle dashboard**: stopped = *down*; manager out of gauges.
+- **Snappier model picker** — instant search, keyboard nav, recents on top.
 
 ### Migration notes (self-hosters)
 

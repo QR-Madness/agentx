@@ -6402,6 +6402,27 @@ def config_get(request):
 
 
 @csrf_exempt
+def settings_manifest(request):
+    """
+    GET /api/settings/manifest - Canonical registry of every user-tunable
+    setting (Settings Manifest v1): store, type, default, current value
+    (secrets redacted), write route, and model-role linkage. The substrate
+    for the settings agent (explain/suggest/validate).
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .settings_manifest import build_manifest
+        return JsonResponse(build_manifest())
+    except Exception as e:
+        logger.error(f"Error building settings manifest: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 def models_roles(request):
     """
     GET /api/models/roles - Model roles + membership + effective-model preview.
@@ -6569,6 +6590,25 @@ def config_update(request):
             continue
         config.set(f"ambassador.{key}", value)
         updated_keys.append(f"ambassador.{key}")
+
+    # Update image-generation + vision settings. (These sections existed in
+    # DEFAULT_CONFIG but had no handler here — the Images settings UI silently
+    # dropped every save while still toasting success.)
+    _IMAGES_KEYS = ("enabled", "default_model", "avatar_style_prompt")
+    images_settings = data.get("images", {})
+    for key, value in images_settings.items():
+        if key not in _IMAGES_KEYS or value is None:
+            continue
+        config.set(f"images.{key}", value)
+        updated_keys.append(f"images.{key}")
+
+    _VISION_KEYS = ("enabled", "refeed_recent_turns")
+    vision_settings = data.get("vision", {})
+    for key, value in vision_settings.items():
+        if key not in _VISION_KEYS or value is None:
+            continue
+        config.set(f"vision.{key}", value)
+        updated_keys.append(f"vision.{key}")
 
     # Update model roles (settings overhaul D1). Only `models.roles.{known}` is
     # writable here — the rest of the `models` section stays read-only. Values

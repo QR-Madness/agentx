@@ -5,9 +5,16 @@
  * ToolkitPage (backdrop + motion + body-overflow lock). Filters by provider
  * and by capability flag (tools / vision / json-mode / streaming), with a
  * search box and rich per-row metadata.
+ *
+ * Built for large catalogs (OpenRouter can be 500+ models): per-model derived
+ * data (capabilities, badges, search haystack) is computed once per catalog,
+ * search filtering is deferred via useDeferredValue, rows are memoized, and
+ * off-screen rows skip layout/paint via `content-visibility` in the CSS.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,7 +23,7 @@ import {
 } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import {
-  fetchModelsOnce, invalidateModelCache,
+  fetchModelsOnce, invalidateModelCache, pushRecentModel, readRecentModels, writeRecentModel,
 } from './modelCatalog';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import {
@@ -50,6 +57,22 @@ const CAPABILITIES: { key: CapabilityKey; label: string; icon: React.ReactNode; 
   { key: 'speech',        label: 'Speech',    icon: <Volume2 size={13} />, match: m => !!m.supports_speech },
   { key: 'transcription', label: 'Transcribe', icon: <Mic size={13} />,   match: m => !!m.supports_transcription },
 ];
+
+type CapabilitySpec = (typeof CAPABILITIES)[number];
+
+/** Per-model derived data, computed once per catalog (not per keystroke / per row render). */
+interface PreparedModel {
+  id: string;
+  name: string;
+  description?: string;
+  provider: string;
+  providerLabel: string;
+  badges: string[];
+  caps: CapabilitySpec[];
+  capKeys: ReadonlySet<CapabilityKey>;
+  /** Lowercase search haystack — includes the model id so id fragments match. */
+  haystack: string;
+}
 
 interface ModelPickerModalProps {
   isOpen: boolean;
@@ -90,6 +113,25 @@ function formatPrice(input?: number | null, output?: number | null, currency = '
   return `${i} / ${o} per 1M`;
 }
 
+function prepareModel(m: ModelInfo): PreparedModel {
+  const caps = CAPABILITIES.filter(c => c.match(m));
+  return {
+    id: m.id,
+    name: m.name,
+    description: m.description ?? undefined,
+    provider: m.provider,
+    providerLabel: PROVIDER_LABELS[m.provider] ?? m.provider,
+    badges: [
+      formatContext(m.context_length ?? m.context_window),
+      formatMaxOut(m.max_output_tokens ?? undefined),
+      formatPrice(m.cost_per_1k_input, m.cost_per_1k_output, m.pricing_currency),
+    ].filter(Boolean),
+    caps,
+    capKeys: new Set(caps.map(c => c.key)),
+    haystack: `${m.id} ${m.name} ${m.description ?? ''}`.toLowerCase(),
+  };
+}
+
 export function ModelPickerModal({
   isOpen, onClose, value, onChange, showDefault = true, requireCapability,
 }: ModelPickerModalProps) {
@@ -99,9 +141,18 @@ export function ModelPickerModal({
   const [selectedCaps, setSelectedCaps] = useState<Set<CapabilityKey>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [pending, setPending] = useState<string>(value);
+  const [recents, setRecents] = useState<string[]>([]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const initialScrollDone = useRef(false);
 
   // Sync pending selection whenever the modal opens with a new value
   useEffect(() => { if (isOpen) setPending(value); }, [isOpen, value]);
+  useEffect(() => {
+    if (isOpen) {
+      setRecents(readRecentModels());
+      initialScrollDone.current = false;
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -114,13 +165,6 @@ export function ModelPickerModal({
     });
     return () => { cancelled = true; };
   }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';
@@ -137,6 +181,10 @@ export function ModelPickerModal({
     });
   }, []);
 
+  // Derived per-model data, computed once per catalog.
+  const prepared = useMemo(() => models.map(prepareModel), [models]);
+  const preparedById = useMemo(() => new Map(prepared.map(p => [p.id, p])), [prepared]);
+
   const providers = useMemo(() => {
     const set = new Set(models.map(m => m.provider));
     return Array.from(set).sort((a, b) => {
@@ -149,22 +197,48 @@ export function ModelPickerModal({
     });
   }, [models]);
 
+  const providerCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of models) counts[m.provider] = (counts[m.provider] ?? 0) + 1;
+    return counts;
+  }, [models]);
+
+  // Defer search filtering so typing stays responsive on large catalogs.
+  const deferredQuery = useDeferredValue(searchQuery);
+
   const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const required = requireCapability && CAPABILITIES.find(c => c.key === requireCapability);
-    return models.filter(m => {
-      if (required && !required.match(m)) return false;
-      if (selectedProviders.size && !selectedProviders.has(m.provider)) return false;
+    const q = deferredQuery.trim().toLowerCase();
+    return prepared.filter(p => {
+      if (requireCapability && !p.capKeys.has(requireCapability)) return false;
+      if (selectedProviders.size && !selectedProviders.has(p.provider)) return false;
       for (const cap of selectedCaps) {
-        const spec = CAPABILITIES.find(c => c.key === cap);
-        if (spec && !spec.match(m)) return false;
+        if (!p.capKeys.has(cap)) return false;
       }
-      if (q && !(m.name.toLowerCase().includes(q) || (m.description ?? '').toLowerCase().includes(q))) {
-        return false;
-      }
+      if (q && !p.haystack.includes(q)) return false;
       return true;
     });
-  }, [models, selectedProviders, selectedCaps, searchQuery, requireCapability]);
+  }, [prepared, selectedProviders, selectedCaps, deferredQuery, requireCapability]);
+
+  // "Recent" group — only when the list isn't narrowed by search or filters.
+  const isNarrowed = searchQuery.trim() !== '' || selectedProviders.size > 0 || selectedCaps.size > 0;
+  const recentRows = useMemo(() => {
+    if (isNarrowed) return [];
+    const out: PreparedModel[] = [];
+    for (const id of recents) {
+      const p = preparedById.get(id);
+      if (p && (!requireCapability || p.capKeys.has(requireCapability))) out.push(p);
+    }
+    return out;
+  }, [isNarrowed, recents, preparedById, requireCapability]);
+
+  // Ordered ids of every visible row ('' = the System default row) for keyboard nav.
+  const visibleIds = useMemo(() => {
+    const ids: string[] = [];
+    if (showDefault) ids.push('');
+    for (const p of recentRows) ids.push(p.id);
+    for (const p of filtered) ids.push(p.id);
+    return ids;
+  }, [showDefault, recentRows, filtered]);
 
   const toggleProvider = (p: string) => {
     setSelectedProviders(prev => {
@@ -183,10 +257,57 @@ export function ModelPickerModal({
     });
   };
 
-  const handleConfirm = () => {
-    onChange(pending);
+  const selectRow = useCallback((id: string) => setPending(id), []);
+  const confirmWith = useCallback((id: string) => {
+    if (id) {
+      writeRecentModel(id);
+      setRecents(prev => pushRecentModel(prev, id));
+    }
+    onChange(id);
     onClose();
-  };
+  }, [onChange, onClose]);
+
+  // Keyboard: Escape closes, ArrowUp/Down move the pending selection (works
+  // while the search input is focused — arrows don't type), Enter confirms.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!visibleIds.length) return;
+        e.preventDefault();
+        const delta = e.key === 'ArrowDown' ? 1 : -1;
+        setPending(prev => {
+          const idx = visibleIds.indexOf(prev);
+          if (idx === -1) return delta === 1 ? visibleIds[0] : visibleIds[visibleIds.length - 1];
+          return visibleIds[(idx + delta + visibleIds.length) % visibleIds.length];
+        });
+        return;
+      }
+      if (e.key === 'Enter') {
+        // Focused buttons (filter chips, footer, refresh) keep their native
+        // Enter → click behavior; model rows and the search input confirm.
+        const t = e.target as HTMLElement | null;
+        if (t instanceof HTMLButtonElement && !t.classList.contains('model-row')) return;
+        e.preventDefault();
+        confirmWith(pending);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose, visibleIds, confirmWith, pending]);
+
+  // Keep the pending row visible: centered on first paint after load (so the
+  // currently-selected model is in view on open), nearest-edge afterwards
+  // (keyboard nav; a click never causes a jump since the row is on screen).
+  useEffect(() => {
+    if (!isOpen || loading) return;
+    const block = initialScrollDone.current ? 'nearest' : 'center';
+    initialScrollDone.current = true;
+    listRef.current
+      ?.querySelector(`[data-model-id="${CSS.escape(pending)}"]`)
+      ?.scrollIntoView({ block });
+  }, [isOpen, loading, pending]);
 
   return createPortal(
     <AnimatePresence>
@@ -229,7 +350,6 @@ export function ModelPickerModal({
                     <div className="filter-empty">No providers configured</div>
                   )}
                   {providers.map(p => {
-                    const count = models.filter(m => m.provider === p).length;
                     const on = selectedProviders.has(p);
                     return (
                       <button
@@ -239,7 +359,7 @@ export function ModelPickerModal({
                         onClick={() => toggleProvider(p)}
                       >
                         <span>{PROVIDER_LABELS[p] ?? p}</span>
-                        <span className="filter-chip-count">{count}</span>
+                        <span className="filter-chip-count">{providerCounts[p] ?? 0}</span>
                       </button>
                     );
                   })}
@@ -277,7 +397,7 @@ export function ModelPickerModal({
                   <Search size={14} className="search-icon" />
                   <input
                     type="text"
-                    placeholder="Search by name or description…"
+                    placeholder="Search by name, id, or description…"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                   />
@@ -286,7 +406,7 @@ export function ModelPickerModal({
                   )}
                 </div>
 
-                <div className="model-picker-list">
+                <div className="model-picker-list" ref={listRef}>
                   {loading ? (
                     <div className="model-picker-status">
                       <Loader2 size={16} className="spin" />
@@ -296,28 +416,40 @@ export function ModelPickerModal({
                     <>
                       {showDefault && (
                         <ModelRow
+                          id=""
                           selected={pending === ''}
-                          onClick={() => setPending('')}
+                          onSelect={selectRow}
+                          onConfirm={confirmWith}
                           title="System default"
                           subtitle="Use the system's default model"
                         />
                       )}
+                      {recentRows.length > 0 && (
+                        <>
+                          <div className="model-list-heading">Recent</div>
+                          {recentRows.map(p => (
+                            <ModelRow
+                              key={`recent:${p.id}`}
+                              id={p.id}
+                              selected={pending === p.id}
+                              onSelect={selectRow}
+                              onConfirm={confirmWith}
+                              record={p}
+                            />
+                          ))}
+                          <div className="model-list-heading">All models</div>
+                        </>
+                      )}
                       {filtered.length === 0 ? (
                         <div className="model-picker-status">No models match the current filters.</div>
-                      ) : filtered.map(m => (
+                      ) : filtered.map(p => (
                         <ModelRow
-                          key={m.id}
-                          selected={pending === m.id}
-                          onClick={() => setPending(m.id)}
-                          title={m.name}
-                          subtitle={m.description ?? undefined}
-                          provider={PROVIDER_LABELS[m.provider] ?? m.provider}
-                          badges={[
-                            formatContext(m.context_length ?? m.context_window),
-                            formatMaxOut(m.max_output_tokens ?? undefined),
-                            formatPrice(m.cost_per_1k_input, m.cost_per_1k_output, m.pricing_currency),
-                          ].filter(Boolean)}
-                          caps={CAPABILITIES.filter(c => c.match(m))}
+                          key={p.id}
+                          id={p.id}
+                          selected={pending === p.id}
+                          onSelect={selectRow}
+                          onConfirm={confirmWith}
+                          record={p}
                         />
                       ))}
                     </>
@@ -326,7 +458,7 @@ export function ModelPickerModal({
 
                 <div className="model-picker-footer">
                   <button type="button" className="mp-button" onClick={onClose}>Cancel</button>
-                  <button type="button" className="mp-button primary" onClick={handleConfirm}>
+                  <button type="button" className="mp-button primary" onClick={() => confirmWith(pending)}>
                     <Check size={14} />
                     <span>Use this model</span>
                   </button>
@@ -342,38 +474,49 @@ export function ModelPickerModal({
 }
 
 interface ModelRowProps {
+  id: string;
   selected: boolean;
-  onClick: () => void;
-  title: string;
+  onSelect: (id: string) => void;
+  /** Double-click (or Enter) confirms the row immediately. */
+  onConfirm: (id: string) => void;
+  /** Precomputed catalog record; omitted for the synthetic "System default" row. */
+  record?: PreparedModel;
+  /** Fallback title/subtitle for the synthetic row. */
+  title?: string;
   subtitle?: string;
-  provider?: string;
-  badges?: string[];
-  caps?: typeof CAPABILITIES;
 }
 
-function ModelRow({ selected, onClick, title, subtitle, provider, badges, caps }: ModelRowProps) {
+const ModelRow = memo(function ModelRow({
+  id, selected, onSelect, onConfirm, record, title, subtitle,
+}: ModelRowProps) {
+  const rowTitle = record?.name ?? title;
+  const rowSubtitle = record?.description ?? subtitle;
   return (
     <button
       type="button"
       className={`model-row ${selected ? 'selected' : ''}`}
-      onClick={onClick}
+      data-model-id={id}
+      onClick={() => onSelect(id)}
+      onDoubleClick={() => onConfirm(id)}
     >
       <div className="model-row-main">
         <div className="model-row-title-line">
-          <span className="model-row-title">{title}</span>
-          {provider && <span className="model-row-provider">{provider}</span>}
+          <span className="model-row-title">{rowTitle}</span>
+          {record && <span className="model-row-provider">{record.providerLabel}</span>}
           {selected && <Check size={14} className="model-row-check" />}
         </div>
-        {subtitle && <div className="model-row-subtitle" title={subtitle}>{subtitle}</div>}
+        {rowSubtitle && <div className="model-row-subtitle" title={rowSubtitle}>{rowSubtitle}</div>}
       </div>
-      <div className="model-row-meta">
-        {(badges ?? []).map((b, i) => (
-          <span key={i} className="model-row-badge">{b}</span>
-        ))}
-        {(caps ?? []).map(c => (
-          <span key={c.key} className="model-row-cap" title={c.label}>{c.icon}</span>
-        ))}
-      </div>
+      {record && (
+        <div className="model-row-meta">
+          {record.badges.map((b, i) => (
+            <span key={i} className="model-row-badge">{b}</span>
+          ))}
+          {record.caps.map(c => (
+            <span key={c.key} className="model-row-cap" title={c.label}>{c.icon}</span>
+          ))}
+        </div>
+      )}
     </button>
   );
-}
+});

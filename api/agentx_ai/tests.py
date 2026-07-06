@@ -6770,6 +6770,94 @@ class ModelRolesEndpointTest(TestCase):
             self.assertEqual(resp.status_code, 400, f"{bad!r} accepted")
 
 
+class SettingsManifestTest(TestCase):
+    """Settings Manifest v1 — the settings-agent substrate."""
+
+    def _manifest(self):
+        from agentx_ai.settings_manifest import build_manifest
+        return build_manifest()
+
+    def test_covers_both_stores_with_expected_keys(self):
+        m = self._manifest()
+        self.assertNotIn("errors", m)
+        by_key = {e["key"]: e for e in m["entries"]}
+        # Memory store: a stage model, routed to the right write endpoint,
+        # linked to its model role.
+        ext = by_key["extraction_model"]
+        self.assertEqual(ext["store"], "memory")
+        self.assertEqual(ext["writable_via"], "/api/memory/settings")
+        self.assertEqual(ext["role_member"], "extraction")
+        self.assertEqual(ext["role"], "fast_utility")
+        rec = by_key["recall_candidate_pool"]
+        self.assertEqual(rec["writable_via"], "/api/memory/recall-settings")
+        # Config store: a role key and a config-side role member.
+        self.assertEqual(by_key["models.roles.summarizer"]["writable_via"],
+                         "/api/config/update")
+        comp = by_key["compression.model"]
+        self.assertEqual(comp["role_member"], "compression")
+        # trajectory_compression.* is config-stored but bridged through the
+        # memory settings endpoint.
+        self.assertEqual(by_key["trajectory_compression.model"]["writable_via"],
+                         "/api/memory/settings")
+        # Plumbing keys are API-read-only.
+        self.assertIsNone(by_key["neo4j_uri"]["writable_via"])
+        # Sanity: the registry is substantial, not a sample.
+        self.assertGreater(m["counts"]["memory"], 100)
+        self.assertGreater(m["counts"]["config"], 60)
+
+    def test_secrets_are_redacted(self):
+        m = self._manifest()
+        for entry in m["entries"]:
+            if not entry["secret"]:
+                continue
+            for field in ("value", "default"):
+                v = entry[field]
+                self.assertIn(v, ("***", ""),
+                              f"{entry['key']}.{field} leaked: {v!r}")
+        # The credential-bearing keys are actually classified as secret.
+        by_key = {e["key"]: e for e in m["entries"]}
+        for key in ("neo4j_password", "postgres_uri", "openai_api_key",
+                    "search.tavily_api_key", "providers.anthropic.api_key"):
+            self.assertTrue(by_key[key]["secret"], f"{key} not marked secret")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class SettingsManifestEndpointTest(TestCase):
+    def test_manifest_get_shape(self):
+        resp = self.client.get("/api/settings/manifest")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["version"], 1)
+        self.assertIsInstance(body["entries"], list)
+        self.assertEqual(body["counts"]["total"], len(body["entries"]))
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ConfigImagesVisionUpdateTest(TestCase):
+    """Regression: config_update silently dropped `images`/`vision` sections —
+    the Images settings UI toasted success while persisting nothing."""
+
+    def test_images_and_vision_sections_persist(self):
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({
+                    "images": {"enabled": False, "avatar_style_prompt": "minimalist"},
+                    "vision": {"refeed_recent_turns": 4},
+                }),
+                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        cfg.set.assert_any_call("images.enabled", False)
+        cfg.set.assert_any_call("images.avatar_style_prompt", "minimalist")
+        cfg.set.assert_any_call("vision.refeed_recent_turns", 4)
+        updated = resp.json()["updated"]
+        self.assertIn("images.enabled", updated)
+        self.assertIn("vision.refeed_recent_turns", updated)
+
+
 class UsageLedgerTest(TestCase):
     """Foundation #5 — the content-free usage/cost ledger writer."""
 

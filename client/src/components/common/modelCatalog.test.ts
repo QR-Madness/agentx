@@ -5,7 +5,10 @@ vi.mock('../../lib/api', () => ({
   api: { listModels },
 }));
 
-import { fetchModelsOnce, invalidateModelCache } from './modelCatalog';
+import {
+  fetchModelsOnce, invalidateModelCache,
+  pushRecentModel, readRecentModels, writeRecentModel, RECENT_MODELS_KEY,
+} from './modelCatalog';
 
 const MODELS = [
   { id: 'anthropic:claude', name: 'Claude', provider: 'anthropic' },
@@ -43,5 +46,41 @@ describe('modelCatalog', () => {
     const second = await fetchModelsOnce();
     expect(second).toEqual(MODELS);
     expect(listModels).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('recent models', () => {
+  beforeEach(() => {
+    localStorage.removeItem(RECENT_MODELS_KEY);
+  });
+
+  it('pushRecentModel prepends, de-dupes, and caps at 5', () => {
+    expect(pushRecentModel([], 'a')).toEqual(['a']);
+    expect(pushRecentModel(['a', 'b'], 'b')).toEqual(['b', 'a']);
+    expect(pushRecentModel(['a', 'b', 'c', 'd', 'e'], 'f')).toEqual(['f', 'a', 'b', 'c', 'd']);
+    // Empty id is ignored (System default is never a "recent")
+    expect(pushRecentModel(['a'], '')).toEqual(['a']);
+  });
+
+  it('pushRecentModel does not mutate its input', () => {
+    const input = ['a', 'b'];
+    pushRecentModel(input, 'c');
+    expect(input).toEqual(['a', 'b']);
+  });
+
+  it('write/read round-trips most-recent-first through localStorage', () => {
+    writeRecentModel('anthropic:claude');
+    writeRecentModel('openai:gpt');
+    writeRecentModel('anthropic:claude');
+    expect(readRecentModels()).toEqual(['anthropic:claude', 'openai:gpt']);
+  });
+
+  it('readRecentModels tolerates garbage storage', () => {
+    localStorage.setItem(RECENT_MODELS_KEY, 'not json{');
+    expect(readRecentModels()).toEqual([]);
+    localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify({ nope: true }));
+    expect(readRecentModels()).toEqual([]);
+    localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(['ok', 42, null, 'also-ok']));
+    expect(readRecentModels()).toEqual(['ok', 'also-ok']);
   });
 });

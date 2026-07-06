@@ -62,6 +62,13 @@
       **settings-overhaul panel** auto-generate a clean UI, supplies the **"document every feature
       in-UI"** + **Memory Area cleanup** descriptions, and gives `/api/config/update` real validation.
       Build this first.
+  - [x] **v1 registry + API** `[v0.21.160]` — `agentx_ai/settings_manifest.py` +
+        `GET /api/settings/manifest`: both stores (memory `Settings` fields + `DEFAULT_CONFIG`
+        leaves) with per-key `{store, type, default, value (secrets redacted), writable_via,
+        role_member/role}`; write routing mirrors `config_update`'s section handlers
+        (`_CONFIG_WRITE_ROUTES` — extend in lockstep) and the two memory endpoints' whitelists.
+  - [ ] **v2**: prose `description`/"how it works" per key, validation ranges, dead-knob flags —
+        then `/api/config/update` validation + auto-generated UI hints hang off it.
 - [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention
       routing (16.5). Free-rein **read** access: the Settings Manifest, the docs-site (a docs-search
       tool), and a **conversation-diagnostic** tool (transcript + the **Context Inspector** + logs/

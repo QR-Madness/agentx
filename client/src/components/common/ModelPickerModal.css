@@ -226,6 +226,19 @@
   font-size: 13px;
 }
 
+/* Section headings inside the list ("Recent" / "All models") — mirrors the
+   filter-group h3 treatment. */
+.model-list-heading {
+  margin: 8px 2px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.model-list-heading:first-child { margin-top: 0; }
+
 .model-row {
   display: flex;
   align-items: center;
@@ -242,6 +255,12 @@
   cursor: pointer;
   transition: all 0.15s;
   text-align: left;
+  /* Cheap virtualization for 500+-model catalogs: off-screen rows skip layout
+     and paint. 64px ≈ measured desktop row height (12px padding ×2 + 20px title
+     line + 4px gap + 16px subtitle); `auto` remembers the real rendered size.
+     Degrades harmlessly where content-visibility is unsupported. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 .model-row:hover {
   background: var(--glass-layer-2);
@@ -385,6 +404,8 @@
     padding: 16px;
     border-color: var(--accent-tint-soft);
     border-radius: 14px;
+    /* Card rows are much taller (stacked layout, wrapped description). */
+    contain-intrinsic-size: auto 140px;
   }
   .model-row-main {
     width: 100%;

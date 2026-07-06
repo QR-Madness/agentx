@@ -1411,13 +1411,21 @@ GET /api/config/context-limits
 
 Returns the resolved context-window limit per configured model — used by the client for token budgeting.
 
+### Settings Manifest
+
+```
+GET /api/settings/manifest
+```
+
+Canonical machine-readable registry of every user-tunable setting across both stores (memory settings + config): per key — `store`, `type`, `default`, current `value` (secrets redacted), `writable_via` (which endpoint changes it, `null` = server-side only), and model-role linkage (`role_member`/`role`). The substrate for settings tooling and the future settings agent.
+
 ### Update Config
 
 ```
 POST /api/config/update
 ```
 
-Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers.
+Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`.
 
 **Request:**
 ```json

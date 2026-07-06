@@ -3,7 +3,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import {
   api,
   toApiError,
@@ -27,8 +26,6 @@ import {
   CheckpointsResponse,
   EntityGraph,
   ConsolidateResult,
-  ConsolidationSettings,
-  RecallSettings,
   MemoryExport,
   MemoryImportResult,
 } from './api';
@@ -840,60 +837,6 @@ export function useSettingsAutosave<T extends Record<string, unknown>>(opts: {
     flush,
     refresh,
   };
-}
-
-/** Shared shape of the two memory settings hooks below. */
-interface MemorySettingsHook<T> {
-  settings: T | null;
-  loading: boolean;
-  saving: boolean;
-  error: ApiError | null;
-  updateSettings: (updates: Partial<T>) => Promise<boolean>;
-  refresh: () => Promise<void>;
-}
-
-function useMemorySettings<T>(
-  load: () => Promise<T>,
-  save: (updates: Partial<T>) => Promise<unknown>
-): MemorySettingsHook<T> {
-  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
-  const enabled = !authLoading && (!authRequired || isAuthenticated);
-  const { data, loading, error, refresh } = useApi<T>(load, [], { enabled });
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<ApiError | null>(null);
-  const saveRef = useRef(save);
-  saveRef.current = save;
-
-  const updateSettings = useCallback(async (updates: Partial<T>) => {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await saveRef.current(updates);
-      await refresh();
-      return true;
-    } catch (err) {
-      setSaveError(toApiError(err));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [refresh]);
-
-  return { settings: data, loading, saving, error: saveError ?? error, updateSettings, refresh };
-}
-
-export function useConsolidationSettings() {
-  return useMemorySettings<ConsolidationSettings>(
-    () => api.getConsolidationSettings(),
-    updates => api.updateConsolidationSettings(updates)
-  );
-}
-
-export function useRecallSettings() {
-  return useMemorySettings<RecallSettings>(
-    () => api.getRecallSettings(),
-    updates => api.updateRecallSettings(updates)
-  );
 }
 
 /**

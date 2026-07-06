@@ -1,12 +1,12 @@
-import { useState, useEffect, useId, useRef } from 'react';
-import { RefreshCw, Zap, X, RotateCcw, Save } from 'lucide-react';
-import { useApi, useConsolidationSettings } from '../../lib/hooks';
+import { useState, useEffect, useId } from 'react';
+import { RefreshCw, Zap, X, RotateCcw } from 'lucide-react';
+import { useApi, useSettingsAutosave } from '../../lib/hooks';
 import { ConsolidationSettings, api, type ModelRoleMember, type ModelRoleName } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Badge, Button, Checkbox, Label } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
-import { SettingsSection, SliderField, NumberField, ToggleField } from '../settings/fields';
+import { SettingsSection, SliderField, NumberField, ToggleField, SaveStatusChip } from '../settings/fields';
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 
@@ -21,6 +21,9 @@ const ROLE_LABELS: Record<ModelRoleName, string> = {
   deep_reasoning: 'Deep Reasoning',
   summarizer: 'Summarizer',
 };
+
+/** Autosave draft shape (index signature required by useSettingsAutosave). */
+type ConsolidationDraft = ConsolidationSettings & Record<string, unknown>;
 
 /** Human-readable tail of a provider:model id. */
 function shortModel(id: string): string {
@@ -60,71 +63,33 @@ export function ConsolidationSettingsPanel({
 }: {
   onConsolidate: (jobs?: string[]) => Promise<void>;
 }) {
-  const { settings, loading, saving, error, updateSettings, refresh } = useConsolidationSettings();
   const { notifySuccess, notifyError } = useNotify();
   const confirm = useConfirm();
-  const [localSettings, setLocalSettings] = useState<Partial<ConsolidationSettings>>({});
   const [consolidating, setConsolidating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [consolidateJobs, setConsolidateJobs] = useState<string[]>(['consolidate']);
   const jobIdPrefix = useId();
-  // Debounced autosave (baseline-diff so the initial hydration doesn't save).
-  const [autosaveState, setAutosaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const baselineRef = useRef<string | null>(null);
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { settings, loading, error, status, update, refresh } =
+    useSettingsAutosave<ConsolidationDraft>({
+      load: async () => (await api.getConsolidationSettings()) as ConsolidationDraft,
+      save: changed => api.updateConsolidationSettings(changed),
+      onError: err => notifyError(err, 'Consolidation settings'),
+    });
+
   // Effective-model/role chips for the stage pickers; re-fetched after each
   // successful save so the chips track the just-saved stage models.
   const { data: modelRoles, refresh: refreshModelRoles } = useApi(() => api.getModelRoles(), []);
   const roleMembers = modelRoles?.members;
-
   useEffect(() => {
-    if (settings) {
-      setLocalSettings(settings);
-      baselineRef.current = JSON.stringify(settings);
-      setAutosaveState('idle');
-    }
-  }, [settings]);
+    if (status === 'saved') void refreshModelRoles();
+  }, [status, refreshModelRoles]);
 
   const handleChange = <K extends keyof ConsolidationSettings>(
     key: K,
     value: ConsolidationSettings[K]
   ) => {
-    setLocalSettings(prev => ({ ...prev, [key]: value }));
-  };
-
-  // Autosave: persist genuine edits to localSettings after a short debounce.
-  useEffect(() => {
-    if (!settings || Object.keys(localSettings).length === 0) return;
-    const snap = JSON.stringify(localSettings);
-    if (baselineRef.current === null || snap === baselineRef.current) return;
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = setTimeout(async () => {
-      setAutosaveState('saving');
-      const ok = await updateSettings(localSettings);
-      if (ok) {
-        baselineRef.current = snap;
-        setAutosaveState('saved');
-        void refreshModelRoles();
-      } else {
-        setAutosaveState('idle');
-      }
-    }, 800);
-    return () => {
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localSettings]);
-
-  const handleSave = async () => {
-    const success = await updateSettings(localSettings);
-    if (success) {
-      baselineRef.current = JSON.stringify(localSettings);
-      setAutosaveState('saved');
-      void refreshModelRoles();
-      notifySuccess('Settings saved successfully');
-    } else {
-      notifyError('Failed to save settings');
-    }
+    update({ [key]: value } as Partial<ConsolidationDraft>);
   };
 
   // The stage models that inherit `feature_default_model` when left empty.
@@ -141,11 +106,9 @@ export function ConsolidationSettingsPanel({
   // "Apply to all stages": clear every stage model so they all inherit the bulk
   // default; the user can then override individual stages as needed.
   const applyDefaultToAllStages = () => {
-    setLocalSettings(prev => {
-      const next: Record<string, unknown> = { ...prev };
-      for (const k of STAGE_MODEL_KEYS) next[k as string] = '';
-      return next as Partial<ConsolidationSettings>;
-    });
+    const patch: Record<string, unknown> = {};
+    for (const k of STAGE_MODEL_KEYS) patch[k as string] = '';
+    update(patch as Partial<ConsolidationDraft>);
   };
 
   const handleConsolidate = async () => {
@@ -215,11 +178,11 @@ export function ConsolidationSettingsPanel({
     );
   }
 
-  if (error) {
+  if (!settings) {
     return (
       <div className="settings-panel">
         <div className="memory-error">
-          <p>Failed to load settings: {error.message}</p>
+          <p>Failed to load settings{error ? `: ${error.message}` : ''}</p>
           <Button variant="ghost" onClick={refresh}>
             <RefreshCw size={16} /> Retry
           </Button>
@@ -291,7 +254,7 @@ export function ConsolidationSettingsPanel({
           <div className="setting-row">
             <ModelPickerField
               label="Default model"
-              value={localSettings.feature_default_model || ''}
+              value={settings.feature_default_model || ''}
               onChange={v => handleChange('feature_default_model', v)}
               showDefault={false}
             />
@@ -299,6 +262,11 @@ export function ConsolidationSettingsPanel({
           <p className="setting-hint">
             Stages left blank below inherit this model; if this is blank too, they inherit your
             default chat model. Set it once to point all of memory at one model.
+          </p>
+          <p className="setting-hint">
+            Prefer Model Roles (Settings → Infrastructure → Model Roles) for workload-level
+            control — a stage&apos;s assigned role takes precedence over this bulk default, which
+            only applies to stages with no role model resolved.
           </p>
           <Button
             variant="secondary"
@@ -315,7 +283,7 @@ export function ConsolidationSettingsPanel({
           <div className="setting-row">
             <ModelPickerField
               label="Model (blank = inherit default)"
-              value={localSettings.extraction_model || ''}
+              value={settings.extraction_model || ''}
               onChange={v => handleChange('extraction_model', v)}
               showDefault={false}
             />
@@ -323,19 +291,19 @@ export function ConsolidationSettingsPanel({
           </div>
           <SliderField
             label="Temperature"
-            value={localSettings.extraction_temperature ?? 0.2}
+            value={settings.extraction_temperature ?? 0.2}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('extraction_temperature', v)}
           />
           <NumberField
             label="Max Tokens"
-            value={localSettings.extraction_max_tokens ?? 2000}
+            value={settings.extraction_max_tokens ?? 2000}
             min={100} max={8000} fallback={2000}
             onChange={v => handleChange('extraction_max_tokens', v)}
           />
           <ToggleField
             label="Condense facts into atomic statements"
-            checked={localSettings.extraction_condense_facts ?? true}
+            checked={settings.extraction_condense_facts ?? true}
             onChange={v => handleChange('extraction_condense_facts', v)}
           />
         </div>
@@ -348,13 +316,13 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid">
           <ToggleField
             label="Enable relevance filter (skip non-informative turns)"
-            checked={localSettings.relevance_filter_enabled ?? true}
+            checked={settings.relevance_filter_enabled ?? true}
             onChange={v => handleChange('relevance_filter_enabled', v)}
           />
           <div className="setting-row">
             <ModelPickerField
               label="Model"
-              value={localSettings.relevance_filter_model || ''}
+              value={settings.relevance_filter_model || ''}
               onChange={v => handleChange('relevance_filter_model', v)}
               showDefault={false}
             />
@@ -362,13 +330,13 @@ export function ConsolidationSettingsPanel({
           </div>
           <SliderField
             label="Temperature"
-            value={localSettings.relevance_filter_temperature ?? 0.1}
+            value={settings.relevance_filter_temperature ?? 0.1}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('relevance_filter_temperature', v)}
           />
           <NumberField
             label="Max Tokens"
-            value={localSettings.relevance_filter_max_tokens ?? 500}
+            value={settings.relevance_filter_max_tokens ?? 500}
             min={10} max={2000} fallback={500}
             title="Reasoning models need more tokens (500+)"
             onChange={v => handleChange('relevance_filter_max_tokens', v)}
@@ -395,7 +363,7 @@ export function ConsolidationSettingsPanel({
           <div className="setting-row">
             <ModelPickerField
               label="Model"
-              value={localSettings.combined_extraction_model || ''}
+              value={settings.combined_extraction_model || ''}
               onChange={v => handleChange('combined_extraction_model', v)}
               showDefault={false}
             />
@@ -404,7 +372,7 @@ export function ConsolidationSettingsPanel({
               size="sm"
               className="setting-reset-inline"
               onClick={() => handleChange('combined_extraction_model', '')}
-              disabled={!localSettings.combined_extraction_model}
+              disabled={!settings.combined_extraction_model}
               title="Reset to default (run Relevance + Extraction separately)"
             >
               <RotateCcw size={13} />
@@ -414,13 +382,13 @@ export function ConsolidationSettingsPanel({
           </div>
           <SliderField
             label="Temperature"
-            value={localSettings.combined_extraction_temperature ?? 0.3}
+            value={settings.combined_extraction_temperature ?? 0.3}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('combined_extraction_temperature', v)}
           />
           <NumberField
             label="Max Tokens"
-            value={localSettings.combined_extraction_max_tokens ?? 2000}
+            value={settings.combined_extraction_max_tokens ?? 2000}
             min={100} max={8000} fallback={2000}
             onChange={v => handleChange('combined_extraction_max_tokens', v)}
           />
@@ -434,39 +402,39 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid">
           <ToggleField
             label="Enable trajectory compression"
-            checked={localSettings.trajectory_compression_enabled ?? true}
+            checked={settings.trajectory_compression_enabled ?? true}
             onChange={v => handleChange('trajectory_compression_enabled', v)}
           />
           <div className="setting-row">
             <ModelPickerField
               label="Model"
-              value={localSettings.trajectory_compression_model || ''}
+              value={settings.trajectory_compression_model || ''}
               onChange={v => handleChange('trajectory_compression_model', v)}
               showDefault={false}
             />
           </div>
           <SliderField
             label="Temperature"
-            value={localSettings.trajectory_compression_temperature ?? 0.2}
+            value={settings.trajectory_compression_temperature ?? 0.2}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('trajectory_compression_temperature', v)}
           />
           <NumberField
             label="Max Tokens"
-            value={localSettings.trajectory_compression_max_tokens ?? 1500}
+            value={settings.trajectory_compression_max_tokens ?? 1500}
             min={100} max={8000} fallback={1500}
             onChange={v => handleChange('trajectory_compression_max_tokens', v)}
           />
           <SliderField
             label="Trigger Threshold (% of context)"
-            value={localSettings.trajectory_compression_threshold_ratio ?? 0.75}
+            value={settings.trajectory_compression_threshold_ratio ?? 0.75}
             min={0.5} max={0.95} step={0.05}
             format={pct}
             onChange={v => handleChange('trajectory_compression_threshold_ratio', v)}
           />
           <NumberField
             label="Preserve Recent Rounds"
-            value={localSettings.trajectory_compression_preserve_recent_rounds ?? 2}
+            value={settings.trajectory_compression_preserve_recent_rounds ?? 2}
             min={1} max={5} fallback={2}
             onChange={v => handleChange('trajectory_compression_preserve_recent_rounds', v)}
           />
@@ -477,26 +445,26 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid">
           <ToggleField
             label="Enable entity linking (connect facts to entities)"
-            checked={localSettings.entity_linking_enabled ?? true}
+            checked={settings.entity_linking_enabled ?? true}
             onChange={v => handleChange('entity_linking_enabled', v)}
           />
           <SliderField
             label="Similarity Threshold"
-            value={localSettings.entity_linking_similarity_threshold ?? 0.75}
+            value={settings.entity_linking_similarity_threshold ?? 0.75}
             min={0.5} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('entity_linking_similarity_threshold', v)}
           />
           <ToggleField
             label="Use LLM for ambiguous matches"
-            checked={localSettings.entity_linking_use_llm_disambiguation ?? false}
+            checked={settings.entity_linking_use_llm_disambiguation ?? false}
             onChange={v => handleChange('entity_linking_use_llm_disambiguation', v)}
           />
-          {localSettings.entity_linking_use_llm_disambiguation && (
+          {settings.entity_linking_use_llm_disambiguation && (
             <div className="setting-row">
               <ModelPickerField
                 label="Disambiguation Model"
-                value={localSettings.entity_linking_model || ''}
+                value={settings.entity_linking_model || ''}
                 onChange={v => handleChange('entity_linking_model', v)}
                 showDefault={false}
               />
@@ -510,14 +478,14 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid">
           <SliderField
             label="Min Fact Confidence"
-            value={localSettings.fact_confidence_threshold ?? 0.7}
+            value={settings.fact_confidence_threshold ?? 0.7}
             min={0} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('fact_confidence_threshold', v)}
           />
           <SliderField
             label="Min Promotion Confidence"
-            value={localSettings.promotion_min_confidence ?? 0.85}
+            value={settings.promotion_min_confidence ?? 0.85}
             min={0} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('promotion_min_confidence', v)}
@@ -529,19 +497,19 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid intervals">
           <NumberField
             label="Consolidation"
-            value={localSettings.job_consolidate_interval ?? 15}
+            value={settings.job_consolidate_interval ?? 15}
             min={1} fallback={15}
             onChange={v => handleChange('job_consolidate_interval', v)}
           />
           <NumberField
             label="Promotion"
-            value={localSettings.job_promote_interval ?? 60}
+            value={settings.job_promote_interval ?? 60}
             min={1} fallback={60}
             onChange={v => handleChange('job_promote_interval', v)}
           />
           <NumberField
             label="Entity Linking"
-            value={localSettings.job_entity_linking_interval ?? 30}
+            value={settings.job_entity_linking_interval ?? 30}
             min={1} fallback={30}
             onChange={v => handleChange('job_entity_linking_interval', v)}
           />
@@ -553,15 +521,15 @@ export function ConsolidationSettingsPanel({
         <div className="settings-grid">
           <ToggleField
             label="Enable contradiction detection"
-            checked={localSettings.contradiction_detection_enabled ?? false}
+            checked={settings.contradiction_detection_enabled ?? false}
             onChange={v => handleChange('contradiction_detection_enabled', v)}
           />
-          {localSettings.contradiction_detection_enabled && (
+          {settings.contradiction_detection_enabled && (
             <>
               <div className="setting-row">
                 <ModelPickerField
                   label="Contradiction Model"
-                  value={localSettings.contradiction_model || ''}
+                  value={settings.contradiction_model || ''}
                   onChange={v => handleChange('contradiction_model', v)}
                   showDefault={false}
                 />
@@ -569,13 +537,13 @@ export function ConsolidationSettingsPanel({
               </div>
               <SliderField
                 label="Temperature"
-                value={localSettings.contradiction_temperature ?? 0.2}
+                value={settings.contradiction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('contradiction_temperature', v)}
               />
               <NumberField
                 label="Max Tokens"
-                value={localSettings.contradiction_max_tokens ?? 500}
+                value={settings.contradiction_max_tokens ?? 500}
                 min={100} max={4000} fallback={500}
                 onChange={v => handleChange('contradiction_max_tokens', v)}
               />
@@ -583,15 +551,15 @@ export function ConsolidationSettingsPanel({
           )}
           <ToggleField
             label="Enable user correction handling"
-            checked={localSettings.correction_detection_enabled ?? false}
+            checked={settings.correction_detection_enabled ?? false}
             onChange={v => handleChange('correction_detection_enabled', v)}
           />
-          {localSettings.correction_detection_enabled && (
+          {settings.correction_detection_enabled && (
             <>
               <div className="setting-row">
                 <ModelPickerField
                   label="Correction Model"
-                  value={localSettings.correction_model || ''}
+                  value={settings.correction_model || ''}
                   onChange={v => handleChange('correction_model', v)}
                   showDefault={false}
                 />
@@ -599,13 +567,13 @@ export function ConsolidationSettingsPanel({
               </div>
               <SliderField
                 label="Temperature"
-                value={localSettings.correction_temperature ?? 0.2}
+                value={settings.correction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('correction_temperature', v)}
               />
               <NumberField
                 label="Max Tokens"
-                value={localSettings.correction_max_tokens ?? 500}
+                value={settings.correction_max_tokens ?? 500}
                 min={100} max={4000} fallback={500}
                 onChange={v => handleChange('correction_max_tokens', v)}
               />
@@ -615,16 +583,7 @@ export function ConsolidationSettingsPanel({
       </div>
 
       <div className="settings-actions">
-        <span className="autosave-status" aria-live="polite" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
-        </span>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? (
-            <><RefreshCw size={16} className="spin" /> Saving...</>
-          ) : (
-            <><Save size={16} /> Save Settings</>
-          )}
-        </Button>
+        <SaveStatusChip status={status} />
       </div>
     </div>
   );

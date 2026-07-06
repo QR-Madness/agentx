@@ -4294,6 +4294,56 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /settings/manifest:
+    get:
+      tags: [Config]
+      operationId: settingsManifest
+      summary: Settings Manifest — registry of every user-tunable setting
+      description: >-
+        Canonical machine-readable registry across the memory-settings and
+        config stores: per key — store, type, default, current value (secrets
+        redacted), write route, and model-role linkage. The substrate for the
+        settings agent (explain/suggest/validate).
+      responses:
+        '200':
+          description: Manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                  generated_at:
+                    type: string
+                  counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        store:
+                          type: string
+                          enum: [memory, config]
+                        type:
+                          type: string
+                        default: {}
+                        value: {}
+                        secret:
+                          type: boolean
+                        writable_via:
+                          type: string
+                          nullable: true
+                        role_member:
+                          type: string
+                        role:
+                          type: string
+
   /config/update:
     post:
       tags: [Config]
@@ -4303,6 +4353,7 @@ paths:
         Sectioned partial update. `models` accepts only `roles.{fast_utility,
         deep_reasoning,summarizer}` — each "" (clear) or a concrete
         provider:model (`role:` refs and non-`provider:model` strings 400).
+        `images` and `vision` accept their whitelisted keys.
       requestBody:
         required: true
         content:
