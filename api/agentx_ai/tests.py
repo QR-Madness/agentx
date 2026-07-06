@@ -5918,6 +5918,29 @@ class ToolGatingTest(TestCase):
         self.assertIn("checkpoint", names)
         self.assertNotIn("recall_user_history", names)
 
+    def test_legacy_alias_matches_profile_lists(self) -> None:
+        # Profile lists written before the workspace_search → project_search
+        # rename keep gating the renamed tool (both allow and block).
+        from agentx_ai.mcp.tool_executor import ToolInfo
+
+        agent = self._make_agent(allowed=["_internal.workspace_search"])
+        agent._mcp_client.list_tools = MagicMock(return_value=[
+            ToolInfo(name="project_search", description="p", input_schema={},
+                     server_name="_internal"),
+            ToolInfo(name="checkpoint", description="ck", input_schema={},
+                     server_name="_internal"),
+        ])
+        self.assertEqual(self._names(agent._get_tools_for_provider()), ["project_search"])
+
+        agent2 = self._make_agent(blocked=["_internal.workspace_search"])
+        agent2._mcp_client.list_tools = MagicMock(return_value=[
+            ToolInfo(name="project_search", description="p", input_schema={},
+                     server_name="_internal"),
+            ToolInfo(name="checkpoint", description="ck", input_schema={},
+                     server_name="_internal"),
+        ])
+        self.assertEqual(self._names(agent2._get_tools_for_provider()), ["checkpoint"])
+
 
 class ProfileUnqualifiedToolWarningTest(TestCase):
     """A profile loaded with bare tool names (legacy format) logs a warning."""
@@ -11073,3 +11096,345 @@ class AnthropicSystemPromptJoinTest(TestCase):
         system, converted = self._convert([Message(role=MessageRole.USER, content="hi")])
         self.assertIsNone(system)
         self.assertEqual(len(converted), 1)
+
+
+class WorkspaceWriteServiceTest(TestCase):
+    """`create_text_document` / `update_text_document` — policy, collision/ETag
+    conflicts, blob refcounting, no-op short-circuit (all mock-based)."""
+
+    def _settings(self, **over):
+        from types import SimpleNamespace
+        base = {
+            "workspace_agent_writable_extensions": ["md", "markdown", "txt"],
+            "workspace_max_file_bytes": 1000,
+            "workspace_quota_bytes": 10_000,
+        }
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def _svc(self):
+        from agentx_ai.kit.workspaces import service
+        return service
+
+    def _patches(self, settings=None):
+        svc = "agentx_ai.kit.workspaces.service"
+        return (
+            patch(f"{svc}.get_settings", return_value=settings or self._settings()),
+            patch(f"{svc}.repository"),
+            patch(f"{svc}.storage"),
+            patch(f"{svc}.ingestion"),
+        )
+
+    def test_create_rejects_unwritable_extension(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_workspace.return_value = {"id": "ws_1"}
+            for bad in ("notes.py", "report.pdf", "noext"):
+                with self.assertRaises(WorkspaceError) as ctx:
+                    self._svc().create_text_document(
+                        workspace_id="ws_1", filename=bad, content="x"
+                    )
+                self.assertEqual(ctx.exception.code, "unsupported")
+
+    def test_create_rejects_traversal_and_deep_paths(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_workspace.return_value = {"id": "ws_1"}
+            for bad in ("../evil.md", "a/b/c.md", "a\\b.md", "", "  "):
+                with self.assertRaises(WorkspaceError):
+                    self._svc().create_text_document(
+                        workspace_id="ws_1", filename=bad, content="x"
+                    )
+            # One folder level is allowed.
+            r.get_document_by_filename.return_value = None
+            r.workspace_usage_bytes.return_value = 0
+            with patch(
+                "agentx_ai.kit.workspaces.service.storage.store_blob",
+                return_value=("sha_a", "ws_1/sha_a"),
+            ):
+                r.create_document.return_value = {"id": "doc_1"}
+                doc = self._svc().create_text_document(
+                    workspace_id="ws_1", filename="research/notes.md", content="x"
+                )
+            self.assertEqual(doc["id"], "doc_1")
+
+    def test_create_conflict_carries_existing_document_id(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_workspace.return_value = {"id": "ws_1"}
+            r.get_document_by_filename.return_value = {"id": "doc_existing"}
+            with self.assertRaises(WorkspaceError) as ctx:
+                self._svc().create_text_document(
+                    workspace_id="ws_1", filename="notes.md", content="x"
+                )
+            self.assertEqual(ctx.exception.code, "conflict")
+            self.assertEqual(ctx.exception.document_id, "doc_existing")
+
+    def test_create_rejects_empty_content(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_workspace.return_value = {"id": "ws_1"}
+            r.get_document_by_filename.return_value = None
+            with self.assertRaises(WorkspaceError) as ctx:
+                self._svc().create_text_document(
+                    workspace_id="ws_1", filename="notes.md", content=""
+                )
+            self.assertEqual(ctx.exception.code, "unsupported")
+
+    def test_create_happy_path_fires_ingestion(self):
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store as s, ingest as ing:
+            r.get_workspace.return_value = {"id": "ws_1"}
+            r.get_document_by_filename.return_value = None
+            r.workspace_usage_bytes.return_value = 0
+            s.store_blob.return_value = ("sha_a", "ws_1/sha_a")
+            r.create_document.return_value = {"id": "doc_1", "status": "pending"}
+            doc = self._svc().create_text_document(
+                workspace_id="ws_1", filename="notes.md", content="# Hello"
+            )
+        self.assertEqual(doc["id"], "doc_1")
+        self.assertEqual(r.create_document.call_args.kwargs["content_type"], "text/markdown")
+        ing.ingest_document_async.assert_called_once_with("doc_1")
+
+    def _existing_doc(self, **over):
+        doc = {
+            "id": "doc_1", "workspace_id": "ws_1", "filename": "notes.md",
+            "sha256": "sha_old", "storage_key": "ws_1/sha_old", "size_bytes": 50,
+        }
+        doc.update(over)
+        return doc
+
+    def test_update_etag_mismatch_is_conflict(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_document.return_value = self._existing_doc()
+            with self.assertRaises(WorkspaceError) as ctx:
+                self._svc().update_text_document(
+                    workspace_id="ws_1", document_id="doc_1",
+                    content="x", expected_sha256="sha_stale",
+                )
+            self.assertEqual(ctx.exception.code, "conflict")
+
+    def test_update_noop_on_identical_content(self):
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store as s, ingest as ing:
+            r.get_document.return_value = self._existing_doc()
+            r.workspace_usage_bytes.return_value = 50
+            s.store_blob.return_value = ("sha_old", "ws_1/sha_old")  # same content
+            doc = self._svc().update_text_document(
+                workspace_id="ws_1", document_id="doc_1", content="same"
+            )
+        self.assertEqual(doc["id"], "doc_1")
+        r.update_document_content.assert_not_called()
+        ing.ingest_document_async.assert_not_called()
+
+    def test_update_releases_unshared_old_blob(self):
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store as s, ingest as ing:
+            r.get_document.return_value = self._existing_doc()
+            r.workspace_usage_bytes.return_value = 50
+            s.store_blob.return_value = ("sha_new", "ws_1/sha_new")
+            r.update_document_content.return_value = self._existing_doc(
+                sha256="sha_new", storage_key="ws_1/sha_new"
+            )
+            r.count_documents_with_storage_key.return_value = 0  # unshared
+            self._svc().update_text_document(
+                workspace_id="ws_1", document_id="doc_1", content="new"
+            )
+        s.delete_blob.assert_called_once_with("ws_1/sha_old")
+        ing.ingest_document_async.assert_called_once_with("doc_1")
+
+    def test_update_keeps_shared_old_blob(self):
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store as s, ingest:
+            r.get_document.return_value = self._existing_doc()
+            r.workspace_usage_bytes.return_value = 50
+            s.store_blob.return_value = ("sha_new", "ws_1/sha_new")
+            r.update_document_content.return_value = self._existing_doc(sha256="sha_new")
+            r.count_documents_with_storage_key.return_value = 1  # another doc shares it
+            self._svc().update_text_document(
+                workspace_id="ws_1", document_id="doc_1", content="new"
+            )
+        s.delete_blob.assert_not_called()
+
+    def test_update_quota_accounts_for_replaced_bytes(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        # used=9_990 of 10_000; replacing a 50-byte doc with 55 bytes fits
+        # (9_990 - 50 + 55 = 9_995); with 70 bytes it doesn't.
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store as s, ingest:
+            r.get_document.return_value = self._existing_doc()
+            r.workspace_usage_bytes.return_value = 9_990
+            s.store_blob.return_value = ("sha_new", "ws_1/sha_new")
+            r.update_document_content.return_value = self._existing_doc(sha256="sha_new")
+            r.count_documents_with_storage_key.return_value = 1
+            self._svc().update_text_document(
+                workspace_id="ws_1", document_id="doc_1", content="x" * 55
+            )
+            with self.assertRaises(WorkspaceError) as ctx:
+                self._svc().update_text_document(
+                    workspace_id="ws_1", document_id="doc_1", content="x" * 70
+                )
+            self.assertEqual(ctx.exception.code, "quota_exceeded")
+
+    def test_update_rejects_non_text_document(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        cfg, repo, store, ingest = self._patches()
+        with cfg, repo as r, store, ingest:
+            r.get_document.return_value = self._existing_doc(filename="photo.png")
+            with self.assertRaises(WorkspaceError) as ctx:
+                self._svc().update_text_document(
+                    workspace_id="ws_1", document_id="doc_1", content="x"
+                )
+            self.assertEqual(ctx.exception.code, "unsupported")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
+class WorkspaceTextEndpointTest(TestCase):
+    """POST /workspaces/{id}/documents/text + PUT .../documents/{doc}/text —
+    status mapping and the 409 conflict payload (service mocked)."""
+
+    def setUp(self) -> None:
+        from django.test import Client
+        self.client = Client()
+
+    def test_create_returns_201(self):
+        doc = {"id": "doc_1", "workspace_id": "ws_1", "filename": "notes.md",
+               "status": "pending", "size_bytes": 7}
+        with patch("agentx_ai.workspace_views.create_text_document", return_value=doc):
+            resp = self.client.post(
+                "/api/workspaces/ws_1/documents/text",
+                data=json.dumps({"filename": "notes.md", "content": "# Hello"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()["document"]["id"], "doc_1")
+
+    def test_create_conflict_payload(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        err = WorkspaceError("conflict", "'notes.md' already exists", document_id="doc_9")
+        with patch("agentx_ai.workspace_views.create_text_document", side_effect=err), \
+             patch("agentx_ai.workspace_views.repository.get_document",
+                   return_value={"id": "doc_9", "sha256": "sha_cur"}):
+            resp = self.client.post(
+                "/api/workspaces/ws_1/documents/text",
+                data=json.dumps({"filename": "notes.md", "content": "x"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 409)
+        body = resp.json()
+        self.assertEqual(body["code"], "conflict")
+        self.assertEqual(body["document_id"], "doc_9")
+        self.assertEqual(body["current_sha256"], "sha_cur")
+
+    def test_create_requires_content(self):
+        resp = self.client.post(
+            "/api/workspaces/ws_1/documents/text",
+            data=json.dumps({"filename": "notes.md"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_update_passes_expected_sha(self):
+        doc = {"id": "doc_1", "workspace_id": "ws_1", "filename": "notes.md",
+               "status": "pending", "size_bytes": 3}
+        with patch("agentx_ai.workspace_views.update_text_document", return_value=doc) as upd:
+            resp = self.client.put(
+                "/api/workspaces/ws_1/documents/doc_1/text",
+                data=json.dumps({"content": "new", "expected_sha256": "sha_x"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(upd.call_args.kwargs["expected_sha256"], "sha_x")
+
+    def test_update_unsupported_maps_to_415(self):
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        err = WorkspaceError("unsupported", "not a text document")
+        with patch("agentx_ai.workspace_views.update_text_document", side_effect=err):
+            resp = self.client.put(
+                "/api/workspaces/ws_1/documents/doc_1/text",
+                data=json.dumps({"content": "x"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 415)
+
+
+class ProjectPromptingTest(TestCase):
+    """Slice B: the `project-collaboration` builtin layer, the always-on project
+    identity block, and the workspace_search → project_search rename/alias."""
+
+    def test_builtin_layer_present_and_composed(self):
+        from agentx_ai.prompts import layers as layers_mod
+        ids = [layer.id for layer in layers_mod.BUILTIN_LAYERS]
+        self.assertIn("project-collaboration", ids)
+        # Ordered after reasoning-vs-results (20), before structured-thinking (30).
+        layer = next(x for x in layers_mod.BUILTIN_LAYERS if x.id == "project-collaboration")
+        self.assertEqual(layer.order, 25)
+        for needle in ("create_document", "update_document", "project_search"):
+            self.assertIn(needle, layer.default)
+
+    def test_identity_block_empty_project(self):
+        from agentx_ai.kit.workspaces import retrieval
+        with patch.object(retrieval.repository, "get_workspace",
+                          return_value={"id": "ws_1", "name": "Thesis", "description": ""}), \
+             patch.object(retrieval.repository, "list_documents", return_value=[]):
+            block = retrieval.render_project_identity_block("ws_1")
+        self.assertIn("Thesis", block)
+        self.assertIn("no documents yet", block)
+        self.assertIn("create_document", block)
+
+    def test_identity_block_with_docs_and_description(self):
+        from agentx_ai.kit.workspaces import retrieval
+        docs = [{"status": "ready"}, {"status": "pending"}, {"status": "ready"}]
+        with patch.object(retrieval.repository, "get_workspace",
+                          return_value={"id": "ws_1", "name": "Thesis",
+                                        "description": "Doctoral research."}), \
+             patch.object(retrieval.repository, "list_documents", return_value=docs):
+            block = retrieval.render_project_identity_block("ws_1")
+        self.assertIn("Doctoral research.", block)
+        self.assertIn("2 document(s)", block)
+
+    def test_identity_block_missing_workspace(self):
+        from agentx_ai.kit.workspaces import retrieval
+        with patch.object(retrieval.repository, "get_workspace", return_value=None):
+            self.assertEqual(retrieval.render_project_identity_block("ws_gone"), "")
+
+    def test_legacy_workspace_search_alias_executes(self):
+        from agentx_ai.mcp.internal_tools import (
+            find_internal_tool, is_internal_tool, execute_internal_tool,
+        )
+        self.assertTrue(is_internal_tool("project_search"))
+        self.assertTrue(is_internal_tool("workspace_search"))  # legacy alias
+        found = find_internal_tool("workspace_search")
+        assert found is not None
+        self.assertEqual(found.name, "project_search")
+        # Executing via the legacy name reaches the real handler (no workspace
+        # bound here, so it returns the friendly "not in a project" error).
+        res = execute_internal_tool("workspace_search", {"query": "x"})
+        payload = json.loads(res.content[0]["text"])
+        self.assertFalse(payload["success"])
+        self.assertIn("project", payload["error"].lower())
+
+    def test_no_model_visible_workspace_wording(self):
+        # The rename is finished: no advertised description/schema still says
+        # "workspace" (the shell working-directory wording is allowed to; it
+        # refers to the temporary sandbox, not the project).
+        from agentx_ai.mcp.internal_tools import _INTERNAL_TOOLS
+        for tool in _INTERNAL_TOOLS.values():
+            self.assertNotIn("workspace", tool.description.lower(),
+                             f"{tool.name} description still says 'workspace'")
+
+    def test_document_write_tools_advertised_and_gated(self):
+        from agentx_ai.mcp import internal_tools as it
+        names = {t.name for t in it.get_internal_tools()}
+        self.assertIn("create_document", names)
+        self.assertIn("update_document", names)
+        with patch.object(it, "_document_write_tools_enabled", return_value=False):
+            gated = {t.name for t in it.get_internal_tools()}
+        self.assertNotIn("create_document", gated)
+        self.assertNotIn("update_document", gated)

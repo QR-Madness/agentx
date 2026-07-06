@@ -47,9 +47,10 @@ Per-turn context (legacy summary): keep the SYSTEM preamble + as much **recent v
 > membership (`workspace_conversations`, one project per conversation; turn precedence
 > request > membership; `ws_home` is never a project) + project memory channels
 > (`_project_{ws_id}` becomes the turn's channel; workflow > project > profile; opt-out
-> `memory.project_channels`). Agent tools `workspace_search`/`document_query`/`read_document`
+> `memory.project_channels`). Agent tools `project_search` (né `workspace_search`; legacy alias
+> executes)/`document_query`/`read_document` + **write tools `create_document`/`update_document`**
 > (`mcp/internal_tools.py`, workspace-scoped via `InternalToolContext`); stable
-> workspace-manifest ledger block + auto `doc` citations.
+> project-identity (prio 90) + instructions (88) + manifest (85) ledger blocks + auto `doc` citations.
 
 A persistent, named container of user files with a searchable manifest (todo/backlog/workspaces.md).
 **Three-store separation:** bytes → content-addressed blob store on disk (`storage.py`,
@@ -155,6 +156,37 @@ uploads previously stayed stuck forever. Documents also embed **one at a time**
 (`ingestion._EMBED_LOCK`, slices of 16, 600s background timeout): a CPU embedder is serial
 anyway, and concurrent uploads round-robining slices multiplied every slice's queue wait past
 any sane timeout (observed with 4 simultaneous PDFs).
+
+**Agent-writable project documents + project prompting (v0.21.161).** Agents can now
+*manipulate* project files, not just read them. **Write path** (`service.py`):
+`create_text_document` / `update_text_document` — shared by the REST endpoints
+(`POST /workspaces/{id}/documents/text`, `PUT /workspaces/{id}/documents/{doc}/text`) and two new
+internal tools **`create_document`** / **`update_document`** (advertised by default; opt-out
+`workspace_agent_write_tools`; agent-writable extensions capped to
+`workspace_agent_writable_extensions` = md/markdown/txt). Semantics: create refuses filename
+collisions with a typed `conflict` (409 + existing `document_id` — update is an explicit act, never
+a silent overwrite); update is full-content replace with an optional `expected_sha256` ETag
+(hub editor sends it; agent tool is last-write-wins), a same-sha **no-op short-circuit**, quota math
+`used − old + new`, and re-ingestion (`status→pending`, chunks/tags/summary refresh for free).
+**Blob refcounting** (`release_blob_if_unreferenced`): content-addressing means two doc rows can
+share one blob — update *and* the document-delete path (previously deleted unconditionally: a real
+dedup bug) only remove the file when no other row references the `storage_key`. **Stale-ingest
+guard** (`ingestion._superseded`): rapid successive updates race daemon threads; ingest re-checks
+the row's `sha256` before writing chunks/status and bails if a newer update won. **Project
+prompting** (the "agent doesn't know what a project is" fix — three stacked gaps): (1) new builtin
+prompt layer **`project-collaboration`** (`prompts/layers.py`, order 25) teaches the concept, the
+tool vocabulary, "create durable things as project documents, keep them current", and
+prefer-native-over-filesystem-MCP; (2) an **always-on `project_identity` ledger block** (priority
+90 > instructions 88 > manifest 85; `retrieval.render_project_identity_block`) so even an *empty*
+project announces itself (name, description, doc count, how to add files) — previously an empty
+project was invisible; (3) the model-visible rename is finished: **`workspace_search` →
+`project_search`** with `_TOOL_ALIASES` (legacy name still resolves/executes for old conversations
++ procedural records; `legacy_names_for` keeps per-profile `_internal.workspace_search`
+allow/block entries matching in `Agent._get_tools_for_provider`), and shell tool text now says
+"temporary shell working copy — NOT project documents; use create_document" (the exact confusion
+that sent an agent to a filesystem MCP). Tests: `WorkspaceWriteServiceTest`,
+`WorkspaceTextEndpointTest`, `ProjectPromptingTest`, `ToolGatingTest.test_legacy_alias…`;
+`rag_e2e.py` §7 drives create→409→ready→update→refcount→ETag-409 + both tools end-to-end.
 
 **Anthropic system-prompt drop (fixed, v0.21.150).** `anthropic_provider._convert_messages`
 assigned `system_prompt = msg.content` per SYSTEM message — each one *overwrote* the last. A

@@ -68,9 +68,13 @@ def ingest_document(document_id: str) -> dict[str, Any]:
                     texts[start:start + _EMBED_SLICE_SIZE], timeout=_EMBED_SLICE_TIMEOUT_S,
                 ))
         rows = [(c["index"], c["text"], vec) for c, vec in zip(chunks, vectors, strict=True)]
+        if _superseded(document_id, doc["sha256"]):
+            return {"status": "superseded"}
         repository.replace_chunks(document_id, doc["workspace_id"], rows)
 
         tags, summary = _enrich(doc["filename"], text)
+        if _superseded(document_id, doc["sha256"]):
+            return {"status": "superseded"}
         repository.set_document_enrichment(
             document_id, tags=tags, summary=summary, status="ready"
         )
@@ -91,6 +95,19 @@ def ingest_document(document_id: str) -> dict[str, Any]:
             reason = "embedding timed out — the server may be busy; retry ingestion"
         repository.set_document_status(document_id, "failed", reason)
         return {"status": "failed", "error": reason}
+
+
+def _superseded(document_id: str, started_sha256: str) -> bool:
+    """Rapid successive updates race: an older ingest thread must not overwrite a
+    newer update's chunks/status. True → this run's content is stale; bail out
+    (the newer update fired its own ingestion)."""
+    current = repository.get_document(document_id)
+    if current is None:
+        return True
+    if current["sha256"] != started_sha256:
+        logger.info("📄 WORKSPACE ingest superseded for %s — newer content won", document_id)
+        return True
+    return False
 
 
 def ingest_document_async(document_id: str) -> None:
