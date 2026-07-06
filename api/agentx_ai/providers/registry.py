@@ -275,10 +275,14 @@ class ProviderRegistry:
     def _fallback_chain(self, model: str, preferred_fallback: str | None) -> list[str]:
         """Ordered, de-duped `provider:model` candidates: requested → the active
         agent model (caller's known-good) → global default model. Empty/invalid
-        entries are dropped."""
+        entries are dropped. `role:` refs are expanded defensively (a leaked
+        but unset role drops out and the chain degrades to today's behavior)."""
+        from ..model_roles import expand_role_ref
+
         chain: list[str] = []
         for m in (model, preferred_fallback, self._default_chat_model()):
-            if m and ":" in m and m not in chain:
+            m = expand_role_ref(m)
+            if m and ":" in m and not m.lower().startswith("role:") and m not in chain:
                 chain.append(m)
         return chain
 
@@ -292,6 +296,13 @@ class ProviderRegistry:
         describing a substitution (None when the requested model was used). Honors
         the ``models.fallback_enabled`` kill-switch (strict resolve when off).
         """
+        from ..model_roles import expand_role_ref
+
+        # Defense in depth: a `role:` ref that reaches the registry is expanded
+        # here so the sentinel never hits a provider lookup (an unset role keeps
+        # the original string for error messages and falls down the chain).
+        model = expand_role_ref(model) or model
+
         if not self._fallback_enabled():
             provider, model_id = self.get_provider_for_model(model)
             return provider, model_id, None
@@ -326,6 +337,11 @@ class ProviderRegistry:
         resolution failures and runtime provider errors (timeout/5xx/connection),
         updating the health cache as it goes. Raises only if every candidate fails.
         """
+        from ..model_roles import expand_role_ref
+
+        # Same `role:` backstop as resolve_with_fallback.
+        model = expand_role_ref(model) or model
+
         if not self._fallback_enabled():
             provider, model_id = self.get_provider_for_model(model)
             return await provider.complete(messages, model_id, **kwargs)

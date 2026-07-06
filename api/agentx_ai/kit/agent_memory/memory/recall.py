@@ -895,12 +895,14 @@ class RecallLayer:
         settings = self.settings
 
         try:
+            from ....model_roles import resolve_member_model
             from ....providers.registry import get_registry
 
             registry = get_registry()
-            provider, model_id, _ = registry.resolve_with_fallback(
-                settings.recall_hyde_model
-            )
+            # An empty explicit value follows the `fast_utility` model role.
+            model_pref = (resolve_member_model("recall_hyde", settings.recall_hyde_model)
+                          or settings.recall_hyde_model)
+            provider, model_id, _ = registry.resolve_with_fallback(model_pref)
 
             from ....providers.base import Message, MessageRole
 
@@ -1008,12 +1010,15 @@ class RecallLayer:
         settings = self.settings
 
         try:
+            from ....model_roles import resolve_member_model
             from ....providers.registry import get_registry
 
             registry = get_registry()
-            provider, model_id, _ = registry.resolve_with_fallback(
-                settings.recall_self_query_model
-            )
+            # An empty explicit value follows the `fast_utility` model role.
+            model_pref = (resolve_member_model(
+                "recall_self_query", settings.recall_self_query_model)
+                or settings.recall_self_query_model)
+            provider, model_id, _ = registry.resolve_with_fallback(model_pref)
 
             from ....providers.base import Message, MessageRole
 

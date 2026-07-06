@@ -57,6 +57,16 @@ DEFAULT_CONFIG = {
             "extraction": None,
         },
         "overrides": {},
+        # Model roles (settings overhaul D1) — one model per workload cluster;
+        # members with an empty/"inherit" value follow their role (implicit
+        # tier, see agentx_ai/model_roles.py). "" = role unset = tier is a
+        # no-op. Read with literal "" defaults so old installs need no
+        # migration (`_load` does NOT merge new defaults).
+        "roles": {
+            "fast_utility": "",
+            "deep_reasoning": "",
+            "summarizer": "",
+        },
         # When a feature's configured model is unavailable (provider unconfigured
         # or unreachable), fall back to the active agent model / default model
         # instead of hard-failing the turn. Kill-switch for the universal fallback.

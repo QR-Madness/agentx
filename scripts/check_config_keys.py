@@ -33,11 +33,29 @@ READ_RE = re.compile(
 
 def default_config() -> dict:
     tree = ast.parse((API / "config.py").read_text(encoding="utf-8"))
+    # Module-level literal constants (e.g. DEFAULT_IMAGE_MODEL) are referenced
+    # by name inside DEFAULT_CONFIG — inline them so literal_eval can parse it.
+    constants: dict[str, ast.expr] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(
+            node.targets[0], ast.Name
+        ):
+            try:
+                ast.literal_eval(node.value)
+            except ValueError:
+                continue
+            constants[node.targets[0].id] = node.value
+
+    class _Inline(ast.NodeTransformer):
+        def visit_Name(self, name: ast.Name) -> ast.expr:
+            return constants.get(name.id, name)
+
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "DEFAULT_CONFIG" for t in node.targets
         ):
-            return ast.literal_eval(node.value)
+            inlined = ast.fix_missing_locations(_Inline().visit(node.value))
+            return ast.literal_eval(inlined)
     raise SystemExit("could not find DEFAULT_CONFIG in config.py")
 
 

@@ -121,8 +121,12 @@ def _enrich(filename: str, text: str) -> tuple[list[str], str]:
         from ...providers.base import Message, MessageRole
         from ...providers.registry import get_registry
 
+        from ...model_roles import resolve_member_model
+
         settings = get_settings()
-        model = settings.workspace_summary_model or _DEFAULT_SUMMARY_MODEL
+        # Explicit setting (role: expanded) → `summarizer` role → shipped default.
+        model = (resolve_member_model("workspace_summary", settings.workspace_summary_model)
+                 or _DEFAULT_SUMMARY_MODEL)
         provider, model_id, _ = get_registry().resolve_with_fallback(model)
 
         prompt = (

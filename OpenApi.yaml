@@ -622,6 +622,62 @@ paths:
                     type: object
                     additionalProperties: true
 
+  /models/roles:
+    get:
+      tags: [Providers]
+      operationId: modelsRoles
+      summary: Model roles + membership + effective-model preview
+      description: >-
+        The three model roles (fast_utility, deep_reasoning, summarizer) with
+        their configured models, plus every member's current resolution chain
+        (explicit value / role model / effective model / what it's following).
+        Set roles via POST /api/config/update {"models": {"roles": {...}}}.
+      responses:
+        '200':
+          description: Roles and members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+                        description:
+                          type: string
+                        model:
+                          type: string
+                          description: Configured provider:model ("" = unset)
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        member:
+                          type: string
+                        label:
+                          type: string
+                        role:
+                          type: string
+                        kind:
+                          type: string
+                          enum: [memory, config]
+                        source:
+                          type: string
+                        explicit:
+                          type: string
+                        role_model:
+                          type: string
+                        effective:
+                          type: string
+                        following:
+                          type: string
+                          enum: [explicit, role, fallback]
+
   /agent/run:
     post:
       tags: [Agent]
@@ -4216,6 +4272,10 @@ paths:
       tags: [Config]
       operationId: configUpdate
       summary: Update runtime configuration
+      description: >-
+        Sectioned partial update. `models` accepts only `roles.{fast_utility,
+        deep_reasoning,summarizer}` — each "" (clear) or a concrete
+        provider:model (`role:` refs and non-`provider:model` strings 400).
       requestBody:
         required: true
         content:

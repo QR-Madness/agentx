@@ -183,6 +183,21 @@ through the gateway/tunnel.
 **Source:** deployment overhaul plan (this session); `manager/README` posture in
 `docs-site/.../deployment/manager.md`.
 
+### ADR-11 — Model roles are an implicit overlay tier; explicit values always win
+**Decision:** the scattered utility-model settings cluster into three roles
+(`models.roles.{fast_utility,deep_reasoning,summarizer}`, single source `agentx_ai/model_roles.py`).
+The role tier is **implicit**: a member follows its role only while its own value is empty/"inherit";
+setting a role never rewrites member keys (no "adopt" writes — they would destroy custom values); an
+unset role makes the tier a byte-identical no-op. `role:<name>` is a valid explicit value anywhere;
+the registry expands it defensively so the sentinel never reaches a provider lookup. Roles produce ONE
+concrete requested model — ADR-5 fallback + swap-surfacing run after, unchanged. Membership v1
+deliberately excludes planner/ambassador/aide/images (their empty means "follow the agent model", a
+different semantic).
+**Why:** ~15 "which model runs this internal job?" knobs across two stores were unintelligible; an
+overlay keeps every existing chain intact while giving users three meaningful levers.
+**Guard:** `ModelRolesTest` (behavior-preservation matrix, sentinel containment, role-to-role refs
+ignored); `ModelRolesEndpointTest`. **Source:** settings overhaul D1 (user-locked: implicit tier).
+
 ---
 
 ## Rejected — do not relitigate

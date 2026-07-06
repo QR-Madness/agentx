@@ -95,6 +95,19 @@ class ProcedureDistillResult(BaseModel):
     error: str | None = None
 
 
+# Stage name → model-role member key (agentx_ai.model_roles.ROLE_MEMBERS) for
+# the implicit role tier in _resolve_stage_model.
+_STAGE_MEMBERS: dict[str, str] = {
+    "extraction": "extraction",
+    "relevance": "relevance_filter",
+    "contradiction": "contradiction",
+    "correction": "correction",
+    "entity_linking": "entity_linking",
+    "combined": "combined_extraction",
+    "procedural": "procedural_distill",
+}
+
+
 class ExtractionService:
     """
     Service for LLM-based extraction from text.
@@ -153,11 +166,11 @@ class ExtractionService:
 
         model, temperature, max_tokens = stage_config[stage]
 
-        # Inheritance (Slice 5): an empty/"inherit" stage model resolves to the
-        # bulk `feature_default_model`, then the global default chat model — so a
-        # fresh install follows the user's main model instead of assuming a
-        # specific local provider.
-        model = self._resolve_stage_model(model)
+        # Inheritance (Slice 5 + roles overlay): an empty/"inherit" stage model
+        # resolves through its model role, then the bulk `feature_default_model`,
+        # then the global default chat model — so a fresh install follows the
+        # user's main model instead of assuming a specific local provider.
+        model = self._resolve_stage_model(model, member=_STAGE_MEMBERS.get(stage))
 
         try:
             # resolve_with_fallback adds the universal safety net: an unconfigured
@@ -169,26 +182,32 @@ class ExtractionService:
             logger.warning(f"Provider for {stage} not available: {e}")
             raise
 
-    def _resolve_stage_model(self, model: str) -> str:
-        """Resolve a stage's model through inheritance: explicit stage value →
+    def _resolve_stage_model(self, model: str, member: str | None = None) -> str:
+        """Resolve a stage's model through inheritance: explicit stage value
+        (`role:` refs expanded) → the stage's model role (implicit tier) →
         `feature_default_model` (bulk) → global default chat model. Empty or the
         literal "inherit" means "not set"."""
-        for candidate in (model, getattr(self.settings, "feature_default_model", "")):
-            c = (candidate or "").strip()
-            if c and c.lower() != "inherit":
-                return c
+        from ....model_roles import resolve_model_pref, role_model_for
+
+        resolved = resolve_model_pref(model)
+        if resolved:
+            return resolved
+        if member:
+            role_model = role_model_for(member)
+            if role_model:
+                return role_model
+        resolved = resolve_model_pref(getattr(self.settings, "feature_default_model", ""))
+        if resolved:
+            return resolved
         from ....config import get_config_manager
         dm = get_config_manager().get("preferences.default_model")
         if dm:
             return str(dm)
         # Still nothing — fall back to the bulk extraction model (a concrete,
-        # sensible memory default) rather than leaking the "inherit" sentinel to
-        # the registry (it isn't a valid provider:model).
-        c = (model or "").strip()
-        if c and c.lower() != "inherit":
-            return c
-        bulk = (getattr(self.settings, "combined_extraction_model", "") or "").strip()
-        return bulk if bulk and bulk.lower() != "inherit" else ""
+        # sensible memory default) rather than leaking the "inherit"/"role:"
+        # sentinels to the registry (they aren't valid provider:model strings).
+        return resolve_model_pref(
+            getattr(self.settings, "combined_extraction_model", "")) or ""
 
     async def check_relevance(self, text: str) -> RelevanceResult:
         """

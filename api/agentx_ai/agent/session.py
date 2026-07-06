@@ -237,11 +237,14 @@ class SessionManager:
             return False
 
         from .context import ContextManager, ContextConfig
+        from ..model_roles import resolve_member_model
 
-        summary_model = cfg.get(
+        explicit_model = cfg.get(
             "session.rolling_summary.model",
             "anthropic:claude-haiku-4-5-20251001",
         )
+        # An empty explicit value follows the `summarizer` model role.
+        summary_model = resolve_member_model("rolling_summary", explicit_model) or explicit_model
         manager = ContextManager(ContextConfig(summary_model=summary_model))
 
         # Roll the previous summary into the new one so the summary stays bounded.

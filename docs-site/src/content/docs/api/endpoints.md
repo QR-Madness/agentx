@@ -303,6 +303,30 @@ Async health check of all configured providers.
 
 `status` is `"healthy"` if all pass, `"degraded"` if any fail.
 
+### Model Roles
+
+```
+GET /api/models/roles
+```
+
+The three model roles (`fast_utility`, `deep_reasoning`, `summarizer`) with their configured models, plus every member setting's current resolution chain. A member with an empty value follows its role; an explicit value always wins; any model setting may also be set to `role:<name>` explicitly.
+
+**Response:**
+```json
+{
+  "roles": {
+    "summarizer": {"label": "Summarizer", "description": "…", "model": ""}
+  },
+  "members": [
+    {"member": "compression", "label": "Tool-output compression",
+     "role": "summarizer", "kind": "config", "source": "compression.model",
+     "explicit": "", "role_model": "", "effective": "", "following": "fallback"}
+  ]
+}
+```
+
+`following` is `explicit` (member's own value wins), `role` (inheriting the role's model), or `fallback` (neither set — the provider fallback chain decides). Set roles via `POST /api/config/update` with `{"models": {"roles": {"summarizer": "provider:model"}}}` — `""` clears a role; `role:` refs and non-`provider:model` strings are rejected.
+
 ---
 
 ## Agent

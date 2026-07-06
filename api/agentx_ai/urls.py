@@ -32,6 +32,8 @@ urlpatterns = [
     path("providers", views.providers_list, name="providers-list"),
     path("providers/models", views.providers_models, name="providers-models"),
     path("providers/health", views.providers_health, name="providers-health"),
+    # Model roles (settings overhaul D1)
+    path("models/roles", views.models_roles, name="models-roles"),
     # Agent endpoints
     path("agent/run", views.agent_run, name="agent-run"),
     path("agent/chat", views.agent_chat, name="agent-chat"),

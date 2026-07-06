@@ -6584,6 +6584,183 @@ class ModelFallbackTest(TestCase):
             self.assertEqual(svc._resolve_stage_model(""), "anthropic:main")
 
 
+class ModelRolesTest(TestCase):
+    """Settings overhaul D1 — the implicit model-role tier.
+
+    The hard constraint is behavior preservation: with all roles unset the
+    tier must be a byte-identical no-op for every member; a role only governs
+    a member whose own value is empty/"inherit"; explicit values always win;
+    the `role:` sentinel can never reach a provider lookup.
+    """
+
+    def _cfg(self, roles=None, extra=None):
+        from unittest.mock import MagicMock
+        vals = {f"models.roles.{k}": v for k, v in (roles or {}).items()}
+        vals.update(extra or {})
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda k, d=None: vals.get(k, d)
+        return cfg
+
+    def test_roles_unset_is_a_noop_for_every_member(self):
+        """Old-install simulation: config without models.roles → the tier
+        resolves nothing and `resolve_member_model(...) or explicit` returns
+        the explicit value byte-identically for all members and value shapes."""
+        from unittest.mock import patch
+        from agentx_ai.model_roles import ROLE_MEMBERS, resolve_member_model
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            for member in ROLE_MEMBERS:
+                for explicit in ("lmstudio:google/gemma-3-4b", "", None, "inherit"):
+                    got = resolve_member_model(member, explicit) or explicit
+                    self.assertEqual(got, explicit,
+                                     f"{member} with {explicit!r} drifted to {got!r}")
+
+    def test_role_set_members_follow_only_when_empty(self):
+        from unittest.mock import patch
+        from agentx_ai.model_roles import resolve_member_model
+        cfg = self._cfg(roles={"summarizer": "openrouter:google/gemini-3.5-flash"})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            # empty/inherit member → follows the role
+            self.assertEqual(
+                resolve_member_model("compression", None),
+                "openrouter:google/gemini-3.5-flash")
+            self.assertEqual(
+                resolve_member_model("rolling_summary", "inherit"),
+                "openrouter:google/gemini-3.5-flash")
+            # explicit member value wins over the role
+            self.assertEqual(
+                resolve_member_model("compression", "anthropic:claude-haiku-4-5"),
+                "anthropic:claude-haiku-4-5")
+
+    def test_explicit_role_ref_and_unset_fall_through(self):
+        from unittest.mock import patch
+        from agentx_ai.model_roles import expand_role_ref, resolve_member_model
+        cfg = self._cfg(roles={"deep_reasoning": "openrouter:nvidia/nemotron-3-ultra-550b-a55b"})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            # cross-role explicit ref resolves through the named role
+            self.assertEqual(
+                resolve_member_model("compression", "role:deep_reasoning"),
+                "openrouter:nvidia/nemotron-3-ultra-550b-a55b")
+            # unset role ref → None (caller falls through its default chain)
+            self.assertIsNone(expand_role_ref("role:summarizer"))
+            # unknown role ref → None, never raises
+            self.assertIsNone(expand_role_ref("role:nonexistent"))
+            # non-role values pass through untouched (including empties)
+            self.assertEqual(expand_role_ref("anthropic:x"), "anthropic:x")
+            self.assertEqual(expand_role_ref(""), "")
+            self.assertIsNone(expand_role_ref(None))
+
+    def test_role_to_role_refs_are_ignored(self):
+        from unittest.mock import patch
+        from agentx_ai.model_roles import configured_role_model
+        cfg = self._cfg(roles={"summarizer": "role:fast_utility",
+                               "fast_utility": "lmstudio:google/gemma-3-4b"})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            self.assertEqual(configured_role_model("summarizer"), "")
+
+    def test_stage_model_role_tier_sits_between_explicit_and_bulk(self):
+        from unittest.mock import MagicMock, patch
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        svc = ExtractionService.__new__(ExtractionService)
+        svc._settings = MagicMock(feature_default_model="anthropic:bulk")
+        cfg = self._cfg(roles={"fast_utility": "openrouter:google/gemini-3.1-flash-lite"})
+        with patch.object(type(svc), "settings", property(lambda s: s._settings)), \
+             patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            # empty stage + member in a set role → the role beats the bulk default
+            self.assertEqual(svc._resolve_stage_model("", member="extraction"),
+                             "openrouter:google/gemini-3.1-flash-lite")
+            # explicit stage value still wins over the role
+            self.assertEqual(svc._resolve_stage_model("lmstudio:explicit", member="extraction"),
+                             "lmstudio:explicit")
+            # member of an UNSET role → falls through to the bulk default
+            self.assertEqual(svc._resolve_stage_model("", member="combined_extraction"),
+                             "anthropic:bulk")
+
+    def test_sentinel_never_reaches_provider_lookup(self):
+        """A leaked `role:` ref is expanded (role set) or dropped (role unset)
+        by the registry chain — the sentinel string never becomes a candidate."""
+        from unittest.mock import MagicMock, patch
+        from agentx_ai.providers.registry import ProviderRegistry
+        from agentx_ai.providers.base import ProviderConfig
+
+        reg_cfg = MagicMock()
+        reg_cfg.get.side_effect = lambda k, d=None: {
+            "models.fallback_enabled": True,
+            "preferences.default_model": "anthropic:claude-haiku-4-5",
+        }.get(k, d)
+        reg = ProviderRegistry(config_manager=reg_cfg)
+        reg._provider_configs = {"anthropic": ProviderConfig(api_key="x"),
+                                 "openrouter": ProviderConfig(api_key="x")}
+        reg.get_provider = lambda n: f"<provider:{n}>"  # type: ignore[assignment]
+
+        # role unset → the ref drops out; chain degrades to the global default
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            chain = reg._fallback_chain("role:summarizer", None)
+            self.assertEqual(chain, ["anthropic:claude-haiku-4-5"])
+            self.assertFalse(any(c.startswith("role:") for c in chain))
+        # role set → the ref expands to the concrete model at the chain head
+        cfg = self._cfg(roles={"summarizer": "openrouter:google/gemini-3.5-flash"})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            chain = reg._fallback_chain("role:summarizer", None)
+            self.assertEqual(chain[0], "openrouter:google/gemini-3.5-flash")
+            provider, model_id, note = reg.resolve_with_fallback("role:summarizer")
+            self.assertEqual(provider, "<provider:openrouter>")
+            self.assertEqual(model_id, "google/gemini-3.5-flash")
+            self.assertIsNone(note)  # resolving the role's own model is not a swap
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ModelRolesEndpointTest(TestCase):
+    """GET /api/models/roles + the config_update models.roles handler."""
+
+    def test_roles_get_shape(self):
+        resp = self.client.get("/api/models/roles")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(set(body["roles"].keys()),
+                         {"fast_utility", "deep_reasoning", "summarizer"})
+        for meta in body["roles"].values():
+            self.assertIn("label", meta)
+            self.assertIn("model", meta)
+        members = {m["member"]: m for m in body["members"]}
+        self.assertIn("extraction", members)
+        self.assertIn("compression", members)
+        for m in members.values():
+            self.assertIn(m["following"], ("explicit", "role", "fallback"))
+            self.assertIn("effective", m)
+
+    def test_config_update_sets_and_clears_roles(self):
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({"models": {"roles": {
+                    "summarizer": "openrouter:google/gemini-3.5-flash",
+                    "fast_utility": "",           # clearing sends ""
+                    "bogus_role": "x:y",           # unknown names are ignored
+                }}}),
+                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        cfg.set.assert_any_call("models.roles.summarizer",
+                                "openrouter:google/gemini-3.5-flash")
+        cfg.set.assert_any_call("models.roles.fast_utility", "")
+        set_keys = [c.args[0] for c in cfg.set.call_args_list]
+        self.assertNotIn("models.roles.bogus_role", set_keys)
+
+    def test_config_update_rejects_non_concrete_role_values(self):
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        for bad in ("role:fast_utility", "no-colon-model"):
+            with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+                 patch("agentx_ai.views.get_registry"):
+                resp = self.client.post(
+                    "/api/config/update",
+                    data=json.dumps({"models": {"roles": {"summarizer": bad}}}),
+                    content_type="application/json")
+            self.assertEqual(resp.status_code, 400, f"{bad!r} accepted")
+
+
 class UsageLedgerTest(TestCase):
     """Foundation #5 — the content-free usage/cost ledger writer."""
 

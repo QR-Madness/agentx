@@ -52,12 +52,16 @@ class ToolOutputCompressor:
 
     def _get_config(self) -> dict[str, Any]:
         """Get compression config from ConfigManager."""
+        from ..model_roles import resolve_member_model
+
         config = get_config_manager()
+        explicit_model = config.get("compression.model", None)
         return {
             "enabled": config.get("compression.enabled", True),
-            # No hardcoded model default: an unset value resolves down the fallback
-            # chain (active turn model → global default) in complete_with_fallback.
-            "model": config.get("compression.model", None),
+            # No hardcoded model default: an unset value follows the `summarizer`
+            # model role, else resolves down the fallback chain (active turn
+            # model → global default) in complete_with_fallback.
+            "model": resolve_member_model("compression", explicit_model) or explicit_model,
             "temperature": config.get("compression.temperature", 0.2),
             "max_tokens": config.get("compression.max_tokens", 1000),
             "max_summary_chars": config.get("compression.max_summary_chars", 2000),

@@ -170,16 +170,19 @@ def compress_trajectory(
         ``True`` if compression was performed, ``False`` otherwise.
     """
     from ..config import get_config_manager
+    from ..model_roles import resolve_member_model
     from .helpers import estimate_tokens
 
     cfg_mgr = get_config_manager()
+    explicit_model = cfg_mgr.get("trajectory_compression.model", None)
     config = {
         "enabled": cfg_mgr.get("trajectory_compression.enabled", True),
         "threshold_ratio": cfg_mgr.get("trajectory_compression.threshold_ratio", 0.75),
         "preserve_recent_rounds": cfg_mgr.get("trajectory_compression.preserve_recent_rounds", 2),
-        # No hardcoded model default: an unset value resolves down the fallback
-        # chain (active turn model → global default) in complete_with_fallback.
-        "model": cfg_mgr.get("trajectory_compression.model", None),
+        # No hardcoded model default: an unset value follows the `summarizer`
+        # model role, else resolves down the fallback chain (active turn model
+        # → global default) in complete_with_fallback.
+        "model": resolve_member_model("trajectory_compression", explicit_model) or explicit_model,
         "temperature": cfg_mgr.get("trajectory_compression.temperature", 0.2),
         "max_tokens": cfg_mgr.get("trajectory_compression.max_tokens", 1500),
         "max_knowledge_chars": cfg_mgr.get("trajectory_compression.max_knowledge_chars", 3000),

@@ -4191,7 +4191,10 @@ async def prompts_enhance(request):
     if not enabled:
         return JsonResponse({'error': 'Prompt enhancement is disabled'}, status=400)
 
-    model = config.get("prompt_enhancement.model", "claude-3-5-haiku-latest")
+    from .model_roles import resolve_member_model
+    explicit_model = config.get("prompt_enhancement.model", "claude-3-5-haiku-latest")
+    # An empty explicit value follows the `summarizer` model role.
+    model = resolve_member_model("prompt_enhancement", explicit_model) or explicit_model
     temperature = config.get("prompt_enhancement.temperature", 0.7)
     max_tokens = config.get("prompt_enhancement.max_tokens", 1000)
     system_prompt = config.get("prompt_enhancement.system_prompt", "")
@@ -6362,6 +6365,40 @@ def config_get(request):
 
 
 @csrf_exempt
+def models_roles(request):
+    """
+    GET /api/models/roles - Model roles + membership + effective-model preview.
+
+    Single source for the Model Roles settings UI: role copy, each role's
+    configured model, and every member's current resolution chain
+    (explicit value / role model / effective model / what it's following).
+    Set roles via POST /api/config/update {"models": {"roles": {...}}}.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET only'}, status=405)
+
+    try:
+        from .model_roles import (
+            ROLES,
+            ROLE_MEMBERS,
+            configured_role_model,
+            effective_member_chain,
+        )
+
+        roles = {
+            name: {**meta, "model": configured_role_model(name)}
+            for name, meta in ROLES.items()
+        }
+        members = [effective_member_chain(key) for key in ROLE_MEMBERS]
+        return JsonResponse({"roles": roles, "members": members})
+    except Exception as e:
+        logger.error(f"Error building model roles view: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 def config_update(request):
     """
     POST /api/config/update - Update runtime configuration.
@@ -6495,6 +6532,25 @@ def config_update(request):
             continue
         config.set(f"ambassador.{key}", value)
         updated_keys.append(f"ambassador.{key}")
+
+    # Update model roles (settings overhaul D1). Only `models.roles.{known}` is
+    # writable here — the rest of the `models` section stays read-only. Values
+    # must be "" (clear the role) or a concrete provider:model; `role:` refs
+    # are rejected (no role-to-role chains). Clearing sends "" (the section's
+    # `is not None` idiom would drop an explicit null).
+    from .model_roles import ROLE_NAMES
+    roles_settings = (data.get("models", {}) or {}).get("roles", {})
+    for key, value in roles_settings.items():
+        if key not in ROLE_NAMES or value is None:
+            continue
+        value = str(value).strip()
+        if value and (":" not in value or value.lower().startswith("role:")):
+            return JsonResponse({
+                'error': f'models.roles.{key} must be "" or a concrete '
+                         f'provider:model (got {value!r})'
+            }, status=400)
+        config.set(f"models.roles.{key}", value)
+        updated_keys.append(f"models.roles.{key}")
 
     # Persist to disk
     if not config.save():

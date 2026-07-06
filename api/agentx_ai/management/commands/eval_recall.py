@@ -232,14 +232,19 @@ class Command(BaseCommand):
             chosen = [a for a in ARMS if a.default]
 
         from agentx_ai.kit.agent_memory.config import get_settings
+        from agentx_ai.model_roles import resolve_member_model
         settings = get_settings()
         resolved: list[tuple[Arm, str | None]] = []
         for arm in chosen:
             skip = None
             if arm.requires_llm:
-                model = opts.get("llm_model") or (
+                explicit = opts.get("llm_model") or (
                     settings.recall_hyde_model if arm.name == "hyde"
                     else settings.recall_self_query_model)
+                # Expand role: refs / implicit role tier before the provider
+                # preflight — mirrors what recall does at run time.
+                member = "recall_hyde" if arm.name == "hyde" else "recall_self_query"
+                model = resolve_member_model(member, explicit) or explicit
                 try:
                     from agentx_ai.providers.registry import get_registry
                     get_registry().get_provider_for_model(model)
