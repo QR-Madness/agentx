@@ -711,94 +711,189 @@ export function useImportMemory() {
   return { mutate, loading, error };
 }
 
-export function useConsolidationSettings() {
-  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
-  const [settings, setSettings] = useState<ConsolidationSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+/** Save status exposed by {@link useSettingsAutosave} (drives Saving…/Saved ✓). */
+export type SettingsSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-  const fetchSettings = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+export interface UseSettingsAutosaveResult<T> {
+  /** Draft = last server state + local edits (render forms from this). */
+  settings: T | null;
+  loading: boolean;
+  /** Load or save error, whichever is most recent. */
+  error: ApiError | null;
+  status: SettingsSaveStatus;
+  /** Convenience: status === 'saving'. */
+  saving: boolean;
+  /** Stage edits; a debounced baseline-diff save follows automatically. */
+  update: (patch: Partial<T>) => void;
+  /** Save any pending edits immediately. Resolves false on failure. */
+  flush: () => Promise<boolean>;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * useSettingsAutosave — the ONE save pattern for preference sections
+ * (settings overhaul D5: autosave everywhere; secrets keep explicit Save).
+ *
+ * Loads via {@link useApi}, keeps a local draft, and after `debounceMs` of
+ * inactivity persists only the keys that differ from the last server state
+ * (baseline-diff — no no-op writes). Pending edits flush on unmount so a
+ * quick navigation away can't drop a change.
+ */
+export function useSettingsAutosave<T extends Record<string, unknown>>(opts: {
+  load: () => Promise<T>;
+  save: (updates: Partial<T>) => Promise<unknown>;
+  enabled?: boolean;
+  debounceMs?: number;
+  /** Side-effect for load/save errors (e.g. `notifyError`). */
+  onError?: (error: ApiError) => void;
+}): UseSettingsAutosaveResult<T> {
+  const { load, save, enabled = true, debounceMs = 800, onError } = opts;
+  const { data, loading, error: loadError, refresh } = useApi<T>(load, [], { enabled, onError });
+
+  const [draft, setDraft] = useState<T | null>(null);
+  const [status, setStatus] = useState<SettingsSaveStatus>('idle');
+  const [saveError, setSaveError] = useState<ApiError | null>(null);
+
+  const baselineRef = useRef<T | null>(null);
+  const draftRef = useRef<T | null>(null);
+  draftRef.current = draft;
+  const pendingRef = useRef<Partial<T>>({});
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
+  // Adopt fresh server state as the baseline; re-apply edits staged since.
+  useEffect(() => {
+    if (data) {
+      baselineRef.current = data;
+      setDraft({ ...data, ...pendingRef.current });
+    }
+  }, [data]);
+
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const baseline = baselineRef.current;
+    const current = draftRef.current;
+    if (!baseline || !current) return true;
+
+    const changed: Partial<T> = {};
+    for (const key of Object.keys(current) as (keyof T)[]) {
+      if (!Object.is(current[key], baseline[key])) changed[key] = current[key];
+    }
+    if (Object.keys(changed).length === 0) {
+      pendingRef.current = {};
+      return true;
+    }
+
+    setStatus('saving');
     try {
-      const res = await api.getConsolidationSettings();
-      setSettings(res);
+      await saveRef.current(changed);
+      baselineRef.current = { ...baseline, ...changed };
+      pendingRef.current = {};
+      setSaveError(null);
+      setStatus('saved');
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(
+        () => setStatus(s => (s === 'saved' ? 'idle' : s)),
+        2000
+      );
+      return true;
     } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
+      const apiErr = toApiError(err);
+      setSaveError(apiErr);
+      setStatus('error');
+      onErrorRef.current?.(apiErr);
+      return false;
     }
   }, []);
 
-  useEffect(() => {
-    if (authLoading) return;
-    if (authRequired && !isAuthenticated) return;
-    fetchSettings();
-  }, [fetchSettings, authLoading, authRequired, isAuthenticated]);
+  const update = useCallback((patch: Partial<T>) => {
+    pendingRef.current = { ...pendingRef.current, ...patch };
+    setDraft(prev => (prev ? { ...prev, ...patch } : prev));
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => void flush(), debounceMs);
+  }, [flush, debounceMs]);
 
-  const updateSettings = useCallback(async (updates: Partial<ConsolidationSettings>) => {
+  // Flush pending edits on unmount (fire-and-forget) so navigating away
+  // mid-debounce never drops a change.
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      void flush();
+    }
+  }, [flush]);
+
+  return {
+    settings: draft,
+    loading,
+    error: saveError ?? loadError,
+    status,
+    saving: status === 'saving',
+    update,
+    flush,
+    refresh,
+  };
+}
+
+/** Shared shape of the two memory settings hooks below. */
+interface MemorySettingsHook<T> {
+  settings: T | null;
+  loading: boolean;
+  saving: boolean;
+  error: ApiError | null;
+  updateSettings: (updates: Partial<T>) => Promise<boolean>;
+  refresh: () => Promise<void>;
+}
+
+function useMemorySettings<T>(
+  load: () => Promise<T>,
+  save: (updates: Partial<T>) => Promise<unknown>
+): MemorySettingsHook<T> {
+  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
+  const enabled = !authLoading && (!authRequired || isAuthenticated);
+  const { data, loading, error, refresh } = useApi<T>(load, [], { enabled });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<ApiError | null>(null);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
+  const updateSettings = useCallback(async (updates: Partial<T>) => {
     setSaving(true);
-    setError(null);
+    setSaveError(null);
     try {
-      await api.updateConsolidationSettings(updates);
-      // Refresh settings after save
-      await fetchSettings();
+      await saveRef.current(updates);
+      await refresh();
       return true;
     } catch (err) {
-      setError(err as ApiError);
+      setSaveError(toApiError(err));
       return false;
     } finally {
       setSaving(false);
     }
-  }, [fetchSettings]);
+  }, [refresh]);
 
-  return { settings, loading, saving, error, updateSettings, refresh: fetchSettings };
+  return { settings: data, loading, saving, error: saveError ?? error, updateSettings, refresh };
+}
+
+export function useConsolidationSettings() {
+  return useMemorySettings<ConsolidationSettings>(
+    () => api.getConsolidationSettings(),
+    updates => api.updateConsolidationSettings(updates)
+  );
 }
 
 export function useRecallSettings() {
-  const { isAuthenticated, authRequired, isLoading: authLoading } = useAuth();
-  const [settings, setSettings] = useState<RecallSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const fetchSettings = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getRecallSettings();
-      setSettings(res);
-    } catch (err) {
-      setError(err as ApiError);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (authRequired && !isAuthenticated) return;
-    fetchSettings();
-  }, [fetchSettings, authLoading, authRequired, isAuthenticated]);
-
-  const updateSettings = useCallback(async (updates: Partial<RecallSettings>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api.updateRecallSettings(updates);
-      // Refresh settings after save
-      await fetchSettings();
-      return true;
-    } catch (err) {
-      setError(err as ApiError);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [fetchSettings]);
-
-  return { settings, loading, saving, error, updateSettings, refresh: fetchSettings };
+  return useMemorySettings<RecallSettings>(
+    () => api.getRecallSettings(),
+    updates => api.updateRecallSettings(updates)
+  );
 }
 
 /**

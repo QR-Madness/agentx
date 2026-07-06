@@ -1139,14 +1139,20 @@ export interface ConsolidationActiveInfo {
   triggered_by: string;
 }
 
+/** Health of the memory-settings overrides file (GET /api/memory/settings only). */
+export interface SettingsFileStatus {
+  path: string;
+  exists: boolean;
+  error: string | null;
+}
+
 export interface ConsolidationSettings {
   // Bulk default for every stage model: a stage left empty inherits this; if this
   // is empty too, stages inherit the global default chat model.
   feature_default_model: string;
 
-  // Extraction
+  // Extraction (model uses provider:model format)
   extraction_enabled: boolean;
-  extraction_provider: string;
   extraction_model: string;
   extraction_temperature: number;
   extraction_max_tokens: number;
@@ -1155,7 +1161,6 @@ export interface ConsolidationSettings {
 
   // Relevance filter
   relevance_filter_enabled: boolean;
-  relevance_filter_provider: string;
   relevance_filter_model: string;
   relevance_filter_temperature: number;
   relevance_filter_max_tokens: number;
@@ -1165,6 +1170,19 @@ export interface ConsolidationSettings {
   combined_extraction_model: string;
   combined_extraction_temperature: number;
   combined_extraction_max_tokens: number;
+
+  // Procedural distillation + reflex/salient cores
+  procedural_distill_model: string;
+  procedural_distill_temperature: number;
+  procedural_distill_max_tokens: number;
+  procedural_distill_timeout_s: number;
+  procedural_dedupe_threshold: number;
+  procedural_distill_batch_limit: number;
+  reflex_core_enabled: boolean;
+  reflex_core_limit: number;
+  salient_core_enabled: boolean;
+  salient_core_limit: number;
+  salient_core_min_salience: number;
 
   // Trajectory compression (consolidates older tool-call rounds into a Knowledge block)
   trajectory_compression_enabled: boolean;
@@ -1177,6 +1195,8 @@ export interface ConsolidationSettings {
   // Entity linking
   entity_linking_enabled: boolean;
   entity_linking_similarity_threshold: number;
+  entity_linking_max_facts: number;
+  entity_linking_max_ngram: number;
   entity_linking_model: string;
   entity_linking_use_llm_disambiguation: boolean;
 
@@ -1188,8 +1208,10 @@ export interface ConsolidationSettings {
   job_consolidate_interval: number;
   job_promote_interval: number;
   job_entity_linking_interval: number;
+  job_distill_procedures_interval: number;
 
-  // Experimental
+  // Fact verification pipeline
+  link_autocreate_stub_entities: boolean;
   contradiction_detection_enabled: boolean;
   contradiction_model: string;
   contradiction_temperature: number;
@@ -1198,12 +1220,17 @@ export interface ConsolidationSettings {
   correction_model: string;
   correction_temperature: number;
   correction_max_tokens: number;
+  semantic_duplicate_threshold: number;
+  contradiction_similarity_threshold: number;
+  contradiction_max_candidates: number;
 
   // Read-only (from server)
   entity_types: string[];
   relationship_types: string[];
   default_extraction_prompt: string;
   default_relevance_prompt: string;
+  /** GET-only: health of the overrides file (a corrupt file silently falls back to defaults). */
+  settings_file_status?: SettingsFileStatus;
 }
 
 export interface RecallSettings {
@@ -1213,6 +1240,19 @@ export interface RecallSettings {
   recall_enable_query_expansion: boolean;
   recall_enable_hyde: boolean;
   recall_enable_self_query: boolean;
+
+  // General recall settings
+  recall_min_confidence: number;
+
+  // Two-stage recall (candidate pool + cross-encoder rerank)
+  recall_candidate_pool: number;
+  recall_ce_max_demotion: number;
+  cross_encoder_enabled: boolean;
+  cross_encoder_model: string;
+
+  // First-person attribution guard
+  recall_first_person_guard: boolean;
+  recall_first_person_penalty: number;
 
   // Hybrid search settings
   recall_hybrid_bm25_weight: number;
@@ -1227,14 +1267,12 @@ export interface RecallSettings {
   // Query expansion settings
   recall_expansion_max_variants: number;
 
-  // HyDE settings
-  recall_hyde_provider: string;
+  // HyDE settings (model uses provider:model format)
   recall_hyde_model: string;
   recall_hyde_temperature: number;
   recall_hyde_max_tokens: number;
 
-  // Self-query settings
-  recall_self_query_provider: string;
+  // Self-query settings (model uses provider:model format)
   recall_self_query_model: string;
   recall_self_query_temperature: number;
   recall_self_query_max_tokens: number;

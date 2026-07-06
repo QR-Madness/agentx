@@ -36,6 +36,10 @@ interface ModelPickerFieldProps {
   label?: string;
   /** Optional hint below the trigger */
   hint?: string;
+  /** Restrict the picker to models with this capability (forwarded to ModelPickerModal) */
+  requireCapability?: 'tools' | 'vision' | 'image' | 'json' | 'streaming' | 'speech' | 'transcription';
+  /** Trigger text when no model is selected (default "System default") */
+  placeholder?: string;
 }
 
 export function ModelPickerField({
@@ -45,6 +49,8 @@ export function ModelPickerField({
   showDefault = false,
   label,
   hint,
+  requireCapability,
+  placeholder = 'System default',
 }: ModelPickerFieldProps) {
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -58,7 +64,7 @@ export function ModelPickerField({
   const selected = value ? catalog.find(m => m.id === value) : undefined;
   const ctx = selected?.context_length ?? selected?.context_window;
   const selectedName = (() => {
-    if (!value) return 'System default';
+    if (!value) return placeholder;
     if (selected) return selected.name;
     // Model not in the catalog (yet) — fall back to the id, stripping a provider prefix.
     const parts = value.split(':');
@@ -109,6 +115,7 @@ export function ModelPickerField({
         value={value}
         onChange={handleChange}
         showDefault={showDefault}
+        requireCapability={requireCapability}
       />
     </div>
   );

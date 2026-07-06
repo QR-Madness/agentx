@@ -2,97 +2,89 @@
  * SearchSection — Web search backend configuration (Track B/C)
  *
  * Picks the backend (Tavily / Brave), holds the API keys, and toggles fallback.
- * API keys arrive redacted from GET /api/config (e.g. "***1234"); we only send a
- * key back on save when the user has typed a new value (not the redacted mask).
+ * Non-secret knobs autosave via useSettingsAutosave (settings field kit); the
+ * API keys keep an explicit "Save keys" flow (secrets are never autosaved).
+ * Keys arrive redacted from GET /api/config (e.g. "***1234"); we only send a
+ * key back when the user has typed a new value (not the redacted mask).
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Globe, RefreshCw, Save, Eye, EyeOff, Wifi } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Badge, Button, Input, SectionHeader } from '../../ui';
+import { NumberField, SaveStatusChip, SelectField, ToggleField } from '../../settings/fields';
 
 type Backend = 'tavily' | 'brave';
+
+interface SearchSettings extends Record<string, unknown> {
+  backend: Backend;
+  fallback_enabled: boolean;
+  max_results: number;
+}
 
 const isRedacted = (v: string) => v.startsWith('***');
 
 export default function SearchSection() {
   const { notifyError, notifySuccess } = useNotify();
 
-  const [settings, setSettings] = useState<{
-    backend: Backend;
-    fallback_enabled: boolean;
-    max_results: number;
-    tavily_api_key: string;
-    brave_api_key: string;
-  }>({
-    backend: 'tavily',
-    fallback_enabled: true,
-    max_results: 5,
+  // Secrets stay out of the autosave draft — explicit Save only.
+  const [keys, setKeys] = useState<{ tavily_api_key: string; brave_api_key: string }>({
     tavily_api_key: '',
     brave_api_key: '',
   });
-
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [showKeys, setShowKeys] = useState<{ tavily: boolean; brave: boolean }>({
     tavily: false,
     brave: false,
   });
+  const [savingKeys, setSavingKeys] = useState(false);
+  const [testing, setTesting] = useState(false);
 
-  useEffect(() => {
-    void fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
-    setLoading(true);
-    try {
+  const { settings, loading, status, update, refresh } = useSettingsAutosave<SearchSettings>({
+    load: async () => {
       const config = await api.getConfig();
-      const s = (config.search || {}) as {
-        backend?: Backend;
-        fallback_enabled?: boolean;
-        max_results?: number;
+      const s = (config.search || {}) as Partial<SearchSettings> & {
         tavily_api_key?: string;
         brave_api_key?: string;
       };
-      setSettings({
-        backend: s.backend === 'brave' ? 'brave' : 'tavily',
-        fallback_enabled: s.fallback_enabled ?? true,
-        max_results: s.max_results ?? 5,
+      // Seed the key inputs alongside the autosaved knobs (single fetch).
+      setKeys({
         tavily_api_key: s.tavily_api_key || '',
         brave_api_key: s.brave_api_key || '',
       });
-    } catch (error) {
-      notifyError(error, 'Failed to load search settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const update: NonNullable<Parameters<typeof api.updateConfig>[0]['search']> = {
-        backend: settings.backend,
-        fallback_enabled: settings.fallback_enabled,
-        max_results: settings.max_results,
+      return {
+        backend: s.backend === 'brave' ? 'brave' : 'tavily',
+        fallback_enabled: s.fallback_enabled ?? true,
+        max_results: s.max_results ?? 5,
       };
-      // Only send keys the user actually changed (skip empty + redacted mask).
-      if (settings.tavily_api_key && !isRedacted(settings.tavily_api_key)) {
-        update.tavily_api_key = settings.tavily_api_key;
-      }
-      if (settings.brave_api_key && !isRedacted(settings.brave_api_key)) {
-        update.brave_api_key = settings.brave_api_key;
-      }
-      await api.updateConfig({ search: update });
-      notifySuccess('Search settings saved', 'Web Search');
+    },
+    save: async changed => {
+      await api.updateConfig({ search: changed });
+    },
+    onError: err => notifyError(err, 'Web Search settings'),
+  });
+
+  // A key is sendable when the user typed a new value (not empty, not the mask).
+  const tavilyChanged = !!keys.tavily_api_key && !isRedacted(keys.tavily_api_key);
+  const braveChanged = !!keys.brave_api_key && !isRedacted(keys.brave_api_key);
+
+  const handleSaveKeys = async () => {
+    setSavingKeys(true);
+    try {
+      // Only send keys the user actually changed (skip empty + redacted mask);
+      // the backend skips omitted/None values so stored keys aren't overwritten.
+      const payload: NonNullable<Parameters<typeof api.updateConfig>[0]['search']> = {};
+      if (tavilyChanged) payload.tavily_api_key = keys.tavily_api_key;
+      if (braveChanged) payload.brave_api_key = keys.brave_api_key;
+      await api.updateConfig({ search: payload });
+      notifySuccess('API keys saved', 'Web Search');
       // Re-fetch so key fields show the freshly-redacted values.
-      void fetchSettings();
+      await refresh();
     } catch (error) {
-      notifyError(error, 'Failed to save search settings');
+      notifyError(error, 'Failed to save API keys');
     } finally {
-      setSaving(false);
+      setSavingKeys(false);
     }
   };
 
@@ -118,69 +110,45 @@ export default function SearchSection() {
         icon={<Globe size={20} />}
         title="Web Search"
         description="Backend for the agent's web_search tool. Tavily is the default; Brave is the fallback."
+        actions={<SaveStatusChip status={status} />}
       />
 
-      {loading ? (
+      {loading || !settings ? (
         <div className="loading-state">
           <RefreshCw size={24} className="spin" />
           <span>Loading settings...</span>
         </div>
       ) : (
         <div className="settings-content">
-          {/* Backend selector */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Search Backend</span>
-              <span className="setting-hint">Primary provider for web search</span>
-            </label>
-            <select
-              className="form-input"
-              value={settings.backend}
-              onChange={(e) => setSettings((p) => ({ ...p, backend: e.target.value as Backend }))}
-            >
-              <option value="tavily">Tavily (recommended)</option>
-              <option value="brave">Brave</option>
-            </select>
-          </div>
+          <SelectField
+            label="Search Backend"
+            value={settings.backend}
+            onChange={v => update({ backend: v as Backend })}
+            hint="Primary provider for web search"
+            options={[
+              { value: 'tavily', label: 'Tavily (recommended)' },
+              { value: 'brave', label: 'Brave' },
+            ]}
+          />
 
-          {/* Fallback toggle */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Fallback to other backend</span>
-              <span className="setting-hint">If the primary errors or returns nothing, try the other</span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={settings.fallback_enabled}
-                onChange={(e) => setSettings((p) => ({ ...p, fallback_enabled: e.target.checked }))}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
+          <ToggleField
+            checked={settings.fallback_enabled}
+            onChange={fallback_enabled => update({ fallback_enabled })}
+            label="Fallback to other backend"
+            hint="If the primary errors or returns nothing, try the other"
+          />
 
-          {/* Max results */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Max Results</span>
-              <span className="setting-hint">Results returned per search (1–10)</span>
-            </label>
-            <div className="input-with-hint">
-              <input
-                type="number"
-                className="form-input"
-                value={settings.max_results}
-                onChange={(e) =>
-                  setSettings((p) => ({ ...p, max_results: parseInt(e.target.value) || 5 }))
-                }
-                min={1}
-                max={10}
-                step={1}
-              />
-            </div>
-          </div>
+          <NumberField
+            label="Max Results"
+            value={settings.max_results}
+            min={1}
+            max={10}
+            fallback={5}
+            onChange={max_results => update({ max_results })}
+            title="Results returned per search (1–10)"
+          />
 
-          {/* Tavily API key */}
+          {/* Tavily API key — secrets keep explicit Save (never autosaved) */}
           <div className="setting-row">
             <label className="setting-label">
               <span className="flex items-center gap-1.5">
@@ -195,8 +163,8 @@ export default function SearchSection() {
             <div className="api-key-input">
               <Input
                 type={showKeys.tavily ? 'text' : 'password'}
-                value={settings.tavily_api_key}
-                onChange={(e) => setSettings((p) => ({ ...p, tavily_api_key: e.target.value }))}
+                value={keys.tavily_api_key}
+                onChange={(e) => setKeys((p) => ({ ...p, tavily_api_key: e.target.value }))}
                 placeholder="tvly-..."
                 autoComplete="off"
               />
@@ -221,8 +189,8 @@ export default function SearchSection() {
             <div className="api-key-input">
               <Input
                 type={showKeys.brave ? 'text' : 'password'}
-                value={settings.brave_api_key}
-                onChange={(e) => setSettings((p) => ({ ...p, brave_api_key: e.target.value }))}
+                value={keys.brave_api_key}
+                onChange={(e) => setKeys((p) => ({ ...p, brave_api_key: e.target.value }))}
                 placeholder="BSA..."
                 autoComplete="off"
               />
@@ -238,15 +206,20 @@ export default function SearchSection() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions — keys only; the knobs above autosave */}
           <div className="setting-actions">
             <Button variant="secondary" onClick={handleTest} loading={testing}>
               <Wifi size={16} />
               {testing ? 'Testing...' : 'Test connection'}
             </Button>
-            <Button variant="primary" onClick={handleSave} loading={saving}>
+            <Button
+              variant="primary"
+              onClick={handleSaveKeys}
+              loading={savingKeys}
+              disabled={!tavilyChanged && !braveChanged}
+            >
               <Save size={16} />
-              {saving ? 'Saving...' : 'Save Settings'}
+              {savingKeys ? 'Saving...' : 'Save keys'}
             </Button>
           </div>
         </div>

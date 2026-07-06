@@ -3,14 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Brain,
-  ChevronRight,
   Cpu,
-  Eye,
   Library,
   MessageSquare,
   Save,
   Trash2,
-  Wrench,
   X,
   Zap,
   Share2,
@@ -28,11 +25,12 @@ import {
 import { type AgentProfile, type ModelInfo, type ReasoningStrategy } from '../../lib/api';
 import { agentAccent } from '../../lib/agentAccent';
 import { fetchModelsOnce } from '../common/modelCatalog';
-import { ModelPickerModal } from '../common/ModelPickerModal';
+import { ModelPickerField } from '../common/ModelPickerField';
 import { VoicePicker } from '../common/VoicePicker';
 import { AvatarPicker } from '../common/AvatarPicker';
 import { ControlCard } from '../common/ControlCard';
 import { CopyChip, SegmentedControl, Badge } from '../ui';
+import { useConfirm } from '../ui/ConfirmDialog';
 import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { OverridablePromptField } from '../common/OverridablePromptField';
@@ -193,11 +191,9 @@ export function ProfileContent({
     handleDelete,
   } = useProfileEditorState(profile);
 
+  const confirm = useConfirm();
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryMode, setLibraryMode] = useState<'insert' | 'select'>('insert');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [speechPickerOpen, setSpeechPickerOpen] = useState(false);
-  const [transcriptionPickerOpen, setTranscriptionPickerOpen] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<ModelInfo[]>([]);
   const isAmbassador = kind === 'ambassador';
   const accent = agentAccent(profile?.agentId ?? 'new');
@@ -227,7 +223,6 @@ export function ProfileContent({
     const parts = defaultModel.split(':');
     return parts.length > 1 ? parts.slice(1).join(':') : defaultModel;
   })();
-  const selectedProviderLabel = selectedModel?.provider ?? (defaultModel.includes(':') ? defaultModel.split(':')[0] : '');
   // Image-only model: outputs images but not text (e.g. flux). It can't act on a
   // system prompt or call tools, so Direct mode is auto-forced server-side; reflect
   // that here (toggle locked on + an info note recommending it).
@@ -259,9 +254,15 @@ export function ProfileContent({
     });
   };
 
-  const handleDeleteClick = () => {
+  const handleDeleteClick = async () => {
     if (!profile) return;
-    if (!window.confirm(`Delete "${profile.name}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${profile.name}"?`,
+      body: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     handleDelete(profile.id, onDeleted);
   };
 
@@ -357,39 +358,13 @@ export function ProfileContent({
                 >
                   <ControlCard icon={<Cpu size={14} />} title="Model" summary={`${selectedLabel}${ctxLabel ? ` · ${ctxLabel}` : ''}`}>
                     <div className="profile-model-selector-wrap">
-                      <button
-                        type="button"
-                        className="profile-model-trigger"
-                        onClick={() => setPickerOpen(true)}
-                      >
-                        <div className="profile-model-trigger-main">
-                          <span className="profile-model-trigger-label">Model</span>
-                          <span className="profile-model-trigger-name">{selectedLabel}</span>
-                          {selectedProviderLabel && (
-                            <span className="profile-model-trigger-provider">{selectedProviderLabel}</span>
-                          )}
-                        </div>
-                        <div className="profile-model-trigger-meta">
-                          {selectedCtx && (
-                            <span className="profile-model-trigger-badge">{ctxLabel}</span>
-                          )}
-                          {selectedModel?.supports_tools && (
-                            <span className="profile-model-trigger-cap" title="Tools"><Wrench size={12} /></span>
-                          )}
-                          {selectedModel?.supports_vision && (
-                            <span className="profile-model-trigger-cap" title="Vision"><Eye size={12} /></span>
-                          )}
-                          <ChevronRight size={14} className="profile-model-trigger-chev" />
-                        </div>
-                      </button>
+                      <ModelPickerField
+                        label="Model"
+                        value={defaultModel}
+                        onChange={setDefaultModel}
+                        showDefault
+                      />
                     </div>
-                    <ModelPickerModal
-                      isOpen={pickerOpen}
-                      onClose={() => setPickerOpen(false)}
-                      value={defaultModel}
-                      onChange={setDefaultModel}
-                      showDefault
-                    />
                   </ControlCard>
 
                   <ControlCard icon={<Sliders size={14} />} title="Generation" summary={`${temperature.toFixed(1)} · ${tempLabel(temperature)}`}>
@@ -604,28 +579,12 @@ export function ProfileContent({
 
                     <div className="profile-form-field" style={{ marginTop: 12 }}>
                       <label className="profile-form-label">Speech model</label>
-                      <button
-                        type="button"
-                        className="profile-model-trigger"
-                        onClick={() => setSpeechPickerOpen(true)}
-                      >
-                        <div className="profile-model-trigger-main">
-                          <span className="profile-model-trigger-label">Text-to-speech model</span>
-                          <span className="profile-model-trigger-name">
-                            {speechModel || 'microsoft/mai-voice-2 (default)'}
-                          </span>
-                        </div>
-                        <div className="profile-model-trigger-meta">
-                          <ChevronRight size={14} className="profile-model-trigger-chev" />
-                        </div>
-                      </button>
-                      <ModelPickerModal
-                        isOpen={speechPickerOpen}
-                        onClose={() => setSpeechPickerOpen(false)}
+                      <ModelPickerField
                         value={speechModel}
                         onChange={setSpeechModel}
                         showDefault
                         requireCapability="speech"
+                        placeholder="microsoft/mai-voice-2 (default)"
                       />
                     </div>
 
@@ -649,28 +608,12 @@ export function ProfileContent({
                           for review before you send.
                         </span>
                       </label>
-                      <button
-                        type="button"
-                        className="profile-model-trigger"
-                        onClick={() => setTranscriptionPickerOpen(true)}
-                      >
-                        <div className="profile-model-trigger-main">
-                          <span className="profile-model-trigger-label">Speech-to-text model</span>
-                          <span className="profile-model-trigger-name">
-                            {transcriptionModel || 'openai/whisper-1 (default)'}
-                          </span>
-                        </div>
-                        <div className="profile-model-trigger-meta">
-                          <ChevronRight size={14} className="profile-model-trigger-chev" />
-                        </div>
-                      </button>
-                      <ModelPickerModal
-                        isOpen={transcriptionPickerOpen}
-                        onClose={() => setTranscriptionPickerOpen(false)}
+                      <ModelPickerField
                         value={transcriptionModel}
                         onChange={setTranscriptionModel}
                         showDefault
                         requireCapability="transcription"
+                        placeholder="openai/whisper-1 (default)"
                       />
                     </div>
                   </ControlCard>

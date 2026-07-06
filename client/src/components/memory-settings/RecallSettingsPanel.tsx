@@ -5,10 +5,7 @@ import { RecallSettings } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Button } from '../ui';
-import { SettingsSection } from './fields/SettingsSection';
-import { SliderField } from './fields/SliderField';
-import { NumberField } from './fields/NumberField';
-import { ToggleField } from './fields/ToggleField';
+import { SettingsSection, SliderField, NumberField, ToggleField } from '../settings/fields';
 
 const oneDp = (v: number) => v.toFixed(1);
 
@@ -204,7 +201,6 @@ export function RecallSettingsPanel() {
                 label="Model"
                 value={localSettings.recall_hyde_model ?? ''}
                 onChange={v => handleChange('recall_hyde_model', v)}
-                onProviderChange={v => handleChange('recall_hyde_provider', v)}
                 showDefault={false}
               />
             </div>
@@ -226,7 +222,6 @@ export function RecallSettingsPanel() {
                 label="Model"
                 value={localSettings.recall_self_query_model ?? ''}
                 onChange={v => handleChange('recall_self_query_model', v)}
-                onProviderChange={v => handleChange('recall_self_query_provider', v)}
                 showDefault={false}
               />
             </div>

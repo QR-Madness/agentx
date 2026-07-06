@@ -1,88 +1,52 @@
 /**
  * PromptsSection — Prompt enhancement configuration
+ *
+ * Settings live under `prompt_enhancement.*` in data/config.json. Built on the
+ * settings field kit + autosave (useSettingsAutosave).
  */
 
-import { useState, useEffect } from 'react';
-import {
-  Sparkles,
-  RefreshCw,
-  Save,
-} from 'lucide-react';
+import { Sparkles, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
-import { Button, SectionHeader } from '../../ui';
+import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
+import {
+  NumberField,
+  PromptField,
+  SaveStatusChip,
+  SliderField,
+  ToggleField,
+} from '../../settings/fields';
+
+interface PromptEnhanceSettings extends Record<string, unknown> {
+  enabled: boolean;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  system_prompt: string;
+}
 
 export default function PromptsSection() {
-  const { notifyError, notifySuccess } = useNotify();
-  const [promptEnhanceSettings, setPromptEnhanceSettings] = useState<{
-    enabled: boolean;
-    model: string;
-    temperature: number;
-    max_tokens: number;
-    system_prompt: string;
-  }>({
-    enabled: true,
-    model: 'anthropic:claude-3-5-haiku-latest',
-    temperature: 0.7,
-    max_tokens: 1000,
-    system_prompt: '',
-  });
+  const { notifyError } = useNotify();
 
-  const [loadingPromptSettings, setLoadingPromptSettings] = useState(false);
-  const [savingPromptSettings, setSavingPromptSettings] = useState(false);
-
-  // Fetch prompt enhancement settings on mount
-  useEffect(() => {
-    fetchPromptSettings();
-  }, []);
-
-  const fetchPromptSettings = async () => {
-    setLoadingPromptSettings(true);
-    try {
+  const { settings, loading, status, update } = useSettingsAutosave<PromptEnhanceSettings>({
+    load: async () => {
       const config = await api.getConfig();
-      const promptConfig = (config.prompt_enhancement || {}) as {
-        enabled?: boolean;
-        model?: string;
-        temperature?: number;
-        max_tokens?: number;
-        system_prompt?: string;
+      const p = (config.prompt_enhancement || {}) as Partial<PromptEnhanceSettings>;
+      return {
+        enabled: p.enabled ?? true,
+        model: p.model || 'anthropic:claude-3-5-haiku-latest',
+        temperature: p.temperature ?? 0.7,
+        max_tokens: p.max_tokens ?? 1000,
+        system_prompt: p.system_prompt || '',
       };
-      setPromptEnhanceSettings({
-        enabled: promptConfig.enabled ?? true,
-        model: promptConfig.model || 'anthropic:claude-3-5-haiku-latest',
-        temperature: promptConfig.temperature ?? 0.7,
-        max_tokens: promptConfig.max_tokens ?? 1000,
-        system_prompt: promptConfig.system_prompt || '',
-      });
-    } catch (error) {
-      notifyError(error, 'Failed to load prompt settings');
-    } finally {
-      setLoadingPromptSettings(false);
-    }
-  };
-
-  const handleSavePromptSettings = async () => {
-    setSavingPromptSettings(true);
-    try {
-      // Save all prompt enhancement settings at once
-      await api.updateConfig({
-        prompt_enhancement: {
-          enabled: promptEnhanceSettings.enabled,
-          model: promptEnhanceSettings.model,
-          temperature: promptEnhanceSettings.temperature,
-          max_tokens: promptEnhanceSettings.max_tokens,
-          system_prompt: promptEnhanceSettings.system_prompt,
-        },
-      });
-
-      notifySuccess('Prompt settings saved', 'Prompt Enhancement');
-    } catch (error) {
-      notifyError(error, 'Failed to save prompt settings');
-    } finally {
-      setSavingPromptSettings(false);
-    }
-  };
+    },
+    save: async changed => {
+      await api.updateConfig({ prompt_enhancement: changed });
+    },
+    onError: err => notifyError(err, 'Prompt Enhancement settings'),
+  });
 
   return (
     <div className="settings-section fade-in">
@@ -90,116 +54,60 @@ export default function PromptsSection() {
         icon={<Sparkles size={20} />}
         title="Prompt Enhancement"
         description="Configure AI-powered prompt enhancement for better results"
+        actions={<SaveStatusChip status={status} />}
       />
 
-      {loadingPromptSettings ? (
+      {loading || !settings ? (
         <div className="loading-state">
           <RefreshCw size={24} className="spin" />
           <span>Loading settings...</span>
         </div>
       ) : (
         <div className="settings-content">
-          {/* Enable toggle */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Enable Prompt Enhancement</span>
-              <span className="setting-hint">Allow AI to improve your prompts before sending</span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={promptEnhanceSettings.enabled}
-                onChange={(e) => setPromptEnhanceSettings(prev => ({
-                  ...prev,
-                  enabled: e.target.checked
-                }))}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
+          <ToggleField
+            checked={settings.enabled}
+            onChange={enabled => update({ enabled })}
+            label="Enable Prompt Enhancement"
+            hint="Allow AI to improve your prompts before sending"
+          />
 
-          {/* Model selection */}
           <div className="setting-row">
             <ModelPickerField
               label="Enhancement Model"
-              value={promptEnhanceSettings.model}
-              onChange={(modelId) => setPromptEnhanceSettings(prev => ({
-                ...prev,
-                model: modelId
-              }))}
+              value={settings.model}
+              onChange={model => update({ model })}
               showDefault={false}
             />
           </div>
 
-          {/* Temperature */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Temperature</span>
-              <span className="setting-hint">Creativity level (0.0 - 1.0)</span>
-            </label>
-            <div className="input-with-hint">
-              <input
-                type="number"
-                className="form-input"
-                value={promptEnhanceSettings.temperature}
-                onChange={(e) => setPromptEnhanceSettings(prev => ({
-                  ...prev,
-                  temperature: parseFloat(e.target.value) || 0.7
-                }))}
-                min={0}
-                max={1}
-                step={0.1}
-              />
-            </div>
-          </div>
+          <SliderField
+            label="Temperature"
+            value={settings.temperature}
+            min={0}
+            max={1}
+            step={0.1}
+            onChange={temperature => update({ temperature })}
+            format={v => v.toFixed(1)}
+          />
 
-          {/* Max tokens */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Max Tokens</span>
-              <span className="setting-hint">Maximum output length for enhanced prompt</span>
-            </label>
-            <div className="input-with-hint">
-              <input
-                type="number"
-                className="form-input"
-                value={promptEnhanceSettings.max_tokens}
-                onChange={(e) => setPromptEnhanceSettings(prev => ({
-                  ...prev,
-                  max_tokens: parseInt(e.target.value) || 1000
-                }))}
-                min={100}
-                max={4000}
-                step={100}
-              />
-            </div>
-          </div>
+          <NumberField
+            label="Max Tokens"
+            value={settings.max_tokens}
+            min={100}
+            max={4000}
+            fallback={1000}
+            onChange={max_tokens => update({ max_tokens })}
+            title="Maximum output length for enhanced prompt."
+          />
 
-          {/* Custom system prompt */}
-          <div className="setting-row vertical">
-            <label className="setting-label">
-              <span>Custom System Prompt</span>
-              <span className="setting-hint">Leave empty to use the default prompt</span>
-            </label>
-            <textarea
-              className="form-textarea"
-              value={promptEnhanceSettings.system_prompt}
-              onChange={(e) => setPromptEnhanceSettings(prev => ({
-                ...prev,
-                system_prompt: e.target.value
-              }))}
-              placeholder="Enter custom instructions for the enhancement model..."
-              rows={4}
-            />
-          </div>
-
-          {/* Save button */}
-          <div className="setting-actions">
-            <Button variant="primary" onClick={handleSavePromptSettings} loading={savingPromptSettings}>
-              <Save size={16} />
-              {savingPromptSettings ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </div>
+          <PromptField
+            label="Custom System Prompt"
+            value={settings.system_prompt}
+            onChange={system_prompt => update({ system_prompt })}
+            onReset={() => update({ system_prompt: '' })}
+            placeholder="Enter custom instructions for the enhancement model..."
+            rows={4}
+          />
         </div>
       )}
     </div>

@@ -5,11 +5,8 @@ import { ConsolidationSettings, api } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Button, Checkbox, Label } from '../ui';
-import { SettingsSection } from './fields/SettingsSection';
-import { SliderField } from './fields/SliderField';
-import { NumberField } from './fields/NumberField';
-import { ToggleField } from './fields/ToggleField';
-import { PromptField } from './fields/PromptField';
+import { useConfirm } from '../ui/ConfirmDialog';
+import { SettingsSection, SliderField, NumberField, ToggleField, PromptField } from '../settings/fields';
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 
@@ -26,6 +23,7 @@ export function ConsolidationSettingsPanel({
 }) {
   const { settings, loading, saving, error, updateSettings, refresh } = useConsolidationSettings();
   const { notifySuccess, notifyError } = useNotify();
+  const confirm = useConfirm();
   const [localSettings, setLocalSettings] = useState<Partial<ConsolidationSettings>>({});
   const [consolidating, setConsolidating] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -125,15 +123,21 @@ export function ConsolidationSettingsPanel({
   };
 
   const handleReinitMemory = async () => {
-    if (!confirm('This will reset consolidation for ALL conversations, allowing them to be reprocessed. Continue?')) {
-      return;
-    }
+    const proceed = await confirm({
+      title: 'Reset consolidation?',
+      body: 'This will reset consolidation for ALL conversations, allowing them to be reprocessed.',
+      confirmLabel: 'Continue',
+      danger: true,
+    });
+    if (!proceed) return;
 
-    const deleteMemories = confirm(
-      'Also DELETE all existing entities, facts, and strategies?\n\n' +
-      'Click OK to delete and rebuild from scratch.\n' +
-      'Click Cancel to keep existing memories and just reprocess conversations.'
-    );
+    const deleteMemories = await confirm({
+      title: 'Also delete existing memories?',
+      body: 'Delete all existing entities, facts, and strategies, and rebuild from scratch? Choose "Keep memories" to keep existing memories and just reprocess conversations.',
+      confirmLabel: 'Delete & rebuild',
+      cancelLabel: 'Keep memories',
+      danger: true,
+    });
 
     setResetting(true);
     try {
@@ -278,7 +282,6 @@ export function ConsolidationSettingsPanel({
               label="Model (blank = inherit default)"
               value={localSettings.extraction_model || ''}
               onChange={v => handleChange('extraction_model', v)}
-              onProviderChange={v => handleChange('extraction_provider', v)}
               showDefault={false}
             />
           </div>

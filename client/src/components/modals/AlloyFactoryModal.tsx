@@ -23,6 +23,7 @@ import type {
   AlloyWorkflow,
   AlloyWorkflowMember,
 } from '../../lib/api';
+import { useConfirm } from '../ui/ConfirmDialog';
 import './AlloyFactoryModal.css';
 
 interface AlloyFactoryModalProps {
@@ -50,6 +51,7 @@ interface SpecialistDraft {
 }
 
 export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFactoryModalProps) {
+  const confirm = useConfirm();
   const { profiles } = useAgentProfile();
   const {
     workflows,
@@ -72,7 +74,13 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
   }, [profiles]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm(`Delete workflow "${id}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete workflow "${id}"?`,
+      body: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     await deleteWorkflow(id);
     setSelection(prev => (prev.kind === 'edit' && prev.id === id ? { kind: 'empty' } : prev));
   };

@@ -33,13 +33,12 @@ Find the right doc before diving in — they're split deliberately so this file 
 
 ## Hard-Won Working Rules
 
-Landmines that cost real debugging time — read before touching the memory kit:
+Landmines that cost real debugging time — read before touching memory:
 
-1. **Settings overrides:** the memory kit reads settings **live** via `get_settings()`
-   (zero module-level snapshots — `task docs:check` ratchets the count at 0; never add one).
-   Temporary/test/eval overrides use ONE mechanism: `with pin_memory_settings(override):`
-   (kit `config.py`) — never `save_memory_settings()`, which writes
-   `data/memory_settings.json` for a live dev server to pick up. Details in Development-Notes.
+1. **Settings overrides:** the memory kit reads settings **live** (zero module snapshots,
+   ratchet 0). Temporary overrides use ONE mechanism (see Development-Notes):
+   `with pin_memory_settings(override):` — never `save_memory_settings()` (it writes
+   `data/memory_settings.json` for a live server).
 2. **Two extraction paths:** windowed (default) + legacy per-turn behind
    `extraction_windowing_enabled` — behavior changes must edit both or gate on the flag.
 3. **Eval harnesses:** `eval_consolidation` is GLOBAL (needs a sterile cluster or `--snapshot`;
@@ -121,6 +120,8 @@ touching a surface. The rules that must not drift:
 - 3 primary pages (Start, Dashboard, AgentX) routed via `RootLayout` + `TopBar`; gate pages `AuthPage` (`AGENTX_AUTH_ENABLED`) + `VersionMismatchPage`.
 - **Command palette is the primary command surface** — `components/common/CommandPalette.tsx` over the `hooks/useCommands.tsx` registry; palette + TopBar icons share `lib/surfaces.ts` (`SURFACES.*`) so they can't drift.
 - Destructive actions use `ui/ConfirmDialog` (`useConfirm()`), never native `confirm`.
+- **Settings sections** build on `components/settings/fields/` + `useSettingsAutosave`
+  (see `PlannerSection`); **secrets keep explicit Save**.
 - Multi-server: `ServerContext` app-wide; `lib/api` typed client facade; `lib/hooks.ts` data hooks on the `useApi<T>` factory; `AgentProfileContext` for profiles.
 - **Add a theme = one entry in `THEMES`** (`lib/theme.ts`) — pickers iterate the registry; a vitest enforces cross-theme token parity; glow tokens use a transparent shadow, never bare `none`.
 - API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`; surface via `useNotify().notifyError(err)` (toasts); inline errors only for form-field validation.

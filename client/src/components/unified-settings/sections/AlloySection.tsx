@@ -1,75 +1,49 @@
 /**
  * AlloySection — Multi-agent (Agent Alloy) delegation settings (Track D)
  *
- * Surfaces the previously config-only delegation controls: the global ad-hoc
- * delegation switch (lets any agent delegate to any delegatable profile) and the
- * fan-out concurrency bound.
+ * Surfaces the previously config-only delegation controls under `alloy.*`:
+ * the global ad-hoc delegation switch (lets any agent delegate to any
+ * delegatable profile), fan-out concurrency/depth bounds, the per-delegation
+ * timeout, and specialist tool inheritance. Built on the settings field kit +
+ * autosave (useSettingsAutosave).
  */
 
-import { useEffect, useState } from 'react';
-import { Users, RefreshCw, Save } from 'lucide-react';
+import { Users, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
-import { Button, SectionHeader } from '../../ui';
+import { SectionHeader } from '../../ui';
+import { NumberField, SaveStatusChip, ToggleField } from '../../settings/fields';
+
+interface AlloySettings extends Record<string, unknown> {
+  allow_adhoc_delegation: boolean;
+  max_parallel_delegations: number;
+  max_delegation_depth: number;
+  delegation_timeout_seconds: number;
+  specialist_inherits_supervisor_tools: boolean;
+}
 
 export default function AlloySection() {
-  const { notifyError, notifySuccess } = useNotify();
+  const { notifyError } = useNotify();
 
-  const [settings, setSettings] = useState<{
-    allow_adhoc_delegation: boolean;
-    max_parallel_delegations: number;
-    max_delegation_depth: number;
-  }>({
-    allow_adhoc_delegation: false,
-    max_parallel_delegations: 3,
-    max_delegation_depth: 3,
-  });
-
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    void fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
-    setLoading(true);
-    try {
+  const { settings, loading, status, update } = useSettingsAutosave<AlloySettings>({
+    load: async () => {
       const config = await api.getConfig();
-      const a = (config.alloy || {}) as {
-        allow_adhoc_delegation?: boolean;
-        max_parallel_delegations?: number;
-        max_delegation_depth?: number;
-      };
-      setSettings({
+      const a = (config.alloy || {}) as Partial<AlloySettings>;
+      return {
         allow_adhoc_delegation: a.allow_adhoc_delegation ?? false,
         max_parallel_delegations: a.max_parallel_delegations ?? 3,
         max_delegation_depth: a.max_delegation_depth ?? 3,
-      });
-    } catch (error) {
-      notifyError(error, 'Failed to load delegation settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await api.updateConfig({
-        alloy: {
-          allow_adhoc_delegation: settings.allow_adhoc_delegation,
-          max_parallel_delegations: settings.max_parallel_delegations,
-          max_delegation_depth: settings.max_delegation_depth,
-        },
-      });
-      notifySuccess('Delegation settings saved', 'Multi-Agent');
-    } catch (error) {
-      notifyError(error, 'Failed to save delegation settings');
-    } finally {
-      setSaving(false);
-    }
-  };
+        delegation_timeout_seconds: a.delegation_timeout_seconds ?? 300,
+        specialist_inherits_supervisor_tools:
+          a.specialist_inherits_supervisor_tools ?? true,
+      };
+    },
+    save: async changed => {
+      await api.updateConfig({ alloy: changed });
+    },
+    onError: err => notifyError(err, 'Multi-Agent settings'),
+  });
 
   return (
     <div className="settings-section fade-in">
@@ -77,95 +51,66 @@ export default function AlloySection() {
         icon={<Users size={20} />}
         title="Multi-Agent Delegation"
         description="Let agents hand subtasks to other agents (Agent Alloy)."
+        actions={<SaveStatusChip status={status} />}
       />
 
-      {loading ? (
+      {loading || !settings ? (
         <div className="loading-state">
           <RefreshCw size={24} className="spin" />
           <span>Loading settings...</span>
         </div>
       ) : (
         <div className="settings-content">
-          {/* Ad-hoc delegation toggle */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Ad-hoc delegation</span>
-              <span className="setting-hint">
+          <ToggleField
+            checked={settings.allow_adhoc_delegation}
+            onChange={allow_adhoc_delegation => update({ allow_adhoc_delegation })}
+            label="Ad-hoc delegation"
+            hint={
+              <>
                 Give every agent a `delegate_to` tool so it can hand subtasks to any
                 profile marked “available for delegation”.
-              </span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={settings.allow_adhoc_delegation}
-                onChange={(e) =>
-                  setSettings((p) => ({ ...p, allow_adhoc_delegation: e.target.checked }))
-                }
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
+              </>
+            }
+          />
 
-          {/* Max parallel delegations */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Max parallel delegations</span>
-              <span className="setting-hint">
-                How many specialists may run at once when an agent fans out in a
-                single turn (1–8).
-              </span>
-            </label>
-            <div className="input-with-hint">
-              <input
-                type="number"
-                className="form-input"
-                value={settings.max_parallel_delegations}
-                onChange={(e) =>
-                  setSettings((p) => ({
-                    ...p,
-                    max_parallel_delegations: parseInt(e.target.value) || 3,
-                  }))
-                }
-                min={1}
-                max={8}
-                step={1}
-              />
-            </div>
-          </div>
+          <NumberField
+            label="Max parallel delegations"
+            value={settings.max_parallel_delegations}
+            min={1}
+            max={8}
+            fallback={3}
+            onChange={max_parallel_delegations => update({ max_parallel_delegations })}
+            title="How many specialists may run at once when an agent fans out in a single turn (1–8)."
+          />
 
-          {/* Max delegation depth */}
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Max delegation depth</span>
-              <span className="setting-hint">
-                How many delegation hops deep a chain may go before it's rejected (1–5).
-              </span>
-            </label>
-            <div className="input-with-hint">
-              <input
-                type="number"
-                className="form-input"
-                value={settings.max_delegation_depth}
-                onChange={(e) =>
-                  setSettings((p) => ({
-                    ...p,
-                    max_delegation_depth: parseInt(e.target.value) || 3,
-                  }))
-                }
-                min={1}
-                max={5}
-                step={1}
-              />
-            </div>
-          </div>
+          <NumberField
+            label="Max delegation depth"
+            value={settings.max_delegation_depth}
+            min={1}
+            max={5}
+            fallback={3}
+            onChange={max_delegation_depth => update({ max_delegation_depth })}
+            title="How many delegation hops deep a chain may go before it's rejected (1–5)."
+          />
 
-          <div className="setting-actions">
-            <Button variant="primary" onClick={handleSave} loading={saving}>
-              <Save size={16} />
-              {saving ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </div>
+          <NumberField
+            label="Delegation timeout (seconds)"
+            value={settings.delegation_timeout_seconds}
+            min={30}
+            max={3600}
+            fallback={300}
+            onChange={delegation_timeout_seconds => update({ delegation_timeout_seconds })}
+            title="How long a delegated subtask may run before it's cancelled."
+          />
+
+          <ToggleField
+            checked={settings.specialist_inherits_supervisor_tools}
+            onChange={specialist_inherits_supervisor_tools =>
+              update({ specialist_inherits_supervisor_tools })
+            }
+            label="Specialists inherit supervisor tools"
+            hint="When on, a delegated specialist gets the supervisor's tool set in addition to its own profile's tools."
+          />
         </div>
       )}
     </div>

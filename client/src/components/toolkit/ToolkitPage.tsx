@@ -19,6 +19,7 @@ import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackg
 import { backdropVariants, containerVariants } from '../unified-settings/animations/transitions';
 import type { MCPServer, MCPServerConfigInput } from '../../lib/api';
 import { api } from '../../lib/api';
+import { useConfirm } from '../ui/ConfirmDialog';
 import { ServerForm } from './ServerForm';
 import './ToolkitPage.css';
 
@@ -154,6 +155,7 @@ function ServersView() {
     createServer, updateServer, deleteServer, validateServer,
   } = useMCPServers();
   const { profiles } = useAgentProfile();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<MCPServer | null | undefined>(undefined); // undefined = closed; null = creating
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -166,7 +168,13 @@ function ServersView() {
   };
 
   const onDelete = async (s: MCPServer) => {
-    if (!confirm(`Delete server "${s.name}"? This rewrites mcp_servers.json.`)) return;
+    const ok = await confirm({
+      title: `Delete server "${s.name}"?`,
+      body: 'This rewrites mcp_servers.json.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(s.name);
     try { await deleteServer(s.name); } finally { setBusy(null); }
   };

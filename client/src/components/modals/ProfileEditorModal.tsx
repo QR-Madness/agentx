@@ -24,6 +24,7 @@ import { PromptLibraryModal } from './PromptLibraryModal';
 import { ModelPickerField } from '../common/ModelPickerField';
 import './ProfileEditorModal.css';
 import { Button } from '../ui';
+import { useConfirm } from '../ui/ConfirmDialog';
 
 const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Automatically select based on task' },
@@ -43,6 +44,7 @@ interface ProfileEditorModalProps {
 
 export function ProfileEditorModal({ onClose, editProfile: editProfileProp, profileId, isNew }: ProfileEditorModalProps) {
   const { profiles, createProfile, updateProfile, deleteProfile } = useAgentProfile();
+  const confirm = useConfirm();
 
   // Resolve the profile to edit - either from prop or by finding it via ID
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -170,9 +172,12 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
   const handleDelete = async () => {
     if (!editProfile) return;
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${editProfile.name}"? This action cannot be undone.`
-    );
+    const confirmed = await confirm({
+      title: `Delete "${editProfile.name}"?`,
+      body: 'This action cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
     if (!confirmed) return;
 
     setDeleting(true);

@@ -3,17 +3,19 @@
  *
  * OpenRouter-only today: a model picker (default flux.2-klein-4b), the app-level avatar
  * STYLE prompt (the per-profile SUBJECT prompt is appended at generation time), and an
- * enable toggle. Persists under `images.*`. Leads with the OpenRouter-required notice.
+ * enable toggle. Persists under `images.*` (vision input under `vision.*`), autosaved
+ * via useSettingsAutosave + the settings field kit. Leads with the OpenRouter notice.
  */
 
-import { useEffect, useState } from 'react';
-import { ImageIcon, RefreshCw, Save, Info } from 'lucide-react';
+import { ImageIcon, RefreshCw, Info } from 'lucide-react';
 import { api } from '../../../lib/api';
+import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
-import { Button, SectionHeader } from '../../ui';
+import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
+import { PromptField, SaveStatusChip, ToggleField } from '../../settings/fields';
 
-interface ImageSettings {
+interface ImageSettings extends Record<string, unknown> {
   enabled: boolean;
   default_model: string;
   avatar_style_prompt: string;
@@ -30,55 +32,30 @@ const FALLBACK: ImageSettings = {
 };
 
 export default function ImagesSection() {
-  const { notifyError, notifySuccess } = useNotify();
-  const [settings, setSettings] = useState<ImageSettings>(FALLBACK);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const { notifyError } = useNotify();
 
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const load = async () => {
-    setLoading(true);
-    try {
+  const { settings, loading, status, update } = useSettingsAutosave<ImageSettings>({
+    load: async () => {
       const config = await api.getConfig();
       const im = (config.images || {}) as Partial<ImageSettings>;
       const vi = (config.vision || {}) as { enabled?: boolean };
-      setSettings({
+      return {
         enabled: im.enabled ?? FALLBACK.enabled,
         default_model: im.default_model || FALLBACK.default_model,
         avatar_style_prompt: im.avatar_style_prompt || FALLBACK.avatar_style_prompt,
         visionEnabled: vi.enabled ?? FALLBACK.visionEnabled,
-      });
-    } catch (error) {
-      notifyError(error, 'Failed to load image settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await api.updateConfig({
-        images: {
-          enabled: settings.enabled,
-          default_model: settings.default_model,
-          avatar_style_prompt: settings.avatar_style_prompt,
-        },
-        vision: {
-          enabled: settings.visionEnabled,
-        },
-      });
-      notifySuccess('Image settings saved', 'Images');
-      await load();
-    } catch (error) {
-      notifyError(error, 'Failed to save image settings');
-    } finally {
-      setSaving(false);
-    }
-  };
+      };
+    },
+    save: async changed => {
+      // `visionEnabled` persists under vision.*; everything else under images.*.
+      const { visionEnabled, ...images } = changed;
+      const payload: Parameters<typeof api.updateConfig>[0] = {};
+      if (Object.keys(images).length > 0) payload.images = images;
+      if (visionEnabled !== undefined) payload.vision = { enabled: visionEnabled };
+      await api.updateConfig(payload);
+    },
+    onError: err => notifyError(err, 'Image settings'),
+  });
 
   return (
     <div className="settings-section fade-in">
@@ -86,6 +63,7 @@ export default function ImagesSection() {
         icon={<ImageIcon size={20} />}
         title="Images"
         description="Generate agent avatars (and, soon, images in conversations) — via OpenRouter."
+        actions={<SaveStatusChip status={status} />}
       />
 
       <div
@@ -100,77 +78,48 @@ export default function ImagesSection() {
         </span>
       </div>
 
-      {loading ? (
+      {loading || !settings ? (
         <div className="loading-state">
           <RefreshCw size={24} className="spin" />
           <span>Loading settings...</span>
         </div>
       ) : (
         <div className="settings-content">
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Enable image generation</span>
-              <span className="setting-hint">When off, the avatar "Generate" tab is unavailable.</span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={settings.enabled}
-                onChange={(e) => setSettings((prev) => ({ ...prev, enabled: e.target.checked }))}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
+          <ToggleField
+            checked={settings.enabled}
+            onChange={enabled => update({ enabled })}
+            label="Enable image generation"
+            hint={'When off, the avatar "Generate" tab is unavailable.'}
+          />
 
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Enable vision input</span>
-              <span className="setting-hint">
-                Let you attach images to a message so a vision-capable model can see them. When
-                off, the composer's attach button is hidden.
-              </span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={settings.visionEnabled}
-                onChange={(e) => setSettings((prev) => ({ ...prev, visionEnabled: e.target.checked }))}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
+          <ToggleField
+            checked={settings.visionEnabled}
+            onChange={visionEnabled => update({ visionEnabled })}
+            label="Enable vision input"
+            hint="Let you attach images to a message so a vision-capable model can see them. When off, the composer's attach button is hidden."
+          />
 
           <div className="setting-row">
             <ModelPickerField
               label="Image model"
               value={settings.default_model}
-              onChange={(modelId) => setSettings((prev) => ({ ...prev, default_model: modelId }))}
+              onChange={default_model => update({ default_model })}
             />
           </div>
 
-          <div className="setting-row">
-            <label className="setting-label">
-              <span>Avatar style prompt</span>
-              <span className="setting-hint">
-                The app-wide look. The per-agent subject ("a gray-haired strategist…") is added
-                when you generate.
-              </span>
-            </label>
-            <textarea
-              className="form-input"
-              rows={3}
-              value={settings.avatar_style_prompt}
-              onChange={(e) => setSettings((prev) => ({ ...prev, avatar_style_prompt: e.target.value }))}
-              placeholder={FALLBACK.avatar_style_prompt}
-            />
-          </div>
-
-          <div className="setting-actions">
-            <Button variant="primary" onClick={handleSave} loading={saving}>
-              <Save size={16} />
-              {saving ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </div>
+          <PromptField
+            label="Avatar style prompt"
+            value={settings.avatar_style_prompt}
+            onChange={avatar_style_prompt => update({ avatar_style_prompt })}
+            onReset={() => update({ avatar_style_prompt: FALLBACK.avatar_style_prompt })}
+            placeholder={FALLBACK.avatar_style_prompt}
+            rows={3}
+            defaultText={FALLBACK.avatar_style_prompt}
+          />
+          <span className="setting-hint">
+            The app-wide look. The per-agent subject ("a gray-haired strategist…") is added
+            when you generate.
+          </span>
         </div>
       )}
     </div>

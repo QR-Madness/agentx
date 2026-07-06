@@ -12,6 +12,7 @@ import { useNotify } from '../../../contexts/NotificationContext';
 import { api, ConfigUpdate } from '../../../lib/api';
 import { Button, Card, Badge, SectionHeader, Input } from '../../ui';
 import type { BadgeProps } from '../../ui';
+import { useConfirm } from '../../ui/ConfirmDialog';
 import anthropicIcon from '../../../assets/providers/anthropic-dark.svg';
 import openaiIcon from '../../../assets/providers/openai-light.svg';
 import openrouterIcon from '../../../assets/providers/open-router-dark.svg';
@@ -92,22 +93,33 @@ const EMPTY_SETTINGS: ProviderSettings = {
 export default function ProvidersSection() {
   const { activeServer, activeMetadata, updateMetadata } = useServer();
   const { notifyError, notifySuccess } = useNotify();
+  const confirm = useConfirm();
 
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>(EMPTY_SETTINGS);
   const [savingConfig, setSavingConfig] = useState(false);
+  // Last-loaded (or last-saved) state — the dirty-check baseline for the
+  // explicit Save button (secrets stay on explicit save, never autosave).
+  const [baseline, setBaseline] = useState<ProviderSettings | null>(null);
 
   useEffect(() => {
-    if (activeMetadata?.apiKeys) {
-      setProviderSettings({
-        lmstudio: activeMetadata.apiKeys.lmstudio || '',
-        anthropic: activeMetadata.apiKeys.anthropic || '',
-        openai: activeMetadata.apiKeys.openai || '',
-        openrouter: activeMetadata.apiKeys.openrouter || '',
-        vercel: activeMetadata.apiKeys.vercel || '',
-      });
-    }
+    if (!activeMetadata) return;
+    const loaded: ProviderSettings = {
+      lmstudio: activeMetadata.apiKeys?.lmstudio || '',
+      anthropic: activeMetadata.apiKeys?.anthropic || '',
+      openai: activeMetadata.apiKeys?.openai || '',
+      openrouter: activeMetadata.apiKeys?.openrouter || '',
+      vercel: activeMetadata.apiKeys?.vercel || '',
+    };
+    if (activeMetadata.apiKeys) setProviderSettings(loaded);
+    // Capture the baseline once per session (server switches hard-reload the
+    // app); every later metadata change is a local edit, not a load.
+    setBaseline(prev => prev ?? loaded);
   }, [activeMetadata]);
+
+  const dirty = PROVIDERS.some(
+    p => providerSettings[p.key] !== (baseline ?? EMPTY_SETTINGS)[p.key]
+  );
 
   const toggleApiKeyVisibility = (provider: string) => {
     setShowApiKeys(prev => ({ ...prev, [provider]: !prev[provider] }));
@@ -124,9 +136,11 @@ export default function ProvidersSection() {
   };
 
   const handleSaveProviderSettings = async () => {
-    const confirmed = window.confirm(
-      'Saving will update server configuration and may affect running models. Continue?'
-    );
+    const confirmed = await confirm({
+      title: 'Save provider settings?',
+      body: 'Saving will update server configuration and may affect running models.',
+      confirmLabel: 'Save to Server',
+    });
     if (!confirmed) return;
 
     setSavingConfig(true);
@@ -142,6 +156,7 @@ export default function ProvidersSection() {
       };
 
       await api.updateConfig(config);
+      setBaseline({ ...providerSettings });
       notifySuccess('Settings saved and applied to server', 'Providers');
     } catch (error) {
       notifyError(error, 'Failed to save provider settings');
@@ -157,10 +172,18 @@ export default function ProvidersSection() {
         title="Model Providers"
         description="Configure API keys and URLs for AI model providers"
         actions={
-          <Button variant="primary" onClick={handleSaveProviderSettings} loading={savingConfig}>
-            <Upload size={16} />
-            Save to Server
-          </Button>
+          <>
+            {dirty && <span className="text-warning text-xs">Unsaved changes</span>}
+            <Button
+              variant="primary"
+              onClick={handleSaveProviderSettings}
+              loading={savingConfig}
+              disabled={!dirty || savingConfig}
+            >
+              <Upload size={16} />
+              Save to Server
+            </Button>
+          </>
         }
       />
 

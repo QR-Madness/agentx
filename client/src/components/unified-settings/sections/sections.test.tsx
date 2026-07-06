@@ -42,6 +42,12 @@ vi.mock('../../common/modelCatalog', () => ({
   fetchModelsOnce: vi.fn().mockResolvedValue([]),
 }));
 
+// ProvidersSection replaced window.confirm with the app dialog; stub the hook
+// so the section renders without a ConfirmProvider at the root.
+vi.mock('../../ui/ConfirmDialog', () => ({
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
+
 import ProvidersSection from './ProvidersSection';
 import ModelsSection from './ModelsSection';
 
@@ -55,8 +61,12 @@ describe('ProvidersSection', () => {
     // Tinted badge pills survived the primitive swap.
     expect(screen.getByText('High-Reasoning')).toBeInTheDocument();
     expect(screen.getByText('Cloud Router')).toBeInTheDocument();
-    // Save button is a real <button> via the Button primitive.
-    expect(screen.getByRole('button', { name: /save to server/i })).toBeInTheDocument();
+    // Save button is a real <button> via the Button primitive, and starts
+    // disabled because the form matches the last-loaded state (not dirty).
+    const save = screen.getByRole('button', { name: /save to server/i });
+    expect(save).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
   });
 });
 
@@ -66,8 +76,11 @@ describe('ModelsSection', () => {
     expect(screen.getByText('Default Model')).toBeInTheDocument();
     expect(screen.getByText('Global default model')).toBeInTheDocument();
     expect(screen.getByText('Model Context Limits')).toBeInTheDocument();
-    // getContextLimits resolves → the limits card appears.
+    // getContextLimits resolves → the limits card appears with kit NumberFields.
     expect(await screen.findByText('Local')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save limits/i })).toBeInTheDocument();
+    expect(screen.getByText('Context Window (tokens)')).toBeInTheDocument();
+    expect(screen.getByText('Max Output Tokens')).toBeInTheDocument();
+    // The explicit Save button is gone — limits autosave (SaveStatusChip).
+    expect(screen.queryByRole('button', { name: /save limits/i })).toBeNull();
   });
 });

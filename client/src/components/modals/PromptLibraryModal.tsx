@@ -33,6 +33,7 @@ import {
   type TemplateType,
   type PromptTemplateCreate,
 } from '../../lib/api';
+import { useConfirm } from '../ui/ConfirmDialog';
 import './PromptLibraryModal.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ export function PromptLibraryModal({
   variant = 'modal',
 }: PromptLibraryModalProps) {
   const { allTemplates, allTags, loading, error: dataError, refresh } = usePromptLibraryData();
+  const confirm = useConfirm();
 
   // Layout
   const rootRef = useRef<HTMLDivElement>(null);
@@ -322,7 +324,13 @@ export function PromptLibraryModal({
 
   const handleDelete = async () => {
     if (!selectedTemplate || selectedTemplate.isBuiltin) return;
-    if (!window.confirm(`Delete "${selectedTemplate.name}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${selectedTemplate.name}"?`,
+      body: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setDeleting(true);
     setFormError(null);
     try {

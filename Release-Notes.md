@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.157 -->
+<!-- release-version: 0.21.158 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -26,7 +26,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   conversations with scoped memory.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
-- **Hardened self-hosting**: token gateway in the bundle; no-env boots default safe.
+- **Hardened self-hosting**: token gateway; no-env boots default safe.
 - **Memory brain upgrade**: windowed extraction (cross-turn links, provenance), an
   `eval_recall` harness, and **two-stage recall** (cross-encoder rerank, +20pp MRR).
 - **Reasoning models think out loud** on all OpenAI-compatible providers.
@@ -42,15 +42,14 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Boots**: warm starts 2+ min → seconds; first-boot hang fixed.
 - **Big documents ingest reliably**, with real failure reasons + Retry.
 - **Token-limit cutoffs auto-continue**; compression retries down the fallback chain.
-- **Memory settings apply live** — no restart needed; corrupt settings files are
-  surfaced, invalid values rejected per key.
+- **Memory settings apply live**; corrupt files surfaced, bad values rejected per key.
+- **Settings autosave** — sections save as you edit; API keys keep explicit Save.
 - **Bundle dashboard**: stopped = *down*; manager out of gauges.
 
 ### Migration notes (self-hosters)
 
-- Missing `DJANGO_DEBUG`/`AGENTX_AUTH_ENABLED` → safe defaults (set explicitly to keep
-  old behavior); gateway clusters set `AGENTX_TRUST_PROXY=true`; repo clusters run
-  `task cluster:adopt` once.
+- Missing `DJANGO_DEBUG`/`AGENTX_AUTH_ENABLED` → safe defaults; gateway clusters set
+  `AGENTX_TRUST_PROXY=true`; repo clusters run `task cluster:adopt` once.
 
 ### Getting started
 
