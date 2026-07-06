@@ -195,8 +195,21 @@ def _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail):
     from .agent.context_ledger import LedgerBlock
 
     if workspace_id:
-        # Instructions outrank the manifest (88 > 85): under budget pressure the
-        # user's standing guidance survives longer than the file catalog.
+        # Identity outranks instructions outranks the manifest (90 > 88 > 85).
+        # Identity is ALWAYS emitted (even for an empty project) — without it the
+        # model is never told it's in a project and reaches for external
+        # filesystem tools when asked to add a file.
+        try:
+            from .kit.workspaces.retrieval import render_project_identity_block
+            identity_block = render_project_identity_block(workspace_id)
+            if identity_block:
+                blocks.append(LedgerBlock(
+                    key="project_identity", priority=90, content=identity_block,
+                    shrink_fn=shrink_tail,
+                ))
+        except Exception as pi_err:  # noqa: BLE001 — awareness is best-effort
+            logger.debug(f"Project identity injection skipped: {pi_err}")
+
         try:
             from .kit.workspaces.retrieval import render_instructions_block
             instructions_block = render_instructions_block(workspace_id)

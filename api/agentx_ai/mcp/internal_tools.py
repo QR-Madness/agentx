@@ -44,7 +44,8 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "tool_output_path",
     "read_user_message",
     "recall_user_history",
-    "workspace_search",
+    "project_search",
+    "workspace_search",  # legacy alias of project_search (pre-Projects rename)
     "document_query",
     "read_document",
 })
@@ -591,10 +592,13 @@ def checkpoint(
 
 
 # --- File Workspaces & Document RAG (todo/backlog/workspaces.md) -------------
-# Two-tier retrieval over the conversation's attached workspace: workspace_search
+# Two-tier retrieval over the conversation's attached project: project_search
 # (catalog → which file) then document_query (semantic → which passage), with
-# read_document for full paginated text. All scope to the active workspace_id from
-# the per-turn internal context; no workspace attached → a clear, non-fatal error.
+# read_document for full paginated text, and create_document/update_document for
+# durable writes. All scope to the active workspace_id from the per-turn internal
+# context; no project attached → a clear, non-fatal error.
+# NOTE: project_search was `workspace_search` before the Projects rename —
+# _TOOL_ALIASES keeps old conversations/procedural records executable.
 
 def _active_workspace_id() -> str | None:
     from .internal_context import current_context
@@ -604,7 +608,7 @@ def _active_workspace_id() -> str | None:
 
 
 @register_tool(
-    name="workspace_search",
+    name="project_search",
     description=(
         "Search the attached project's documents by filename, tag, or topic "
         "(catalog search). Use this FIRST to find which file is relevant, then "
@@ -620,12 +624,12 @@ def _active_workspace_id() -> str | None:
         "required": ["query"],
     },
 )
-def workspace_search(query: str, limit: int = 10) -> dict[str, Any]:
+def project_search(query: str, limit: int = 10) -> dict[str, Any]:
     from ..kit.workspaces import retrieval
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
+        return {"error": "This conversation is not in a project — ask the user to attach or create one in the Projects hub.", "success": False}
     results = retrieval.search_manifest(workspace_id, query, limit=limit)
     return {"results": results, "count": len(results), "success": True}
 
@@ -652,7 +656,7 @@ def document_query(query: str, top_k: int = 5) -> dict[str, Any]:
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
+        return {"error": "This conversation is not in a project — ask the user to attach or create one in the Projects hub.", "success": False}
     results = retrieval.query_chunks(workspace_id, query, top_k=top_k)
     return {"results": results, "count": len(results), "success": True}
 
@@ -661,7 +665,7 @@ def document_query(query: str, top_k: int = 5) -> dict[str, Any]:
     name="read_document",
     description=(
         "Read a document's full text (paginated), scoped to the attached project. "
-        "Use after `workspace_search`/`document_query` to read more context around a "
+        "Use after `project_search`/`document_query` to read more context around a "
         "hit. Returns a slice with has_more/total_chars for further pagination."
     ),
     input_schema={
@@ -679,11 +683,115 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
 
     workspace_id = _active_workspace_id()
     if not workspace_id:
-        return {"error": "This conversation is not in a project (no workspace attached).", "success": False}
+        return {"error": "This conversation is not in a project — ask the user to attach or create one in the Projects hub.", "success": False}
     doc = retrieval.read_document(document_id, offset=offset, limit=limit, workspace_id=workspace_id)
     if doc is None:
-        return {"error": f"Document {document_id} not found in this workspace.", "success": False}
+        return {"error": f"Document {document_id} not found in this project.", "success": False}
     return {**doc, "success": True}
+
+
+@register_tool(
+    name="create_document",
+    description=(
+        "Create a durable document in the attached project. This is the RIGHT way to "
+        "produce a lasting file (notes, plans, reports, drafts, living reference docs): "
+        "it appears in the user's Projects hub, survives this conversation, and becomes "
+        "searchable via `project_search`/`document_query` after a brief indexing pass. "
+        "Markdown (`.md`) is preferred; `.txt` also works. Fails if the filename already "
+        "exists — use `update_document` to change an existing file. Do NOT use shell "
+        "`write_file` or external filesystem tools for project documents: those files "
+        "are temporary and never become part of the project."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "filename": {
+                "type": "string",
+                "description": "Name for the new document, e.g. `notes.md` (optionally one folder level: `research/notes.md`). Allowed types: md, markdown, txt.",
+            },
+            "content": {"type": "string", "description": "The document's full content."},
+        },
+        "required": ["filename", "content"],
+    },
+)
+def create_document_tool(filename: str, content: str) -> dict[str, Any]:
+    from ..kit.workspaces.service import WorkspaceError, create_text_document
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub if they want a durable file.",
+            "success": False,
+        }
+    try:
+        doc = create_text_document(
+            workspace_id=workspace_id, filename=filename, content=content
+        )
+    except WorkspaceError as e:
+        out: dict[str, Any] = {"error": e.message, "success": False}
+        if e.document_id:
+            out["existing_document_id"] = e.document_id
+        return out
+    return {
+        "success": True,
+        "document": {
+            "id": doc["id"],
+            "filename": doc["filename"],
+            "status": doc["status"],
+            "size_bytes": doc["size_bytes"],
+        },
+        "note": "Indexing in the background — it will show as ready in the project shortly.",
+    }
+
+
+@register_tool(
+    name="update_document",
+    description=(
+        "Replace the full content of an existing project document (get its `document_id` "
+        "from the project file list or `project_search`). Read it first with "
+        "`read_document` if you don't have the current content — this replaces the WHOLE "
+        "file. Use this to keep living documents (notes, plans, memory files) current as "
+        "the work evolves. The document is re-indexed automatically."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {
+                "type": "string",
+                "description": "The document's id (from the project file list or a search result).",
+            },
+            "content": {"type": "string", "description": "The new full content of the document."},
+        },
+        "required": ["document_id", "content"],
+    },
+)
+def update_document_tool(document_id: str, content: str) -> dict[str, Any]:
+    from ..kit.workspaces.service import WorkspaceError, update_text_document
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub if they want a durable file.",
+            "success": False,
+        }
+    try:
+        doc = update_text_document(
+            workspace_id=workspace_id, document_id=document_id, content=content
+        )
+    except WorkspaceError as e:
+        return {"error": e.message, "success": False}
+    return {
+        "success": True,
+        "document": {
+            "id": doc["id"],
+            "filename": doc["filename"],
+            "status": doc["status"],
+            "size_bytes": doc["size_bytes"],
+        },
+        "note": "Re-indexing in the background.",
+    }
 
 
 @register_tool(
@@ -691,7 +799,7 @@ def read_document(document_id: str, offset: int = 0, limit: int = 12000) -> dict
     description=(
         "Look at an image — load it into your vision so you can actually see and describe it. "
         "Use this for image files in the attached project (e.g. a `.png`/`.jpg` from "
-        "`workspace_search`/`list_files`) or an image generated earlier in this conversation. "
+        "`project_search`/`list_files`) or an image generated earlier in this conversation. "
         "`read_document` only returns text, so use THIS to view a picture. After viewing, the "
         "image appears in the conversation and you can describe or reason about what it shows."
     ),
@@ -851,11 +959,12 @@ def _shell_guard() -> tuple[str | None, str | None, dict[str, Any] | None]:
 @register_tool(
     name="run_command",
     description=(
-        "Run a shell command in the attached project (a sandboxed working copy of its "
-        "files). It runs in this workspace's shell backend — a locked-down bubblewrap jail "
-        "(no network) or a persistent container (installs + network), per the workspace's "
-        "setting. Use for inspecting/transforming files (ls, grep, sed, python3, etc.). "
-        "Returns stdout, stderr, and exit_code."
+        "Run a shell command in the attached project (a sandboxed, TEMPORARY working copy "
+        "of its files). It runs in the project's shell backend — a locked-down bubblewrap "
+        "jail (no network) or a persistent container (installs + network), per the "
+        "project's setting. Use for inspecting/transforming files (ls, grep, sed, python3, "
+        "etc.). Files created here are NOT project documents — use `create_document` for "
+        "durable files. Returns stdout, stderr, and exit_code."
     ),
     input_schema={
         "type": "object",
@@ -905,13 +1014,15 @@ def run_command(command: str, timeout: int | None = None) -> dict[str, Any]:
 @register_tool(
     name="write_file",
     description=(
-        "Create or overwrite a text file in the attached project's working copy (path is "
-        "relative to the workspace root; no escaping it). Safer/more reliable than echo/heredoc."
+        "Create or overwrite a text file in the attached project's shell working copy — a "
+        "TEMPORARY sandbox (files here are NOT project documents and are eventually "
+        "cleaned up; use `create_document` for durable project files). Safer/more "
+        "reliable than echo/heredoc for scratch work the shell will process."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Relative path within the workspace."},
+            "path": {"type": "string", "description": "Relative path within the shell working directory."},
             "content": {"type": "string", "description": "File contents (UTF-8 text)."},
         },
         "required": ["path", "content"],
@@ -929,11 +1040,11 @@ def write_file(path: str, content: str) -> dict[str, Any]:
 
 @register_tool(
     name="read_file",
-    description="Read a text file from the attached project's working copy (relative path).",
+    description="Read a text file from the attached project's shell working copy (relative path).",
     input_schema={
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Relative path within the workspace."},
+            "path": {"type": "string", "description": "Relative path within the shell working directory."},
             "offset": {"type": "integer", "description": "Start character (default 0).", "default": 0},
             "limit": {"type": "integer", "description": "Max characters (default 12000).", "default": 12000},
         },
@@ -952,7 +1063,7 @@ def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict[str, Any]:
 
 @register_tool(
     name="list_files",
-    description="List files in the attached project's working copy (relative paths).",
+    description="List files in the attached project's shell working copy (relative paths; temporary sandbox, not the project's document list — that is in the Project files block or `project_search`).",
     input_schema={"type": "object", "properties": {}},
 )
 def list_files() -> dict[str, Any]:
@@ -2143,6 +2254,7 @@ def get_internal_tools() -> list[ToolInfo]:
     """
     backend = resolve_active_search_backend()
     shell_on = _shell_allowed()
+    doc_write_on = _document_write_tools_enabled()
     tools: list[ToolInfo] = []
     for tool in _INTERNAL_TOOLS.values():
         if tool.name in _CAPABILITY_GATED_TOOLS and backend != "tavily":
@@ -2151,11 +2263,24 @@ def get_internal_tools() -> list[ToolInfo]:
             continue
         if tool.name in _SHELL_TOOL_NAMES and not shell_on:
             continue  # agent shells are opt-in per-workspace (workspace.allow_shell)
+        if tool.name in _DOCUMENT_WRITE_TOOL_NAMES and not doc_write_on:
+            continue  # default-on, config opt-out (workspace_agent_write_tools)
         tools.append(_advertise_tool(tool, backend))
     return tools
 
 
 _SHELL_TOOL_NAMES: frozenset[str] = frozenset({"run_command", "write_file", "read_file", "list_files"})
+_DOCUMENT_WRITE_TOOL_NAMES: frozenset[str] = frozenset({"create_document", "update_document"})
+
+
+def _document_write_tools_enabled() -> bool:
+    """Project document write tools are ON by default; settings opt-out."""
+    try:
+        from ..kit.agent_memory.config import get_settings
+
+        return bool(get_settings().workspace_agent_write_tools)
+    except Exception:  # pragma: no cover - defensive
+        return True
 
 
 def _shell_allowed() -> bool:
@@ -2170,6 +2295,23 @@ def _shell_allowed() -> bool:
     return bool(ws and ws.get("allow_shell"))
 
 
+# Legacy → current tool names. Old conversations, procedural-memory records, and
+# per-profile tool lists may still say `workspace_search` (pre-Projects rename);
+# they must keep resolving/executing.
+_TOOL_ALIASES: dict[str, str] = {"workspace_search": "project_search"}
+
+
+def resolve_tool_name(name: str) -> str:
+    """Map a (possibly legacy) tool name to its current registered name."""
+    return _TOOL_ALIASES.get(name, name)
+
+
+def legacy_names_for(name: str) -> list[str]:
+    """Reverse alias lookup: the legacy names that map to ``name`` (for
+    name-keyed filters like per-profile allow/block lists)."""
+    return [old for old, new in _TOOL_ALIASES.items() if new == name]
+
+
 def find_internal_tool(name: str) -> ToolInfo | None:
     """
     Find an internal tool by name.
@@ -2180,7 +2322,7 @@ def find_internal_tool(name: str) -> ToolInfo | None:
     Returns:
         ToolInfo if found, None otherwise
     """
-    tool = _INTERNAL_TOOLS.get(name)
+    tool = _INTERNAL_TOOLS.get(resolve_tool_name(name))
     if tool:
         return ToolInfo(
             name=tool.name,
@@ -2202,7 +2344,7 @@ def execute_internal_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
     Returns:
         ToolResult with execution results
     """
-    tool = _INTERNAL_TOOLS.get(name)
+    tool = _INTERNAL_TOOLS.get(resolve_tool_name(name))
     if not tool:
         return ToolResult(
             success=False,
@@ -2243,5 +2385,5 @@ def execute_internal_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
 
 
 def is_internal_tool(name: str) -> bool:
-    """Check if a tool name is an internal tool."""
-    return name in _INTERNAL_TOOLS
+    """Check if a tool name is an internal tool (legacy aliases included)."""
+    return resolve_tool_name(name) in _INTERNAL_TOOLS

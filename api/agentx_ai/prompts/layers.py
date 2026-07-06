@@ -89,6 +89,31 @@ BUILTIN_LAYERS: list[PromptLayer] = [
             "or your memory tools to commit it to long-term memory."
         ),
     ),
+    PromptLayer(
+        id="project-collaboration",
+        title="Projects",
+        kind="builtin",
+        default_version=1,
+        order=25,
+        default=(
+            "Projects:\n"
+            "- A conversation may belong to a **project** — a durable, named container "
+            "of documents the user curates. When one is attached you'll see a project "
+            "block in your context with its name, instructions, and file list.\n"
+            "- Project tools: `project_search` (find a file by name/tag), "
+            "`document_query` (find a passage by meaning), `read_document` (read), "
+            "`view_image` (see an image), and `create_document`/`update_document` "
+            "(write durable markdown/text files).\n"
+            "- When the user asks for something lasting — notes, a plan, a report, a "
+            "living reference or memory file — create it as a project document with "
+            "`create_document`, and keep it current with `update_document` as the work "
+            "evolves.\n"
+            "- Prefer these native project tools over shell files or external "
+            "filesystem tools: shell files are temporary, and external filesystems are "
+            "not part of the project. If no project is attached and the user wants a "
+            "durable file, say so — they can attach or create one in the Projects hub."
+        ),
+    ),
     # The default "General" profile's sections, folded in so the stack is the
     # complete picture of the default chat system prompt (text mirrors the
     # SECTION_* defaults in defaults.py). Other profiles' sections are not
