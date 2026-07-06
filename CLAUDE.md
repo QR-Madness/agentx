@@ -138,7 +138,8 @@ All commands use [Task](https://taskfile.dev/) (`Taskfile.yml`). Run `task --lis
 ```bash
 # Setup & dev
 task setup              # First-time: install deps, init DB dirs, verify env
-task dev                # Start Docker + API + Client concurrently (full stack)
+task dev                # Start Docker + API + Client concurrently (alias: d)
+task dev:down           # Stop it all: reap dev processes + stop DBs (alias: dd)
 task dev:api            # API only (assumes Docker running)
 task dev:client         # Tauri client only (assumes API running)
 task dev:web            # Client in browser mode (port 1420, no Tauri)

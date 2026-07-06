@@ -94,6 +94,7 @@ tasks:
 
   dev:
     desc: "Start full dev environment (API + Client + memory worker) against running DBs"
+    aliases: [d]
     # Hot runner: ensures the DBs are up-and-healthy (db:up --wait) then runs the
     # processes. It deliberately does NOT migrate or tear anything down — schema
     # is a localized concern (`task db:migrate`), and the DBs persist across dev
@@ -161,6 +162,14 @@ tasks:
           fi
         done
         echo "✓ dev reaped; ports 12319/1420/1421 clear"
+
+  dev:down:
+    desc: "Stop the dev stack: reap API/client/worker processes, then stop the DB containers"
+    aliases: [dd]
+    cmds:
+      - task: dev:kill
+      - task: dev:kill:windows
+      - task: db:down
 
   dev:kill:windows:
     desc: "Windows: reap straggler dev processes + free ports 12319/1420/1421 (prefer WSL2)"
@@ -1167,11 +1176,6 @@ tasks:
     desc: "Shortcut: task setup"
     cmds:
       - task: setup
-
-  d:
-    desc: "Shortcut: task dev"
-    cmds:
-      - task: dev
 
   t:
     desc: "Shortcut: task test"
