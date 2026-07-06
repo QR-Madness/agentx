@@ -364,6 +364,34 @@ class MCPOAuthTest(TestCase):
     async def _await_future(fut):
         return await fut
 
+    def test_superseded_flow_failure_spares_the_retry(self) -> None:
+        # Live-run regression: retry #1 (slow) dies AFTER retry #2 published its
+        # consent URL — its failure must not pop/cancel/error-mark #2's flow.
+        import asyncio
+        import threading
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow1 = oauth_flow.begin_flow("race", loop)
+            flow2 = oauth_flow.begin_flow("race", loop)  # supersedes flow1
+            oauth_flow.publish_authorization_url(flow2, "https://a/authorize?state=live")
+            oauth_flow.fail_flow(flow1, "generator didn't yield")  # death rattle
+
+            self.assertIs(oauth_flow.get_flow("race"), flow2)  # still registered
+            self.assertIsNone(oauth_flow.last_error("race"))   # no sticky error
+            resolved = oauth_flow.resolve_callback("live", "code")  # consent still lands
+            self.assertIs(resolved, flow2)
+            # A CURRENT flow failing (no retry pending) does record the error.
+            flow3 = oauth_flow.begin_flow("race", loop)
+            oauth_flow.fail_flow(flow3, "boom")
+            self.assertEqual(oauth_flow.last_error("race"), "boom")
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
     def test_flow_failure_records_last_error(self) -> None:
         import asyncio
         import threading

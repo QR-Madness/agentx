@@ -345,7 +345,7 @@ class MCPClientManager:
         def _on_done(fut) -> None:
             try:
                 fut.result()
-                oauth_flow.finish_flow(name)
+                oauth_flow.finish_flow(flow)
                 # Mirror the connect endpoint's auto_connect persistence for
                 # connections that complete after the interactive round-trip.
                 try:
@@ -356,8 +356,11 @@ class MCPClientManager:
                 except Exception as persist_err:  # noqa: BLE001 - best-effort
                     logger.warning(f"Could not persist auto_connect for '{name}': {persist_err}")
             except Exception as e:  # noqa: BLE001 - background terminal state
+                # A superseded attempt (future cancelled by a retry's begin_flow)
+                # dies late — fail_flow is identity-guarded so it never disturbs
+                # the newer pending flow.
                 logger.warning(f"OAuth connect for '{name}' failed: {e}")
-                oauth_flow.fail_flow(name, str(e))
+                oauth_flow.fail_flow(flow, str(e))
 
         task_future.add_done_callback(_on_done)
 

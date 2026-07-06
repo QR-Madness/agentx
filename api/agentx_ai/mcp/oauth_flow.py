@@ -105,7 +105,7 @@ def resolve_callback(state: str, code: str) -> PendingFlow | None:
     with _LOCK:
         _prune_locked()
         flow = _BY_STATE.pop(state, None)
-        if flow is not None:
+        if flow is not None and _BY_SERVER.get(flow.server_name) is flow:
             _BY_SERVER.pop(flow.server_name, None)
     if flow is None:
         return None
@@ -122,7 +122,7 @@ def fail_by_state(state: str, error: str) -> PendingFlow | None:
     """Fail the flow for a callback that carries `error` (e.g. denied consent)."""
     with _LOCK:
         flow = _BY_STATE.pop(state, None)
-        if flow is not None:
+        if flow is not None and _BY_SERVER.get(flow.server_name) is flow:
             _BY_SERVER.pop(flow.server_name, None)
     if flow is not None:
         flow.error = error
@@ -132,16 +132,26 @@ def fail_by_state(state: str, error: str) -> PendingFlow | None:
     return flow
 
 
-def fail_flow(server_name: str, error: str) -> None:
-    """Mark a server's pending flow failed (denied consent / connect error)."""
+def fail_flow(flow: PendingFlow, error: str) -> None:
+    """Mark ONE flow failed (denied consent / connect error).
+
+    Identity-guarded: a superseded attempt failing late (its future was
+    cancelled by a newer ``begin_flow``) must not pop, cancel, or error-mark
+    the newer flow registered under the same server name — keying by name
+    alone caused exactly that cascade in the first live run (retry #2's
+    pending consent killed by retry #1's death rattle).
+    """
+    flow.error = error
     with _LOCK:
-        flow = _BY_SERVER.pop(server_name, None)
-        if flow is not None and flow.state:
+        is_current = _BY_SERVER.get(flow.server_name) is flow
+        if is_current:
+            _BY_SERVER.pop(flow.server_name, None)
+        if flow.state and _BY_STATE.get(flow.state) is flow:
             _BY_STATE.pop(flow.state, None)
-        _LAST_ERROR[server_name] = error
-    if flow is not None:
-        flow.error = error
-        flow.loop.call_soon_threadsafe(_cancel_future, flow.future)
+        superseded = (not is_current) and flow.server_name in _BY_SERVER
+        if not superseded:  # don't clobber a live retry's clean slate
+            _LAST_ERROR[flow.server_name] = error
+    flow.loop.call_soon_threadsafe(_cancel_future, flow.future)
 
 
 def last_error(server_name: str) -> str | None:
@@ -155,9 +165,10 @@ def get_flow(server_name: str) -> PendingFlow | None:
         return _BY_SERVER.get(server_name)
 
 
-def finish_flow(server_name: str) -> None:
-    """Drop bookkeeping after a connect attempt settles (success or failure)."""
+def finish_flow(flow: PendingFlow) -> None:
+    """Drop ONE flow's bookkeeping after its connect settles (identity-guarded)."""
     with _LOCK:
-        flow = _BY_SERVER.pop(server_name, None)
-        if flow is not None and flow.state:
+        if _BY_SERVER.get(flow.server_name) is flow:
+            _BY_SERVER.pop(flow.server_name, None)
+        if flow.state and _BY_STATE.get(flow.state) is flow:
             _BY_STATE.pop(flow.state, None)
