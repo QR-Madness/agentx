@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.155 -->
+<!-- release-version: 0.21.156 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,15 +21,14 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
-- **Three new themes** — Ugentx, Tango, Blackhawk join Cosmic/Light/Professional.
-- **Workspaces grew into Projects**: files + per-project **instructions** + conversations,
-  each with its own scoped memory.
-- **Deployment manager, on by default in the bundle** — web dashboard + CLI; zero-config
-  first Start (secrets auto-generate).
+- **Three new themes** — Ugentx, Tango, Blackhawk.
+- **Workspaces grew into Projects**: files + per-project **instructions** +
+  conversations with scoped memory.
+- **Deployment manager, on by default in the bundle** — web dashboard + CLI;
+  zero-config first Start.
 - **Hardened self-hosting**: token gateway in the bundle; no-env boots default safe.
-- **Memory brain upgrade + measuring stick**: windowed extraction (one entity per topic,
-  cross-turn links, provenance), an `eval_recall` harness, and **two-stage recall** —
-  cross-encoder reranking over a wider candidate pool (+20pp MRR).
+- **Memory brain upgrade**: windowed extraction (cross-turn links, provenance), an
+  `eval_recall` harness, and **two-stage recall** (cross-encoder rerank, +20pp MRR).
 - **Reasoning models think out loud** on all OpenAI-compatible providers.
 
 ### Fixes
@@ -41,7 +40,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Boots**: warm starts 2+ min → seconds; first-boot hang fixed; `start-manager.bat`.
 - **Big documents ingest reliably**, with real failure reasons and a Retry button.
 - **Token-limit cutoffs auto-continue**; compression retries down the fallback chain.
-- **Bundle dashboard**: stopped = *down*, manager out of gauges, polling pauses in background.
+- **Memory settings apply live** — no restart needed; corrupt settings files are
+  surfaced, invalid values rejected per key.
+- **Bundle dashboard**: stopped = *down*, manager out of gauges, background polling pauses.
 
 ### Migration notes (self-hosters)
 

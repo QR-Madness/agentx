@@ -362,10 +362,10 @@ class Command(BaseCommand):
         )
 
     # -- model override ------------------------------------------------------
-    def _pin_model(self, model, full):
+    def _build_override(self, model, full):
+        """Build the run's pinned Settings — applied via ``pin_memory_settings``
+        (covers every live read: jobs, extraction service, recall) in handle()."""
         from agentx_ai.kit.agent_memory.config import get_settings
-        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
-        from agentx_ai.kit.agent_memory.consolidation import jobs
 
         update = {"combined_extraction_model": model}
         if full:
@@ -373,11 +373,7 @@ class Command(BaseCommand):
         else:
             update.update(correction_detection_enabled=False,
                           contradiction_detection_enabled=False)
-        override = get_settings().model_copy(update=update)
-        # Pin everywhere consolidation reads settings so the get_settings() TTL
-        # cache cannot revert the model mid-run.
-        jobs.settings = override
-        get_extraction_service()._settings = override
+        return get_settings().model_copy(update=update)
 
     # -- seeding -------------------------------------------------------------
     def _seed(self, cases):
@@ -652,12 +648,12 @@ class Command(BaseCommand):
                 raise CommandError(f"No cases match --only={opts['only']!r}")
 
         # Resolve the extraction model.
-        from agentx_ai.kit.agent_memory.config import get_settings
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
         model = opts["model"] or get_settings().combined_extraction_model
 
         # Validate the provider BEFORE touching data — a snapshot run must not
         # wipe the cluster and then bail because the model is unusable.
-        self._pin_model(model, opts["full"])
+        override = self._build_override(model, opts["full"])
         from agentx_ai.providers.registry import reset_registry, get_registry
         reset_registry()
         try:
@@ -696,9 +692,11 @@ class Command(BaseCommand):
 
         # Run the eval, then ALWAYS restore the snapshot (or clean up) — even if
         # seeding/consolidation/scoring raises — so a snapshot run can't leave the
-        # cluster wiped.
+        # cluster wiped. The pin unwinds with the block (it used to leak — an
+        # in-process call_command left the override applied forever).
         try:
-            self._run_eval(cases, model, opts)
+            with pin_memory_settings(override):
+                self._run_eval(cases, model, opts)
         finally:
             if snapshot_path:
                 self._restore_snapshot(snapshot_path)

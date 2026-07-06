@@ -251,13 +251,9 @@ class Command(BaseCommand):
     # -- per-arm run ---------------------------------------------------------------
     def _run_arm(self, arm, seeded, queries, ks, top_k, llm_model=None):
         """Score one arm; returns the arm result dict. Settings are pinned
-        process-locally (D1) and restored in ``finally`` — never written to disk."""
-        from agentx_ai.kit.agent_memory import embeddings as embeddings_mod
-        from agentx_ai.kit.agent_memory.config import get_settings
+        process-locally via ``pin_memory_settings`` — never written to disk."""
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
         from agentx_ai.kit.agent_memory.evals import recall_scoring as sc
-        from agentx_ai.kit.agent_memory.memory import episodic as episodic_mod
-        from agentx_ai.kit.agent_memory.memory import retrieval as retrieval_mod
-        from agentx_ai.kit.agent_memory.memory import semantic as semantic_mod
         from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
 
         max_k = max([*ks, top_k])
@@ -270,15 +266,9 @@ class Command(BaseCommand):
         self._reset_access_stats()
         mem = AgentMemory(user_id=EVAL_USER, conversation_id=str(uuid4()), channel=CHANNEL)
 
-        pinned_modules = (retrieval_mod, semantic_mod, episodic_mod, embeddings_mod)
-        saved = [m.settings for m in pinned_modules]
-        mem.recall_layer._settings = override
-        for m in pinned_modules:
-            m.settings = override
-
         cross_encoder_loaded = None
         rows = []
-        try:
+        with pin_memory_settings(override):
             # Un-timed warmup: embed cache, BM25 prep, lazy cross-encoder load.
             mem.remember("warmup probe", top_k=1, channels=[CHANNEL],
                          use_recall_layer=arm.use_recall_layer)
@@ -323,9 +313,6 @@ class Command(BaseCommand):
                 for k in ks:
                     row[f"recall@{k}"] = sc.recall_at_k(ranked, relevant, k)
                 rows.append(row)
-        finally:
-            for m, s in zip(pinned_modules, saved, strict=True):
-                m.settings = s
 
         result = {
             "name": arm.name, "status": "OK", "skip_reason": None,

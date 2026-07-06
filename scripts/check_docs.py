@@ -30,9 +30,10 @@ STRICT = "--strict" in sys.argv
 RN_BODY_LIMIT = 2048    # Release-Notes.md sets its own "~2 KB / one screen" target
 CLAUDE_MD_LIMIT = 20000  # the "light index" ceiling; ratchet DOWN as it slims, never up
 # Module-level `settings = get_settings()` snapshots in the memory kit never refresh at
-# runtime — every new one silently breaks the pinning discipline (CLAUDE.md "Hard-Won
-# Working Rules" #1; Development-Notes "Memory Settings & Eval Pinning"). Ratchet DOWN.
-SETTINGS_SNAPSHOT_LIMIT = 9
+# runtime. The kit was purged of them (settings overhaul S1) — reads are live and
+# temporary overrides go through pin_memory_settings() (CLAUDE.md "Hard-Won Working
+# Rules" #1; Development-Notes "Memory Settings & Eval Pinning"). Stays 0 forever.
+SETTINGS_SNAPSHOT_LIMIT = 0
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.*?)\s*#*$")
@@ -186,8 +187,8 @@ def check_settings_snapshots() -> None:
     if count > SETTINGS_SNAPSHOT_LIMIT:
         warnings.append(
             f"kit/agent_memory has {count} module-level `settings = get_settings()` snapshots "
-            f"(> {SETTINGS_SNAPSHOT_LIMIT}) — these never refresh and every eval/test pinning "
-            f"site must know about them; use live get_settings() reads instead "
+            f"(> {SETTINGS_SNAPSHOT_LIMIT}) — these never refresh and silently escape "
+            f"pin_memory_settings(); use live get_settings() reads instead "
             f"(CLAUDE.md Hard-Won Working Rules #1)"
         )
 

@@ -123,13 +123,12 @@ class Command(BaseCommand):
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-    def _pin_and_validate_model(self, model: str) -> None:
-        """Pin the model for ALL extraction stages (combined + correction +
-        contradiction) so one provider serves the run, and fail fast if it's
-        unusable — before any data is written."""
+    def _build_override_and_validate(self, model: str):
+        """Build the override pinning the model for ALL extraction stages
+        (combined + correction + contradiction) so one provider serves the run
+        — applied via ``pin_memory_settings`` in handle() — and fail fast if
+        it's unusable, before any data is written."""
         from agentx_ai.kit.agent_memory.config import get_settings
-        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
-        from agentx_ai.kit.agent_memory.consolidation import jobs
         from agentx_ai.providers.registry import reset_registry, get_registry
 
         override = get_settings().model_copy(update={
@@ -137,8 +136,6 @@ class Command(BaseCommand):
             "correction_model": model,
             "contradiction_model": model,
         })
-        jobs.settings = override
-        get_extraction_service()._settings = override
 
         reset_registry()
         try:
@@ -148,6 +145,7 @@ class Command(BaseCommand):
                 f"Extraction model {model!r} is not usable: {e}. Configure the provider "
                 "(e.g. set OPENROUTER_API_KEY / run LM Studio) or pass --model provider:model_id."
             ) from e
+        return override
 
     # ── agents / seeding ──────────────────────────────────────────────────────
     def _resolve_agents(self, names: str, needed: int):
@@ -212,21 +210,22 @@ class Command(BaseCommand):
         user_id = opts["user_id"] or f"debug-{uuid4().hex[:8]}"
         channel = "_default"
 
-        from agentx_ai.kit.agent_memory.config import get_settings
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
         model = opts["model"] or get_settings().combined_extraction_model
-        self._pin_and_validate_model(model)  # fail fast before touching data
+        override = self._build_override_and_validate(model)  # fail fast before touching data
 
         self.stdout.write(self.style.MIGRATE_HEADING(  # type: ignore[attr-defined]
             f"\ndebug_attribution — scenario={opts['scenario']} model={model} "
             f"agents={[a.name for a in agents]} user={user_id}\n"))
 
         try:
-            conv_id = self._seed(scenario, agents, user_id, channel)
-            from agentx_ai.kit.agent_memory.consolidation import jobs
-            # Scoped to just this conversation — the rest of the cluster is untouched.
-            asyncio.run(jobs.consolidate_episodic_to_semantic(only_conversation_id=conv_id))
+            with pin_memory_settings(override):
+                conv_id = self._seed(scenario, agents, user_id, channel)
+                from agentx_ai.kit.agent_memory.consolidation import jobs
+                # Scoped to just this conversation — the rest of the cluster is untouched.
+                asyncio.run(jobs.consolidate_episodic_to_semantic(only_conversation_id=conv_id))
 
-            report = self._build_report(scenario, agents, user_id, channel)
+                report = self._build_report(scenario, agents, user_id, channel)
             if opts["json"]:
                 self.stdout.write(json.dumps(report, indent=2))
             else:

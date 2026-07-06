@@ -35,11 +35,11 @@ Find the right doc before diving in — they're split deliberately so this file 
 
 Landmines that cost real debugging time — read before touching the memory kit:
 
-1. **Settings overrides:** never use `save_memory_settings()` for temporary/test overrides — it
-   writes `data/memory_settings.json` (a live dev server picks it up) and won't refresh the
-   import-time `settings = get_settings()` snapshots held by ~9 memory-kit modules anyway. Pin
-   process-locally and restore in `finally` — canonical examples:
-   `eval_consolidation._pin_model`, `eval_recall._run_arm`. Details in Development-Notes.
+1. **Settings overrides:** the memory kit reads settings **live** via `get_settings()`
+   (zero module-level snapshots — `task docs:check` ratchets the count at 0; never add one).
+   Temporary/test/eval overrides use ONE mechanism: `with pin_memory_settings(override):`
+   (kit `config.py`) — never `save_memory_settings()`, which writes
+   `data/memory_settings.json` for a live dev server to pick up. Details in Development-Notes.
 2. **Two extraction paths:** windowed (default) + legacy per-turn behind
    `extraction_windowing_enabled` — behavior changes must edit both or gate on the flag.
 3. **Eval harnesses:** `eval_consolidation` is GLOBAL (needs a sterile cluster or `--snapshot`;

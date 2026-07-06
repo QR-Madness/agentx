@@ -8,13 +8,10 @@ from typing import LiteralString
 
 from ..models import Turn
 from ..connections import Neo4jConnection, get_postgres_session
-from ..config import get_settings
 from ..query_utils import CypherFilterBuilder, convert_record_datetimes
 
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
-
-settings = get_settings()
 
 
 class EpisodicMemory:

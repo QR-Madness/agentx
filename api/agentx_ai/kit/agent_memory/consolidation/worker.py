@@ -25,8 +25,6 @@ from .jobs import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
-
 
 class ConsolidationWorker:
     """Background worker that runs memory consolidation jobs."""
@@ -34,13 +32,15 @@ class ConsolidationWorker:
     def __init__(self):
         self.redis = RedisConnection.get_client()
         self.running = True
-        self._audit_logger = MemoryAuditLogger(settings)
+        self._audit_logger = MemoryAuditLogger()
         self.worker_id = str(uuid4())[:8]
         self.started_at = datetime.now(UTC)
         self.jobs_run_count = 0
         self._last_heartbeat = datetime.now(UTC)
 
-        # Jobs with configurable intervals from settings
+        # Jobs with configurable intervals from settings (read at worker start;
+        # an interval change applies on worker restart)
+        settings = get_settings()
         self.jobs = {
             "consolidate": {
                 "func": consolidate_episodic_to_semantic,
@@ -92,7 +92,7 @@ class ConsolidationWorker:
             "jobs_run": self.jobs_run_count,
             "status": "running"
         }
-        self.redis.setex(key, settings.worker_heartbeat_ttl, json.dumps(data))
+        self.redis.setex(key, get_settings().worker_heartbeat_ttl, json.dumps(data))
         self._last_heartbeat = datetime.now(UTC)
 
     def _clear_heartbeat(self):
@@ -103,7 +103,7 @@ class ConsolidationWorker:
     def _cleanup_stale_workers(self):
         """Remove stale heartbeats from crashed workers."""
         pattern = "worker:heartbeat:*"
-        stale_threshold = timedelta(seconds=settings.worker_heartbeat_ttl * 2)
+        stale_threshold = timedelta(seconds=get_settings().worker_heartbeat_ttl * 2)
 
         for key in self.redis.scan_iter(match=pattern):  # type: ignore[union-attr]
             try:
@@ -123,7 +123,7 @@ class ConsolidationWorker:
 
     def _maybe_send_heartbeat(self):
         """Send heartbeat if interval has elapsed."""
-        if datetime.now(UTC) - self._last_heartbeat >= timedelta(seconds=settings.worker_heartbeat_interval):
+        if datetime.now(UTC) - self._last_heartbeat >= timedelta(seconds=get_settings().worker_heartbeat_interval):
             self._send_heartbeat()
 
     def _should_run_job(self, job_name: str, interval_minutes: int) -> bool:

@@ -484,31 +484,41 @@ Each profile has a Docker-style `agent_id` (auto-generated, immutable, adj-adj-n
 
 ### Memory Settings & Eval Pinning (override discipline)
 
-The memory kit reads settings through THREE different capture points, and only one of them
-refreshes at runtime:
+Since the settings overhaul (S1, v0.21.156) the memory kit reads settings **live**: every read
+is a `get_settings()` call (TTL-cached, 60s) or goes through an instance `settings` property
+that falls back to a live read. There are **zero module-level `settings = get_settings()`
+snapshots** — `scripts/check_docs.py` ratchets the count at 0; never add one.
 
-1. **Import-time module snapshots** — ~9 modules hold `settings = get_settings()` at module
-   level (`consolidation/jobs.py`, `memory/retrieval.py`, `memory/semantic.py`,
-   `memory/episodic.py`, `embeddings.py`, `connections.py`, `memory/working.py`,
-   `consolidation/worker.py`, `consolidation/registry.py`). These NEVER refresh — a runtime
-   settings change is invisible to them.
-2. **Init-time instance snapshots** — `RecallLayer._settings` (captured in `__init__`) and
-   `ExtractionService._settings` (an explicit override slot; `None` ⇒ live `get_settings()`).
-3. **Live reads** — code calling `get_settings()` per access (TTL-cached; `save_memory_settings`
-   busts the cache).
+- **Runtime changes apply without a restart** — `save_memory_settings()` busts the TTL cache,
+  so a UI save is visible on the very next read (worst case ≤60s for other processes).
+- **`MEMORY_SETTINGS_PATH` is absolute** (anchored to the repo root; unit-asserted equal to
+  `ConfigManager.CONFIG_PATH.parent / "memory_settings.json"`), with a warn-and-read fallback
+  for a legacy CWD-relative file. A corrupt overrides file falls back to defaults (INV-1) but
+  is **logged and surfaced** as `settings_file_status` in `GET /api/memory/settings`;
+  `POST /api/memory/{settings,recall-settings}` schema-validates the update and rejects the
+  whole write with per-key errors (`400 {"error", "errors": {key: msg}}`).
+- **Instance override slots** (unit tests): `ExtractionService`, `RecallLayer`, `AgentMemory`,
+  and `MemoryAuditLogger` all use the same pattern — `obj._settings = <Settings|mock>`
+  overrides that instance; `None` (default) ⇒ live `get_settings()` via the `settings` property.
 
-**Consequences:**
-- `save_memory_settings()` is for REAL, durable user-facing changes only. Never use it for a
-  temporary/test/eval override: it writes `data/memory_settings.json` (a live dev server picks
-  it up immediately), and it still won't reach the import-time snapshots above.
-- To override temporarily (tests, eval harnesses, experiments): build
-  `override = get_settings().model_copy(update={...})`, assign it to every capture point the
-  code path reads, and restore in `finally`. Canonical implementations:
-  `eval_consolidation.Command._pin_model` (extraction path: `jobs.settings` +
-  `get_extraction_service()._settings`) and `eval_recall.Command._run_arm` (recall path:
-  `recall_layer._settings` + the `retrieval`/`semantic`/`episodic`/`embeddings` module globals,
-  plus `retrieval_cache_enabled=False` — the retrieval cache key does NOT include technique
-  toggles, so stale-config hits are silent).
-- A NEW module-level `settings = get_settings()` snapshot makes every existing pinning site
-  incomplete — don't add one (the repo-hygiene check counts them); prefer live `get_settings()`
-  reads or a passed-in settings object.
+**Temporary overrides** (tests, eval harnesses, experiments) use ONE mechanism:
+
+```python
+from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
+override = get_settings().model_copy(update={...})
+with pin_memory_settings(override):
+    ...  # every get_settings() read sees `override`; the TTL cache can't revert it
+```
+
+Checked BEFORE the TTL cache; nesting-safe (an inner pin restores the outer); busts the cache
+on exit; never touches disk. Process-global — single-process eval/test use only. Canonical
+users: `eval_recall._run_arm` (still pins `retrieval_cache_enabled=False` — the retrieval
+cache key does NOT include technique toggles, so stale-config hits are silent),
+`eval_consolidation.handle`, `debug_attribution.handle`. `save_memory_settings()` is for REAL,
+durable user-facing changes only — never for a temporary override (it writes
+`data/memory_settings.json`; a live dev server picks it up immediately).
+
+**Deliberately boot-frozen** (restart or pin before first use — evals already do): the
+embedding provider/dispatcher singleton (provider choice + queue settings at first build),
+DB connection parameters (first driver/engine/client build), and job intervals
+(worker/registry boot).

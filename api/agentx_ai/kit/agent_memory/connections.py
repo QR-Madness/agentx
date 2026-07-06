@@ -17,8 +17,6 @@ from .config import get_settings
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
-
 # Thread locks for singleton initialization (reentrant to avoid deadlocks)
 _neo4j_lock = threading.RLock()
 _postgres_lock = threading.RLock()
@@ -77,6 +75,7 @@ class Neo4jConnection:
             with _neo4j_lock:
                 # Double-check pattern
                 if cls._driver is None:
+                    settings = get_settings()
                     cls._driver = GraphDatabase.driver(
                         settings.neo4j_uri,
                         auth=(settings.neo4j_user, settings.neo4j_password),
@@ -137,6 +136,7 @@ class PostgresConnection:
             with _postgres_lock:
                 # Double-check pattern
                 if cls._engine is None:
+                    settings = get_settings()
                     cls._engine = create_engine(
                         settings.postgres_uri,
                         pool_size=settings.postgres_pool_size,
@@ -205,6 +205,7 @@ class RedisConnection:
             with _redis_lock:
                 # Double-check pattern
                 if cls._client is None:
+                    settings = get_settings()
                     cls._client = redis.from_url(
                         settings.redis_uri,
                         decode_responses=True,

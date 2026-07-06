@@ -102,15 +102,28 @@ class MemoryAuditLogger:
         """Initialize the audit logger.
 
         Args:
-            settings: Memory configuration settings. Uses default if not provided.
+            settings: Optional settings override (tests). When None, settings
+                are resolved live via get_settings() so runtime updates
+                (e.g. flipping audit_log_level) propagate without a restart.
         """
-        self._settings = settings or get_settings()
-        self._enabled = self._settings.audit_log_level != AuditLogLevel.OFF.value
+        self._settings: Settings | None = settings
+
+    @property
+    def settings(self) -> Settings:
+        # Live-resolved unless explicitly overridden (mirrors
+        # ExtractionService.settings) — get_settings() has its own TTL cache.
+        if self._settings is not None:
+            return self._settings
+        return get_settings()
+
+    @property
+    def _enabled(self) -> bool:
+        return self.settings.audit_log_level != AuditLogLevel.OFF.value
 
     @property
     def log_level(self) -> str:
         """Get current audit log level."""
-        return self._settings.audit_log_level
+        return self.settings.audit_log_level
 
     def _should_log(self, operation: str, memory_type: str) -> bool:
         """Determine if this operation should be logged based on settings.
@@ -125,7 +138,7 @@ class MemoryAuditLogger:
         if not self._enabled:
             return False
 
-        level = self._settings.audit_log_level
+        level = self.settings.audit_log_level
 
         # Verbose logs everything
         if level == AuditLogLevel.VERBOSE.value:
@@ -143,7 +156,7 @@ class MemoryAuditLogger:
         if level == AuditLogLevel.READS.value:
             # Apply sampling for read operations
             if not _is_write_operation(operation):
-                if random.random() > self._settings.audit_sample_rate:
+                if random.random() > self.settings.audit_sample_rate:
                     return False
             return True
 
@@ -151,13 +164,14 @@ class MemoryAuditLogger:
 
     def _get_config_snapshot(self) -> dict[str, Any]:
         """Get current configuration values for snapshot."""
+        s = self.settings
         return {
-            "audit_log_level": self._settings.audit_log_level,
-            "fact_confidence_threshold": self._settings.fact_confidence_threshold,
-            "salience_decay_rate": self._settings.salience_decay_rate,
-            "default_top_k": self._settings.default_top_k,
-            "reranking_enabled": self._settings.reranking_enabled,
-            "extraction_enabled": self._settings.extraction_enabled,
+            "audit_log_level": s.audit_log_level,
+            "fact_confidence_threshold": s.fact_confidence_threshold,
+            "salience_decay_rate": s.salience_decay_rate,
+            "default_top_k": s.default_top_k,
+            "reranking_enabled": s.reranking_enabled,
+            "extraction_enabled": s.extraction_enabled,
         }
 
     def _log_to_db(

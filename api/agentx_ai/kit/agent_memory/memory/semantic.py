@@ -25,7 +25,6 @@ def entity_slug(name: str) -> str:
     so in-batch and graph matching agree on what counts as "the same name".
     """
     return "".join(ch for ch in name.strip().lower() if ch.isalnum())
-settings = get_settings()
 
 
 class SemanticMemory:
@@ -50,7 +49,7 @@ class SemanticMemory:
             Validated entity type (defaults to 'Entity' if invalid)
         """
         # Get allowed types from settings
-        allowed_types = set(settings.entity_types)
+        allowed_types = set(get_settings().entity_types)
 
         # Normalize: uppercase first letter, lowercase rest
         normalized = entity_type.strip().title().replace(" ", "").replace("_", "")

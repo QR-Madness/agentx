@@ -1,13 +1,24 @@
 """Configuration settings for the agent memory system."""
 
 import json
+import logging
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from pydantic_settings import BaseSettings
 
-# Path to user-configurable settings file
-MEMORY_SETTINGS_PATH = Path("data/memory_settings.json")
+logger = logging.getLogger(__name__)
+
+# Path to the user-configurable settings file, anchored to the repo root (this
+# file is api/agentx_ai/kit/agent_memory/config.py) so reads and writes hit the
+# same file regardless of the process CWD. A unit test asserts it agrees with
+# ConfigManager.CONFIG_PATH so the two settings stores can't drift apart.
+MEMORY_SETTINGS_PATH = Path(__file__).resolve().parents[4] / "data" / "memory_settings.json"
+
+# Pre-anchoring installs resolved the path against the CWD; if a process ran
+# outside the repo root its overrides live in <cwd>/data/memory_settings.json.
+_LEGACY_SETTINGS_PATH = Path("data/memory_settings.json")
 
 # Settings cache TTL in seconds
 SETTINGS_CACHE_TTL = 60.0
@@ -353,17 +364,25 @@ class Settings(BaseSettings):
 # Mutable settings that can be updated at runtime
 _runtime_settings: Settings | None = None
 _settings_cache_time: float = 0.0
+# Process-local pin (see pin_memory_settings) — checked BEFORE the TTL cache.
+_pinned_settings: Settings | None = None
+# Last overrides-file load failure ("TypeName: message"), None when healthy.
+_settings_load_error: str | None = None
 
 
 def get_settings() -> Settings:
     """
     Get settings instance with runtime overrides applied.
 
-    Settings are cached with a TTL. If the cache is older than SETTINGS_CACHE_TTL
-    seconds, it will be automatically refreshed. This allows UI changes to take
-    effect without restarting the API server.
+    A process-local pin (pin_memory_settings) wins over everything — the TTL
+    cache cannot revert it mid-run. Otherwise settings are cached with a TTL;
+    once the cache is older than SETTINGS_CACHE_TTL seconds it refreshes, so UI
+    changes take effect without restarting the API server.
     """
     global _runtime_settings, _settings_cache_time
+
+    if _pinned_settings is not None:
+        return _pinned_settings
 
     current_time = time.time()
     cache_expired = (current_time - _settings_cache_time) > SETTINGS_CACHE_TTL
@@ -375,22 +394,110 @@ def get_settings() -> Settings:
     return _runtime_settings
 
 
+@contextmanager
+def pin_memory_settings(override: Settings):
+    """
+    Pin get_settings() to a fixed Settings object for the duration of the block.
+
+    The ONE sanctioned way to apply a temporary override (tests, eval harnesses,
+    experiments): every get_settings() read in the memory kit sees `override`,
+    the TTL cache cannot revert it mid-run, and data/memory_settings.json is
+    never touched. Nesting-safe — an inner pin restores the outer pin on exit;
+    the outermost exit busts the TTL cache so the next read reloads fresh.
+    Process-global, so single-process use only (matches the eval/test harnesses).
+    """
+    global _pinned_settings, _runtime_settings, _settings_cache_time
+    prior = _pinned_settings
+    _pinned_settings = override
+    try:
+        yield override
+    finally:
+        _pinned_settings = prior
+        if prior is None:
+            _runtime_settings = None
+            _settings_cache_time = 0.0
+
+
 def _load_settings_with_overrides() -> Settings:
     """Load base settings and apply any overrides from memory_settings.json."""
+    global _settings_load_error
     base = Settings()
 
-    if MEMORY_SETTINGS_PATH.exists():
+    path = MEMORY_SETTINGS_PATH
+    if not path.exists():
+        # Legacy-CWD fallback: overrides written by a pre-anchoring process
+        # running outside the repo root. Read them, but nag until moved.
         try:
-            with open(MEMORY_SETTINGS_PATH) as f:
+            legacy_differs = (
+                _LEGACY_SETTINGS_PATH.exists()
+                and _LEGACY_SETTINGS_PATH.resolve() != MEMORY_SETTINGS_PATH
+            )
+        except OSError:
+            legacy_differs = False
+        if legacy_differs:
+            logger.warning(
+                "Reading memory settings from CWD-relative %s (legacy location); "
+                "move it to %s",
+                _LEGACY_SETTINGS_PATH.resolve(), MEMORY_SETTINGS_PATH,
+            )
+            path = _LEGACY_SETTINGS_PATH
+
+    if path.exists():
+        try:
+            with open(path) as f:
                 overrides = json.load(f)
             # Apply overrides to a copy of base settings
             base_dict = base.model_dump()
             base_dict.update(overrides)
-            return Settings(**base_dict)
-        except Exception:
-            pass  # Fall back to base settings if file is invalid
+            loaded = Settings(**base_dict)
+            _settings_load_error = None
+            return loaded
+        except Exception as e:
+            # INV-1: loading never raises — fall back to base settings, but say
+            # so (the old silent fallback hid corrupt files indefinitely). The
+            # error is surfaced via get_settings_file_status() in the UI.
+            _settings_load_error = f"{type(e).__name__}: {e}"
+            logger.warning(
+                "Failed to load memory settings overrides from %s — using "
+                "defaults: %s", path, _settings_load_error,
+            )
+            return base
 
+    _settings_load_error = None
     return base
+
+
+def get_settings_file_status() -> dict[str, Any]:
+    """Health of the overrides file, for the settings UI (never raises)."""
+    get_settings()  # refresh the load-error state if the TTL cache expired
+    return {
+        "path": str(MEMORY_SETTINGS_PATH),
+        "exists": MEMORY_SETTINGS_PATH.exists(),
+        "error": _settings_load_error,
+    }
+
+
+def validate_memory_settings(candidate: dict[str, Any]) -> dict[str, str]:
+    """
+    Validate candidate overrides against the Settings schema before saving.
+
+    Merges `candidate` over the current effective settings and re-validates the
+    whole model. Returns {key: message} per failing key (empty dict = valid) so
+    the API can reject the whole write with per-key errors.
+    """
+    from pydantic import ValidationError
+
+    merged = get_settings().model_dump()
+    merged.update(candidate)
+    try:
+        Settings(**merged)
+    except ValidationError as e:
+        errors: dict[str, str] = {}
+        for err in e.errors():
+            loc = err.get("loc") or ("settings",)
+            errors[str(loc[0])] = err.get("msg", "invalid value")
+        return errors
+    return {}
 
 
 def save_memory_settings(settings_dict: dict[str, Any]) -> None:

@@ -1183,9 +1183,9 @@ GET  /api/memory/settings
 POST /api/memory/settings
 ```
 
-**GET** — Returns consolidation settings (extraction, relevance filter, entity linking, quality thresholds) plus default prompts.
+**GET** — Returns consolidation settings (extraction, relevance filter, entity linking, quality thresholds) plus default prompts, and `settings_file_status` (`{path, exists, error}` — `error` is non-null when a corrupt overrides file forced the defaults fallback).
 
-**POST** — Update consolidation settings. Accepts partial updates.
+**POST** — Update consolidation settings. Accepts partial updates. Values are schema-validated: any invalid value rejects the whole update with `400 {"error", "errors": {key: message}}` (nothing persisted). Saved changes apply live — no API restart needed.
 
 ### Recall Settings
 
@@ -1196,7 +1196,7 @@ POST /api/memory/recall-settings
 
 **GET** — Returns recall layer settings (hybrid search, entity-centric, query expansion, HyDE, self-query technique toggles and parameters).
 
-**POST** — Update recall settings. Accepts partial updates.
+**POST** — Update recall settings. Accepts partial updates, with the same schema validation and `400 {"error", "errors"}` reject-whole contract as `/api/memory/settings`.
 
 ### Run Consolidation
 

@@ -75,9 +75,12 @@ class AgentMemory:
         # Event emitter (create default if not provided)
         self.events = events if events is not None else MemoryEventEmitter()
 
-        # Audit logger
-        self._settings = get_settings()
-        self._audit_logger = MemoryAuditLogger(self._settings)
+        # Optional settings override (tests). When None, settings resolve live
+        # via get_settings() so runtime updates propagate — see the property.
+        self._settings: Any = None
+
+        # Audit logger (resolves its own settings live)
+        self._audit_logger = MemoryAuditLogger()
 
         # Sub-modules (with audit logger injection)
         self.episodic = EpisodicMemory(audit_logger=self._audit_logger)
@@ -96,6 +99,14 @@ class AgentMemory:
             base_retriever=self.retriever,
             audit_logger=self._audit_logger,
         )
+
+    @property
+    def settings(self):
+        # Live-resolved unless explicitly overridden (mirrors
+        # ExtractionService.settings) — get_settings() has its own TTL cache.
+        if self._settings is not None:
+            return self._settings
+        return get_settings()
 
     # Storage operations
 
@@ -716,9 +727,9 @@ class AgentMemory:
         Gated by ``reflex_core_enabled`` and bounded by ``reflex_core_limit`` so it
         can be disabled and can't blow the memory token budget.
         """
-        if not getattr(self._settings, "reflex_core_enabled", True):
+        if not getattr(self.settings, "reflex_core_enabled", True):
             return
-        limit = int(getattr(self._settings, "reflex_core_limit", 5))
+        limit = int(getattr(self.settings, "reflex_core_limit", 5))
         bundle.procedures = self.procedural.get_reflex_procedures(channels, limit=limit)
 
     def get_reflex_procedures(self, *, limit: int = 5) -> list[dict[str, Any]]:
@@ -745,15 +756,16 @@ class AgentMemory:
         ``remember`` recall rides along as a lower-priority supplement.
         """
         bundle = MemoryBundle()
-        if not getattr(self._settings, "salient_core_enabled", True):
+        s = self.settings
+        if not getattr(s, "salient_core_enabled", True):
             return bundle
         lim = int(
             limit if limit is not None
-            else getattr(self._settings, "salient_core_limit", 8)
+            else getattr(s, "salient_core_limit", 8)
         )
         floor = float(
             min_salience if min_salience is not None
-            else getattr(self._settings, "salient_core_min_salience", 0.6)
+            else getattr(s, "salient_core_min_salience", 0.6)
         )
         channels = self._default_recall_channels()
         try:

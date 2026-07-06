@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from ..memory.interface import AgentMemory
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
@@ -458,14 +457,14 @@ def _resolve_entity_semantic(
         if etype and cand.get("type") and cand["type"] != etype:
             continue
         score = float(cand.get("score") or 0.0)
-        if score >= settings.entity_linking_auto_threshold:
+        if score >= get_settings().entity_linking_auto_threshold:
             metrics.entities_semantic_linked += 1
             logger.debug(
                 f"semantic-link: '{name}' → '{cand.get('name')}' "
                 f"({cand.get('id')}) score={score:.3f}"
             )
             return cand
-        if score >= settings.entity_linking_similarity_threshold:
+        if score >= get_settings().entity_linking_similarity_threshold:
             # Gray zone: never auto-merge — log as adjudication corpus.
             metrics.entities_semantic_candidates += 1
             logger.info(
@@ -579,7 +578,7 @@ def _resolve_and_prepare_entities(
             # disjoint forms of the same thing). Auto-link only above the
             # conservative threshold; gray zone is logged, never merged.
             candidate_embedding: list[float] | None = None
-            if not resolved and settings.semantic_entity_linking_enabled:
+            if not resolved and get_settings().semantic_entity_linking_enabled:
                 try:
                     candidate_embedding = memory.embedder.embed_single(
                         Entity.compute_embedding_text(name, llm_description, etype)
@@ -738,7 +737,7 @@ def _resolve_relationship_endpoint(
         if found:
             entity_map[name.lower()] = found["id"]
             return found["id"]
-        if settings.semantic_entity_linking_enabled and metrics is not None:
+        if get_settings().semantic_entity_linking_enabled and metrics is not None:
             embedding = memory.embedder.embed_single(
                 Entity.compute_embedding_text(name, None, "Concept")
             )
@@ -1293,7 +1292,7 @@ async def _extract_from_conversation(
     agents by name; the per-turn ``responder_agent_id`` (falling back to
     ``default_agent_id``) tells it which agent "you" addresses.
     """
-    if settings.extraction_windowing_enabled:
+    if get_settings().extraction_windowing_enabled:
         return await _extract_windowed(
             turns, memory, session, extraction_service, user_id, channel,
             conv_id, metrics, errors, roster=roster,
@@ -1312,6 +1311,7 @@ async def _extract_windowed(
 ) -> _ConvExtraction:
     """Windowed extraction: pre-filter → per-turn corrections → windows with
     registry/overview context → split-retry on parse failure."""
+    settings = get_settings()
     out = _ConvExtraction()
     relevance_start = time.perf_counter()
 
@@ -1432,7 +1432,7 @@ async def _extract_per_turn(
         metrics.turns_total += 1
 
         # Check for user corrections first (before relevance filter)
-        if settings.correction_detection_enabled:
+        if get_settings().correction_detection_enabled:
             correction = await extraction_service.check_correction(content)
             metrics.correction_calls += 1
             if correction.is_correction:
@@ -1550,6 +1550,7 @@ async def _store_facts_with_verification(
     its channel, so user facts and agent self-knowledge stay separated. All
     channel-scoped checks (dedup, contradiction, entity linking) run against the
     fact's resolved target channel."""
+    settings = get_settings()
     res = _FactStoreResult()
 
     # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
@@ -2289,6 +2290,7 @@ async def distill_procedures(progress_callback: Callable | None = None) -> dict[
 
     procedural = ProceduralMemory()
     extraction_service = get_extraction_service()
+    settings = get_settings()
     dedupe_threshold = settings.procedural_dedupe_threshold
     batch_limit = settings.procedural_distill_batch_limit
 
@@ -2412,7 +2414,7 @@ def apply_memory_decay() -> dict[str, Any]:
     Returns:
         Dictionary with decay metrics
     """
-    decay_rate = settings.salience_decay_rate
+    decay_rate = get_settings().salience_decay_rate
     entities_decayed = 0
     facts_decayed = 0
 
@@ -2467,6 +2469,7 @@ def promote_to_global() -> dict[str, Any]:
     """
     from ..audit import MemoryAuditLogger
 
+    settings = get_settings()
     min_confidence = settings.promotion_min_confidence
     min_access = settings.promotion_min_access_count
     min_conversations = settings.promotion_min_conversations
@@ -2661,7 +2664,7 @@ def promote_to_global() -> dict[str, Any]:
 
 def cleanup_old_memories() -> dict[str, Any]:
     """Archive or delete old, low-salience memories."""
-    retention_days = settings.episodic_retention_days
+    retention_days = get_settings().episodic_retention_days
     archived_count = 0
     deleted_count = 0
 
@@ -2807,6 +2810,7 @@ def manage_audit_partitions() -> dict[str, Any]:
     """
     from sqlalchemy import text
 
+    settings = get_settings()
     retention_days = settings.audit_retention_days
     ahead_days = settings.audit_partition_ahead_days
 
@@ -3025,6 +3029,7 @@ def link_facts_to_entities() -> dict[str, Any]:
         Dict with items_processed, links_created, facts_still_orphan,
         embeddings_backfilled, errors.
     """
+    settings = get_settings()
     if not settings.entity_linking_enabled:
         logger.debug("Entity linking is disabled")
         return {"items_processed": 0, "links_created": 0,

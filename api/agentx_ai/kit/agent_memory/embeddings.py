@@ -6,14 +6,16 @@ from functools import lru_cache
 from .config import get_settings
 
 logger = logging.getLogger("agentx")
-settings = get_settings()
 
 
 class EmbeddingProvider:
     """Unified embedding interface supporting multiple providers."""
 
     def __init__(self):
-        self.provider = settings.embedding_provider
+        # The provider choice (and the dispatcher's queue settings below) are
+        # frozen at first build of the process-wide singleton — a provider
+        # change needs a restart. Everything else reads settings live.
+        self.provider = get_settings().embedding_provider
         self._client = None
         self._model = None
         self._dimensions_validated = False
@@ -22,7 +24,7 @@ class EmbeddingProvider:
     def _init_openai(self):
         """Initialize OpenAI client for embeddings."""
         from openai import OpenAI
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = OpenAI(api_key=get_settings().openai_api_key)
 
     def _init_local(self):
         """Initialize local embedding model on the resolved compute device."""
@@ -30,10 +32,11 @@ class EmbeddingProvider:
         from ..device import resolve_device
 
         device = resolve_device()
-        self._model = SentenceTransformer(settings.local_embedding_model, device=device)
+        model_name = get_settings().local_embedding_model
+        self._model = SentenceTransformer(model_name, device=device)
         logger.info(
             "Local embedding model '%s' loaded on device '%s'.",
-            settings.local_embedding_model,
+            model_name,
             device,
         )
 
@@ -41,7 +44,7 @@ class EmbeddingProvider:
     def output_dimensions(self) -> int:
         """Auto-detect actual output dimensions from the loaded model."""
         if self.provider == "openai":
-            return settings.embedding_dimensions
+            return get_settings().embedding_dimensions
 
         if self._model is None:
             self._init_local()
@@ -59,7 +62,7 @@ class EmbeddingProvider:
             (actual, configured, match) tuple
         """
         actual = self.output_dimensions
-        configured = settings.embedding_dimensions
+        configured = get_settings().embedding_dimensions
         return actual, configured, actual == configured
 
     def _check_dimensions(self):
@@ -98,6 +101,7 @@ class EmbeddingProvider:
         if self._dispatcher is None:
             from .embedding_queue import EmbeddingDispatcher
 
+            settings = get_settings()
             model = (
                 settings.embedding_model
                 if self.provider == "openai"
@@ -122,7 +126,7 @@ class EmbeddingProvider:
             assert self._client is not None
 
         response = self._client.embeddings.create(
-            model=settings.embedding_model,
+            model=get_settings().embedding_model,
             input=texts
         )
         return [item.embedding for item in response.data]

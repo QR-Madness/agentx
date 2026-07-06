@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 @dataclass
@@ -67,6 +66,7 @@ class RetrievalWeights:
     @classmethod
     def from_config(cls) -> RetrievalWeights:
         """Create RetrievalWeights from config settings."""
+        settings = get_settings()
         return cls(
             episodic=settings.retrieval_weight_episodic,
             semantic_facts=settings.retrieval_weight_semantic_facts,
@@ -152,12 +152,12 @@ class MemoryRetriever:
         """
         self.memory = memory
         self.embedder = get_embedder()
-        self.weights = RetrievalWeights.from_config()
         self._audit_logger = audit_logger
         self._cross_encoder = None  # Lazy-loaded if enabled
 
     def _get_cross_encoder(self):
         """Lazy-load cross-encoder model if enabled."""
+        settings = get_settings()
         if self._cross_encoder is None and settings.cross_encoder_enabled:
             try:
                 from sentence_transformers import CrossEncoder
@@ -187,11 +187,11 @@ class MemoryRetriever:
             f"{top_k}:{include_episodic}:{include_semantic}:{include_procedural}"
             f":{defer_cross_encoder}".encode()
         ).hexdigest()[:16]
-        return f"{settings.retrieval_cache_key_prefix}:{user_id}:{channels_str}:{query_hash}:{params_hash}"
+        return f"{get_settings().retrieval_cache_key_prefix}:{user_id}:{channels_str}:{query_hash}:{params_hash}"
 
     def _get_cached(self, cache_key: str) -> MemoryBundle | None:
         """Get cached retrieval result."""
-        if not settings.retrieval_cache_enabled:
+        if not get_settings().retrieval_cache_enabled:
             return None
 
         try:
@@ -210,6 +210,7 @@ class MemoryRetriever:
 
     def _set_cached(self, cache_key: str, bundle: MemoryBundle) -> None:
         """Cache retrieval result with TTL."""
+        settings = get_settings()
         if not settings.retrieval_cache_enabled:
             return
 
@@ -239,6 +240,7 @@ class MemoryRetriever:
         Returns:
             Number of keys invalidated
         """
+        settings = get_settings()
         if not settings.retrieval_cache_enabled:
             return 0
 
@@ -315,6 +317,7 @@ class MemoryRetriever:
             ValueError: If query exceeds maximum allowed length
         """
         # Validate query length to prevent embedder crashes or excessive resource usage
+        settings = get_settings()
         max_query_length = getattr(settings, 'max_query_length', 10000)
         if len(query) > max_query_length:
             raise ValueError(
@@ -335,8 +338,9 @@ class MemoryRetriever:
         metrics.channels_searched = search_channels
         active_channel = channels[0] if channels else (channel or "_global")
 
-        # Merge weights
-        effective_weights = self.weights.merge(strategy_weights)
+        # Merge weights — recomputed from live settings per call so runtime
+        # weight changes apply without rebuilding the retriever.
+        effective_weights = RetrievalWeights.from_config().merge(strategy_weights)
 
         # Check cache
         cache_key = self._get_cache_key(
@@ -493,7 +497,7 @@ class MemoryRetriever:
         # Always-include: fetch last N turns from current conversation
         # These are marked and will be preserved through reranking
         always_include_turns: list[dict[str, Any]] = []
-        always_include_count = settings.always_include_recent_turns
+        always_include_count = get_settings().always_include_recent_turns
 
         if conversation_id and always_include_count > 0:
             always_include_turns = self.memory.episodic.get_conversation_turns(
@@ -647,6 +651,7 @@ class MemoryRetriever:
         Returns:
             Reranked memory bundle
         """
+        settings = get_settings()
         channel_boost = settings.channel_active_boost
 
         # Rerank turns

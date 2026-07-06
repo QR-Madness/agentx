@@ -20,7 +20,9 @@ import asyncio
 import inspect
 import json
 import re
+import tempfile
 from datetime import datetime, UTC
+from pathlib import Path
 from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -33,6 +35,8 @@ from agentx_ai.kit.agent_memory.config import (
     SETTINGS_CACHE_TTL,
     Settings,
     get_settings,
+    pin_memory_settings,
+    validate_memory_settings,
 )
 from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
 from agentx_ai.kit.agent_memory.consolidation import jobs as consolidation_jobs_module
@@ -2646,6 +2650,88 @@ class SettingsCacheTTLTest(TestCase):
         self.assertGreater(SETTINGS_CACHE_TTL, 0)
 
 
+class PinMemorySettingsTest(TestCase):
+    """pin_memory_settings: the one sanctioned temporary-override mechanism."""
+
+    def test_pin_wins_over_ttl_cache_and_unwinds(self) -> None:
+        baseline = get_settings()
+        override = baseline.model_copy(update={"default_top_k": 3})
+        with pin_memory_settings(override):
+            self.assertIs(get_settings(), override)
+            # A cache-bust mid-pin (e.g. a concurrent save) cannot revert it.
+            memory_config_module._runtime_settings = None
+            memory_config_module._settings_cache_time = 0.0
+            self.assertIs(get_settings(), override)
+        self.assertIsNone(memory_config_module._pinned_settings)
+        self.assertIsNot(get_settings(), override)
+        self.assertEqual(get_settings().default_top_k, baseline.default_top_k)
+
+    def test_nested_pins_restore_outer(self) -> None:
+        outer = get_settings().model_copy(update={"default_top_k": 4})
+        inner = get_settings().model_copy(update={"default_top_k": 2})
+        with pin_memory_settings(outer):
+            with pin_memory_settings(inner):
+                self.assertIs(get_settings(), inner)
+            self.assertIs(get_settings(), outer)
+        self.assertIsNone(memory_config_module._pinned_settings)
+
+    def test_pin_released_on_exception(self) -> None:
+        override = get_settings().model_copy(update={"default_top_k": 2})
+        with self.assertRaises(RuntimeError):
+            with pin_memory_settings(override):
+                raise RuntimeError("mid-pin failure")
+        self.assertIsNone(memory_config_module._pinned_settings)
+        self.assertIsNot(get_settings(), override)
+
+
+class MemorySettingsFileTest(TestCase):
+    """Overrides-file safety: absolute path, honest load failures, validation."""
+
+    def test_settings_path_is_absolute_and_matches_config_manager(self) -> None:
+        from agentx_ai.config import ConfigManager
+        path = memory_config_module.MEMORY_SETTINGS_PATH
+        self.assertTrue(path.is_absolute(),
+                        "MEMORY_SETTINGS_PATH must not depend on the process CWD")
+        self.assertEqual(path,
+                         ConfigManager.CONFIG_PATH.parent / "memory_settings.json",
+                         "memory settings must live beside config.json")
+
+    def test_corrupt_file_falls_back_and_reports_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "memory_settings.json"
+            bad.write_text("{not valid json", encoding="utf-8")
+            with patch.object(memory_config_module, "MEMORY_SETTINGS_PATH", bad):
+                loaded = memory_config_module._load_settings_with_overrides()
+                self.assertIsInstance(loaded, Settings)  # INV-1: never raises
+                status = memory_config_module.get_settings_file_status()
+                self.assertTrue(status["exists"])
+                self.assertIsNotNone(status["error"])
+        # A healthy load clears the recorded error.
+        with tempfile.TemporaryDirectory() as tmp:
+            good = Path(tmp) / "memory_settings.json"
+            good.write_text('{"default_top_k": 7}', encoding="utf-8")
+            with patch.object(memory_config_module, "MEMORY_SETTINGS_PATH", good):
+                loaded = memory_config_module._load_settings_with_overrides()
+                self.assertEqual(loaded.default_top_k, 7)
+                self.assertIsNone(memory_config_module.get_settings_file_status()["error"])
+
+    def test_save_then_next_read_sees_change_without_any_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "memory_settings.json"
+            with patch.object(memory_config_module, "MEMORY_SETTINGS_PATH", path):
+                memory_config_module.save_memory_settings({"default_top_k": 9})
+                # save busts the TTL cache — the very next live read sees it.
+                self.assertEqual(get_settings().default_top_k, 9)
+        # Restore the real cache state for other tests.
+        memory_config_module._runtime_settings = None
+        memory_config_module._settings_cache_time = 0.0
+
+    def test_validate_memory_settings_rejects_bad_values_per_key(self) -> None:
+        errors = validate_memory_settings({"default_top_k": "not-a-number"})
+        self.assertIn("default_top_k", errors)
+        self.assertEqual(validate_memory_settings({"default_top_k": 12}), {})
+
+
 # =============================================================================
 # Combined Extraction Tests (Session 2)
 # =============================================================================
@@ -5181,17 +5267,16 @@ class EvalRecallSeedAndArmTest(MemoryTestBase):
                         uid=uid).single()
         self.assertEqual(rec["c"], 0, "cleanup left eval nodes behind")
 
-    def test_settings_restored_after_arm_exception(self) -> None:
+    def test_settings_unpinned_after_arm_exception(self) -> None:
         if not embeddings_compatible():
             self.skipTest("Embedding dimensions mismatch")
+        from agentx_ai.kit.agent_memory import config as memory_config
         from agentx_ai.kit.agent_memory.evals.recall_corpus import GoldenQuery
-        from agentx_ai.kit.agent_memory.memory import retrieval as retrieval_mod
-        from agentx_ai.kit.agent_memory.memory import semantic as semantic_mod
         er, patcher, uid = self._patched()
         corpus = self._mini_corpus()
         # A query whose expected key was never seeded → KeyError inside the arm loop.
         bad = GoldenQuery("q_bad", "single_hop", "What is unresolvable?", ("no_such_key",))
-        saved_retrieval, saved_semantic = retrieval_mod.settings, semantic_mod.settings
+        cache_enabled_before = memory_config.get_settings().retrieval_cache_enabled
         cmd = er.Command()
         with patcher:
             try:
@@ -5201,10 +5286,11 @@ class EvalRecallSeedAndArmTest(MemoryTestBase):
                     cmd._run_arm(arm, seeded, [bad], (1,), 1)
             finally:
                 cmd._cleanup()
-        self.assertIs(retrieval_mod.settings, saved_retrieval,
-                      "retrieval module settings not restored after exception")
-        self.assertIs(semantic_mod.settings, saved_semantic,
-                      "semantic module settings not restored after exception")
+        self.assertIsNone(memory_config._pinned_settings,
+                          "pin_memory_settings not released after exception")
+        self.assertEqual(memory_config.get_settings().retrieval_cache_enabled,
+                         cache_enabled_before,
+                         "arm override (retrieval_cache_enabled=False) leaked past the pin")
 
 
 @skipUnless(docker_services_running(), "Docker services not running")
@@ -5369,18 +5455,15 @@ class StoreTimeEntityEmbeddingTest(TestCase):
         session = MagicMock()
         session.run.return_value.single.return_value = {"stored": 2}
         metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
-        override = jobs_mod.settings.model_copy(
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
+        override = get_settings().model_copy(
             update={"semantic_entity_linking_enabled": band})
-        saved = jobs_mod.settings
-        jobs_mod.settings = override
-        try:
+        with pin_memory_settings(override):
             count = jobs_mod._store_conversation_entities(
                 session, memory,
                 [{"name": "Kyoto", "type": "Location"}, {"name": "Lisbon", "type": "Location"}],
                 {}, "u", "_global", "c", metrics, [],
             )
-        finally:
-            jobs_mod.settings = saved
         return memory, session, count
 
     def _stored_entities(self, session):
@@ -5420,17 +5503,14 @@ class SemanticBandLinkingTest(TestCase):
         memory.embedder.embed_single.return_value = [0.1] * 4
         metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
         entity_map: dict = {}
-        override = jobs_mod.settings.model_copy(
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
+        override = get_settings().model_copy(
             update={"semantic_entity_linking_enabled": flag})
-        saved = jobs_mod.settings
-        jobs_mod.settings = override
-        try:
+        with pin_memory_settings(override):
             stored, reused, _ = jobs_mod._resolve_and_prepare_entities(
                 memory=memory, extracted_entities=dicts, entity_map=entity_map,
                 user_id="u", channel="_global", conv_id="c", metrics=metrics, errors=[],
             )
-        finally:
-            jobs_mod.settings = saved
         return stored, reused, entity_map, metrics, memory
 
     def test_auto_band_links(self) -> None:
@@ -5678,23 +5758,20 @@ class WindowedJobsFlowTest(TestCase):
         ext.check_relevance_and_extract_window = AsyncMock(side_effect=window_results)
         ext.check_relevance_and_extract = AsyncMock(return_value=self._combined())
         metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
-        override = jobs_mod.settings.model_copy(update={
+        from agentx_ai.kit.agent_memory.config import get_settings, pin_memory_settings
+        override = get_settings().model_copy(update={
             "extraction_windowing_enabled": windowing,
             "extraction_window_max_turns": max_turns,
             "extraction_window_max_tokens": 10_000,
             "correction_detection_enabled": False,
         })
-        saved = jobs_mod.settings
-        jobs_mod.settings = override
-        try:
-            with patch.object(jobs_mod, "_build_scope_context", return_value=([], [])), \
-                 patch.object(jobs_mod, "_get_conversation_overview", return_value=None):
-                out = asyncio.run(jobs_mod._extract_from_conversation(
-                    turns, MagicMock(), MagicMock(), ext, "u", "_global",
-                    "conv-1", metrics, [],
-                ))
-        finally:
-            jobs_mod.settings = saved
+        with pin_memory_settings(override), \
+             patch.object(jobs_mod, "_build_scope_context", return_value=([], [])), \
+             patch.object(jobs_mod, "_get_conversation_overview", return_value=None):
+            out = asyncio.run(jobs_mod._extract_from_conversation(
+                turns, MagicMock(), MagicMock(), ext, "u", "_global",
+                "conv-1", metrics, [],
+            ))
         return out, metrics, ext
 
     @staticmethod

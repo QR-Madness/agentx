@@ -26,7 +26,6 @@ from .jobs import (
 )
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 @dataclass
@@ -94,9 +93,11 @@ class JobRegistry:
 
     def __init__(self):
         self.redis = RedisConnection.get_client()
-        self._audit_logger = MemoryAuditLogger(settings)
+        self._audit_logger = MemoryAuditLogger()
 
-        # Register all jobs with descriptions
+        # Register all jobs with descriptions (intervals read at registry boot;
+        # an interval change applies on restart)
+        settings = get_settings()
         self._jobs: dict[str, JobDefinition] = {
             "consolidate": JobDefinition(
                 name="consolidate",

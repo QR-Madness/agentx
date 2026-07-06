@@ -150,7 +150,9 @@ class RecallLayer:
         self.memory = memory
         self.base_retriever = base_retriever
         self.audit_logger = audit_logger
-        self._settings = get_settings()
+        # Optional settings override (tests). When None, settings resolve live
+        # via get_settings() so runtime updates propagate — see the property.
+        self._settings: Any = None
 
         # Question words for query expansion
         self._question_words = {
@@ -170,6 +172,14 @@ class RecallLayer:
             "email": ["e-mail", "mail address"],
             "phone": ["telephone", "mobile", "cell"],
         }
+
+    @property
+    def settings(self):
+        # Live-resolved unless explicitly overridden (mirrors
+        # ExtractionService.settings) — get_settings() has its own TTL cache.
+        if self._settings is not None:
+            return self._settings
+        return get_settings()
 
     def recall(
         self,
@@ -195,7 +205,7 @@ class RecallLayer:
             MemoryBundle with aggregated results from all techniques
         """
         start_time = time.perf_counter()
-        settings = self._settings
+        settings = self.settings
         channel = channels[0] if channels else self.memory.channel
 
         # Initialize metrics
@@ -378,7 +388,7 @@ class RecallLayer:
         score = bm25_weight/(k + bm25_rank) + vector_weight/(k + vector_rank)
         """
         start_time = time.perf_counter()
-        settings = self._settings
+        settings = self.settings
 
         bm25_weight = settings.recall_hybrid_bm25_weight
         vector_weight = settings.recall_hybrid_vector_weight
@@ -590,7 +600,7 @@ class RecallLayer:
         2. Traverse ABOUT relationships to get linked facts
         """
         start_time = time.perf_counter()
-        settings = self._settings
+        settings = self.settings
 
         threshold = settings.recall_entity_similarity_threshold
         max_entities = settings.recall_entity_max_entities
@@ -704,7 +714,7 @@ class RecallLayer:
         Transforms question form to statement form and generates variants.
         """
         start_time = time.perf_counter()
-        settings = self._settings
+        settings = self.settings
 
         max_variants = settings.recall_expansion_max_variants
 
@@ -726,7 +736,7 @@ class RecallLayer:
                 user_id=user_id,
                 channel=channel,
                 top_k=top_k,
-                min_confidence=self._settings.recall_min_confidence,
+                min_confidence=self.settings.recall_min_confidence,
             )
             logger.debug(
                 f"[RecallLayer:Expansion] Variant \"{variant[:30]}...\" found {len(results)} facts"
@@ -843,7 +853,7 @@ class RecallLayer:
         3. Search with that embedding (closer to stored facts)
         """
         start_time = time.perf_counter()
-        settings = self._settings
+        settings = self.settings
 
         # Generate hypothetical document
         hypothetical = self._generate_hypothetical(query)
@@ -882,7 +892,7 @@ class RecallLayer:
 
     def _generate_hypothetical(self, query: str) -> str:
         """Generate a hypothetical answer using LLM."""
-        settings = self._settings
+        settings = self.settings
 
         try:
             from ....providers.registry import get_registry
@@ -960,14 +970,14 @@ class RecallLayer:
         # the LLM but not yet applied here — only keyword filtering is wired up.
         keywords = filters.get("keywords", [])
 
-        fetch_k = max(top_k * 2, self._settings.recall_candidate_pool)
+        fetch_k = max(top_k * 2, self.settings.recall_candidate_pool)
         embedding = self.memory.embedder.embed_single(query)
         results = self.memory.semantic.vector_search_facts(
             query_embedding=embedding,
             user_id=user_id,
             channel=channels[0] if channels else self.memory.channel,
             top_k=fetch_k,  # Over-fetch to allow filtering
-            min_confidence=self._settings.recall_min_confidence,
+            min_confidence=self.settings.recall_min_confidence,
         )
 
         # Filter by keywords if present
@@ -995,7 +1005,7 @@ class RecallLayer:
 
     def _extract_filters(self, query: str) -> dict[str, Any]:
         """Extract structured filters from query using LLM."""
-        settings = self._settings
+        settings = self.settings
 
         try:
             from ....providers.registry import get_registry
@@ -1056,8 +1066,8 @@ class RecallLayer:
     def _pool_output_width(self, top_k: int) -> int:
         """Technique output width: the full candidate pool when the post-fusion
         cross-encoder stage will cut it back to top_k, else top_k as before."""
-        if self._settings.cross_encoder_enabled:
-            return max(top_k, self._settings.recall_candidate_pool)
+        if self.settings.cross_encoder_enabled:
+            return max(top_k, self.settings.recall_candidate_pool)
         return top_k
 
     def _cross_encoder_stage(
@@ -1127,7 +1137,7 @@ class RecallLayer:
         diluting the promotion wins that carry the stage's MRR gain.
         ``recall_ce_max_demotion <= 0`` disables the cap (pure CE order).
         """
-        cap = self._settings.recall_ce_max_demotion
+        cap = self.settings.recall_ce_max_demotion
         ce_order = sorted(range(len(items)), key=lambda i: scores[i], reverse=True)
         ce_rank = {idx: r + 1 for r, idx in enumerate(ce_order)}
         keyed = []
@@ -1159,7 +1169,7 @@ class RecallLayer:
         if not _FIRST_PERSON_RE.search(query):
             return bundle, {"applied": False, "penalized": 0}
 
-        penalty = min(max(self._settings.recall_first_person_penalty, 0.01), 1.0)
+        penalty = min(max(self.settings.recall_first_person_penalty, 0.01), 1.0)
         penalized = 0
         keyed: list[tuple[float, int, int]] = []
         for i, fact in enumerate(bundle.facts):

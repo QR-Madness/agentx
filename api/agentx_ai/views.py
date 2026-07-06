@@ -5724,7 +5724,10 @@ def memory_settings(request):
 
     if request.method == 'GET':
         try:
-            from .kit.agent_memory.config import get_consolidation_settings
+            from .kit.agent_memory.config import (
+                get_consolidation_settings,
+                get_settings_file_status,
+            )
 
             settings = get_consolidation_settings()
 
@@ -5735,6 +5738,10 @@ def memory_settings(request):
             settings["default_extraction_prompt"] = service._get_default_system_prompt()
             settings["default_relevance_prompt"] = service._get_default_relevance_prompt()
 
+            # Overrides-file health: a corrupt file silently falls back to
+            # defaults (INV-1), so the UI must be able to say so.
+            settings["settings_file_status"] = get_settings_file_status()
+
             return JsonResponse(settings)
         except Exception as e:
             logger.error(f"Error getting memory settings: {e}")
@@ -5742,7 +5749,11 @@ def memory_settings(request):
 
     elif request.method == 'POST':
         try:
-            from .kit.agent_memory.config import save_memory_settings, get_consolidation_settings
+            from .kit.agent_memory.config import (
+                get_consolidation_settings,
+                save_memory_settings,
+                validate_memory_settings,
+            )
 
             data = json.loads(request.body.decode('utf-8'))
 
@@ -5750,12 +5761,23 @@ def memory_settings(request):
             allowed_keys = set(get_consolidation_settings().keys())
             # Remove read-only keys
             allowed_keys -= {"entity_types", "relationship_types",
-                            "default_extraction_prompt", "default_relevance_prompt"}
+                            "default_extraction_prompt", "default_relevance_prompt",
+                            "settings_file_status"}
 
             filtered = {k: v for k, v in data.items() if k in allowed_keys}
 
             if not filtered:
                 return JsonResponse({"error": "No valid settings provided"}, status=400)
+
+            # Schema-validate BEFORE writing: reject the whole update with
+            # per-key errors rather than persisting a file that would silently
+            # fall back to defaults on the next load.
+            validation_errors = validate_memory_settings(filtered)
+            if validation_errors:
+                return JsonResponse({
+                    "error": "Invalid settings values",
+                    "errors": validation_errors,
+                }, status=400)
 
             save_memory_settings(filtered)
 
@@ -5796,7 +5818,11 @@ def recall_settings(request):
 
     elif request.method == 'POST':
         try:
-            from .kit.agent_memory.config import save_memory_settings, get_recall_settings
+            from .kit.agent_memory.config import (
+                get_recall_settings,
+                save_memory_settings,
+                validate_memory_settings,
+            )
 
             data = json.loads(request.body.decode('utf-8'))
 
@@ -5807,6 +5833,14 @@ def recall_settings(request):
 
             if not filtered:
                 return JsonResponse({"error": "No valid settings provided"}, status=400)
+
+            # Same reject-whole schema validation as /api/memory/settings.
+            validation_errors = validate_memory_settings(filtered)
+            if validation_errors:
+                return JsonResponse({
+                    "error": "Invalid settings values",
+                    "errors": validation_errors,
+                }, status=400)
 
             save_memory_settings(filtered)
 

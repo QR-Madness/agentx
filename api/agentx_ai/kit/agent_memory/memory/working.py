@@ -9,8 +9,6 @@ from ..config import get_settings
 if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
 
-settings = get_settings()
-
 
 class WorkingMemory:
     """
@@ -61,7 +59,7 @@ class WorkingMemory:
 
         # Push to list, trim to max size
         self.redis.lpush(self.turns_key, json.dumps(turn_data))
-        self.redis.ltrim(self.turns_key, 0, settings.max_working_memory_items - 1)
+        self.redis.ltrim(self.turns_key, 0, get_settings().max_working_memory_items - 1)
 
         # Set TTL (1 hour default)
         self.redis.expire(self.turns_key, 3600)
@@ -77,7 +75,7 @@ class WorkingMemory:
             List of turn dictionaries
         """
         # Cap limit to configured maximum to prevent resource exhaustion
-        effective_limit = min(max(1, limit), settings.max_working_memory_items)
+        effective_limit = min(max(1, limit), get_settings().max_working_memory_items)
         turns = self.redis.lrange(self.turns_key, 0, effective_limit - 1)
 
         # Refresh TTL on access (sliding window expiry)

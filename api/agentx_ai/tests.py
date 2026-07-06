@@ -4361,6 +4361,45 @@ class FactVerificationPipelineTest(TestCase):
         self.assertIn("contradiction_max_candidates", settings)
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class MemorySettingsEndpointTest(TestCase):
+    """Settings-safety contract of GET/POST /api/memory/settings (S1)."""
+
+    def test_get_reports_settings_file_status(self) -> None:
+        resp = self.client.get("/api/memory/settings")
+        self.assertEqual(resp.status_code, 200)
+        status = resp.json().get("settings_file_status")
+        self.assertIsInstance(status, dict)
+        self.assertIn("exists", status)
+        self.assertIn("error", status)
+
+    def test_post_rejects_whole_update_with_per_key_errors(self) -> None:
+        # One bad value rejects the WHOLE write — nothing may be persisted.
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self.client.post(
+                "/api/memory/settings",
+                data=json.dumps({"extraction_temperature": "warm",
+                                 "extraction_enabled": True}),
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 400)
+            body = resp.json()
+            self.assertIn("error", body)
+            self.assertIn("extraction_temperature", body.get("errors", {}))
+            save.assert_not_called()
+
+    def test_post_recall_settings_validates_too(self) -> None:
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self.client.post(
+                "/api/memory/recall-settings",
+                data=json.dumps({"recall_candidate_pool": "plenty"}),
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("recall_candidate_pool", resp.json().get("errors", {}))
+            save.assert_not_called()
+
+
 # Phase 11.8+ tests moved to tests_memory.py
 
 

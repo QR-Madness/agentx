@@ -4001,6 +4001,10 @@ paths:
       tags: [Memory]
       operationId: memorySettingsGet
       summary: Get consolidation settings
+      description: >-
+        Includes `settings_file_status` ({path, exists, error}) — health of the
+        overrides file; `error` is non-null when a corrupt file forced the
+        defaults fallback.
       responses:
         '200':
           description: Settings
@@ -4028,6 +4032,21 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        '400':
+          description: >-
+            Schema validation failed — the whole update is rejected (nothing
+            persisted); `errors` maps each failing key to a message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  errors:
+                    type: object
+                    additionalProperties:
+                      type: string
 
   /memory/recall-settings:
     get:
@@ -4061,6 +4080,21 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        '400':
+          description: >-
+            Schema validation failed — the whole update is rejected (nothing
+            persisted); `errors` maps each failing key to a message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  errors:
+                    type: object
+                    additionalProperties:
+                      type: string
 
   /jobs:
     get:
