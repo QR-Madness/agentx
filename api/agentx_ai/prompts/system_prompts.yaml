@@ -63,7 +63,7 @@ extraction:
     Reply YES or NO:
 
   # Combined extraction prompt with JSON schema
-  # Variables: {text}
+  # Variables: {text}, {known_entities}, {known_facts}, {agent_roster}, {addressed_agent}
   combined: |
     Extract entities and facts from what the USER said:
 
@@ -544,7 +544,7 @@ extraction:
     If no contradiction: CONTRADICTION: NO
 
   # Assistant self-knowledge extraction
-  # Variables: {text}, {known_entities}, {known_facts}
+  # Variables: {text}, {known_entities}, {known_facts}, {agent_roster}, {addressed_agent}
   # Used by consolidation to extract knowledge from the agent's own responses.
   assistant_self: |
     Extract the agent's own intellectual contributions from this ASSISTANT response.

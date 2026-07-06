@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pyright: reportAttributeAccessIssue=false
 """Self-driven end-to-end harness for File Workspaces & Document RAG.
 
 Drives the WHOLE RAG path against the real stack (your Docker Postgres + pgvector,

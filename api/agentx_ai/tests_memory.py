@@ -1652,7 +1652,7 @@ class MemoryLifecycleIntegrationTest(MemoryTestBase):
 
         self.assertIsNotNone(bundle)
         # Should have some episodic results
-        self.assertGreaterEqual(len(bundle.turns), 0)  # type: ignore[union-attr]
+        self.assertGreaterEqual(len(bundle.relevant_turns), 0)
 
     def test_full_memory_cycle_end_to_end(self) -> None:
         """Complete cycle: store -> consolidate -> remember."""
@@ -3899,7 +3899,10 @@ class RecallProviderImportTest(TestCase):
         provider = MagicMock()
         provider.complete = AsyncMock(return_value=MagicMock(content=content))
         registry = MagicMock()
-        registry.get_provider_for_model.return_value = (provider, "model-x")
+        # recall.py resolves via resolve_with_fallback -> (provider, model_id, notice);
+        # stub the production call shape (a bare MagicMock fails 3-unpacking and
+        # silently lands in the empty fallback — the exact drift this test rotted on).
+        registry.resolve_with_fallback.return_value = (provider, "model-x", None)
         return patch(
             "agentx_ai.providers.registry.get_registry", return_value=registry
         ), provider
@@ -5560,3 +5563,52 @@ class WindowTruncationRetryTest(TestCase):
         result = self._run(self._truncated_payload(), turns)
         self.assertTrue(result.success)
         self.assertEqual(result.entities[0]["name"], "Brightline")
+
+
+class PromptTemplateRenderTest(TestCase):
+    """Every extraction template renders with its documented variables and leaves
+    no unsubstituted {placeholder} behind (JSON examples use doubled braces —
+    an un-doubled brace or a typo'd variable breaks extraction silently at
+    runtime inside try/excepts; this catches it at test time)."""
+
+    TEMPLATE_VARS = {
+        "extraction.relevance": {"text": "t"},
+        "extraction.combined": {
+            "text": "t", "known_entities": "(none)", "known_facts": "(none)",
+            "agent_roster": "(none)", "addressed_agent": "(none)",
+        },
+        "extraction.combined_with_relevance": {
+            "text": "t", "known_entities": "(none)", "known_facts": "(none)",
+            "agent_roster": "(none)", "addressed_agent": "(none)",
+        },
+        "extraction.combined_window": {
+            "turns": "[T1] t", "conversation_overview": "(none)",
+            "known_entities": "(none)", "known_facts": "(none)",
+            "registry_entities": "(none)", "registry_facts": "(none)",
+            "agent_roster": "(none)",
+        },
+        "extraction.correction": {"text": "t"},
+        "extraction.contradiction": {
+            "new_claim": "c", "new_temporal": "current",
+            "new_confidence": "0.9", "existing_facts": "(none)",
+        },
+        "extraction.assistant_self": {
+            "text": "t" * 120, "known_entities": "(none)", "known_facts": "(none)",
+            "agent_roster": "(none)", "addressed_agent": "(none)",
+        },
+    }
+
+    _PLACEHOLDER = re.compile(r"(?<!\{)\{([a-z_]+)\}(?!\})")
+
+    def test_extraction_templates_render_cleanly(self) -> None:
+        loader = get_prompt_loader()
+        for key, variables in self.TEMPLATE_VARS.items():
+            with self.subTest(template=key):
+                rendered = loader.get(key, **variables)
+                self.assertTrue(rendered.strip(), f"{key}: empty render")
+                leftovers = self._PLACEHOLDER.findall(rendered)
+                self.assertEqual(
+                    leftovers, [],
+                    f"{key}: unsubstituted placeholders {leftovers} — "
+                    "un-doubled brace or missing variable",
+                )

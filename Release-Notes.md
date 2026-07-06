@@ -16,97 +16,39 @@
     • Whole body should fit on one screen (~2 KB). If it's longer, trim.
 -->
 
-AgentX is a self-hostable AI agent platform: a Django API server (MCP client, layered
-agent memory, reasoning + drafting, model providers, translation) paired with a
-cross-platform Tauri desktop/mobile client. This is the **Mobile-Ready Alpha** — point
-the client at your own API server and bring your own model providers.
+AgentX is a self-hostable AI agent platform — Django API + Tauri client.
+**Mobile-Ready Alpha**: bring your own server and model providers.
 
 ### Highlights
 
-- **Three new themes: Ugentx, Tango, and Blackhawk.** A phosphor-green terminal, a colorful
-  graphite, and a tactical amber HUD join Cosmic/Light/Professional — each with its own surface
-  character (CRT scanlines, dot-grid bezels), picked from Settings or the command palette.
-- **Workspaces grew into Projects.** The hub bundles files, custom **instructions** (followed
-  in every chat of the project), and the project's conversations — with sidebar project
-  sections, "move to project", and "new chat in this project". Conversations remember their
-  project on the server, and **each project keeps its own memory**: knowledge learned inside
-  a project stays scoped to it (durable facts still graduate to global memory over time).
-- **New: the deployment manager — on by default in the bundle.** Web dashboard + CLI
-  (`qrmadness/agentx-manager`, port 12320, loopback + token): live health incl. a first-boot
-  *initializing* state, CPU/memory/network gauges (live ↓ MB/s while the model downloads),
-  log streaming, config-aware restarts, typed-confirmation destroy. Quick start is now
-  zero-config: `cp .env.example .env` → `up -d` → open the GUI → click **Start** — the secret
-  key + database passwords auto-generate on first Start (existing databases are never
-  re-keyed), and LLM provider keys are added in the app afterwards, not in `.env`.
-- **The token gateway ships in the deploy bundle.** Shared-secret + rate limiting from the
-  bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
-- **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
-  dev `.env` templates opt out explicitly.
-- **Memory extraction got a brain upgrade.** Conversations are now understood in windows (like a
-  human reading the whole exchange, not line-by-line): the same topic mentioned three ways becomes
-  ONE entity with aliases, relationships connect things said in different turns, facts remember
-  which turn they came from, and near-duplicate entities auto-merge via embedding similarity —
-  extraction eval went from failing dedup/relationship/provenance checks to 19/19.
-- **Memory recall is now measurable.** New `eval_recall` dev harness scores retrieval quality
-  (recall@k/MRR per technique, 52-query golden set) so recall changes ship measured, not guessed —
-  the baseline gate for the upcoming reranking and extraction upgrades.
-- **Reasoning models think out loud now.** OpenRouter/Vercel/OpenAI-compatible reasoning
-  tokens stream into the live thinking bubble (like LM Studio) instead of silently burning the
-  output budget, and reasoning-capable models get a larger token budget automatically.
+- **Three new themes** — Ugentx, Tango, and Blackhawk join Cosmic/Light/Professional.
+- **Workspaces grew into Projects**: files + per-project **instructions** + conversations,
+  each project with its own scoped memory.
+- **Deployment manager, on by default in the bundle** — web dashboard + CLI; zero-config
+  first Start (secrets auto-generate).
+- **Hardened self-hosting**: token gateway in the bundle; no-env boots default safe
+  (debug off, auth ON).
+- **Memory brain upgrade + measuring stick**: windowed extraction (one entity per topic,
+  cross-turn relationships, provenance, embedding dedup) + an `eval_recall` harness.
+- **Reasoning models think out loud** across all OpenAI-compatible providers.
 
 ### Fixes
 
-- **The UI got its foundation back.** Buttons in newer panels no longer render as gray
-  UA-default blobs (a missing global reset), keyboard focus rings work again in Light and
-  Professional, and the app finally ships its real fonts (Inter + JetBrains Mono) instead of
-  silently falling back to system type.
-- **Inputs and pickers in newer panels no longer look washed out.** Form controls now share
-  one field style (sunken background, visible border, focus glow) across the Projects hub,
-  Ambassador switchers/composer, and avatar generator.
-- **Anthropic models now receive their full system prompt.** A provider bug dropped every
-  system block except the last (agent persona, memory, and project instructions were all
-  silently lost on Anthropic models); everything now reaches the model.
-- **Big documents ingest reliably.** Embedding large uploads no longer times out under the
-  chat-recall budget (sliced, background-priority embedding), failed documents show a real
-  reason, and a Retry button re-runs ingestion without re-uploading.
-- **First boot can no longer hang after the model download.** hf-xet's lingering download
-  threads could keep schema init alive after success, so uvicorn never started; the image now
-  disables xet (`HF_HUB_DISABLE_XET=1`) and the entrypoint reaps a post-success straggler.
-- **Gateway fails closed** on an empty `AGENTX_GATEWAY_TOKEN` (previously that silently
-  authorized every request), and proxies to the right port for custom `API_PORT`s.
-- **X-Forwarded-For is no longer trusted blindly.** Honored only with `AGENTX_TRUST_PROXY=true`
-  (set behind the gateway) — closes a spoofable localhost auth bypass on exposed APIs.
-- **Rate limiting works without Cloudflare** (TCP-peer fallback when `CF-Connecting-IP` is
-  absent); misleading cloudflared `noHappyEyeballs` SSE comment corrected.
-- **Container boots are fast now.** Warm starts collapsed from 2+ minutes to seconds — one
-  bootstrap process replaces four, schema init no longer loads the embedding model, and the
-  first-boot download runs as an explicit warmup step. `agentx migrate` now also applies
-  Alembic migrations. Windows users get a one-click `start-manager.bat` in the bundle
-  (needs Docker Desktop's WSL 2 integration; community testing welcome).
-- **Answers cut off by the token limit no longer end silently.** The agent auto-continues
-  once where it stopped (`chat.auto_continue_on_length`, on by default), and a still-truncated
-  answer is flagged in the chat (tag + toast) instead of looking finished.
-- **Trajectory/tool-output compression no longer dies silently without Anthropic credits.**
-  The compression models now default to your active/global model and retry down the fallback
-  chain on runtime failures (a broke provider is also skipped for 30s instead of re-paid).
-- **Bundle dashboard reads a stopped stack as *down*** (was *degraded*), and gauges no longer
-  count the manager itself — its container shares the bundle's compose project by design and
-  is now filtered out of status/usage/restart. Bundle mode is now a plain-language dashboard
-  (Start/Stop, component health, resource + live-download tiles); polling pauses in
-  background tabs. Repo mode keeps the multi-cluster grid.
+- **UI foundation restored**: global reset, focus rings, real fonts, one field style.
+- **Anthropic models get their full system prompt** (all but one block was dropped).
+- **Security**: gateway fails closed on an empty token; `X-Forwarded-For` needs
+  `AGENTX_TRUST_PROXY=true`; Cloudflare-free rate limiting.
+- **Boots**: warm starts 2+ min → seconds; first-boot hang fixed; `start-manager.bat`.
+- **Big documents ingest reliably**, with real failure reasons and a Retry button.
+- **Token-limit cutoffs auto-continue**; compression retries down the model-fallback chain.
+- **Bundle dashboard**: stopped = *down*, manager excluded from gauges, background polling pauses.
 
 ### Migration notes (self-hosters)
 
-- `.env` omits `DJANGO_DEBUG` / `AGENTX_AUTH_ENABLED`? The new safe defaults apply (debug off,
-  auth on) — set them explicitly to keep old behavior.
-- Gateway clusters: also set `AGENTX_TRUST_PROXY=true` (`cluster:up` auto-adds
-  `AGENTX_GATEWAY_DIR` to older `.env`s).
-- Repo clusters now run under per-cluster compose projects — migrate a running cluster once
-  with `task cluster:adopt CLUSTER=<name>` (brief downtime).
+- Missing `DJANGO_DEBUG`/`AGENTX_AUTH_ENABLED` in `.env` → safe defaults apply (set explicitly
+  to keep old behavior); gateway clusters set `AGENTX_TRUST_PROXY=true`; repo clusters migrate
+  once via `task cluster:adopt CLUSTER=<name>`.
 
 ### Getting started
 
-See the [documentation](https://agentx.thejpnet.net/docs) — the
-[quickstart](https://agentx.thejpnet.net/docs/getting-started/quickstart) and
-[self-hosting guide](https://agentx.thejpnet.net/docs/deployment/self-hosting) cover
-standing up the server and connecting the client.
+[Documentation](https://agentx.thejpnet.net/docs) · [quickstart](https://agentx.thejpnet.net/docs/getting-started/quickstart) · [self-hosting](https://agentx.thejpnet.net/docs/deployment/self-hosting)

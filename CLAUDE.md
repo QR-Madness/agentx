@@ -29,7 +29,30 @@ Find the right doc before diving in — they're split deliberately so this file 
 
 - The client is cross-platform, thus UI should be highly responsive and use comfortable hit-regions.
 - Following API & Client v.0.20 (see `versions.yaml` for the authoritative version), all changes should be migratable for existing platforms.
-- **Version + notes travel with the work.** Any notable/user-facing change must **bump the version and update the release notes in the same commit** — bump `versions.yaml` (patch, via `task versions:sync` to propagate to all manifests), bump the `<!-- release-version: X.Y.Z -->` marker in root `Release-Notes.md` to match, and add the change to the `Release-Notes.md` body (it always describes the *next* release). This is a continuous dev habit, not a release-time step: `task release:check` asserts the marker matches `versions.yaml`. See [Build & Release](#build--release).
+- **Version + notes travel with the work.** Any notable/user-facing change must **bump the version and update the release notes in the same commit** — bump `versions.yaml` (patch, via `task versions:sync` to propagate to all manifests **and refresh `uv.lock`/`Cargo.lock` — the lockfiles ride the version commit**), bump the `<!-- release-version: X.Y.Z -->` marker in root `Release-Notes.md` to match, and add the change to the `Release-Notes.md` body (it always describes the *next* release). This is a continuous dev habit, not a release-time step: `task release:check` asserts the marker matches `versions.yaml`. See [Build & Release](#build--release).
+
+## Hard-Won Working Rules
+
+Landmines that cost real debugging time — read before touching the memory kit:
+
+1. **Settings overrides:** never use `save_memory_settings()` for temporary/test overrides — it
+   writes `data/memory_settings.json` (a live dev server picks it up) and won't refresh the
+   import-time `settings = get_settings()` snapshots held by ~9 memory-kit modules anyway. Pin
+   process-locally and restore in `finally` — canonical examples:
+   `eval_consolidation._pin_model`, `eval_recall._run_arm`. Details in Development-Notes.
+2. **Two extraction paths:** windowed (default) + legacy per-turn behind
+   `extraction_windowing_enabled` — behavior changes must edit both or gate on the flag.
+3. **Eval harnesses:** `eval_consolidation` is GLOBAL (needs a sterile cluster or `--snapshot`;
+   its drain loop exists because discovery sweeps 10 conversations at a time — keep it).
+   `eval_recall` is user/channel-scoped and safe on a live cluster. Extend their CASES/corpus —
+   don't write one-off eval scripts. Both need `task db:up`.
+4. **Red means you:** the test suite and pyright baseline (`api/.pyright-baseline` = 0, gated in
+   CI) are green. Any failure or new type error is yours — never rationalize it as pre-existing.
+5. **Harness artifact ≠ model failure:** an eval case scoring "stored nothing" is usually
+   plumbing (unconsolidated conversation, truncated output, channel mismatch) — check
+   `c.consolidated` and the metrics counters before touching prompts.
+6. **Prompt templates** (`prompts/system_prompts.yaml`) use `{var}` substitution — literal JSON
+   braces must be doubled `{{ }}`; the render test in `tests_memory.py` guards this.
 
 ## Project Overview
 
@@ -71,15 +94,15 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 detection↔translation code bridging)
 - `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query). ★
-- `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution scoped to a workspace. Two backends via `dispatch.py` (per-workspace `shell_backend`): `bubblewrap` (default, locked-down jail) or `container` (`container.py` — persistent per-workspace Docker container, installs + network, via `docker` CLI → dind sidecar in prod; status/lifecycle at `/api/workspaces/{id}/shell/container`). `sandbox.py` (`BubblewrapSandbox` jail — network off, FS=work dir only, env scrubbed; bare subprocess only behind `allow_unsandboxed`); `workdir.py` materializes the workspace into `data/shell/{ws}/{conv}/` (+ GC + path-jail); `policy.py` deny-list; tools `run_command`/`write_file`/`read_file`/`list_files` in `mcp/internal_tools.py`. Threat model + flags in Development-Notes. Self-driven e2e: `scripts/shell_e2e.py`.
-- `kit/workspaces/` — File Workspaces & Document RAG, surfaced to users as **Projects**: three-store separation (blob store `storage.py` / Postgres manifest `repository.py` / pgvector `document_chunks`); `ingestion.py` parse→chunk→embed→auto-tag+summary; `service.py` upload policy; `retrieval.py` two-tier (manifest catalog + pgvector semantic) + `render_manifest_block`/`render_instructions_block`; API in `workspace_views.py`. **Projects v1**: `description`/`instructions` fields (instructions ride every turn at ledger priority 88) + durable conversation membership (`workspace_conversations`, one project per conversation; turn precedence request > membership; `ws_home` is never a project) + **project memory channels** (`_project_{ws_id}` becomes the turn's memory channel; workflow > project > profile; opt-out `memory.project_channels`). Agent tools `workspace_search`/`document_query`/`read_document` (`mcp/internal_tools.py`, workspace-scoped via `InternalToolContext`); stable workspace-manifest ledger block + auto `doc` citations. Self-driven e2e: `scripts/rag_e2e.py`.
+- `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, per-workspace Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
+- `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Agent tools `workspace_search`/`document_query`/`read_document`. Internals ★. e2e: `scripts/rag_e2e.py`.
 - `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE); configure via `mcp_servers.json`
 - `providers/` — abstract `ModelProvider` (LM Studio/Anthropic/OpenAI/OpenRouter/Vercel); `models.yaml` configs + defaults, `pricing.py` cost. Resolution/fallback ★
 - `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback
 - `drafting/` — speculative decoding, multi-stage pipelines, N-best candidates; `drafting_strategies.yaml`
 - `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection; `orchestrator.py` picks strategy by task type
-- `agent/` — `Agent` orchestrates reasoning + drafting + tools. `TaskPlanner` decomposes; the chat path composes the plan with the **main agent model** via `compose_with_model` (structured JSON; opts out with `{"plan": null}`), gated by `_assess_complexity`. Legacy `plan()` + `SUBTASK`-regex path for non-chat callers. `SessionManager` for conversations.
-- `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`). Each profile has a Docker-style `agent_id` + `self_channel` (`_self_{agent_id}`). `kind` ∈ `agent`|`ambassador` with **separate defaults**; ambassadors are **excluded from chat** (default/routing/`delegate_to` all filter `kind=='agent'`). `_ensure_ambassador_defaults()` seeds/migrates without ever converting the default agent.
+- `agent/` — `Agent` orchestrates reasoning + drafting + tools; `TaskPlanner` decomposes (chat path composes plans with the main agent model; legacy `plan()` for non-chat callers ★); `SessionManager` for conversations.
+- `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`. **Rule:** `kind` ∈ `agent`|`ambassador`, and ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs (section detection, JSON-path, semantic search)
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 - `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★
@@ -91,14 +114,15 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 
 ### Key Client Patterns (`client/src/`)
 
+The full **client surface map** (chat page anatomy, Ambassador Deck, Projects hub, profile/prompt
+editors, theme internals) lives in [`Development-Notes.md`](Development-Notes.md) — read it before
+touching a surface. The rules that must not drift:
+
 - 3 primary pages (Start, Dashboard, AgentX) routed via `RootLayout` + `TopBar`; gate pages `AuthPage` (`AGENTX_AUTH_ENABLED`) + `VersionMismatchPage`.
-- Chat page (`pages/AgentXPage.tsx`) = left `ConversationSidebar` rail + `ChatPanel` (collapsible/resizable, presentation over `ConversationContext`). Shared list logic in `hooks/useConversationList.ts` + `components/chat/ConversationList.tsx`/`ConversationRow.tsx`, reused by the mobile Conversations drawer. Per-conversation meta (pin/archive/icon/color/group/bulk) in `lib/conversationMeta.ts` (reserves `workspaceId`/`fileRefs`). Destructive actions use `ui/ConfirmDialog` (`useConfirm()`), not native `confirm`.
-- Settings, Tools, **Memory**, and the **Ambassador Command Deck** (`SURFACES.ambassadorDeck` — `AmbassadorPanel` in conversation-less `deckThreadId` mode; holds multiple named Inquiries via `AmbassadorInquirySwitcher` + the per-user registry; relay routes via `lib/ambassadorRelay.ts::planRelay` — live in-tab for the active tab, else headless `POST /ambassador/relay`) open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources/**Projects** are right-side drawers. The Projects hub (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`; internal naming stays `workspace`) manages projects (CRUD + upload + ingest status + description/instructions editors + the project's conversation list + "new chat in project"; Home is a fixed personal-media entry). Attach = `conversationMeta.workspaceId` (fast path; chat stream sends `workspace_id`) + durable server membership (`PUT /workspaces/{id}/conversations/{conv}`; the sidebar's project sections derive from it, with a one-time localStorage sync in `lib/projectSync.ts`); `lib/api/workspaces.ts`.
-- **Command palette is the primary command surface** — `components/common/CommandPalette.tsx` (thin `cmdk`) over the `hooks/useCommands.tsx` registry; palette + TopBar icons share `lib/surfaces.ts` (`SURFACES.*`) so they can't drift. `⌘K` dispatches `agentx:toggle-command-palette` (RootLayout owns it).
-- Multi-server: per-server settings in localStorage (`agentx:servers`/`…:meta`/`activeServer`); `ServerContext` app-wide; `lib/api` typed client (facade over `lib/api/`); `lib/hooks.ts` data hooks on the `useApi<T>` factory. `AgentProfileContext` manages profiles.
-- **Agent-profile editor** (`unified-profile-editor/`): hero identity header over a `ControlCard` grid; avatars in `common/AvatarPicker` (`lib/avatars.ts`) — an icon id **or** a generated image (the Generate tab → `POST /api/agent/avatar/generate`, stored as `media:{ws}/{doc}` on `profile.avatar`); render via `common/AgentAvatar` (image avatars resolve to an authed object URL through `lib/avatarImage.ts`, icon otherwise). Signature color from `lib/agentAccent.ts`. Primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`.
-- **Prompt Stack editor** (Settings → Intelligence → "System Prompt"): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` reorder, debounced autosave, reset/diff, live preview via `lib/promptStack.ts::composeStack`. Library snippets insert as custom layers; the enhancer (`/api/prompts/enhance`) rewrites a layer in place.
-- Six themes (Cosmic, Light, Professional, Ugentx terminal-green, Tango graphite, Blackhawk tactical-amber) are token-driven `ThemeDefinition`s in `lib/theme.ts` (~110 CSS vars + picker metadata `description`/`icon`), applied by `ThemeProvider` (also stamps `data-theme` on the root). **Add a theme = one entry in `THEMES`** — pickers (palette + Settings→Appearance) iterate the registry; icons map in `common/themeIcons.tsx`; a vitest enforces cross-theme key parity (all themes define the same var set; glow tokens use a transparent shadow, never bare `none` — `none` in a shadow list kills the whole declaration). Per-theme surface decorations (scanlines/dot-grid/glass) live in `styles/expression.css` (`[data-theme]`-scoped, unlayered). Fonts: Inter + JetBrains Mono self-hosted via `@fontsource` (imported in `main.tsx`; stacks in App.css `@theme static` → `--font-sans`/`--font-mono`).
+- **Command palette is the primary command surface** — `components/common/CommandPalette.tsx` over the `hooks/useCommands.tsx` registry; palette + TopBar icons share `lib/surfaces.ts` (`SURFACES.*`) so they can't drift.
+- Destructive actions use `ui/ConfirmDialog` (`useConfirm()`), never native `confirm`.
+- Multi-server: `ServerContext` app-wide; `lib/api` typed client facade; `lib/hooks.ts` data hooks on the `useApi<T>` factory; `AgentProfileContext` for profiles.
+- **Add a theme = one entry in `THEMES`** (`lib/theme.ts`) — pickers iterate the registry; a vitest enforces cross-theme token parity; glow tokens use a transparent shadow, never bare `none`.
 - API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`; surface via `useNotify().notifyError(err)` (toasts); inline errors only for form-field validation.
 
 #### Styling (Tailwind v4 + design tokens)
@@ -121,25 +145,18 @@ task dev:web            # Client in browser mode (port 1420, no Tauri)
 task install            # Install all deps (uv sync + bun install)
 
 # Database (Docker) — Neo4j, PostgreSQL, Redis
-task db:up / db:down    # Start / stop services (aliases: runners / teardown)
-task db:status
-task db:init            # Create local data dirs (data/neo4j, data/postgres, data/redis)
+task db:up / db:down    # Start / stop services
 task db:init:schemas    # Init schemas: PG via Alembic (upgrade head) + Neo4j/Redis
-task db:verify:schemas  # Read-only schema check
 task db:migrate         # Apply pending migrations: PG (Alembic) + Neo4j
-task db:migrate:pg      # PG only (alembic upgrade head); db:migrate:pg:status to inspect
 task db:revision -- "msg"  # New Alembic (PostgreSQL) revision — see alembic/README
-task db:shell:postgres  # psql / db:shell:redis (redis-cli) / db:shell:neo4j (cypher-shell)
+task db:shell:postgres  # psql / db:shell:redis / db:shell:neo4j
 
 # Django
-task api:run            # Dev server (alias: api:runserver)
-task api:migrate / api:makemigrations / api:shell
+task api:run            # Dev server; also api:migrate / api:makemigrations / api:shell
 
 # Deployment manager (manager/ — owns cluster lifecycle; ADR-10)
 task manager:serve      # Web GUI on http://127.0.0.1:12320 (bearer token in .manager-token)
-task cluster:new CLUSTER=x [GATEWAY=1]   # thin wrappers over `agentx-manager`
-task cluster:up/down/restart/destroy/adopt/status/list CLUSTER=x
-task manager:test       # Manager unit tests; manager:test:integration needs docker
+task cluster:up/down/restart/destroy/adopt/status/list CLUSTER=x   # over `agentx-manager`
 ```
 
 > **Schema migrations:** the memory **PostgreSQL** schema is managed by **Alembic**
@@ -159,7 +176,12 @@ uv run python api/manage.py test agentx_ai.tests.TranslationKitTest -v2
 uv run python api/manage.py test agentx_ai.tests.TranslationKitTest.test_translate_to_french -v2
 ```
 
-Test files: `tests.py` (TranslationKit, HealthCheck, MCP, Extraction), `tests_memory.py` (80 memory-system tests). Key categories: `TranslationKitTest` (needs HuggingFace models, slow first run), `HealthCheckTest` (auto-skips without Docker), `MCPClientTest`/`MCPServerRegistryTest` (no external deps), `ExtractionPipelineTest` (skips without API keys), `ToolOutputCompressorTest`/`ToolOutputChunkerTest`, `IntentAwareRetrievalTest`/`TrajectoryCompressionTest`/`ContextGateTest`, `AgentSelfMemoryTest`, `FactVerificationPipelineTest`. Memory integration tests skip gracefully without Docker or on embedding-dimension mismatch. `DJANGO_SETTINGS_MODULE` is set automatically by the Taskfile.
+Test files: `tests.py` (translation, health, MCP, extraction, providers, voice) and
+`tests_memory.py` (the memory system — mock-based, fast; docker-gated integration classes
+auto-skip without `task db:up`). `task test:memory` runs the memory suite (pass a class via
+`task test:memory -- agentx_ai.tests_memory.SomeTest`). Model-heavy classes
+(`TranslationKitTest`) are slow on first run; everything degrades to skips without
+Docker/API keys. `DJANGO_SETTINGS_MODULE` defaults inside `manage.py` — bare invocations work.
 
 ### Linting, Formatting & Static Analysis
 
@@ -200,27 +222,20 @@ Copy `.env.example` to `.env`. Key vars: `NEO4J_PASSWORD`, `POSTGRES_PASSWORD` (
 
 ## Important Technical Details
 
-- **Translation models load eagerly** at `TranslationKit` init. First request downloads ~600MB (NLLB-200) from HuggingFace.
-- **Memory system is lazy**: DB connections (Neo4j, PostgreSQL, Redis) created on first use. Config via pydantic-settings from `.env`.
-- **Docker data is bind-mounted** to `./data/` (not Docker volumes). Run `task db:init` to create the structure.
-- **Tauri dev server** runs Vite on port 1420, HMR on 1421. Window config in `client/src-tauri/tauri.conf.json`.
-- **Python managed by uv**, client packages by **bun**. `task dev` uses globally-installed `concurrently` (from `task install`).
+- **Translation models load eagerly** at `TranslationKit` init (first request downloads ~600MB); the **memory system is lazy** (DB connections on first use; pydantic-settings from `.env`).
+- **Docker data is bind-mounted** to `./data/` (not Docker volumes); `task db:init` creates the structure.
+- **Python managed by uv**, client packages by **bun**; Tauri dev = Vite on port 1420 (HMR 1421).
 
 ## Agent Memory Interface
 
-`AgentMemory` (`kit/agent_memory/memory/interface.py`) is the unified API. **Core**: `store_turn`,
-`remember(query, top_k)`, `learn_fact`, `upsert_entity`, `record_tool_usage`, `reflect` (async
-consolidation). **Goal tracking**: `add_goal`/`get_goal`/`complete_goal`/`get_active_goals`
-(`TaskPlanner.plan()` opens a goal, `Agent.run()` closes it). Full method semantics + the extraction,
-procedural, context-gating, web-research, model-resolution, and attribution subsystems are documented
-in [`Development-Notes.md`](Development-Notes.md).
+`AgentMemory` (`kit/agent_memory/memory/interface.py`) is the unified API: `store_turn`,
+`remember(query, top_k)`, `learn_fact`, `upsert_entity`, `record_tool_usage`, `reflect`, and
+goal tracking (`add_goal`/`complete_goal`/`get_active_goals`). Full method semantics + the
+extraction, procedural, context-gating, web-research, model-resolution, and attribution
+subsystems are in [`Development-Notes.md`](Development-Notes.md).
 
 ## Project Status
 
-Phases 1–14 + 17 complete. Phase 15 (Plan Execution) core complete. **Phase 16 (Multi-Agent) ~72%**
-— Agent Alloy v1, attribution, routing, tool isolation, ad-hoc + @-mention delegation, and the
-Ambassador (foundation + TTS/STT voice) shipped; **16.7 Ambassador v2** is the live planning. Phase 18
-(UX + Memory Tuning) ~98%. **Phase 19 (Cloud Operation)** planned — scaling assessment + slices in
-[`todo/phases/phase-19-cloud-operation.md`](todo/phases/phase-19-cloud-operation.md). Current version:
-see `versions.yaml`. **Detailed tracking:** [`Todo.md`](Todo.md)
-→ [`todo/`](todo/); memory direction in [`Memory-Roadmap.md`](Memory-Roadmap.md).
+The Progress Tracker in [`Todo.md`](Todo.md) is authoritative (live: **16.7 Ambassador v2**
+planning; **Phase 19 Cloud Operation** queued). Current version: `versions.yaml`; memory
+direction: [`Memory-Roadmap.md`](Memory-Roadmap.md).

@@ -281,6 +281,13 @@ tasks:
     cmds:
       - uv run python api/manage.py test agentx_ai.tests.HealthCheckTest agentx_ai.tests.MCPClientTest agentx_ai.tests.MCPServerRegistryTest agentx_ai.tests.LogArchiveCryptoTest agentx_ai.tests.BootstrapStampTest agentx_ai.tests.BootstrapWarmupSignalTest agentx_ai.tests.BootstrapContractTest agentx_ai.tests.InitMemorySchemaEmbedderTest -v2
 
+  test:memory:
+    desc: "Run the memory suite (pass a class: task test:memory -- agentx_ai.tests_memory.SomeTest)"
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py test {{.CLI_ARGS | default "agentx_ai.tests_memory"}} -v2
+
   test:client:
     desc: "Run client tests (Vitest)"
     dir: client
@@ -1063,6 +1070,14 @@ tasks:
         # docs-site "Current release:" prose mentions
         sed -i "s/\(Current release:\*\* v\)[0-9.]*/\1$API_VERSION/" docs-site/src/content/docs/index.md docs-site/src/content/docs/roadmap.md
         echo "  ✓ docs-site docs prose"
+
+        # Lockfiles record the project version — refresh them HERE so they ride
+        # the same commit as the manifests (otherwise they drift until the next
+        # `uv run`/cargo build dirties the tree mid-session).
+        uv lock --quiet && echo "  ✓ uv.lock"
+        (cd client/src-tauri && cargo update -p agentx-client --quiet 2>/dev/null) \
+          && echo "  ✓ client/src-tauri/Cargo.lock" \
+          || echo "  ~ Cargo.lock skipped (cargo unavailable — next build refreshes it)"
 
         echo "Done."
 

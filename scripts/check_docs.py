@@ -29,6 +29,10 @@ STRICT = "--strict" in sys.argv
 
 RN_BODY_LIMIT = 2048    # Release-Notes.md sets its own "~2 KB / one screen" target
 CLAUDE_MD_LIMIT = 20000  # the "light index" ceiling; ratchet DOWN as it slims, never up
+# Module-level `settings = get_settings()` snapshots in the memory kit never refresh at
+# runtime — every new one silently breaks the pinning discipline (CLAUDE.md "Hard-Won
+# Working Rules" #1; Development-Notes "Memory Settings & Eval Pinning"). Ratchet DOWN.
+SETTINGS_SNAPSHOT_LIMIT = 9
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.*?)\s*#*$")
@@ -171,12 +175,30 @@ def check_claude_size() -> None:
             )
 
 
+def check_settings_snapshots() -> None:
+    """Count import-time settings snapshots in the memory kit (see SETTINGS_SNAPSHOT_LIMIT)."""
+    kit = ROOT / "api" / "agentx_ai" / "kit" / "agent_memory"
+    if not kit.is_dir():
+        return
+    pattern = re.compile(r"^settings\s*=\s*get_settings\(\)", re.M)
+    count = sum(len(pattern.findall(f.read_text(encoding="utf-8", errors="ignore")))
+                for f in kit.rglob("*.py"))
+    if count > SETTINGS_SNAPSHOT_LIMIT:
+        warnings.append(
+            f"kit/agent_memory has {count} module-level `settings = get_settings()` snapshots "
+            f"(> {SETTINGS_SNAPSHOT_LIMIT}) — these never refresh and every eval/test pinning "
+            f"site must know about them; use live get_settings() reads instead "
+            f"(CLAUDE.md Hard-Won Working Rules #1)"
+        )
+
+
 def main() -> int:
     check_links()
     check_todo_orphans()
     check_versions()
     check_release_notes_size()
     check_claude_size()
+    check_settings_snapshots()
 
     print("📑 Doc drift check")
     for w in warnings:

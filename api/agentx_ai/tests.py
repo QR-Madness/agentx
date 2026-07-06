@@ -4252,9 +4252,13 @@ class AgentSelfMemoryTest(TestCase):
             self.assertNotIn("certainty", f)
 
     def test_retrieval_tool_bypass_in_is_retrieval_tool(self):
-        """is_retrieval_tool should detect all 5 retrieval tools."""
+        """is_retrieval_tool must cover the core retrieval tools (subset — the
+        registry legitimately grows as new retrieval tools ship)."""
         from agentx_ai.mcp.internal_tools import RETRIEVAL_TOOL_NAMES
-        self.assertEqual(len(RETRIEVAL_TOOL_NAMES), 5)
+        core = {"read_stored_output", "list_stored_outputs", "tool_output_query",
+                "tool_output_section", "tool_output_path"}
+        missing = core - set(RETRIEVAL_TOOL_NAMES)
+        self.assertFalse(missing, f"core retrieval tools missing: {missing}")
 
 
 class FactVerificationPipelineTest(TestCase):
@@ -4382,6 +4386,10 @@ class ReasoningAsyncRegressionTest(TestCase):
             model="model-x",
         ))
         registry = MagicMock()
+        # Reasoning strategies resolve via resolve_with_fallback -> (provider,
+        # model_id, notice); a bare MagicMock fails 3-unpacking and the strategy
+        # lands in its FAILED path — stub the production call shape.
+        registry.resolve_with_fallback.return_value = (provider, "model-x", None)
         registry.get_provider_for_model.return_value = (provider, "model-x")
         return registry, provider
 
@@ -5037,7 +5045,8 @@ class AlloyDelegationMetricsTest(TestCase):
         fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
         fake_specialist = SimpleNamespace(
             config=SimpleNamespace(default_model="m", max_tool_rounds=3),
-            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m"),
+                                     resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
             _get_tools_for_provider=lambda: None,
             memory=None,
         )
@@ -5083,7 +5092,8 @@ class AlloyDelegationMetricsTest(TestCase):
         fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
         fake_specialist = SimpleNamespace(
             config=SimpleNamespace(default_model="m", max_tool_rounds=3),
-            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m"),
+                                     resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
             _get_tools_for_provider=lambda: None,
             memory=None,
         )
@@ -5536,11 +5546,13 @@ class AdhocDelegationTest(TestCase):
 
     def test_depth_ceiling_enforced(self):
         from types import SimpleNamespace
-        ex = self._make_executor(depth=3, max_depth=3)
+        # depth moved from instance state to a delegate() parameter (concurrent
+        # fan-out branches must not race a shared counter) — pass it explicitly.
+        ex = self._make_executor(max_depth=3)
         with patch("agentx_ai.alloy.executor.get_profile_manager",
                    return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
             done = self._parse_complete(asyncio.run(self._drain(
-                ex.delegate("beta-agent", "x", tool_call_id="t"))))
+                ex.delegate("beta-agent", "x", tool_call_id="t", depth=3))))
         self.assertEqual(done["status"], "failed")
         self.assertIn("max delegation depth", done["error"])
 
@@ -5554,7 +5566,8 @@ class AdhocDelegationTest(TestCase):
         fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
         fake_specialist = SimpleNamespace(
             config=SimpleNamespace(default_model="m", max_tool_rounds=3),
-            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m")),
+            registry=SimpleNamespace(get_provider_for_model=lambda m: (fake_provider, "m"),
+                                     resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
             _get_tools_for_provider=lambda: None,
             memory=None,
         )
@@ -9265,7 +9278,7 @@ class WorkspaceMediaTest(TestCase):
              patch.object(wv.storage, "read_blob", return_value=b"PNGDATA"):
             res = self.client.get("/api/workspaces/ws_home/documents/doc_1/raw")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res["Content-Type"], "image/png")
+        self.assertEqual(res["Content-Type"], "image/png")  # pyright: ignore[reportIndexIssue]
         self.assertEqual(res.content, b"PNGDATA")
 
     def test_raw_endpoint_404_for_unknown_doc(self):
@@ -9602,7 +9615,7 @@ class AmbassadorSpeechTest(TestCase):
         self.assertEqual(kwargs["response_format"], "mp3")
 
 
-class _FakeJsonResponse:
+class _FakeVoiceJsonResponse:
     """Stand-in for an httpx Response carrying a JSON body (e.g. transcription)."""
 
     def __init__(self, payload, status_code: int = 200, text: str = ""):
@@ -9630,7 +9643,7 @@ class OpenRouterTranscriptionTest(TestCase):
 
         provider = self._provider()
         captured: dict = {}
-        resp = _FakeJsonResponse({"text": "hello world", "usage": {"seconds": 1.2}})
+        resp = _FakeVoiceJsonResponse({"text": "hello world", "usage": {"seconds": 1.2}})
         with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
             result = asyncio.run(
                 provider.transcribe_speech(b"AUDIOBYTES", model="openai/whisper-1", audio_format="webm")
@@ -9650,7 +9663,7 @@ class OpenRouterTranscriptionTest(TestCase):
 
         provider = self._provider()
         captured: dict = {}
-        resp = _FakeJsonResponse({}, status_code=429, text="rate limited")
+        resp = _FakeVoiceJsonResponse({}, status_code=429, text="rate limited")
         with patch.object(orp.httpx, "AsyncClient", _fake_async_client(resp, captured)):
             with self.assertRaises(RuntimeError):
                 asyncio.run(provider.transcribe_speech(b"x", model="m"))
@@ -10002,7 +10015,7 @@ class VisionInputTest(TestCase):
         with patch("agentx_ai.kit.workspaces.repository.get_document",
                    return_value={"workspace_id": "ws_home", "storage_key": "k", "content_type": "image/jpeg"}), \
              patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=b"ABC"):
-            mt, b64 = base.resolve_image_data(ref)
+            mt, b64 = base.resolve_image_data(ref)  # pyright: ignore[reportGeneralTypeIssues]
         self.assertEqual(mt, "image/jpeg")  # doc content_type wins over the ref
         self.assertEqual(b64, "QUJD")
 

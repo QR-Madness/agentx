@@ -339,7 +339,7 @@ def list_user_threads(user_id: str) -> list[dict]:
     is dropped from the registry so the list never shows ghosts. Never raises."""
     try:
         client = _redis()
-        ids = [_decode(t) for t in client.zrevrange(_user_threads_key(user_id), 0, -1)]
+        ids = [_decode(t) for t in cast("list", client.zrevrange(_user_threads_key(user_id), 0, -1))]
     except Exception as e:  # pragma: no cover - Redis offline
         logger.debug(f"ambassador thread list failed: {e}")
         return []

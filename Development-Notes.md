@@ -9,8 +9,9 @@
 ## Contents
 
 - [Backend Subsystems](#backend-subsystems) — Prompts, Conversation Context, Ambassador, Logging
+- [Client Surface Map](#client-surface-map-clientsrc) — chat page, Deck, Projects hub, editors, themes
 - [API Endpoints](#api-endpoints-full-reference) — full reference + the chat-stream SSE contract
-- [Agent Memory Internals](#agent-memory-internals) — Interface, Extraction, Procedural, Context Gating, Web Research, Model Resolution, Attribution
+- [Agent Memory Internals](#agent-memory-internals) — Interface, Extraction, Procedural, Context Gating, Web Research, Model Resolution, Attribution (incl. settings-pinning discipline)
 
 ---
 
@@ -26,7 +27,29 @@
 
 Per-turn context (legacy summary): keep the SYSTEM preamble + as much **recent verbatim transcript** as fits `context.verbatim_budget_ratio` (0.7) of the model's real window; drop oldest overflow (covered by the rolling summary). In-memory `SessionManager` is **rehydrated** from durable `conversation_logs` on a cold session (`conversation_history.py::hydrate_session_from_history`) — both the interactive stream (`views.py`) and `Agent.chat()` (Foundation #4b: the **background/queued chat** path now resumes warm too; idempotent, so no double-load). Alloy specialists are deliberately *not* transcript-hydrated — they're task-scoped by contract and already resume warm via shared-channel recall. The rolling summary is **context-window-triggered** (`maybe_update_summary`, token-based) and **persisted** in Redis (`conversation_summary_storage.py`). Checkpoints/scratchpad (`checkpoint_storage.py`) are Redis-keyed per conversation, re-injected each turn; eviction is anchor-preserving (keeps the first), and the `checkpoint` tool has a `replace` mode. After a turn, `views.py::generate_sse` persists via pure builders in `streaming/persistence.py` (user → tool → steer → assistant Turns); a hard Stop (`GeneratorExit`) persists the **partial** turn (`metadata.interrupted`); folded steers persist as `user` turns (`metadata.steered`). **Thinking/CoT is process, not result**: it streams live (shown collapsed in the client) but is **never persisted** to `conversation_logs`. Old turns persisted before this still restore stored `metadata.thinking`.
 
+### Agent Core & Profiles (`agent/`, `agent/profiles.py`)
+
+> Moved from `CLAUDE.md`. `TaskPlanner` decomposes; the **chat path** composes the plan with the
+> main agent model via `compose_with_model` (structured JSON; opts out with `{"plan": null}`),
+> gated by `_assess_complexity`; the legacy `plan()` + `SUBTASK`-regex path serves non-chat
+> callers. `ProfileManager` CRUD lives in `data/agent_profiles.yaml`; each profile has a
+> Docker-style `agent_id` + `self_channel` (`_self_{agent_id}`); `kind` ∈ `agent`|`ambassador`
+> with **separate defaults**, and `_ensure_ambassador_defaults()` seeds/migrates without ever
+> converting the default agent (ambassadors never appear in chat routing).
+
 ### File Workspaces & Document RAG (`kit/workspaces/`, Slice 1, v0.21.103)
+
+> **Index card (ex-CLAUDE.md):** three-store separation (blob `storage.py` / Postgres manifest
+> `repository.py` / pgvector `document_chunks`); `ingestion.py` parse→chunk→embed→auto-tag+summary;
+> `service.py` upload policy; `retrieval.py` two-tier + `render_manifest_block`/
+> `render_instructions_block`; API in `workspace_views.py`. **Projects v1**: `description`/
+> `instructions` (instructions ride every turn at ledger priority 88) + durable conversation
+> membership (`workspace_conversations`, one project per conversation; turn precedence
+> request > membership; `ws_home` is never a project) + project memory channels
+> (`_project_{ws_id}` becomes the turn's channel; workflow > project > profile; opt-out
+> `memory.project_channels`). Agent tools `workspace_search`/`document_query`/`read_document`
+> (`mcp/internal_tools.py`, workspace-scoped via `InternalToolContext`); stable
+> workspace-manifest ledger block + auto `doc` citations.
 
 A persistent, named container of user files with a searchable manifest (todo/backlog/workspaces.md).
 **Three-store separation:** bytes → content-addressed blob store on disk (`storage.py`,
@@ -251,6 +274,15 @@ agent reads and chooses from — pixels enter context only on an explicit `view_
 
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
+> **Index card (ex-CLAUDE.md):** two backends via `dispatch.py` (per-workspace `shell_backend`):
+> `bubblewrap` (default, locked-down jail) or `container` (`container.py` — persistent
+> per-workspace Docker container, installs + network, via `docker` CLI → dind sidecar in prod;
+> status/lifecycle at `/api/workspaces/{id}/shell/container`). `sandbox.py` `BubblewrapSandbox`
+> jail — network off, FS=work dir only, env scrubbed; bare subprocess only behind
+> `allow_unsandboxed`. `workdir.py` materializes the workspace into `data/shell/{ws}/{conv}/`
+> (+ GC + path-jail); `policy.py` deny-list; tools `run_command`/`write_file`/`read_file`/
+> `list_files` in `mcp/internal_tools.py`.
+
 **Opt-in per-workspace** (`workspaces.allow_shell`, **off by default** — LLM-driven arbitrary code
 execution is a deliberate exception to "experimental ships ON"; enablement lives on the *workspace*, not a
 global flag). Lets an agent run commands against a **sandboxed working copy of the attached workspace**. **Threat model:** the LLM is the actor and can be prompt-injected (malicious doc
@@ -313,6 +345,19 @@ reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `
 (previously it silently skipped Alembic). Disable everything with `AGENTX_AUTO_INIT=false`.
 
 ---
+
+## Client Surface Map (`client/src/`)
+
+> Moved from `CLAUDE.md` (which keeps only the drift-proof rules). Read the relevant bullet
+> before touching a surface.
+
+- **Chat page** (`pages/AgentXPage.tsx`) = left `ConversationSidebar` rail + `ChatPanel` (collapsible/resizable, presentation over `ConversationContext`). Shared list logic in `hooks/useConversationList.ts` + `components/chat/ConversationList.tsx`/`ConversationRow.tsx`, reused by the mobile Conversations drawer. Per-conversation meta (pin/archive/icon/color/group/bulk) in `lib/conversationMeta.ts` (reserves `workspaceId`/`fileRefs`).
+- **Surfaces**: Settings, Tools, **Memory**, and the **Ambassador Command Deck** (`SURFACES.ambassadorDeck` — `AmbassadorPanel` in conversation-less `deckThreadId` mode; holds multiple named Inquiries via `AmbassadorInquirySwitcher` + the per-user registry; relay routes via `lib/ambassadorRelay.ts::planRelay` — live in-tab for the active tab, else headless `POST /ambassador/relay`) open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources/**Projects** are right-side drawers.
+- **Projects hub** (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`; internal naming stays `workspace`): CRUD + upload + ingest status + description/instructions editors + the project's conversation list + "new chat in project"; Home is a fixed personal-media entry. Attach = `conversationMeta.workspaceId` (fast path; chat stream sends `workspace_id`) + durable server membership (`PUT /workspaces/{id}/conversations/{conv}`; the sidebar's project sections derive from it, with a one-time localStorage sync in `lib/projectSync.ts`); `lib/api/workspaces.ts`.
+- **Agent-profile editor** (`unified-profile-editor/`): hero identity header over a `ControlCard` grid; avatars in `common/AvatarPicker` (`lib/avatars.ts`) — an icon id **or** a generated image (the Generate tab → `POST /api/agent/avatar/generate`, stored as `media:{ws}/{doc}` on `profile.avatar`); render via `common/AgentAvatar` (image avatars resolve to an authed object URL through `lib/avatarImage.ts`, icon otherwise). Signature color from `lib/agentAccent.ts`. Primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`.
+- **Prompt Stack editor** (Settings → Intelligence → "System Prompt"): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` reorder, debounced autosave, reset/diff, live preview via `lib/promptStack.ts::composeStack`. Library snippets insert as custom layers; the enhancer (`/api/prompts/enhance`) rewrites a layer in place.
+- **Themes**: six token-driven `ThemeDefinition`s in `lib/theme.ts` (~110 CSS vars + picker metadata `description`/`icon`), applied by `ThemeProvider` (stamps `data-theme` on the root); icons map in `common/themeIcons.tsx`; a vitest enforces cross-theme key parity (glow tokens use a transparent shadow, never bare `none` — `none` in a shadow list kills the whole declaration). Per-theme surface decorations (scanlines/dot-grid/glass) live in `styles/expression.css` (`[data-theme]`-scoped, unlayered). Fonts: Inter + JetBrains Mono self-hosted via `@fontsource` (imported in `main.tsx`; stacks in App.css `@theme static` → `--font-sans`/`--font-mono`).
+- **Multi-server**: per-server settings in localStorage (`agentx:servers`/`…:meta`/`activeServer`).
 
 ## API Endpoints (full reference)
 
@@ -436,3 +481,34 @@ Each profile has a Docker-style `agent_id` (auto-generated, immutable, adj-adj-n
 - **Per-agent routing**: `_resolve_subject_channel` honors `subject_agent_id` → `_self_{that_agent}`; assistant self-extraction routes each turn by its own producing `agent_id`.
 - **Rename-safety**: `update_profile` propagates a name change to the Agent entity's `aliases`; `dedupe_entities` never merges `Agent` nodes (keyed by `agent_id`).
 - **Backfill / debug**: `task memory:backfill-agent-attribution[:apply]` rewrites legacy generic self-facts deterministically; `task memory:debug-attribution -- --scenario <directive|cross-agent|mixed> --agents "..."` drives a scripted multi-agent conversation through real consolidation (non-destructive by default; `--isolate` for a sterile read).
+
+### Memory Settings & Eval Pinning (override discipline)
+
+The memory kit reads settings through THREE different capture points, and only one of them
+refreshes at runtime:
+
+1. **Import-time module snapshots** — ~9 modules hold `settings = get_settings()` at module
+   level (`consolidation/jobs.py`, `memory/retrieval.py`, `memory/semantic.py`,
+   `memory/episodic.py`, `embeddings.py`, `connections.py`, `memory/working.py`,
+   `consolidation/worker.py`, `consolidation/registry.py`). These NEVER refresh — a runtime
+   settings change is invisible to them.
+2. **Init-time instance snapshots** — `RecallLayer._settings` (captured in `__init__`) and
+   `ExtractionService._settings` (an explicit override slot; `None` ⇒ live `get_settings()`).
+3. **Live reads** — code calling `get_settings()` per access (TTL-cached; `save_memory_settings`
+   busts the cache).
+
+**Consequences:**
+- `save_memory_settings()` is for REAL, durable user-facing changes only. Never use it for a
+  temporary/test/eval override: it writes `data/memory_settings.json` (a live dev server picks
+  it up immediately), and it still won't reach the import-time snapshots above.
+- To override temporarily (tests, eval harnesses, experiments): build
+  `override = get_settings().model_copy(update={...})`, assign it to every capture point the
+  code path reads, and restore in `finally`. Canonical implementations:
+  `eval_consolidation.Command._pin_model` (extraction path: `jobs.settings` +
+  `get_extraction_service()._settings`) and `eval_recall.Command._run_arm` (recall path:
+  `recall_layer._settings` + the `retrieval`/`semantic`/`episodic`/`embeddings` module globals,
+  plus `retrieval_cache_enabled=False` — the retrieval cache key does NOT include technique
+  toggles, so stale-config hits are silent).
+- A NEW module-level `settings = get_settings()` snapshot makes every existing pinning site
+  incomplete — don't add one (the repo-hygiene check counts them); prefer live `get_settings()`
+  reads or a passed-in settings object.
