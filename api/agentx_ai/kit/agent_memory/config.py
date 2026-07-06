@@ -235,13 +235,44 @@ class Settings(BaseSettings):
 
     # --- Entity Linking (backfill: link orphaned facts to existing entities) ---
     entity_linking_enabled: bool = True
-    entity_linking_similarity_threshold: float = 0.75  # Min embedding similarity (fallback path)
+    # Lower bound of the write-time semantic band (§2.10 Slice 1): matches scoring
+    # >= this but < entity_linking_auto_threshold are LOGGED ONLY (gray zone —
+    # corpus for a later adjudicator), never auto-merged.
+    entity_linking_similarity_threshold: float = 0.75
     entity_linking_use_llm_disambiguation: bool = False  # Use LLM when ambiguous
     entity_linking_model: str = "lmstudio:google/gemma-3-4b"
     # Max orphan facts scanned per backfill run (full-history; bounds memory/time).
     entity_linking_max_facts: int = 5000
     # Longest entity name (in words) the claim n-gram matcher will consider.
     entity_linking_max_ngram: int = 4
+
+    # --- Windowed Extraction (§2.10 Slice 1) ---
+    # Extract over conversation WINDOWS (multiple turns per LLM call) instead of
+    # per-turn: recurring mentions resolve to one entity, relationships may span
+    # turns, and per-fact turn provenance is preserved. Off → legacy per-turn path.
+    extraction_windowing_enabled: bool = True
+    # Greedy window budget over turn contents (input side; sized so worst-case
+    # JSON output stays under the window output cap below).
+    extraction_window_max_tokens: int = 1200
+    extraction_window_max_turns: int = 6
+    # Output cap for window calls (floor — the stage max_tokens wins if larger).
+    # Reasoning models think before the JSON; a dense 4-turn window's payload
+    # plus thinking overflows the per-turn 2000 default and truncation eats the
+    # trailing relationships array first.
+    extraction_window_max_output_tokens: int = 3000
+    # Rolling registry (prior windows' extractions re-shown to later windows).
+    extraction_registry_max_entities: int = 15
+    extraction_registry_max_facts: int = 20
+
+    # --- Semantic entity resolution at write time (§2.10 Slice 1) ---
+    # After exact name/alias/slug lookup misses, consult vector similarity over
+    # existing entity embeddings. Same-type only; Agent entities never merge.
+    semantic_entity_linking_enabled: bool = True
+    # Auto-link (reuse + alias fold) when the top match scores >= this.
+    entity_linking_auto_threshold: float = 0.90
+    # Entities with NULL embeddings backfilled per entity_linking job run
+    # (consolidation historically stored embedding=None; self-healing).
+    entity_embedding_backfill_batch: int = 200
 
     # Entity types to recognize
     entity_types: list = [

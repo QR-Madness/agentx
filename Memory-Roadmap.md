@@ -330,7 +330,26 @@ Statement timeouts, retry-with-backoff, per-user rate limits on memory ops — a
 Known Future Issues. Bundle them into the repository layer pass (1.5): one module boundary
 means one place to wrap timeout/retry/limit decorators instead of forty call sites.
 
-### 2.10 Extraction v2 — structured, verified, salience-scored `[REFINES: retrieval-extraction.md "Claude Sonnet for Extraction" + "Improved Extraction Prompts"]`
+### 2.10 Extraction v2 — structured, verified, salience-scored `[PARTIAL v0.21.154 — Slice 1 (windowed extraction + honest entity resolution) SHIPPED; structured outputs = Slice 2; NLI/salience/merge-vocab/propositions queued]`
+
+**Slice 1 shipped (v0.21.154) — "make the graph side honest":** conversation-**windowed**
+extraction (token-budgeted turn windows via `_assemble_windows`; pleasantry pre-filter before
+windowing; rolling entity/fact **registry** carried window→window; conversation-**overview**
+block from the rolling summary; split-retry on parse failure; truncation-aware retry — a
+repaired-truncated multi-turn window re-runs split rather than silently losing the trailing
+relationships array; per-fact `source_turn` → **`source_turn_id` provenance fixed for user
+facts**). Entity resolution: **within-batch pending index** (same name/alias/slug in one
+conversation can no longer mint twice), **write-time semantic band** (embed at store time;
+`vector_search_entities` after exact lookup misses — ≥0.90 auto-link+alias, 0.75–0.90 log-only
+gray zone, same-type/never-Agent guards), entity-**embedding backfill** rides the
+`entity_linking` job, **relationship endpoint recovery** (exact → semantic; drops now counted,
+were silent), node-merge extracted to `maintenance/entity_merge.py` + `dedupe_entities
+--semantic` for existing damage. Eval: `eval_consolidation` gained aliases/cardinality/
+relationship/provenance/distinctness assertions + 6 new cases (3 graph-honesty + 3 multi-contact
+business narratives). **Before (per-turn): dedup FAIL (2 nodes), cross-turn edges MISSING,
+provenance 0%. After (windowed, `openrouter:nvidia/nemotron-3-ultra-550b-a55b`): 19/19 PASS,
+3× stable on the flaky trio.** Flags: `extraction_windowing_enabled`,
+`semantic_entity_linking_enabled` (both default-ON, per-turn path preserved behind the flag).
 
 From the [extraction survey](todo/research/2026-07-extraction-research.md). Extraction today is
 prompt-only JSON over LM Studio with heuristic repair (`_parse_combined_response` /

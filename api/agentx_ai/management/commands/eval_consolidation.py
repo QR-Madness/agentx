@@ -67,6 +67,21 @@ class EvalCase:
     expect_facts: list[str] = field(default_factory=list)
     expect_entities: list[str] = field(default_factory=list)
     forbid_facts: list[str] = field(default_factory=list)
+    # -- §2.10 Slice 1 graph-honesty assertions -------------------------------
+    # Each inner list = phrasings of ONE concept; PASS iff exactly one stored
+    # entity matches (by name or alias) — catches duplicate-entity minting.
+    expect_single_entity: list[list[str]] = field(default_factory=list)
+    # Cardinality ceiling for the case's channel (None = unchecked).
+    expect_entity_count_max: int | None = None
+    # [[A, B], ...]: >=1 RELATES_TO edge between A and B (either direction) —
+    # catches cross-turn relationship blindness + silent endpoint drops.
+    expect_relationship_pairs: list[list[str]] = field(default_factory=list)
+    # Groups of phrasings that must resolve to DIFFERENT entities (each group
+    # nonempty, pairwise-disjoint ids) — the inverse of expect_single_entity:
+    # similar contacts must NOT be over-merged ("Nadia Osei" ≠ "Dr. Osei").
+    expect_distinct_entities: list[list[str]] = field(default_factory=list)
+    # Every stored fact must carry a non-null source_turn_id.
+    expect_fact_provenance: bool = False
     # -- procedural-only fields ---------------------------------------------
     tool_sequence: list[str] = field(default_factory=list)
     task_type: str = "general"
@@ -168,6 +183,82 @@ CASES: list[EvalCase] = [
         note="multi-turn: multiple orgs/people/topics + future temporal",
         expect_facts=["reinforcement learning"],
         expect_entities=["ETH Zurich", "DeepMind"],
+    ),
+    # ---- §2.10 Slice 1: graph honesty (windowed extraction + resolution) ----
+    EvalCase(
+        name="dedup_three_phrasings", level=4,
+        turns=[
+            "I've been reading about RAG for my research notes.",
+            "Retrieval-augmented generation seems like the right approach for grounding them.",
+            "So retrieval augmented generation is what I'll build the notes system on.",
+        ],
+        note="one concept, three phrasings across turns → exactly ONE entity",
+        expect_facts=["retrieval"],
+        expect_single_entity=[["RAG", "retrieval-augmented generation",
+                               "retrieval augmented generation"]],
+        expect_entity_count_max=3,
+    ),
+    EvalCase(
+        name="cross_turn_relationship", level=4,
+        turns=[
+            "My colleague Amara has been job hunting for months.",
+            "Separately — I finally fixed my bike's gear cable today.",
+            "She accepted the offer! She now works at Northwind Observatory.",
+        ],
+        note="edge endpoints introduced in DIFFERENT turns (T1 person, T3 employer)",
+        expect_entities=["Amara", "Northwind"],
+        expect_relationship_pairs=[["Amara", "Northwind"]],
+    ),
+    EvalCase(
+        name="user_fact_provenance", level=1,
+        turns=["My favorite tea is oolong."],
+        note="user facts must carry source_turn_id (was None pre-Slice-1)",
+        expect_facts=["oolong"],
+        expect_fact_provenance=True,
+    ),
+    # ---- Level 5+: juicy multi-contact business narratives -------------------
+    EvalCase(
+        name="startup_org_map", level=5,
+        turns=[
+            "Quick update on Brightline Analytics, the supply-chain startup I founded with Priya Raman.",
+            "We just closed a seed round led by Harbor Peak Capital — their partner Tomás Vega is joining our board.",
+            "Priya is moving from CTO to Chief Product Officer; our new CTO is Deng Wei, who we poached from Kestrel Robotics.",
+            "We're also piloting with two customers: Meridian Foods and the Aster Hotel Group.",
+        ],
+        note="org map: founders/investors/role change/customers across 4 turns",
+        expect_facts=["Chief Product Officer"],
+        expect_entities=["Brightline", "Priya", "Harbor Peak", "Tomás", "Deng Wei",
+                         "Kestrel", "Meridian", "Aster"],
+        expect_single_entity=[["Brightline Analytics", "Brightline"]],
+        expect_relationship_pairs=[["Priya", "Brightline"],
+                                   ["Tomás", "Harbor Peak"],
+                                   ["Deng Wei", "Brightline"]],
+    ),
+    EvalCase(
+        name="contact_web_two_oseis", level=5,
+        turns=[
+            "My accountant Nadia Osei just moved her practice to Geneva.",
+            "Not to be confused with my mentor Dr. Osei — he's still in Accra. Nadia is his niece, funnily enough.",
+            "Nadia's firm, Ledgerline Partners, now handles both my business and personal filings.",
+        ],
+        note="two similar contacts must stay DISTINCT nodes + kinship edge",
+        expect_entities=["Nadia", "Ledgerline"],
+        expect_distinct_entities=[["Nadia Osei"], ["Dr. Osei"]],
+        expect_relationship_pairs=[["Nadia", "Ledgerline"]],
+    ),
+    EvalCase(
+        name="vendor_project_pipeline", level=5,
+        turns=[
+            "The Foxglove rollout is the data-platform project I'm running this quarter.",
+            "Our vendor contact is Sofia Marchetti from Delta Harbor Systems.",
+            "Foxglove's steering committee meets Thursdays; Sofia joins remotely.",
+            "If the rollout succeeds, Delta Harbor becomes our primary vendor next year.",
+        ],
+        note="project + vendor contact + future commitment, endpoints across turns",
+        expect_facts=["primary vendor"],
+        expect_entities=["Foxglove", "Sofia", "Delta Harbor"],
+        expect_relationship_pairs=[["Sofia", "Delta Harbor"]],
+        expect_fact_provenance=True,
     ),
     # ---- Procedural: tool-usage → strategy learning -------------------------
     # These seed a tool trajectory + success/failure Outcome and are scored
@@ -343,18 +434,43 @@ class Command(BaseCommand):
     # -- scoring -------------------------------------------------------------
     @staticmethod
     def _stored(channel):
+        """Structured channel contents: entities carry aliases (dedup-quality
+        assertions need them), facts carry provenance, plus RELATES_TO pairs."""
         from agentx_ai.kit.agent_memory.connections import Neo4jConnection
         with Neo4jConnection.session() as s:
-            facts = [r["c"] for r in s.run(
-                "MATCH (f:Fact {channel:$ch}) RETURN f.claim AS c", ch=channel)]
-            ents = [r["n"] for r in s.run(
-                "MATCH (e:Entity {channel:$ch}) RETURN e.name AS n", ch=channel)]
-        return facts, ents
+            facts = [{"claim": r["c"], "source_turn_id": r["st"]} for r in s.run(
+                "MATCH (f:Fact {channel:$ch}) RETURN f.claim AS c, "
+                "f.source_turn_id AS st", ch=channel)]
+            ents = [{"id": r["id"], "name": r["n"], "aliases": r["a"] or []}
+                    for r in s.run(
+                        "MATCH (e:Entity {channel:$ch}) RETURN e.id AS id, "
+                        "e.name AS n, coalesce(e.aliases, []) AS a", ch=channel)]
+            rels = [(r["src"], r["t"], r["tgt"]) for r in s.run(
+                "MATCH (a:Entity {channel:$ch})-[r:RELATES_TO]->(b:Entity {channel:$ch}) "
+                "RETURN a.name AS src, r.type AS t, b.name AS tgt", ch=channel)]
+        return {"facts": facts, "entities": ents, "relationships": rels}
+
+    @staticmethod
+    def _entity_ids_matching(entities, phrasings):
+        """Distinct entity ids whose name OR any alias contains any phrasing."""
+        matched = set()
+        needles = [p.lower() for p in phrasings]
+        for ent in entities:
+            haystacks = [ent["name"], *ent["aliases"]]
+            if any(n in h.lower() for h in haystacks for n in needles):
+                matched.add(ent["id"])
+        return matched
 
     def _score_case(self, case):
-        facts, ents = self._stored(CHANNEL_PREFIX + case.name)
+        stored = self._stored(CHANNEL_PREFIX + case.name)
+        facts = [f["claim"] for f in stored["facts"]]
+        ents = [e["name"] for e in stored["entities"]]
         fact_blob = " || ".join(facts).lower()
-        ent_blob = " || ".join(ents).lower()
+        # Aliases count toward entity expectations (a dedup merge may demote an
+        # expected surface form to an alias — still a correct store).
+        ent_blob = " || ".join(
+            n for e in stored["entities"] for n in [e["name"], *e["aliases"]]
+        ).lower()
 
         if not case.relevant:
             ok = not facts and not ents
@@ -366,6 +482,62 @@ class Command(BaseCommand):
         forbidden = [sub for sub in case.forbid_facts if sub.lower() in fact_blob]
         total = len(case.expect_facts) + len(case.expect_entities)
         hits = fact_hits + ent_hits
+        extra = []
+
+        # -- §2.10 Slice 1 assertions: dedup, cardinality, edges, provenance --
+        for phrasings in case.expect_single_entity:
+            total += 1
+            matched = self._entity_ids_matching(stored["entities"], phrasings)
+            if len(matched) == 1:
+                hits += 1
+            else:
+                extra.append(f"single-entity[{phrasings[0]}]: {len(matched)} nodes (want 1)")
+        if case.expect_entity_count_max is not None:
+            total += 1
+            if len(stored["entities"]) <= case.expect_entity_count_max:
+                hits += 1
+            else:
+                extra.append(f"entity-count {len(stored['entities'])} > "
+                             f"max {case.expect_entity_count_max}")
+        for pair in case.expect_relationship_pairs:
+            total += 1
+            a_ids = self._entity_ids_matching(stored["entities"], [pair[0]])
+            b_ids = self._entity_ids_matching(stored["entities"], [pair[1]])
+            a_names = {e["name"] for e in stored["entities"] if e["id"] in a_ids}
+            b_names = {e["name"] for e in stored["entities"] if e["id"] in b_ids}
+            found = any(
+                (src in a_names and tgt in b_names) or (src in b_names and tgt in a_names)
+                for src, _t, tgt in stored["relationships"]
+            )
+            if found:
+                hits += 1
+            else:
+                extra.append(f"relationship {pair[0]}<->{pair[1]}: missing")
+        if case.expect_distinct_entities:
+            total += 1
+            groups = [self._entity_ids_matching(stored["entities"], g)
+                      for g in case.expect_distinct_entities]
+            all_nonempty = all(groups)
+            disjoint = all(
+                groups[i].isdisjoint(groups[j])
+                for i in range(len(groups)) for j in range(i + 1, len(groups))
+            )
+            if all_nonempty and disjoint:
+                hits += 1
+            elif not all_nonempty:
+                missing = [case.expect_distinct_entities[i][0]
+                           for i, g in enumerate(groups) if not g]
+                extra.append(f"distinct-entities: missing {missing}")
+            else:
+                extra.append("distinct-entities: over-merged (groups share a node)")
+        if case.expect_fact_provenance:
+            total += 1
+            if stored["facts"] and all(f["source_turn_id"] for f in stored["facts"]):
+                hits += 1
+            else:
+                lacking = sum(1 for f in stored["facts"] if not f["source_turn_id"])
+                extra.append(f"provenance: {lacking}/{len(stored['facts'])} "
+                             "facts lack source_turn_id")
 
         if forbidden:
             status = "FAIL"
@@ -376,6 +548,8 @@ class Command(BaseCommand):
         else:
             status = "FAIL"
         detail = f"facts {fact_hits}/{len(case.expect_facts)}, entities {ent_hits}/{len(case.expect_entities)}"
+        if extra:
+            detail += " — " + "; ".join(extra)
         if forbidden:
             detail += f" — FORBIDDEN matched: {forbidden}"
         return {"status": status, "facts": facts, "entities": ents, "detail": detail}
@@ -541,7 +715,23 @@ class Command(BaseCommand):
         """Seed → consolidate (extraction) → detect patterns (procedural) → score → persist."""
         self._seed(cases)
         from agentx_ai.kit.agent_memory.consolidation import jobs
-        result = asyncio.run(jobs.consolidate_episodic_to_semantic())
+        # The sweep's discovery caps at 10 conversations per run (production
+        # cadence); the suite seeds one conversation per case, so DRAIN the
+        # queue — otherwise cases beyond the first 10 score as empty stores.
+        result = None
+        for _ in range(10):
+            sweep = asyncio.run(jobs.consolidate_episodic_to_semantic())
+            if result is None:
+                result = sweep
+            else:
+                for key in ("items_processed", "entities", "facts", "relationships"):
+                    result[key] += sweep[key]
+                result["errors"].extend(sweep["errors"])
+                for key in ("extraction_calls", "total_tokens_used"):
+                    result["metrics"][key] += sweep["metrics"][key]
+            if sweep["items_processed"] == 0:
+                break
+        assert result is not None  # loop body runs at least once
         patterns_extracted = 0
         if any(c.is_procedural for c in cases):
             patterns_extracted = jobs.detect_patterns().get("items_processed", 0)

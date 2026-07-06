@@ -1005,7 +1005,14 @@ class ConsolidationPipelineTest(TestCase):
 
         ext = MagicMock()
         ext.check_correction = AsyncMock(return_value=MagicMock(is_correction=False))
+        # The windowed path (default since §2.10 Slice 1) uses the real
+        # pleasantry filter + the window extractor; both paths get the same
+        # canned combined result so the pinned behavior holds under either flag.
+        ext.is_heuristic_skip.side_effect = ExtractionService.is_heuristic_skip
         ext.check_relevance_and_extract = AsyncMock(
+            return_value=combined if combined is not None else self._combined()
+        )
+        ext.check_relevance_and_extract_window = AsyncMock(
             return_value=combined if combined is not None else self._combined()
         )
         ext.check_relevance_and_extract_assistant = AsyncMock(
@@ -4186,13 +4193,14 @@ class ResolveDeviceTest(TestCase):
 
 class DedupeEntitiesAliasMergeTest(TestCase):
     """
-    Pure-Python helpers in ``dedupe_entities`` — the Cypher rewrite needs a
-    live Neo4j to exercise, but the alias-merge logic that decides what the
-    survivor ends up with is deterministic and worth its own regression net.
+    Pure-Python helpers now in ``maintenance.entity_merge`` (relocated from
+    ``dedupe_entities``) — the Cypher rewrite needs a live Neo4j to exercise,
+    but the alias-merge logic that decides what the survivor ends up with is
+    deterministic and worth its own regression net.
     """
 
     def test_merge_alias_set_excludes_survivor_name(self) -> None:
-        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import merge_alias_set as _merge_alias_set
 
         merged = _merge_alias_set(
             survivor_name="Alice",
@@ -4203,7 +4211,7 @@ class DedupeEntitiesAliasMergeTest(TestCase):
         self.assertEqual(merged, ["AL"])
 
     def test_merge_alias_set_lowercase_dedups_across_dups(self) -> None:
-        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import merge_alias_set as _merge_alias_set
 
         merged = _merge_alias_set(
             survivor_name="Bob",
@@ -4215,7 +4223,7 @@ class DedupeEntitiesAliasMergeTest(TestCase):
         self.assertEqual(merged, ["Robert", "B", "robbie"])
 
     def test_merge_alias_set_handles_empty_and_whitespace(self) -> None:
-        from agentx_ai.management.commands.dedupe_entities import _merge_alias_set
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import merge_alias_set as _merge_alias_set
 
         merged = _merge_alias_set(
             survivor_name="Carol",
@@ -4225,7 +4233,7 @@ class DedupeEntitiesAliasMergeTest(TestCase):
         self.assertEqual(merged, ["Caroline", "C."])
 
     def test_first_non_empty_skips_blank_strings(self) -> None:
-        from agentx_ai.management.commands.dedupe_entities import _first_non_empty
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import first_non_empty as _first_non_empty
 
         self.assertEqual(
             _first_non_empty([None, "", "  ", "real value", "later"]),
@@ -4929,3 +4937,626 @@ class ClusterUtilDelegationTest(MemoryTestBase):
         self.assertEqual(bundle["snapshot_version"], 1)
         self.assertIn("users", bundle)
         self.assertIn("created_at", bundle)
+
+
+class EntityMergeUtilTest(TestCase):
+    """maintenance.entity_merge: pure helpers + merge_entity_group query flow."""
+
+    def test_merge_alias_set_dedup_and_casing(self) -> None:
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import merge_alias_set
+        merged = merge_alias_set(
+            "RAG",
+            ["RAG", "Retrieval-Augmented Generation", "retrieval augmented generation"],
+            [["rag"], ["Retrieval-Augmented Generation"], []],
+        )
+        # Survivor name excluded; case-insensitive dedup; first-seen casing kept.
+        self.assertEqual(
+            merged,
+            ["Retrieval-Augmented Generation", "retrieval augmented generation"],
+        )
+
+    def test_first_non_empty(self) -> None:
+        from agentx_ai.kit.agent_memory.maintenance.entity_merge import first_non_empty
+        self.assertEqual(first_non_empty([None, "  ", "desc", "later"]), "desc")
+        self.assertIsNone(first_non_empty([None, ""]))
+
+    def test_merge_entity_group_query_sequence(self) -> None:
+        from agentx_ai.kit.agent_memory.maintenance import entity_merge as em
+        tx = MagicMock()
+        tx.run.return_value.single.return_value = {"rewritten": 3, "collapsed_groups": 1}
+        result = em.merge_entity_group(
+            tx,
+            ids=["surv", "dup1", "dup2"],
+            names=["RAG", "Retrieval-Augmented Generation", "rag"],
+            alias_lists=[[], [], []],
+            descriptions=[None, "a retrieval pattern", None],
+            access_counts=[2, 3, 1],
+        )
+        self.assertEqual(result["duplicates"], 2)
+        self.assertEqual(result["rewritten"], 6)  # 3 per dup
+        self.assertEqual(result["collapsed"], 1)
+        # First call folds survivor fields with the merged alias union + summed counts.
+        first = tx.run.call_args_list[0]
+        self.assertIs(first.args[0], em.APPLY_SURVIVOR_FIELDS)
+        self.assertEqual(first.kwargs["merged_access_count"], 6)
+        self.assertEqual(first.kwargs["merged_description"], "a retrieval pattern")
+        self.assertIn("Retrieval-Augmented Generation", first.kwargs["merged_aliases"])
+        # Then one rewrite per dup, then the parallel-rel collapse.
+        queries = [c.args[0] for c in tx.run.call_args_list[1:]]
+        self.assertEqual(
+            queries,
+            [em.REWRITE_AND_DELETE_DUP, em.REWRITE_AND_DELETE_DUP, em.DEDUPE_PARALLEL_RELS],
+        )
+
+    def test_command_delegates(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import Command
+        from agentx_ai.kit.agent_memory.maintenance import entity_merge as em
+        cmd = Command()
+        with patch.object(em, "merge_entity_group") as mock_merge:
+            # The command module imported the symbol directly; patch there.
+            with patch(
+                "agentx_ai.management.commands.dedupe_entities.merge_entity_group",
+                return_value={"duplicates": 1, "rewritten": 0, "collapsed": 0},
+            ) as mock_cmd_merge:
+                out = cmd._merge_one_group(
+                    MagicMock(),
+                    ids=["a", "b"], names=["X", "x"], alias_lists=[[], []],
+                    descriptions=[None, None], access_counts=[0, 0],
+                )
+        self.assertEqual(out["duplicates"], 1)
+        mock_cmd_merge.assert_called_once()
+        mock_merge.assert_not_called()
+
+
+class WithinBatchEntityDedupTest(TestCase):
+    """_resolve_and_prepare_entities step 1.5: batch-local pending index (Bug 2)."""
+
+    def _resolve(self, dicts, find_result=None):
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _resolve_and_prepare_entities
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        memory = MagicMock()
+        memory.semantic.get_entity_by_id.return_value = None
+        memory.semantic.find_entity_by_name_or_alias.return_value = find_result
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
+        entity_map: dict = {}
+        errors: list = []
+        stored, reused, total = _resolve_and_prepare_entities(
+            memory=memory, extracted_entities=dicts, entity_map=entity_map,
+            user_id="u", channel="_global", conv_id="c", metrics=metrics, errors=errors,
+        )
+        return stored, reused, entity_map, metrics, errors
+
+    def test_same_name_twice_mints_once(self) -> None:
+        stored, reused, entity_map, metrics, _ = self._resolve([
+            {"name": "RAG", "type": "Concept", "confidence": 0.8},
+            {"name": "rag", "type": "Concept", "confidence": 0.9},
+        ])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(reused, 0)
+        self.assertEqual(metrics.entities_deduped_in_batch, 1)
+        self.assertEqual(stored[0].salience, 0.9)  # max confidence wins
+        self.assertEqual(entity_map["rag"], stored[0].id)
+
+    def test_alias_and_slug_variants_fold(self) -> None:
+        stored, _, entity_map, metrics, _ = self._resolve([
+            {"name": "RAG", "type": "Concept"},
+            # alias ties this to the pending "RAG"; hyphenated name slug-matches nothing pending
+            {"name": "Retrieval-Augmented Generation", "type": "Concept", "aliases": ["RAG"]},
+        ])
+        # The second dict's alias "RAG" hits the pending index → folded, not minted.
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(metrics.entities_deduped_in_batch, 1)
+        aliases_lower = {a.lower() for a in stored[0].aliases}
+        self.assertIn("retrieval-augmented generation", aliases_lower)
+        self.assertEqual(entity_map["retrieval-augmented generation"], stored[0].id)
+
+    def test_distinct_names_mint_separately(self) -> None:
+        stored, _, _, metrics, _ = self._resolve([
+            {"name": "Kyoto", "type": "Location"},
+            {"name": "Lisbon", "type": "Location"},
+        ])
+        self.assertEqual(len(stored), 2)
+        self.assertEqual(metrics.entities_deduped_in_batch, 0)
+
+
+class StoreTimeEntityEmbeddingTest(TestCase):
+    """_store_conversation_entities: new entities reach the UNWIND with vectors.
+
+    With the semantic band ON, each candidate is embedded once during band
+    lookup and that vector rides onto the minted entity; the batch pass only
+    covers band-off / embed_single-failure stragglers.
+    """
+
+    def _run(self, embed_side_effect, band=False):
+        from agentx_ai.kit.agent_memory.consolidation import jobs as jobs_mod
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        memory = MagicMock()
+        memory.semantic.get_entity_by_id.return_value = None
+        memory.semantic.find_entity_by_name_or_alias.return_value = None
+        memory.semantic.vector_search_entities.return_value = []
+        memory.embedder.embed.side_effect = embed_side_effect
+        memory.embedder.embed_single.return_value = [0.3] * 4
+        session = MagicMock()
+        session.run.return_value.single.return_value = {"stored": 2}
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
+        override = jobs_mod.settings.model_copy(
+            update={"semantic_entity_linking_enabled": band})
+        saved = jobs_mod.settings
+        jobs_mod.settings = override
+        try:
+            count = jobs_mod._store_conversation_entities(
+                session, memory,
+                [{"name": "Kyoto", "type": "Location"}, {"name": "Lisbon", "type": "Location"}],
+                {}, "u", "_global", "c", metrics, [],
+            )
+        finally:
+            jobs_mod.settings = saved
+        return memory, session, count
+
+    def _stored_entities(self, session):
+        call = session.run.call_args_list[0]
+        return call.kwargs.get("entities") or call[1].get("entities")
+
+    def test_band_off_batch_embed_assigns_vectors(self) -> None:
+        memory, session, _ = self._run(embed_side_effect=[[[0.1] * 4, [0.2] * 4]])
+        memory.embedder.embed.assert_called_once()
+        self.assertEqual(len(memory.embedder.embed.call_args.args[0]), 2)
+        self.assertTrue(all(e["embedding"] is not None
+                            for e in self._stored_entities(session)))
+
+    def test_band_on_reuses_lookup_vector_no_batch_call(self) -> None:
+        memory, session, _ = self._run(embed_side_effect=RuntimeError("unused"), band=True)
+        # Band lookup embedded each candidate once; nothing left for the batch.
+        memory.embedder.embed.assert_not_called()
+        self.assertTrue(all(e["embedding"] == [0.3] * 4
+                            for e in self._stored_entities(session)))
+
+    def test_embed_failure_degrades_to_none(self) -> None:
+        memory, session, count = self._run(embed_side_effect=RuntimeError("model down"))
+        self.assertTrue(all(e["embedding"] is None
+                            for e in self._stored_entities(session)))
+
+
+class SemanticBandLinkingTest(TestCase):
+    """_resolve_entity_semantic: auto-link / gray-zone log / mint bands + guards."""
+
+    def _resolve(self, dicts, candidates, flag=True):
+        from agentx_ai.kit.agent_memory.consolidation import jobs as jobs_mod
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        memory = MagicMock()
+        memory.semantic.get_entity_by_id.return_value = None
+        memory.semantic.find_entity_by_name_or_alias.return_value = None
+        memory.semantic.vector_search_entities.return_value = candidates
+        memory.embedder.embed_single.return_value = [0.1] * 4
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
+        entity_map: dict = {}
+        override = jobs_mod.settings.model_copy(
+            update={"semantic_entity_linking_enabled": flag})
+        saved = jobs_mod.settings
+        jobs_mod.settings = override
+        try:
+            stored, reused, _ = jobs_mod._resolve_and_prepare_entities(
+                memory=memory, extracted_entities=dicts, entity_map=entity_map,
+                user_id="u", channel="_global", conv_id="c", metrics=metrics, errors=[],
+            )
+        finally:
+            jobs_mod.settings = saved
+        return stored, reused, entity_map, metrics, memory
+
+    def test_auto_band_links(self) -> None:
+        cand = {"id": "e-1", "name": "Retrieval-Augmented Generation",
+                "type": "Concept", "score": 0.95}
+        stored, reused, entity_map, metrics, memory = self._resolve(
+            [{"name": "RAG", "type": "Concept"}], [cand])
+        self.assertEqual(len(stored), 0)
+        self.assertEqual(reused, 1)
+        self.assertEqual(metrics.entities_semantic_linked, 1)
+        self.assertEqual(entity_map["rag"], "e-1")
+        # The new surface form folds in as an alias on the survivor.
+        memory.semantic.merge_entity_aliases.assert_called_once()
+        self.assertIn("RAG", memory.semantic.merge_entity_aliases.call_args.kwargs["aliases"])
+
+    def test_gray_zone_logs_only(self) -> None:
+        cand = {"id": "e-1", "name": "Retrieval-Augmented Generation",
+                "type": "Concept", "score": 0.80}
+        stored, reused, _, metrics, _ = self._resolve(
+            [{"name": "RAG", "type": "Concept"}], [cand])
+        self.assertEqual(len(stored), 1)  # minted new — never merged
+        self.assertEqual(reused, 0)
+        self.assertEqual(metrics.entities_semantic_candidates, 1)
+        self.assertEqual(metrics.entities_semantic_linked, 0)
+
+    def test_below_band_mints_with_embedding(self) -> None:
+        cand = {"id": "e-1", "name": "Unrelated", "type": "Concept", "score": 0.60}
+        stored, _, _, metrics, _ = self._resolve(
+            [{"name": "RAG", "type": "Concept"}], [cand])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(metrics.entities_semantic_candidates, 0)
+        # Band-lookup vector is reused on the minted entity (embed once).
+        self.assertIsNotNone(stored[0].embedding)
+
+    def test_type_mismatch_and_agent_guards(self) -> None:
+        # High score but wrong type → not linked.
+        wrong_type = {"id": "e-1", "name": "RAG", "type": "Person", "score": 0.99}
+        stored, _, _, metrics, _ = self._resolve(
+            [{"name": "RAG", "type": "Concept"}], [wrong_type])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(metrics.entities_semantic_linked, 0)
+        # Agent candidates are never linked, whatever the score.
+        agent_cand = {"id": "e-2", "name": "Mobius", "type": "Agent", "score": 0.99}
+        stored, _, _, metrics, _ = self._resolve(
+            [{"name": "Mobius", "type": "Concept"}], [agent_cand])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(metrics.entities_semantic_linked, 0)
+
+    def test_flag_off_skips_semantic(self) -> None:
+        cand = {"id": "e-1", "name": "RAG", "type": "Concept", "score": 0.99}
+        stored, _, _, metrics, memory = self._resolve(
+            [{"name": "RAG", "type": "Concept"}], [cand], flag=False)
+        self.assertEqual(len(stored), 1)
+        memory.semantic.vector_search_entities.assert_not_called()
+
+
+class RelationshipEndpointRecoveryTest(TestCase):
+    """_batch_store_relationships: unmapped endpoints recover or drop with a counter."""
+
+    def _store(self, rels, entity_map, find_side_effect=None, candidates=()):
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _batch_store_relationships
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        memory = MagicMock()
+        memory.semantic.find_entity_by_name_or_alias.side_effect = find_side_effect
+        memory.semantic.vector_search_entities.return_value = list(candidates)
+        memory.embedder.embed_single.return_value = [0.1] * 4
+        session = MagicMock()
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
+        count = _batch_store_relationships(
+            session, rels, entity_map,
+            memory=memory, user_id="u", channel="_global", metrics=metrics,
+        )
+        return count, metrics, session
+
+    def test_exact_lookup_recovers_endpoint(self) -> None:
+        count, metrics, _ = self._store(
+            [{"source": "Marcus", "target": "Spotify", "type": "works_at"}],
+            {"marcus": "e-m"},
+            find_side_effect=[{"id": "e-s", "name": "Spotify"}],
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(metrics.relationships_dropped, 0)
+
+    def test_semantic_autoband_recovers_endpoint(self) -> None:
+        count, metrics, _ = self._store(
+            [{"source": "Marcus", "target": "Spotify AB", "type": "works_at"}],
+            {"marcus": "e-m"},
+            find_side_effect=[None],
+            candidates=[{"id": "e-s", "name": "Spotify", "type": "Concept", "score": 0.93}],
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(metrics.relationships_dropped, 0)
+
+    def test_unresolvable_drops_with_counter(self) -> None:
+        count, metrics, session = self._store(
+            [{"source": "Ghost", "target": "Phantom", "type": "haunts"}],
+            {},
+            find_side_effect=[None, None],
+            candidates=[],
+        )
+        self.assertEqual(count, 0)
+        self.assertEqual(metrics.relationships_dropped, 1)
+        session.run.assert_not_called()  # nothing valid to store
+
+
+class EntityEmbeddingBackfillTest(TestCase):
+    """_backfill_entity_embeddings: bounded batch embed + UNWIND write."""
+
+    def test_backfill_embeds_and_writes(self) -> None:
+        from agentx_ai.kit.agent_memory.consolidation import jobs as jobs_mod
+        session = MagicMock()
+        rows = [
+            {"id": "e-1", "name": "RAG", "description": None, "type": "Concept"},
+            {"id": "e-2", "name": "Kyoto", "description": "city", "type": "Location"},
+        ]
+        run_results = [MagicMock(**{"__iter__.return_value": iter(rows)}), MagicMock()]
+        session.run.side_effect = run_results
+        embedder = MagicMock()
+        embedder.embed.return_value = [[0.1] * 4, [0.2] * 4]
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=session)
+        ctx.__exit__ = MagicMock(return_value=False)
+        with patch("agentx_ai.kit.agent_memory.connections.Neo4jConnection.session",
+                   return_value=ctx), \
+             patch.object(jobs_mod, "get_embedder", return_value=embedder):
+            n = jobs_mod._backfill_entity_embeddings(limit=200)
+        self.assertEqual(n, 2)
+        items = session.run.call_args_list[1].kwargs["items"]
+        self.assertEqual(items[0]["id"], "e-1")
+        self.assertEqual(len(items), 2)
+
+
+class WindowAssemblyTest(TestCase):
+    """_assemble_windows: token budget, turn cap, oversized turns, ordering."""
+
+    def _windows(self, contents, max_tokens=10, max_turns=6):
+        from agentx_ai.kit.agent_memory.consolidation.jobs import _assemble_windows
+        turns = [{"id": f"t{i}", "content": c} for i, c in enumerate(contents)]
+        with patch("agentx_ai.tokens.estimate_tokens", side_effect=len):
+            return _assemble_windows(turns, max_tokens=max_tokens, max_turns=max_turns)
+
+    def test_token_budget_splits(self) -> None:
+        w = self._windows(["aaaa", "bbbb", "cccc"], max_tokens=8)
+        self.assertEqual([[t["id"] for t in win] for win in w], [["t0", "t1"], ["t2"]])
+
+    def test_max_turns_cap(self) -> None:
+        w = self._windows(["a", "b", "c", "d"], max_tokens=1000, max_turns=2)
+        self.assertEqual(len(w), 2)
+        self.assertEqual(len(w[0]), 2)
+
+    def test_oversized_turn_owns_a_window(self) -> None:
+        w = self._windows(["x" * 50, "yy"], max_tokens=10)
+        self.assertEqual(len(w), 2)
+        self.assertEqual(len(w[0]), 1)  # never split, never merged
+
+    def test_order_preserved_and_all_turns_kept(self) -> None:
+        contents = [f"turn {i}" for i in range(7)]
+        w = self._windows(contents, max_tokens=20, max_turns=3)
+        flat = [t["content"] for win in w for t in win]
+        self.assertEqual(flat, contents)
+
+
+class WindowedExtractionServiceTest(TestCase):
+    """check_relevance_and_extract_window: source_turn mapping + attribution."""
+
+    def _run(self, response_json, turns=None, roster=None):
+        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
+        svc = get_extraction_service()
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=MagicMock(
+            content=response_json, usage={"total_tokens": 11}))
+        turns = turns or [
+            {"index": 1, "content": "first", "turn_id": "turn-1",
+             "addressed_agent_id": None, "addressed_agent_name": None},
+            {"index": 2, "content": "second", "turn_id": "turn-2",
+             "addressed_agent_id": "ag-1", "addressed_agent_name": "Mobius"},
+        ]
+        with patch.object(svc, "_get_provider_for_stage",
+                          return_value=(provider, "m", 0.3, 2000)):
+            return asyncio.run(svc.check_relevance_and_extract_window(
+                turns, roster=roster or [{"agent_id": "ag-1", "name": "Mobius"}],
+            ))
+
+    def test_source_turn_maps_to_turn_id(self) -> None:
+        result = self._run(json.dumps({
+            "is_relevant": True, "entities": [],
+            "facts": [
+                {"claim": "User lives in Lisbon", "subject": "user",
+                 "source_turn": 1, "certainty": "explicit", "entity_names": []},
+                {"claim": "User likes chess", "subject": "user",
+                 "source_turn": 2, "certainty": "explicit", "entity_names": []},
+            ],
+            "relationships": [],
+        }))
+        self.assertTrue(result.success)
+        self.assertEqual(result.facts[0]["source_turn_id"], "turn-1")
+        self.assertEqual(result.facts[1]["source_turn_id"], "turn-2")
+        self.assertNotIn("source_turn", result.facts[0])
+
+    def test_bad_source_turn_degrades_to_none(self) -> None:
+        result = self._run(json.dumps({
+            "is_relevant": True, "entities": [],
+            "facts": [{"claim": "User likes tea", "subject": "user",
+                       "source_turn": 99, "certainty": "explicit", "entity_names": []}],
+            "relationships": [],
+        }))
+        self.assertIsNone(result.facts[0]["source_turn_id"])
+
+    def test_agent_fact_resolves_source_turn_addressee(self) -> None:
+        # subject="agent" with no subject_agent → falls back to the SOURCE
+        # turn's addressed agent (turn 2 addresses Mobius/ag-1).
+        result = self._run(json.dumps({
+            "is_relevant": True, "entities": [],
+            "facts": [{"claim": "User wants step-by-step thinking",
+                       "subject": "agent", "source_turn": 2,
+                       "certainty": "explicit", "entity_names": []}],
+            "relationships": [],
+        }))
+        self.assertEqual(result.facts[0].get("subject_agent_id"), "ag-1")
+
+
+class WindowedJobsFlowTest(TestCase):
+    """_extract_windowed: pre-filter, registry threading, split-retry, flag-off."""
+
+    def _combined(self, *, success=True, is_relevant=True, entities=None,
+                  facts=None, relationships=None):
+        r = MagicMock()
+        r.success = success
+        r.is_relevant = is_relevant
+        r.entities = entities or []
+        r.facts = facts or []
+        r.relationships = relationships or []
+        r.tokens_used = 3
+        r.reason = "llm_extracted"
+        r.error = "boom" if not success else None
+        return r
+
+    def _run(self, turns, window_results, *, max_turns=1, windowing=True):
+        from agentx_ai.kit.agent_memory.consolidation import jobs as jobs_mod
+        from agentx_ai.kit.agent_memory.consolidation.metrics import ConsolidationMetrics
+        from agentx_ai.kit.agent_memory.extraction.service import ExtractionService
+        ext = MagicMock()
+        ext.is_heuristic_skip.side_effect = ExtractionService.is_heuristic_skip
+        ext.check_correction = AsyncMock(return_value=MagicMock(is_correction=False))
+        ext.check_relevance_and_extract_window = AsyncMock(side_effect=window_results)
+        ext.check_relevance_and_extract = AsyncMock(return_value=self._combined())
+        metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
+        override = jobs_mod.settings.model_copy(update={
+            "extraction_windowing_enabled": windowing,
+            "extraction_window_max_turns": max_turns,
+            "extraction_window_max_tokens": 10_000,
+            "correction_detection_enabled": False,
+        })
+        saved = jobs_mod.settings
+        jobs_mod.settings = override
+        try:
+            with patch.object(jobs_mod, "_build_scope_context", return_value=([], [])), \
+                 patch.object(jobs_mod, "_get_conversation_overview", return_value=None):
+                out = asyncio.run(jobs_mod._extract_from_conversation(
+                    turns, MagicMock(), MagicMock(), ext, "u", "_global",
+                    "conv-1", metrics, [],
+                ))
+        finally:
+            jobs_mod.settings = saved
+        return out, metrics, ext
+
+    @staticmethod
+    def _turn(i, content):
+        return {"id": f"turn-{i}", "content": content, "responder_agent_id": None}
+
+    def test_prefilter_and_registry_threading(self) -> None:
+        turns = [
+            self._turn(1, "I study retrieval-augmented generation for my thesis."),
+            self._turn(2, "ok"),  # pleasantry — must not reach a window
+            self._turn(3, "My advisor endorses RAG as the framing."),
+        ]
+        w1 = self._combined(entities=[{"name": "Retrieval-Augmented Generation",
+                                       "type": "Concept", "aliases": ["RAG"],
+                                       "confidence": 0.9}],
+                            facts=[{"claim": "User studies RAG"}])
+        w2 = self._combined()
+        out, metrics, ext = self._run(turns, [w1, w2], max_turns=1)
+        self.assertEqual(metrics.turns_total, 3)
+        self.assertEqual(metrics.turns_skipped_heuristic, 1)
+        self.assertEqual(metrics.extraction_windows, 2)
+        # Window 2 receives window 1's extractions as registry context.
+        second_call = ext.check_relevance_and_extract_window.call_args_list[1]
+        reg_ents = second_call.kwargs["registry_entities"]
+        self.assertEqual(reg_ents[0]["name"], "Retrieval-Augmented Generation")
+        reg_facts = second_call.kwargs["registry_facts"]
+        self.assertEqual(reg_facts[0]["claim"], "User studies RAG")
+
+    def test_split_retry_on_parse_failure(self) -> None:
+        turns = [self._turn(1, "First substantive turn content."),
+                 self._turn(2, "Second substantive turn content.")]
+        fail = self._combined(success=False)
+        half1, half2 = self._combined(), self._combined()
+        out, metrics, ext = self._run(turns, [fail, half1, half2], max_turns=6)
+        self.assertEqual(metrics.window_retries, 1)
+        self.assertEqual(ext.check_relevance_and_extract_window.call_count, 3)
+        self.assertFalse(out.extraction_failed)
+
+    def test_single_turn_failure_marks_extraction_failed(self) -> None:
+        turns = [self._turn(1, "Only one substantive turn here.")]
+        out, metrics, _ = self._run(turns, [self._combined(success=False)])
+        self.assertTrue(out.extraction_failed)
+
+    def test_flag_off_uses_per_turn_path(self) -> None:
+        turns = [self._turn(1, "A substantive turn about chess strategy.")]
+        out, metrics, ext = self._run(turns, [], windowing=False)
+        ext.check_relevance_and_extract.assert_called_once()
+        ext.check_relevance_and_extract_window.assert_not_called()
+        self.assertEqual(metrics.extraction_windows, 0)
+
+
+class SemanticDedupePairingTest(TestCase):
+    """dedupe_entities --semantic: union-find grouping + pass filtering."""
+
+    def test_group_semantic_pairs_union_find(self) -> None:
+        from agentx_ai.management.commands.dedupe_entities import _group_semantic_pairs
+        groups = _group_semantic_pairs([("a", "b"), ("b", "c"), ("x", "y")])
+        as_sets = sorted(groups, key=len, reverse=True)
+        self.assertEqual(as_sets[0], {"a", "b", "c"})
+        self.assertEqual(as_sets[1], {"x", "y"})
+        self.assertEqual(_group_semantic_pairs([]), [])
+
+    def test_semantic_pass_filters_and_merges(self) -> None:
+        from agentx_ai.management.commands import dedupe_entities as de
+        cmd = de.Command()
+        ents = [
+            {"id": "e1", "name": "RAG", "type": "Concept", "user_id": "u",
+             "embedding": [0.1]},
+            {"id": "e2", "name": "Retrieval-Augmented Generation", "type": "Concept",
+             "user_id": "u", "embedding": [0.1]},
+        ]
+        neighbors_e1 = [
+            {"id": "e2", "name": "Retrieval-Augmented Generation", "type": "Concept",
+             "user_id": "u", "score": 0.95},
+            {"id": "e3", "name": "Ragtime Music", "type": "Concept",
+             "user_id": "OTHER", "score": 0.94},   # other user → filtered
+            {"id": "e4", "name": "Rag Doll", "type": "Product",
+             "user_id": "u", "score": 0.93},       # type mismatch → filtered
+            {"id": "e5", "name": "Weak Match", "type": "Concept",
+             "user_id": "u", "score": 0.70},       # below threshold → filtered
+        ]
+        neighbors_e2 = [
+            {"id": "e1", "name": "RAG", "type": "Concept", "user_id": "u", "score": 0.95},
+        ]
+        group_fields = {
+            "ids": ["e2", "e1"], "names": ["Retrieval-Augmented Generation", "RAG"],
+            "alias_lists": [[], []], "descriptions": [None, None],
+            "access_counts": [3, 1],
+        }
+
+        def _run(query, **params):
+            res = MagicMock()
+            if query is de.COUNT_UNEMBEDDED:
+                res.single.return_value = {"n": 7}
+            elif query is de.ENUMERATE_EMBEDDED:
+                res.__iter__ = MagicMock(return_value=iter(ents))
+            elif query is de.SEMANTIC_NEIGHBORS:
+                rows = neighbors_e1 if params["id"] == "e1" else neighbors_e2
+                res.__iter__ = MagicMock(return_value=iter(rows))
+            elif query is de.FETCH_GROUP_FIELDS:
+                res.single.return_value = group_fields
+            return res
+
+        tx = MagicMock()
+        tx.run.side_effect = _run
+        with patch.object(cmd, "_merge_one_group",
+                          return_value={"duplicates": 1, "rewritten": 2, "collapsed": 0}
+                          ) as mock_merge:
+            summary = cmd._run_semantic_pass(
+                tx, user_id="u", channel=None, threshold=0.90, verbose=False)
+        self.assertEqual(summary["groups"], 1)
+        self.assertEqual(summary["duplicates"], 1)
+        self.assertEqual(summary["unembedded"], 7)
+        mock_merge.assert_called_once()
+        self.assertEqual(mock_merge.call_args.kwargs["ids"], ["e2", "e1"])
+
+
+class WindowTruncationRetryTest(TestCase):
+    """Truncated (repaired) multi-turn window output → success=False so the
+    caller's split-retry fires; single-turn windows keep the salvage."""
+
+    def _run(self, content, turns):
+        from agentx_ai.kit.agent_memory.extraction.service import get_extraction_service
+        svc = get_extraction_service()
+        provider = MagicMock()
+        provider.complete = AsyncMock(return_value=MagicMock(
+            content=content, usage={"total_tokens": 9}))
+        with patch.object(svc, "_get_provider_for_stage",
+                          return_value=(provider, "m", 0.3, 2000)):
+            return asyncio.run(svc.check_relevance_and_extract_window(turns))
+
+    @staticmethod
+    def _truncated_payload():
+        # Valid JSON prefix cut mid-relationships → only repair can parse it.
+        return ('{"is_relevant": true, "entities": [{"name": "Brightline", '
+                '"type": "Organization", "confidence": 0.9}], "facts": [], '
+                '"relationships": [{"source": "Priya", "targ')
+
+    def test_multi_turn_truncation_fails_for_retry(self) -> None:
+        turns = [
+            {"index": 1, "content": "a", "turn_id": "t1",
+             "addressed_agent_id": None, "addressed_agent_name": None},
+            {"index": 2, "content": "b", "turn_id": "t2",
+             "addressed_agent_id": None, "addressed_agent_name": None},
+        ]
+        result = self._run(self._truncated_payload(), turns)
+        self.assertFalse(result.success)
+        self.assertEqual(result.reason, "truncated_retry")
+
+    def test_single_turn_truncation_keeps_salvage(self) -> None:
+        turns = [{"index": 1, "content": "a", "turn_id": "t1",
+                  "addressed_agent_id": None, "addressed_agent_name": None}]
+        result = self._run(self._truncated_payload(), turns)
+        self.assertTrue(result.success)
+        self.assertEqual(result.entities[0]["name"], "Brightline")

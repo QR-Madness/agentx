@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.153 -->
+<!-- release-version: 0.21.154 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -42,6 +42,11 @@ the client at your own API server and bring your own model providers.
   bundle; pick your exposure: token tunnel, named tunnel, or a host port for your own proxy.
 - **Safe-by-default settings.** With no env set, the API boots with debug off and auth ON;
   dev `.env` templates opt out explicitly.
+- **Memory extraction got a brain upgrade.** Conversations are now understood in windows (like a
+  human reading the whole exchange, not line-by-line): the same topic mentioned three ways becomes
+  ONE entity with aliases, relationships connect things said in different turns, facts remember
+  which turn they came from, and near-duplicate entities auto-merge via embedding similarity —
+  extraction eval went from failing dedup/relationship/provenance checks to 19/19.
 - **Memory recall is now measurable.** New `eval_recall` dev harness scores retrieval quality
   (recall@k/MRR per technique, 52-query golden set) so recall changes ship measured, not guessed —
   the baseline gate for the upcoming reranking and extraction upgrades.

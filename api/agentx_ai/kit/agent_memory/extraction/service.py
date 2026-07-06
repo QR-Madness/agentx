@@ -80,6 +80,9 @@ class CombinedExtractionResult(BaseModel):
     tokens_used: int = 0
     success: bool = True
     error: str | None = None
+    # True when the JSON was salvaged by the truncated-output repair — the
+    # tail of the payload (typically the relationships array) may be missing.
+    truncated: bool = False
 
 
 class ProcedureDistillResult(BaseModel):
@@ -722,6 +725,16 @@ class ExtractionService:
 
         return entities_block, facts_block
 
+    @staticmethod
+    def is_heuristic_skip(text: str) -> bool:
+        """Cheap pleasantry filter (no LLM): exact skip-pattern match or <10 chars.
+
+        Exposed so the windowed consolidation path can pre-filter turns BEFORE
+        window assembly (a pleasantry must not consume window budget)."""
+        stripped = text.strip()
+        skip_patterns = get_prompt_loader().get_list("constants.skip_patterns")
+        return stripped.lower() in skip_patterns or len(stripped) < 10
+
     async def check_relevance_and_extract(
         self,
         text: str,
@@ -747,10 +760,7 @@ class ExtractionService:
         """
         # Quick heuristic pre-filter (skip LLM for obvious cases)
         loader = get_prompt_loader()
-        text_lower = text.strip().lower()
-        skip_patterns = loader.get_list("constants.skip_patterns")
-
-        if text_lower in skip_patterns or len(text.strip()) < 10:
+        if self.is_heuristic_skip(text):
             return CombinedExtractionResult(
                 is_relevant=False,
                 reason="heuristic_skip",
@@ -844,6 +854,147 @@ class ExtractionService:
                 reason="error_default_relevant",
                 success=False,
                 error=str(e),
+            )
+
+    @staticmethod
+    def _render_registry(
+        entities: list[dict[str, Any]] | None,
+        facts: list[dict[str, Any]] | None,
+    ) -> tuple[str, str]:
+        """Render the window registry (prior-window extractions, no ids yet)."""
+        ent_lines = [
+            f'- name="{e.get("name")}" type={e.get("type")} aliases={e.get("aliases") or []}'
+            for e in (entities or [])
+        ]
+        fact_lines = [f'- "{f.get("claim")}"' for f in (facts or []) if f.get("claim")]
+        return ("\n".join(ent_lines) or "(none)", "\n".join(fact_lines) or "(none)")
+
+    async def check_relevance_and_extract_window(
+        self,
+        turns: list[dict[str, Any]],
+        known_entities: list[dict[str, Any]] | None = None,
+        known_facts: list[dict[str, Any]] | None = None,
+        registry_entities: list[dict[str, Any]] | None = None,
+        registry_facts: list[dict[str, Any]] | None = None,
+        conversation_overview: str | None = None,
+        roster: list[dict[str, str]] | None = None,
+    ) -> CombinedExtractionResult:
+        """Windowed combined relevance + extraction over multiple user turns
+        (§2.10 Slice 1 — one call sees the whole window, so recurring mentions
+        resolve to ONE entity and relationships may span turns).
+
+        ``turns`` items: {index (1-based), content, turn_id, addressed_agent_id,
+        addressed_agent_name}. Each fact's LLM-emitted ``source_turn`` index is
+        mapped to that turn's id → per-fact ``source_turn_id`` (fixes the
+        user-fact provenance gap of the per-turn path). Pleasantry turns are
+        expected to be pre-filtered by the caller via `is_heuristic_skip`.
+        """
+        if not turns:
+            return CombinedExtractionResult(is_relevant=False, reason="empty_window",
+                                            success=True)
+        loader = get_prompt_loader()
+        try:
+            provider, model_id, temperature, max_tokens = self._get_provider_for_stage('combined')
+        except ValueError as e:
+            logger.warning(f"Windowed extraction provider unavailable: {e}")
+            return CombinedExtractionResult(
+                is_relevant=True, reason="provider_unavailable",
+                success=False, error=str(e),
+            )
+        # A window's JSON scales with the window, and reasoning models spend
+        # output tokens thinking before it — give the window path more output
+        # headroom than the per-turn stage default.
+        max_tokens = max(max_tokens, self.settings.extraction_window_max_output_tokens)
+
+        turns_block = "\n".join(
+            f"[T{t['index']} | addressed: {t.get('addressed_agent_name') or '(unknown)'}] "
+            f"{t['content']}"
+            for t in turns
+        )
+        entities_block, facts_block = self._render_scope_context(known_entities, known_facts)
+        registry_entities_block, registry_facts_block = self._render_registry(
+            registry_entities, registry_facts)
+        roster_block, _ = self._render_roster(roster, None)
+        prompt = loader.get(
+            "extraction.combined_window",
+            turns=turns_block,
+            conversation_overview=(conversation_overview or "(none)").strip(),
+            known_entities=entities_block,
+            known_facts=facts_block,
+            registry_entities=registry_entities_block,
+            registry_facts=registry_facts_block,
+            agent_roster=roster_block,
+        )
+        messages = [Message(role=MessageRole.USER, content=prompt)]
+
+        try:
+            result = await provider.complete(
+                messages, model_id, temperature=temperature, max_tokens=max_tokens,
+            )
+            tokens_used = result.usage.get("total_tokens", 0) if result.usage else 0
+            parsed = self._parse_combined_response(result.content)
+            if not parsed.success:
+                logger.warning(f"Failed to parse windowed response: {parsed.error}")
+                return CombinedExtractionResult(
+                    is_relevant=True, reason="parse_error_default_relevant",
+                    tokens_used=tokens_used, success=False, error=parsed.error,
+                )
+            if parsed.truncated and len(turns) > 1:
+                # Repair salvaged a prefix — the tail (usually the relationships
+                # array) is gone. Fail the multi-turn window so the caller's
+                # split-retry produces smaller outputs; single-turn windows keep
+                # the salvage (better than nothing).
+                logger.warning(
+                    f"Windowed response truncated ({len(turns)} turns) — "
+                    "failing window for split-retry")
+                return CombinedExtractionResult(
+                    is_relevant=True, reason="truncated_retry",
+                    tokens_used=tokens_used, success=False,
+                    error="truncated output (repaired prefix discarded for retry)",
+                )
+
+            idx_to_turn = {t["index"]: t for t in turns}
+            # Window-level fallback for "you"-resolution: the most common
+            # addressed agent across the window's turns.
+            addr_ids = [t.get("addressed_agent_id") for t in turns if t.get("addressed_agent_id")]
+            window_default = max(set(addr_ids), key=addr_ids.count) if addr_ids else None
+
+            if parsed.facts:
+                parsed.facts = self._apply_confidence_calibration(parsed.facts)
+                parsed.facts = self._normalize_temporal_fields(parsed.facts)
+                resolved_facts = []
+                for fact in parsed.facts:
+                    source_turn = fact.pop("source_turn", None)
+                    src = None
+                    if isinstance(source_turn, int | float) or (
+                            isinstance(source_turn, str) and str(source_turn).isdigit()):
+                        src = idx_to_turn.get(int(source_turn))
+                    if src is None and source_turn is not None:
+                        logger.debug(f"windowed fact carries bad source_turn={source_turn!r}")
+                    # Attribution resolves "you" against the SOURCE turn's
+                    # addressed agent (windows can address multiple agents).
+                    addressed = (src or {}).get("addressed_agent_id") or window_default
+                    fact = self._resolve_agent_attribution(
+                        [fact], roster, addressed, default_subject="user",
+                    )[0]
+                    fact["source_turn_id"] = (src or {}).get("turn_id")
+                    resolved_facts.append(fact)
+                parsed.facts = resolved_facts
+
+            parsed.tokens_used = tokens_used
+            parsed.reason = "llm_extracted" if parsed.is_relevant else "llm_not_relevant"
+            logger.debug(
+                f"Windowed extraction: turns={len(turns)} relevant={parsed.is_relevant}, "
+                f"{len(parsed.entities)} entities, {len(parsed.facts)} facts, "
+                f"{len(parsed.relationships)} relationships"
+            )
+            return parsed
+
+        except Exception as e:
+            logger.exception(f"Windowed extraction failed: {e}")
+            return CombinedExtractionResult(
+                is_relevant=True, reason="error_default_relevant",
+                success=False, error=str(e),
             )
 
     # Confidence mapping for assistant self-extraction certainty levels
@@ -1095,7 +1246,9 @@ class ExtractionService:
                 repaired = self._repair_truncated_json(text[json_start:])
                 if repaired and isinstance(repaired, dict):
                     logger.debug("Repaired truncated JSON from combined response")
-                    return _make_result(repaired)
+                    result = _make_result(repaired)
+                    result.truncated = True
+                    return result
 
             return None
 

@@ -419,6 +419,63 @@ def _handle_contradiction(
     return "stored"
 
 
+def _resolve_entity_semantic(
+    memory: AgentMemory,
+    name: str,
+    etype: str | None,
+    embedding: list[float] | None,
+    user_id: str,
+    channel: str,
+    metrics: ConsolidationMetrics,
+) -> dict[str, Any] | None:
+    """Vector-band entity resolution (§2.10 Slice 1, Bug 3).
+
+    Consults `vector_search_entities` after exact name/alias/slug matching has
+    missed. The top *eligible* candidate (same type when etype given; never an
+    Agent on either side — INV-3) decides:
+
+      score >= entity_linking_auto_threshold  → return the match (auto-link)
+      score >= entity_linking_similarity_threshold → log-only gray zone
+      below → None (mint new)
+
+    Note: vector_search_entities bumps access_count as a side effect — one
+    write-path bump per candidate lookup is negligible vs recall traffic, but
+    decay tuning should know it exists.
+    """
+    if embedding is None or (etype or "") == "Agent":
+        return None
+    try:
+        candidates = memory.semantic.vector_search_entities(
+            embedding, top_k=3, user_id=user_id, channel=channel,
+        )
+    except Exception as e:
+        logger.debug(f"semantic entity lookup failed for '{name}': {e}")
+        return None
+
+    for cand in candidates:
+        if (cand.get("type") or "") == "Agent":
+            continue
+        if etype and cand.get("type") and cand["type"] != etype:
+            continue
+        score = float(cand.get("score") or 0.0)
+        if score >= settings.entity_linking_auto_threshold:
+            metrics.entities_semantic_linked += 1
+            logger.debug(
+                f"semantic-link: '{name}' → '{cand.get('name')}' "
+                f"({cand.get('id')}) score={score:.3f}"
+            )
+            return cand
+        if score >= settings.entity_linking_similarity_threshold:
+            # Gray zone: never auto-merge — log as adjudication corpus.
+            metrics.entities_semantic_candidates += 1
+            logger.info(
+                f"semantic-link gray zone (log-only): '{name}' ~ "
+                f"'{cand.get('name')}' ({cand.get('id')}) score={score:.3f}"
+            )
+        return None  # top eligible candidate decides; weaker ones can't outrank it
+    return None
+
+
 def _resolve_and_prepare_entities(
     memory: AgentMemory,
     extracted_entities: list[dict[str, Any]],
@@ -434,6 +491,10 @@ def _resolve_and_prepare_entities(
 
     Resolution order:
       1. Honor LLM-supplied `existing_entity_id` if it points to an in-scope entity.
+      1.5. Batch-local pending index (name/alias/slug against entities already
+           prepared in THIS batch) — without it, two mentions of the same new
+           entity in one conversation mint two nodes: the graph lookup below
+           can't see unstored batch-mates.
       2. `find_entity_by_name_or_alias` (name → alias → slug).
       3. Otherwise treat as new and prepare an Entity for batch insert.
 
@@ -443,9 +504,23 @@ def _resolve_and_prepare_entities(
 
     Returns (entities_to_store, num_reused, total_entities_resolved).
     """
+    from ..memory.semantic import entity_slug
+
     entities_to_store: list[Entity] = []
     reused = 0
     semantic = memory.semantic
+    # Batch-local index over pending (unstored) entities: lowercase name, every
+    # alias, and the alnum slug of each — same normalizer the graph lookup uses.
+    pending_index: dict[str, Entity] = {}
+
+    def _index_pending(ent: Entity) -> None:
+        keys = {ent.name.lower(), entity_slug(ent.name)}
+        for alias in ent.aliases:
+            keys.add(alias.lower())
+            keys.add(entity_slug(alias))
+        for key in keys:
+            if key:
+                pending_index.setdefault(key, ent)
 
     for entity_dict in extracted_entities:
         try:
@@ -470,10 +545,50 @@ def _resolve_and_prepare_entities(
                         f"falling back to name lookup for '{name}'"
                     )
 
+            # 1.5) Batch-local pending match — probe with the candidate's name
+            # AND its aliases (an alias may be the form a batch-mate used).
+            if not resolved:
+                pending = None
+                for probe in [name, *llm_aliases]:
+                    pending = (pending_index.get(probe.lower())
+                               or pending_index.get(entity_slug(probe)))
+                    if pending is not None:
+                        break
+                if pending is not None:
+                    for alias in [name, *llm_aliases]:
+                        if (alias.lower() != pending.name.lower()
+                                and alias.lower() not in {a.lower() for a in pending.aliases}):
+                            pending.aliases.append(alias)
+                    if llm_description and not pending.description:
+                        pending.description = llm_description
+                    pending.salience = max(
+                        pending.salience, entity_dict.get("confidence", 0.5))
+                    entity_map[name.lower()] = pending.id
+                    _index_pending(pending)  # new aliases become keys
+                    metrics.entities_deduped_in_batch += 1
+                    continue
+
             # 2) Name / alias / slug lookup
             if not resolved:
                 resolved = semantic.find_entity_by_name_or_alias(
                     name=name, user_id=user_id, channel=channel,
+                )
+
+            # 2.5) Semantic band: embedding similarity against stored entities
+            # (catches "RAG" vs "Retrieval-Augmented Generation" — lexically
+            # disjoint forms of the same thing). Auto-link only above the
+            # conservative threshold; gray zone is logged, never merged.
+            candidate_embedding: list[float] | None = None
+            if not resolved and settings.semantic_entity_linking_enabled:
+                try:
+                    candidate_embedding = memory.embedder.embed_single(
+                        Entity.compute_embedding_text(name, llm_description, etype)
+                    )
+                except Exception as e:
+                    logger.debug(f"candidate embed failed for '{name}': {e}")
+                resolved = _resolve_entity_semantic(
+                    memory, name, etype, candidate_embedding,
+                    user_id, channel, metrics,
                 )
 
             if resolved:
@@ -505,7 +620,7 @@ def _resolve_and_prepare_entities(
                 metrics.entities_reused += 1
                 continue
 
-            # 3) New entity
+            # 3) New entity (reuse the band-lookup vector — embed once)
             entity = Entity(
                 id=str(uuid4()),
                 name=name,
@@ -514,9 +629,11 @@ def _resolve_and_prepare_entities(
                 aliases=llm_aliases,
                 properties=llm_properties or {},
                 salience=entity_dict.get("confidence", 0.5),
+                embedding=candidate_embedding,
             )
             entities_to_store.append(entity)
             entity_map[name.lower()] = entity.id
+            _index_pending(entity)
 
         except Exception as e:
             logger.warning(f"Failed to prepare entity {entity_dict.get('name')}: {e}")
@@ -599,18 +716,65 @@ def _batch_store_entities(
     return len(entities)
 
 
+def _resolve_relationship_endpoint(
+    name: str,
+    memory: AgentMemory,
+    user_id: str,
+    channel: str,
+    entity_map: dict[str, str],
+    metrics: ConsolidationMetrics | None,
+) -> str | None:
+    """Recover a relationship endpoint missing from the batch entity_map.
+
+    Exact name/alias/slug lookup first, then the semantic auto-band only
+    (no gray-zone linking for endpoints — a wrong edge anchor is worse than a
+    dropped edge). Successful resolutions are cached into entity_map so later
+    rels in the same batch hit the fast path.
+    """
+    try:
+        found = memory.semantic.find_entity_by_name_or_alias(
+            name=name, user_id=user_id, channel=channel,
+        )
+        if found:
+            entity_map[name.lower()] = found["id"]
+            return found["id"]
+        if settings.semantic_entity_linking_enabled and metrics is not None:
+            embedding = memory.embedder.embed_single(
+                Entity.compute_embedding_text(name, None, "Concept")
+            )
+            cand = _resolve_entity_semantic(
+                memory, name, None, embedding, user_id, channel, metrics,
+            )
+            if cand:
+                entity_map[name.lower()] = cand["id"]
+                return cand["id"]
+    except Exception as e:
+        logger.debug(f"relationship endpoint recovery failed for '{name}': {e}")
+    return None
+
+
 def _batch_store_relationships(
     session,
     relationships: list[dict[str, Any]],
     entity_map: dict[str, str],
+    memory: AgentMemory | None = None,
+    user_id: str | None = None,
+    channel: str | None = None,
+    metrics: ConsolidationMetrics | None = None,
 ) -> int:
     """
     Store multiple relationships in a single Neo4j transaction using UNWIND.
+
+    Endpoints missing from `entity_map` are recovered via store lookup + the
+    semantic auto-band when `memory` is provided; irrecoverable relationships
+    are counted (`metrics.relationships_dropped`) and logged — previously they
+    were dropped silently (a hidden cause of graph edge sparsity).
 
     Args:
         session: Neo4j session
         relationships: List of relationship dictionaries
         entity_map: Map of lowercase entity name to entity ID
+        memory/user_id/channel/metrics: enable endpoint recovery when given
 
     Returns:
         Number of relationships stored
@@ -623,6 +787,13 @@ def _batch_store_relationships(
     for rel in relationships:
         source_id = entity_map.get(rel["source"].lower())
         target_id = entity_map.get(rel["target"].lower())
+        if memory is not None and user_id is not None and channel is not None:
+            if not source_id:
+                source_id = _resolve_relationship_endpoint(
+                    rel["source"], memory, user_id, channel, entity_map, metrics)
+            if not target_id:
+                target_id = _resolve_relationship_endpoint(
+                    rel["target"], memory, user_id, channel, entity_map, metrics)
         if source_id and target_id:
             valid_rels.append({
                 "source_id": source_id,
@@ -630,6 +801,13 @@ def _batch_store_relationships(
                 "rel_type": rel["type"],
                 "confidence": rel.get("confidence", 0.7),
             })
+        else:
+            logger.debug(
+                f"dropping relationship {rel.get('source')!r}-[{rel.get('type')!r}]->"
+                f"{rel.get('target')!r}: unresolved endpoint(s)"
+            )
+            if metrics is not None:
+                metrics.relationships_dropped += 1
 
     if not valid_rels:
         return 0
@@ -1011,7 +1189,7 @@ def _fetch_pending_conversations(
         OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
         WITH c, u, t, resp
         ORDER BY t.index
-        WITH c, u, collect({content: t.content, responder_agent_id: resp.agent_id}) AS turns
+        WITH c, u, collect({id: t.id, content: t.content, responder_agent_id: resp.agent_id}) AS turns
         ORDER BY c.started_at DESC
         LIMIT 10
         RETURN c.id AS conversation_id,
@@ -1026,6 +1204,78 @@ def _fetch_pending_conversations(
     return records, len(conversations_found)
 
 
+def _assemble_windows(
+    turns: list[dict[str, Any]], max_tokens: int, max_turns: int,
+) -> list[list[dict[str, Any]]]:
+    """Greedy token/turn-budgeted window assembly (pure, order-preserving).
+
+    Never splits a turn; a single turn over the token budget becomes its own
+    window. Sized so worst-case extraction JSON stays inside the combined
+    stage's output cap.
+    """
+    from ....tokens import estimate_tokens
+
+    windows: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_tokens = 0
+    for turn in turns:
+        turn_tokens = estimate_tokens(turn.get("content") or "")
+        if current and (current_tokens + turn_tokens > max_tokens
+                        or len(current) >= max_turns):
+            windows.append(current)
+            current, current_tokens = [], 0
+        current.append(turn)
+        current_tokens += turn_tokens
+    if current:
+        windows.append(current)
+    return windows
+
+
+def _get_conversation_overview(conv_id: str) -> str | None:
+    """Rolling conversation summary for the window prompt's OVERVIEW block.
+
+    Lazy kit→agent import, best-effort by design: the summary lives in the
+    chat session layer (Redis ``conv_summary:{id}``) and may simply not exist.
+    """
+    try:
+        from agentx_ai.agent.conversation_summary_storage import get_summary
+        return get_summary(conv_id)
+    except Exception:
+        return None
+
+
+def _accumulate_registry(
+    registry_entities: dict[str, dict[str, Any]],
+    registry_facts: list[dict[str, Any]],
+    result,
+) -> None:
+    """Fold a window's extractions into the rolling registry (name-lower dedup:
+    union aliases, max confidence). Blunts registry echo — a re-emitted entity
+    merges here before it ever reaches storage."""
+    for ent in result.entities:
+        name = (ent.get("name") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        existing = registry_entities.get(key)
+        if existing is None:
+            registry_entities[key] = {
+                "name": name,
+                "type": ent.get("type"),
+                "aliases": list(ent.get("aliases") or []),
+                "confidence": ent.get("confidence", 0.5),
+            }
+        else:
+            for alias in ent.get("aliases") or []:
+                if alias.lower() not in {a.lower() for a in existing["aliases"]}:
+                    existing["aliases"].append(alias)
+            existing["confidence"] = max(
+                existing["confidence"], ent.get("confidence", 0.5))
+    for fact in result.facts:
+        if fact.get("claim"):
+            registry_facts.append({"claim": fact["claim"]})
+
+
 async def _extract_from_conversation(
     turns, memory, session, extraction_service, user_id, channel,
     conv_id, metrics, errors, roster=None, default_agent_id=None,
@@ -1033,10 +1283,146 @@ async def _extract_from_conversation(
     """Apply correction detection + combined relevance/extraction over a
     conversation's user turns, accumulating entities/facts/relationships.
 
+    Windowed by default (§2.10 Slice 1): turns are pre-filtered for
+    pleasantries, assembled into token-budgeted windows, and extracted one
+    window per LLM call — with a rolling registry + conversation overview so
+    later windows reuse earlier names. `extraction_windowing_enabled=False`
+    falls back to the legacy per-turn path.
+
     ``roster`` ([{agent_id, name}]) lets the extractor attribute facts to specific
     agents by name; the per-turn ``responder_agent_id`` (falling back to
     ``default_agent_id``) tells it which agent "you" addresses.
     """
+    if settings.extraction_windowing_enabled:
+        return await _extract_windowed(
+            turns, memory, session, extraction_service, user_id, channel,
+            conv_id, metrics, errors, roster=roster,
+            default_agent_id=default_agent_id,
+        )
+    return await _extract_per_turn(
+        turns, memory, session, extraction_service, user_id, channel,
+        conv_id, metrics, errors, roster=roster,
+        default_agent_id=default_agent_id,
+    )
+
+
+async def _extract_windowed(
+    turns, memory, session, extraction_service, user_id, channel,
+    conv_id, metrics, errors, roster=None, default_agent_id=None,
+) -> _ConvExtraction:
+    """Windowed extraction: pre-filter → per-turn corrections → windows with
+    registry/overview context → split-retry on parse failure."""
+    out = _ConvExtraction()
+    relevance_start = time.perf_counter()
+
+    # Pleasantry pre-filter BEFORE windowing (a skip must not consume budget).
+    kept: list[dict[str, Any]] = []
+    for turn in turns:
+        metrics.turns_total += 1
+        if extraction_service.is_heuristic_skip(turn.get("content") or ""):
+            metrics.turns_skipped_heuristic += 1
+            continue
+        kept.append(turn)
+
+    # Correction detection stays per-turn (identical semantics to the legacy path).
+    if settings.correction_detection_enabled:
+        for turn in kept:
+            correction = await extraction_service.check_correction(turn["content"])
+            metrics.correction_calls += 1
+            if correction.is_correction:
+                if _handle_user_correction(memory, session, correction, user_id, channel):
+                    out.corrections_applied += 1
+                    metrics.corrections_applied += 1
+                # Still extract from the turn — it may have new info
+
+    if not kept:
+        metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
+        return out
+
+    windows = _assemble_windows(
+        kept, settings.extraction_window_max_tokens, settings.extraction_window_max_turns)
+    overview = _get_conversation_overview(conv_id)
+    name_by_agent = {a.get("agent_id"): a.get("name") for a in (roster or [])}
+    registry_entities: dict[str, dict[str, Any]] = {}
+    registry_facts: list[dict[str, Any]] = []
+
+    async def _run_window(window: list[dict[str, Any]]):
+        payload = []
+        for i, turn in enumerate(window, start=1):
+            addressed_id = turn.get("responder_agent_id") or default_agent_id
+            payload.append({
+                "index": i,
+                "content": turn["content"],
+                "turn_id": turn.get("id"),
+                "addressed_agent_id": addressed_id,
+                "addressed_agent_name": name_by_agent.get(addressed_id),
+            })
+        scope_entities, scope_facts = _build_scope_context(
+            memory=memory,
+            text="\n".join(t["content"] for t in window),
+            user_id=user_id,
+            channel=channel,
+        )
+        reg_ents = list(registry_entities.values())[-settings.extraction_registry_max_entities:]
+        reg_facts = registry_facts[-settings.extraction_registry_max_facts:]
+        result = await extraction_service.check_relevance_and_extract_window(
+            payload,
+            known_entities=scope_entities,
+            known_facts=scope_facts,
+            registry_entities=reg_ents,
+            registry_facts=reg_facts,
+            conversation_overview=overview,
+            roster=roster,
+        )
+        metrics.extraction_calls += 1
+        metrics.extraction_windows += 1
+        metrics.total_tokens_used += result.tokens_used
+        return result
+
+    async def _ingest(window: list[dict[str, Any]], depth: int = 0) -> None:
+        result = await _run_window(window)
+        if not result.success:
+            # Parse failure / truncation beyond repair: split once and retry
+            # each half (a smaller window ≈ smaller output). Depth-1 only.
+            if depth == 0 and len(window) > 1:
+                metrics.window_retries += 1
+                mid = len(window) // 2
+                logger.warning(
+                    f"Window extraction failed for {conv_id} "
+                    f"({len(window)} turns) — splitting and retrying: {result.error}"
+                )
+                await _ingest(window[:mid], depth=1)
+                await _ingest(window[mid:], depth=1)
+                return
+            out.extraction_failed = True
+            logger.warning(f"Extraction failed for window in {conv_id}: {result.error}")
+            return
+        if result.is_relevant:
+            out.relevant_turns.extend(window)
+            metrics.turns_relevant += len(window)
+            out.entities.extend(result.entities)
+            out.facts.extend(result.facts)
+            out.relationships.extend(result.relationships)
+            metrics.entities_extracted += len(result.entities)
+            metrics.facts_extracted += len(result.facts)
+            metrics.relationships_extracted += len(result.relationships)
+            _accumulate_registry(registry_entities, registry_facts, result)
+        else:
+            metrics.turns_skipped_llm += len(window)
+            logger.debug(f"Window judged irrelevant ({len(window)} turns, {result.reason})")
+
+    for window in windows:
+        await _ingest(window)
+
+    metrics.relevance_latency_ms += int((time.perf_counter() - relevance_start) * 1000)
+    return out
+
+
+async def _extract_per_turn(
+    turns, memory, session, extraction_service, user_id, channel,
+    conv_id, metrics, errors, roster=None, default_agent_id=None,
+) -> _ConvExtraction:
+    """Legacy per-turn extraction (flag-off fallback; pre-Slice-1 behavior)."""
     out = _ConvExtraction()
 
     relevance_start = time.perf_counter()
@@ -1117,6 +1503,23 @@ def _store_conversation_entities(
         metrics=metrics,
         errors=errors,
     )
+
+    # Embed new entities at store time so vector_search_entities can see them
+    # (consolidation entities historically stored embedding=None, blinding the
+    # semantic linking band + --semantic dedupe). Batch call; failure degrades
+    # to embedding=None — the entity_linking job's backfill catches those.
+    try:
+        pending_embed = [e for e in entities_to_store
+                         if getattr(e, "embedding", None) is None
+                         and hasattr(e, "embedding_text")]
+        if pending_embed:
+            vectors = memory.embedder.embed([e.embedding_text() for e in pending_embed])
+            for ent, vec in zip(pending_embed, vectors, strict=True):
+                ent.embedding = vec
+    except Exception as embed_err:
+        logger.warning(
+            f"Entity batch embed failed for {conv_id} (backfill will retry): {embed_err}"
+        )
 
     # Batch store only the genuinely new entities
     try:
@@ -1315,7 +1718,7 @@ async def _store_facts_with_verification(
 
 def _link_facts_and_relationships(
     session, conv_id, stored_fact_ids, extracted_relationships,
-    entity_map, metrics, errors,
+    entity_map, metrics, errors, memory=None, user_id=None, channel=None,
 ) -> int:
     """Batch-create DERIVED_FROM edges for stored facts and batch-store the
     extracted relationships. Returns the relationship count."""
@@ -1330,10 +1733,11 @@ def _link_facts_and_relationships(
         except Exception as e:
             logger.warning(f"Batch DERIVED_FROM creation failed: {e}")
 
-    # Batch store relationships using UNWIND
+    # Batch store relationships using UNWIND (with endpoint recovery)
     try:
         rel_count = _batch_store_relationships(
-            session, extracted_relationships, entity_map
+            session, extracted_relationships, entity_map,
+            memory=memory, user_id=user_id, channel=channel, metrics=metrics,
         )
         metrics.relationships_stored += rel_count
     except Exception as e:
@@ -1436,7 +1840,7 @@ async def _consolidate_user_conversation(
 
     rel_count = _link_facts_and_relationships(
         session, conv_id, fact_result.stored_fact_ids, extracted.relationships,
-        entity_map, metrics, errors,
+        entity_map, metrics, errors, memory=memory, user_id=user_id, channel=channel,
     )
 
     # Track storage latency
@@ -1608,11 +2012,13 @@ async def _consolidate_assistant_conversation(
                 logger.warning(f"Self-extraction fact storage failed: {e}")
                 errors.append(f"self_fact:{conv_id}:{e}")
 
-        # Store relationships
+        # Store relationships (with endpoint recovery in the self channel)
         if result.relationships:
             try:
                 _batch_store_relationships(
                     session, result.relationships, entity_map,
+                    memory=memory, user_id=user_id, channel=self_channel,
+                    metrics=metrics,
                 )
             except Exception as e:
                 logger.warning(f"Self-extraction relationship storage failed: {e}")
@@ -2566,6 +2972,42 @@ def _claim_entity_candidates(claim: str, max_ngram: int) -> list[str]:
     return candidates
 
 
+def _backfill_entity_embeddings(limit: int) -> int:
+    """Embed entities stored with ``embedding IS NULL`` (bounded batch).
+
+    Consolidation historically stored entities without embeddings, blinding
+    `vector_search_entities` (and thus the §2.10 semantic band + `--semantic`
+    dedupe) to them. The live path now embeds at store time; this self-healing
+    sweep converges the backlog. Returns the number embedded.
+    """
+    from ..connections import Neo4jConnection
+    with Neo4jConnection.session() as session:
+        rows = list(session.run(
+            """
+            MATCH (e:Entity)
+            WHERE e.embedding IS NULL AND e.name IS NOT NULL
+            RETURN e.id AS id, e.name AS name, e.description AS description,
+                   coalesce(e.type, 'Concept') AS type
+            LIMIT $limit
+            """, limit=limit,
+        ))
+        if not rows:
+            return 0
+        texts = [Entity.compute_embedding_text(r["name"], r["description"], r["type"])
+                 for r in rows]
+        vectors = get_embedder().embed(texts)
+        session.run(
+            """
+            UNWIND $items AS item
+            MATCH (e:Entity {id: item.id})
+            SET e.embedding = item.embedding
+            """,
+            items=[{"id": r["id"], "embedding": v}
+                   for r, v in zip(rows, vectors, strict=True)],
+        ).consume()
+        return len(rows)
+
+
 def link_facts_to_entities() -> dict[str, Any]:
     """
     Backfill: link orphaned facts (no ``ABOUT`` edge) to existing entities.
@@ -2574,16 +3016,28 @@ def link_facts_to_entities() -> dict[str, Any]:
     linking fix. For each orphan fact it matches claim n-grams against a per-channel
     index of entity names/aliases/slugs (same semantics as
     ``find_entity_by_name_or_alias``) and creates ``(Fact)-[:ABOUT]->(:Entity)``
-    edges. No embeddings (consolidation entities have none) and no LLM; it only links
-    to entities that already exist (unlike the live path, it does not create stubs).
+    edges. No LLM; it only links to entities that already exist (unlike the live
+    path, it does not create stubs). Also backfills missing entity *embeddings*
+    (bounded per run) so the write-time semantic band and ``--semantic`` dedupe
+    can see pre-Slice-1 entities.
 
     Returns:
-        Dict with items_processed, links_created, facts_still_orphan, errors.
+        Dict with items_processed, links_created, facts_still_orphan,
+        embeddings_backfilled, errors.
     """
     if not settings.entity_linking_enabled:
         logger.debug("Entity linking is disabled")
         return {"items_processed": 0, "links_created": 0,
                 "facts_still_orphan": 0, "skipped": "disabled"}
+
+    embeddings_backfilled = 0
+    try:
+        embeddings_backfilled = _backfill_entity_embeddings(
+            settings.entity_embedding_backfill_batch)
+        if embeddings_backfilled:
+            logger.info(f"🔗 Backfilled {embeddings_backfilled} entity embedding(s)")
+    except Exception as e:
+        logger.warning(f"Entity embedding backfill failed (will retry next run): {e}")
 
     max_ngram = settings.entity_linking_max_ngram
     links_created = 0
@@ -2659,5 +3113,6 @@ def link_facts_to_entities() -> dict[str, Any]:
         "items_processed": facts_processed,
         "links_created": links_created,
         "facts_still_orphan": facts_still_orphan,
+        "embeddings_backfilled": embeddings_backfilled,
         "errors": errors,
     }

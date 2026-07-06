@@ -35,6 +35,15 @@
 > **Extraction v2 umbrella** — designs in [Memory-Roadmap §2.10](../../Memory-Roadmap.md); each
 > sub-slice eval-gated by `eval_recall`/`eval_consolidation`.
 
+- [x] **Slice 1 — conversation-windowed extraction + honest entity resolution** `[v0.21.154]` —
+      windowed multi-turn extraction (registry + overview + split/truncation retry + per-fact
+      `source_turn_id` provenance), within-batch entity dedup, write-time semantic linking band
+      (auto ≥0.90 / log-only 0.75–0.90), entity-embedding backfill, relationship endpoint
+      recovery, shared node-merge util + `dedupe_entities --semantic`, eval_consolidation
+      graph-honesty + multi-contact business cases. **19/19 PASS** with
+      `openrouter:nvidia/nemotron-3-ultra-550b-a55b` (before, per-turn: dedup/edges/provenance
+      all failing). Detail: Memory-Roadmap §2.10.
+
 - [ ] Canonical Fact/Entity/Edge schema + **structured outputs** — LM Studio `response_format`
       json_schema plumbed through `ModelProvider.complete`; Pydantic validate + one retry; retire
       the regex/truncated-JSON repair paths

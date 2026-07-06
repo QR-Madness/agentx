@@ -68,6 +68,16 @@ class ConsolidationMetrics:
     fact_entity_links_recovered: int = 0
     fact_entity_stubs_created: int = 0
 
+    # Entity resolution v2 (§2.10 Slice 1). NOTE: with windowing enabled,
+    # extraction_calls counts WINDOW LLM calls (was: per-turn calls).
+    extraction_windows: int = 0
+    window_retries: int = 0
+    entities_deduped_in_batch: int = 0   # batch-local pending-index hits (Bug 2)
+    entities_semantic_linked: int = 0    # auto-linked >= entity_linking_auto_threshold
+    entities_semantic_candidates: int = 0  # logged-only band (0.75–0.90 gray zone)
+    relationships_dropped: int = 0       # both endpoints unresolvable (was silent)
+    entity_embeddings_backfilled: int = 0
+
     # Assistant self-extraction
     assistant_turns_total: int = 0
     assistant_turns_relevant: int = 0

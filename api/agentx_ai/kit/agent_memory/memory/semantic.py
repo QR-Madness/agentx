@@ -15,6 +15,16 @@ if TYPE_CHECKING:
     from ..audit import MemoryAuditLogger
 
 logger = logging.getLogger(__name__)
+
+
+def entity_slug(name: str) -> str:
+    """Canonical entity-name slug: lowercase, alphanumerics only.
+
+    Shared by `find_entity_by_name_or_alias` (Python side of the slug match)
+    and the consolidation batch-local pending index (`_resolve_and_prepare_entities`)
+    so in-batch and graph matching agree on what counts as "the same name".
+    """
+    return "".join(ch for ch in name.strip().lower() if ch.isalnum())
 settings = get_settings()
 
 
@@ -129,7 +139,8 @@ class SemanticMemory:
         Tries in order:
           1. Exact case-insensitive name match.
           2. Case-insensitive alias match.
-          3. Slug match (lowercased, whitespace stripped) against name or aliases.
+          3. Slug match (lowercased, alphanumerics only — `entity_slug`) against
+             name or aliases.
 
         Searches the given channel plus '_global'. Returns the most-salient match,
         or None if nothing matches.
@@ -139,7 +150,7 @@ class SemanticMemory:
 
         needle = name.strip()
         needle_lower = needle.lower()
-        needle_slug = "".join(ch for ch in needle_lower if ch.isalnum())
+        needle_slug = entity_slug(needle)
 
         with Neo4jConnection.session() as session:
             result = session.run("""
@@ -152,9 +163,11 @@ class SemanticMemory:
                     OR (
                       $needle_slug <> ''
                       AND (
-                        replace(toLower(e.name), ' ', '') = $needle_slug
+                        // apoc strip matches entity_slug() (alnum-only); the old
+                        // space-only replace() never matched hyphenated names.
+                        apoc.text.replace(toLower(e.name), '[^a-z0-9]', '') = $needle_slug
                         OR any(a IN coalesce(e.aliases, [])
-                               WHERE replace(toLower(a), ' ', '') = $needle_slug)
+                               WHERE apoc.text.replace(toLower(a), '[^a-z0-9]', '') = $needle_slug)
                       )
                     )
                   )

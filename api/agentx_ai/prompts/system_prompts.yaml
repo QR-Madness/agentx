@@ -290,6 +290,194 @@ extraction:
       "relationships": []
     }}
 
+  # Conversation-windowed combined relevance + extraction (§2.10 Slice 1).
+  # Variables: {turns}, {conversation_overview}, {known_entities}, {known_facts},
+  #            {registry_entities}, {registry_facts}, {agent_roster}
+  # One call sees a WINDOW of numbered user turns, so the same topic mentioned
+  # in several turns yields ONE entity and relationships may span turns.
+  combined_window: |
+    Extract entities and facts from a WINDOW of the USER's conversation turns.
+    Use the KNOWN context to avoid duplicating what is already stored, and treat
+    the window as one narrative: the same thing mentioned in several turns is ONE
+    entity, and relationships may connect things said in different turns.
+
+    CONVERSATION OVERVIEW (rolling summary — context only, do NOT extract from it):
+    {conversation_overview}
+
+    TURNS (each tagged [Tn | addressed: <agent>]; "you" in a turn refers to its addressed agent):
+    {turns}
+
+    KNOWN ENTITIES (already in memory — reuse by setting existing_entity_id):
+    {known_entities}
+
+    EXTRACTED EARLIER IN THIS CONVERSATION (no id yet — if mentioned again, reuse
+    the EXACT same name; do NOT re-emit unless adding new aliases/description):
+    {registry_entities}
+
+    KNOWN FACTS (already stored — do NOT re-extract; only emit NEW or REFINED claims):
+    {known_facts}
+
+    ALREADY EXTRACTED FACTS FROM THIS CONVERSATION (do NOT re-extract these):
+    {registry_facts}
+
+    STEP 1 — RELEVANCE CHECK
+    Does the window contain any extractable information: names, personal info,
+    preferences, opinions, goals, technical details, or claims about specific things?
+    Work and business substance COUNTS: projects, employers, vendors, customers,
+    colleagues/contacts and their roles, organizations, plans and commitments are
+    all extractable — treat them exactly like personal facts.
+    Answer NO ONLY if EVERY turn is pure pleasantry with no substance
+    ("ok", "thanks", "sounds good", "got it").
+
+    STEP 2 — EXTRACTION (only if relevant)
+
+    SUBJECT — who each fact is about
+    These are the USER's turns. Resolve pronouns: "I"/"me"/"my" = the user;
+    "you"/"your" = the agent addressed by THAT turn (see the [Tn | addressed: …] tag).
+    Tag every fact with "subject":
+    - "user":        about the speaker (the user). The common case.
+    - "agent":       about an AI agent ("you're great at SQL" → subject="agent").
+    - "third_party": about someone/something else named (a colleague, company, tool).
+    Only emit a fact if it carries durable information; do not invent an agent fact
+    just because the user paid a compliment.
+
+    AGENT ATTRIBUTION — which agent a fact concerns
+    Agents in this conversation (attribute by NAME; the id is the durable key):
+    {agent_roster}
+    When a fact is about or directed at a specific agent, add a "subject_agent" field
+    holding that agent's NAME exactly as listed above. Resolve "you" to the turn's
+    addressed agent. A directive is *about* the targeted agent — set subject="agent"
+    and subject_agent to its name even though the user is the one asking
+    ("Mobius, think step-by-step" → subject="agent", subject_agent="Mobius"). If you
+    cannot tell which agent, omit subject_agent. Never invent a name that is not listed.
+
+    CLAIM CONVENTION
+    Write each claim in the third person, present tense, starting with the subject.
+    Never echo "I"/"my"/"you" into the stored claim. Name the agent — never the generic
+    word "agent" — whenever you know which one (and add that name to entity_names).
+    - subject="user":        "User <verb> ..."  ("I work at Anthropic" → "User works at Anthropic")
+    - subject="agent":       "<AgentName> <verb> ..." ("you keep forgetting my name" → "Mobius forgets the user's name").
+                             Directive: phrase naturally and still set subject_agent —
+                             "Mobius, think step-by-step" → "User wants Mobius to think step-by-step"
+    - subject="third_party": "<Name> <verb> ..." ("my manager Sarah leads payments" → "Sarah leads payments")
+
+    SOURCE TURN
+    Every fact carries "source_turn": the [Tn] number of the turn where it was
+    stated. A fact synthesized from several turns uses the turn that completes it.
+
+    NEGATION
+    Negation must be explicit in the claim — never emit the positive form for a denial.
+    - "I don't use React"           → claim="User does not use React"
+    - "I no longer work at Google"  → claim="User works at Google", temporal_context="past"
+      (the past temporal context is the canonical encoding; do NOT also emit a
+      negated claim.)
+
+    ENTITY REUSE
+    If a mention matches a KNOWN ENTITY (same real-world referent, even with different
+    casing or via an alias), set existing_entity_id to that entity's id. If it matches
+    a name under EXTRACTED EARLIER IN THIS CONVERSATION, reuse that exact name and only
+    re-emit it when adding new aliases or description. Within this window, the same
+    referent mentioned in different turns or spellings is ONE entity — pick one
+    canonical name and put other forms in aliases.
+
+    FACT REFINEMENT
+    If a new claim sharpens or replaces a KNOWN FACT (e.g. "User practices piano" →
+    "User practices piano mostly in the evenings"), set refines_fact_id to the existing
+    fact's id. Do NOT also emit the un-refined version separately.
+
+    CERTAINTY (for facts)
+    - "explicit":  user directly stated it ("I work at Anthropic")
+    - "implied":   strongly implied by context ("my office in SF" → works in SF)
+    - "inferred":  reasonably inferred ("debugging Python" → knows Python)
+    - "uncertain": ambiguous or hedged ("I think I might prefer...")
+
+    TEMPORAL CONTEXT (for facts)
+    - "current": applies now
+    - "past":    no longer applies
+    - "future":  will apply later
+    - null:      no clear temporal indicator — use the JSON literal null, NOT the string "null"
+
+    IMPLICIT CORRECTIONS
+    A statement that implies a change from a previous state extracts BOTH:
+    - the OLD state with temporal_context="past"
+    - the NEW state with temporal_context="current"
+    - "I switched from React to Vue" →
+        fact1: claim="User uses React", temporal_context="past"
+        fact2: claim="User uses Vue",   temporal_context="current"
+      (Only extract an old value if explicitly mentioned.)
+
+    DEDUPLICATION
+    - Do not emit two facts that mean the same thing within this response.
+    - Do not list the same entity twice; pick one canonical name (e.g. "Python", not
+      "python"; "Google", not "Google LLC" or "google").
+
+    RELATIONSHIPS
+    Emit relationships between extracted/known entities, INCLUDING when the two
+    entities were mentioned in DIFFERENT turns of this window — that is the point
+    of seeing the whole window.
+
+    ENTITY TYPES: Person | Organization | Technology | Product | Location | Event | Concept
+
+    Respond with JSON ONLY (no prose, no markdown fences):
+    {{
+      "is_relevant": true|false,
+      "entities": [
+        {{
+          "name": "CanonicalName",
+          "type": "Person|Organization|Technology|Product|Location|Event|Concept",
+          "description": "brief description (omit if nothing new to add)",
+          "aliases": ["optional new aliases"],
+          "existing_entity_id": "uuid-if-this-matches-a-known-entity (omit if new)",
+          "confidence": 0.0-1.0
+        }}
+      ],
+      "facts": [
+        {{
+          "claim": "<Subject> <verb> ...",
+          "subject": "user|agent|third_party",
+          "subject_agent": "AgentName (only when the fact is about/directed at a specific listed agent; omit otherwise)",
+          "source_turn": 1,
+          "certainty": "explicit|implied|inferred|uncertain",
+          "temporal_context": "current|past|future|null (JSON literal, not the string)",
+          "entity_names": ["CanonicalName"],
+          "refines_fact_id": "uuid-if-this-refines-a-known-fact (omit otherwise)"
+        }}
+      ],
+      "relationships": [
+        {{"source": "EntityA", "target": "EntityB", "type": "works_at|knows|uses|prefers|etc", "confidence": 0.0-1.0}}
+      ]
+    }}
+
+    If NOT relevant, return: {{"is_relevant": false, "entities": [], "facts": [], "relationships": []}}
+
+    ───────── EXAMPLE ─────────
+
+    TURNS:
+    [T1 | addressed: (unknown)] I've been reading about retrieval-augmented generation for my thesis.
+    [T2 | addressed: (unknown)] Thanks, that helps!
+    [T3 | addressed: (unknown)] My advisor Dr. Chen thinks RAG is the right framing for it.
+    KNOWN ENTITIES: (none)
+    EXTRACTED EARLIER IN THIS CONVERSATION: (none)
+    KNOWN FACTS: (none)
+    OUTPUT:
+    {{
+      "is_relevant": true,
+      "entities": [
+        {{"name": "Retrieval-Augmented Generation", "type": "Concept", "description": "Retrieval technique the user studies", "aliases": ["RAG"], "confidence": 0.9}},
+        {{"name": "Dr. Chen", "type": "Person", "description": "User's thesis advisor", "confidence": 0.9}}
+      ],
+      "facts": [
+        {{"claim": "User researches Retrieval-Augmented Generation for their thesis", "subject": "user", "source_turn": 1, "certainty": "explicit", "temporal_context": "current", "entity_names": ["Retrieval-Augmented Generation"]}},
+        {{"claim": "Dr. Chen is the user's thesis advisor", "subject": "third_party", "source_turn": 3, "certainty": "explicit", "temporal_context": "current", "entity_names": ["Dr. Chen"]}},
+        {{"claim": "Dr. Chen endorses Retrieval-Augmented Generation as the framing for the user's thesis", "subject": "third_party", "source_turn": 3, "certainty": "explicit", "temporal_context": "current", "entity_names": ["Dr. Chen", "Retrieval-Augmented Generation"]}}
+      ],
+      "relationships": [
+        {{"source": "Dr. Chen", "target": "Retrieval-Augmented Generation", "type": "endorses", "confidence": 0.85}}
+      ]
+    }}
+    Note: "RAG" in T3 is the SAME entity as T1's full form — one entity with an
+    alias, and the relationship connects entities from different turns.
+
   # User correction detection prompt
   # Variables: {text}
   correction: |
