@@ -1,0 +1,44 @@
+/* DocumentPreviewModal — print-to-PDF support.
+ *
+ * "Export as PDF" calls window.print(); this @media print block makes the
+ * rendered document the ONLY visible content (classic visibility trick — the
+ * app chrome, drawer, and modal shell all disappear from the print output).
+ * Known platform caveat: window.print() is a no-op on macOS WKWebView (Tauri);
+ * Linux WebKitGTK, Windows WebView2, and browser mode all show the dialog.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .doc-print-area,
+  .doc-print-area * {
+    visibility: visible;
+  }
+  .doc-print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    overflow: visible;
+    padding: 0;
+    margin: 0;
+    background: #fff;
+    color: #000;
+  }
+}
+
+/* Scrollable preview body inside the modal. */
+.doc-preview-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.doc-preview-body pre.doc-preview-plain {
+  margin: 0;
+  padding: var(--space-3, 12px);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
