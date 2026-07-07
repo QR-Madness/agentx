@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.167 -->
+<!-- release-version: 0.21.168 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -59,8 +59,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Snappier model picker** — instant search, keyboard nav, recents on top.
 - **MCP sign-in fixed & polished** — Connect now reliably opens your browser (with a
   copy-link fallback dialog); a cancelled or denied sign-in no longer shows as "signed
-  in"; OAuth connectors now reconnect on restart via a silent token refresh instead of
-  asking you to sign in again; the Toolkit forms are rebuilt on the shared field controls
+  in"; OAuth connectors reconnect on restart from their stored tokens (refreshing silently
+  only when actually expired) instead of asking you to sign in again; the Toolkit forms are
+  rebuilt on the shared field controls
   with a simpler URL-first "Add server" flow (advanced options tucked behind a disclosure).
 - **Connector sign-in nudge** — starting a new conversation prompts you to connect any
   OAuth tools the active agent still needs, with a one-click Connect.

@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -294,14 +293,16 @@ class MCPClientManager:
                     return
                 storage = self.context.storage
                 expires_at = storage.read_token_expiry() if isinstance(storage, FileTokenStorage) else None
-                # Legacy token files (written before expiry was persisted) have
-                # no absolute expiry — force a proactive refresh rather than risk
-                # a stale bearer → 401 → interactive re-auth. A live refresh_token
-                # reconnects headlessly; a dead one falls through to a re-auth
-                # prompt, which is the correct outcome.
-                self.context.token_expiry_time = (
-                    expires_at if expires_at is not None else time.time() - 1
-                )
+                # Restore the persisted absolute expiry so is_token_valid() is
+                # accurate and the SDK refreshes proactively ONLY when the token
+                # has genuinely expired. When we don't know the expiry — a legacy
+                # file, or a server that issues long-lived tokens with no
+                # `expires_in` — leave it unset and trust the stored access token
+                # as-is. Forcing a refresh there breaks exactly those cases:
+                # a long-lived token is still valid, and a server with no refresh
+                # endpoint 404s the refresh → a needless interactive re-auth.
+                if expires_at is not None:
+                    self.context.token_expiry_time = expires_at
 
         callback_url = oauth_callback_url()
         metadata = OAuthClientMetadata.model_validate({
