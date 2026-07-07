@@ -2286,6 +2286,116 @@ paths:
         '415':
           description: Unsupported file type
 
+  /workspaces/{workspace_id}/documents/text:
+    post:
+      tags: [Workspaces]
+      operationId: workspaceDocumentCreateText
+      summary: Create a text/markdown document (JSON); ingested in the background
+      description: >-
+        Creates a durable text document (agent-writable types: md/markdown/txt; the
+        filename may carry one folder level, e.g. `research/notes.md`). A filename
+        collision returns 409 with the existing document's id — updating is an explicit,
+        separate act (`PUT …/documents/{document_id}/text`). Backs the Projects hub
+        "New document" action and mirrors the agent's `create_document` tool.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, content]
+              properties:
+                filename:
+                  type: string
+                  description: e.g. `notes.md` (md/markdown/txt; one optional folder level)
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Created; ingestion starts in the background (status=pending)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Filename already exists in this workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, enum: [conflict] }
+                  document_id: { type: string, description: The existing document's id }
+                  current_sha256: { type: string }
+        '413':
+          description: Content too large or workspace quota exceeded
+        '415':
+          description: Not an agent-writable text type
+
+  /workspaces/{workspace_id}/documents/{document_id}/text:
+    put:
+      tags: [Workspaces]
+      operationId: workspaceDocumentUpdateText
+      summary: Replace a text document's content (JSON); re-ingested in the background
+      description: >-
+        Full-content replace for md/markdown/txt documents. Pass the last-known
+        `expected_sha256` for optimistic concurrency — a mismatch returns 409 with
+        `current_sha256`. Identical content is a no-op (no re-ingest). On change the
+        document returns to `pending` and re-ingests (chunks, tags, summary refresh);
+        the previous blob is deleted only when no other document references it
+        (content-addressed dedup). Mirrors the agent's `update_document` tool.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                expected_sha256:
+                  type: string
+                  description: Optimistic-concurrency check (the sha256 last read)
+      responses:
+        '200':
+          description: Updated (status=pending while re-ingesting; unchanged doc on no-op)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: expected_sha256 mismatch (document changed since read)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, enum: [conflict] }
+                  document_id: { type: string }
+                  current_sha256: { type: string }
+        '413':
+          description: Content too large or workspace quota exceeded
+        '415':
+          description: Not an agent-writable text type
+
   /workspaces/{workspace_id}/documents/{document_id}:
     get:
       tags: [Workspaces]

@@ -303,6 +303,8 @@ class Agent:
         except Exception as e:
             logger.warning(f"Failed to build server gate: {e}")
 
+        from ..mcp.internal_tools import legacy_names_for
+
         tools = []
         for t in mcp_tools:
             # Server-side whitelist (default-allow only for servers not in registry,
@@ -316,10 +318,15 @@ class Agent:
             # together. Internal tools resolve to `_internal.<name>`. Tools
             # without a server attribution (legacy paths) fall back to the
             # bare name so old configs keep working until they're migrated.
-            fq_name = f"{server_name}.{t.name}" if server_name else t.name
-            if self.config.allowed_tools and fq_name not in self.config.allowed_tools:
+            # Renamed internal tools (e.g. workspace_search → project_search)
+            # also match their legacy names so existing profile lists hold.
+            names = {t.name, *legacy_names_for(t.name)}
+            candidates = (
+                {f"{server_name}.{n}" for n in names} if server_name else names
+            )
+            if self.config.allowed_tools and candidates.isdisjoint(self.config.allowed_tools):
                 continue
-            if self.config.blocked_tools and fq_name in self.config.blocked_tools:
+            if self.config.blocked_tools and not candidates.isdisjoint(self.config.blocked_tools):
                 continue
 
             tools.append({

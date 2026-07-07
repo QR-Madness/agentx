@@ -47,9 +47,10 @@ Per-turn context (legacy summary): keep the SYSTEM preamble + as much **recent v
 > membership (`workspace_conversations`, one project per conversation; turn precedence
 > request > membership; `ws_home` is never a project) + project memory channels
 > (`_project_{ws_id}` becomes the turn's channel; workflow > project > profile; opt-out
-> `memory.project_channels`). Agent tools `workspace_search`/`document_query`/`read_document`
+> `memory.project_channels`). Agent tools `project_search` (né `workspace_search`; legacy alias
+> executes)/`document_query`/`read_document` + **write tools `create_document`/`update_document`**
 > (`mcp/internal_tools.py`, workspace-scoped via `InternalToolContext`); stable
-> workspace-manifest ledger block + auto `doc` citations.
+> project-identity (prio 90) + instructions (88) + manifest (85) ledger blocks + auto `doc` citations.
 
 A persistent, named container of user files with a searchable manifest (todo/backlog/workspaces.md).
 **Three-store separation:** bytes → content-addressed blob store on disk (`storage.py`,
@@ -155,6 +156,37 @@ uploads previously stayed stuck forever. Documents also embed **one at a time**
 (`ingestion._EMBED_LOCK`, slices of 16, 600s background timeout): a CPU embedder is serial
 anyway, and concurrent uploads round-robining slices multiplied every slice's queue wait past
 any sane timeout (observed with 4 simultaneous PDFs).
+
+**Agent-writable project documents + project prompting (v0.21.161).** Agents can now
+*manipulate* project files, not just read them. **Write path** (`service.py`):
+`create_text_document` / `update_text_document` — shared by the REST endpoints
+(`POST /workspaces/{id}/documents/text`, `PUT /workspaces/{id}/documents/{doc}/text`) and two new
+internal tools **`create_document`** / **`update_document`** (advertised by default; opt-out
+`workspace_agent_write_tools`; agent-writable extensions capped to
+`workspace_agent_writable_extensions` = md/markdown/txt). Semantics: create refuses filename
+collisions with a typed `conflict` (409 + existing `document_id` — update is an explicit act, never
+a silent overwrite); update is full-content replace with an optional `expected_sha256` ETag
+(hub editor sends it; agent tool is last-write-wins), a same-sha **no-op short-circuit**, quota math
+`used − old + new`, and re-ingestion (`status→pending`, chunks/tags/summary refresh for free).
+**Blob refcounting** (`release_blob_if_unreferenced`): content-addressing means two doc rows can
+share one blob — update *and* the document-delete path (previously deleted unconditionally: a real
+dedup bug) only remove the file when no other row references the `storage_key`. **Stale-ingest
+guard** (`ingestion._superseded`): rapid successive updates race daemon threads; ingest re-checks
+the row's `sha256` before writing chunks/status and bails if a newer update won. **Project
+prompting** (the "agent doesn't know what a project is" fix — three stacked gaps): (1) new builtin
+prompt layer **`project-collaboration`** (`prompts/layers.py`, order 25) teaches the concept, the
+tool vocabulary, "create durable things as project documents, keep them current", and
+prefer-native-over-filesystem-MCP; (2) an **always-on `project_identity` ledger block** (priority
+90 > instructions 88 > manifest 85; `retrieval.render_project_identity_block`) so even an *empty*
+project announces itself (name, description, doc count, how to add files) — previously an empty
+project was invisible; (3) the model-visible rename is finished: **`workspace_search` →
+`project_search`** with `_TOOL_ALIASES` (legacy name still resolves/executes for old conversations
++ procedural records; `legacy_names_for` keeps per-profile `_internal.workspace_search`
+allow/block entries matching in `Agent._get_tools_for_provider`), and shell tool text now says
+"temporary shell working copy — NOT project documents; use create_document" (the exact confusion
+that sent an agent to a filesystem MCP). Tests: `WorkspaceWriteServiceTest`,
+`WorkspaceTextEndpointTest`, `ProjectPromptingTest`, `ToolGatingTest.test_legacy_alias…`;
+`rag_e2e.py` §7 drives create→409→ready→update→refcount→ETag-409 + both tools end-to-end.
 
 **Anthropic system-prompt drop (fixed, v0.21.150).** `anthropic_provider._convert_messages`
 assigned `system_prompt = msg.content` per SYSTEM message — each one *overwrote* the last. A
@@ -384,7 +416,7 @@ reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `
 
 - **Chat page** (`pages/AgentXPage.tsx`) = left `ConversationSidebar` rail + `ChatPanel` (collapsible/resizable, presentation over `ConversationContext`). Shared list logic in `hooks/useConversationList.ts` + `components/chat/ConversationList.tsx`/`ConversationRow.tsx`, reused by the mobile Conversations drawer. Per-conversation meta (pin/archive/icon/color/group/bulk) in `lib/conversationMeta.ts` (reserves `workspaceId`/`fileRefs`).
 - **Surfaces**: Settings, Tools, **Memory**, and the **Ambassador Command Deck** (`SURFACES.ambassadorDeck` — `AmbassadorPanel` in conversation-less `deckThreadId` mode; holds multiple named Inquiries via `AmbassadorInquirySwitcher` + the per-user registry; relay routes via `lib/ambassadorRelay.ts::planRelay` — live in-tab for the active tab, else headless `POST /ambassador/relay`) open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources/**Projects** are right-side drawers.
-- **Projects hub** (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`; internal naming stays `workspace`): CRUD + upload + ingest status + description/instructions editors + the project's conversation list + "new chat in project"; Home is a fixed personal-media entry. Attach = `conversationMeta.workspaceId` (fast path; chat stream sends `workspace_id`) + durable server membership (`PUT /workspaces/{id}/conversations/{conv}`; the sidebar's project sections derive from it, with a one-time localStorage sync in `lib/projectSync.ts`); `lib/api/workspaces.ts`.
+- **Projects hub** (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`; internal naming stays `workspace`): CRUD + upload + ingest status + description/instructions editors + the project's conversation list + "new chat in project"; Home is a fixed personal-media entry. **Document preview/editor (v0.21.162)**: file rows click-open `DocumentPreviewModal.tsx` — markdown renders through the shared chat renderer (`chat/MessageContent`), txt/code as mono text, images/PDFs from an authed object URL (`workspacesApi.fetchDocumentBlob`, sha-cache-busted since `/raw` content changes on edit; revoked on close); md/txt get an Edit mode with explicit Save/Cancel using the `expected_sha256` ETag (409 → "changed elsewhere" toast) and an **Export PDF** button (`window.print()` + a print-visibility stylesheet in `DocumentPreviewModal.css`; known no-op on macOS WKWebView — Linux/Windows/browser fine, Download is the fallback). A **"New document"** action creates a scaffolded `.md` via `POST /documents/text` and opens it in edit mode. Attach = `conversationMeta.workspaceId` (fast path; chat stream sends `workspace_id`) + durable server membership (`PUT /workspaces/{id}/conversations/{conv}`; the sidebar's project sections derive from it, with a one-time localStorage sync in `lib/projectSync.ts`); `lib/api/workspaces.ts`.
 - **Agent-profile editor** (`unified-profile-editor/`): hero identity header over a `ControlCard` grid; avatars in `common/AvatarPicker` (`lib/avatars.ts`) — an icon id **or** a generated image (the Generate tab → `POST /api/agent/avatar/generate`, stored as `media:{ws}/{doc}` on `profile.avatar`); render via `common/AgentAvatar` (image avatars resolve to an authed object URL through `lib/avatarImage.ts`, icon otherwise). Signature color from `lib/agentAccent.ts`. Primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`.
 - **Settings** (`unified-settings/`, registry `sections/index.tsx::SECTION_HIERARCHY`): six nav groups — Infrastructure (Providers, Model Limits, **Model Roles** — per-role picker + member effective-model chips over `GET /api/models/roles`, Web Search, Images), Intelligence (Planner, Multi-Agent, Ambassador), **Prompts** (System Prompt, Prompt Enhancement, **Template Library** — the shared `prompt-library/PromptLibraryBrowser` also backing the in-chat modal, **Feature Prompts** — all four overridable feature prompts with diff/reset via `GET /api/prompts/feature-defaults`), **Memory** (Overview, Recall — incl. the Two-Stage Rerank + Advanced blocks, Consolidation — with per-stage role chips), Tools, Interface. Sections build on the settings field kit + `useSettingsAutosave` (CLAUDE.md client rules); search matches section `keywords`.
 - **Prompt Stack editor** (Settings → Prompts → "System Prompt"): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` reorder, debounced autosave, reset/diff, live preview via `lib/promptStack.ts::composeStack`. Library snippets insert as custom layers; the enhancer (`/api/prompts/enhance`) rewrites a layer in place.

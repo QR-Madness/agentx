@@ -1,4 +1,14 @@
-import { request as apiRequest } from './core';
+import { getBaseUrl, request as apiRequest } from './core';
+import { getAuthToken, getActiveGatewayToken } from '../storage';
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
+  const token = getAuthToken();
+  if (token) headers['X-Auth-Token'] = token;
+  const gatewayToken = getActiveGatewayToken();
+  if (gatewayToken) headers['AgentX-Gateway-Token'] = gatewayToken;
+  return headers;
+}
 
 /** Per-workspace shell sandbox. */
 export type ShellBackend = 'bubblewrap' | 'container';
@@ -183,5 +193,65 @@ export const workspacesApi = {
       `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
       { method: 'DELETE' },
     );
+  },
+
+  /** Create a text/markdown document (hub "New document"; 409 on filename collision). */
+  async createTextDocument(
+    workspaceId: string,
+    filename: string,
+    content: string,
+  ): Promise<{ document: WorkspaceDocument }> {
+    return apiRequest(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents/text`, {
+      method: 'POST',
+      body: JSON.stringify({ filename, content }),
+    });
+  },
+
+  /** Replace a text document's content (re-ingests). `expectedSha256` is an
+   *  optimistic-concurrency check — a mismatch returns 409 with `current_sha256`. */
+  async updateTextDocument(
+    workspaceId: string,
+    documentId: string,
+    content: string,
+    expectedSha256?: string | null,
+  ): Promise<{ document: WorkspaceDocument }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/text`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          content,
+          ...(expectedSha256 ? { expected_sha256: expectedSha256 } : {}),
+        }),
+      },
+    );
+  },
+
+  /** Fetch a document's raw bytes via the authed client (a bare <img>/<iframe> src
+   *  can't carry the auth header). `sha` cache-busts after edits — the /raw path is
+   *  stable but its content changes when a text document is updated. */
+  async fetchDocumentBlob(
+    workspaceId: string,
+    documentId: string,
+    sha?: string | null,
+  ): Promise<Blob> {
+    const path =
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/raw` +
+      (sha ? `?v=${encodeURIComponent(sha)}` : '');
+    const response = await fetch(`${getBaseUrl()}${path}`, { headers: authHeaders() });
+    if (!response.ok) {
+      throw { message: `Document fetch failed (${response.status})`, status: response.status, kind: 'http' };
+    }
+    return response.blob();
+  },
+
+  /** Fetch a text document's content as a string. */
+  async fetchDocumentText(
+    workspaceId: string,
+    documentId: string,
+    sha?: string | null,
+  ): Promise<string> {
+    const blob = await this.fetchDocumentBlob(workspaceId, documentId, sha);
+    return blob.text();
   },
 };

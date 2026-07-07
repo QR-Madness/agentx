@@ -11,16 +11,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Check, FileText, FolderKanban, Home, Link2, Link2Off, Loader2, MessageSquare,
+  Check, FilePlus2, FileText, FolderKanban, Home, Link2, Link2Off, Loader2, MessageSquare,
   MessageSquarePlus, Pencil, Plus, RotateCcw, Terminal, Trash2, Upload, X,
 } from 'lucide-react';
-import { api, type ConversationSummary, type Workspace, type WorkspaceDocument } from '../../lib/api';
+import { api, toApiError, type ConversationSummary, type Workspace, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { getDisplayTitle, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { Badge, Button, IconButton, Input, SegmentedControl, Textarea } from '../ui';
 import { WorkspaceContainerCard } from './WorkspaceContainerCard';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 
 /** Reserved personal media space — files only, never a project. */
 const HOME_ID = 'ws_home';
@@ -107,6 +108,9 @@ export function WorkspacesPanel({
   const [descDraft, setDescDraft] = useState('');
   const [instrDraft, setInstrDraft] = useState('');
   const [instrStatus, setInstrStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [preview, setPreview] = useState<{ doc: WorkspaceDocument; edit: boolean } | null>(null);
+  const [namingDoc, setNamingDoc] = useState(false);
+  const [docNameDraft, setDocNameDraft] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -347,6 +351,29 @@ export function WorkspacesPanel({
       setUploading(false);
     }
   }, [selectedId, notify, refreshDocuments, refreshWorkspaces]);
+
+  const createTextDocument = useCallback(async () => {
+    if (!selectedId) { setNamingDoc(false); return; }
+    let name = docNameDraft.trim();
+    if (!name) { setNamingDoc(false); return; }
+    if (!/\.(md|markdown|txt)$/i.test(name)) name = `${name}.md`;
+    try {
+      const { document } = await api.createTextDocument(selectedId, name, `# ${name.replace(/\.(md|markdown|txt)$/i, '')}\n`);
+      setNamingDoc(false); setDocNameDraft('');
+      await refreshDocuments(selectedId);
+      setPreview({ doc: document, edit: true });
+    } catch (err) {
+      const apiErr = toApiError(err);
+      notify.notifyError(apiErr, apiErr.status === 409
+        ? 'A file with that name already exists'
+        : 'Could not create document');
+    }
+  }, [selectedId, docNameDraft, notify, refreshDocuments]);
+
+  const onPreviewUpdated = useCallback((updated: WorkspaceDocument) => {
+    // Reflect the save immediately; the pending-poll takes over for re-indexing.
+    setDocuments(prev => prev.map(d => (d.id === updated.id ? updated : d)));
+  }, []);
 
   const retryIngest = useCallback(async (doc: WorkspaceDocument) => {
     if (!selectedId) return;
@@ -675,6 +702,32 @@ export function WorkspacesPanel({
                   />
                 </button>
 
+                {/* New document — create a markdown file directly in the project */}
+                <div className="mx-3 -mt-1 mb-2">
+                  {namingDoc ? (
+                    <form
+                      onSubmit={e => { e.preventDefault(); void createTextDocument(); }}
+                      className="flex items-center gap-1.5"
+                    >
+                      <Input
+                        autoFocus value={docNameDraft} placeholder="notes.md"
+                        onChange={e => setDocNameDraft(e.target.value)}
+                        onBlur={() => { if (!docNameDraft.trim()) setNamingDoc(false); }}
+                        onKeyDown={e => { if (e.key === 'Escape') { setNamingDoc(false); setDocNameDraft(''); } }}
+                        className="ax-field--sm"
+                      />
+                      <Button type="submit" size="sm">Create</Button>
+                    </form>
+                  ) : (
+                    <Button
+                      variant="ghost" size="sm" className="text-accent"
+                      onClick={() => { setNamingDoc(true); setDocNameDraft(''); }}
+                    >
+                      <FilePlus2 size={13} /> New document
+                    </Button>
+                  )}
+                </div>
+
                 <div className="space-y-3 px-3 pb-3">
                   {documents.length === 0 ? (
                     <p className="p-3 text-sm text-fg-muted">No files yet.</p>
@@ -699,7 +752,12 @@ export function WorkspacesPanel({
                               className="group flex items-start gap-2 rounded-lg border border-line-subtle bg-surface-raised p-2.5 transition-colors hover:border-line"
                             >
                               <FileText size={16} className="mt-0.5 shrink-0 text-fg-muted" />
-                              <div className="min-w-0 flex-1">
+                              <button
+                                type="button"
+                                onClick={() => setPreview({ doc, edit: false })}
+                                title={`Preview ${doc.filename}`}
+                                className="min-w-0 flex-1 bg-transparent text-left"
+                              >
                                 <div className="flex items-center gap-2">
                                   <span className="truncate text-sm font-medium">{leafName(doc.filename, group.folder)}</span>
                                   <Badge
@@ -722,7 +780,7 @@ export function WorkspacesPanel({
                                 )}
                                 {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
                                 <span className="mt-0.5 block font-mono text-2xs text-fg-muted">{formatBytes(doc.size_bytes)}</span>
-                              </div>
+                              </button>
                               {doc.status === 'failed' && (
                                 <IconButton
                                   aria-label={`Retry ingesting ${doc.filename}`}
@@ -807,6 +865,16 @@ export function WorkspacesPanel({
           )}
         </section>
       </div>
+
+      {preview && selectedId && (
+        <DocumentPreviewModal
+          workspaceId={selectedId}
+          document={preview.doc}
+          startInEdit={preview.edit}
+          onClose={() => setPreview(null)}
+          onDocumentUpdated={onPreviewUpdated}
+        />
+      )}
     </div>
   );
 }

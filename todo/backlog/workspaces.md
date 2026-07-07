@@ -35,6 +35,23 @@
 > follow-ups:** default agent profile per project; client Memory drawer renders `_project_*`
 > channels with the project's name; multi-workspace projects; project archives/templates.
 >
+> ⭐ **Agent-writable project documents + project prompting — shipped v0.21.161.**
+> `create_document`/`update_document` internal tools + `POST/PUT …/documents/text` endpoints
+> (service-layer `create_text_document`/`update_text_document`: collision→409-with-id, ETag
+> `expected_sha256`, no-op short-circuit, quota `used−old+new`, blob **refcount** on release —
+> also fixed the unconditional-delete dedup bug — and a stale-ingest guard). Prompting fix for
+> "agent doesn't know projects": builtin `project-collaboration` layer, **always-on**
+> `project_identity` ledger block (prio 90; empty projects announce themselves), and the
+> model-visible rename finished — **`workspace_search` → `project_search`** with `_TOOL_ALIASES`
+> (legacy name + `_internal.workspace_search` profile entries keep working). Client preview/edit
+> = Slice C (v0.21.162). **Write-path follow-ups:** document rename endpoint; lightweight doc
+> version history (content-addressing makes retained shas cheap); agent-generated PDFs (fpdf2 +
+> markdown) if client-side export proves insufficient; skip Haiku re-enrich on near-identical
+> edit-saves; **Google Drive import (long-term)** — seam is the source-agnostic
+> `service.upload_document(filename, content_type, raw)`; a future `kit/workspaces/imports/gdrive.py`
+> fetches bytes and calls it (MCP OAuth's token-store/callback machinery is reusable; note Google
+> does NOT support RFC 7591 dynamic registration — use pre-registered client credentials).
+>
 > ⭐ **Agent shells spawn *inside* the workspace — shipped v0.21.108** (`kit/shell/`): opt-in
 > (`shell.enabled`), bubblewrap-jailed `run_command` + path-jailed `write_file`/`read_file`/`list_files`,
 > with the workspace materialized into a per-conversation work dir as the CWD (network off, FS jailed, env

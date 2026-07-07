@@ -24,6 +24,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.
+- **Agents can now write project files** — `create_document`/`update_document` create
+  and revise durable markdown/text docs (indexed + searchable); agents are told what a
+  project is, even an empty one.
+- **Project files open in the hub** — click any file to preview (markdown rendered,
+  images, PDFs), edit markdown/text in place, create new docs, and export to PDF.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
 - **Hardened self-hosting**: token gateway; safe no-env boots.
@@ -37,6 +42,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Added HTTPS scheme to Tauri app** - which will invalidate all local data on Windows.
 - **UI foundation restored**: reset, real fonts, one field style.
 - **Anthropic models get their full system prompt** (blocks were dropped).
 - **Security**: gateway fails closed on an empty token; proxy trust is opt-in;

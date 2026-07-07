@@ -158,7 +158,7 @@ def main() -> int:
             _log(f"  top chunk #{top['chunk_index']} score={top['score']} :: {top['text'][:70]!r}")
 
         manifest = retrieval.search_manifest(workspace_id, seed.stem[:8])
-        check(len(manifest) > 0, f"workspace_search finds the file by name (n={len(manifest)})")
+        check(len(manifest) > 0, f"project_search finds the file by name (n={len(manifest)})")
 
         # The agent-facing tools, scoped via the per-turn internal context.
         from agentx_ai.mcp.internal_context import (
@@ -220,6 +220,86 @@ def main() -> int:
 
         resp = client.put(f"/api/workspaces/ws_home/conversations/{conv_id}")
         check(resp.status_code in (400, 404), f"PUT membership on ws_home rejected (got {resp.status_code})")
+
+        # --- 7. Text-document write path (create → ready → update → refcount) ---
+        import json as _json2
+
+        resp = post(
+            f"/api/workspaces/{workspace_id}/documents/text",
+            data=_json2.dumps({"filename": "e2e-notes.md",
+                               "content": "# E2E notes\n\nphotosynthesis converts light."}),
+            content_type="application/json",
+        )
+        check(resp.status_code == 201, f"create text document → 201 (got {resp.status_code})")
+        text_doc = resp.json()["document"]
+        text_doc_id = text_doc["id"]
+        first_sha = text_doc["sha256"]
+
+        # Collision → 409 carrying the existing id.
+        resp = post(
+            f"/api/workspaces/{workspace_id}/documents/text",
+            data=_json2.dumps({"filename": "e2e-notes.md", "content": "other"}),
+            content_type="application/json",
+        )
+        check(resp.status_code == 409 and resp.json().get("document_id") == text_doc_id,
+              f"duplicate filename → 409 with existing id (got {resp.status_code})")
+
+        status, deadline = "pending", time.monotonic() + POLL_TIMEOUT_S
+        while status == "pending" and time.monotonic() < deadline:
+            time.sleep(POLL_INTERVAL_S)
+            d = get(f"/api/workspaces/{workspace_id}/documents/{text_doc_id}").json()["document"]
+            status = d["status"]
+        check(status == "ready", f"text document ingested (final={status})")
+
+        old_key = _storage_key(text_doc_id)
+        resp = client.put(
+            f"/api/workspaces/{workspace_id}/documents/{text_doc_id}/text",
+            data=_json2.dumps({"content": "# E2E notes (v2)\n\nchlorophyll absorbs light.",
+                               "expected_sha256": first_sha}),
+            content_type="application/json",
+        )
+        check(resp.status_code == 200, f"update text document → 200 (got {resp.status_code})")
+        updated = resp.json()["document"]
+        check(updated["sha256"] != first_sha, "update produced a new sha256")
+        check(updated["status"] == "pending", "update resets status to pending (re-ingest)")
+        check(storage.read_blob(old_key) is None, "old blob released (unshared refcount)")
+
+        # Stale ETag → 409 with the current sha.
+        resp = client.put(
+            f"/api/workspaces/{workspace_id}/documents/{text_doc_id}/text",
+            data=_json2.dumps({"content": "x", "expected_sha256": first_sha}),
+            content_type="application/json",
+        )
+        check(resp.status_code == 409 and resp.json().get("current_sha256") == updated["sha256"],
+              f"stale expected_sha256 → 409 with current sha (got {resp.status_code})")
+
+        status, deadline = "pending", time.monotonic() + POLL_TIMEOUT_S
+        while status == "pending" and time.monotonic() < deadline:
+            time.sleep(POLL_INTERVAL_S)
+            d = get(f"/api/workspaces/{workspace_id}/documents/{text_doc_id}").json()["document"]
+            status = d["status"]
+        check(status == "ready", f"updated document re-ingested (final={status})")
+
+        # Agent-tool path: create + update through the internal tools.
+        tok = set_context(InternalToolContext(user_id="default", workspace_id=workspace_id))
+        try:
+            tool_res = execute_internal_tool(
+                "create_document",
+                {"filename": "e2e-agent.md", "content": "# Agent file\n\ncellular respiration."},
+            )
+            payload = _json2.loads(tool_res.content[0]["text"]) if tool_res.content else {}
+            check(bool(tool_res.success and payload.get("success")),
+                  "create_document tool creates a project document")
+            agent_doc_id = (payload.get("document") or {}).get("id")
+            upd_res = execute_internal_tool(
+                "update_document",
+                {"document_id": agent_doc_id, "content": "# Agent file v2\n\nmitochondria."},
+            )
+            upd_payload = _json2.loads(upd_res.content[0]["text"]) if upd_res.content else {}
+            check(bool(upd_res.success and upd_payload.get("success")),
+                  "update_document tool replaces content")
+        finally:
+            reset_context(tok)
 
     finally:
         if workspace_id and not args.keep:
