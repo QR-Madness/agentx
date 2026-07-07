@@ -27,7 +27,7 @@ const RANGES = [7, 14, 30] as const;
 // Friendly labels for usage_events.source (Foundation #5 by-source breakdown).
 const SOURCE_LABELS: Record<string, string> = {
   chat: 'Chat',
-  alloy: 'Multi-agent',
+  alloy: 'Team runs',
   ambassador_llm: 'Ambassador',
   ambassador_tts: 'Voice · TTS',
   ambassador_stt: 'Voice · STT',

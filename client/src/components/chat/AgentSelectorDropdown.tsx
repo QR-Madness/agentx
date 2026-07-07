@@ -14,6 +14,7 @@ import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useModal } from '../../contexts/ModalContext';
+import { SURFACES } from '../../lib/surfaces';
 import { AgentAvatar } from '../common/AgentAvatar';
 import { DropdownPortal } from '../ui/DropdownPortal';
 import './AgentSelectorDropdown.css';
@@ -93,7 +94,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
     onClose();
   };
   const handleManageWorkflows = () => {
-    openModal({ id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' });
+    openModal(SURFACES.teams);
     onClose();
   };
 
@@ -152,7 +153,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
             onClick={() => switchSegment('workflows')}
           >
             <WorkflowIcon size={13} />
-            Workflows
+            Teams
             {activeWorkflow && <Crown size={11} className="segment-active-dot" />}
           </button>
         </div>
@@ -166,8 +167,8 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={segment === 'agents' ? 'Search agents…' : 'Search workflows…'}
-              aria-label={segment === 'agents' ? 'Search agents' : 'Search workflows'}
+              placeholder={segment === 'agents' ? 'Search agents…' : 'Search teams…'}
+              aria-label={segment === 'agents' ? 'Search agents' : 'Search teams'}
             />
           </div>
         )}
@@ -189,7 +190,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
           ) : (
             <button className="agent-create-button" onClick={handleManageWorkflows}>
               <Settings size={14} />
-              <span>Manage Workflows…</span>
+              <span>Manage Teams…</span>
             </button>
           )}
         </div>
@@ -202,7 +203,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
       return (
         <>
           <div className="agent-selector-locked-hint">
-            Agent is set by the active workflow. Switch to <strong>Workflows → No workflow</strong> to choose one.
+            Agent is set by the active team. Switch to <strong>Teams → No team</strong> to choose one.
           </div>
           {profiles.map(profile => {
             const isSupervisor = profile.agentId === supervisorAgentId;
@@ -212,7 +213,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
                 <div className="agent-item-info">
                   <span className="agent-item-name">
                     {profile.name}
-                    {isSupervisor && <span className="agent-item-badge">supervisor</span>}
+                    {isSupervisor && <span className="agent-item-badge">lead</span>}
                   </span>
                   <span className="agent-item-model">{profile.defaultModel || 'Default model'}</span>
                   {profile.tags && profile.tags.length > 0 && (
@@ -281,14 +282,14 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
         >
           <div className="agent-item-avatar agent-item-avatar-ghost"><Bot size={14} /></div>
           <div className="agent-item-info">
-            <span className="agent-item-name">No workflow</span>
+            <span className="agent-item-name">No team</span>
             <span className="agent-item-model">Single-agent chat</span>
           </div>
           {activeWorkflowId === null && <Check size={14} className="agent-item-check" />}
         </div>
 
         {filteredWorkflows.length === 0 && query.trim() !== '' && (
-          <div className="agent-selector-empty">No workflows match “{query}”.</div>
+          <div className="agent-selector-empty">No teams match “{query}”.</div>
         )}
 
         {filteredWorkflows.map((w, i) => {
@@ -307,7 +308,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
               <div className="agent-item-info">
                 <span className="agent-item-name">{w.name}</span>
                 <span className="agent-item-model">
-                  {specialistCount} specialist{specialistCount === 1 ? '' : 's'}
+                  {specialistCount} member{specialistCount === 1 ? '' : 's'}
                 </span>
               </div>
               {activeWorkflowId === w.id && <Check size={14} className="agent-item-check" />}

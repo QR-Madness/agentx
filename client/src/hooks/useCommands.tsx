@@ -86,6 +86,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-logs', group: 'Workspace', label: 'Open Logs', icon: <ScrollText size={16} />, keywords: ['console', 'debug', 'server', 'trace'], run: open('logs') },
       { id: 'open-tool-outputs', group: 'Workspace', label: 'Open Tool Outputs', icon: <FileStack size={16} />, keywords: ['debug', 'stored', 'cache', 'outputs', 'tool', 'results'], run: open('toolOutputBrowser') },
       { id: 'open-workspaces', group: 'Workspace', label: 'Open Projects', icon: <FolderOpen size={16} />, keywords: ['workspaces', 'projects', 'files', 'documents', 'upload', 'rag', 'pdf', 'corpus', 'knowledge', 'instructions'], run: open('workspaces') },
+      { id: 'open-teams', group: 'Workspace', label: 'Manage agent teams', icon: <Users size={16} />, keywords: ['alloy', 'workflow', 'team', 'teams', 'delegation', 'lead', 'members', 'factory'], run: open('teams') },
       { id: 'open-profile', group: 'Workspace', label: 'Agent profiles', icon: <BrainCircuit size={16} />, keywords: ['profile', 'profiles', 'agent', 'agents', 'persona', 'model', 'temperature', 'prompt', 'edit'], run: open('profileEditor') },
       { id: 'focus', group: 'Workspace', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen', icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: ['zen', 'immersive', 'hide', 'chrome'], run: () => { toggleFocusMode(); onClose(); } },
 

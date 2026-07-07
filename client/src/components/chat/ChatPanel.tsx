@@ -960,7 +960,7 @@ export function ChatPanel() {
               type="button"
               className="run-trace-badge"
               onClick={openRunTrace}
-              title="View Alloy run trace"
+              title="View team run trace"
             >
               <ArrowRightLeft size={12} />
               <span>Trace</span>
@@ -1111,7 +1111,7 @@ export function ChatPanel() {
             {activeWorkflow && (
               <span
                 className="profile-indicator-workflow"
-                title={`Alloy workflow: ${activeWorkflow.name}`}
+                title={`Team: ${activeWorkflow.name}`}
               >
                 <WorkflowIcon size={10} />
                 <span>{activeWorkflow.name}</span>

@@ -99,10 +99,10 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
       },
       {
         id: 'alloy',
-        label: 'Multi-Agent',
+        label: 'Agent Teams',
         icon: <Users size={18} />,
         component: lazy(() => import('./AlloySection')),
-        keywords: ['delegation', 'delegate', 'alloy', 'multi-agent', 'ad-hoc', 'parallel', 'fan-out']
+        keywords: ['delegation', 'delegate', 'alloy', 'team', 'teams', 'multi-agent', 'ad-hoc', 'parallel', 'fan-out']
       },
       {
         id: 'ambassador',

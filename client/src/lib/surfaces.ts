@@ -23,6 +23,7 @@ export type SurfaceKey =
   | 'profileEditor'
   | 'conversations'
   | 'workspaces'
+  | 'teams'
   | 'changePassword';
 
 export const SURFACES: Record<SurfaceKey, ModalConfig> = {
@@ -40,5 +41,7 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   profileEditor: { id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full' },
   conversations: { id: 'conversations-drawer', type: 'drawer', component: 'conversations', position: 'right', size: 'md' },
   workspaces: { id: 'workspaces-drawer', type: 'drawer', component: 'workspaces', position: 'right', size: 'xxl' },
+  // User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
+  teams: { id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' },
   changePassword: { id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' },
 };

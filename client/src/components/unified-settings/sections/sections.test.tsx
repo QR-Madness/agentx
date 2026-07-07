@@ -133,6 +133,14 @@ describe('SECTION_HIERARCHY (settings overhaul S4)', () => {
     });
   });
 
+  it('renames the alloy section to Agent Teams (user-facing only)', () => {
+    // Internal id stays `alloy` (Workspaces→Projects precedent) — only the
+    // label changed. `teams` keyword routes palette/search to it.
+    const alloy = findSectionById('alloy');
+    expect(alloy?.label).toBe('Agent Teams');
+    expect(alloy?.keywords).toContain('teams');
+  });
+
   it('every section carries search keywords', () => {
     for (const section of getAllSections()) {
       expect(section.keywords?.length, `${section.id} has no keywords`).toBeGreaterThan(0);

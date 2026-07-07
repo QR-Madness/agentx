@@ -42,15 +42,15 @@ export default function AlloySection() {
     save: async changed => {
       await api.updateConfig({ alloy: changed });
     },
-    onError: err => notifyError(err, 'Multi-Agent settings'),
+    onError: err => notifyError(err, 'Agent Teams settings'),
   });
 
   return (
     <div className="settings-section fade-in">
       <SectionHeader
         icon={<Users size={20} />}
-        title="Multi-Agent Delegation"
-        description="Let agents hand subtasks to other agents (Agent Alloy)."
+        title="Agent Teams"
+        description="Let agents delegate subtasks to each other, ad-hoc or in structured teams."
         actions={<SaveStatusChip status={status} />}
       />
 
@@ -67,8 +67,8 @@ export default function AlloySection() {
             label="Ad-hoc delegation"
             hint={
               <>
-                Give every agent a `delegate_to` tool so it can hand subtasks to any
-                profile marked “available for delegation”.
+                Give every agent a `delegate_to` tool (plus a roster prompt) so it can
+                hand subtasks to any profile that joined the team roster.
               </>
             }
           />
@@ -80,7 +80,7 @@ export default function AlloySection() {
             max={8}
             fallback={3}
             onChange={max_parallel_delegations => update({ max_parallel_delegations })}
-            title="How many specialists may run at once when an agent fans out in a single turn (1–8)."
+            title="How many teammates may run at once when an agent fans out in a single turn (1–8)."
           />
 
           <NumberField
@@ -108,8 +108,8 @@ export default function AlloySection() {
             onChange={specialist_inherits_supervisor_tools =>
               update({ specialist_inherits_supervisor_tools })
             }
-            label="Specialists inherit supervisor tools"
-            hint="When on, a delegated specialist gets the supervisor's tool set in addition to its own profile's tools."
+            label="Members inherit the lead's tools"
+            hint="When on, a delegated team member gets the delegating agent's tool set in addition to its own profile's tools."
           />
         </div>
       )}

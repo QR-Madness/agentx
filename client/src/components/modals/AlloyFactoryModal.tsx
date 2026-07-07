@@ -1,5 +1,7 @@
 /**
  * AlloyFactoryModal — Manage Agent Alloy workflows.
+ * User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
+ * UI terminology: workflow → Team, supervisor → Lead, specialists → Members.
  *
  * Full-screen layout: workflow list in the left sidebar, editor on the right.
  * v1 is form-based; the visual Factory canvas is on the roadmap and will read
@@ -75,7 +77,7 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
 
   const handleDelete = async (id: string) => {
     const ok = await confirm({
-      title: `Delete workflow "${id}"?`,
+      title: `Delete team "${id}"?`,
       body: 'This cannot be undone.',
       confirmLabel: 'Delete',
       danger: true,
@@ -96,9 +98,9 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
             <WorkflowIcon size={18} />
           </div>
           <div>
-            <h2>Agent Alloy — Factory</h2>
+            <h2>Agent Teams</h2>
             <div className="alloy-subtitle">
-              Compose multi-agent workflows with a supervisor and specialists
+              Compose teams of agents — a lead who delegates to members
             </div>
           </div>
         </div>
@@ -115,11 +117,11 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
             onClick={() => setSelection({ kind: 'new' })}
           >
             <Plus size={14} />
-            New workflow
+            New team
           </button>
 
           {workflows.length === 0 ? (
-            <div className="alloy-sidebar-empty">No workflows yet.</div>
+            <div className="alloy-sidebar-empty">No teams yet.</div>
           ) : (
             <div className="alloy-sidebar-list">
               {workflows.map(w => {
@@ -138,14 +140,14 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
                     <div className="sidebar-item-text">
                       <div className="sidebar-item-name">{w.name}</div>
                       <div className="sidebar-item-meta">
-                        {supervisor?.name ?? w.supervisorAgentId} · {specialistCount} specialist{specialistCount === 1 ? '' : 's'}
+                        {supervisor?.name ?? w.supervisorAgentId} · {specialistCount} member{specialistCount === 1 ? '' : 's'}
                       </div>
                     </div>
                     <span
                       className="sidebar-item-delete"
                       role="button"
                       tabIndex={0}
-                      title="Delete workflow"
+                      title="Delete team"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDelete(w.id);
@@ -173,7 +175,7 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
             <Sparkles size={16} className="banner-icon" />
             <div>
               <strong>Factory Canvas — coming soon.</strong> A visual node graph for
-              designing delegation flows is on the roadmap. Workflows you save here
+              designing delegation flows is on the roadmap. Teams you save here
               will load directly into the canvas when it ships.
             </div>
           </div>
@@ -219,11 +221,11 @@ function EmptyState({ onNew }: { onNew: () => void }) {
   return (
     <div className="alloy-empty-state">
       <WorkflowIcon size={48} />
-      <h3>No workflow selected</h3>
-      <p>Pick a workflow from the sidebar to edit it, or create a new one to get started.</p>
+      <h3>No team selected</h3>
+      <p>Pick a team from the sidebar to edit it, or create a new one to get started.</p>
       <button className="alloy-btn alloy-btn-primary" onClick={onNew}>
         <Plus size={14} />
-        Create new workflow
+        Create new team
       </button>
     </div>
   );
@@ -319,11 +321,11 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
       return;
     }
     if (!isEditing && existingIds.has(id)) {
-      setError(`A workflow with id "${id}" already exists.`);
+      setError(`A team with id "${id}" already exists.`);
       return;
     }
     if (!supervisorId) {
-      setError('Pick a supervisor agent.');
+      setError('Pick a lead agent.');
       return;
     }
 
@@ -352,7 +354,7 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
         isEditing
       );
     } catch (e) {
-      setError(apiErrorMessage(e) || 'Failed to save workflow.');
+      setError(apiErrorMessage(e) || 'Failed to save team.');
     } finally {
       setSaving(false);
     }
@@ -398,12 +400,12 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
           rows={2}
           value={description}
           onChange={e => setDescription(e.target.value)}
-          placeholder="What this workflow is for"
+          placeholder="What this team is for"
         />
       </div>
 
       <div className="alloy-form-row">
-        <label htmlFor="alloy-supervisor">Supervisor</label>
+        <label htmlFor="alloy-supervisor">Lead</label>
         <select
           id="alloy-supervisor"
           value={supervisorId}
@@ -417,18 +419,18 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
           ))}
         </select>
         <span className="form-hint">
-          The supervisor owns the conversation and decides when to delegate.
-          The supervisor <strong>must</strong> be a high-quality model that's
+          The lead owns the conversation and decides when to delegate.
+          The lead <strong>must</strong> be a high-quality model that's
           tested in multi-agent orchestration; actionable results aren't
           guaranteed otherwise.
         </span>
       </div>
 
       <div className="alloy-form-row">
-        <label>Specialists</label>
+        <label>Members</label>
         <span className="form-hint">
-          Toggle which agents the supervisor can delegate to. Hints are passed
-          to the supervisor so it can choose the right specialist for each task.
+          Toggle which agents the lead can delegate to. Hints are passed
+          to the lead so it can choose the right member for each task.
         </span>
         <div className="alloy-specialists">
           {profiles.length === 0 && (
@@ -449,12 +451,12 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
                     checked={enabled}
                     disabled={isSupervisor}
                     onChange={() => toggleSpecialist(p.agentId)}
-                    aria-label={`Include ${p.name} as specialist`}
+                    aria-label={`Include ${p.name} as team member`}
                   />
                   <div className="specialist-info">
                     <div className="specialist-name">
                       {p.name}
-                      {isSupervisor && <span className="specialist-badge">supervisor</span>}
+                      {isSupervisor && <span className="specialist-badge">lead</span>}
                     </div>
                     <div className="specialist-id">{p.agentId}</div>
                   </div>
@@ -476,8 +478,8 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
       <div className="alloy-actions">
         <span className="form-hint">
           {isEditing
-            ? 'Changes apply to new conversations using this workflow.'
-            : 'You can edit specialists and hints any time.'}
+            ? 'Changes apply to new conversations using this team.'
+            : 'You can edit members and hints any time.'}
         </span>
         <div className="alloy-actions-right">
           <button
@@ -486,7 +488,7 @@ function WorkflowEditorView({ initial, profiles, existingIds, onSubmit }: Editor
             disabled={saving}
           >
             <Save size={14} />
-            {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Create workflow'}
+            {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Create team'}
           </button>
         </div>
       </div>

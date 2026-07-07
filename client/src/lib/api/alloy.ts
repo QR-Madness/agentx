@@ -1,3 +1,5 @@
+// User-facing name: "Agent Teams" (internal: Alloy — wire format stays /api/alloy/*).
+// Precedent: Workspaces→Projects (strings renamed, internal ids kept).
 import { request as apiRequest } from './core';
 import type { AlloyWorkflow, AlloyWorkflowCreate, AlloyWorkflowUpdate, ServerWorkflow } from './types';
 
