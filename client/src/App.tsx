@@ -14,6 +14,7 @@ import { TooltipProvider } from './components/ui/Tooltip';
 import { Toaster } from './components/ui/Toaster';
 import { ConfirmProvider } from './components/ui/ConfirmDialog';
 import { ModalPortal } from './components/modals/ModalPortal';
+import { ConnectorAuthNudge } from './components/connectors/ConnectorAuthNudge';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RootLayout } from './layouts/RootLayout';
 import { ResizeHandles } from './layouts/ResizeHandles';
@@ -110,6 +111,7 @@ function App() {
                               </ErrorBoundary>
                               <ModalPortal />
                               <Toaster />
+                              <ConnectorAuthNudge />
                               {showWindowControls && <ResizeHandles />}
                             </ConfirmProvider>
                           </UIChromeProvider>

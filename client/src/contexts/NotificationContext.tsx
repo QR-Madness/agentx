@@ -16,6 +16,12 @@ import { toApiError, type ApiErrorKind } from '../lib/api';
 
 export type ToastKind = 'error' | 'warning' | 'success' | 'info';
 
+/** Optional inline action button (Claude-style "Connect" / "Undo" affordance). */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface Toast {
   id: string;
   kind: ToastKind;
@@ -23,6 +29,7 @@ export interface Toast {
   message: string;
   /** Auto-dismiss delay in ms. `0` keeps the toast until manually dismissed. */
   duration: number;
+  action?: ToastAction;
 }
 
 export interface NotifyOptions {
@@ -30,6 +37,7 @@ export interface NotifyOptions {
   title?: string;
   message: string;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface NotificationContextValue {
@@ -82,6 +90,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       title: opts.title,
       message: opts.message,
       duration: opts.duration ?? (opts.kind === 'error' ? ERROR_DURATION : DEFAULT_DURATION),
+      action: opts.action,
     };
 
     setToasts(prev => {

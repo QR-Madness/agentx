@@ -41,6 +41,15 @@ export function Toaster() {
               <div className="toast__body">
                 {toast.title && <div className="toast__title">{toast.title}</div>}
                 <div className="toast__message">{toast.message}</div>
+                {toast.action && (
+                  <button
+                    type="button"
+                    className="toast__action"
+                    onClick={() => { toast.action?.onClick(); dismiss(toast.id); }}
+                  >
+                    {toast.action.label}
+                  </button>
+                )}
               </div>
               <button
                 type="button"
