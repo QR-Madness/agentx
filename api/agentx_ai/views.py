@@ -325,6 +325,24 @@ def _resolve_delegation_tool(agent, active_workflow):
     return None
 
 
+def _build_delegation_roster_block(agent, active_workflow):
+    """Roster nudge content for ad-hoc delegation, or None.
+
+    Only outside a workflow (the supervisor block already frames the team
+    there) and only when this turn actually offers `delegate_to` — i.e. an
+    ad-hoc executor is attached (which encodes the config gate, the
+    per-conversation flag, and "other profiles exist"). Factored out of the
+    chat-stream generator for the same path-budget reason as
+    `_resolve_delegation_tool`.
+    """
+    if active_workflow is not None:
+        return None
+    if getattr(agent, "_active_alloy_executor", None) is None:
+        return None
+    from .alloy.prompts import build_adhoc_roster_prompt
+    return build_adhoc_roster_prompt(agent.config.agent_id or "")
+
+
 def index(request):
     return JsonResponse({'message': 'Hello, AgentX AI!'})
 
@@ -1659,6 +1677,21 @@ async def agent_chat_stream(request):
                         content=participants_block,
                         shrink_fn=shrink_tail,
                     ))
+
+            # Ad-hoc delegation roster (Phase 16.4 completion): outside a
+            # workflow, when `delegate_to` is on offer, tell the model who its
+            # teammates are and when handing off is worth it. Non-mandatory —
+            # droppable under budget pressure (the tool description still lists
+            # targets). May coexist with `participants` (who has spoken) — this
+            # block answers a different question (whom you may delegate to).
+            roster_content = _build_delegation_roster_block(agent, active_workflow)
+            if roster_content:
+                blocks.append(LedgerBlock(
+                    key="delegation_roster",
+                    priority=85,
+                    content=roster_content,
+                    shrink_fn=shrink_tail,
+                ))
 
             # Re-inject any model-authored checkpoints for this conversation. They
             # live in Redis and are appended fresh each turn so trajectory
