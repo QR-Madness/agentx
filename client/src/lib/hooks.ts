@@ -178,11 +178,16 @@ export function useMCPServers(opts?: { pollInterval?: number }) {
   }, []);
 
   const connectServer = useCallback(async (name: string) => {
+    // Returns the connect result so callers can drive the OAuth round-trip:
+    // `auth_required` carries the consent URL to open; the server transitions
+    // to connected in the background (visible via refresh/poll).
     try {
-      await api.connectMCPServer(name);
+      const result = await api.connectMCPServer(name);
       await refresh();
+      return result;
     } catch (err) {
       setError(err as ApiError);
+      return { status: 'error', server: name };
     }
   }, [refresh]);
 

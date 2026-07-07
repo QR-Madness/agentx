@@ -74,6 +74,10 @@ class AgentXAuthMiddleware:
         "/api/auth/login",
         "/api/auth/status",
         "/api/auth/setup",  # Only works when setup is required
+        # OAuth redirect from an external authorization server — the browser
+        # carries no X-Auth-Token. The view validates the OAuth `state` and
+        # resolves nothing for unknown/expired states (400).
+        "/api/mcp/oauth/callback",
     ]
 
     # Routes that should always be public (even if not in list)

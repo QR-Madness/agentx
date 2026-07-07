@@ -36,6 +36,24 @@ from .transports.streamable_http import StreamableHTTPTransport
 logger = logging.getLogger(__name__)
 
 
+def oauth_callback_url() -> str:
+    """The OAuth redirect URI — a loopback endpoint on this API (RFC 8252).
+
+    The API is the OAuth client (it holds the tokens and runs the MCP
+    sessions), so the browser redirect must land here, not on the desktop
+    client. Override for non-default ports / remote-API setups with
+    ``AGENTX_OAUTH_REDIRECT_URL``. NOTE: `/api/mcp/oauth/callback` is exempted
+    from auth middleware (the browser carries no token); it validates the
+    OAuth `state` instead.
+    """
+    import os
+
+    return (
+        os.environ.get("AGENTX_OAUTH_REDIRECT_URL")
+        or "http://localhost:12319/api/mcp/oauth/callback"
+    )
+
+
 @dataclass
 class ResourceInfo:
     """Information about an MCP resource."""
@@ -231,13 +249,148 @@ class MCPClientManager:
             except Exception as e:
                 logger.warning(f"Failed to disconnect '{name}': {e}")
     
-    async def _connect_persistent(self, config: ServerConfig) -> ServerConnection:
+    # ──────────────────────────────────────────────
+    #  OAuth 2.1 (remote transports)
+    # ──────────────────────────────────────────────
+
+    def _build_oauth_provider(self, config: ServerConfig, interactive_flow=None):
+        """Build the SDK's OAuthClientProvider for an `auth: {type: oauth}` server.
+
+        The provider (an httpx.Auth) handles RFC 9728 resource-metadata
+        discovery, RFC 7591 dynamic registration, PKCE, token refresh — backed
+        by our per-server FileTokenStorage. `interactive_flow` (a PendingFlow)
+        wires the browser round-trip; without one, a server that *needs* fresh
+        consent fails fast with a clear "connect interactively" error instead
+        of hanging a headless connect (startup restore, connect_all).
+        """
+        auth_cfg = config.resolve_auth()
+        if not auth_cfg or auth_cfg.get("type") != "oauth":
+            return None
+
+        from mcp.client.auth import OAuthClientProvider
+        from mcp.shared.auth import OAuthClientMetadata
+
+        from .oauth_flow import publish_authorization_url
+        from .oauth_storage import FileTokenStorage
+
+        callback_url = oauth_callback_url()
+        metadata = OAuthClientMetadata.model_validate({
+            "client_name": "AgentX",
+            "redirect_uris": [callback_url],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            **({"scope": auth_cfg["scope"]} if auth_cfg.get("scope") else {}),
+        })
+        storage = FileTokenStorage(config.name, preregistered=auth_cfg)
+
+        if interactive_flow is not None:
+            async def redirect_handler(url: str) -> None:
+                publish_authorization_url(interactive_flow, url)
+                logger.info(f"OAuth authorization required for '{config.name}' — awaiting user consent")
+
+            async def callback_handler() -> tuple[str, str | None]:
+                return await interactive_flow.future
+        else:
+            async def redirect_handler(url: str) -> None:
+                raise MCPTransportError(
+                    f"Server '{config.name}' requires OAuth authorization — "
+                    "connect it from the Toolkit page to sign in."
+                )
+
+            async def callback_handler() -> tuple[str, str | None]:
+                raise MCPTransportError(
+                    f"Server '{config.name}' requires OAuth authorization — "
+                    "connect it from the Toolkit page to sign in."
+                )
+
+        return OAuthClientProvider(
+            server_url=config.require_url(),
+            client_metadata=metadata,
+            storage=storage,
+            redirect_handler=redirect_handler,
+            callback_handler=callback_handler,
+        )
+
+    def connect_interactive(self, name: str, wait_s: float = 8.0) -> dict[str, Any]:
+        """Connect with user-in-the-loop OAuth support (sync-safe).
+
+        Returns one of:
+          {"status": "connected", "connection": ServerConnection}
+          {"status": "auth_required", "authorization_url": str}   — connect
+            keeps running in the background; it completes when the user
+            authorizes in the browser and the callback view resolves the flow.
+
+        Non-OAuth servers (and OAuth servers with valid/refreshable stored
+        tokens) connect synchronously, same as `connect()`.
+        """
+        from . import oauth_flow
+
+        if name in self._active_connections:
+            return {"status": "connected", "connection": self._active_connections[name]}
+
+        config = self.registry.get(name)
+        if not config:
+            raise MCPServerNotFoundError(f"Server '{name}' not found in registry", server=name)
+
+        auth_cfg = config.auth or {}
+        if auth_cfg.get("type") != "oauth":
+            return {"status": "connected", "connection": self.connect(name)}
+
+        loop = self._ensure_loop()
+        flow = oauth_flow.begin_flow(name, loop)
+        task_future = asyncio.run_coroutine_threadsafe(
+            self._connect_persistent(config, interactive_flow=flow), loop
+        )
+
+        def _on_done(fut) -> None:
+            try:
+                fut.result()
+                oauth_flow.finish_flow(flow)
+                # Mirror the connect endpoint's auto_connect persistence for
+                # connections that complete after the interactive round-trip.
+                try:
+                    cfg = self.registry.get(name)
+                    if cfg is not None and not cfg.auto_connect:
+                        cfg.auto_connect = True
+                        self.registry.save_to_file()
+                except Exception as persist_err:  # noqa: BLE001 - best-effort
+                    logger.warning(f"Could not persist auto_connect for '{name}': {persist_err}")
+            except Exception as e:  # noqa: BLE001 - background terminal state
+                # A superseded attempt (future cancelled by a retry's begin_flow)
+                # dies late — fail_flow is identity-guarded so it never disturbs
+                # the newer pending flow.
+                logger.warning(f"OAuth connect for '{name}' failed: {e}")
+                oauth_flow.fail_flow(flow, str(e))
+
+        task_future.add_done_callback(_on_done)
+
+        # Either the connect finishes outright (stored tokens still good) or
+        # the redirect handler publishes the consent URL — whichever is first.
+        deadline = wait_s
+        step = 0.05
+        waited = 0.0
+        while waited < deadline:
+            if task_future.done():
+                # Propagates connect errors (bad URL, refused, etc.).
+                return {"status": "connected", "connection": task_future.result()}
+            if flow.url_ready.is_set() and flow.authorization_url:
+                return {"status": "auth_required", "authorization_url": flow.authorization_url}
+            flow.url_ready.wait(step)
+            waited += step
+        raise MCPTransportError(
+            f"Server '{name}' did not respond within {wait_s:.0f}s (no authorization URL either)"
+        )
+
+    async def _connect_persistent(
+        self, config: ServerConfig, interactive_flow=None
+    ) -> ServerConnection:
         """Connect to a server with a persistent (non-scoped) connection."""
         config.validate()
-        
+        auth = self._build_oauth_provider(config, interactive_flow=interactive_flow)
+
         stack = AsyncExitStack()
         await stack.__aenter__()
-        
+
         try:
             if config.transport == TransportType.STDIO:
                 session = await stack.enter_async_context(
@@ -254,6 +407,7 @@ class MCPClientManager:
                         name=config.name,
                         url=config.require_url(),
                         headers=config.resolve_headers(),
+                        auth=auth,
                     )
                 )
             elif config.transport == TransportType.STREAMABLE_HTTP:
@@ -262,6 +416,7 @@ class MCPClientManager:
                         name=config.name,
                         url=config.require_url(),
                         headers=config.resolve_headers(),
+                        auth=auth,
                     )
                 )
             else:
@@ -348,6 +503,7 @@ class MCPClientManager:
             name=config.name,
             url=config.require_url(),
             headers=config.resolve_headers(),
+            auth=self._build_oauth_provider(config),
         ) as session:
             connection = await self._setup_connection(session, config)
             try:
@@ -362,6 +518,7 @@ class MCPClientManager:
             name=config.name,
             url=config.require_url(),
             headers=config.resolve_headers(),
+            auth=self._build_oauth_provider(config),
         ) as session:
             connection = await self._setup_connection(session, config)
             try:

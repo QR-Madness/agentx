@@ -38,6 +38,13 @@ class ServerConfig:
     # For SSE/WebSocket transport
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
+
+    # OAuth 2.1 for remote transports (SSE / streamable HTTP):
+    #   {"type": "oauth", "scope"?: str, "client_id"?: str, "client_secret"?: str}
+    # No client_id → RFC 7591 dynamic client registration; client_id/secret are
+    # for providers without DCR (values support ${VAR} env expansion). Tokens +
+    # registration persist per-server under data/mcp_oauth/ (see oauth_storage).
+    auth: dict[str, Any] | None = None
     
     # Connection settings
     timeout: float = 30.0
@@ -66,6 +73,13 @@ class ServerConfig:
         elif self.transport in (TransportType.SSE, TransportType.STREAMABLE_HTTP, TransportType.WEBSOCKET):
             if not self.url:
                 raise ValueError(f"Server '{self.name}': {self.transport.value} transport requires 'url'")
+        if self.auth is not None:
+            if self.auth.get("type") != "oauth":
+                raise ValueError(f"Server '{self.name}': auth.type must be 'oauth'")
+            if self.transport not in (TransportType.SSE, TransportType.STREAMABLE_HTTP):
+                raise ValueError(
+                    f"Server '{self.name}': OAuth requires a remote transport (sse/streamable_http)"
+                )
         return True
 
     def require_command(self) -> str:
@@ -87,6 +101,13 @@ class ServerConfig:
     def resolve_headers(self) -> dict[str, str]:
         """Resolve environment variables in headers (e.g., ${API_KEY} -> actual value)."""
         return self._resolve_vars(self.headers)
+
+    def resolve_auth(self) -> dict[str, Any] | None:
+        """The auth block with ${VAR} string values resolved from os.environ."""
+        if self.auth is None:
+            return None
+        strings = {k: v for k, v in self.auth.items() if isinstance(v, str)}
+        return {**self.auth, **self._resolve_vars(strings)}
 
     def _resolve_vars(self, mapping: dict[str, str]) -> dict[str, str]:
         """Resolve ${VAR} references in a string dict from os.environ."""
@@ -115,6 +136,7 @@ class ServerConfig:
             env=data.get("env", {}),
             url=data.get("url"),
             headers=data.get("headers", {}),
+            auth=(dict(data["auth"]) if data.get("auth") else None),
             timeout=data.get("timeout", 30.0),
             auto_reconnect=data.get("auto_reconnect", True),
             auto_connect=data.get("auto_connect", False),
@@ -212,6 +234,8 @@ class ServerRegistry:
             out["url"] = config.url
         if config.headers:
             out["headers"] = dict(config.headers)
+        if config.auth:
+            out["auth"] = dict(config.auth)
         if config.timeout != 30.0:
             out["timeout"] = config.timeout
         if config.auto_reconnect is not True:

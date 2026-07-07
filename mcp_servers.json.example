@@ -28,6 +28,24 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://agent:agent@localhost:5432/agent_memory"],
       "transport": "stdio"
+    },
+    "remote-oauth-example": {
+      "transport": "streamable_http",
+      "url": "https://mcp.example.com/mcp",
+      "auth": {
+        "type": "oauth",
+        "scope": "mcp:tools"
+      },
+      "timeout": 60.0
+    },
+    "remote-oauth-preregistered": {
+      "transport": "sse",
+      "url": "https://provider.example.com/sse",
+      "auth": {
+        "type": "oauth",
+        "client_id": "${MY_MCP_CLIENT_ID}",
+        "client_secret": "${MY_MCP_CLIENT_SECRET}"
+      }
     }
   }
 }

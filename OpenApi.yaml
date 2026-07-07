@@ -532,6 +532,75 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        '202':
+          description: >-
+            OAuth server needs user consent. Open `authorization_url` in a browser;
+            the connect completes in the background once the user authorizes (poll
+            `GET /mcp/servers` for the transition to connected).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [auth_required] }
+                  server: { type: string }
+                  authorization_url: { type: string }
+
+  /mcp/oauth/callback:
+    get:
+      tags: [MCP]
+      operationId: mcpOauthCallback
+      summary: OAuth 2.1 redirect target for remote MCP servers
+      description: >-
+        The loopback redirect URI (RFC 8252) the authorization server sends the user
+        back to after consent. PUBLIC (the browser carries no auth token) — validated
+        by the OAuth `state` instead; unknown/expired states resolve nothing (400).
+        Returns a small human-readable HTML page. Override the advertised URL with
+        `AGENTX_OAUTH_REDIRECT_URL` when the API is not on localhost:12319.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+        - name: error
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Authorization accepted — the connection completes in the background
+          content:
+            text/html:
+              schema: { type: string }
+        '400':
+          description: Missing/unknown state, or the provider returned an error
+          content:
+            text/html:
+              schema: { type: string }
+
+  /mcp/servers/{name}/auth/reset:
+    post:
+      tags: [MCP]
+      operationId: mcpServerAuthReset
+      summary: Forget a server's OAuth tokens + dynamic registration
+      description: Disconnects the server if connected and deletes its `data/mcp_oauth/` state — the next connect starts a fresh sign-in.
+      parameters:
+        - $ref: '#/components/parameters/ServerName'
+      responses:
+        '200':
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  server: { type: string }
+                  cleared: { type: boolean }
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /mcp/disconnect:
     post:
@@ -4904,6 +4973,25 @@ components:
           type: integer
         resources_count:
           type: integer
+        auth:
+          type: object
+          nullable: true
+          description: >-
+            OAuth 2.1 config for remote transports — type (always "oauth") plus optional
+            scope / client_id / client_secret; no client_id → RFC 7591 dynamic registration.
+          properties:
+            type: { type: string, enum: [oauth] }
+            scope: { type: string }
+            client_id: { type: string }
+            client_secret: { type: string }
+        auth_state:
+          type: object
+          nullable: true
+          description: OAuth lifecycle state (null for non-OAuth servers).
+          properties:
+            authorized: { type: boolean }
+            pending: { type: boolean }
+            error: { type: string, nullable: true }
 
     McpTool:
       type: object

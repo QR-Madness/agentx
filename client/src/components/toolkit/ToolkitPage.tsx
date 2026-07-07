@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as Accordion from '@radix-ui/react-accordion';
 import {
   X, Server, Wrench, Tag, Shield, Code, Plus, Pencil, Trash2,
-  Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown,
+  Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown, KeyRound,
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
@@ -158,6 +158,9 @@ function ServersView() {
   const confirm = useConfirm();
   const [editing, setEditing] = useState<MCPServer | null | undefined>(undefined); // undefined = closed; null = creating
   const [busy, setBusy] = useState<string | null>(null);
+  // Server currently waiting on a browser OAuth consent (connect continues
+  // server-side; we poll until it flips to connected or errors).
+  const [authWait, setAuthWait] = useState<string | null>(null);
 
   const handleSubmit = async (name: string, cfg: MCPServerConfigInput, rename?: string) => {
     if (editing && editing.name) {
@@ -165,6 +168,42 @@ function ServersView() {
     } else {
       await createServer(name, cfg);
     }
+  };
+
+  const handleConnect = async (s: MCPServer) => {
+    const result = await connectServer(s.name);
+    if (result?.status === 'auth_required' && result.authorization_url) {
+      window.open(result.authorization_url, '_blank', 'noopener');
+      setAuthWait(s.name);
+    }
+  };
+
+  // Poll while a consent tab is open; stop on connected / auth error / timeout.
+  useEffect(() => {
+    if (!authWait) return;
+    const started = Date.now();
+    const t = window.setInterval(() => {
+      void refresh();
+      if (Date.now() - started > 5 * 60_000) setAuthWait(null);
+    }, 2500);
+    return () => window.clearInterval(t);
+  }, [authWait, refresh]);
+  useEffect(() => {
+    if (!authWait) return;
+    const s = servers.find(x => x.name === authWait);
+    if (!s || s.status === 'connected' || s.auth_state?.error) setAuthWait(null);
+  }, [servers, authWait]);
+
+  const resetAuth = async (s: MCPServer) => {
+    const ok = await confirm({
+      title: `Reset sign-in for "${s.name}"?`,
+      body: 'Forgets the stored tokens and registration — the next connect asks you to sign in again.',
+      confirmLabel: 'Reset',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(s.name);
+    try { await api.resetMCPServerAuth(s.name); await refresh(); } finally { setBusy(null); }
   };
 
   const onDelete = async (s: MCPServer) => {
@@ -234,19 +273,39 @@ function ServersView() {
                     ? 'No agents allowed'
                     : `${s.allowed_agent_ids.length} agent${s.allowed_agent_ids.length === 1 ? '' : 's'} whitelisted`}
               </div>
+              {s.auth?.type === 'oauth' && (
+                <div className="meta">
+                  {authWait === s.name
+                    ? 'OAuth · waiting for authorization in your browser…'
+                    : s.auth_state?.error
+                      ? `OAuth · sign-in failed: ${s.auth_state.error}`
+                      : s.auth_state?.authorized
+                        ? 'OAuth · signed in'
+                        : 'OAuth · sign-in required on connect'}
+                </div>
+              )}
               <div className="toolkit-card-actions">
-                {s.status === 'connected' ? (
+                {authWait === s.name ? (
+                  <button className="toolkit-button" onClick={() => setAuthWait(null)}>
+                    <Loader2 size={14} className="spin" /> Cancel wait
+                  </button>
+                ) : s.status === 'connected' ? (
                   <button className="toolkit-button" onClick={() => disconnectServer(s.name)} disabled={busy !== null}>
                     <Unplug size={14} /> Disconnect
                   </button>
                 ) : (
-                  <button className="toolkit-button" onClick={() => connectServer(s.name)} disabled={busy !== null}>
+                  <button className="toolkit-button" onClick={() => void handleConnect(s)} disabled={busy !== null}>
                     <Plug size={14} /> Connect
                   </button>
                 )}
                 <button className="toolkit-button" onClick={() => setEditing(s)} disabled={busy !== null}>
                   <Pencil size={14} /> Edit
                 </button>
+                {s.auth?.type === 'oauth' && s.auth_state?.authorized && (
+                  <button className="toolkit-button" onClick={() => void resetAuth(s)} disabled={busy !== null} title="Forget stored tokens (sign in again on next connect)">
+                    <KeyRound size={14} /> Reset auth
+                  </button>
+                )}
                 <button className="toolkit-button danger" onClick={() => onDelete(s)} disabled={busy === s.name}>
                   {busy === s.name ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
                 </button>

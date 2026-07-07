@@ -23,11 +23,14 @@ urlpatterns = [
     # MCP endpoints
     path("mcp/servers", views.mcp_servers, name="mcp-servers"),
     path("mcp/servers/validate", views.mcp_server_validate, name="mcp-server-validate"),
+    path("mcp/servers/<str:name>/auth/reset", views.mcp_server_auth_reset, name="mcp-server-auth-reset"),
     path("mcp/servers/<str:name>", views.mcp_server_detail, name="mcp-server-detail"),
     path("mcp/tools", views.mcp_tools, name="mcp-tools"),
     path("mcp/resources", views.mcp_resources, name="mcp-resources"),
     path("mcp/connect", views.mcp_connect, name="mcp-connect"),
     path("mcp/disconnect", views.mcp_disconnect, name="mcp-disconnect"),
+    # OAuth redirect for remote MCP servers — PUBLIC (state-validated; see middleware)
+    path("mcp/oauth/callback", views.mcp_oauth_callback, name="mcp-oauth-callback"),
     # Provider endpoints
     path("providers", views.providers_list, name="providers-list"),
     path("providers/models", views.providers_models, name="providers-models"),
