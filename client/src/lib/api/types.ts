@@ -227,6 +227,9 @@ export interface ChatRequest {
   agent_profile_id?: string;  // Agent profile to use (includes model, temperature, etc.)
   temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
   use_memory?: boolean;  // Enable memory retrieval (default true)
+  // Solo mode: suppress ad-hoc delegation for this turn (no delegate_to tool /
+  // roster prompt). Ignored when workflow_id is set — a team run IS delegation.
+  disable_delegation?: boolean;
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see

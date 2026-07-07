@@ -14,7 +14,7 @@
 import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
-  ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen,
+  ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen, Users,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -115,6 +115,14 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       });
     }
     if (activeTabId) {
+      // Solo/Team: per-conversation ad-hoc delegation toggle. Unlike memory it
+      // never locks — delegation is per-turn. Ignored while a workflow is active.
+      cmds.push({
+        id: 'toggle-delegation', group: 'Conversation',
+        label: activeTab?.noDelegation ? 'Enable delegation for this chat' : 'Disable delegation for this chat',
+        icon: <Users size={16} />, keywords: ['solo', 'team', 'delegate', 'delegation', 'roster'],
+        run: () => { updateTab(activeTabId, { noDelegation: !activeTab?.noDelegation }); onClose(); },
+      });
       cmds.push({ id: 'conv-close', group: 'Conversation', label: 'Close conversation', hint: '⌘W', icon: <X size={16} />, keywords: ['tab', 'remove'], run: () => { closeTab(activeTabId); onClose(); } });
     }
 

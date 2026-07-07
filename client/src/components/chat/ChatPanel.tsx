@@ -23,6 +23,8 @@ import {
   PanelLeftOpen,
   Image as ImageIcon,
   AlertTriangle,
+  Users,
+  UserX,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { MessageImages } from './MessageImages';
@@ -235,6 +237,15 @@ export function ChatPanel() {
     },
     [activeTab, updateTab],
   );
+  // Solo/Team chip: per-conversation ad-hoc delegation toggle. Unlike memory it
+  // never locks — delegation is per-turn with no consistency invariant.
+  const soloMode = activeTab?.noDelegation ?? false;
+  const setNoDelegation = useCallback(
+    (next: boolean) => {
+      if (activeTab) updateTab(activeTab.id, { noDelegation: next });
+    },
+    [activeTab, updateTab],
+  );
   const agentName = supervisorProfile?.name ?? getAgentName();
 
   // Vision pre-warning: when images are attached, check whether the effective model
@@ -244,10 +255,19 @@ export function ChatPanel() {
   // Vision input opt-out (Settings → Images). Defaults to shown; hides the attach
   // button only when explicitly disabled. Read once per mount.
   const [visionEnabled, setVisionEnabled] = useState(true);
+  // Global ad-hoc delegation gate — decides whether the Solo/Team chip shows at
+  // all (read from the same one-shot config fetch as the vision flag).
+  const [adhocDelegationEnabled, setAdhocDelegationEnabled] = useState(true);
   useEffect(() => {
     let alive = true;
     api.getConfig()
-      .then(cfg => { if (alive) setVisionEnabled((cfg.vision as { enabled?: boolean })?.enabled ?? true); })
+      .then(cfg => {
+        if (!alive) return;
+        setVisionEnabled((cfg.vision as { enabled?: boolean })?.enabled ?? true);
+        setAdhocDelegationEnabled(
+          (cfg.alloy as { allow_adhoc_delegation?: boolean })?.allow_adhoc_delegation ?? true,
+        );
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -553,6 +573,7 @@ export function ChatPanel() {
       agent_profile_id: tabProfile?.id,
       model: activeTab.modelOverride || undefined,
       use_memory: useMemory,
+      disable_delegation: soloMode || undefined,
       workflow_id: activeTab.workflowId || undefined,
       workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       ...(imgs.length ? { images: imgs } : {}),
@@ -593,6 +614,7 @@ export function ChatPanel() {
               agent_profile_id: tabProfile?.id,
               model: activeTab.modelOverride || undefined,
               use_memory: useMemory,
+              disable_delegation: soloMode || undefined,
               workflow_id: activeTab.workflowId || undefined,
               workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
             });
@@ -615,11 +637,12 @@ export function ChatPanel() {
         agent_profile_id: tabProfile?.id,
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
+        disable_delegation: soloMode || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
     },
-    [activeTab, isTyping, tabProfile?.id, useMemory, appendMessage, updateMessage, stream.send, notifyError],
+    [activeTab, isTyping, tabProfile?.id, useMemory, soloMode, appendMessage, updateMessage, stream.send, notifyError],
   );
 
   // Outbound relay from another surface (the Ambassador panel): fold the message
@@ -646,11 +669,12 @@ export function ChatPanel() {
         agent_profile_id: tabProfile?.id,
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
+        disable_delegation: soloMode || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
     },
-    [activeTab, isTyping, stream.steer, stream.send, appendMessage, profiles, tabProfile?.id, useMemory],
+    [activeTab, isTyping, stream.steer, stream.send, appendMessage, profiles, tabProfile?.id, useMemory, soloMode],
   );
 
   // Register this tab's relay handler so the Ambassador panel can reach it.
@@ -1127,6 +1151,28 @@ export function ChatPanel() {
             {activeTab?.noMemorization ? <DatabaseZap size={12} /> : <Database size={12} />}
             <span>{activeTab?.noMemorization ? 'No memory' : 'Memory'}</span>
           </button>
+
+          {/* Solo/Team chip — per-conversation ad-hoc delegation toggle. Shown
+              only when delegation is actually possible this turn: outside a
+              workflow (a team run IS delegation), global gate on, and at least
+              one other agent on the roster. Never locks (per-turn semantics). */}
+          {!activeTab?.workflowId && adhocDelegationEnabled &&
+            profiles.some(p =>
+              p.kind === 'agent' && p.availableForDelegation && p.agentId !== tabProfile?.agentId,
+            ) && (
+            <button
+              className={`composer-chip ${soloMode ? '' : 'active'}`}
+              onClick={() => setNoDelegation(!soloMode)}
+              title={
+                soloMode
+                  ? 'Solo — this agent handles everything itself; click to allow delegation to teammates'
+                  : 'Team — this agent may delegate subtasks to roster teammates; click to go solo'
+              }
+            >
+              {soloMode ? <UserX size={12} /> : <Users size={12} />}
+              <span>{soloMode ? 'Solo' : 'Team'}</span>
+            </button>
+          )}
         </div>
         {(pendingImages.length > 0 || uploadingImages > 0) && (
           <div className="composer-images">
