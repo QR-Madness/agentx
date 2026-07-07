@@ -2,14 +2,25 @@ import { describe, it, expect } from 'vitest';
 import { contextChipState } from './contextChip';
 
 describe('contextChipState', () => {
-  it('hides below 50% usage and on missing/invalid info', () => {
+  it('hides only when the window is unknown/invalid', () => {
     expect(contextChipState(null)).toBeNull();
     expect(contextChipState(undefined)).toBeNull();
     expect(contextChipState({ window: 0, used: 0 })).toBeNull();
-    expect(contextChipState({ window: 10_000, used: 4_900 })).toBeNull();
   });
 
-  it('shows a quiet percentage from 50%', () => {
+  it('shows at all times when the window is known, including a fresh chat at 0%', () => {
+    // Brand-new conversation: used defaults to 0, chip still appears.
+    expect(contextChipState({ window: 128_000 })).toEqual({
+      label: '0% ctx',
+      warn: false,
+      title: 'Context: 0 / 128,000 tokens',
+    });
+    // Low usage no longer hides it.
+    const low = contextChipState({ window: 10_000, used: 900 });
+    expect(low).toEqual({ label: '9% ctx', warn: false, title: 'Context: 900 / 10,000 tokens' });
+  });
+
+  it('shows a quiet percentage in the mid range', () => {
     const s = contextChipState({ window: 10_000, used: 6_200 });
     expect(s).toEqual({
       label: '62% ctx',

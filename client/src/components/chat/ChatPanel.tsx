@@ -392,16 +392,17 @@ export function ChatPanel() {
     setStreaming(stream.state.phase === 'streaming');
   }, [stream.state.phase, setStreaming]);
 
-  // Backfill the context-window indicator for conversations that were saved
-  // before context_window/used was persisted on assistant turns, or that
-  // were rehydrated from localStorage (the runtime contextInfo is stripped
-  // on save). Uses the latest assistant message's model to look up the
-  // window, and estimates `used` from message char count if no tokens were
-  // recorded.
+  // Seed/backfill the context-window indicator so the chip shows at ALL times
+  // (including a brand-new conversation at 0%). `contextInfo` is set live by the
+  // `done` event; this effect covers the gaps — a fresh tab with no turns yet,
+  // conversations saved before context tokens were persisted, and tabs
+  // rehydrated from localStorage (the runtime contextInfo is stripped on save).
+  // Resolves the window from the latest assistant turn's model, falling back to
+  // the tab's effective model; estimates `used` from tokens/char count, or 0
+  // when nothing has been sent yet. Never clobbers a live `done`-set value.
   useEffect(() => {
     if (!activeTab || activeTab.contextInfo) return;
     const msgs = activeTab.messages;
-    if (!msgs.length) return;
 
     let modelId: string | undefined;
     let usedTokens: number | undefined;
@@ -414,29 +415,35 @@ export function ChatPanel() {
       }
       if (modelId) break;
     }
+    // Fresh conversation (or an assistant turn with no recorded model): fall
+    // back to the composer's effective model so the chip still appears.
+    if (!modelId) modelId = effectiveModel || undefined;
     if (!modelId) return;
 
+    const tabId = activeTab.id;
     let cancelled = false;
     fetchModelsOnce().then((models) => {
-      if (cancelled || !activeTab) return;
+      if (cancelled) return;
       const info = models.find((mm) => mm.id === modelId);
       const window = info?.context_window ?? info?.context_length;
       if (!window) return;
       const used =
         usedTokens ??
-        Math.ceil(
-          msgs.reduce(
-            (n, m) =>
-              n + (m.type === 'user' || m.type === 'assistant' ? m.content.length : 0),
-            0,
-          ) / 4,
-        );
-      setTabContextInfo(activeTab.id, { window, used });
+        (msgs.length
+          ? Math.ceil(
+              msgs.reduce(
+                (n, m) =>
+                  n + (m.type === 'user' || m.type === 'assistant' ? m.content.length : 0),
+                0,
+              ) / 4,
+            )
+          : 0);
+      setTabContextInfo(tabId, { window, used });
     });
     return () => {
       cancelled = true;
     };
-  }, [activeTab, setTabContextInfo]);
+  }, [activeTab, effectiveModel, setTabContextInfo]);
 
   // Profiles matching the active @query (by name or agent_id), like the selector.
   const mentionItems = useMemo(() => {
@@ -1164,9 +1171,9 @@ export function ChatPanel() {
           )}
 
           {/* Context chip — the single context-usage indicator (replaced the
-              header bar). Hidden while usage is low; a quiet percentage from
-              50%; warns near the ceiling with a hint that older turns are
-              summarized automatically. Display-only (tooltip carries detail). */}
+              header bar). Shown at all times (from 0% on a fresh chat); warns
+              near the ceiling with a hint that older turns are summarized
+              automatically. Display-only (tooltip carries detail). */}
           {contextChip && (
             <span
               className={`composer-chip ${contextChip.warn ? 'warn' : ''}`}
