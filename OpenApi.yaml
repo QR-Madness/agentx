@@ -833,10 +833,14 @@ paths:
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
         Events: `run_started`, `start`, `memory_context`, `chunk`, `status`, `steer`,
         `tool_call`, `tool_result`, `exhibit`, `workspace_attached`, `done`, `close`, plus
-        `delegation_*` events when a workflow is active. See the Multi-Agent docs for
-        delegation event shapes. The `workspace_attached` event (`{ workspace_id }`) follows
-        a generated `image` exhibit so a conversation with no workspace can durably attach
-        the personal Home store the media fell back to.
+        `delegation_*` events when a workflow is active or an ad-hoc delegation runs. See
+        the Multi-Agent docs for delegation event shapes. `exhibit` and `workspace_attached`
+        may also arrive DURING an active delegation (a specialist's generated image passes
+        through top-level, rendering under the delegation card); `delegation_complete`
+        carries an optional `exhibits` array (the wires, capped at 5) so restored
+        conversations rebuild the cards. The `workspace_attached` event (`{ workspace_id }`)
+        follows a generated `image` exhibit so a conversation with no workspace can durably
+        attach the personal Home store the media fell back to.
         The `status` event (`{ phase, label, detail?, group?, progress? }`) is a coarse
         per-phase activity feed (`recalling`/`composing`/`thinking`/`running_tool`/`reading`)
         the client shows as a live line; it rides the run's event bus so it replays on

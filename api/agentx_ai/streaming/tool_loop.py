@@ -326,8 +326,11 @@ async def _run_delegations(
             for k in (
                 "tokens_input", "tokens_output", "duration_ms",
                 "cost_estimate", "cost_currency", "pricing_snapshot",
+                # Exhibit wires the specialist produced — consumed (and stripped)
+                # by the persistence step so reload rebuilds the cards.
+                "exhibits",
             )
-            if k in done
+            if k in done and done[k] is not None
         }
 
     async def _drive(tc) -> None:
@@ -407,6 +410,19 @@ async def _run_delegations(
                 tool_name=tc.name,
                 content=tool_content,
                 task_context=task,
+            )
+        # Supervisor-facing exhibit note (appended AFTER oversize handling so it
+        # always survives): the supervisor only sees the specialist's text —
+        # without this it re-invents image markdown/URLs for artifacts it never
+        # saw (guessing ws_home → client 404s). Persistence/previews stay clean;
+        # this rides only the TOOL message.
+        n_exhibits = len(final_metrics.get(tc.id, {}).get("exhibits") or [])
+        if n_exhibits:
+            tool_content = (
+                f"{tool_content}\n\n[note: {n_exhibits} exhibit(s) (e.g. a "
+                "generated image) were produced by this agent and are ALREADY "
+                "displayed to the user. Do not write image markdown or URLs "
+                "for them; refer to them in prose.]"
             )
         delegation_messages.append(Message(
             role=MessageRole.TOOL,
@@ -500,12 +516,30 @@ async def _execute_and_emit_tools(
                 "success": not is_error,
                 "duration_ms": round(tool_avg_time, 2),
             }
+            delegated_exhibits: list[dict] = []
             if tm.tool_call_id in delegation_raw:
                 # Persist the full specialist output + delegation context
                 # so the client can reconstruct a DelegationMessage card
-                # on conversation restore.
-                result_entry["delegation"] = delegation_raw[tm.tool_call_id]
+                # on conversation restore. Exhibit wires are stripped from the
+                # delegation metadata (kept lean) and persisted as their own
+                # synthetic present_exhibit turns below.
+                dr = dict(delegation_raw[tm.tool_call_id])
+                delegated_exhibits = dr.pop("exhibits", None) or []
+                result_entry["delegation"] = dr
             result.tool_turns_data.append(result_entry)
+            # Synthetic present_exhibit turns for exhibits produced INSIDE the
+            # delegation: the existing reload path rebuilds an exhibit card from
+            # a present_exhibit tool_call turn (same seam the direct image flow
+            # uses), restoring the card right after the delegation card.
+            for i, wire in enumerate(delegated_exhibits):
+                if not isinstance(wire, dict):
+                    continue
+                result.tool_turns_data.append({
+                    "type": "tool_call",
+                    "tool": "present_exhibit",
+                    "tool_call_id": wire.get("id") or f"exh_dlg_{tm.tool_call_id}_{i}",
+                    "arguments": wire,
+                })
 
     messages.extend(tool_messages)
 
@@ -740,12 +774,19 @@ async def _run_tool_loop(
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
             # Surface empty completions explicitly so downstream code
             # (session storage, done event, parsed.content) doesn't carry
-            # silently empty content through to the UI.
-            if tool_round == 0 and not result.content:
+            # silently empty content through to the UI. Covers ANY empty final
+            # (not just round 0): after a delegation round the model sometimes
+            # stops without synthesizing — fall back to the last specialist's
+            # output so the bubble reads sensibly instead of rendering empty.
+            if not (result.content or "").strip():
                 logger.warning(
-                    f"Empty completion from model={model_id} (no content, no tool calls)"
+                    f"Empty completion from model={model_id} "
+                    f"(round {tool_round + 1}, delegations={len(result.delegations)})"
                 )
-                fallback = "[empty response from model]"
+                if result.delegations:
+                    fallback = result.delegations[-1][:500].strip() or "[delegation completed]"
+                else:
+                    fallback = "[empty response from model]"
                 result.content = fallback
                 result.final_content = fallback
                 yield _sse("chunk", {"content": fallback})
