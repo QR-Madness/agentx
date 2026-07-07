@@ -28,14 +28,20 @@ split three ways: file **bytes** in a content-addressed blob store (dedup by sha
 
 **Attach a workspace to a conversation** (from the drawer) and the agent:
 
-- sees the workspace's **file manifest** every turn (names + tags + summaries) — so it knows
+- knows it's **in a project** every turn — an always-on identity block (name, description,
+  document count) plus the **file manifest** (names + tags + summaries) — so it knows
   *what corpus it has* before searching;
-- retrieves in two tiers — **`workspace_search`** (catalog: by filename/tag/summary) to find
-  the right *file*, then **`document_query`** (semantic: pgvector) to find the right *passage*,
-  and **`read_document`** for full text;
+- retrieves in two tiers — **`project_search`** (catalog: by filename/tag/summary; the legacy
+  `workspace_search` name still executes) to find the right *file*, then **`document_query`**
+  (semantic: pgvector) to find the right *passage*, and **`read_document`** for full text;
+- **writes durable documents** — **`create_document`** / **`update_document`** create and
+  revise markdown/text files that land in the project like any upload (indexed, searchable,
+  visible in the hub). Great for notes, plans, reports, and living "memory files" the agent
+  keeps current across conversations. On by default (`workspace_agent_write_tools` opts out);
+  agent-writable types are capped to md/markdown/txt;
 - **cites** the documents it used (they show in the conversation's Sources panel).
 
-Per-file and per-workspace size quotas are enforced at upload.
+Per-file and per-workspace size quotas are enforced at upload and on agent writes.
 
 ## Agent Shells (opt-in)
 

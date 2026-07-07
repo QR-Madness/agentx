@@ -146,6 +146,39 @@ def render_instructions_block(workspace_id: str, max_chars: int = 8000) -> str:
     )
 
 
+def render_project_identity_block(workspace_id: str) -> str:
+    """Always-on project identity for the turn preamble.
+
+    Unlike the instructions/manifest blocks (which are empty for a fresh project),
+    this renders whenever a project is attached — otherwise the model is never told
+    it's in a project at all and falls back to external filesystem tools when asked
+    to "add a file". Returns "" only when the workspace row doesn't exist.
+    """
+    ws = repository.get_workspace(workspace_id)
+    if not ws:
+        return ""
+    lines = [f"This conversation belongs to the project “{ws['name']}”."]
+    description = (ws.get("description") or "").strip()
+    if description:
+        lines.append(f"About this project: {description}")
+    doc_count = sum(
+        1 for d in repository.list_documents(workspace_id) if d.get("status") == "ready"
+    )
+    if doc_count:
+        lines.append(
+            f"It has {doc_count} document(s) — see the 'Project files' list. Read them "
+            "with `project_search`/`document_query`/`read_document`; add or revise "
+            "durable files with `create_document`/`update_document`."
+        )
+    else:
+        lines.append(
+            "This project has no documents yet. You can create one with "
+            "`create_document` (durable — it appears in the user's Projects hub); "
+            "the user can also upload files there."
+        )
+    return "\n".join(lines)
+
+
 def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
     """Render the workspace's file list for the turn preamble (stable awareness).
 
@@ -158,8 +191,9 @@ def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
     has_images = any(str(d.get("content_type") or "").startswith("image/") for d in docs)
     header = (
         "Project files — this conversation belongs to a project; these are its "
-        "documents. Search them with `workspace_search` (by name/tag) and "
-        "`document_query` (by meaning), then `read_document`"
+        "documents. Search them with `project_search` (by name/tag) and "
+        "`document_query` (by meaning), then `read_document`; write with "
+        "`create_document`/`update_document`"
     )
     header += (
         ". Image files are marked 🖼 — to actually see one, call "

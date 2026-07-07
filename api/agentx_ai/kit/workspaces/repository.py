@@ -358,6 +358,62 @@ def get_document(document_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def get_document_by_filename(workspace_id: str, filename: str) -> dict[str, Any] | None:
+    """Exact-filename lookup within a workspace (create-collision check)."""
+    with get_postgres_session() as s:
+        row = s.execute(
+            text(
+                """
+                SELECT id, workspace_id, filename, content_type, size_bytes, sha256,
+                       storage_key, tags, summary, status, error, created_at, updated_at
+                FROM documents WHERE workspace_id = :wid AND filename = :fn
+                LIMIT 1
+                """
+            ),
+            {"wid": workspace_id, "fn": filename},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def update_document_content(
+    document_id: str, *, size_bytes: int, sha256: str, storage_key: str
+) -> dict[str, Any] | None:
+    """Repoint a document at new blob content and reset it for re-ingestion."""
+    with get_postgres_session() as s:
+        s.execute(
+            text(
+                """
+                UPDATE documents
+                SET size_bytes = :sz, sha256 = :sha, storage_key = :key,
+                    status = 'pending', error = NULL, updated_at = NOW()
+                WHERE id = :id
+                """
+            ),
+            {"id": document_id, "sz": size_bytes, "sha": sha256, "key": storage_key},
+        )
+        s.commit()
+    return get_document(document_id)  # None if the row vanished mid-update
+
+
+def count_documents_with_storage_key(
+    workspace_id: str, storage_key: str, exclude_id: str | None = None
+) -> int:
+    """Blob refcount: sha-dedup means several docs can share one blob — only the
+    last referencing row's deletion/update may remove the file."""
+    with get_postgres_session() as s:
+        row = s.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM documents
+                WHERE workspace_id = :wid AND storage_key = :key
+                  AND (:excl IS NULL OR id != :excl)
+                """
+            ),
+            {"wid": workspace_id, "key": storage_key, "excl": exclude_id},
+        ).first()
+    return int(row[0]) if row else 0
+
+
 def set_document_enrichment(
     document_id: str, *, tags: list[str], summary: str, status: str, error: str | None = None
 ) -> None:

@@ -30,6 +30,10 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
   const [url, setUrl] = useState(initial?.url ?? '');
   const [env, setEnv] = useState<KV[]>(dictToList(initial?.env));
   const [headers, setHeaders] = useState<KV[]>(dictToList(initial?.headers));
+  const [authMode, setAuthMode] = useState<'none' | 'oauth'>(initial?.auth?.type === 'oauth' ? 'oauth' : 'none');
+  const [authScope, setAuthScope] = useState(initial?.auth?.scope ?? '');
+  const [authClientId, setAuthClientId] = useState(initial?.auth?.client_id ?? '');
+  const [authClientSecret, setAuthClientSecret] = useState(initial?.auth?.client_secret ?? '');
   const [timeout, setTimeoutVal] = useState<number>(initial?.timeout ?? 30);
   const [autoReconnect, setAutoReconnect] = useState<boolean>(initial?.auto_reconnect ?? true);
   const [tags, setTags] = useState<string>((initial?.tags ?? []).join(', '));
@@ -49,6 +53,14 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
     env: transport === 'stdio' ? listToDict(env) : {},
     url: transport !== 'stdio' ? (url || null) : null,
     headers: transport !== 'stdio' ? listToDict(headers) : {},
+    auth: transport !== 'stdio' && authMode === 'oauth'
+      ? {
+          type: 'oauth' as const,
+          ...(authScope.trim() ? { scope: authScope.trim() } : {}),
+          ...(authClientId.trim() ? { client_id: authClientId.trim() } : {}),
+          ...(authClientSecret.trim() ? { client_secret: authClientSecret.trim() } : {}),
+        }
+      : null,
     timeout: Number.isFinite(timeout) ? timeout : 30,
     auto_reconnect: autoReconnect,
     // Preserve the auto-managed connected-state flag across edits (not a form
@@ -64,6 +76,7 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
   const config = useMemo(buildConfig, [
     transport, command, argsText, url, env, headers, timeout, autoReconnect,
     tags, groups, whitelistAll, allowedAgents,
+    authMode, authScope, authClientId, authClientSecret,
   ]);
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +168,34 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." disabled={submitting} />
           </label>
           {renderKV(headers, setHeaders, 'Headers')}
+          <label>
+            <span>Authorization</span>
+            <select value={authMode} onChange={(e) => setAuthMode(e.target.value as 'none' | 'oauth')} disabled={submitting}>
+              <option value="none">None / static headers</option>
+              <option value="oauth">OAuth 2.1 (sign in via browser)</option>
+            </select>
+          </label>
+          {authMode === 'oauth' && (
+            <>
+              <label>
+                <span>Scope (optional)</span>
+                <input value={authScope} onChange={(e) => setAuthScope(e.target.value)} placeholder="mcp:tools offline_access" disabled={submitting} />
+              </label>
+              <label>
+                <span>Client ID (optional — blank = automatic registration)</span>
+                <input value={authClientId} onChange={(e) => setAuthClientId(e.target.value)} placeholder="pre-registered client id (use ${VAR} for env)" disabled={submitting} />
+              </label>
+              {authClientId.trim() && (
+                <label>
+                  <span>Client secret (optional)</span>
+                  <input type="password" value={authClientSecret} onChange={(e) => setAuthClientSecret(e.target.value)} placeholder="${MY_CLIENT_SECRET}" disabled={submitting} />
+                </label>
+              )}
+              <p className="meta" style={{ margin: 0 }}>
+                Connecting opens the provider's sign-in page in your browser; tokens are stored on the server.
+              </p>
+            </>
+          )}
         </>
       )}
 

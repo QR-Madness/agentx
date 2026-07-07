@@ -81,6 +81,10 @@ class Settings(BaseSettings):
         "sh", "sql", "html", "css", "toml", "ini", "log", "text",
     ]
     workspace_summary_model: str = ""                   # blank → feature_default_model / fallback
+    workspace_agent_write_tools: bool = True            # advertise create_document/update_document
+    workspace_agent_writable_extensions: list[str] = [  # types the *agent* may write (narrower than uploads)
+        "md", "markdown", "txt",
+    ]
 
     # Memory settings
     episodic_retention_days: int = 90

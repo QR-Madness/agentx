@@ -199,6 +199,18 @@ Connect to one or all configured MCP servers.
 }
 ```
 
+**Response (OAuth server needing consent — HTTP 202):**
+```json
+{
+  "status": "auth_required",
+  "server": "remote-oauth",
+  "authorization_url": "https://provider.example.com/authorize?..."
+}
+```
+
+Open `authorization_url` in a browser; the connect completes in the background once the
+user authorizes (poll `GET /api/mcp/servers` for the transition to `connected`).
+
 **Request (all):**
 ```json
 {"all": true}
@@ -222,6 +234,30 @@ POST /api/mcp/disconnect
 
 **Request (single):** `{"server": "filesystem"}`
 **Request (all):** `{"all": true}`
+
+### OAuth 2.1 (remote servers)
+
+Remote servers (`sse` / `streamable_http`) can require OAuth 2.1. Add an `auth` block to
+the server config:
+
+```json
+{"auth": {"type": "oauth", "scope": "mcp:tools", "client_id": "optional", "client_secret": "${VAR}"}}
+```
+
+With no `client_id`, AgentX registers itself dynamically (RFC 7591) after discovering the
+authorization server via protected-resource metadata (RFC 9728); `client_id`/`client_secret`
+are for providers without dynamic registration. Tokens + the registration persist per server
+under `data/mcp_oauth/` and refresh automatically.
+
+```
+GET  /api/mcp/oauth/callback              # OAuth redirect target (public; state-validated)
+POST /api/mcp/servers/{name}/auth/reset   # forget tokens + registration (fresh sign-in)
+```
+
+The callback is the loopback redirect URI (RFC 8252) registered with the authorization
+server — override the advertised URL with `AGENTX_OAUTH_REDIRECT_URL` when the API is not
+on `http://localhost:12319`. Server payloads from `GET /api/mcp/servers` carry an
+`auth_state` object (`authorized` / `pending` / `error`) for OAuth servers.
 
 ---
 
@@ -637,6 +673,8 @@ PATCH  /api/workspaces/{workspace_id}                # { name?, description?, in
 DELETE /api/workspaces/{workspace_id}                # delete (cascades documents + blobs + memberships + shell container)
 GET    /api/workspaces/{workspace_id}/documents      # manifest list (tags/summary/status)
 POST   /api/workspaces/{workspace_id}/documents      # multipart field `file` → 201 (status=pending)
+POST   /api/workspaces/{workspace_id}/documents/text # { filename, content } → 201 (create md/txt doc; 409 on filename collision)
+PUT    /api/workspaces/{workspace_id}/documents/{document_id}/text  # { content, expected_sha256? } → 200 (replace content, re-ingests; 409 on ETag mismatch)
 GET    /api/workspaces/{workspace_id}/documents/{document_id}
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
 GET    /api/workspaces/{workspace_id}/documents/{document_id}/raw   # serve blob bytes (e.g. generated avatars)
@@ -666,13 +704,25 @@ that workspace. Conversation rows from `/api/conversations` carry a `workspace_i
 Upload errors: `415` unsupported file type, `413` per-file size limit or workspace quota
 exceeded. Supported v1 types: PDF + text/markdown/code.
 
+**Text documents (create/update):** the `/documents/text` endpoints accept JSON and are limited
+to agent-writable types (`md`/`markdown`/`txt`; filenames may carry one folder level, e.g.
+`research/notes.md`). Create returns `409` with `{ code: "conflict", document_id }` when the
+filename already exists — update is an explicit, separate act. Update replaces the whole
+content and re-ingests (`status` returns to `pending`); pass the document's last-known
+`expected_sha256` for optimistic concurrency — a mismatch returns `409` with `current_sha256`.
+Identical content is a no-op (no re-ingest). These endpoints back the Projects hub editor and
+mirror the agent's `create_document`/`update_document` tools.
+
 **Attaching to a conversation:** pass `workspace_id` in the `/api/agent/chat/stream` request body,
 or link the conversation durably via `PUT /api/workspaces/{id}/conversations/{conversation_id}`.
 Turn precedence: an explicit request `workspace_id` wins (and self-heals the membership record);
 otherwise the server falls back to the conversation's stored membership and emits a
-`workspace_attached` SSE event so the client re-learns the binding. The agent then sees the
-project's **instructions** and file manifest in its context and can call the workspace tools
-(`workspace_search`, `document_query`, `read_document`); document hits are auto-cited (`source_type: "doc"`).
+`workspace_attached` SSE event so the client re-learns the binding. The agent then sees a
+**project identity block** (always, even for an empty project), the project's **instructions**,
+and the file manifest in its context, and can call the project tools (`project_search` — legacy
+alias `workspace_search` still executes — `document_query`, `read_document`, plus
+`create_document`/`update_document` for durable writes); document hits are auto-cited
+(`source_type: "doc"`).
 
 **Agent shells (opt-in, per workspace).** Set `allow_shell: true` on a workspace to expose sandboxed
 shell tools (`run_command`, `write_file`/`read_file`/`list_files`) to agents whose conversation is

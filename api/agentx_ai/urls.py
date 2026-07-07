@@ -23,11 +23,14 @@ urlpatterns = [
     # MCP endpoints
     path("mcp/servers", views.mcp_servers, name="mcp-servers"),
     path("mcp/servers/validate", views.mcp_server_validate, name="mcp-server-validate"),
+    path("mcp/servers/<str:name>/auth/reset", views.mcp_server_auth_reset, name="mcp-server-auth-reset"),
     path("mcp/servers/<str:name>", views.mcp_server_detail, name="mcp-server-detail"),
     path("mcp/tools", views.mcp_tools, name="mcp-tools"),
     path("mcp/resources", views.mcp_resources, name="mcp-resources"),
     path("mcp/connect", views.mcp_connect, name="mcp-connect"),
     path("mcp/disconnect", views.mcp_disconnect, name="mcp-disconnect"),
+    # OAuth redirect for remote MCP servers — PUBLIC (state-validated; see middleware)
+    path("mcp/oauth/callback", views.mcp_oauth_callback, name="mcp-oauth-callback"),
     # Provider endpoints
     path("providers", views.providers_list, name="providers-list"),
     path("providers/models", views.providers_models, name="providers-models"),
@@ -73,6 +76,9 @@ urlpatterns = [
     path("workspaces", workspace_views.workspaces, name="workspaces"),
     path("workspaces/<str:workspace_id>", workspace_views.workspace_detail, name="workspace-detail"),
     path("workspaces/<str:workspace_id>/documents", workspace_views.workspace_documents, name="workspace-documents"),
+    # NOTE: "documents/text" must precede "documents/<str:document_id>" (str matches "text").
+    path("workspaces/<str:workspace_id>/documents/text", workspace_views.workspace_documents_text, name="workspace-documents-text"),
+    path("workspaces/<str:workspace_id>/documents/<str:document_id>/text", workspace_views.workspace_document_text, name="workspace-document-text"),
     path("workspaces/<str:workspace_id>/documents/<str:document_id>/raw", workspace_views.workspace_document_raw, name="workspace-document-raw"),
     path("workspaces/<str:workspace_id>/documents/<str:document_id>/reingest", workspace_views.workspace_document_reingest, name="workspace-document-reingest"),
     path("workspaces/<str:workspace_id>/documents/<str:document_id>", workspace_views.workspace_document_detail, name="workspace-document-detail"),

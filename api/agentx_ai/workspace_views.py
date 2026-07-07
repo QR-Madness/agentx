@@ -4,6 +4,8 @@ Endpoints (base ``/api``):
   GET/POST   /workspaces                         list / create
   GET/PATCH/DELETE /workspaces/{id}              detail / rename+fields / delete
   GET/POST   /workspaces/{id}/documents          manifest list / multipart upload
+  POST       /workspaces/{id}/documents/text     create text/markdown doc (JSON)
+  PUT        /workspaces/{id}/documents/{doc_id}/text  replace text content (JSON)
   GET/DELETE /workspaces/{id}/documents/{doc_id} detail / delete
   GET        /workspaces/{id}/conversations      the project's conversations
   PUT/DELETE /workspaces/{id}/conversations/{conv_id}  link (move) / unlink
@@ -23,7 +25,13 @@ from typing import Any
 from django.views.decorators.csrf import csrf_exempt
 
 from .kit.workspaces import repository, storage
-from .kit.workspaces.service import WorkspaceError, upload_document
+from .kit.workspaces.service import (
+    WorkspaceError,
+    create_text_document,
+    release_blob_if_unreferenced,
+    update_text_document,
+    upload_document,
+)
 from .utils.responses import json_error, json_success, parse_json_body, require_methods
 
 logger = logging.getLogger(__name__)
@@ -33,7 +41,20 @@ _ERROR_STATUS = {
     "unsupported": 415,
     "too_large": 413,
     "quota_exceeded": 413,
+    "conflict": 409,
 }
+
+
+def _workspace_error_response(e: WorkspaceError):
+    extra: dict[str, Any] = {}
+    if e.code == "conflict":
+        extra["code"] = "conflict"
+        if e.document_id:
+            extra["document_id"] = e.document_id
+            doc = repository.get_document(e.document_id)
+            if doc:
+                extra["current_sha256"] = doc.get("sha256")
+    return json_error(e.message, status=_ERROR_STATUS.get(e.code, 400), **extra)
 
 
 def _iso(value: Any) -> Any:
@@ -190,8 +211,53 @@ def workspace_documents(request, workspace_id: str):
             raw=raw,
         )
     except WorkspaceError as e:
-        return json_error(e.message, status=_ERROR_STATUS.get(e.code, 400))
+        return _workspace_error_response(e)
     return json_success({"document": _serialize_document(doc)}, status=201)
+
+
+@csrf_exempt
+@require_methods("POST")
+def workspace_documents_text(request, workspace_id: str):
+    """Create a text/markdown document from JSON (the hub's "New document" and the
+    agent's ``create_document`` REST twin). Filename collision → 409 with the
+    existing ``document_id``."""
+    data, err = parse_json_body(request)
+    if err:
+        return err
+    filename = str(data.get("filename") or "")
+    content = data.get("content")
+    if not isinstance(content, str):
+        return json_error("Missing required field: content (string)", status=400)
+    try:
+        doc = create_text_document(
+            workspace_id=workspace_id, filename=filename, content=content
+        )
+    except WorkspaceError as e:
+        return _workspace_error_response(e)
+    return json_success({"document": _serialize_document(doc)}, status=201)
+
+
+@csrf_exempt
+@require_methods("PUT")
+def workspace_document_text(request, workspace_id: str, document_id: str):
+    """Replace a text document's content. Optional ``expected_sha256`` is an
+    optimistic-concurrency check → 409 with ``current_sha256`` on mismatch."""
+    data, err = parse_json_body(request)
+    if err:
+        return err
+    content = data.get("content")
+    if not isinstance(content, str):
+        return json_error("Missing required field: content (string)", status=400)
+    try:
+        doc = update_text_document(
+            workspace_id=workspace_id,
+            document_id=document_id,
+            content=content,
+            expected_sha256=str(data.get("expected_sha256") or "") or None,
+        )
+    except WorkspaceError as e:
+        return _workspace_error_response(e)
+    return json_success({"document": _serialize_document(doc)})
 
 
 @csrf_exempt
@@ -207,7 +273,8 @@ def workspace_document_detail(request, workspace_id: str, document_id: str):
 
     storage_key = repository.delete_document(document_id)
     if storage_key:
-        storage.delete_blob(storage_key)
+        # sha-dedup: another doc row may still reference the same blob.
+        release_blob_if_unreferenced(workspace_id, storage_key)
     return json_success({"status": "deleted", "document_id": document_id})
 
 

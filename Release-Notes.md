@@ -24,12 +24,19 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.
+- **Agents can now write project files** — `create_document`/`update_document` create
+  and revise durable markdown/text docs (indexed + searchable); agents are told what a
+  project is, even an empty one.
+- **Project files open in the hub** — click any file to preview (markdown rendered,
+  images, PDFs), edit markdown/text in place, create new docs, and export to PDF.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
 - **Hardened self-hosting**: token gateway; safe no-env boots.
 - **Memory brain upgrade**: windowed extraction, an `eval_recall` harness, and
   **two-stage recall** (+20pp MRR).
 - **Reasoning models think out loud** on OpenAI-compatible providers.
+- **Sign in to remote MCP servers** — OAuth 2.1 with automatic client registration;
+  connect opens your browser, tokens are stored and refreshed server-side.
 - **Model roles** — one model each for Fast Utility, Deep Reasoning, Summarizer;
   unset feature models follow their role, explicit choices win.
 
