@@ -355,6 +355,92 @@ def _build_delegation_roster_block(agent, active_workflow):
     return build_adhoc_roster_prompt(agent.config.agent_id or "")
 
 
+async def _ensure_summary_coverage(
+    agent, session, blocks, history, *,
+    new_message_content, context_window, reserved_tokens, cfg,
+):
+    """JIT summary coverage before ledger assembly (INV-CTX-1: no silent loss).
+
+    When the verbatim history won't fit this turn's REAL history budget
+    (input budget minus the new message and every registered block), refresh
+    the rolling summary FIRST — so the summary block registered right after
+    this call covers exactly the turns ``fit_history`` is about to drop.
+    The summary was previously reactive (post-turn), so the first over-budget
+    turn dropped history with zero coverage; a cold rehydrate before any
+    summary persisted lost it entirely.
+
+    Returns ``(history, digest_content)``: ``history`` refreshed when the
+    session was trimmed by the summarizer; ``digest_content`` is the
+    deterministic never-lose fallback (summarizer unavailable) to register
+    as a ``history_digest`` block. No cost on the fits-already path.
+    Factored out of the chat-stream generator (pyright path budget).
+    """
+    from .tokens import estimate_messages
+    from .agent.context_ledger import estimate_text_tokens, shrink_tail
+    from .providers.base import MessageRole
+
+    if not bool(cfg.get("context.preassembly_summary_enabled", True)):
+        return history, None
+
+    non_system = [m for m in history if m.role != MessageRole.SYSTEM]
+    if not non_system:
+        return history, None
+    input_budget = min(
+        int(context_window * float(cfg.get("context.verbatim_budget_ratio", 0.9))),
+        context_window - reserved_tokens,
+    )
+    blocks_tokens = sum(estimate_text_tokens(b.content) for b in blocks)
+    history_budget = input_budget - estimate_text_tokens(new_message_content or "") - blocks_tokens
+    if history_budget <= 0 or estimate_messages(non_system) <= history_budget:
+        return history, None
+
+    # Over budget: fold the elder turns into the rolling summary NOW. Target
+    # slightly under the budget — maybe_update_summary keeps turns until the
+    # threshold is crossed, so the kept tail lands within the ledger's fit.
+    emit_status("composing", "Compressing older turns…")
+    try:
+        updated = await agent._session_manager.maybe_update_summary(
+            session.id,
+            token_threshold=max(1, int(history_budget * 0.9)),
+            recent_floor=int(cfg.get("context.recent_floor", 4)),
+        )
+    except Exception as e:
+        logger.warning(f"JIT summary refresh failed for {session.id}: {e}")
+        updated = False
+    if updated:
+        # Session messages were trimmed to the kept tail; re-derive the
+        # history (still excluding the just-added user message).
+        return session.get_messages()[:-1], None
+
+    # Never-lose fallback: a deterministic compact digest of the turns the
+    # ledger is about to drop (newest→oldest fill mirrors fit_history).
+    # Session messages are NOT trimmed in this mode — retried next turn.
+    used = 0
+    keep = 0
+    for m in reversed(non_system):
+        t = estimate_messages([m])
+        if used + t > history_budget and keep > 0:
+            break
+        used += t
+        keep += 1
+    dropped = non_system[: len(non_system) - keep]
+    if not dropped:
+        return history, None
+    lines = [
+        shrink_tail(f"{getattr(m.role, 'value', m.role)}: {m.content}", 120)
+        for m in dropped
+    ]
+    digest = (
+        "Earlier turns (compact fallback — summarization unavailable):\n"
+        + "\n".join(f"- {line}" for line in lines)
+    )
+    logger.warning(
+        "JIT summary unavailable for %s — emitting history_digest for %d turn(s)",
+        session.id, len(dropped),
+    )
+    return history, digest
+
+
 def index(request):
     return JsonResponse({'message': 'Hello, AgentX AI!'})
 
@@ -1811,8 +1897,31 @@ async def agent_chat_stream(request):
             # (Context window + capabilities were resolved up front, before the
             # direct-mode decision.)
 
+            # JIT summary coverage (INV-CTX-1): when this turn's history won't
+            # fit its real budget, refresh the rolling summary FIRST so the
+            # summary block below covers exactly what fit_history drops — the
+            # summary is no longer only reactive (post-turn). On summarizer
+            # failure a deterministic history_digest block stands in.
+            _cfg = get_config_manager()
+            if not direct_mode:
+                context, _digest = await _ensure_summary_coverage(
+                    agent, session, blocks, context,
+                    new_message_content=message_for_context,
+                    context_window=context_window,
+                    reserved_tokens=max_output_tokens + 2000,
+                    cfg=_cfg,
+                )
+                if _digest:
+                    blocks.append(LedgerBlock(
+                        key="history_digest",
+                        priority=60,
+                        content=_digest,
+                        shrink_fn=shrink_lines_newest_n,
+                    ))
+
             # The (persisted) rolling summary covers turns older than the verbatim
-            # budget — keep it above the transcript but droppable under hard pressure.
+            # budget — registered AFTER the JIT refresh so a summary created this
+            # turn is included this turn; droppable only under hard pressure.
             if session.summary:
                 blocks.append(LedgerBlock(
                     key="summary",
@@ -1826,12 +1935,12 @@ async def agent_chat_stream(request):
             # within a fraction of the window, drop the oldest overflow (covered by
             # the summary) and the lowest-priority blocks, then append the new turn.
             # The per-block allocation report is the Context Inspector's data seam.
-            _cfg = get_config_manager()
             emit_status("composing")
             # A single direct-mode branch (kept to one decision point so this very
             # large generator stays within the type-checker's path-analysis budget):
             # the whole harness — ledger preamble + history, MCP/delegation tools, and
             # the token-budget header — is replaced by a bare user turn with no tools.
+            ledger_result = None  # set on the standard path; done-event telemetry
             if direct_mode:
                 messages = [Message(
                     role=MessageRole.USER, content=message_for_context, images=model_images or None
@@ -1846,7 +1955,7 @@ async def agent_chat_stream(request):
                     ),
                     context_window=context_window,
                     reserved_tokens=max_output_tokens + 2000,
-                    verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.7)),
+                    verbatim_ratio=float(_cfg.get("context.verbatim_budget_ratio", 0.9)),
                     recent_floor=int(_cfg.get("context.recent_floor", 4)),
                 )
                 messages = ledger_result.messages
@@ -2285,13 +2394,16 @@ async def agent_chat_stream(request):
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
 
-            # Roll up older turns into session.summary when the verbatim transcript
-            # crosses the context-window budget (best-effort; persisted for resume).
+            # Post-turn summary PRE-WARM: roll older turns into session.summary
+            # when the transcript crosses summary_trigger_ratio — deliberately
+            # BELOW the verbatim ceiling, so the summary is usually fresh before
+            # the JIT pre-assembly check (INV-CTX-1 backstop) has to pay for it
+            # on the trigger turn. Best-effort; persisted for resume.
             try:
-                _vr = float(get_config_manager().get("context.verbatim_budget_ratio", 0.7))
+                _tr = float(get_config_manager().get("context.summary_trigger_ratio", 0.85))
                 await agent._session_manager.maybe_update_summary(
                     session.id,
-                    token_threshold=int(context_window * _vr),
+                    token_threshold=int(context_window * _tr),
                     recent_floor=int(get_config_manager().get("context.recent_floor", 4)),
                 )
             except Exception as e:
@@ -2347,6 +2459,13 @@ async def agent_chat_stream(request):
                 # Context window info for UI display
                 'context_window': context_window,
                 'context_used': final_context_tokens,
+                # Compression telemetry for the client context chip: whether a
+                # rolling summary covers older turns, and how many verbatim
+                # turns the ledger dropped this turn (0 on direct/plan paths).
+                'context_summarized': bool(getattr(session, 'summary', None)),
+                'context_dropped_turns': (
+                    ledger_result.history_dropped if ledger_result is not None else 0
+                ),
                 # Per-turn cost (null when no pricing available)
                 'cost_estimate': cost['cost_total'] if cost else None,
                 'cost_currency': cost['currency'] if cost else None,
