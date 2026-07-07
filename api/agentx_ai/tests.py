@@ -5798,6 +5798,48 @@ class DelegatableProfileTest(TestCase):
         self.assertNotIn("off-ee-ff", enum)    # flag off → excluded
         self.assertNotIn("self-aa-bb", enum)   # self excluded
 
+    def test_delegation_hint_survives_save_reload(self):
+        """`delegation_hint` persists through save→reload (hand-picked save dict)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = self._manager(path)
+            mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+                id="h", name="H", agent_id="hin-ted-one",
+                delegation_hint="  Data analysis and abstract pattern synthesis  ",
+            ))
+            reloaded = self._manager(path)
+            p = reloaded.get_profile("h")
+            # Validator trims whitespace; value survives the round trip.
+            self.assertEqual(p.delegation_hint, "Data analysis and abstract pattern synthesis")
+
+    def test_adhoc_tool_prefers_delegation_hint_over_description(self):
+        """Target bullets read delegation_hint first, description as fallback."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.alloy.delegation_tool import build_adhoc_delegation_tool
+
+        profiles = [
+            SimpleNamespace(
+                agent_id="hint-aa-bb", name="Hinted", description="generalist",
+                delegation_hint="formal logic specialist", available_for_delegation=True,
+            ),
+            SimpleNamespace(
+                agent_id="desc-cc-dd", name="Described", description="essay critique",
+                delegation_hint=None, available_for_delegation=True,
+            ),
+        ]
+        with patch("agentx_ai.agent.profiles.get_profile_manager") as gpm:
+            gpm.return_value = SimpleNamespace(list_profiles=lambda: profiles)
+            tool = build_adhoc_delegation_tool("self-ee-ff")
+
+        self.assertIn("formal logic specialist", tool["description"])
+        self.assertNotIn("generalist", tool["description"])   # hint wins
+        self.assertIn("essay critique", tool["description"])  # description fallback
+
 
 class ExplicitAgentRoutingTest(TestCase):
     """Phase 16.2: routing-by-agent_id helper + multi-agent prompt block."""

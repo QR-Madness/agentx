@@ -76,27 +76,51 @@ def build_delegation_tool(workflow: Workflow) -> dict:
     """
     Build the ``delegate_to`` descriptor scoped to the specialists of a workflow.
     """
+    from ..agent.profiles import get_profile_manager
+
     names = resolve_specialist_names(workflow)
+    # Per-member hint wins; the profile's own delegation_hint is the fallback so
+    # a team member with no hint still surfaces its profile specialty.
+    profile_hints = {
+        p.agent_id: p.delegation_hint
+        for p in get_profile_manager().list_profiles()
+        if getattr(p, "agent_id", None)
+    }
     entries = [
-        (m.agent_id, names.get(m.agent_id, m.agent_id), m.delegation_hint or "")
+        (
+            m.agent_id,
+            names.get(m.agent_id, m.agent_id),
+            m.delegation_hint or profile_hints.get(m.agent_id) or "",
+        )
         for m in workflow.specialists()
     ]
     return _build_descriptor(entries)
 
 
-def build_adhoc_delegation_tool(self_agent_id: str) -> dict:
-    """
-    Build the ``delegate_to`` descriptor for ad-hoc (non-workflow) delegation
-    (Phase 16.4): every agent profile except the delegating agent is a target.
+def list_adhoc_delegation_targets(self_agent_id: str) -> list[tuple[str, str, str]]:
+    """List ``(agent_id, name, hint)`` rows for ad-hoc delegation targets.
+
+    Single source of truth for who is delegable — shared by the ad-hoc tool
+    descriptor and the roster system-prompt block so they can never disagree.
+    Filters: has an agent_id, not the delegator itself, opted into the roster
+    (``available_for_delegation``), and agent-kind (ambassadors are not chat
+    agents → never delegation targets).
     """
     from ..agent.profiles import get_profile_manager
 
-    entries = [
-        (p.agent_id, p.name, p.description or "")
+    return [
+        (p.agent_id, p.name, getattr(p, "delegation_hint", None) or p.description or "")
         for p in get_profile_manager().list_profiles()
         if getattr(p, "agent_id", None)
         and p.agent_id != self_agent_id
         and getattr(p, "available_for_delegation", True)
-        and getattr(p, "kind", "agent") == "agent"  # ambassadors are not chat agents → never delegation targets
+        and getattr(p, "kind", "agent") == "agent"
     ]
-    return _build_descriptor(entries)
+
+
+def build_adhoc_delegation_tool(self_agent_id: str) -> dict:
+    """
+    Build the ``delegate_to`` descriptor for ad-hoc (non-workflow) delegation
+    (Phase 16.4): every opted-in agent profile except the delegator is a target.
+    """
+    return _build_descriptor(list_adhoc_delegation_targets(self_agent_id))

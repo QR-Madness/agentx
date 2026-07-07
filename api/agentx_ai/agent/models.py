@@ -197,6 +197,13 @@ class AgentProfile(BaseModel):
         True,
         description="Whether other agents may delegate to this profile (ad-hoc delegation)",
     )
+    # One-line specialty surfaced to teammates deciding whom to delegate to — shown
+    # in the ad-hoc roster prompt and the `delegate_to` tool's target list. Falls
+    # back to `description` when unset.
+    delegation_hint: str | None = Field(
+        None,
+        description="One-line specialty shown to teammates deciding whom to delegate to",
+    )
 
     # Ambassador (Phase 16.6): optional extra section turning this profile into a
     # parallel, non-polluting conversation interpreter. None = not an ambassador.
@@ -237,6 +244,15 @@ class AgentProfile(BaseModel):
             if len(out) >= 4:
                 break
         return out
+
+    @field_validator("delegation_hint", mode="before")
+    @classmethod
+    def _normalize_delegation_hint(cls, v: object) -> str | None:
+        """Trim; empty → None; cap at 200 chars (it's a one-liner for teammates)."""
+        if v is None:
+            return None
+        hint = str(v).strip()[:200]
+        return hint or None
 
     @property
     def self_channel(self) -> str:
