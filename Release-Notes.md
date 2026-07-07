@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.169 -->
+<!-- release-version: 0.21.170 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -75,6 +75,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   Caps-Lock warning), a status-dot connection pill, and a **readable reason** when a server is
   unreachable (was "[object Object]"); the server picker no longer closes while you paste a
   gateway token.
+- **Desktop share links resolve to the hosted app** — connection links copied from the desktop app
+  now point at the hosted web app (`agx.thejpnet.net`) instead of the unshareable `tauri://localhost`,
+  so a recipient can just open the link on their phone and sign in.
 
 ### Migration notes (self-hosters)
 

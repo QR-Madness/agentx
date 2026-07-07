@@ -58,10 +58,15 @@
       links carry a server URL + optional gateway token so a recipient connects by opening the link
       and entering only a password (`lib/connectionString.ts` + `ConnectGate` confirm). Headless-
       tested via `.claude/launch.json` (`web`). See Development-Notes → Client Surface Map.
-- [ ] **Cloud-deploy the PWA (Cloudflare Pages)** — the segue to hosted/SaaS: publish the web build,
-      wire `VITE_PUBLIC_APP_URL` so desktop-issued share links target the hosted app, and document
-      the required server posture (`AGENTX_PUBLIC_HOST`/CORS + `AGENTX_AUTH_ENABLED=true`, reachable
-      API via tunnel). Deferred from the v0.21.169 shell PR.
+- [x] **Cloud-deploy the PWA (Cloudflare Pages)** — manual, Taskfile-driven `[v0.21.170]`. `task
+      client:deploy:pages` builds `client/dist` and `wrangler pages deploy`s it (project `agentx`,
+      custom domain `agx.thejpnet.net`); `client/.env.production` sets `VITE_PUBLIC_APP_URL` so
+      desktop-issued share links resolve to the hosted app; `_redirects`/`_headers` for SPA fallback
+      + SW freshness. A redeploy ships a PWA update via the existing `onNeedRefresh` prompt.
+- [ ] **Hosted API posture + automated rollout** — the remaining PaaS bits: the API a PWA connects to
+      must allow the PWA origin (`AGENTX_PUBLIC_HOST`/`CORS_ALLOWED_ORIGINS` + `AGENTX_AUTH_ENABLED=true`,
+      reachable via tunnel); and move the manual `client:deploy:pages` to CI (`CLOUDFLARE_API_TOKEN`)
+      with staged/targeted rollout. Pairs with provisioning + embeddings decisions (OpenRouter vs Fly GPU).
 
 ### MCP client — remote OAuth & lifecycle
 

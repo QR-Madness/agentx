@@ -272,6 +272,13 @@ tasks:
     cmds:
       - bun run build
 
+  client:deploy:pages:
+    desc: "Build the web/PWA bundle and deploy it to Cloudflare Pages (manual; run `bunx wrangler login` once first)"
+    deps: [client:build:web]
+    dir: client
+    cmds:
+      - bunx wrangler pages deploy dist --project-name=agentx --branch=main
+
 # ============================================================================
 # TESTING
 # ============================================================================
