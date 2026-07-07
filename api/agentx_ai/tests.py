@@ -3442,6 +3442,39 @@ class StreamingToolLoopTest(TestCase):
         self.assertEqual(len(chunk_events), 1)
         self.assertIn("[empty response from model]", chunk_events[0])
 
+    def test_empty_final_after_delegation_falls_back_to_preview(self) -> None:
+        """A delegation round followed by an EMPTY final no longer renders an
+        empty bubble — the loop falls back to the last specialist's output."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(
+                id="d1", name="delegate_to",
+                arguments={"agent_id": "beta-agent", "task": "draw"},
+            )])],
+            [],  # supervisor says nothing after the delegation
+        ])
+
+        class _FakeExecutor:
+            max_parallel_delegations = 2
+
+            async def delegate(self, target, task, *, tool_call_id):
+                yield ('event: delegation_complete\ndata: '
+                       + json.dumps({
+                           "target_agent_id": target, "tool_call_id": tool_call_id,
+                           "status": "success", "error": None,
+                           "result_preview": "specialist prose",
+                       }) + "\n\n"), "specialist prose"
+
+        agent = self._FakeAgent()
+        agent._active_alloy_executor = _FakeExecutor()
+        events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.content, "specialist prose")
+        self.assertEqual(result.final_content, "specialist prose")
+        chunk_events = self._events_of(events, "chunk")
+        self.assertTrue(any("specialist prose" in c for c in chunk_events))
+
     def test_one_tool_round_then_completion(self) -> None:
         """A tool round emits tool_call + tool_result, extends messages, then completes."""
         from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
@@ -6183,6 +6216,162 @@ class AdhocDelegationTest(TestCase):
         self.assertEqual(done["status"], "success")
         self.assertEqual(done["target_agent_id"], "beta-agent")
         self.assertTrue(any(e[0].startswith("event: delegation_start") for e in events))
+
+    # ---- multimodality: exhibits produced inside a delegation ----
+
+    def _delegate_with_stream(self, fake_stream, profile_extra: dict | None = None):
+        """Drive delegate() with a fake specialist stream; return (events, done)."""
+        from types import SimpleNamespace
+        ex = self._make_executor()
+        profile = SimpleNamespace(
+            name="Beta", default_model="m", agent_id="beta-agent", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+            **(profile_extra or {}),
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+        pm = SimpleNamespace(
+            get_profile_by_agent_id=lambda a: profile if a == "beta-agent" else None,
+            list_profiles=lambda: [profile],
+        )
+        captured_configs: list = []
+
+        def record_agent(config):
+            captured_configs.append(config)
+            return fake_specialist
+
+        with patch("agentx_ai.alloy.executor.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.core.Agent", side_effect=record_agent), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(self._drain(
+                ex.delegate("beta-agent", "draw it", tool_call_id="t")))
+        return events, self._parse_complete(events), captured_configs
+
+    def test_delegate_forwards_exhibit_top_level_and_reports_wires(self):
+        """Specialist exhibit/workspace_attached events pass through TOP-LEVEL
+        (unwrapped — the client renders them like any exhibit), and the wires
+        ride delegation_complete.exhibits for persistence."""
+        wire = {"id": "exh_img_1", "schema_version": 1, "elements": [{"type": "image"}]}
+
+        async def fake_stream(*args, **kwargs):
+            yield f'event: exhibit\ndata: {json.dumps(wire)}\n\n'
+            yield 'event: workspace_attached\ndata: {"workspace_id": "ws_1"}\n\n'
+            kwargs["result"].content = "drew the image"
+            yield 'event: chunk\ndata: {"content": "drew the image"}\n\n'
+
+        events, done, _ = self._delegate_with_stream(fake_stream)
+        sse = [e[0] for e in events]
+        self.assertTrue(any(s.startswith("event: exhibit\n") for s in sse))
+        self.assertTrue(any(s.startswith("event: workspace_attached\n") for s in sse))
+        self.assertEqual(done["status"], "success")
+        self.assertEqual(done["exhibits"], [wire])
+
+    def test_delegate_binds_specialist_internal_ctx(self):
+        """Internal tools inside the delegation run under a specialist-scoped
+        InternalToolContext (specialist agent_id + alloy channel), and the
+        binding is reset afterwards."""
+        from agentx_ai.mcp.internal_context import current_context
+        seen: dict = {}
+
+        async def fake_stream(*args, **kwargs):
+            ctx = current_context()
+            seen["ctx"] = ctx
+            kwargs["result"].content = "ok"
+            yield 'event: chunk\ndata: {"content": "ok"}\n\n'
+
+        self._delegate_with_stream(fake_stream)
+        ctx = seen["ctx"]
+        assert ctx is not None
+        self.assertEqual(ctx.agent_id, "beta-agent")   # attributed to the specialist
+        self.assertEqual(ctx.channel, "_global")       # the executor's channel
+        self.assertEqual(ctx.user_id, "u")             # inherited from supervisor
+        self.assertIsNone(current_context())           # reset after the run
+
+    def test_specialist_config_carries_profile_tool_gates(self):
+        """Phase 18.2 parity: the specialist's own allowed/blocked tool lists
+        survive into its AgentConfig (previously dropped)."""
+        async def fake_stream(*args, **kwargs):
+            kwargs["result"].content = "ok"
+            yield 'event: chunk\ndata: {"content": "ok"}\n\n'
+
+        _, _, configs = self._delegate_with_stream(fake_stream, profile_extra={
+            "allowed_tools": ["_internal.generate_image"],
+            "blocked_tools": ["x.y"],
+        })
+        assert configs, "specialist Agent was never constructed"
+        cfg = configs[0]
+        self.assertEqual(cfg.allowed_tools, ["_internal.generate_image"])
+        self.assertEqual(cfg.blocked_tools, ["x.y"])
+
+    def test_run_delegations_notes_exhibits_and_persists_wires(self):
+        """_run_delegations appends the already-displayed note to the
+        supervisor's TOOL message (only there — previews stay clean) and
+        _execute_and_emit_tools persists the wires as synthetic
+        present_exhibit turns after the delegation result entry."""
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import (
+            _run_delegations, _execute_and_emit_tools, ToolLoopResult,
+        )
+
+        wire = {"id": "exh_img_9", "elements": []}
+
+        class FakeExecutor:
+            max_parallel_delegations = 2
+
+            async def delegate(self, target, task, *, tool_call_id):
+                yield f'event: exhibit\ndata: {json.dumps(wire)}\n\n', ""
+                yield ('event: delegation_complete\ndata: '
+                       + json.dumps({
+                           "target_agent_id": target, "tool_call_id": tool_call_id,
+                           "status": "success", "error": None,
+                           "result_preview": "made it", "exhibits": [wire],
+                       }) + "\n\n"), "made it"
+
+        tc = SimpleNamespace(id="tc1", name="delegate_to",
+                             arguments={"agent_id": "beta-agent", "task": "draw"})
+        result = ToolLoopResult()
+        delegation_messages: list = []
+        delegation_raw: dict = {}
+        agent = SimpleNamespace()  # no oversize handler, no regular tools
+
+        async def run():
+            async for _ in _run_delegations(
+                [tc], FakeExecutor(), agent,
+                result=result,
+                delegation_messages=delegation_messages,
+                delegation_raw=delegation_raw,
+            ):
+                pass
+            async for _ in _execute_and_emit_tools(
+                [], delegation_messages, [tc], {"tc1"}, agent, [],
+                task_context="draw", capture_tool_turns=True,
+                result=result, delegation_raw=delegation_raw,
+            ):
+                pass
+
+        asyncio.run(run())
+
+        # Note rides ONLY the supervisor's tool message.
+        self.assertIn("ALREADY displayed", delegation_messages[0].content)
+        self.assertNotIn("ALREADY displayed", result.delegations[0])
+        # Synthetic present_exhibit turn persisted after the delegation result,
+        # and the delegation metadata was stripped of the wires.
+        exhibit_turns = [t for t in result.tool_turns_data if t["tool"] == "present_exhibit"]
+        self.assertEqual(len(exhibit_turns), 1)
+        self.assertEqual(exhibit_turns[0]["arguments"], wire)
+        self.assertEqual(exhibit_turns[0]["tool_call_id"], "exh_img_9")
+        dlg_results = [t for t in result.tool_turns_data
+                       if t["type"] == "tool_result" and "delegation" in t]
+        self.assertEqual(len(dlg_results), 1)
+        self.assertNotIn("exhibits", dlg_results[0]["delegation"])
 
 
 class TranslationInternalToolsTest(TestCase):

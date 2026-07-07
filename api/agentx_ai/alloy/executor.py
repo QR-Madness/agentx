@@ -180,6 +180,8 @@ class AlloyExecutor:
         from ..agent.core import Agent, AgentConfig
         from ..streaming.tool_loop import streaming_tool_loop, ToolLoopResult
 
+        profile_allowed = getattr(profile, "allowed_tools", None)
+        profile_blocked = getattr(profile, "blocked_tools", None)
         specialist_config = AgentConfig(
             name=profile.name,
             user_id=self.supervisor.config.user_id,
@@ -190,6 +192,10 @@ class AlloyExecutor:
             enable_memory=profile.enable_memory,
             enable_tools=profile.enable_tools,
             max_tool_rounds=self.supervisor.config.max_tool_rounds,
+            # Phase 18.2 parity: the specialist's own per-profile tool gating
+            # applies inside a delegation too (previously dropped here).
+            allowed_tools=list(profile_allowed) if profile_allowed is not None else None,
+            blocked_tools=list(profile_blocked) if profile_blocked else None,
         )
         specialist = Agent(specialist_config)
         # Specialists do not re-delegate. Only the supervisor receives the
@@ -208,9 +214,31 @@ class AlloyExecutor:
         tools = specialist._get_tools_for_provider() if profile.enable_tools else None
 
         # ------- stream specialist run -------
+        # Bind a specialist-scoped internal-tool context for the duration of the
+        # run. The outer chat turn's binding does reach us via contextvars, but
+        # it attributes tool usage (usage ledger, checkpoints, doc writes) to
+        # the SUPERVISOR and breaks entirely for ambient-less callers. Inherit
+        # user/conversation/workspace from the outer binding, re-scope
+        # agent_id/channel to the specialist.
+        from ..mcp.internal_context import (
+            InternalToolContext, current_context, set_context, reset_context,
+        )
+        outer_ctx = current_context()
+        ctx_token = set_context(InternalToolContext(
+            user_id=(outer_ctx.user_id if outer_ctx else (self.supervisor.config.user_id or "default")),
+            channel=self.channel,
+            agent_id=profile.agent_id,
+            conversation_id=(outer_ctx.conversation_id if outer_ctx else self.session.id),
+            workspace_id=(outer_ctx.workspace_id if outer_ctx else None),
+        ))
+
         accumulated = ""
         status = "success"
         error: str | None = None
+        # Exhibit wires the specialist produced (generate_image/present_exhibit)
+        # that we forwarded to the client — used for the tool-result note and
+        # the delegation_complete payload (persistence seam).
+        forwarded_exhibits: list[dict] = []
         loop_result = ToolLoopResult()
         t0 = time.perf_counter()
         try:
@@ -258,13 +286,24 @@ class AlloyExecutor:
                         "success": inner.get("success", True),
                         "duration_ms": inner.get("duration_ms"),
                     }), accumulated
-                # Drop info/other events — they would create top-level cards.
+                elif event_name in ("exhibit", "workspace_attached"):
+                    # Multimodal output is conversation-level: pass it through
+                    # TOP-LEVEL, unchanged, so the client renders the exhibit
+                    # and auto-attaches the workspace exactly like the main
+                    # loop (zero client changes). The card lands right under
+                    # the streaming delegation card.
+                    if event_name == "exhibit" and len(forwarded_exhibits) < 5:
+                        forwarded_exhibits.append(inner)
+                    yield event_str, accumulated
+                # Drop info/status/other events — they would create top-level cards.
                 accumulated = loop_result.content
         except Exception as e:
             logger.exception(f"Specialist {target_agent_id} failed during delegation")
             status = "failed"
             error = str(e)
             accumulated = accumulated or f"[delegation failed: {error}]"
+        finally:
+            reset_context(ctx_token)
         duration_ms = (time.perf_counter() - t0) * 1000
 
         # Reserve a unique history slot + Turn index up front (fan-out safe).
@@ -363,6 +402,10 @@ class AlloyExecutor:
             "status": status,
             "error": error,
             "result_preview": accumulated[:500],
+            # Exhibit wires the specialist produced (already forwarded live as
+            # top-level `exhibit` events) — the outer loop persists these as
+            # synthetic present_exhibit turns so reload rebuilds the cards.
+            "exhibits": forwarded_exhibits or None,
             "tokens_input": loop_result.tokens_in,
             "tokens_output": loop_result.tokens_out,
             "duration_ms": duration_ms,
