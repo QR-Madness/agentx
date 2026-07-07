@@ -325,6 +325,36 @@ def _resolve_delegation_tool(agent, active_workflow):
     return None
 
 
+def _adhoc_delegation_enabled(cfg, disable_delegation: bool) -> bool:
+    """Gate for attaching the ad-hoc delegation executor (Phase 16.4).
+
+    Config default is ON (safe: the roster is opt-in per profile); the
+    per-conversation Solo flag short-circuits it. Only consulted on the
+    non-workflow branch — a workflow (team) run IS delegation and ignores it.
+    """
+    if disable_delegation:
+        return False
+    return bool(cfg.get("alloy.allow_adhoc_delegation", True))
+
+
+def _build_delegation_roster_block(agent, active_workflow):
+    """Roster nudge content for ad-hoc delegation, or None.
+
+    Only outside a workflow (the supervisor block already frames the team
+    there) and only when this turn actually offers `delegate_to` — i.e. an
+    ad-hoc executor is attached (which encodes the config gate, the
+    per-conversation flag, and "other profiles exist"). Factored out of the
+    chat-stream generator for the same path-budget reason as
+    `_resolve_delegation_tool`.
+    """
+    if active_workflow is not None:
+        return None
+    if getattr(agent, "_active_alloy_executor", None) is None:
+        return None
+    from .alloy.prompts import build_adhoc_roster_prompt
+    return build_adhoc_roster_prompt(agent.config.agent_id or "")
+
+
 def index(request):
     return JsonResponse({'message': 'Hello, AgentX AI!'})
 
@@ -1246,6 +1276,9 @@ async def agent_chat_stream(request):
         use_memory = data.get("use_memory", True)
         workflow_id = data.get("workflow_id")  # Optional Agent Alloy workflow
         workspace_id = data.get("workspace_id")  # Optional attached document workspace
+        # Per-conversation Solo mode: suppress ad-hoc delegation for this turn
+        # (tool + roster). Ignored under a workflow — a team run IS delegation.
+        disable_delegation = bool(data.get("disable_delegation", False))
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -1444,7 +1477,7 @@ async def agent_chat_stream(request):
         elif agent_profile is not None:
             from .config import get_config_manager
             cfg = get_config_manager()
-            if cfg.get("alloy.allow_adhoc_delegation", False):
+            if _adhoc_delegation_enabled(cfg, disable_delegation):
                 others = [
                     p for p in profile_manager.list_profiles()
                     if getattr(p, "agent_id", None) and p.agent_id != agent_profile.agent_id
@@ -1659,6 +1692,21 @@ async def agent_chat_stream(request):
                         content=participants_block,
                         shrink_fn=shrink_tail,
                     ))
+
+            # Ad-hoc delegation roster (Phase 16.4 completion): outside a
+            # workflow, when `delegate_to` is on offer, tell the model who its
+            # teammates are and when handing off is worth it. Non-mandatory —
+            # droppable under budget pressure (the tool description still lists
+            # targets). May coexist with `participants` (who has spoken) — this
+            # block answers a different question (whom you may delegate to).
+            roster_content = _build_delegation_roster_block(agent, active_workflow)
+            if roster_content:
+                blocks.append(LedgerBlock(
+                    key="delegation_roster",
+                    priority=85,
+                    content=roster_content,
+                    shrink_fn=shrink_tail,
+                ))
 
             # Re-inject any model-authored checkpoints for this conversation. They
             # live in Redis and are appended fresh each turn so trajectory
@@ -6904,6 +6952,7 @@ def agent_profiles_list(request):
                     "allowed_tools": list(p.allowed_tools) if p.allowed_tools is not None else None,
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "available_for_delegation": p.available_for_delegation,
+                    "delegation_hint": p.delegation_hint,
                     "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "kind": p.kind,
                     "is_default": p.is_default,
@@ -6953,6 +7002,7 @@ def agent_profiles_list(request):
                     "allowed_tools": list(created.allowed_tools) if created.allowed_tools is not None else None,
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "available_for_delegation": created.available_for_delegation,
+                    "delegation_hint": created.delegation_hint,
                     "ambassador": created.ambassador.model_dump() if created.ambassador else None,
                     "kind": created.kind,
                     "is_default": created.is_default,
@@ -7006,6 +7056,7 @@ def agent_profile_detail(request, profile_id):
                 "allowed_tools": list(profile.allowed_tools) if profile.allowed_tools is not None else None,
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "available_for_delegation": profile.available_for_delegation,
+                "delegation_hint": profile.delegation_hint,
                 "ambassador": profile.ambassador.model_dump() if profile.ambassador else None,
                 "kind": profile.kind,
                 "is_default": profile.is_default,
@@ -7044,6 +7095,7 @@ def agent_profile_detail(request, profile_id):
                 "allowed_tools": list(updated.allowed_tools) if updated.allowed_tools is not None else None,
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "available_for_delegation": updated.available_for_delegation,
+                "delegation_hint": updated.delegation_hint,
                 "ambassador": updated.ambassador.model_dump() if updated.ambassador else None,
                 "kind": updated.kind,
                 "is_default": updated.is_default,

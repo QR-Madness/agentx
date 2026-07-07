@@ -1,5 +1,6 @@
 /**
  * AlloyRunTraceModal — inspect a completed/live Agent Alloy run.
+ * User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
  *
  * Static run *tracing* (not replay/re-run): groups the active conversation's
  * delegation messages into runs (see lib/alloyTrace) and renders a per-run
@@ -89,9 +90,9 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
             <ArrowRightLeft size={18} />
           </div>
           <div>
-            <h2>Run Trace</h2>
+            <h2>Team Run Trace</h2>
             <div className="alloy-trace-subtitle">
-              {workflow ? `Workflow: ${workflow.name}` : 'Multi-agent delegation breakdown'}
+              {workflow ? `Team: ${workflow.name}` : 'Delegation breakdown for this team run'}
             </div>
           </div>
         </div>
@@ -104,7 +105,7 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
         <div className="alloy-trace-empty">
           <ArrowRightLeft size={40} />
           <h3>No delegations in this conversation</h3>
-          <p>Run trace appears once a supervisor delegates to a specialist.</p>
+          <p>Run trace appears once an agent delegates to a teammate.</p>
         </div>
       ) : (
         <div className="alloy-trace-body">
@@ -158,7 +159,7 @@ function RunDetail({
       <div className="alloy-trace-summary">
         <div className="summary-supervisor">
           <Crown size={14} />
-          <span>{supervisorName ?? 'Supervisor'}</span>
+          <span>{supervisorName ?? 'Lead'}</span>
         </div>
         <div className="summary-stats">
           <span className="summary-stat" title="Delegations">

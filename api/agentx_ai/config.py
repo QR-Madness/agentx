@@ -213,8 +213,11 @@ DEFAULT_CONFIG = {
         "specialist_inherits_supervisor_tools": True,
         "delegation_timeout_seconds": 300,
         # Phase 16.4: when true, agents in a normal (non-workflow) conversation
-        # get a `delegate_to` tool targeting any other profile. Default off.
-        "allow_adhoc_delegation": False,
+        # get a `delegate_to` tool + roster prompt targeting opted-in profiles.
+        # Default ON (ship-experimental-on): safe because the roster is opt-in
+        # per profile (`available_for_delegation` defaults off) — nothing
+        # delegates until the user puts profiles on the roster.
+        "allow_adhoc_delegation": True,
     },
     "search": {
         "backend": "tavily",          # "tavily" | "brave"

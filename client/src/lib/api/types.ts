@@ -227,6 +227,9 @@ export interface ChatRequest {
   agent_profile_id?: string;  // Agent profile to use (includes model, temperature, etc.)
   temperature?: number;  // Model temperature (0.0-2.0, default 0.7)
   use_memory?: boolean;  // Enable memory retrieval (default true)
+  // Solo mode: suppress ad-hoc delegation for this turn (no delegate_to tool /
+  // roster prompt). Ignored when workflow_id is set — a team run IS delegation.
+  disable_delegation?: boolean;
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see
@@ -472,9 +475,12 @@ export interface AgentProfile {
   // means all tools enabled; blockedTools always wins.
   allowedTools?: string[] | null;
   blockedTools?: string[];
-  // Phase 16.4: when true, other agents may delegate to this profile (ad-hoc
-  // delegation). Defaults true server-side.
+  // Phase 16.4: when true, this profile is on the ad-hoc delegation roster —
+  // other agents may hand it subtasks. Opt-in (defaults false server-side).
   availableForDelegation?: boolean;
+  // One-line specialty shown to teammates deciding whom to delegate to.
+  // Falls back to `description` when unset.
+  delegationHint?: string | null;
   // Phase 16.6: optional ambassador section — present when this profile can act
   // as a parallel conversation interpreter.
   ambassador?: AmbassadorSection;
@@ -524,6 +530,7 @@ export interface AgentProfileCreate {
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;
+  delegation_hint?: string | null;
   // Phase 16.6 — ambassador section (snake_case body). null clears it.
   ambassador?: {
     enabled: boolean;

@@ -191,11 +191,20 @@ class AgentProfile(BaseModel):
     )
 
     # Delegation (Phase 16.4): when true, this profile is offered as an ad-hoc
-    # `delegate_to` target to other agents. Default true keeps existing behavior
-    # (all profiles were delegable); turn off to hide a profile from delegation.
+    # `delegate_to` target to other agents. Default FALSE — the team roster is
+    # opt-in (pairs with `alloy.allow_adhoc_delegation` defaulting ON: the
+    # feature is live, but nothing delegates until profiles join the roster).
+    # Profiles saved before this flip carry their explicit persisted value.
     available_for_delegation: bool = Field(
-        True,
+        False,
         description="Whether other agents may delegate to this profile (ad-hoc delegation)",
+    )
+    # One-line specialty surfaced to teammates deciding whom to delegate to — shown
+    # in the ad-hoc roster prompt and the `delegate_to` tool's target list. Falls
+    # back to `description` when unset.
+    delegation_hint: str | None = Field(
+        None,
+        description="One-line specialty shown to teammates deciding whom to delegate to",
     )
 
     # Ambassador (Phase 16.6): optional extra section turning this profile into a
@@ -237,6 +246,15 @@ class AgentProfile(BaseModel):
             if len(out) >= 4:
                 break
         return out
+
+    @field_validator("delegation_hint", mode="before")
+    @classmethod
+    def _normalize_delegation_hint(cls, v: object) -> str | None:
+        """Trim; empty → None; cap at 200 chars (it's a one-liner for teammates)."""
+        if v is None:
+            return None
+        hint = str(v).strip()[:200]
+        return hint or None
 
     @property
     def self_channel(self) -> str:

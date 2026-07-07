@@ -264,6 +264,7 @@ class ProfileManager:
                     "allowed_tools": p.allowed_tools,
                     "blocked_tools": p.blocked_tools,
                     "available_for_delegation": p.available_for_delegation,
+                    "delegation_hint": p.delegation_hint,
                     # Ambassador section (previously dropped here → lost on restart).
                     "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "is_default": p.is_default,

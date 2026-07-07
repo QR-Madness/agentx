@@ -67,6 +67,12 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('offers the Solo/Team delegation toggle for the active conversation', () => {
+    render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+    // noDelegation is falsy on the mocked tab → the command offers to disable.
+    expect(screen.getByText('Disable delegation for this chat')).toBeInTheDocument();
+  });
+
   it('closes on Escape', () => {
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);

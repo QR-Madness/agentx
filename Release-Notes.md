@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.170 -->
+<!-- release-version: 0.21.171 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   connect opens your browser, tokens are stored and refreshed server-side.
 - **Model roles** — one model each for Fast Utility, Deep Reasoning, Summarizer;
   unset feature models follow their role, explicit choices win.
+- **Agent Teams** — delegation is now first-class: opt profiles into the team roster
+  with a one-line Specialty, and agents see their teammates in-prompt and delegate when
+  one is clearly better suited; a per-chat **Solo/Team** toggle keeps any conversation
+  single-agent. ("Agent Alloy" workflows are now **Teams** — a lead who delegates to
+  members.) Ad-hoc delegation ships enabled, but the roster starts empty (profiles are
+  now opt-in, so nothing delegates until you add teammates).
 
 ### Fixes
 

@@ -1,6 +1,7 @@
 /**
  * Alloy Workflow Context — manages multi-agent workflow definitions
  * for the active server. Mirrors AgentProfileContext.
+ * User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
  */
 
 import {

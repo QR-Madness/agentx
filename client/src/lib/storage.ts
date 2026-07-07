@@ -377,6 +377,9 @@ export interface ConversationTab {
   createdAt: string;
   lastMessageAt: string;
   noMemorization?: boolean;
+  // Solo mode: suppress ad-hoc delegation for this conversation (no delegate_to
+  // tool / roster prompt). Ignored while a workflow (team) is active on the tab.
+  noDelegation?: boolean;
   // Per-conversation model override (e.g. "openrouter:anthropic/claude-..."),
   // chosen from the composer's inline model chip. Falls back to the profile's
   // model when unset. Sent as `model` on the stream request.
@@ -423,6 +426,7 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
     ...t,
     workflowId: t.workflowId ?? null,
     noMemorization: t.noMemorization ?? false,
+    noDelegation: t.noDelegation ?? false,
     modelOverride: t.modelOverride ?? null,
   }));
 }

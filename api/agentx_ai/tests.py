@@ -5798,6 +5798,193 @@ class DelegatableProfileTest(TestCase):
         self.assertNotIn("off-ee-ff", enum)    # flag off → excluded
         self.assertNotIn("self-aa-bb", enum)   # self excluded
 
+    def test_delegation_hint_survives_save_reload(self):
+        """`delegation_hint` persists through save→reload (hand-picked save dict)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = self._manager(path)
+            mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+                id="h", name="H", agent_id="hin-ted-one",
+                delegation_hint="  Data analysis and abstract pattern synthesis  ",
+            ))
+            reloaded = self._manager(path)
+            p = reloaded.get_profile("h")
+            # Validator trims whitespace; value survives the round trip.
+            self.assertEqual(p.delegation_hint, "Data analysis and abstract pattern synthesis")
+
+    def test_adhoc_tool_prefers_delegation_hint_over_description(self):
+        """Target bullets read delegation_hint first, description as fallback."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.alloy.delegation_tool import build_adhoc_delegation_tool
+
+        profiles = [
+            SimpleNamespace(
+                agent_id="hint-aa-bb", name="Hinted", description="generalist",
+                delegation_hint="formal logic specialist", available_for_delegation=True,
+            ),
+            SimpleNamespace(
+                agent_id="desc-cc-dd", name="Described", description="essay critique",
+                delegation_hint=None, available_for_delegation=True,
+            ),
+        ]
+        with patch("agentx_ai.agent.profiles.get_profile_manager") as gpm:
+            gpm.return_value = SimpleNamespace(list_profiles=lambda: profiles)
+            tool = build_adhoc_delegation_tool("self-ee-ff")
+
+        self.assertIn("formal logic specialist", tool["description"])
+        self.assertNotIn("generalist", tool["description"])   # hint wins
+        self.assertIn("essay critique", tool["description"])  # description fallback
+
+    def test_available_for_delegation_defaults_off(self):
+        """Roster is opt-in: a fresh profile is NOT a delegation target."""
+        from agentx_ai.agent.models import AgentProfile
+        p = AgentProfile(id="n", name="N", agent_id="new-one-two")  # type: ignore[call-arg]
+        self.assertFalse(p.available_for_delegation)
+
+    def test_adhoc_gate_predicate(self):
+        """_adhoc_delegation_enabled: config default ON; per-conversation Solo
+        flag short-circuits; an explicit persisted False stays off."""
+        from types import SimpleNamespace
+        from agentx_ai.views import _adhoc_delegation_enabled
+
+        store = {}
+        cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
+        # Key absent (existing installs whose config.json predates the flip) → ON.
+        self.assertTrue(_adhoc_delegation_enabled(cfg, disable_delegation=False))
+        # Solo flag wins regardless of config.
+        self.assertFalse(_adhoc_delegation_enabled(cfg, disable_delegation=True))
+        # Explicitly persisted off stays off.
+        store["alloy.allow_adhoc_delegation"] = False
+        self.assertFalse(_adhoc_delegation_enabled(cfg, disable_delegation=False))
+
+    def test_workflow_delegation_unaffected_by_solo_flag(self):
+        """Scope rule: the Solo flag gates ad-hoc only. A workflow supervisor
+        still gets its delegate_to tool — the flag is not an input to the
+        workflow branch of _resolve_delegation_tool at all."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.views import _resolve_delegation_tool
+
+        member = SimpleNamespace(agent_id="spec-aa-bb", delegation_hint="analysis")
+        workflow = SimpleNamespace(specialists=lambda: [member])
+        agent = SimpleNamespace(
+            config=SimpleNamespace(agent_id="lead-cc-dd"),
+            _active_alloy_executor=None,  # Solo turn: no ad-hoc executor attached
+        )
+        profiles = [SimpleNamespace(agent_id="spec-aa-bb", name="Spec", delegation_hint=None)]
+        with patch(
+            "agentx_ai.agent.profiles.get_profile_manager",
+            return_value=SimpleNamespace(list_profiles=lambda: profiles),
+        ):
+            desc = _resolve_delegation_tool(agent, workflow)
+        assert desc is not None
+        self.assertEqual(
+            desc["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
+        )
+
+
+class AdhocRosterPromptTest(TestCase):
+    """Ad-hoc delegation roster block: the system-prompt nudge that makes
+    conversational delegation actually happen (workflows had a supervisor
+    prompt; open chat had only the bare tool descriptor)."""
+
+    @staticmethod
+    def _profiles():
+        from types import SimpleNamespace
+        return [
+            SimpleNamespace(
+                agent_id="self-aa-bb", name="Self", description="",
+                delegation_hint=None, available_for_delegation=True, kind="agent",
+            ),
+            SimpleNamespace(
+                agent_id="logic-cc-dd", name="Logician", description="fallback desc",
+                delegation_hint="formal logic and argument mapping",
+                available_for_delegation=True, kind="agent",
+            ),
+            SimpleNamespace(
+                agent_id="off-ee-ff", name="Recluse", description="opted out",
+                delegation_hint=None, available_for_delegation=False, kind="agent",
+            ),
+            SimpleNamespace(
+                agent_id="amb-gg-hh", name="Envoy", description="briefer",
+                delegation_hint="summaries", available_for_delegation=True,
+                kind="ambassador",
+            ),
+        ]
+
+    def _patched(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        profiles = self._profiles()
+        return patch(
+            "agentx_ai.agent.profiles.get_profile_manager",
+            return_value=SimpleNamespace(list_profiles=lambda: profiles),
+        )
+
+    def test_roster_lists_delegable_teammates_only(self):
+        from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
+        with self._patched():
+            roster = build_adhoc_roster_prompt("self-aa-bb")
+        assert roster is not None
+        self.assertIn("Logician", roster)
+        self.assertIn("logic-cc-dd", roster)
+        self.assertIn("formal logic and argument mapping", roster)  # hint rendered
+        self.assertNotIn("Self", roster)      # self excluded
+        self.assertNotIn("Recluse", roster)   # opted out of the roster
+        self.assertNotIn("Envoy", roster)     # ambassadors never delegable
+
+    def test_roster_none_when_empty(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
+        with patch(
+            "agentx_ai.agent.profiles.get_profile_manager",
+            return_value=SimpleNamespace(list_profiles=list),
+        ):
+            self.assertIsNone(build_adhoc_roster_prompt("self-aa-bb"))
+
+    def test_roster_tone_is_soft(self):
+        """The ad-hoc nudge must stay optional-toned — never the supervisor's
+        'Default to delegation' framing (that's workflow-only)."""
+        from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
+        with self._patched():
+            roster = build_adhoc_roster_prompt("self-aa-bb")
+        assert roster is not None
+        self.assertNotIn("Default to delegation", roster)
+        self.assertIn("delegation is an option, not an obligation", roster)
+
+    def test_target_lister_excludes_ambassadors(self):
+        from agentx_ai.alloy.delegation_tool import list_adhoc_delegation_targets
+        with self._patched():
+            targets = list_adhoc_delegation_targets("self-aa-bb")
+        ids = [aid for aid, _, _ in targets]
+        self.assertEqual(ids, ["logic-cc-dd"])
+
+    def test_roster_block_helper_gating(self):
+        """views helper: no roster inside a workflow or without an attached
+        ad-hoc executor; present when the executor is attached outside one."""
+        from types import SimpleNamespace
+        from agentx_ai.views import _build_delegation_roster_block
+
+        cfg = SimpleNamespace(agent_id="self-aa-bb")
+        with self._patched():
+            # Workflow active → supervisor block owns the framing.
+            agent = SimpleNamespace(config=cfg, _active_alloy_executor=object())
+            self.assertIsNone(_build_delegation_roster_block(agent, object()))
+            # No executor attached (config gate off / solo / no peers).
+            agent = SimpleNamespace(config=cfg, _active_alloy_executor=None)
+            self.assertIsNone(_build_delegation_roster_block(agent, None))
+            # Ad-hoc executor attached, no workflow → roster present.
+            agent = SimpleNamespace(config=cfg, _active_alloy_executor=object())
+            roster = _build_delegation_roster_block(agent, None)
+            assert roster is not None
+            self.assertIn("Logician", roster)
+
 
 class ExplicitAgentRoutingTest(TestCase):
     """Phase 16.2: routing-by-agent_id helper + multi-agent prompt block."""

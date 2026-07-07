@@ -1,11 +1,26 @@
-# Multi-Agent (Agent Alloy)
+# Agent Teams (Agent Alloy)
 
-**Agent Alloy** is AgentX's multi-agent orchestration system (Phase 16, v1 shipped
-2026-04-27). It lets one **supervisor** agent delegate focused subtasks to **specialist**
-agents, coordinating their work over a shared memory channel.
+**Agent Teams** is AgentX's multi-agent orchestration system (Phase 16, v1 shipped
+2026-04-27 as *Agent Alloy* — the internal module, API routes, and config keys keep that
+name; only the user-facing vocabulary changed, same precedent as Workspaces→Projects).
+It lets one agent delegate focused subtasks to teammates, coordinating their work over a
+shared memory channel. UI terminology: a workflow is a **Team**, the supervisor is the
+**Lead**, and specialists are **Members**.
 
-A configured set of agents is called a **workflow** (an "alloy"). Workflows are opt-in: a
-normal chat uses a single agent, and only becomes multi-agent when you attach a `workflow_id`.
+Delegation comes in two flavors:
+
+- **Structured teams** — a saved workflow (`workflow_id` on the chat request) puts the
+  team's lead in charge of the conversation with an aggressive "orchestrate, don't
+  execute" supervisor prompt.
+- **Ad-hoc delegation** — in ordinary chats, any agent can hand a subtask to any profile
+  that **joined the team roster** (`available_for_delegation`, opt-in, off by default).
+  The agent gets the `delegate_to` tool *and* a roster block in its system prompt listing
+  each teammate's specialty (`delegation_hint`, falling back to the profile description)
+  with deliberately soft guidance: handle it yourself by default, delegate when a
+  teammate is clearly better suited. Enabled by default (`alloy.allow_adhoc_delegation`);
+  nothing delegates until profiles opt onto the roster. A per-conversation **Solo/Team**
+  toggle (composer chip or command palette) sends `disable_delegation` to suppress it
+  for a chat — ignored under a workflow, since a team run *is* delegation.
 
 ```mermaid
 graph TD
@@ -79,7 +94,7 @@ and extracted facts are visible across the workflow. Each delegation also create
 |-----|---------|-------------|
 | `alloy.max_delegation_depth` | `3` | Maximum delegation nesting depth |
 | `alloy.specialist_inherits_supervisor_tools` | `true` | Whether specialists get the supervisor's tool set |
-| `alloy.allow_adhoc_delegation` | `false` | Allow `delegate_to` in ordinary (workflow-less) chats |
+| `alloy.allow_adhoc_delegation` | `true` | Allow `delegate_to` + the roster prompt in ordinary (workflow-less) chats. Safe default: the roster itself is opt-in per profile (`available_for_delegation` defaults `false`) |
 | `alloy.delegation_timeout_seconds` | — | Per-delegation timeout |
 
 ## Execution & Streaming
@@ -158,6 +173,7 @@ Shipped (v1 plus the routing/delegation waves through v0.21.5):
 - **Explicit routing** — `target_agent_id` on the chat-stream request (priority `workflow_id > target_agent_id > agent_profile_id > default`)
 - **Per-agent tool isolation** — `allowed_tools` / `blocked_tools` enforced per profile
 - **Ad-hoc agent-to-agent delegation** — `delegate_to` in workflow-less chats, gated by `alloy.allow_adhoc_delegation` (depth-limited, no self-delegation)
+- **First-class conversational delegation** — a `delegation_roster` system-prompt block (teammates + specialties from the opt-in roster, same source as the tool enum), per-profile `delegation_hint`, opt-in `available_for_delegation` (default off), the global gate default-ON, and a per-conversation Solo/Team toggle (`disable_delegation`)
 - **@-mention routing** — an inline `@agent-id` / `@name` routes a turn; `AgentParticipant` graph nodes + a client `@`-autocomplete composer
 
 Deferred (see [Roadmap → Phase 16](../roadmap.md)): the visual **Factory canvas** editor,
