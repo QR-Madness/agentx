@@ -19,6 +19,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { RootLayout } from './layouts/RootLayout';
 import { ResizeHandles } from './layouts/ResizeHandles';
 import { showWindowControls } from './lib/platform';
+import { PwaToasts } from './pwa/PwaToasts';
+import { ConnectGate } from './components/ConnectGate';
 import './App.css';
 
 /**
@@ -111,6 +113,8 @@ function App() {
                               </ErrorBoundary>
                               <ModalPortal />
                               <Toaster />
+                              <PwaToasts />
+                              <ConnectGate />
                               <ConnectorAuthNudge />
                               {showWindowControls && <ResizeHandles />}
                             </ConfirmProvider>

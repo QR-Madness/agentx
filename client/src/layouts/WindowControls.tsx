@@ -8,32 +8,29 @@
 
 import { useEffect, useState } from 'react';
 import { Minus, Square, Copy, X } from 'lucide-react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { platform } from '../platform';
 import './WindowControls.css';
 
 export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    const win = getCurrentWindow();
     let unlisten: (() => void) | undefined;
-    win.isMaximized().then(setMaximized).catch(() => {});
-    win
-      .onResized(() => {
-        win.isMaximized().then(setMaximized).catch(() => {});
-      })
-      .then(fn => { unlisten = fn; })
+    let cancelled = false;
+    const sync = () => platform.window.isMaximized().then(setMaximized).catch(() => {});
+    sync();
+    platform.window
+      .onResized(sync)
+      .then(fn => { if (cancelled) fn(); else unlisten = fn; })
       .catch(() => {});
-    return () => unlisten?.();
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
-
-  const win = getCurrentWindow();
 
   return (
     <div className="window-controls" data-tauri-drag-region={false}>
       <button
         className="window-control"
-        onClick={() => win.minimize()}
+        onClick={() => platform.window.minimize()}
         title="Minimize"
         aria-label="Minimize"
       >
@@ -41,7 +38,7 @@ export function WindowControls() {
       </button>
       <button
         className="window-control"
-        onClick={() => win.toggleMaximize()}
+        onClick={() => platform.window.toggleMaximize()}
         title={maximized ? 'Restore' : 'Maximize'}
         aria-label={maximized ? 'Restore' : 'Maximize'}
       >
@@ -49,7 +46,7 @@ export function WindowControls() {
       </button>
       <button
         className="window-control window-control--close"
-        onClick={() => win.close()}
+        onClick={() => platform.window.close()}
         title="Close"
         aria-label="Close"
       >

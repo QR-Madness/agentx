@@ -3,12 +3,13 @@
  */
 
 import { useState, FormEvent } from 'react';
-import { Lock, Eye, EyeOff, Shield, AlertCircle, KeyRound, Loader2, WifiOff, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Shield, AlertCircle, KeyRound, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useServer } from '../contexts/ServerContext';
 import { ServerSelector } from '../components/ServerSelector';
+import { PasswordField } from '../components/common/PasswordField';
+import { Button, StatusDot } from '../components/ui';
 import './AuthPage.css';
-import { Button } from '../components/ui';
 
 const LOGIN_USERNAME = 'root';
 
@@ -26,7 +27,7 @@ function ConnectionStatus({ state, error, serverName, serverUrl, onRetry }: Conn
   if (state === 'connecting') {
     return (
       <div className="auth-connection-status auth-connection-status--pending">
-        <Loader2 size={16} className="auth-connection-spinner" />
+        <StatusDot tone="warning" pulse />
         <span>Connecting to {target}…</span>
       </div>
     );
@@ -35,7 +36,7 @@ function ConnectionStatus({ state, error, serverName, serverUrl, onRetry }: Conn
   if (state === 'unreachable') {
     return (
       <div className="auth-connection-status auth-connection-status--error">
-        <WifiOff size={16} />
+        <StatusDot tone="error" />
         <div className="auth-connection-status-body">
           <strong>Couldn't reach {target}</strong>
           {error && <span className="auth-connection-status-detail">{error}</span>}
@@ -43,16 +44,16 @@ function ConnectionStatus({ state, error, serverName, serverUrl, onRetry }: Conn
             Check the URL above, switch servers, or retry.
           </span>
         </div>
-        <button type="button" className="auth-connection-retry" onClick={onRetry}>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
           <RefreshCw size={14} /> Retry
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="auth-connection-status auth-connection-status--ok">
-      <CheckCircle2 size={16} />
+      <StatusDot tone="online" />
       <span>Connected to {target}</span>
     </div>
   );
@@ -73,8 +74,6 @@ export function AuthPage() {
   // Form state
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // UI state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -172,70 +171,39 @@ export function AuthPage() {
             </div>
           )}
 
-          <div className="auth-field">
-            <label htmlFor="password">
-              {setupRequired ? 'New Password' : 'Password'}
-            </label>
-            <div className="auth-input-wrapper">
-              <Lock size={18} className="auth-input-icon" />
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={setupRequired ? 'Enter new password (min 8 characters)' : 'Enter password'}
-                autoComplete={setupRequired ? 'new-password' : 'current-password'}
-                disabled={isSubmitting}
-                minLength={8}
-              />
-              <button
-                type="button"
-                className="auth-toggle-password"
-                onClick={() => setShowPassword(!showPassword)}
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
+          <PasswordField
+            id="password"
+            label={setupRequired ? 'New Password' : 'Password'}
+            value={password}
+            onChange={setPassword}
+            placeholder={setupRequired ? 'Enter new password (min 8 characters)' : 'Enter password'}
+            autoComplete={setupRequired ? 'new-password' : 'current-password'}
+            minLength={8}
+            disabled={isSubmitting}
+            autoFocus
+          />
 
           {setupRequired && (
-            <div className="auth-field">
-              <label htmlFor="confirmPassword">Confirm Password</label>
-              <div className="auth-input-wrapper">
-                <Lock size={18} className="auth-input-icon" />
-                <input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm password"
-                  autoComplete="new-password"
-                  disabled={isSubmitting}
-                  minLength={8}
-                />
-                <button
-                  type="button"
-                  className="auth-toggle-password"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  tabIndex={-1}
-                >
-                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
+            <PasswordField
+              id="confirmPassword"
+              label="Confirm Password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Confirm password"
+              autoComplete="new-password"
+              minLength={8}
+              disabled={isSubmitting}
+            />
           )}
 
           <Button
             type="submit"
-            variant="primary" className="auth-submit"
+            variant="primary"
+            className="auth-submit"
+            loading={isSubmitting}
             disabled={isSubmitting}
           >
-            {isSubmitting
-              ? 'Please wait...'
-              : setupRequired
-                ? 'Set Password'
-                : 'Sign In'}
+            {setupRequired ? 'Set Password' : 'Sign In'}
           </Button>
         </form>
         )}

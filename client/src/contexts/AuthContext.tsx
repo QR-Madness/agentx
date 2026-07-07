@@ -13,6 +13,7 @@ import {
   CLIENT_PROTOCOL_VERSION,
   compareSemver,
   setAuthRequired as setApiAuthRequired,
+  apiErrorMessage,
 } from '../lib/api';
 import { getAuthToken, saveAuthToken, clearAuthToken } from '../lib/storage';
 
@@ -114,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         // Server unreachable / version endpoint missing. Surface to the UI so
         // the user can pick another host instead of staring at a spinner.
-        const message = error instanceof Error ? error.message : String(error);
+        const message = apiErrorMessage(error);
         console.warn('Server reachability check failed:', message);
         setVersionInfo(null);
         setVersionMismatch(false);
@@ -174,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       // Reached the server but a follow-up call (e.g. authStatus) failed —
       // treat as unreachable so the user can act on it.
-      const message = error instanceof Error ? error.message : String(error);
+      const message = apiErrorMessage(error);
       console.error('Failed to check auth status:', message);
       setConnectionState('unreachable');
       setConnectionError(message);

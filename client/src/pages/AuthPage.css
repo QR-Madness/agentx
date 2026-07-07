@@ -201,63 +201,6 @@
   color: var(--text-secondary);
 }
 
-.auth-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.auth-input-icon {
-  position: absolute;
-  left: 14px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.auth-input-wrapper input {
-  width: 100%;
-  padding: 12px 44px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 14px;
-  transition: all 0.2s ease;
-}
-
-.auth-input-wrapper input:focus {
-  outline: none;
-  border-color: var(--accent-purple);
-  box-shadow: 0 0 0 3px var(--accent-tint-soft);
-}
-
-.auth-input-wrapper input::placeholder {
-  color: var(--text-muted);
-}
-
-.auth-input-wrapper input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.auth-toggle-password {
-  position: absolute;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.auth-toggle-password:hover {
-  color: var(--text-secondary);
-}
-
 .auth-submit {
   margin-top: 8px;
   padding: 14px 24px;
@@ -629,7 +572,7 @@
 
 .auth-connection-status {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   margin: 16px 0 0;
   padding: 12px 14px;
@@ -685,33 +628,14 @@
   font-size: 12px;
 }
 
-.auth-connection-spinner {
-  animation: spin 1s linear infinite;
+/* Keep the StatusDot from squashing next to long server text, and nudge it onto
+   the first text line in the multi-line error state. */
+.auth-connection-status .status-dot {
   flex-shrink: 0;
 }
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.auth-connection-retry {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.auth-connection-retry:hover {
-  border-color: var(--accent-purple);
-  color: var(--accent-purple);
+.auth-connection-status--error .status-dot {
+  margin-top: 5px;
+  align-self: flex-start;
 }
 
 /* === Mobile Responsive === */
