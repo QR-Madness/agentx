@@ -57,7 +57,7 @@ class ContextManager:
         new_message: Message,
         context_window: int,
         reserved_tokens: int,
-        verbatim_ratio: float = 0.9,
+        verbatim_ratio: float = 0.7,
         recent_floor: int = 4,
     ) -> list[Message]:
         """Build the final, budget-fit message list for one turn (sync, no LLM).

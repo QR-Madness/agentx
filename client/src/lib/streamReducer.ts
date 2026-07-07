@@ -17,10 +17,6 @@ export type StreamPhase = 'idle' | 'streaming';
 export interface ContextInfo {
   window: number;
   used: number;
-  // Compression telemetry from the done event (context chip hint): a rolling
-  // summary covers older turns / how many verbatim turns dropped this turn.
-  summarized?: boolean;
-  droppedTurns?: number;
 }
 
 export interface ActiveToolCall {

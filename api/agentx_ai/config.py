@@ -195,22 +195,11 @@ DEFAULT_CONFIG = {
         },
     },
     "context": {
-        # Verbatim CEILING: fraction of the model's real context window the
-        # verbatim transcript may use (assembly still hard-caps at
-        # window − reserved output). Raised 0.7 → 0.9 so compression kicks in
-        # just before the context limit, not lossily at 70%. The rolling-summary
-        # trigger is a SEPARATE knob now (summary_trigger_ratio) — the old
-        # double duty is gone.
-        "verbatim_budget_ratio": 0.9,
-        # Post-turn rolling-summary pre-warm threshold (fraction of window).
-        # Fires slightly BELOW the verbatim ceiling so the summary is usually
-        # fresh before the JIT pre-assembly check ever has to pay for it.
-        "summary_trigger_ratio": 0.85,
-        # JIT pre-assembly summarization (INV-CTX-1 backstop): when a turn's
-        # history exceeds its real budget, refresh the summary BEFORE assembly
-        # so dropped turns are always covered (deterministic digest fallback
-        # when the summarizer is unavailable).
-        "preassembly_summary_enabled": True,
+        # Fraction of the model's real context window kept for the verbatim
+        # conversation transcript (the rest is reserved for the response + tools).
+        # Drives both per-turn assembly and the rolling-summary token trigger, so
+        # compression is context-window-based, not message-count-based.
+        "verbatim_budget_ratio": 0.7,
         # Floor of most-recent turns always kept verbatim.
         "recent_floor": 4,
         # Max turns pulled from durable history when rehydrating a cold session.

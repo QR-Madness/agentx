@@ -51,10 +51,6 @@ export interface StreamCallbacks {
     tokens_output?: number;
     context_window?: number;
     context_used?: number;
-    /** A rolling summary covers turns older than the verbatim window. */
-    context_summarized?: boolean;
-    /** Verbatim turns the ledger dropped this turn (0 when everything fit). */
-    context_dropped_turns?: number;
     model?: string;
     provider?: string;
     cost_estimate?: number | null;

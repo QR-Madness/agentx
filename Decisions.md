@@ -67,17 +67,6 @@ searches `[active_channel, _self_{agent_id}, _global]`.
 **Guard:** recall/attribution tests (`tests_memory.py`). *Default-channel drift (`_global` vs `_default`)
 is a known hazard — Memory-Roadmap §1.4 `ChannelRef` is the fix.*
 
-### INV-CTX-1 — No silent context loss
-A turn may leave the model's verbatim view **only when covered** by the persisted rolling summary;
-the JIT pre-assembly refresh (`views.py::_ensure_summary_coverage`) sizes the summary to the turns
-`fit_history` is about to drop, **before** assembly. When the summarizer is unavailable, the dropped
-turns must instead appear in the deterministic `history_digest` block that same turn (no model call,
-never silence). Rehydration surfaces coverage gaps (`session.metadata["history_overflow"]` when the
-row cap is hit with no restored summary) rather than truncating silently. The verbatim ceiling
-(`context.verbatim_budget_ratio`, 0.9) and the post-turn summary trigger
-(`context.summary_trigger_ratio`, 0.85) are **separate knobs** — the old 0.7 double duty is gone.
-**Guard:** `ConversationContextTest` JIT-coverage tests (`tests.py`).
-
 ---
 
 ## Decisions
