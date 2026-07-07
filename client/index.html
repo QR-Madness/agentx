@@ -5,6 +5,15 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AgentX - AI Toolbox</title>
+    <!-- PWA / installable-web. The manifest link is injected by vite-plugin-pwa
+         (web build only). These are the bits it doesn't manage: iOS home-screen
+         behaviour (Safari has no manifest support for these) + theme color. -->
+    <meta name="theme-color" content="#05070f" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AgentX" />
     <style>
       /* Boot splash — pure CSS (no images, so it can't fail to load over the
          dev network), painted instantly before the JS bundle parses so the

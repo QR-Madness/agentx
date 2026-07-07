@@ -12,6 +12,18 @@ import "@fontsource/jetbrains-mono/700.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { registerPwa } from "./pwa/registerPwa";
+import { initInstallPrompt } from "./pwa/installPrompt";
+import { consumeConnectFragment } from "./lib/connectionString";
+
+// Read + strip any `#connect=` share fragment before React renders, so the token
+// never lingers in the URL/history; ConnectGate picks up the stashed payload.
+consumeConnectFragment();
+
+// Web/PWA shell wiring — both no-op under Tauri (and tree-shaken via __IS_TAURI__).
+// Register the service worker + install affordance before the app renders.
+registerPwa();
+initInstallPrompt();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

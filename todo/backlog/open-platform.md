@@ -51,6 +51,17 @@
       MCP Tools below — `memory_recall` / `memory_store` / `conversation_summary`.)
 - [ ] **Egress / webhooks** — outbound events so external systems can react to agent activity
       (run lifecycle, new facts, goal completion).
+- [x] **Web/PWA shell + connection links** — shipped `[v0.21.169]`. Same React app builds as an
+      installable web PWA (iOS/Android-friendly, auto-updating, no store) alongside the Tauri
+      desktop app via a compile-time `__IS_TAURI__` gate + `src/platform/` capability façade
+      (import-boundary test keeps Tauri bytes out of the web bundle). Shareable `#connect=<base64url>`
+      links carry a server URL + optional gateway token so a recipient connects by opening the link
+      and entering only a password (`lib/connectionString.ts` + `ConnectGate` confirm). Headless-
+      tested via `.claude/launch.json` (`web`). See Development-Notes → Client Surface Map.
+- [ ] **Cloud-deploy the PWA (Cloudflare Pages)** — the segue to hosted/SaaS: publish the web build,
+      wire `VITE_PUBLIC_APP_URL` so desktop-issued share links target the hosted app, and document
+      the required server posture (`AGENTX_PUBLIC_HOST`/CORS + `AGENTX_AUTH_ENABLED=true`, reachable
+      API via tunnel). Deferred from the v0.21.169 shell PR.
 
 ### MCP client — remote OAuth & lifecycle
 

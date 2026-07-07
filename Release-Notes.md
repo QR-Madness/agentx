@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.168 -->
+<!-- release-version: 0.21.169 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,6 +21,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **Run AgentX from a browser** — an installable **PWA** build (ideal for iPhone/Android
+  and anywhere the desktop app can't go, auto-updating with no store), plus shareable
+  **connection links**: send someone a link and they connect to your server by opening it
+  and entering only a password.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.
@@ -67,6 +71,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   OAuth tools the active agent still needs, with a one-click Connect.
 - **Toggles look right everywhere** — the switch thumb was mis-centered by a global button
   reset; the control is now a self-contained primitive with a clean slide + accent glow.
+- **Sign-in screen polish** — password fields now use the shared field styling (reveal toggle +
+  Caps-Lock warning), a status-dot connection pill, and a **readable reason** when a server is
+  unreachable (was "[object Object]"); the server picker no longer closes while you paste a
+  gateway token.
 
 ### Migration notes (self-hosters)
 

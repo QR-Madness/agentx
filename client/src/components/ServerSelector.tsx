@@ -9,8 +9,11 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Server, ChevronDown, ChevronUp, Plus, X, Pencil, Trash2, Check } from 'lucide-react';
+import { Server, ChevronDown, ChevronUp, Plus, X, Pencil, Trash2, Check, Share2 } from 'lucide-react';
 import { useServer } from '../contexts/ServerContext';
+import { useNotify } from '../contexts/NotificationContext';
+import { buildConnectUrl } from '../lib/connectionString';
+import type { ServerConfig } from '../lib/storage';
 import '../pages/AuthPage.css';
 
 interface ServerSelectorProps {
@@ -22,6 +25,7 @@ interface ServerSelectorProps {
 
 export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch }: ServerSelectorProps) {
   const { servers, activeServer, switchServer, addNewServer, updateServerConfig, deleteServer } = useServer();
+  const { notifySuccess, notify } = useNotify();
   const [open, setOpen] = useState(defaultOpen);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -56,7 +60,15 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
   useEffect(() => {
     if (!open) return;
     let lastWidth = window.innerWidth;
-    const onScroll = () => closeDropdown();
+    const onScroll = (e: Event) => {
+      // Only a page/container scroll should dismiss the dropdown. Ignore scrolls
+      // that originate *inside* it — notably a long gateway token scrolling its
+      // password field horizontally as you type (the capture-phase listener also
+      // catches element scrolls, which would otherwise slam the form shut mid-edit).
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('.auth-server-dropdown')) return;
+      closeDropdown();
+    };
     const onResize = () => {
       const w = window.innerWidth;
       if (w !== lastWidth) { lastWidth = w; closeDropdown(); }
@@ -121,6 +133,20 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
   const handleDelete = (id: string) => {
     deleteServer(id);
     setConfirmingDeleteId(null);
+  };
+
+  // Copy a shareable connection link (server address + gateway token) so a
+  // recipient can open it and only enter the password. Never includes the
+  // per-user auth token — that's set by signing in on the other end.
+  const handleShare = async (s: ServerConfig) => {
+    const link = buildConnectUrl({ url: s.url, gatewayToken: s.gatewayToken, name: s.name });
+    try {
+      await navigator.clipboard.writeText(link);
+      notifySuccess('Connection link copied — share it so they can sign in.', 'Link copied');
+    } catch {
+      // Clipboard blocked (e.g. non-secure context) — surface the link to copy manually.
+      notify({ kind: 'info', title: 'Copy this connection link', message: link, duration: 0 });
+    }
   };
 
   return (
@@ -245,6 +271,14 @@ export function ServerSelector({ disabled = false, defaultOpen = false, onSwitch
                   </div>
                 ) : (
                   <div className="auth-server-option-actions">
+                    <button
+                      type="button"
+                      className="auth-server-action-btn"
+                      title="Copy connection link"
+                      onClick={() => handleShare(s)}
+                    >
+                      <Share2 size={14} />
+                    </button>
                     <button
                       type="button"
                       className="auth-server-action-btn"

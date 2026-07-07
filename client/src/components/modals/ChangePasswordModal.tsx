@@ -7,9 +7,10 @@
  */
 
 import { useState, FormEvent } from 'react';
-import { Lock, Eye, EyeOff, AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
+import { AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-// Reuse the existing auth-* class library (input wrapper, error pill, etc.).
+import { PasswordField } from '../common/PasswordField';
+// Reuse the auth-* form classes (.auth-form / .auth-error / .auth-field label).
 import '../../pages/AuthPage.css';
 import { Button } from '../ui';
 
@@ -23,9 +24,6 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showOld, setShowOld] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,10 +97,9 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
           label="Current Password"
           value={oldPassword}
           onChange={setOldPassword}
-          show={showOld}
-          onToggleShow={() => setShowOld(s => !s)}
           autoComplete="current-password"
           disabled={submitting || success}
+          autoFocus
         />
 
         <PasswordField
@@ -110,8 +107,6 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
           label="New Password"
           value={newPassword}
           onChange={setNewPassword}
-          show={showNew}
-          onToggleShow={() => setShowNew(s => !s)}
           autoComplete="new-password"
           minLength={8}
           disabled={submitting || success}
@@ -122,8 +117,6 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
           label="Confirm New Password"
           value={confirmPassword}
           onChange={setConfirmPassword}
-          show={showConfirm}
-          onToggleShow={() => setShowConfirm(s => !s)}
           autoComplete="new-password"
           minLength={8}
           disabled={submitting || success}
@@ -147,48 +140,6 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
           </Button>
         </div>
       </form>
-    </div>
-  );
-}
-
-interface PasswordFieldProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  show: boolean;
-  onToggleShow: () => void;
-  autoComplete: string;
-  minLength?: number;
-  disabled?: boolean;
-}
-
-function PasswordField({
-  id, label, value, onChange, show, onToggleShow, autoComplete, minLength, disabled,
-}: PasswordFieldProps) {
-  return (
-    <div className="auth-field">
-      <label htmlFor={id}>{label}</label>
-      <div className="auth-input-wrapper">
-        <Lock size={18} className="auth-input-icon" />
-        <input
-          id={id}
-          type={show ? 'text' : 'password'}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          autoComplete={autoComplete}
-          minLength={minLength}
-          disabled={disabled}
-        />
-        <button
-          type="button"
-          className="auth-toggle-password"
-          onClick={onToggleShow}
-          tabIndex={-1}
-        >
-          {show ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
     </div>
   );
 }

@@ -9,12 +9,8 @@
  * Rendered only on frameless desktop (Windows/Linux) — see `showWindowControls`.
  */
 
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { platform, type ResizeDir as Dir } from '../platform';
 import './ResizeHandles.css';
-
-type Dir =
-  | 'North' | 'South' | 'East' | 'West'
-  | 'NorthEast' | 'NorthWest' | 'SouthEast' | 'SouthWest';
 
 const HANDLES: { dir: Dir; cls: string }[] = [
   { dir: 'North', cls: 'rh-n' },
@@ -32,7 +28,7 @@ export function ResizeHandles() {
     // Only the primary button starts a resize.
     if (e.button !== 0) return;
     e.preventDefault();
-    getCurrentWindow().startResizeDragging(dir).catch(() => {});
+    platform.window.startResizeDragging(dir).catch(() => {});
   };
 
   return (

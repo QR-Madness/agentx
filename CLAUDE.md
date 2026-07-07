@@ -125,6 +125,7 @@ touching a surface. The rules that must not drift:
 - Multi-server: `ServerContext` app-wide; `lib/api` typed client facade; `lib/hooks.ts` data hooks on the `useApi<T>` factory; `AgentProfileContext` for profiles.
 - **Add a theme = one entry in `THEMES`** (`lib/theme.ts`) — pickers iterate the registry; a vitest enforces cross-theme token parity; glow tokens use a transparent shadow, never bare `none`.
 - API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`; surface via `useNotify().notifyError(err)` (toasts); inline errors only for form-field validation.
+- **Two shells (desktop + web/PWA)** — one React app, gated by compile-time `__IS_TAURI__`. **Rule:** `@tauri-apps/*` is imported **only** under `src/platform/` (capability façade `platform.opener`/`platform.window`; `importBoundary.test.ts` fails on any stray import, keeping the web bundle Tauri-free). PWA shell in `src/pwa/`; share-a-server **connection links** in `lib/connectionString.ts` (`#connect=…`) → `ConnectGate`. Full detail: [`Development-Notes.md`](Development-Notes.md) → Client Surface Map.
 
 #### Styling (Tailwind v4 + design tokens)
 
