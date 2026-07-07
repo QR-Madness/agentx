@@ -483,6 +483,8 @@ SSE events in order:
 
 The streaming endpoint supports the same tool-use loop as the non-streaming endpoint (up to 10 rounds). Memory storage happens after the stream completes.
 
+During a delegation (`delegation_*` events — see the [Agent Teams guide](../features/multi-agent.md)), a specialist's `exhibit` and `workspace_attached` events pass through **top-level** so the client renders them like any exhibit; `delegation_complete` carries an optional `exhibits` array (cap 5) used to rebuild the cards on conversation restore.
+
 **Detached execution.** The run is driven by a server-side daemon thread that fans SSE events into a Redis stream and persists turns on completion — independent of the HTTP connection. Closing or switching the tab does **not** stop the run; it plays to completion and can be re-attached. This is what prevents the in-flight response (and, for a new chat, the whole conversation) from being lost on disconnect.
 
 **Example with curl:**

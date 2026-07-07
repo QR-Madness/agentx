@@ -126,7 +126,17 @@ In addition to the standard chat SSE events, delegations emit:
 | `delegation_chunk` | `delegation_id`, `target_agent_id`, `content` (streamed specialist tokens) |
 | `delegation_tool_call` | `delegation_id`, `target_agent_id`, `tool`, `tool_call_id`, `arguments` |
 | `delegation_tool_result` | `delegation_id`, `target_agent_id`, `tool`, `content`, `success`, `duration_ms` |
-| `delegation_complete` | `delegation_id`, `target_agent_id`, `status`, `error`, `result_preview` |
+| `delegation_complete` | `delegation_id`, `target_agent_id`, `status`, `error`, `result_preview`, `exhibits?` (wires for exhibits produced inside the delegation, cap 5) |
+
+Multimodal specialist output passes through: a specialist's `exhibit` and
+`workspace_attached` events are forwarded **top-level, unchanged** (the image/exhibit
+renders under the delegation card, and workspace auto-attach works exactly like the main
+loop). The delegating agent's tool result carries an "already displayed" note so it
+doesn't re-invent image URLs, and the wires are persisted as `present_exhibit` turns so
+reloaded conversations rebuild the cards. Specialist internal tools run under the
+specialist's own identity (usage attribution) with the conversation's user/workspace
+inherited, and the specialist profile's `allowed_tools`/`blocked_tools` gating applies
+inside delegations.
 
 ## Storage & API
 
