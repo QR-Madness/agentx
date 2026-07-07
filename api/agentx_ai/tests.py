@@ -312,6 +312,36 @@ class MCPOAuthTest(TestCase):
                 self.assertTrue(oauth_storage.clear_oauth_state("my server!"))
                 self.assertIsNone(asyncio.run(store.get_tokens()))
 
+    def test_token_storage_persists_absolute_expiry(self) -> None:
+        # `expires_in` is relative to issue time and can't tell a restarted
+        # process if a token is still good — so set_tokens also persists an
+        # absolute `expires_at` that the loader restores to drive a headless
+        # refresh instead of a stale-bearer → 401 → interactive re-auth.
+        import asyncio
+        import tempfile
+        import time
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.shared.auth import OAuthToken
+        from agentx_ai.mcp import oauth_storage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                store = oauth_storage.FileTokenStorage("srv")
+                # No tokens yet, and a legacy-style read → no expiry.
+                self.assertIsNone(store.read_token_expiry())
+                before = time.time()
+                asyncio.run(store.set_tokens(OAuthToken(
+                    access_token="at", token_type="Bearer", refresh_token="rt", expires_in=3600,  # noqa: S106
+                )))
+                exp = store.read_token_expiry()
+                assert exp is not None
+                self.assertGreaterEqual(exp, before + 3600 - 2)
+                self.assertLessEqual(exp, time.time() + 3600 + 2)
+                # A token without expires_in drops the absolute expiry.
+                asyncio.run(store.set_tokens(OAuthToken(access_token="at2", token_type="Bearer")))  # noqa: S106
+                self.assertIsNone(store.read_token_expiry())
+
     def test_token_storage_preregistered_seed(self) -> None:
         import asyncio
         import tempfile

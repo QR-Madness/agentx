@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +125,26 @@ class FileTokenStorage:
         # No exclude_none: required-but-nullable fields (e.g. client_info's
         # redirect_uris) must survive the round-trip or validation fails.
         data["tokens"] = tokens.model_dump(mode="json")
+        # Persist the ABSOLUTE expiry. `expires_in` is relative to issue time,
+        # so on its own it can't tell a restarted process whether the token is
+        # still good — and the SDK's `_initialize` doesn't restore expiry. We
+        # capture it here (tokens are freshly issued at set-time) so the loader
+        # can drive a proactive, headless refresh instead of a stale bearer →
+        # 401 → interactive re-auth. See `read_token_expiry`.
+        if tokens.expires_in is not None:
+            data["expires_at"] = time.time() + int(tokens.expires_in)
+        else:
+            data.pop("expires_at", None)
         self._write(data)
+
+    def read_token_expiry(self) -> float | None:
+        """Absolute Unix expiry persisted alongside the tokens (None if unknown).
+
+        `None` means either no tokens or a legacy file written before expiry was
+        persisted — the loader treats that as "refresh proactively" rather than
+        trusting a possibly-stale access token.
+        """
+        return self._read().get("expires_at")
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         raw = self._read().get("client_info")

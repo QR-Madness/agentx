@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -273,6 +274,35 @@ class MCPClientManager:
         from .oauth_flow import publish_authorization_url
         from .oauth_storage import FileTokenStorage
 
+        class _RestoringOAuthProvider(OAuthClientProvider):
+            """OAuthClientProvider that restores token expiry on cold start.
+
+            The SDK's ``_initialize`` loads stored tokens but NOT their expiry
+            (``token_expiry_time`` stays ``None``), so a restarted process treats
+            an expired access token as valid, sends it, gets a 401, and falls
+            into the *full interactive* auth flow instead of a headless refresh —
+            defeating the whole point of a stored refresh_token. We restore the
+            persisted absolute expiry so ``is_token_valid()`` is accurate and the
+            SDK refreshes proactively (RFC 6749 §6) via the refresh_token before
+            ever sending a stale bearer.
+            """
+
+            async def _initialize(self) -> None:
+                await super()._initialize()
+                tok = self.context.current_tokens
+                if not (tok and tok.access_token):
+                    return
+                storage = self.context.storage
+                expires_at = storage.read_token_expiry() if isinstance(storage, FileTokenStorage) else None
+                # Legacy token files (written before expiry was persisted) have
+                # no absolute expiry — force a proactive refresh rather than risk
+                # a stale bearer → 401 → interactive re-auth. A live refresh_token
+                # reconnects headlessly; a dead one falls through to a re-auth
+                # prompt, which is the correct outcome.
+                self.context.token_expiry_time = (
+                    expires_at if expires_at is not None else time.time() - 1
+                )
+
         callback_url = oauth_callback_url()
         metadata = OAuthClientMetadata.model_validate({
             "client_name": "AgentX",
@@ -303,7 +333,7 @@ class MCPClientManager:
                     "connect it from the Toolkit page to sign in."
                 )
 
-        return OAuthClientProvider(
+        return _RestoringOAuthProvider(
             server_url=config.require_url(),
             client_metadata=metadata,
             storage=storage,
