@@ -123,7 +123,7 @@ def assemble_ledger(
     new_message: Message,
     context_window: int,
     reserved_tokens: int,
-    verbatim_ratio: float = 0.7,
+    verbatim_ratio: float = 0.9,
     recent_floor: int = 4,
     history_priority: int = 50,
 ) -> LedgerResult:

@@ -636,7 +636,12 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
 
         if (data.session_id) optsRef.current.onSessionId?.(data.session_id);
         if (data.context_window && data.context_used) {
-          optsRef.current.onContextInfo?.({ window: data.context_window, used: data.context_used });
+          optsRef.current.onContextInfo?.({
+            window: data.context_window,
+            used: data.context_used,
+            summarized: data.context_summarized,
+            droppedTurns: data.context_dropped_turns,
+          });
         }
       },
 
