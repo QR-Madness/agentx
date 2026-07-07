@@ -1,13 +1,13 @@
 /**
- * contextChipState — pure display logic for the composer context chip.
+ * contextChipState — pure display logic for the context-usage indicator that
+ * sits beside the composer's draft-message token estimate.
  *
- * The chip is the single context-usage indicator (it replaced the header
- * usage bar). It is shown **whenever the model's window is known** — including
- * a brand-new conversation at 0% — so the user always has a read on how full
- * the context is. It only needs the window: `used` defaults to 0 (a fresh chat
- * that hasn't completed a turn yet). Near the ceiling it switches to a warn
- * state with a hint that older turns are summarized automatically (the server
- * compresses just before the context limit — see context.verbatim_budget_ratio).
+ * Shown **whenever the model's window is known** — including a brand-new
+ * conversation at 0% — so the user always has a read on how full the context
+ * is. It only needs the window: `used` defaults to 0 (a fresh chat that hasn't
+ * completed a turn yet). Near the ceiling it switches to a warn state with a
+ * hint that older turns are summarized automatically (the server compresses
+ * just before the context limit — see context.verbatim_budget_ratio).
  */
 
 export interface ChipContextInfo {
@@ -18,7 +18,7 @@ export interface ChipContextInfo {
 }
 
 export interface ContextChipState {
-  /** e.g. "62% ctx" */
+  /** e.g. "62% context" */
   label: string;
   /** Warn styling (composer-chip warn) at high usage. */
   warn: boolean;
@@ -39,7 +39,7 @@ export function contextChipState(info: ChipContextInfo | null | undefined): Cont
   const pct = Math.min(Math.round(ratio * 100), 100);
   const tokens = `${used.toLocaleString()} / ${info.window.toLocaleString()} tokens`;
   if (ratio < WARN_AT) {
-    return { label: `${pct}% ctx`, warn: false, title: `Context: ${tokens}` };
+    return { label: `${pct}% context`, warn: false, title: `Context: ${tokens}` };
   }
   let title = `Context ${pct}% full — older turns are summarized automatically (${tokens})`;
   if (info.droppedTurns && info.droppedTurns > 0) {
@@ -47,5 +47,5 @@ export function contextChipState(info: ChipContextInfo | null | undefined): Cont
   } else if (info.summarized) {
     title += ' · summary active';
   }
-  return { label: `${pct}% ctx`, warn: true, title };
+  return { label: `${pct}% context`, warn: true, title };
 }

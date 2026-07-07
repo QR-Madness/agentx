@@ -10,7 +10,6 @@ import {
   Square,
   ChevronUp,
   ChevronDown,
-  Layers,
   Sparkles,
   Workflow as WorkflowIcon,
   Crown,
@@ -1169,20 +1168,6 @@ export function ChatPanel() {
               <span>{soloMode ? 'Solo' : 'Team'}</span>
             </button>
           )}
-
-          {/* Context chip — the single context-usage indicator (replaced the
-              header bar). Shown at all times (from 0% on a fresh chat); warns
-              near the ceiling with a hint that older turns are summarized
-              automatically. Display-only (tooltip carries detail). */}
-          {contextChip && (
-            <span
-              className={`composer-chip ${contextChip.warn ? 'warn' : ''}`}
-              title={contextChip.title}
-            >
-              <Layers size={12} />
-              <span>{contextChip.label}</span>
-            </span>
-          )}
         </div>
         {(pendingImages.length > 0 || uploadingImages > 0) && (
           <div className="composer-images">
@@ -1322,6 +1307,15 @@ export function ChatPanel() {
           <span className={input.length > 4000 ? 'warning' : ''}>
             {input.length} chars · ~{Math.ceil(input.length / 4)} tokens
           </span>
+          {/* Context usage sits beside the draft-message token estimate — a
+              fitting, non-invasive home (it replaced the composer chip). Shown
+              whenever the model window is known; warns near the ceiling with a
+              hint that older turns are summarized automatically. */}
+          {contextChip && (
+            <span className={contextChip.warn ? 'warning' : ''} title={contextChip.title}>
+              {' · '}{contextChip.label}
+            </span>
+          )}
         </div>
       </div>
 

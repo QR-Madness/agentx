@@ -57,9 +57,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   replies and broken image links), survive reloads, and are correctly attributed.
 - **Agents no longer forget mid-conversation** — older turns are now summarized *before*
   they leave the context window (previously they could vanish uncovered at 70% usage or
-  after a restart), verbatim history runs to ~90% of the window, and a composer **context
-  chip** shows how full the context is at all times (from 0% on a fresh chat) with a
-  heads-up when compression kicks in.
+  after a restart), verbatim history runs to ~90% of the window, and the composer shows
+  how full the context is at all times (beside the message token estimate, from 0% on a
+  fresh chat) with a heads-up when compression kicks in.
 - **Added HTTPS scheme to Tauri app** - which will invalidate all local data on Windows.
 - **Windows: Settings, Toolkit & profile editor open properly** — they collapsed to a
   thin line on WebView2 (full-screen surfaces were nested inside a centered dialog).

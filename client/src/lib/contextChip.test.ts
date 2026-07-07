@@ -11,19 +11,19 @@ describe('contextChipState', () => {
   it('shows at all times when the window is known, including a fresh chat at 0%', () => {
     // Brand-new conversation: used defaults to 0, chip still appears.
     expect(contextChipState({ window: 128_000 })).toEqual({
-      label: '0% ctx',
+      label: '0% context',
       warn: false,
       title: 'Context: 0 / 128,000 tokens',
     });
     // Low usage no longer hides it.
     const low = contextChipState({ window: 10_000, used: 900 });
-    expect(low).toEqual({ label: '9% ctx', warn: false, title: 'Context: 900 / 10,000 tokens' });
+    expect(low).toEqual({ label: '9% context', warn: false, title: 'Context: 900 / 10,000 tokens' });
   });
 
   it('shows a quiet percentage in the mid range', () => {
     const s = contextChipState({ window: 10_000, used: 6_200 });
     expect(s).toEqual({
-      label: '62% ctx',
+      label: '62% context',
       warn: false,
       title: 'Context: 6,200 / 10,000 tokens',
     });
@@ -32,7 +32,7 @@ describe('contextChipState', () => {
   it('warns from 75% with the summarization hint', () => {
     const s = contextChipState({ window: 10_000, used: 8_000 });
     expect(s?.warn).toBe(true);
-    expect(s?.label).toBe('80% ctx');
+    expect(s?.label).toBe('80% context');
     expect(s?.title).toContain('older turns are summarized automatically');
   });
 
@@ -46,6 +46,6 @@ describe('contextChipState', () => {
   });
 
   it('caps the label at 100%', () => {
-    expect(contextChipState({ window: 1_000, used: 1_500 })?.label).toBe('100% ctx');
+    expect(contextChipState({ window: 1_000, used: 1_500 })?.label).toBe('100% context');
   });
 });
