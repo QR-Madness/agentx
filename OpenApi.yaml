@@ -866,6 +866,13 @@ paths:
                         Route this turn to the agent with this Docker-style `agent_id`.
                         Resolution priority: `workflow_id` > `target_agent_id` >
                         `agent_profile_id` > default. An unknown id yields an SSE `error` event.
+                    disable_delegation:
+                      type: boolean
+                      default: false
+                      description: >-
+                        Per-conversation "Solo" mode: suppress ad-hoc delegation for
+                        this turn (no `delegate_to` tool, no roster prompt). Ignored
+                        when `workflow_id` is set — a team run is delegation.
       responses:
         '200':
           description: SSE stream
@@ -5348,6 +5355,20 @@ components:
           type: array
           items:
             type: string
+        available_for_delegation:
+          type: boolean
+          default: false
+          description: >-
+            When true, this profile is on the ad-hoc delegation roster — other
+            agents may hand it subtasks via `delegate_to`. Opt-in (default
+            false); the UI calls this "Join the team roster".
+        delegation_hint:
+          type: string
+          nullable: true
+          description: >-
+            One-line specialty shown to teammates deciding whom to delegate
+            to (roster prompt + `delegate_to` target list). Falls back to
+            `description` when unset. Trimmed; max 200 chars.
         is_default:
           type: boolean
         created_at:

@@ -325,6 +325,18 @@ def _resolve_delegation_tool(agent, active_workflow):
     return None
 
 
+def _adhoc_delegation_enabled(cfg, disable_delegation: bool) -> bool:
+    """Gate for attaching the ad-hoc delegation executor (Phase 16.4).
+
+    Config default is ON (safe: the roster is opt-in per profile); the
+    per-conversation Solo flag short-circuits it. Only consulted on the
+    non-workflow branch — a workflow (team) run IS delegation and ignores it.
+    """
+    if disable_delegation:
+        return False
+    return bool(cfg.get("alloy.allow_adhoc_delegation", True))
+
+
 def _build_delegation_roster_block(agent, active_workflow):
     """Roster nudge content for ad-hoc delegation, or None.
 
@@ -1264,6 +1276,9 @@ async def agent_chat_stream(request):
         use_memory = data.get("use_memory", True)
         workflow_id = data.get("workflow_id")  # Optional Agent Alloy workflow
         workspace_id = data.get("workspace_id")  # Optional attached document workspace
+        # Per-conversation Solo mode: suppress ad-hoc delegation for this turn
+        # (tool + roster). Ignored under a workflow — a team run IS delegation.
+        disable_delegation = bool(data.get("disable_delegation", False))
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -1462,7 +1477,7 @@ async def agent_chat_stream(request):
         elif agent_profile is not None:
             from .config import get_config_manager
             cfg = get_config_manager()
-            if cfg.get("alloy.allow_adhoc_delegation", False):
+            if _adhoc_delegation_enabled(cfg, disable_delegation):
                 others = [
                     p for p in profile_manager.list_profiles()
                     if getattr(p, "agent_id", None) and p.agent_id != agent_profile.agent_id

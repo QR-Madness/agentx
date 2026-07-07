@@ -191,10 +191,12 @@ class AgentProfile(BaseModel):
     )
 
     # Delegation (Phase 16.4): when true, this profile is offered as an ad-hoc
-    # `delegate_to` target to other agents. Default true keeps existing behavior
-    # (all profiles were delegable); turn off to hide a profile from delegation.
+    # `delegate_to` target to other agents. Default FALSE — the team roster is
+    # opt-in (pairs with `alloy.allow_adhoc_delegation` defaulting ON: the
+    # feature is live, but nothing delegates until profiles join the roster).
+    # Profiles saved before this flip carry their explicit persisted value.
     available_for_delegation: bool = Field(
-        True,
+        False,
         description="Whether other agents may delegate to this profile (ad-hoc delegation)",
     )
     # One-line specialty surfaced to teammates deciding whom to delegate to — shown

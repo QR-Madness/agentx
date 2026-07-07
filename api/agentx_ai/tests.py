@@ -5840,6 +5840,53 @@ class DelegatableProfileTest(TestCase):
         self.assertNotIn("generalist", tool["description"])   # hint wins
         self.assertIn("essay critique", tool["description"])  # description fallback
 
+    def test_available_for_delegation_defaults_off(self):
+        """Roster is opt-in: a fresh profile is NOT a delegation target."""
+        from agentx_ai.agent.models import AgentProfile
+        p = AgentProfile(id="n", name="N", agent_id="new-one-two")  # type: ignore[call-arg]
+        self.assertFalse(p.available_for_delegation)
+
+    def test_adhoc_gate_predicate(self):
+        """_adhoc_delegation_enabled: config default ON; per-conversation Solo
+        flag short-circuits; an explicit persisted False stays off."""
+        from types import SimpleNamespace
+        from agentx_ai.views import _adhoc_delegation_enabled
+
+        store = {}
+        cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
+        # Key absent (existing installs whose config.json predates the flip) → ON.
+        self.assertTrue(_adhoc_delegation_enabled(cfg, disable_delegation=False))
+        # Solo flag wins regardless of config.
+        self.assertFalse(_adhoc_delegation_enabled(cfg, disable_delegation=True))
+        # Explicitly persisted off stays off.
+        store["alloy.allow_adhoc_delegation"] = False
+        self.assertFalse(_adhoc_delegation_enabled(cfg, disable_delegation=False))
+
+    def test_workflow_delegation_unaffected_by_solo_flag(self):
+        """Scope rule: the Solo flag gates ad-hoc only. A workflow supervisor
+        still gets its delegate_to tool — the flag is not an input to the
+        workflow branch of _resolve_delegation_tool at all."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from agentx_ai.views import _resolve_delegation_tool
+
+        member = SimpleNamespace(agent_id="spec-aa-bb", delegation_hint="analysis")
+        workflow = SimpleNamespace(specialists=lambda: [member])
+        agent = SimpleNamespace(
+            config=SimpleNamespace(agent_id="lead-cc-dd"),
+            _active_alloy_executor=None,  # Solo turn: no ad-hoc executor attached
+        )
+        profiles = [SimpleNamespace(agent_id="spec-aa-bb", name="Spec", delegation_hint=None)]
+        with patch(
+            "agentx_ai.agent.profiles.get_profile_manager",
+            return_value=SimpleNamespace(list_profiles=lambda: profiles),
+        ):
+            desc = _resolve_delegation_tool(agent, workflow)
+        assert desc is not None
+        self.assertEqual(
+            desc["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
+        )
+
 
 class AdhocRosterPromptTest(TestCase):
     """Ad-hoc delegation roster block: the system-prompt nudge that makes
