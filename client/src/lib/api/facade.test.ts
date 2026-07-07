@@ -51,6 +51,7 @@ describe('api facade', () => {
         "authStatus",
         "briefTurn",
         "cancelChatRun",
+        "cancelMCPServerAuth",
         "cancelPlan",
         "changePassword",
         "chat",
