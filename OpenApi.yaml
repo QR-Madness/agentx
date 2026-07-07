@@ -846,6 +846,10 @@ paths:
         the client shows as a live line; it rides the run's event bus so it replays on
         re-attach. The `steer` event (`{ id, message }`) echoes a user message folded into
         the running turn via the steer endpoint (live steering).
+        The `done` event carries context telemetry for the client's context chip:
+        `context_window`/`context_used` (tokens), `context_summarized` (a rolling summary
+        covers older turns) and `context_dropped_turns` (verbatim turns dropped by the
+        ledger this turn; 0 when everything fit).
         The `exhibit` event carries a declarative, agent-authored content tree
         (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
         calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),

@@ -7981,6 +7981,147 @@ class ConversationContextTest(TestCase):
             self.assertEqual(len(s.messages), 4)  # trimmed to the recent floor
             set_sum.assert_called_once()
 
+    # ---- context integrity (INV-CTX-1): JIT pre-assembly summary coverage ----
+
+    def _coverage_fixture(self, n_history=20, msg_chars=400):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from agentx_ai.agent.session import Session
+        from agentx_ai.providers.base import Message, MessageRole
+
+        session = Session(id="cv")
+        for i in range(n_history):
+            session.add_message(Message(
+                role=MessageRole.USER if i % 2 == 0 else MessageRole.ASSISTANT,
+                content=f"turn-{i} " + ("y" * msg_chars),
+            ))
+        session.add_message(Message(role=MessageRole.USER, content="the new question"))
+        history = session.get_messages()[:-1]
+        blocks = [SimpleNamespace(content="system block " * 10)]
+        agent = SimpleNamespace(
+            _session_manager=SimpleNamespace(maybe_update_summary=AsyncMock(return_value=True)),
+        )
+        store = {}
+        cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
+        return session, history, blocks, agent, cfg
+
+    def _run_coverage(self, session, history, blocks, agent, cfg, *, window, reserved=100):
+        import asyncio
+        from agentx_ai.views import _ensure_summary_coverage
+        return asyncio.run(_ensure_summary_coverage(
+            agent, session, blocks, history,
+            new_message_content="the new question",
+            context_window=window,
+            reserved_tokens=reserved,
+            cfg=cfg,
+        ))
+
+    def test_jit_coverage_noop_under_budget(self):
+        """History fits → no summary call, no digest, history unchanged."""
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1_000_000)
+        self.assertIs(out, history)
+        self.assertIsNone(digest)
+        agent._session_manager.maybe_update_summary.assert_not_called()
+
+    def test_jit_coverage_sized_to_history_budget(self):
+        """Over budget → the summary refresh is sized to THIS turn's real
+        history budget (input budget minus new message and block tokens),
+        slightly under so the kept tail fits; refreshed history is returned."""
+        from agentx_ai.agent.context_ledger import estimate_text_tokens
+
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        window, reserved = 1000, 100
+        out, digest = self._run_coverage(session, history, blocks, agent, cfg,
+                                         window=window, reserved=reserved)
+        self.assertIsNone(digest)
+        input_budget = min(int(window * 0.9), window - reserved)
+        expected_budget = (
+            input_budget
+            - estimate_text_tokens("the new question")
+            - estimate_text_tokens(blocks[0].content)
+        )
+        call = agent._session_manager.maybe_update_summary.call_args
+        self.assertEqual(call.args, ("cv",))
+        self.assertEqual(call.kwargs["token_threshold"], max(1, int(expected_budget * 0.9)))
+        # Session wasn't actually trimmed by the mock, so the refreshed history
+        # is everything except the just-added user message.
+        self.assertEqual(len(out), len(session.get_messages()) - 1)
+
+    def test_jit_coverage_failure_produces_digest(self):
+        """Summarizer unavailable while over budget → deterministic digest of
+        the turns that would drop (never silent loss); session untrimmed."""
+        from unittest.mock import AsyncMock
+
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        agent._session_manager.maybe_update_summary = AsyncMock(return_value=False)
+        before = len(session.messages)
+        out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1000)
+        self.assertIs(out, history)
+        assert digest is not None
+        self.assertIn("compact fallback", digest)
+        self.assertIn("turn-0", digest)          # the oldest turn is covered
+        self.assertEqual(len(session.messages), before)  # nothing trimmed
+
+    def test_jit_coverage_respects_disable_flag(self):
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        cfg_store = {"context.preassembly_summary_enabled": False}
+        from types import SimpleNamespace
+        cfg = SimpleNamespace(get=lambda key, default=None: cfg_store.get(key, default))
+        out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1000)
+        self.assertIs(out, history)
+        self.assertIsNone(digest)
+        agent._session_manager.maybe_update_summary.assert_not_called()
+
+    def test_rehydrate_wires_max_rows_and_flags_overflow(self):
+        """Row cap hit with no persisted summary → history_overflow flagged
+        (the JIT summarizer backfills next turn); the max_rows knob is passed
+        through to the reader."""
+        from unittest.mock import patch
+        from agentx_ai.agent.session import Session
+        from agentx_ai.agent.conversation_history import hydrate_session_from_history
+
+        rows = [("assistant", "A2"), ("user", "U2"), ("assistant", "A1"), ("user", "U1")]
+        seen_max: list[int] = []
+
+        def reader(cid, n):
+            seen_max.append(n)
+            return rows[:n]
+
+        with patch("agentx_ai.agent.conversation_summary_storage.get_summary",
+                   return_value=None):
+            s = Session(id="cap")
+            n = hydrate_session_from_history(
+                s, "cap", token_budget=10_000_000, max_rows=4, reader=reader)
+        self.assertEqual(n, 4)
+        self.assertEqual(seen_max, [4])
+        self.assertTrue(s.metadata.get("history_overflow"))
+
+        # Cap NOT hit → no flag.
+        with patch("agentx_ai.agent.conversation_summary_storage.get_summary",
+                   return_value=None):
+            s2 = Session(id="ok")
+            hydrate_session_from_history(
+                s2, "ok", token_budget=10_000_000, max_rows=10, reader=reader)
+        self.assertFalse(s2.metadata.get("history_overflow", False))
+
+        # Summary restored → covered, no flag even at the cap.
+        with patch("agentx_ai.agent.conversation_summary_storage.get_summary",
+                   return_value="covered"):
+            s3 = Session(id="sum")
+            hydrate_session_from_history(
+                s3, "sum", token_budget=10_000_000, max_rows=4, reader=reader)
+        self.assertFalse(s3.metadata.get("history_overflow", False))
+
+    def test_context_config_defaults_decoupled(self):
+        """The verbatim ceiling (0.9) and the post-turn summary trigger (0.85)
+        are separate knobs; the JIT backstop ships ON (experimental-on)."""
+        from agentx_ai.config import DEFAULT_CONFIG
+        ctx = DEFAULT_CONFIG["context"]
+        self.assertEqual(ctx["verbatim_budget_ratio"], 0.9)
+        self.assertEqual(ctx["summary_trigger_ratio"], 0.85)
+        self.assertTrue(ctx["preassembly_summary_enabled"])
+
 
 class TokenEstimatorTest(TestCase):
     """Foundation #6 — the shared tiktoken-backed token estimator.

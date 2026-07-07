@@ -29,6 +29,22 @@
 > follow-ups (`scratchpad_note`, `forget`/`remember_this`/provenance, cached recap), and the
 > per-profile internal-tool gating UI (18.9.x). All shipped — see roadmap.
 
+### 18.17 Context integrity (INV-CTX-1) — ✅ Complete `[v0.21.173]`
+
+> Fix for total mid-conversation recall loss: history dropped at 70% of the window while the
+> rolling summary was reactive (post-turn) — the first over-budget turn lost turns with zero
+> coverage, and a cold rehydrate before any summary persisted lost them entirely.
+
+- [x] Verbatim ceiling 0.7 → **0.9** (compress just before the limit), decoupled from the new
+      post-turn pre-warm trigger `context.summary_trigger_ratio` (0.85).
+- [x] **JIT pre-assembly summarization** (`views.py::_ensure_summary_coverage`): summary sized to
+      exactly what `fit_history` drops this turn, registered the same turn; deterministic
+      `history_digest` block fallback when the summarizer is unavailable.
+- [x] Rehydration: `context.rehydrate_max_turns` wired (was dead); `history_overflow` flag when
+      the row cap is hit uncovered.
+- [x] `done` carries `context_summarized`/`context_dropped_turns`; composer **context chip**
+      (hidden <50%, % ≥50%, warn + summarization hint ≥75%) replaced the header usage bar.
+
 ### 18.13 Layered Prompt Composer ("Prompt Stack") — ✅ Complete `[v0.21.47]`
 
 > Replace the single-base-prompt model with a durable, block-based stack of editable

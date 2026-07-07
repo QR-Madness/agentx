@@ -48,7 +48,7 @@ interface ConversationContextValue {
   setActiveTabModel: (model: string | null) => void;
 
   // Per-tab context-window usage indicator
-  setTabContextInfo: (tabId: string, info: { window: number; used: number } | null) => void;
+  setTabContextInfo: (tabId: string, info: { window: number; used: number; summarized?: boolean; droppedTurns?: number } | null) => void;
 
   // Server-side conversation history
   serverConversations: ConversationSummary[];

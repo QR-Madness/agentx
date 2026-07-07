@@ -377,6 +377,7 @@ def hydrate_session_from_history(
     conversation_id: str,
     *,
     token_budget: int,
+    max_rows: int | None = None,
     reader: TurnReader | None = None,
 ) -> int:
     """Populate an *empty, not-yet-hydrated* session from durable history (once).
@@ -384,11 +385,25 @@ def hydrate_session_from_history(
     Idempotent: no-ops when the session already has messages (an active in-process
     conversation) or was already hydrated this lifetime — so it never clobbers live
     state or double-loads. Returns the number of turns loaded.
+
+    ``max_rows`` defaults to ``context.rehydrate_max_turns`` (the knob was
+    previously defined but never wired — hydrate was silently bound by the
+    module ``_MAX_ROWS``). When the row cap is hit AND no persisted summary was
+    restored, ``session.metadata["history_overflow"]`` is set so the coverage
+    gap is surfaced (INV-CTX-1) — the JIT pre-assembly summarizer backfills the
+    summary on the next turn instead of the elder turns silently vanishing.
     """
     if session is None or session.messages or session.metadata.get("hydrated"):
         return 0
     # Mark first so a history-less conversation isn't re-queried every turn.
     session.metadata["hydrated"] = True
+
+    if max_rows is None:
+        try:
+            from ..config import get_config_manager
+            max_rows = int(get_config_manager().get("context.rehydrate_max_turns", _MAX_ROWS))
+        except Exception:  # pragma: no cover - defensive
+            max_rows = _MAX_ROWS
 
     # Restore the persisted rolling summary (covers turns older than the budget),
     # unless the live session already carries one.
@@ -401,10 +416,20 @@ def hydrate_session_from_history(
         except Exception as e:  # pragma: no cover - Redis offline
             logger.debug(f"summary restore skipped: {e}")
 
-    msgs = load_recent_turns(conversation_id, token_budget=token_budget, reader=reader)
+    msgs = load_recent_turns(
+        conversation_id, token_budget=token_budget, max_rows=max_rows, reader=reader
+    )
     if msgs:
         session.messages.extend(msgs)
         logger.info(
             f"Rehydrated {len(msgs)} prior turns into session '{conversation_id}'"
+        )
+    # Cap hit with no summary restored → turns beyond the cap have NO coverage.
+    # Flag it rather than truncating silently; the JIT summarizer picks it up.
+    if len(msgs) >= max_rows and not session.summary:
+        session.metadata["history_overflow"] = True
+        logger.warning(
+            f"Rehydration hit the {max_rows}-row cap for '{conversation_id}' with no "
+            "persisted summary — flagged history_overflow (JIT summary will backfill)"
         )
     return len(msgs)

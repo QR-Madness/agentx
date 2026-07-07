@@ -27,6 +27,7 @@ import {
   UserX,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { contextChipState } from '../../lib/contextChip';
 import { MessageImages } from './MessageImages';
 import type { ChatImageRef } from '../../lib/api/types';
 import { RelayMenu } from './relay/RelayMenu';
@@ -206,6 +207,7 @@ export function ChatPanel() {
   // doesn't yank the viewport away from a user reading older messages.
   const [isPinned, setIsPinned] = useState(true);
   const contextInfo = activeTab?.contextInfo ?? null;
+  const contextChip = contextChipState(contextInfo);
   const [showRelay, setShowRelay] = useState(false);
   const [hasUnreadBgJobs, setHasUnreadBgJobs] = useState(false);
   // Bumped each time the agent saves a checkpoint mid-stream; the badge
@@ -931,20 +933,7 @@ export function ChatPanel() {
             </button>
           )}
           <span className="chat-panel-title">{activeTab.title}</span>
-          {contextInfo && (
-            <div className="context-usage" title={`${contextInfo.used.toLocaleString()} / ${contextInfo.window.toLocaleString()} tokens`}>
-              <Layers size={12} />
-              <div className="context-bar">
-                <div
-                  className="context-bar-fill"
-                  style={{ width: `${Math.min((contextInfo.used / contextInfo.window) * 100, 100)}%` }}
-                />
-              </div>
-              <span className="context-label">
-                {(contextInfo.used / 1000).toFixed(1)}k / {(contextInfo.window / 1000).toFixed(0)}k
-              </span>
-            </div>
-          )}
+          {/* Context usage moved to the composer context chip (one indicator). */}
           <CheckpointsBadge
             conversationId={activeTab.sessionId}
             flashSignal={checkpointSignal}
@@ -1172,6 +1161,20 @@ export function ChatPanel() {
               {soloMode ? <UserX size={12} /> : <Users size={12} />}
               <span>{soloMode ? 'Solo' : 'Team'}</span>
             </button>
+          )}
+
+          {/* Context chip — the single context-usage indicator (replaced the
+              header bar). Hidden while usage is low; a quiet percentage from
+              50%; warns near the ceiling with a hint that older turns are
+              summarized automatically. Display-only (tooltip carries detail). */}
+          {contextChip && (
+            <span
+              className={`composer-chip ${contextChip.warn ? 'warn' : ''}`}
+              title={contextChip.title}
+            >
+              <Layers size={12} />
+              <span>{contextChip.label}</span>
+            </span>
           )}
         </div>
         {(pendingImages.length > 0 || uploadingImages > 0) && (
