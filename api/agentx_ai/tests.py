@@ -5944,7 +5944,7 @@ class AdhocRosterPromptTest(TestCase):
         from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
         with patch(
             "agentx_ai.agent.profiles.get_profile_manager",
-            return_value=SimpleNamespace(list_profiles=lambda: []),
+            return_value=SimpleNamespace(list_profiles=list),
         ):
             self.assertIsNone(build_adhoc_roster_prompt("self-aa-bb"))
 

@@ -461,7 +461,7 @@ Conversational interaction with session management.
 POST /api/agent/chat/stream
 ```
 
-Same request body as `/agent/chat`. Optional extras: `workflow_id` (run an Agent Alloy workflow), `target_agent_id` (route this turn to a specific agent by its Docker-style `agent_id`), `workspace_id` (attach a document workspace), and `images` (**vision input** — an array of `{workspace_id, doc_id, media_type}` refs to images already uploaded via `POST /agent/chat/images`). A vision-capable model receives the images as image blocks; a non-vision model gets the text only, with a `status` notice. An image-only turn may send an empty `message`. Routing priority: `workflow_id` > `target_agent_id` > `agent_profile_id` > default; an unknown `target_agent_id` yields an `error` event. Returns Server-Sent Events (SSE).
+Same request body as `/agent/chat`. Optional extras: `workflow_id` (run an Agent Alloy workflow — a "Team" in the UI), `target_agent_id` (route this turn to a specific agent by its Docker-style `agent_id`), `disable_delegation` (Solo mode — suppress ad-hoc delegation for this turn: no `delegate_to` tool, no roster prompt; ignored when `workflow_id` is set), `workspace_id` (attach a document workspace), and `images` (**vision input** — an array of `{workspace_id, doc_id, media_type}` refs to images already uploaded via `POST /agent/chat/images`). A vision-capable model receives the images as image blocks; a non-vision model gets the text only, with a `status` notice. An image-only turn may send an empty `message`. Routing priority: `workflow_id` > `target_agent_id` > `agent_profile_id` > default; an unknown `target_agent_id` yields an `error` event. Returns Server-Sent Events (SSE).
 
 **Response:** `Content-Type: text/event-stream`
 
@@ -788,6 +788,8 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
   "direct_mode": false,
   "allowed_tools": null,
   "blocked_tools": [],
+  "available_for_delegation": false,
+  "delegation_hint": null,
   "is_default": true,
   "created_at": "2026-04-01T12:00:00",
   "updated_at": "2026-04-01T12:00:00"
@@ -797,12 +799,19 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
 `POST` requires `name` (an `id` and `agent_id` are generated if omitted) and returns `201`.
 `PATCH` accepts a partial object; `agent_id` is immutable.
 
+`available_for_delegation` (opt-in, default `false`) puts the profile on the ad-hoc
+delegation roster ("Join the team roster" in the UI); `delegation_hint` is a one-line
+specialty shown to teammates deciding whom to delegate to (falls back to `description`;
+trimmed, max 200 chars).
+
 ---
 
 ## Multi-Agent (Agent Alloy)
 
 Supervisor + specialist workflows with delegation over shared memory channels (Phase 16, v1).
-See the [Multi-Agent feature guide](../features/multi-agent.md) for concepts.
+**"Agent Teams" is the user-facing name** for this system — routes, payloads, and config keys
+keep the `alloy` vocabulary. See the [Agent Teams feature guide](../features/multi-agent.md)
+for concepts.
 
 ```
 GET    /api/alloy/workflows
