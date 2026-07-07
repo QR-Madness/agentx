@@ -472,9 +472,12 @@ export interface AgentProfile {
   // means all tools enabled; blockedTools always wins.
   allowedTools?: string[] | null;
   blockedTools?: string[];
-  // Phase 16.4: when true, other agents may delegate to this profile (ad-hoc
-  // delegation). Defaults true server-side.
+  // Phase 16.4: when true, this profile is on the ad-hoc delegation roster —
+  // other agents may hand it subtasks. Opt-in (defaults false server-side).
   availableForDelegation?: boolean;
+  // One-line specialty shown to teammates deciding whom to delegate to.
+  // Falls back to `description` when unset.
+  delegationHint?: string | null;
   // Phase 16.6: optional ambassador section — present when this profile can act
   // as a parallel conversation interpreter.
   ambassador?: AmbassadorSection;
@@ -524,6 +527,7 @@ export interface AgentProfileCreate {
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;
+  delegation_hint?: string | null;
   // Phase 16.6 — ambassador section (snake_case body). null clears it.
   ambassador?: {
     enabled: boolean;

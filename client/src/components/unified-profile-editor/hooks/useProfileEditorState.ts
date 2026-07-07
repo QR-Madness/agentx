@@ -37,7 +37,9 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   // non-null array switches to whitelist mode. `blockedTools` always wins.
   const [allowedTools, setAllowedTools] = useState<string[] | null>(null);
   const [blockedTools, setBlockedTools] = useState<string[]>([]);
-  const [availableForDelegation, setAvailableForDelegation] = useState(true);
+  // Team roster (ad-hoc delegation) is opt-in: fresh profiles start off it.
+  const [availableForDelegation, setAvailableForDelegation] = useState(false);
+  const [delegationHint, setDelegationHint] = useState('');
   // Phase 16.6 — ambassador section: when enabled, this profile can act as a
   // parallel conversation interpreter (briefs turns without entering the chat).
   const [ambassadorEnabled, setAmbassadorEnabled] = useState(false);
@@ -83,7 +85,8 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setDirectMode(profile.directMode ?? false);
       setAllowedTools(profile.allowedTools ?? null);
       setBlockedTools(profile.blockedTools ?? []);
-      setAvailableForDelegation(profile.availableForDelegation ?? true);
+      setAvailableForDelegation(profile.availableForDelegation ?? false);
+      setDelegationHint(profile.delegationHint ?? '');
       setAmbassadorEnabled(profile.ambassador?.enabled ?? false);
       setAmbassadorBriefingPrompt(profile.ambassador?.briefingPrompt ?? '');
       setAmbassadorVerbosity(profile.ambassador?.verbosity ?? 'normal');
@@ -110,7 +113,8 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setDirectMode(false);
       setAllowedTools(null);
       setBlockedTools([]);
-      setAvailableForDelegation(true);
+      setAvailableForDelegation(false);
+      setDelegationHint('');
       setAmbassadorEnabled(false);
       setAmbassadorBriefingPrompt('');
       setAmbassadorVerbosity('normal');
@@ -177,6 +181,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     allowed_tools: allowedTools,
     blocked_tools: blockedTools,
     available_for_delegation: availableForDelegation,
+    delegation_hint: delegationHint.trim() || null,
     kind,
     // Ambassador config travels only on ambassador-kind profiles; null clears
     // any legacy section on a normal agent. Persona overrides: null rides the
@@ -232,7 +237,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   }, [
     name, avatar, description, tags, defaultModel, temperature, reasoningStrategy,
     baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools, directMode,
-    allowedTools, blockedTools, availableForDelegation, kind,
+    allowedTools, blockedTools, availableForDelegation, delegationHint, kind,
     ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
     voiceMode, speechModel, voice, transcriptionModel,
   ]);
@@ -303,6 +308,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
+    delegationHint, setDelegationHint,
     kind,
     ambassadorEnabled, setAmbassadorEnabled,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,

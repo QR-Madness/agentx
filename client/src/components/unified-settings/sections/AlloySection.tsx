@@ -31,7 +31,7 @@ export default function AlloySection() {
       const config = await api.getConfig();
       const a = (config.alloy || {}) as Partial<AlloySettings>;
       return {
-        allow_adhoc_delegation: a.allow_adhoc_delegation ?? false,
+        allow_adhoc_delegation: a.allow_adhoc_delegation ?? true,
         max_parallel_delegations: a.max_parallel_delegations ?? 3,
         max_delegation_depth: a.max_delegation_depth ?? 3,
         delegation_timeout_seconds: a.delegation_timeout_seconds ?? 300,

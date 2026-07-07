@@ -38,6 +38,7 @@ import { api } from '../../lib/api';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState } from './hooks/useProfileEditorState';
+import { useAgentProfile } from '../../contexts/AgentProfileContext';
 
 const panelVariants = {
   enter: (dir: number) => ({
@@ -170,6 +171,7 @@ export function ProfileContent({
     allowedTools, setAllowedTools,
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
+    delegationHint, setDelegationHint,
     kind,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
     ambassadorVerbosity, setAmbassadorVerbosity,
@@ -197,6 +199,26 @@ export function ProfileContent({
   const [modelCatalog, setModelCatalog] = useState<ModelInfo[]>([]);
   const isAmbassador = kind === 'ambassador';
   const accent = agentAccent(profile?.agentId ?? 'new');
+
+  // Team membership card: who else is already on the ad-hoc delegation roster
+  // (agent-kind, opted in, not this profile), plus the global gate so we can
+  // warn when roster membership would be inert.
+  const { profiles: allProfiles } = useAgentProfile();
+  const rosterPeers = allProfiles
+    .filter(p => p.kind === 'agent' && p.availableForDelegation && p.id !== profile?.id)
+    .map(p => p.name);
+  const [adhocDelegationEnabled, setAdhocDelegationEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.getConfig()
+      .then(cfg => {
+        if (cancelled) return;
+        const alloy = (cfg.alloy || {}) as { allow_adhoc_delegation?: boolean };
+        setAdhocDelegationEnabled(alloy.allow_adhoc_delegation ?? true);
+      })
+      .catch(() => { /* gate notice is best-effort — stay silent on failure */ });
+    return () => { cancelled = true; };
+  }, []);
   const [personaDefaults, setPersonaDefaults] = useState<{ briefing: string; qa: string; draft: string } | null>(null);
 
   useEffect(() => {
@@ -457,13 +479,13 @@ export function ProfileContent({
                     </div>
                   </ControlCard>
 
-                  {/* Delegation — agents only (ambassadors are never delegation targets) */}
+                  {/* Team membership — agents only (ambassadors are never delegation targets) */}
                   {!isAmbassador && (
-                  <ControlCard icon={<Share2 size={14} />} title="Delegation" summary={availableForDelegation ? 'available' : 'off'}>
+                  <ControlCard icon={<Share2 size={14} />} title="Team membership" summary={availableForDelegation ? 'in roster' : 'not in roster'}>
                     <label className="profile-toggle-row">
                       <span className="profile-toggle-label">
                         <Share2 size={15} />
-                        Available for delegation
+                        Join the team roster
                       </span>
                       <div className="profile-toggle-right">
                         <input
@@ -476,10 +498,39 @@ export function ProfileContent({
                       </div>
                     </label>
                     <span className="profile-form-hint">
-                      When on, other agents can hand subtasks to this profile via the
-                      <code> delegate_to </code> tool (requires ad-hoc delegation enabled
-                      in Settings → Multi-Agent).
+                      When on, other agents see this profile as a teammate and can hand it
+                      subtasks via the <code>delegate_to</code> tool.
                     </span>
+                    <div className="profile-form-field" style={{ marginTop: 12, opacity: availableForDelegation ? 1 : 0.55 }}>
+                      <label className="profile-form-label">Specialty</label>
+                      <textarea
+                        value={delegationHint}
+                        onChange={e => setDelegationHint(e.target.value)}
+                        placeholder="What this agent is best at — teammates read this when deciding whom to delegate to"
+                        rows={2}
+                        maxLength={200}
+                        disabled={!availableForDelegation}
+                        className="profile-system-prompt"
+                      />
+                      <span className="profile-form-hint">
+                        One line, shown in teammates' rosters. Leave empty to fall back to the
+                        profile description.
+                      </span>
+                    </div>
+                    <span className="profile-form-hint" style={{ marginTop: 10 }}>
+                      {rosterPeers.length > 0
+                        ? <>Current roster: {rosterPeers.join(', ')}{availableForDelegation ? ' — and this profile' : ''}.</>
+                        : availableForDelegation
+                          ? 'This profile is the only one on the roster so far.'
+                          : 'No other agents are on the roster yet.'}
+                    </span>
+                    {adhocDelegationEnabled === false && (
+                      <span className="profile-form-hint" style={{ marginTop: 6 }}>
+                        <AlertCircle size={12} style={{ verticalAlign: 'text-top', marginRight: 4 }} />
+                        Ad-hoc delegation is disabled globally (Settings → Agent Teams) — roster
+                        membership has no effect until it's re-enabled.
+                      </span>
+                    )}
                   </ControlCard>
                   )}
 

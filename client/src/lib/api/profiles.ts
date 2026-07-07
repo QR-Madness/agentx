@@ -23,6 +23,7 @@ interface RawAgentProfile {
   allowed_tools?: string[] | null;
   blocked_tools?: string[];
   available_for_delegation?: boolean;
+  delegation_hint?: string | null;
   ambassador?: {
     enabled?: boolean;
     briefing_prompt?: string;
@@ -62,7 +63,8 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
     directMode: p.direct_mode ?? false,
     allowedTools: p.allowed_tools ?? null,
     blockedTools: p.blocked_tools ?? [],
-    availableForDelegation: p.available_for_delegation ?? true,
+    availableForDelegation: p.available_for_delegation ?? false,
+    delegationHint: p.delegation_hint ?? null,
     ambassador: p.ambassador
       ? {
           enabled: p.ambassador.enabled ?? false,
