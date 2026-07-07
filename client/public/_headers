@@ -1,0 +1,7 @@
+# Keep the service worker + manifest revalidated so a redeploy propagates as a
+# PWA update (new sw.js -> onNeedRefresh -> "New version — Reload" toast).
+# Hashed assets/* are content-addressed and stay long-cached under Pages defaults.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

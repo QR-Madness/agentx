@@ -194,6 +194,26 @@ image) recreates whichever services actually changed. Dashboard **Up**/
 Schema migrations re-apply automatically on boot (idempotent). Your config and
 data persist under `./data`.
 
+## Web/PWA client (Cloudflare Pages)
+
+Everything above hosts the **API**. The desktop app and the **web/PWA client** are the same app —
+the web build is a static bundle you can host anywhere. We publish it to Cloudflare Pages at
+`agx.thejpnet.net`, driven from the repo Taskfile:
+
+```bash
+cd client && bunx wrangler login   # one-time (or set CLOUDFLARE_API_TOKEN)
+task client:deploy:pages           # builds client/dist, then `wrangler pages deploy`
+```
+
+The build reads `VITE_PUBLIC_APP_URL` (`client/.env.production`) so connection-share links — including
+ones copied from the desktop app, where the origin is the unshareable `tauri://localhost` — resolve to
+the hosted app. A redeploy ships a **PWA update automatically**: the new service worker surfaces a
+"New version — Reload" prompt.
+
+The PWA is a pure static client; it connects to whatever AgentX API a connection link (or the user)
+points it at. That API must allow the PWA origin — set `AGENTX_PUBLIC_HOST` (or list it in
+`CORS_ALLOWED_ORIGINS`) — and run with `AGENTX_AUTH_ENABLED=true` for public use.
+
 ## Documentation
 
 Full docs: https://agentx.thejpnet.net/docs/deployment

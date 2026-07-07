@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback. The app is a single-index SPA (page switching is
+# state-based; deep-linking uses a #connect= fragment), so any path serves the app.
+# If docs ever co-host on this project, add a `/docs/*` passthrough ABOVE this rule.
+/*    /index.html    200
