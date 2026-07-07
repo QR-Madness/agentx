@@ -330,29 +330,12 @@ button.toolkit-chip.solid:hover {
   color: var(--text-secondary);
   font-weight: 500;
 }
-.toolkit-form input,
-.toolkit-form select,
-.toolkit-form textarea {
-  background: var(--glass-layer-2);
-  border: 1px solid var(--accent-tint-soft);
-  border-radius: 10px;
-  padding: 9px 12px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.toolkit-form input:focus,
-.toolkit-form select:focus,
-.toolkit-form textarea:focus {
-  border-color: var(--cosmic-violet);
-  box-shadow: var(--border-glow-subtle);
-}
-.toolkit-form textarea {
+/* Form controls are the shared field primitives (Input/Textarea/Select/Switch/
+   SegmentedControl) — they carry their own chrome, so the form must NOT restyle
+   raw <input>/<select>/<textarea> or it would override that chrome. */
+.toolkit-form textarea.ax-field {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
-  resize: vertical;
   min-height: 90px;
 }
 .toolkit-form-row {
@@ -389,6 +372,84 @@ button.toolkit-chip.solid:hover {
   color: var(--text-primary);
   font-weight: 500;
   white-space: normal;
+}
+
+/* Switch row — label/help on the left, Switch pinned right (settings-style). */
+.toolkit-form .toolkit-switch-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.toolkit-form .toolkit-switch-row:hover {
+  border-color: var(--accent-tint-medium);
+  background: var(--glass-layer-3);
+}
+.toolkit-form .toolkit-switch-row > span {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ⓘ hint next to a field label */
+.toolkit-hint {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  color: var(--text-muted);
+  cursor: help;
+  vertical-align: middle;
+  transition: color 0.15s;
+}
+.toolkit-hint:hover,
+.toolkit-hint:focus-visible {
+  color: var(--text-secondary);
+  outline: none;
+}
+
+/* KEY / value / remove triplet inside a KV editor */
+.toolkit-kv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+/* Advanced disclosure */
+.toolkit-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.toolkit-advanced-toggle:hover { color: var(--text-primary); }
+.toolkit-advanced-toggle svg { transition: transform 0.2s; }
+.toolkit-advanced-toggle svg.open { transform: rotate(180deg); }
+.toolkit-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--accent-tint-soft);
+  padding-top: 14px;
 }
 
 .toolkit-error-banner {

@@ -252,12 +252,17 @@ under `data/mcp_oauth/` and refresh automatically.
 ```
 GET  /api/mcp/oauth/callback              # OAuth redirect target (public; state-validated)
 POST /api/mcp/servers/{name}/auth/reset   # forget tokens + registration (fresh sign-in)
+POST /api/mcp/servers/{name}/auth/cancel  # abort an in-flight sign-in (leaves stored tokens)
 ```
 
 The callback is the loopback redirect URI (RFC 8252) registered with the authorization
 server — override the advertised URL with `AGENTX_OAUTH_REDIRECT_URL` when the API is not
 on `http://localhost:12319`. Server payloads from `GET /api/mcp/servers` carry an
-`auth_state` object (`authorized` / `pending` / `error`) for OAuth servers.
+`auth_state` object (`authorized` / `pending` / `error`) for OAuth servers. `authorized`
+means real tokens are stored — not merely that a registration file exists (the SDK writes
+that at dynamic-registration time, before consent), so a cancelled or denied sign-in never
+reads as authorized. `auth/cancel` aborts the pending browser consent flow so a late
+completion can't retroactively flip the server to signed-in.
 
 ---
 

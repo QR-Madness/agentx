@@ -43,6 +43,10 @@ class PendingFlow:
     url_ready: threading.Event = field(default_factory=threading.Event)
     # Terminal error from the background connect task (shown in server status).
     error: str | None = None
+    # Set by an explicit user cancel (see cancel_flow): the background connect's
+    # done-callback must treat the resulting CancelledError as a quiet abort, not
+    # a "sign-in failed" error worth surfacing.
+    cancelled: bool = False
 
     @property
     def expired(self) -> bool:
@@ -152,6 +156,26 @@ def fail_flow(flow: PendingFlow, error: str) -> None:
         if not superseded:  # don't clobber a live retry's clean slate
             _LAST_ERROR[flow.server_name] = error
     flow.loop.call_soon_threadsafe(_cancel_future, flow.future)
+
+
+def cancel_flow(server_name: str) -> bool:
+    """Abort the current pending flow for a server (explicit user cancel).
+
+    Marks the flow ``cancelled`` (so the connect task's done-callback stays
+    quiet), drops its bookkeeping, and cancels its future. Records **no**
+    ``_LAST_ERROR`` — a cancel is not a failure. Identity-safe: only the flow
+    currently registered for the server is touched. Returns True if a pending
+    flow was cancelled.
+    """
+    with _LOCK:
+        flow = _BY_SERVER.pop(server_name, None)
+        if flow is None:
+            return False
+        flow.cancelled = True
+        if flow.state and _BY_STATE.get(flow.state) is flow:
+            _BY_STATE.pop(flow.state, None)
+    flow.loop.call_soon_threadsafe(_cancel_future, flow.future)
+    return True
 
 
 def last_error(server_name: str) -> str | None:

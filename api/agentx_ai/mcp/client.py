@@ -356,6 +356,12 @@ class MCPClientManager:
                 except Exception as persist_err:  # noqa: BLE001 - best-effort
                     logger.warning(f"Could not persist auto_connect for '{name}': {persist_err}")
             except Exception as e:  # noqa: BLE001 - background terminal state
+                # An explicit user cancel (cancel_flow) aborts the future; that
+                # is not a failure — stay quiet so the card doesn't flip to
+                # "sign-in failed". cancel_flow already dropped the bookkeeping.
+                if flow.cancelled:
+                    logger.info(f"OAuth connect for '{name}' cancelled by user")
+                    return
                 # A superseded attempt (future cancelled by a retry's begin_flow)
                 # dies late — fail_flow is identity-guarded so it never disturbs
                 # the newer pending flow.

@@ -483,6 +483,78 @@ class MCPOAuthTest(TestCase):
         self.assertTrue(resp.json()["cleared"])
         clear.assert_called_once_with("remote")
 
+    def test_has_oauth_tokens_requires_tokens_not_just_a_file(self) -> None:
+        # The SDK writes the per-server file at RFC 7591 registration time —
+        # before consent — so file existence is NOT proof of sign-in. Only
+        # stored tokens count as "authorized".
+        import asyncio
+        import tempfile
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+        from agentx_ai.mcp import oauth_storage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                store = oauth_storage.FileTokenStorage("srv")
+                # Registration only (pre-consent): file exists, but not signed in.
+                info = OAuthClientInformationFull(client_id="cid", client_secret=None, redirect_uris=None)
+                asyncio.run(store.set_client_info(info))
+                self.assertTrue(oauth_storage.has_oauth_state("srv"))
+                self.assertFalse(oauth_storage.has_oauth_tokens("srv"))
+                # Tokens land on real consent → authorized.
+                asyncio.run(store.set_tokens(OAuthToken(access_token="at", token_type="Bearer")))  # noqa: S106 — test fixture
+                self.assertTrue(oauth_storage.has_oauth_tokens("srv"))
+                # No file at all → not authorized.
+                self.assertFalse(oauth_storage.has_oauth_tokens("absent"))
+
+    def test_cancel_flow_aborts_without_recording_error(self) -> None:
+        import asyncio
+        import threading
+        import time
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow = oauth_flow.begin_flow("cxl", loop)
+            oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=cxl-st")
+            self.assertTrue(oauth_flow.cancel_flow("cxl"))
+            self.assertTrue(flow.cancelled)
+            self.assertIsNone(oauth_flow.get_flow("cxl"))      # bookkeeping dropped
+            self.assertIsNone(oauth_flow.last_error("cxl"))    # a cancel is not an error
+            # The future is cancelled (any callback_handler awaiter unblocks).
+            for _ in range(50):
+                if flow.future.cancelled():
+                    break
+                time.sleep(0.02)
+            self.assertTrue(flow.future.cancelled())
+            # Nothing pending now → cancel is a no-op.
+            self.assertFalse(oauth_flow.cancel_flow("cxl"))
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
+    def test_auth_cancel_endpoint(self) -> None:
+        with patch("agentx_ai.views.get_mcp_manager") as gm, \
+             patch("agentx_ai.mcp.oauth_flow.cancel_flow", return_value=True) as cxl:
+            manager = MagicMock()
+            manager.registry.get.return_value = MagicMock()
+            gm.return_value = manager
+            resp = self._client().post("/api/mcp/servers/remote/auth/cancel")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["cancelled"])
+        cxl.assert_called_once_with("remote")
+
+    def test_auth_cancel_endpoint_unknown_server(self) -> None:
+        with patch("agentx_ai.views.get_mcp_manager") as gm:
+            manager = MagicMock()
+            manager.registry.get.return_value = None
+            gm.return_value = manager
+            resp = self._client().post("/api/mcp/servers/nope/auth/cancel")
+        self.assertEqual(resp.status_code, 404)
+
 
 class MCPServerRegistryTest(TestCase):
     def test_server_config_creation(self) -> None:

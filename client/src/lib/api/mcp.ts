@@ -55,6 +55,15 @@ export const mcpApi = {
     });
   },
 
+  /** Abort an in-flight OAuth sign-in (the "Cancel" on the sign-in dialog) so a
+   *  late browser completion can't flip the server to "signed in". Stored
+   *  tokens (if any) are left intact — use resetMCPServerAuth to forget those. */
+  async cancelMCPServerAuth(server: string): Promise<{ status: string; server: string; cancelled: boolean }> {
+    return apiRequest(`/api/mcp/servers/${encodeURIComponent(server)}/auth/cancel`, {
+      method: 'POST',
+    });
+  },
+
   async connectAllMCPServers(): Promise<{ results: Record<string, { status: string; error?: string }> }> {
     return apiRequest('/api/mcp/connect', {
       method: 'POST',

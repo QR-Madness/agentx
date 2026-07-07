@@ -56,6 +56,26 @@ def has_oauth_state(server_name: str) -> bool:
     return _token_path(server_name).exists()
 
 
+def has_oauth_tokens(server_name: str) -> bool:
+    """True only when actual OAuth *tokens* are stored (not just a registration).
+
+    The SDK writes the per-server file at RFC 7591 dynamic-registration time
+    (``client_info`` only, *before* consent), so mere file existence is not
+    proof of sign-in — a cancelled/denied attempt leaves a token-less file
+    behind. This drives the "signed in" indicator; ``has_oauth_state`` (file
+    existence) is only for the reset/cleanup path.
+    """
+    path = _token_path(server_name)
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(data, dict) and data.get("tokens"))
+
+
 class FileTokenStorage:
     """``mcp.client.auth.TokenStorage`` over a per-server JSON file.
 

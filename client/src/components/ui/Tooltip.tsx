@@ -19,7 +19,10 @@ const TooltipContent = React.forwardRef<
     ref={ref}
     sideOffset={sideOffset}
     className={cn(
-      'z-50 overflow-hidden rounded-lg px-3 py-1.5 text-sm',
+      // Above the app's hand-rolled modal layer (Settings/Toolkit/Profile
+      // editors sit at z-index 2000-2200); a transient tooltip must never be
+      // occluded by the surface that launched it.
+      'z-[2400] overflow-hidden rounded-lg px-3 py-1.5 text-sm',
       'bg-[var(--surface-overlay)] text-[var(--text-primary)]',
       'border border-[var(--border-default)]',
       'shadow-md backdrop-blur-sm',

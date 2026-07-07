@@ -594,11 +594,13 @@ def _serialize_auth_state(config) -> dict | None:
     if not config.auth or config.auth.get("type") != "oauth":
         return None
     from .mcp import oauth_flow
-    from .mcp.oauth_storage import has_oauth_state
+    from .mcp.oauth_storage import has_oauth_tokens
 
     flow = oauth_flow.get_flow(config.name)
     return {
-        "authorized": has_oauth_state(config.name),
+        # Tokens present — not mere file existence (the SDK writes a token-less
+        # registration file at DCR time, before consent).
+        "authorized": has_oauth_tokens(config.name),
         "pending": bool(flow and flow.authorization_url and flow.error is None),
         "error": oauth_flow.last_error(config.name),
     }
@@ -921,6 +923,25 @@ def mcp_server_auth_reset(request, name: str):
     _refresh_connection(manager, name)  # drop the live session before forgetting tokens
     cleared = clear_oauth_state(name)
     return JsonResponse({"status": "reset", "server": name, "cleared": cleared})
+
+
+@csrf_exempt
+def mcp_server_auth_cancel(request, name: str):
+    """POST: abort an in-flight OAuth sign-in (the "Cancel" on the sign-in dialog).
+
+    Cancels the pending browser consent flow server-side so a late completion
+    can't flip the server to "signed in" after the user backed out. Leaves any
+    previously-stored tokens untouched (use auth/reset to forget those).
+    """
+    from .mcp import oauth_flow
+
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+    manager = get_mcp_manager()
+    if manager.registry.get(name) is None:
+        return json_error(f"Server '{name}' not found", status=404)
+    cancelled = oauth_flow.cancel_flow(name)
+    return JsonResponse({"status": "cancelled", "server": name, "cancelled": cancelled})
 
 
 @csrf_exempt

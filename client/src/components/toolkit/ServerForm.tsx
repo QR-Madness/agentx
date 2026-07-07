@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, HelpCircle, ChevronDown, Globe, TerminalSquare } from 'lucide-react';
 import type { MCPServer, MCPServerConfigInput, AgentProfile } from '../../lib/api';
+import {
+  Input, Textarea, Button, IconButton, Switch, Tooltip, SegmentedControl,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '../ui';
 
 interface ServerFormProps {
   initial?: MCPServer | null;
@@ -11,6 +15,9 @@ interface ServerFormProps {
 }
 
 type KV = { key: string; value: string };
+type Mode = 'remote' | 'local';
+/** Remote sub-transports — the specific wire protocol behind an MCP URL. */
+type RemoteTransport = 'streamable_http' | 'sse' | 'websocket';
 
 function dictToList(d?: Record<string, string>): KV[] {
   return d ? Object.entries(d).map(([key, value]) => ({ key, value })) : [];
@@ -21,10 +28,23 @@ function listToDict(rows: KV[]): Record<string, string> {
   return out;
 }
 
+/** Small ⓘ affordance that reveals guidance on hover/focus — keeps labels terse. */
+function Hint({ text }: { text: string }) {
+  return (
+    <Tooltip content={text}>
+      <span className="toolkit-hint" tabIndex={0} role="note" aria-label={text}>
+        <HelpCircle size={13} />
+      </span>
+    </Tooltip>
+  );
+}
+
 export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValidate }: ServerFormProps) {
   const isEdit = !!initial;
   const [name, setName] = useState(initial?.name ?? '');
-  const [transport, setTransport] = useState(initial?.transport ?? 'stdio');
+  // `stdio` = local command; anything else = a remote MCP URL. Default new
+  // servers to remote streamable_http (the overwhelming common case).
+  const [transport, setTransport] = useState(initial?.transport ?? 'streamable_http');
   const [command, setCommand] = useState(initial?.command ?? '');
   const [argsText, setArgsText] = useState((initial?.args ?? []).join('\n'));
   const [url, setUrl] = useState(initial?.url ?? '');
@@ -40,9 +60,18 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
   const [groups, setGroups] = useState<string>((initial?.groups ?? []).join(', '));
   const [whitelistAll, setWhitelistAll] = useState<boolean>(initial?.allowed_agent_ids == null);
   const [allowedAgents, setAllowedAgents] = useState<string[]>(initial?.allowed_agent_ids ?? []);
+  // Existing servers open Advanced so their configured settings are visible;
+  // new servers start collapsed for a clean first-run.
+  const [advancedOpen, setAdvancedOpen] = useState<boolean>(isEdit);
 
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  const mode: Mode = transport === 'stdio' ? 'local' : 'remote';
+  const setMode = (m: Mode) => {
+    if (m === 'local') setTransport('stdio');
+    else if (transport === 'stdio') setTransport('streamable_http');
+  };
 
   const buildConfig = (): MCPServerConfigInput => ({
     transport,
@@ -104,25 +133,24 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
   };
 
   const updateKV = (rows: KV[], setRows: (r: KV[]) => void, idx: number, patch: Partial<KV>) => {
-    const next = rows.map((r, i) => i === idx ? { ...r, ...patch } : r);
-    setRows(next);
+    setRows(rows.map((r, i) => i === idx ? { ...r, ...patch } : r));
   };
 
-  const renderKV = (rows: KV[], setRows: (r: KV[]) => void, label: string) => (
+  const renderKV = (rows: KV[], setRows: (r: KV[]) => void, label: string, hint?: string) => (
     <label>
-      <span>{label}</span>
+      <span>{label}{hint && <Hint text={hint} />}</span>
       {rows.map((r, i) => (
-        <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input value={r.key} placeholder="KEY" onChange={(e) => updateKV(rows, setRows, i, { key: e.target.value })} />
-          <input value={r.value} placeholder="value (use ${VAR} for env)" onChange={(e) => updateKV(rows, setRows, i, { value: e.target.value })} />
-          <button type="button" className="toolkit-button" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove">
+        <div key={i} className="toolkit-kv-row">
+          <Input value={r.key} placeholder="KEY" onChange={(e) => updateKV(rows, setRows, i, { key: e.target.value })} />
+          <Input value={r.value} placeholder="value (use ${VAR})" onChange={(e) => updateKV(rows, setRows, i, { value: e.target.value })} />
+          <IconButton aria-label="Remove row" size="sm" tone="danger" onClick={() => setRows(rows.filter((_, j) => j !== i))}>
             <Trash2 size={14} />
-          </button>
+          </IconButton>
         </div>
       ))}
-      <button type="button" className="toolkit-button" onClick={() => setRows([...rows, { key: '', value: '' }])}>
+      <Button type="button" variant="ghost" size="sm" onClick={() => setRows([...rows, { key: '', value: '' }])}>
         <Plus size={14} /> Add row
-      </button>
+      </Button>
     </label>
   );
 
@@ -130,129 +158,155 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
     <form className="toolkit-form" onSubmit={submit}>
       <label>
         <span>Server name</span>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="filesystem"
-          required
-          disabled={submitting}
-        />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="filesystem" required disabled={submitting} />
       </label>
 
       <label>
-        <span>Transport</span>
-        <select value={transport} onChange={(e) => setTransport(e.target.value)} disabled={submitting}>
-          <option value="stdio">stdio</option>
-          <option value="sse">sse</option>
-          <option value="streamable_http">streamable_http</option>
-          <option value="websocket">websocket</option>
-        </select>
+        <span>Connection</span>
+        <SegmentedControl<Mode>
+          value={mode}
+          onChange={setMode}
+          ariaLabel="Connection type"
+          options={[
+            { value: 'remote', label: 'Remote (URL)', icon: <Globe size={14} /> },
+            { value: 'local', label: 'Local (command)', icon: <TerminalSquare size={14} /> },
+          ]}
+        />
       </label>
 
-      {transport === 'stdio' ? (
+      {mode === 'remote' ? (
         <>
           <label>
-            <span>Command</span>
-            <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" disabled={submitting} />
+            <span>MCP server URL</span>
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/sse" disabled={submitting} />
           </label>
-          <label>
-            <span>Args (one per line)</span>
-            <textarea value={argsText} onChange={(e) => setArgsText(e.target.value)} rows={4} placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/tmp" />
-          </label>
-          {renderKV(env, setEnv, 'Environment variables')}
-        </>
-      ) : (
-        <>
-          <label>
-            <span>URL</span>
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." disabled={submitting} />
-          </label>
-          {renderKV(headers, setHeaders, 'Headers')}
           <label>
             <span>Authorization</span>
-            <select value={authMode} onChange={(e) => setAuthMode(e.target.value as 'none' | 'oauth')} disabled={submitting}>
-              <option value="none">None / static headers</option>
-              <option value="oauth">OAuth 2.1 (sign in via browser)</option>
-            </select>
+            <Select value={authMode} onValueChange={(v) => setAuthMode(v as 'none' | 'oauth')} disabled={submitting}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None / static headers</SelectItem>
+                <SelectItem value="oauth">OAuth 2.1 (sign in via browser)</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           {authMode === 'oauth' && (
             <>
               <label>
-                <span>Scope (optional)</span>
-                <input value={authScope} onChange={(e) => setAuthScope(e.target.value)} placeholder="mcp:tools offline_access" disabled={submitting} />
+                <span>Scope<Hint text="Space-separated OAuth scopes to request. Leave blank to use the provider's defaults." /></span>
+                <Input value={authScope} onChange={(e) => setAuthScope(e.target.value)} placeholder="mcp:tools offline_access" disabled={submitting} />
               </label>
               <label>
-                <span>Client ID (optional — blank = automatic registration)</span>
-                <input value={authClientId} onChange={(e) => setAuthClientId(e.target.value)} placeholder="pre-registered client id (use ${VAR} for env)" disabled={submitting} />
+                <span>Client ID<Hint text="Leave blank for automatic dynamic client registration (RFC 7591). Set it only for providers that require a pre-registered client." /></span>
+                <Input value={authClientId} onChange={(e) => setAuthClientId(e.target.value)} placeholder="blank = automatic registration (use ${VAR})" disabled={submitting} />
               </label>
               {authClientId.trim() && (
                 <label>
-                  <span>Client secret (optional)</span>
-                  <input type="password" value={authClientSecret} onChange={(e) => setAuthClientSecret(e.target.value)} placeholder="${MY_CLIENT_SECRET}" disabled={submitting} />
+                  <span>Client secret<Hint text="Only for confidential pre-registered clients. Prefer ${VAR} so the secret isn't stored in mcp_servers.json." /></span>
+                  <Input type="password" value={authClientSecret} onChange={(e) => setAuthClientSecret(e.target.value)} placeholder="${MY_CLIENT_SECRET}" disabled={submitting} />
                 </label>
               )}
-              <p className="meta" style={{ margin: 0 }}>
+              <p className="toolkit-section-note" style={{ margin: 0 }}>
                 Connecting opens the provider's sign-in page in your browser; tokens are stored on the server.
               </p>
             </>
           )}
         </>
+      ) : (
+        <>
+          <label>
+            <span>Command</span>
+            <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" disabled={submitting} />
+          </label>
+          <label>
+            <span>Args<Hint text="One argument per line." /></span>
+            <Textarea value={argsText} onChange={(e) => setArgsText(e.target.value)} rows={4} placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/tmp" />
+          </label>
+        </>
       )}
 
-      <label>
-        <span>Timeout (s)</span>
-        <input
-          type="number"
-          min={1}
-          step={0.5}
-          value={timeout}
-          onChange={(e) => setTimeoutVal(parseFloat(e.target.value) || 30)}
-        />
-      </label>
-      <label className="checkbox-row">
-        <input type="checkbox" checked={autoReconnect} onChange={(e) => setAutoReconnect(e.target.checked)} />
-        <span>Auto-reconnect</span>
-      </label>
+      {/* Advanced — every remaining setting, gated behind a disclosure so the
+          common path stays a URL + auth. Nothing is dropped. */}
+      <button
+        type="button"
+        className="toolkit-advanced-toggle"
+        aria-expanded={advancedOpen}
+        onClick={() => setAdvancedOpen(o => !o)}
+      >
+        <ChevronDown size={15} className={advancedOpen ? 'open' : ''} />
+        Advanced settings
+      </button>
 
-      <label>
-        <span>Tags (comma-separated)</span>
-        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="filesystem, local" />
-      </label>
-      <label>
-        <span>Groups (comma-separated)</span>
-        <input value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="research, dev" />
-      </label>
+      {advancedOpen && (
+        <div className="toolkit-advanced-body">
+          {mode === 'remote' ? (
+            <>
+              <label>
+                <span>Transport<Hint text="The wire protocol behind the URL. streamable_http suits most modern MCP servers; pick sse or websocket only if the server requires it." /></span>
+                <Select value={transport} onValueChange={(v) => setTransport(v as RemoteTransport)} disabled={submitting}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="streamable_http">streamable_http</SelectItem>
+                    <SelectItem value="sse">sse</SelectItem>
+                    <SelectItem value="websocket">websocket</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+              {renderKV(headers, setHeaders, 'Headers', 'Static request headers sent on every call (e.g. a static bearer token). Use ${VAR} for env expansion.')}
+            </>
+          ) : (
+            renderKV(env, setEnv, 'Environment variables', 'Passed to the launched command. Use ${VAR} to expand from the API server\'s environment.')
+          )}
 
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={whitelistAll}
-          onChange={(e) => setWhitelistAll(e.target.checked)}
-        />
-        <span>Allow all agents</span>
-      </label>
-      {!whitelistAll && (
-        <label>
-          <span>Allowed agents</span>
-          <div className="toolkit-chips">
-            {agentProfiles.map(p => {
-              const on = allowedAgents.includes(p.agentId);
-              return (
-                <button
-                  type="button"
-                  key={p.agentId}
-                  className={`toolkit-chip ${on ? 'solid' : ''}`}
-                  onClick={() => setAllowedAgents(on
-                    ? allowedAgents.filter(a => a !== p.agentId)
-                    : [...allowedAgents, p.agentId])}
-                >
-                  {p.name} <span style={{ opacity: 0.6 }}>({p.agentId})</span>
-                </button>
-              );
-            })}
-            {agentProfiles.length === 0 && <span className="meta">No agent profiles defined</span>}
+          <div className="toolkit-form-row">
+            <label>
+              <span>Timeout (s)</span>
+              <Input type="number" min={1} step={0.5} value={timeout} onChange={(e) => setTimeoutVal(parseFloat(e.target.value) || 30)} />
+            </label>
           </div>
-        </label>
+
+          <div className="toolkit-switch-row" onClick={() => setAutoReconnect(v => !v)} role="presentation">
+            <span>Auto-reconnect<Hint text="Reconnect automatically if the session drops or on app start." /></span>
+            <Switch checked={autoReconnect} onCheckedChange={setAutoReconnect} onClick={(e) => e.stopPropagation()} />
+          </div>
+
+          <label>
+            <span>Tags (comma-separated)</span>
+            <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="filesystem, local" />
+          </label>
+          <label>
+            <span>Groups (comma-separated)</span>
+            <Input value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="research, dev" />
+          </label>
+
+          <div className="toolkit-switch-row" onClick={() => setWhitelistAll(v => !v)} role="presentation">
+            <span>Allow all agents<Hint text="When on, every agent may use this server. Turn off to whitelist specific agents." /></span>
+            <Switch checked={whitelistAll} onCheckedChange={setWhitelistAll} onClick={(e) => e.stopPropagation()} />
+          </div>
+          {!whitelistAll && (
+            <label>
+              <span>Allowed agents</span>
+              <div className="toolkit-chips">
+                {agentProfiles.map(p => {
+                  const on = allowedAgents.includes(p.agentId);
+                  return (
+                    <button
+                      type="button"
+                      key={p.agentId}
+                      className={`toolkit-chip ${on ? 'solid' : ''}`}
+                      onClick={() => setAllowedAgents(on
+                        ? allowedAgents.filter(a => a !== p.agentId)
+                        : [...allowedAgents, p.agentId])}
+                    >
+                      {p.name} <span style={{ opacity: 0.6 }}>({p.agentId})</span>
+                    </button>
+                  );
+                })}
+                {agentProfiles.length === 0 && <span className="meta">No agent profiles defined</span>}
+              </div>
+            </label>
+          )}
+        </div>
       )}
 
       {errors.length > 0 && (
@@ -262,12 +316,12 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
       )}
 
       <div className="toolkit-modal-actions">
-        <button type="button" className="toolkit-button" onClick={onCancel} disabled={submitting}>
-          <X size={14} /> Cancel
-        </button>
-        <button type="submit" className="toolkit-button primary" disabled={submitting || errors.length > 0}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" disabled={submitting || errors.length > 0}>
           {isEdit ? 'Save changes' : 'Create server'}
-        </button>
+        </Button>
       </div>
     </form>
   );

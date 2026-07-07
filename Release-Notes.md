@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.164 -->
+<!-- release-version: 0.21.165 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -57,6 +57,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Settings overhauled** — autosave as you edit (API keys keep explicit Save); new
   Prompts & Memory groups; every prompt override in one place with diff-vs-default.
 - **Snappier model picker** — instant search, keyboard nav, recents on top.
+- **MCP sign-in fixed & polished** — Connect now reliably opens your browser (with a
+  copy-link fallback dialog); a cancelled or denied sign-in no longer shows as "signed
+  in"; the Toolkit forms are rebuilt on the shared field controls with a simpler
+  URL-first "Add server" flow (advanced options tucked behind a disclosure).
 
 ### Migration notes (self-hosters)
 

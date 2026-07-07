@@ -24,6 +24,7 @@ urlpatterns = [
     path("mcp/servers", views.mcp_servers, name="mcp-servers"),
     path("mcp/servers/validate", views.mcp_server_validate, name="mcp-server-validate"),
     path("mcp/servers/<str:name>/auth/reset", views.mcp_server_auth_reset, name="mcp-server-auth-reset"),
+    path("mcp/servers/<str:name>/auth/cancel", views.mcp_server_auth_cancel, name="mcp-server-auth-cancel"),
     path("mcp/servers/<str:name>", views.mcp_server_detail, name="mcp-server-detail"),
     path("mcp/tools", views.mcp_tools, name="mcp-tools"),
     path("mcp/resources", views.mcp_resources, name="mcp-resources"),

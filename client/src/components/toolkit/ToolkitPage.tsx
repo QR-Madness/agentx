@@ -12,6 +12,7 @@ import * as Accordion from '@radix-ui/react-accordion';
 import {
   X, Server, Wrench, Tag, Shield, Code, Plus, Pencil, Trash2,
   Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown, KeyRound,
+  ExternalLink,
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
@@ -20,6 +21,11 @@ import { backdropVariants, containerVariants } from '../unified-settings/animati
 import type { MCPServer, MCPServerConfigInput } from '../../lib/api';
 import { api } from '../../lib/api';
 import { useConfirm } from '../ui/ConfirmDialog';
+import {
+  Button, IconButton, Input, Textarea, StatusDot, CopyChip, Tooltip,
+  Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
+} from '../ui';
+import { openExternal } from '../../lib/openExternal';
 import { ServerForm } from './ServerForm';
 import './ToolkitPage.css';
 
@@ -91,9 +97,9 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
               <div className="header-left">
                 <h1>Toolkit</h1>
               </div>
-              <button className="toolkit-button" onClick={onClose} title="Close">
+              <IconButton aria-label="Close Toolkit" onClick={onClose}>
                 <X size={16} />
-              </button>
+              </IconButton>
             </div>
             <div className="toolkit-content toolkit-single-view">
               {/* Primary section — always visible. */}
@@ -159,8 +165,12 @@ function ServersView() {
   const [editing, setEditing] = useState<MCPServer | null | undefined>(undefined); // undefined = closed; null = creating
   const [busy, setBusy] = useState<string | null>(null);
   // Server currently waiting on a browser OAuth consent (connect continues
-  // server-side; we poll until it flips to connected or errors).
+  // server-side; we poll until it flips to connected or errors). `authUrl` is
+  // the authorization URL for the manual-open fallback in the sign-in dialog.
   const [authWait, setAuthWait] = useState<string | null>(null);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+
+  const clearAuthWait = () => { setAuthWait(null); setAuthUrl(null); };
 
   const handleSubmit = async (name: string, cfg: MCPServerConfigInput, rename?: string) => {
     if (editing && editing.name) {
@@ -173,25 +183,36 @@ function ServersView() {
   const handleConnect = async (s: MCPServer) => {
     const result = await connectServer(s.name);
     if (result?.status === 'auth_required' && result.authorization_url) {
-      window.open(result.authorization_url, '_blank', 'noopener');
       setAuthWait(s.name);
+      setAuthUrl(result.authorization_url);
+      // Fire the browser open up front (Tauri-aware); the dialog stays up as a
+      // manual fallback if it didn't open.
+      void openExternal(result.authorization_url);
     }
   };
 
-  // Poll while a consent tab is open; stop on connected / auth error / timeout.
+  // Abort an in-flight sign-in server-side so a late completion can't flip the
+  // server to "signed in" after the user backed out.
+  const cancelAuth = async (name: string) => {
+    try { await api.cancelMCPServerAuth(name); } catch { /* best-effort */ }
+    clearAuthWait();
+    void refresh();
+  };
+
+  // Poll while the sign-in dialog is open; stop on connected / auth error / timeout.
   useEffect(() => {
     if (!authWait) return;
     const started = Date.now();
     const t = window.setInterval(() => {
       void refresh();
-      if (Date.now() - started > 5 * 60_000) setAuthWait(null);
+      if (Date.now() - started > 5 * 60_000) clearAuthWait();
     }, 2500);
     return () => window.clearInterval(t);
   }, [authWait, refresh]);
   useEffect(() => {
     if (!authWait) return;
     const s = servers.find(x => x.name === authWait);
-    if (!s || s.status === 'connected' || s.auth_state?.error) setAuthWait(null);
+    if (!s || s.status === 'connected' || s.auth_state?.error) clearAuthWait();
   }, [servers, authWait]);
 
   const resetAuth = async (s: MCPServer) => {
@@ -226,15 +247,15 @@ function ServersView() {
           <p>{servers.length} configured · edits write to mcp_servers.json</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="toolkit-button" onClick={refresh} disabled={loading}>
+          <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw size={14} /> Refresh
-          </button>
-          <button className="toolkit-button" onClick={() => connectAll()} disabled={loading}>
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => connectAll()} disabled={loading}>
             <Plug size={14} /> Connect all
-          </button>
-          <button className="toolkit-button primary" onClick={() => setEditing(null)}>
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setEditing(null)}>
             <Plus size={14} /> Add server
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -251,7 +272,16 @@ function ServersView() {
               <div className="toolkit-card-header">
                 <Server size={16} />
                 <span className="name" title={s.name}>{s.name}</span>
-                <span className={`status-dot ${s.status === 'connected' ? 'online' : 'offline'}`} />
+                <StatusDot
+                  tone={
+                    s.status === 'connected' ? 'online'
+                      : s.auth_state?.error ? 'error'
+                        : (authWait === s.name || s.auth_state?.pending) ? 'warning'
+                          : 'inactive'
+                  }
+                  pulse={authWait === s.name || !!s.auth_state?.pending}
+                  title={s.status === 'connected' ? 'Connected' : 'Disconnected'}
+                />
               </div>
               <div className="meta">
                 {s.transport} · {s.status === 'connected'
@@ -275,8 +305,8 @@ function ServersView() {
               </div>
               {s.auth?.type === 'oauth' && (
                 <div className="meta">
-                  {authWait === s.name
-                    ? 'OAuth · waiting for authorization in your browser…'
+                  {authWait === s.name || s.auth_state?.pending
+                    ? 'OAuth · waiting for authorization…'
                     : s.auth_state?.error
                       ? `OAuth · sign-in failed: ${s.auth_state.error}`
                       : s.auth_state?.authorized
@@ -286,29 +316,39 @@ function ServersView() {
               )}
               <div className="toolkit-card-actions">
                 {authWait === s.name ? (
-                  <button className="toolkit-button" onClick={() => setAuthWait(null)}>
-                    <Loader2 size={14} className="spin" /> Cancel wait
-                  </button>
+                  <Button variant="secondary" size="sm" disabled>
+                    <Loader2 size={14} className="spin" /> Waiting…
+                  </Button>
                 ) : s.status === 'connected' ? (
-                  <button className="toolkit-button" onClick={() => disconnectServer(s.name)} disabled={busy !== null}>
+                  <Button variant="secondary" size="sm" onClick={() => disconnectServer(s.name)} disabled={busy !== null}>
                     <Unplug size={14} /> Disconnect
-                  </button>
+                  </Button>
                 ) : (
-                  <button className="toolkit-button" onClick={() => void handleConnect(s)} disabled={busy !== null}>
+                  <Button variant="primary" size="sm" onClick={() => void handleConnect(s)} disabled={busy !== null}>
                     <Plug size={14} /> Connect
-                  </button>
+                  </Button>
                 )}
-                <button className="toolkit-button" onClick={() => setEditing(s)} disabled={busy !== null}>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(s)} disabled={busy !== null}>
                   <Pencil size={14} /> Edit
-                </button>
+                </Button>
                 {s.auth?.type === 'oauth' && s.auth_state?.authorized && (
-                  <button className="toolkit-button" onClick={() => void resetAuth(s)} disabled={busy !== null} title="Forget stored tokens (sign in again on next connect)">
-                    <KeyRound size={14} /> Reset auth
-                  </button>
+                  <Tooltip content="Forget stored tokens (sign in again on next connect)">
+                    <Button variant="ghost" size="sm" onClick={() => void resetAuth(s)} disabled={busy !== null}>
+                      <KeyRound size={14} /> Reset auth
+                    </Button>
+                  </Tooltip>
                 )}
-                <button className="toolkit-button danger" onClick={() => onDelete(s)} disabled={busy === s.name}>
-                  {busy === s.name ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                </button>
+                <Tooltip content="Delete server">
+                  <IconButton
+                    aria-label={`Delete ${s.name}`}
+                    size="sm"
+                    tone="danger"
+                    onClick={() => onDelete(s)}
+                    disabled={busy === s.name}
+                  >
+                    {busy === s.name ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                  </IconButton>
+                </Tooltip>
               </div>
             </div>
           ))}
@@ -330,6 +370,35 @@ function ServersView() {
         </div>,
         document.body
       )}
+
+      {/* OAuth sign-in — auto-opens the browser and stays up as the manual
+          fallback. `open` is derived from authWait, so the poll effect that
+          clears authWait on connect auto-closes it. Dismissing (Esc/backdrop)
+          cancels the server-side flow. */}
+      <Dialog
+        open={authWait != null}
+        onOpenChange={(o) => { if (!o && authWait) void cancelAuth(authWait); }}
+      >
+        <DialogContent showClose={false} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sign in to “{authWait}”</DialogTitle>
+            <DialogDescription>
+              We opened your browser to finish signing in. Didn’t open? Use the link below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 py-3">
+            {authUrl && <CopyChip value={authUrl} label="Copy sign-in link" />}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => authWait && void cancelAuth(authWait)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => authUrl && void openExternal(authUrl)}>
+              <ExternalLink size={14} /> Open sign-in page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -349,10 +418,12 @@ function ToolsBrowserView() {
         Reference catalog of discovered tools. Per-agent tool access is set per profile —
         Agent Profiles → Tools.
       </p>
-      <div className="toolkit-search">
-        <Search size={16} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tools…" />
-      </div>
+      <Input
+        icon={<Search size={16} />}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search tools…"
+      />
       {loading ? (
         <div className="toolkit-empty"><Loader2 className="spin" /> Loading…</div>
       ) : filtered.length === 0 ? (
@@ -565,7 +636,7 @@ function RawJsonView() {
     <>
       <div className="toolkit-raw-editor">
         <div className="warning"><AlertTriangle size={14} /> Saving here disconnects affected servers and rewrites the config file.</div>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+        <Textarea value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
         {parseError && <div className="toolkit-error-banner"><span>JSON parse: {parseError}</span></div>}
         {validateErrors.length > 0 && (
           <div className="toolkit-error-banner">
@@ -574,12 +645,12 @@ function RawJsonView() {
         )}
         {savedMsg && <div className="meta" style={{ color: 'var(--feedback-success)' }}>{savedMsg}</div>}
         <div className="actions">
-          <button className="toolkit-button" onClick={() => setText(initialJson)} disabled={saving}>
+          <Button variant="secondary" size="sm" onClick={() => setText(initialJson)} disabled={saving}>
             Reset to current
-          </button>
-          <button className="toolkit-button primary" onClick={save} disabled={!valid || saving}>
+          </Button>
+          <Button variant="primary" size="sm" onClick={save} disabled={!valid || saving}>
             {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Save
-          </button>
+          </Button>
         </div>
       </div>
     </>

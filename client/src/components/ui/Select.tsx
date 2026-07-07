@@ -45,7 +45,9 @@ const SelectContent = React.forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-xl p-1',
+        // z-[2400]: clear the app's hand-rolled modal layer (Settings/Toolkit
+        // at z-index 2000-2200) so the open dropdown isn't hidden behind it.
+        'relative z-[2400] max-h-96 min-w-[8rem] overflow-hidden rounded-xl p-1',
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
         'shadow-lg backdrop-blur-sm text-fg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',

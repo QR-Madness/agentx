@@ -602,6 +602,32 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /mcp/servers/{name}/auth/cancel:
+    post:
+      tags: [MCP]
+      operationId: mcpServerAuthCancel
+      summary: Cancel an in-flight OAuth sign-in
+      description: >-
+        Aborts a pending interactive browser consent flow server-side so a late
+        completion can't flip the server to "signed in" after the user backed
+        out. Any previously-stored tokens are left intact (use `auth/reset` to
+        forget those).
+      parameters:
+        - $ref: '#/components/parameters/ServerName'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  server: { type: string }
+                  cancelled: { type: boolean, description: Whether a pending flow was actually aborted }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /mcp/disconnect:
     post:
       tags: [MCP]
