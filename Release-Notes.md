@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.163 -->
+<!-- release-version: 0.21.164 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Fixes
 
 - **Added HTTPS scheme to Tauri app** - which will invalidate all local data on Windows.
+- **Windows: Settings, Toolkit & profile editor open properly** — they collapsed to a
+  thin line on WebView2 (full-screen surfaces were nested inside a centered dialog).
 - **UI foundation restored**: reset, real fonts, one field style.
 - **Anthropic models get their full system prompt** (blocks were dropped).
 - **Security**: gateway fails closed on an empty token; proxy trust is opt-in;
