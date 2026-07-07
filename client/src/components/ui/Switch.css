@@ -1,0 +1,60 @@
+/**
+ * Switch — a self-contained toggle. Every box-model property is set explicitly
+ * so the global `button` reset in base.css (which forces justify-content:center,
+ * gap, and transition:all onto all buttons) can't leak in and shove the thumb
+ * off-center or animate the track. The thumb is absolutely positioned, so its
+ * travel is deterministic regardless of flex context.
+ */
+
+.ax-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start; /* neutralize base.css `justify-content: center` */
+  gap: 0;                      /* neutralize base.css `gap: 8px` */
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-overlay);
+  cursor: pointer;
+  /* Explicit list, NOT the base.css `all` (which animates width/layout). */
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ax-switch[data-state='checked'] {
+  background: var(--accent-primary);
+  box-shadow: 0 0 12px -3px var(--accent-primary);
+}
+
+.ax-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint-medium, rgba(139, 92, 246, 0.4));
+}
+
+.ax-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ax-switch__thumb {
+  position: absolute;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* 42 track − 3 left − 18 thumb − 3 right = 18px travel (symmetric). */
+.ax-switch[data-state='checked'] .ax-switch__thumb {
+  transform: translateX(18px);
+}

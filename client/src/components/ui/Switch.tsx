@@ -1,33 +1,20 @@
 /**
- * Switch — boolean toggle built on Radix. Uses the accent token for the on state.
+ * Switch — boolean toggle built on Radix. Styling lives in Switch.css (explicit
+ * box model so the global button reset can't misalign the thumb). Uses the
+ * accent token for the on state, with a soft glow.
  */
 
 import * as React from 'react';
 import * as SwitchPrimitive from '@radix-ui/react-switch';
 import { cn } from '../../lib/utils';
+import './Switch.css';
 
 export const Switch = React.forwardRef<
   React.ComponentRef<typeof SwitchPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>
 >(({ className, ...props }, ref) => (
-  <SwitchPrimitive.Root
-    ref={ref}
-    className={cn(
-      'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full',
-      'border border-transparent transition-colors outline-none',
-      'focus-visible:ring-2 focus-visible:ring-accent',
-      'disabled:cursor-not-allowed disabled:opacity-50',
-      'data-[state=checked]:bg-accent data-[state=unchecked]:bg-[var(--surface-overlay)]',
-      className
-    )}
-    {...props}
-  >
-    <SwitchPrimitive.Thumb
-      className={cn(
-        'pointer-events-none block h-5 w-5 rounded-full bg-white shadow-sm ring-0',
-        'transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0.5'
-      )}
-    />
+  <SwitchPrimitive.Root ref={ref} className={cn('ax-switch', className)} {...props}>
+    <SwitchPrimitive.Thumb className="ax-switch__thumb" />
   </SwitchPrimitive.Root>
 ));
 Switch.displayName = SwitchPrimitive.Root.displayName;
