@@ -386,7 +386,10 @@ export interface ConversationTab {
   modelOverride?: string | null;
   // Latest context-window usage from the most recent stream on this tab.
   // Not persisted — would mislead if rehydrated stale.
-  contextInfo?: { window: number; used: number; updatedAt: number };
+  contextInfo?: {
+    window: number; used: number; updatedAt: number;
+    summarized?: boolean; droppedTurns?: number;
+  };
   // The detached run currently in flight on this tab. Persisted (unlike
   // contextInfo) so a reopened tab can re-attach to a run that was streaming
   // when the tab/browser closed. Cleared when the run reaches a terminal state.

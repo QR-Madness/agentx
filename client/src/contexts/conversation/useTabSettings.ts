@@ -43,10 +43,13 @@ export function useTabSettings({ activeTabId, updateTab }: UseTabSettingsArgs) {
   }, [activeTabId, updateTab]);
 
   const setTabContextInfo = useCallback(
-    (tabId: string, info: { window: number; used: number } | null) => {
+    (tabId: string, info: { window: number; used: number; summarized?: boolean; droppedTurns?: number } | null) => {
       updateTab(tabId, {
         contextInfo: info
-          ? { window: info.window, used: info.used, updatedAt: Date.now() }
+          ? {
+              window: info.window, used: info.used, updatedAt: Date.now(),
+              summarized: info.summarized, droppedTurns: info.droppedTurns,
+            }
           : undefined,
       });
     },
